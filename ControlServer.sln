@@ -1,0 +1,54 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.Domain", "src\ControlServer.Domain\ControlServer.Domain.csproj", "{7D87D838-5B44-4D35-8B2A-70A9F47D996E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.Application", "src\ControlServer.Application\ControlServer.Application.csproj", "{E8481CE2-31BA-46FB-8D10-98F4B28C755B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.Infrastructure", "src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj", "{1384D75C-1BFA-459F-B30B-9B539921B9EA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.Host", "src\ControlServer.Host\ControlServer.Host.csproj", "{6EF04AD5-C7A4-4C95-98CD-9C554CDB1CD0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.FakeOnboard", "tools\ControlServer.FakeOnboard\ControlServer.FakeOnboard.csproj", "{75C9CC76-B5FC-4935-A2FD-3E2FDBA9A243}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.Conformance", "tools\ControlServer.Conformance\ControlServer.Conformance.csproj", "{21BE04E7-774A-4DBD-B046-A1D8781F3577}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.Tests", "tests\ControlServer.Tests\ControlServer.Tests.csproj", "{7675EE9C-4915-43AB-B413-BDF8FDF51274}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7D87D838-5B44-4D35-8B2A-70A9F47D996E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D87D838-5B44-4D35-8B2A-70A9F47D996E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D87D838-5B44-4D35-8B2A-70A9F47D996E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D87D838-5B44-4D35-8B2A-70A9F47D996E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E8481CE2-31BA-46FB-8D10-98F4B28C755B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E8481CE2-31BA-46FB-8D10-98F4B28C755B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E8481CE2-31BA-46FB-8D10-98F4B28C755B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E8481CE2-31BA-46FB-8D10-98F4B28C755B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1384D75C-1BFA-459F-B30B-9B539921B9EA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1384D75C-1BFA-459F-B30B-9B539921B9EA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1384D75C-1BFA-459F-B30B-9B539921B9EA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1384D75C-1BFA-459F-B30B-9B539921B9EA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6EF04AD5-C7A4-4C95-98CD-9C554CDB1CD0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6EF04AD5-C7A4-4C95-98CD-9C554CDB1CD0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6EF04AD5-C7A4-4C95-98CD-9C554CDB1CD0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6EF04AD5-C7A4-4C95-98CD-9C554CDB1CD0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{75C9CC76-B5FC-4935-A2FD-3E2FDBA9A243}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{75C9CC76-B5FC-4935-A2FD-3E2FDBA9A243}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{75C9CC76-B5FC-4935-A2FD-3E2FDBA9A243}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{75C9CC76-B5FC-4935-A2FD-3E2FDBA9A243}.Release|Any CPU.Build.0 = Release|Any CPU
+		{21BE04E7-774A-4DBD-B046-A1D8781F3577}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{21BE04E7-774A-4DBD-B046-A1D8781F3577}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{21BE04E7-774A-4DBD-B046-A1D8781F3577}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{21BE04E7-774A-4DBD-B046-A1D8781F3577}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7675EE9C-4915-43AB-B413-BDF8FDF51274}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7675EE9C-4915-43AB-B413-BDF8FDF51274}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7675EE9C-4915-43AB-B413-BDF8FDF51274}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7675EE9C-4915-43AB-B413-BDF8FDF51274}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
