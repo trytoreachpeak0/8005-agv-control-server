@@ -153,7 +153,7 @@ static object ReleaseIdentity() => new
 {
     repository = "8005-agv-protocol",
     releaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-    tag = "candidate-72ddde5",
+    tag = ProtocolCandidateIdentity.Tag,
     commit = ProtocolCandidateIdentity.RepositoryCommit,
     protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
     profileId = ProtocolCandidateIdentity.ProfileId,

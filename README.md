@@ -2,13 +2,14 @@
 
 WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含候选协议下的 SQLite 持久状态核、五步恢复握手、可靠 inbox/outbox、Demand/RIoT 意图、多仓批次、断联收敛、原子完成、只读 MesIngest V2 适配器、可运行 Host、Fake Onboard 和逐切片 G2 入口。
 
-这仍不是整个双端 MVP Release Candidate：真实 RIoT 环境移动集成与车辆/Map/站点资格、真实 OnboardHmi、G3、正式协议批准和安装/现场验收仍是后续门禁。
+这仍不是整个双端 MVP Release Candidate：真实 RIoT 环境移动集成与车辆/Map/站点资格、真实 OnboardHmi、G3 和安装/现场验收仍是后续门禁。
 
-候选协议绑定：
+正式协议绑定：
 
-- protocol commit: `72ddde595165468520d9f3a46b25e4aa4eec0c3f`
-- manifest SHA-256: `e878d89e820535fe1eb64b85681b9c2994fb98646309e6ba768219c5c8735f2e`
-- status: `CANDIDATE_UNAPPROVED`
+- tag: `protocol-v0.1.0`
+- protocol commit: `3ad309ffd5f9a48a6cf390b51a81da2f47c814dd`
+- manifest SHA-256: `92c19e74affe876902e1c64aa5cdbca845f5dbc93a8c82014a16627a26deb8d3`
+- status: `APPROVED_RELEASE`
 
 构建前必须使用 `global.json` 指定的 .NET SDK `8.0.424`。若 SDK 未加入 `PATH`，可先把 `WIRE_TO_GATE_DOTNET_EXE` 指向该版本的 `dotnet.exe`：
 

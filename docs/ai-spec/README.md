@@ -5,9 +5,9 @@
 ## 固定身份与边界
 
 - 分支：`ControlServer_MVP`
-- 协议候选：`72ddde595165468520d9f3a46b25e4aa4eec0c3f`
-- manifest：`e878d89e820535fe1eb64b85681b9c2994fb98646309e6ba768219c5c8735f2e`
-- 状态：`CANDIDATE_UNAPPROVED`；允许隔离开发/G2/G3，不得称为正式 ProtocolRelease。
+- 协议 release：`protocol-v0.1.0@3ad309ffd5f9a48a6cf390b51a81da2f47c814dd`
+- manifest：`92c19e74affe876902e1c64aa5cdbca845f5dbc93a8c82014a16627a26deb8d3`
+- 状态：`APPROVED_RELEASE`；所有 G2/G3 证据必须绑定该精确身份。
 - MesIngest 只读；RIoT 只由 ControlServer 通过具名端口调用；Onboard 只接收业务级协议，不接收原始 IO。
 
 ## 事务与副作用顺序

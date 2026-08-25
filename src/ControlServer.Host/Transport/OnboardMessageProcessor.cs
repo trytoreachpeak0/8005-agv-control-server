@@ -196,7 +196,7 @@ public sealed class OnboardMessageProcessor(
             RequiredString(identity, "profileId") != ProtocolCandidateIdentity.ProfileId ||
             identity.GetProperty("protocolVersion").GetInt32() != ProtocolCandidateIdentity.ProtocolVersion)
         {
-            throw new ProtocolIdentityMismatchException("ProtocolReleaseIdentity differs from this candidate build.");
+            throw new ProtocolIdentityMismatchException("ProtocolReleaseIdentity differs from this release build.");
         }
 
         string credentialVariable = configuration[$"{OnboardTransportOptions.SectionName}:CredentialEnvironmentVariable"]
@@ -260,7 +260,7 @@ public sealed class OnboardMessageProcessor(
     {
         repository = "8005-agv-protocol",
         releaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-        tag = "candidate-72ddde5",
+        tag = ProtocolCandidateIdentity.Tag,
         commit = ProtocolCandidateIdentity.RepositoryCommit,
         protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
         profileId = ProtocolCandidateIdentity.ProfileId,
