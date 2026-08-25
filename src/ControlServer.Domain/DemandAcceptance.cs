@@ -14,4 +14,9 @@ public sealed record OrderIntent(
     string UpperId,
     string Purpose,
     string TargetStationId,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string VehicleKey = "",
+    int MapId = 0,
+    int DestinationStationId = 0,
+    long AgvLifecycleGeneration = 0,
+    long DispatchGeneration = 0);

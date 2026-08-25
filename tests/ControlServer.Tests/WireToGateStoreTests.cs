@@ -1,0 +1,213 @@
+using ControlServer.Domain;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+
+namespace ControlServer.Tests;
+
+public sealed class WireToGateStoreTests
+{
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    public async Task FiveStepRecoveryRequiresCurrentGenerationAndUniqueConsistentFacts()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        SessionIdentity identity = new(
+            "AGV-001", 1, ProtocolCandidateIdentity.RepositoryCommit,
+            ProtocolCandidateIdentity.ManifestSha256, ProtocolCandidateIdentity.ProfileId,
+            ProtocolCandidateIdentity.ProtocolVersion);
+
+        await fixture.Store.BeginSessionRecoveryAsync(identity, fixture.CancellationToken);
+        await fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 1, 4, "cap-hash", fixture.CancellationToken);
+        await fixture.Store.ApplySafetySnapshotAsync("AGV-001", 1, 9, true, "safe-hash", fixture.CancellationToken);
+        await fixture.Store.ApplyRecoveryReportAsync(
+            "AGV-001", 1, "REPORT-001", 0, [], [], fixture.CancellationToken);
+        SessionReadinessDecision decision = await fixture.Store.DecideReadinessAsync(
+            "AGV-001", 1, fixture.CancellationToken);
+
+        Assert.Equal(SessionReadiness.Ready, decision.Readiness);
+        await Assert.ThrowsAsync<StaleSessionGenerationException>(() =>
+            fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 0, 5, "late", fixture.CancellationToken));
+
+        await fixture.Store.BeginSessionRecoveryAsync(identity with { SessionGeneration = 2 }, fixture.CancellationToken);
+        SessionReadinessDecision reconnectDecision = await fixture.Store.GetReadinessAsync(
+            "AGV-001", fixture.CancellationToken);
+        Assert.Equal(SessionReadiness.RecoveryRequired, reconnectDecision.Readiness);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task SlotPlanAndReliableCommandAreAtomicAndBatchNeedsCompleteSafeEvidence()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        StationOperationPlan plan = new(
+            "ATTEMPT-001", "D-001", "SUBLOT-001", [1, 2], 0, "plan-hash", fixture.Now);
+
+        await fixture.Store.PrepareSlotOperationAsync(plan, "MSG-CMD-001", "command-json", fixture.CancellationToken);
+
+        Assert.Equal(1, await fixture.Context.StationOperations.CountAsync(fixture.CancellationToken));
+        Assert.Equal(1, await fixture.Context.ProtocolOutbox.CountAsync(fixture.CancellationToken));
+        await Assert.ThrowsAsync<UnsafePhysicalEvidenceException>(() => fixture.Store.CommitSlotBatchAsync(
+            "ATTEMPT-001",
+            [new SlotPhysicalEvidence(1, SlotBusinessState.Occupied, true, true)],
+            fixture.Now.AddSeconds(1), fixture.CancellationToken));
+
+        await fixture.Store.CommitSlotBatchAsync(
+            "ATTEMPT-001",
+            [
+                new SlotPhysicalEvidence(1, SlotBusinessState.Occupied, true, true),
+                new SlotPhysicalEvidence(2, SlotBusinessState.Occupied, true, true)
+            ],
+            fixture.Now.AddSeconds(2), fixture.CancellationToken);
+
+        StationOperationRow row = await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken);
+        Assert.Equal(StationOperationStatus.Committed, row.Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task GateMovementRequiresFreshSafeCheckAndStableIntentIdentity()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        SafetyCheckObservation fresh = new("CHECK-001", 12, true, fixture.Now, fixture.Now.AddSeconds(10));
+        OrderIntent gateIntent = new("LEG-GATE-001", "D-001", "W2G-D-001-GATE-1", "TO_GATE", "ST-GATE", fixture.Now);
+
+        await fixture.Store.AuthorizeMovementAsync(gateIntent, fresh, fixture.Now.AddSeconds(5), fixture.CancellationToken);
+        Assert.Equal(1, await fixture.Context.OrderIntents.CountAsync(fixture.CancellationToken));
+
+        SafetyCheckObservation expired = fresh with { CheckId = "CHECK-002", ValidUntil = fixture.Now.AddSeconds(3) };
+        await Assert.ThrowsAsync<UnsafeMovementAuthorizationException>(() => fixture.Store.AuthorizeMovementAsync(
+            gateIntent with { MovementLegId = "LEG-GATE-002", UpperId = "W2G-D-001-GATE-2" },
+            expired, fixture.Now.AddSeconds(4), fixture.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task UnloadCompletionCommitsAllFourFactsExactlyOnce()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot("D-001", "SUBLOT-001|WIRE_TO_GATE", 7, "history-1", 21, fixture.Now),
+            new OrderIntent("LEG-001", "D-001", "W2G-D-001-PICKUP-1", "TO_PICKUP", "ST-PICKUP", fixture.Now),
+            fixture.CancellationToken);
+
+        SlotPhysicalEvidence[] allEmpty =
+        [
+            new(1, SlotBusinessState.Empty, true, true),
+            new(2, SlotBusinessState.Empty, true, true)
+        ];
+        await fixture.Store.CompleteDemandAfterUnloadAsync(
+            "UNLOAD-001", "D-001", "SUBLOT-001|WIRE_TO_GATE", 7, allEmpty,
+            "all-empty-locked-output-reset", fixture.Now.AddMinutes(1), fixture.CancellationToken);
+        await fixture.Store.CompleteDemandAfterUnloadAsync(
+            "UNLOAD-001", "D-001", "SUBLOT-001|WIRE_TO_GATE", 7, allEmpty,
+            "all-empty-locked-output-reset", fixture.Now.AddMinutes(1), fixture.CancellationToken);
+
+        Assert.Equal(1, await fixture.Context.UnloadBatches.CountAsync(fixture.CancellationToken));
+        Assert.Equal(1, await fixture.Context.StopClosures.CountAsync(fixture.CancellationToken));
+        Assert.Equal(1, await fixture.Context.TransportDemandCompletions.CountAsync(fixture.CancellationToken));
+        Assert.Equal(DemandExecutionStatus.Succeeded,
+            (await fixture.Context.AcceptedDemands.SingleAsync(fixture.CancellationToken)).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    public async Task ConnectionLossCanFinishButNeverExpandActiveUnlockSet()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.RecordConnectionLossAsync("AGV-001", 4, [2], fixture.Now, fixture.CancellationToken);
+
+        await Assert.ThrowsAsync<ActiveUnlockSetExpansionException>(() => fixture.Store.RecordSafeFinishAsync(
+            "AGV-001", 4, [2, 3], fixture.Now.AddSeconds(1), fixture.CancellationToken));
+        await fixture.Store.RecordSafeFinishAsync(
+            "AGV-001", 4, [2], fixture.Now.AddSeconds(2), fixture.CancellationToken);
+
+        ConnectionRecoveryRow row = await fixture.Context.ConnectionRecoveries.SingleAsync(fixture.CancellationToken);
+        Assert.Equal(ConnectionRecoveryStatus.AwaitingHandshake, row.Status);
+        Assert.False(row.ResumeAuthorized);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task InboxReplaysFirstResponseAndRejectsDifferentContent()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        int sideEffects = 0;
+        string first = await fixture.Store.CaptureFirstResponseAsync(
+            "MSG-001", "same-hash", () => Task.FromResult($"result-{++sideEffects}"),
+            fixture.Now, fixture.CancellationToken);
+        string replay = await fixture.Store.CaptureFirstResponseAsync(
+            "MSG-001", "same-hash", () => Task.FromResult($"result-{++sideEffects}"),
+            fixture.Now.AddSeconds(1), fixture.CancellationToken);
+
+        Assert.Equal("result-1", first);
+        Assert.Equal(first, replay);
+        Assert.Equal(1, sideEffects);
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() => fixture.Store.CaptureFirstResponseAsync(
+            "MSG-001", "different-hash", () => Task.FromResult("must-not-run"),
+            fixture.Now.AddSeconds(2), fixture.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ForcedRecoveryGenerationFencesLateResultsAndPersistsDecision()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.AdvanceForcedRecoveryGenerationAsync("AGV-001", 2, fixture.Now, fixture.CancellationToken);
+
+        OperationResultDisposition late = await fixture.Store.RecordOperationResultAsync(
+            "RESULT-LATE", "ATTEMPT-001", "AGV-001", 1, "late-hash", fixture.Now.AddSeconds(1), fixture.CancellationToken);
+        OperationResultDisposition current = await fixture.Store.RecordOperationResultAsync(
+            "RESULT-CURRENT", "ATTEMPT-001", "AGV-001", 2, "current-hash", fixture.Now.AddSeconds(2), fixture.CancellationToken);
+        string first = await fixture.Store.RecordRecoveryDecisionAsync(
+            "RECOVERY-SESSION-001", "ACTION-001", 2, "decision-hash", "RESUME",
+            fixture.Now.AddSeconds(3), fixture.CancellationToken);
+        string replay = await fixture.Store.RecordRecoveryDecisionAsync(
+            "RECOVERY-SESSION-001", "ACTION-001", 2, "decision-hash", "COMPENSATE",
+            fixture.Now.AddSeconds(4), fixture.CancellationToken);
+
+        Assert.Equal(OperationResultDisposition.HistoricalOnly, late);
+        Assert.Equal(OperationResultDisposition.Accepted, current);
+        Assert.Equal("RESUME", first);
+        Assert.Equal(first, replay);
+        Assert.Equal(1, await fixture.Context.RecoveryDecisions.CountAsync(fixture.CancellationToken));
+    }
+
+    private sealed class StoreFixture : IAsyncDisposable
+    {
+        private StoreFixture(
+            SqliteConnection connection,
+            ControlServerDbContext context,
+            CancellationToken cancellationToken)
+        {
+            Connection = connection;
+            Context = context;
+            Store = new WireToGateStore(context);
+            CancellationToken = cancellationToken;
+        }
+
+        public SqliteConnection Connection { get; }
+        public ControlServerDbContext Context { get; }
+        public WireToGateStore Store { get; }
+        public DateTimeOffset Now { get; } = new(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        public CancellationToken CancellationToken { get; }
+
+        public static async Task<StoreFixture> CreateAsync()
+        {
+            SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            return new StoreFixture(connection, context, TestContext.Current.CancellationToken);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Context.DisposeAsync();
+            await Connection.DisposeAsync();
+        }
+    }
+}

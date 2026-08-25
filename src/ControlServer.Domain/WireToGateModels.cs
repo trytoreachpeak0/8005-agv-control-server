@@ -1,0 +1,85 @@
+namespace ControlServer.Domain;
+
+public sealed record SessionIdentity(
+    string AgvId,
+    long SessionGeneration,
+    string ProtocolCommit,
+    string ManifestSha256,
+    string ProfileId,
+    int ProtocolVersion);
+
+public enum SessionReadiness
+{
+    RecoveryRequired,
+    Ready
+}
+
+public sealed record SessionReadinessDecision(SessionReadiness Readiness, string ReasonCode);
+
+public sealed record StationOperationPlan(
+    string SlotOperationAttemptId,
+    string DemandId,
+    string SublotId,
+    IReadOnlyList<int> TargetSlots,
+    long ForcedRecoveryGeneration,
+    string ContentHash,
+    DateTimeOffset CreatedAt);
+
+public enum StationOperationStatus
+{
+    Prepared,
+    Committed,
+    Cancelled,
+    RecoveryRequired
+}
+
+public enum SlotBusinessState
+{
+    Empty,
+    Occupied,
+    Unknown
+}
+
+public sealed record SlotPhysicalEvidence(
+    int SlotNumber,
+    SlotBusinessState State,
+    bool DoorLocked,
+    bool UnlockOutputReset);
+
+public sealed record SafetyCheckObservation(
+    string CheckId,
+    long SafetyStateVersion,
+    bool DepartureSafe,
+    DateTimeOffset ObservedAt,
+    DateTimeOffset ValidUntil);
+
+public enum DemandExecutionStatus
+{
+    Accepted,
+    Succeeded,
+    Cancelled,
+    RecoveryRequired
+}
+
+public enum ConnectionRecoveryStatus
+{
+    Connected,
+    SafelyFinishing,
+    AwaitingHandshake,
+    RecoveryRequired
+}
+
+public enum OperationResultDisposition
+{
+    Accepted,
+    HistoricalOnly,
+    Replay
+}
+
+public sealed class ProtocolIdentityMismatchException(string message) : InvalidOperationException(message);
+public sealed class StaleSessionGenerationException(string message) : InvalidOperationException(message);
+public sealed class ProtocolContentConflictException(string message) : InvalidOperationException(message);
+public sealed class UnsafePhysicalEvidenceException(string message) : InvalidOperationException(message);
+public sealed class UnsafeMovementAuthorizationException(string message) : InvalidOperationException(message);
+public sealed class ActiveUnlockSetExpansionException(string message) : InvalidOperationException(message);
+public sealed class BusinessIdentityConflictException(string message) : InvalidOperationException(message);

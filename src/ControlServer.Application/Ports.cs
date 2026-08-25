@@ -10,6 +10,8 @@ public interface IMesIngestCatalog
 public interface IRiotMovementGateway
 {
     Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken);
+
+    Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken);
 }
 
 public interface IOnboardPeer
@@ -25,4 +27,26 @@ public interface IDemandAcceptanceStore
         CancellationToken cancellationToken);
 }
 
-public sealed record RiotOrderObservation(string UpperId, string Outcome, string? OrderId);
+public interface IMovementIntentStore
+{
+    Task<StoredMovementIntent?> GetByUpperIdAsync(string upperId, CancellationToken cancellationToken);
+
+    Task MarkResultUnknownAsync(string upperId, CancellationToken cancellationToken);
+
+    Task ConfirmAsync(string upperId, string orderId, CancellationToken cancellationToken);
+}
+
+public enum RiotOrderObservationKind
+{
+    NotFound,
+    Active,
+    Terminal,
+    Unknown
+}
+
+public sealed record RiotOrderObservation(
+    string UpperId,
+    RiotOrderObservationKind Kind,
+    string? OrderId);
+
+public sealed record StoredMovementIntent(OrderIntent Intent, string Status, string? OrderId);
