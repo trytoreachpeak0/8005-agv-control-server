@@ -233,7 +233,9 @@ function New-TlsMaterial {
         $notBefore,
         $notAfter,
         $serialNumber)
-    $serverCertificate = $issuedServerCertificate.CopyWithPrivateKey($serverKey)
+    $serverCertificate = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::CopyWithPrivateKey(
+        $issuedServerCertificate,
+        $serverKey)
     $issuedServerCertificate.Dispose()
 
     $password = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24)).ToLowerInvariant()
@@ -1331,7 +1333,7 @@ $configuration = [ordered]@{
         temporaryTrustCleanupVerified = if ($null -ne $tlsMaterial) { $tlsMaterial.TrustCleanupVerified } else { $false }
         leafPinRequired = $true
         realOnboardAckDropTransport = 'TLS_LOOPBACK'
-        realOnboardAckDropTlsCombination = 'PASS'
+        realOnboardAckDropTlsCombination = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     }
     ports = [ordered]@{
         controlTls = $controlPort
