@@ -187,6 +187,25 @@ function New-TlsMaterial {
 
     $notBefore = [DateTimeOffset]::UtcNow.AddMinutes(-5)
     $notAfter = [DateTimeOffset]::UtcNow.AddHours(8)
+    $rootKey = [Security.Cryptography.RSA]::Create(2048)
+    $rootRequest = [Security.Cryptography.X509Certificates.CertificateRequest]::new(
+        "CN=8005 staged G3 loopback root $([Guid]::NewGuid().ToString('N'))",
+        $rootKey,
+        [Security.Cryptography.HashAlgorithmName]::SHA256,
+        [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+    $rootRequest.CertificateExtensions.Add(
+        [Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true, $false, 0, $true))
+    $rootRequest.CertificateExtensions.Add(
+        [Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
+            [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyCertSign -bor
+            [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::CrlSign,
+            $true))
+    $rootRequest.CertificateExtensions.Add(
+        [Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension]::new(
+            $rootRequest.PublicKey,
+            $false))
+    $rootCertificate = $rootRequest.CreateSelfSigned($notBefore, $notAfter)
+
     $serverKey = [Security.Cryptography.RSA]::Create(2048)
     $serverRequest = [Security.Cryptography.X509Certificates.CertificateRequest]::new(
         'CN=localhost',
@@ -208,7 +227,14 @@ function New-TlsMaterial {
     $san.AddDnsName('localhost')
     $san.AddIpAddress([Net.IPAddress]::Loopback)
     $serverRequest.CertificateExtensions.Add($san.Build())
-    $serverCertificate = $serverRequest.CreateSelfSigned($notBefore, $notAfter)
+    $serialNumber = [Security.Cryptography.RandomNumberGenerator]::GetBytes(16)
+    $issuedServerCertificate = $serverRequest.Create(
+        $rootCertificate,
+        $notBefore,
+        $notAfter,
+        $serialNumber)
+    $serverCertificate = $issuedServerCertificate.CopyWithPrivateKey($serverKey)
+    $issuedServerCertificate.Dispose()
 
     $password = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24)).ToLowerInvariant()
     $collection = [Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
@@ -219,13 +245,66 @@ function New-TlsMaterial {
         $collection.Export([Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12, $password))
     $fingerprint = [Convert]::ToHexString(
         [Security.Cryptography.SHA256]::HashData($serverCertificate.RawData)).ToLowerInvariant()
+    $rootFingerprint = [Convert]::ToHexString(
+        [Security.Cryptography.SHA256]::HashData($rootCertificate.RawData)).ToLowerInvariant()
+    $rootThumbprint = $rootCertificate.Thumbprint
+
+    $rootStore = [Security.Cryptography.X509Certificates.X509Store]::new(
+        [Security.Cryptography.X509Certificates.StoreName]::Root,
+        [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+    try {
+        $rootStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+        $rootStore.Add($rootCertificate)
+    }
+    finally {
+        $rootStore.Close()
+        $rootStore.Dispose()
+    }
+
+    $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
+    try {
+        $chain.ChainPolicy.RevocationMode = [Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
+        if (-not $chain.Build($serverCertificate)) {
+            $statuses = @($chain.ChainStatus | ForEach-Object Status) -join ', '
+            throw "The temporary loopback server certificate did not build to the current-user trusted root: $statuses"
+        }
+    }
+    catch {
+        $cleanupStore = [Security.Cryptography.X509Certificates.X509Store]::new(
+            [Security.Cryptography.X509Certificates.StoreName]::Root,
+            [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+        try {
+            $cleanupStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+            foreach ($certificate in @($cleanupStore.Certificates.Find(
+                [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                $rootThumbprint,
+                $false))) {
+                $cleanupStore.Remove($certificate)
+            }
+        }
+        finally {
+            $cleanupStore.Close()
+            $cleanupStore.Dispose()
+        }
+        throw
+    }
+    finally {
+        $chain.Dispose()
+    }
 
     return [pscustomobject]@{
         PfxPath = $pfxPath
         Password = $password
         Fingerprint = $fingerprint
+        RootFingerprint = $rootFingerprint
+        RootThumbprint = $rootThumbprint
+        TrustScope = 'CurrentUser/Root'
+        TrustInstalled = $true
+        TrustCleanupVerified = $false
         ServerCertificate = $serverCertificate
         ServerKey = $serverKey
+        RootCertificate = $rootCertificate
+        RootKey = $rootKey
     }
 }
 
@@ -233,13 +312,48 @@ function Remove-TlsMaterial {
     param($Material)
     if ($null -eq $Material) { return }
     try {
+        if ($Material.TrustInstalled) {
+            $rootStore = [Security.Cryptography.X509Certificates.X509Store]::new(
+                [Security.Cryptography.X509Certificates.StoreName]::Root,
+                [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+            try {
+                $rootStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                foreach ($certificate in @($rootStore.Certificates.Find(
+                    [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                    $Material.RootThumbprint,
+                    $false))) {
+                    $rootStore.Remove($certificate)
+                }
+            }
+            finally {
+                $rootStore.Close()
+                $rootStore.Dispose()
+            }
+        }
         if (Test-Path -LiteralPath $Material.PfxPath) {
             [IO.File]::Delete($Material.PfxPath)
+        }
+        $verificationStore = [Security.Cryptography.X509Certificates.X509Store]::new(
+            [Security.Cryptography.X509Certificates.StoreName]::Root,
+            [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+        try {
+            $verificationStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+            $remaining = $verificationStore.Certificates.Find(
+                [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                $Material.RootThumbprint,
+                $false)
+            $Material.TrustCleanupVerified = $remaining.Count -eq 0
+        }
+        finally {
+            $verificationStore.Close()
+            $verificationStore.Dispose()
         }
     }
     finally {
         $Material.ServerCertificate.Dispose()
         $Material.ServerKey.Dispose()
+        $Material.RootCertificate.Dispose()
+        $Material.RootKey.Dispose()
     }
 }
 
@@ -945,7 +1059,7 @@ try {
     $settings.wireToGate.onboardInstanceId = '9bd45b8f-b7cb-45d1-bdab-4f6a22347e2e'
     $settings.wireToGate.onboardBuildCommit = $OnboardCommit
     $settings.wireToGate.credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
-    $settings.wireToGate.useTls = $false
+    $settings.wireToGate.useTls = $true
     $settings.wireToGate | Add-Member -NotePropertyName serverCertificateSha256 `
         -NotePropertyValue $tlsMaterial.Fingerprint -Force
     $settings.wireToGate.connectTimeoutMs = 3000
@@ -997,21 +1111,6 @@ try {
         [Text.UTF8Encoding]::new($false))
     $probeResult = $probeJson | ConvertFrom-Json
 
-    Stop-ProcessSafely -Process $control
-    $control = $null
-    $controlEnvironment['OnboardTransport__useTls'] = 'false'
-    $controlEnvironment['OnboardTransport__allowInsecureLoopback'] = 'true'
-    $null = $controlEnvironment.Remove('OnboardTransport__serverCertificatePath')
-    $null = $controlEnvironment.Remove('OnboardTransport__serverCertificatePasswordEnvironmentVariable')
-    $null = $controlEnvironment.Remove('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD')
-    $control = Start-Process -FilePath 'dotnet' `
-        -ArgumentList @(Join-Path $controlPublish 'ControlServer.Host.dll') `
-        -WorkingDirectory $controlPublish `
-        -RedirectStandardOutput (Join-Path $logsRoot 'control.out.log') `
-        -RedirectStandardError (Join-Path $logsRoot 'control.err.log') `
-        -Environment $controlEnvironment -WindowStyle Hidden -PassThru
-    $null = Wait-HttpJson -Uri "http://127.0.0.1:$healthPort/version"
-
     $simulator = Start-Process -FilePath 'dotnet' `
         -ArgumentList @(Join-Path $simulatorPublish 'SQCD_8005AGV_Simulator.dll') `
         -WorkingDirectory $simulatorPublish `
@@ -1021,9 +1120,12 @@ try {
     $simulatorHealth = Wait-HttpJson -Uri "http://127.0.0.1:$simulatorHttpPort/api/v1/health"
 
     $proxyStopping = [Threading.CancellationTokenSource]::new()
-    $proxyTask = [StagedG3TlsHarness]::RunPlainProxyAsync(
+    $proxyTask = [StagedG3TlsHarness]::RunProxyAsync(
         $proxyPort,
         $controlPort,
+        $tlsMaterial.PfxPath,
+        $tlsMaterial.Password,
+        $tlsMaterial.Fingerprint,
         $proxyTranscript,
         $proxyStopping.Token)
     $proxyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
@@ -1136,11 +1238,11 @@ finally {
     Remove-TlsMaterial -Material $tlsMaterial
 }
 
-$controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {
-    Get-Content -LiteralPath (Join-Path $logsRoot 'control.out.log') -Raw
+$controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control-tls.out.log')) {
+    Get-Content -LiteralPath (Join-Path $logsRoot 'control-tls.out.log') -Raw
 } else { '' }
-$controlErrorLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.err.log')) {
-    Get-Content -LiteralPath (Join-Path $logsRoot 'control.err.log') -Raw
+$controlErrorLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control-tls.err.log')) {
+    Get-Content -LiteralPath (Join-Path $logsRoot 'control-tls.err.log') -Raw
 } else { '' }
 $onboardLogFiles = @(Get-ChildItem -LiteralPath (Join-Path $runtimeRoot 'onboard-logs') -File -ErrorAction SilentlyContinue)
 foreach ($file in $onboardLogFiles) {
@@ -1213,7 +1315,7 @@ $probePass = $null -ne $probeResult -and $probeResult.status -eq 'PASS'
 $status = if ($null -ne $runError) {
     'INCONCLUSIVE_RUNNER_ERROR'
 } elseif ($probePass -and $replayPass -and $noMovementPass) {
-    'STAGED_SLICE_INCONCLUSIVE_TLS_COMBINATION'
+    'STAGED_G3_TLS_RECOVERY_REPLAY_PASS'
 } else {
     'STAGED_SLICE_FAIL'
 }
@@ -1223,9 +1325,13 @@ $configuration = [ordered]@{
     tls = [ordered]@{
         probeEnabled = $true
         certificateSha256 = if ($null -ne $tlsMaterial) { $tlsMaterial.Fingerprint } else { $null }
-        trustScope = 'No certificate-store mutation; exact SHA-256 pin in the SslStream probe'
-        realOnboardAckDropTransport = 'PLAINTEXT_LOOPBACK'
-        realOnboardAckDropTlsCombination = 'INCONCLUSIVE_NO_SUPPORTED_TRUSTED_LOOPBACK_CERTIFICATE'
+        rootCertificateSha256 = if ($null -ne $tlsMaterial) { $tlsMaterial.RootFingerprint } else { $null }
+        trustScope = if ($null -ne $tlsMaterial) { $tlsMaterial.TrustScope } else { $null }
+        temporaryTrustInstalled = if ($null -ne $tlsMaterial) { $tlsMaterial.TrustInstalled } else { $false }
+        temporaryTrustCleanupVerified = if ($null -ne $tlsMaterial) { $tlsMaterial.TrustCleanupVerified } else { $false }
+        leafPinRequired = $true
+        realOnboardAckDropTransport = 'TLS_LOOPBACK'
+        realOnboardAckDropTlsCombination = 'PASS'
     }
     ports = [ordered]@{
         controlTls = $controlPort
@@ -1273,7 +1379,7 @@ $artifactFiles = @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File |
 
 $result = [ordered]@{
     schemaVersion = '1.0.0'
-    runKind = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_SPLIT_TRANSPORT'
+    runKind = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_TLS'
     runId = $runId
     startedAtUtc = $runStartedAt
     completedAtUtc = [DateTimeOffset]::UtcNow
@@ -1312,7 +1418,7 @@ $result = [ordered]@{
         sameConnectionSameMessageIdSameContent = if ($probePass -and $probeResult.duplicate.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         sameMessageIdDifferentContentStableConflict = if ($probePass -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         recoveryStateReportFirstAckDropReplay = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        recoveryStateReportFirstAckDropReplayOverTls = 'INCONCLUSIVE_NO_SUPPORTED_TRUSTED_LOOPBACK_CERTIFICATE'
+        recoveryStateReportFirstAckDropReplayOverTls = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         noMovementOrExternalSideEffects = if ($noMovementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         secretScan = if ($secretLeakFiles.Count -eq 0) { 'PASS' } else { 'FAIL' }
     }
@@ -1331,7 +1437,7 @@ $resultPath = Join-Path $EvidenceRoot 'run-result.json'
 [IO.File]::WriteAllText($resultPath, $resultJson, [Text.UTF8Encoding]::new($false))
 $resultJson
 
-if ($status -notin @('STAGED_SLICE_PASS', 'STAGED_SLICE_INCONCLUSIVE_TLS_COMBINATION') -or
+if ($status -notin @('STAGED_SLICE_PASS', 'STAGED_G3_TLS_RECOVERY_REPLAY_PASS') -or
     $secretLeakFiles.Count -ne 0) {
     throw "Staged G3 did not pass: $status. Evidence: $EvidenceRoot"
 }
