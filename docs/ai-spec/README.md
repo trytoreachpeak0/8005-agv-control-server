@@ -5,9 +5,12 @@
 ## 固定身份与边界
 
 - 分支：`ControlServer_MVP`
-- 协议 release：`protocol-v0.1.0@3ad309ffd5f9a48a6cf390b51a81da2f47c814dd`
-- manifest：`92c19e74affe876902e1c64aa5cdbca845f5dbc93a8c82014a16627a26deb8d3`
+- 协议 release：`protocol-v0.1.1@1531489e42e328f28bfe0c51ed3f8c56e5ce0279`
+- manifest：`a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f`
+- schema bundle：`e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c`
+- vectors：`fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e`
 - 状态：`APPROVED_RELEASE`；所有 G2/G3 证据必须绑定该精确身份。
+- `W2G-IS-01` 使用专用轨迹 `CV-DEMAND-ACCEPT-TO-PICKUP`；通用重试与首结果重放轨迹继续归属 `W2G-IS-06`。
 - MesIngest 只读；RIoT 只由 ControlServer 通过具名端口调用；Onboard 只接收业务级协议，不接收原始 IO。
 
 ## 事务与副作用顺序

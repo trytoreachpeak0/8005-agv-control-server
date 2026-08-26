@@ -76,8 +76,12 @@ app.MapGet("/version", () => Results.Ok(new
 {
     protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
     profileId = ProtocolCandidateIdentity.ProfileId,
+    protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
+    protocolTag = ProtocolCandidateIdentity.Tag,
     protocolCommit = ProtocolCandidateIdentity.RepositoryCommit,
     manifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+    schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256,
+    vectorsSha256 = ProtocolCandidateIdentity.VectorsSha256,
     approvalStatus = ProtocolCandidateIdentity.ApprovalStatus
 }));
 app.MapGet("/api/runtime/sessions", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>

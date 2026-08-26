@@ -6,9 +6,11 @@ WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含候�
 
 正式协议绑定：
 
-- tag: `protocol-v0.1.0`
-- protocol commit: `3ad309ffd5f9a48a6cf390b51a81da2f47c814dd`
-- manifest SHA-256: `92c19e74affe876902e1c64aa5cdbca845f5dbc93a8c82014a16627a26deb8d3`
+- tag: `protocol-v0.1.1`
+- protocol commit: `1531489e42e328f28bfe0c51ed3f8c56e5ce0279`
+- manifest SHA-256: `a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f`
+- schema bundle SHA-256: `e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c`
+- vectors SHA-256: `fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e`
 - status: `APPROVED_RELEASE`
 
 构建前必须使用 `global.json` 指定的 .NET SDK `8.0.424`。若 SDK 未加入 `PATH`，可先把 `WIRE_TO_GATE_DOTNET_EXE` 指向该版本的 `dotnet.exe`：
@@ -39,5 +41,7 @@ dotnet run --project .\tools\ControlServer.FakeOnboard -c Release -- --host 127.
 .\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice W2G-IS-00 `
   -ProtocolManifest <protocol-repo>\manifest\release.json -Output <new-evidence-directory>
 ```
+
+`W2G-IS-01` 在 `protocol-v0.1.1` 中映射到专用轨迹 `CV-DEMAND-ACCEPT-TO-PICKUP`；旧 `v0.1.0` G2 证据不能继承。
 
 实施入口见 [`docs/ai-spec/README.md`](docs/ai-spec/README.md)。秘密、PFX 和 CallApiKey 不得提交；生产值从受 ACL 保护的外部配置或环境变量注入。
