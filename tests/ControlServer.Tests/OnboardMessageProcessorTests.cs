@@ -197,17 +197,48 @@ public sealed class OnboardMessageProcessorTests
                     ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
                 })
                 .Build();
+            WireToGateStore store = new(context);
             OnboardMessageProcessor processor = new(
-                new WireToGateStore(context), new FixedTimeProvider(), configuration);
+                store, new FixedTimeProvider(), configuration);
             OnboardConnectionState state = new();
             await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
 
             const string attemptId = "00000000-0000-4000-8000-000000000120";
+            const string demandId = "00000000-0000-4000-8000-000000000111";
+            await store.AcceptWithOrderIntentAsync(
+                new AcceptedDemandSnapshot(
+                    demandId,
+                    "SUBLOT-001|WIRE_TO_GATE",
+                    7,
+                    "00000000-0000-4000-8000-000000000199",
+                    21,
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                new OrderIntent(
+                    "00000000-0000-4000-8000-000000000198",
+                    demandId,
+                    "W2G-D-111-PICKUP-1",
+                    "TO_PICKUP",
+                    "PICKUP-01",
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                TestContext.Current.CancellationToken);
+            await store.PrepareSlotOperationAsync(
+                new StationOperationPlan(
+                    attemptId,
+                    demandId,
+                    "SUBLOT-001",
+                    [1],
+                    SlotOperationType.Load,
+                    0,
+                    new string('b', 64),
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                "00000000-0000-4000-8000-000000000119",
+                "load-command-json",
+                TestContext.Current.CancellationToken);
             (string MessageType, string MessageId, object Payload)[] messages =
             [
                 ("SublotSubmitted", "00000000-0000-4000-8000-000000000101", new
                 {
-                    demandId = "00000000-0000-4000-8000-000000000111",
+                    demandId,
                     operationSessionId = "00000000-0000-4000-8000-000000000112",
                     stationId = "PICKUP-01",
                     worklistRevision = 2,
@@ -249,28 +280,11 @@ public sealed class OnboardMessageProcessorTests
                     observedCapabilityVersion = 1,
                     conflictingContentSha256 = (string?)null
                 }),
-                ("OperationResult", attemptId, new
-                {
-                    demandId = "00000000-0000-4000-8000-000000000111",
-                    slotOperationAttemptId = attemptId,
-                    operationType = "LOAD",
-                    overallOutcome = "COMPLETED",
-                    slotResults = new[]
-                    {
-                        new
-                        {
-                            slotNo = 1,
-                            outcome = "SUCCEEDED",
-                            finalPhysicalState = "OCCUPIED",
-                            lockState = "LOCKED",
-                            unlockOutputState = "RESET",
-                            reasonCodes = Array.Empty<string>()
-                        }
-                    },
-                    observedAt = "2026-08-25T09:00:00Z",
-                    journalCheckpoint = "RESULT_RECORDED",
-                    resultContentSha256 = new string('a', 64)
-                })
+                ("OperationResult", attemptId, OperationResultPayload(
+                    demandId,
+                    attemptId,
+                    "LOAD",
+                    "OCCUPIED"))
             ];
 
             foreach ((string messageType, string messageId, object payload) in messages)
@@ -305,6 +319,11 @@ public sealed class OnboardMessageProcessorTests
                     TestContext.Current.CancellationToken)).FirstResponseJson,
                 replay);
             Assert.Single(await context.OperationResults.ToListAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(
+                StationOperationStatus.Committed,
+                (await context.StationOperations.SingleAsync(
+                    row => row.SlotOperationAttemptId == attemptId,
+                    TestContext.Current.CancellationToken)).Status);
 
             string conflictingResult = Envelope(
                 "OperationResult",
@@ -319,6 +338,99 @@ public sealed class OnboardMessageProcessorTests
         {
             Environment.SetEnvironmentVariable(credentialVariable, null);
         }
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task CompletedUnloadResultAtomicallyClosesDemandBeforeDurableAck()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+        const string demandId = "00000000-0000-4000-8000-000000000301";
+        const string attemptId = "00000000-0000-4000-8000-000000000302";
+        DateTimeOffset now = new(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        await store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                demandId,
+                "SUBLOT-301|WIRE_TO_GATE",
+                9,
+                "00000000-0000-4000-8000-000000000303",
+                24,
+                now),
+            new OrderIntent(
+                "00000000-0000-4000-8000-000000000304",
+                demandId,
+                "W2G-D-301-PICKUP-1",
+                "TO_PICKUP",
+                "PICKUP-01",
+                now),
+            TestContext.Current.CancellationToken);
+        await store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                attemptId,
+                demandId,
+                "SUBLOT-301",
+                [1, 2],
+                SlotOperationType.Unload,
+                0,
+                new string('c', 64),
+                now),
+            "00000000-0000-4000-8000-000000000305",
+            "unload-command-json",
+            TestContext.Current.CancellationToken);
+        OnboardMessageProcessor processor = new(
+            store,
+            new FixedTimeProvider(),
+            new ConfigurationBuilder().Build());
+        OnboardConnectionState state = new()
+        {
+            AgvId = "AGV-001",
+            SessionGeneration = 1,
+            Readiness = SessionReadiness.Ready
+        };
+        await store.BeginSessionRecoveryAsync(
+            new SessionIdentity(
+                "AGV-001",
+                1,
+                ProtocolCandidateIdentity.RepositoryCommit,
+                ProtocolCandidateIdentity.ManifestSha256,
+                ProtocolCandidateIdentity.ProfileId,
+                ProtocolCandidateIdentity.ProtocolVersion),
+            TestContext.Current.CancellationToken);
+        string line = Envelope(
+            "OperationResult",
+            attemptId,
+            1,
+            OperationResultPayload(demandId, attemptId, "UNLOAD", "EMPTY", [1, 2]));
+
+        string response = await processor.ProcessAsync(
+            line,
+            state,
+            TestContext.Current.CancellationToken);
+
+        using JsonDocument acknowledgement = JsonDocument.Parse(response);
+        Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());
+        Assert.Equal(WireContentHash(line), acknowledgement.RootElement.GetProperty("payload")
+            .GetProperty("acceptedContentSha256").GetString());
+        Assert.Equal(1, await context.UnloadBatches.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await context.StopClosures.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await context.TransportDemandCompletions.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            DemandExecutionStatus.Succeeded,
+            (await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(
+            StationOperationStatus.Committed,
+            (await context.StationOperations.SingleAsync(TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(1, await context.ProtocolInbox.CountAsync(
+            row => row.MessageId == attemptId,
+            TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -443,6 +555,47 @@ public sealed class OnboardMessageProcessorTests
         unknownPresent = !departureSafe,
         reasonCodes = departureSafe ? Array.Empty<string>() : new[] { "VEHICLE_MOTION_UNKNOWN" }
     };
+
+    private static object OperationResultPayload(
+        string demandId,
+        string attemptId,
+        string operationType,
+        string finalPhysicalState,
+        int[]? slots = null)
+    {
+        object[] slotResults = (slots ?? [1])
+            .Select(slot => (object)new
+            {
+                slotNo = slot,
+                outcome = "COMPLETED",
+                finalPhysicalState,
+                lockState = "LOCKED",
+                unlockOutputState = "RESET",
+                reasonCodes = Array.Empty<string>()
+            })
+            .ToArray();
+        var withoutHash = new
+        {
+            demandId,
+            slotOperationAttemptId = attemptId,
+            operationType,
+            overallOutcome = "COMPLETED",
+            slotResults,
+            observedAt = "2026-08-25T09:00:00Z",
+            journalCheckpoint = "RESULT_RECORDED"
+        };
+        return new
+        {
+            withoutHash.demandId,
+            withoutHash.slotOperationAttemptId,
+            withoutHash.operationType,
+            withoutHash.overallOutcome,
+            withoutHash.slotResults,
+            withoutHash.observedAt,
+            withoutHash.journalCheckpoint,
+            resultContentSha256 = WireContentHash(JsonSerializer.Serialize(withoutHash))
+        };
+    }
 
     private static string WireContentHash(string line) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(line))).ToLowerInvariant();

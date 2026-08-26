@@ -258,10 +258,12 @@ public sealed class OnboardJourneyPublisherTests
             new SlotOperationCommand(
                 sublotMessageId,
                 demandId,
+                "SUBLOT-001",
                 operationSessionId,
                 "00000000-0000-4000-8000-000000000406",
                 SlotOperationType.Load,
                 [1, 3],
+                0,
                 new string('a', 64)),
             TestContext.Current.CancellationToken);
         await publisher.PublishPreDepartureSafetyCheckAsync(
@@ -282,14 +284,24 @@ public sealed class OnboardJourneyPublisherTests
             new SlotOperationCommand(
                 null,
                 demandId,
+                "SUBLOT-001",
                 operationSessionId,
                 "00000000-0000-4000-8000-000000000410",
                 SlotOperationType.Unload,
                 [2, 4],
+                0,
                 new string('c', 64)),
             TestContext.Current.CancellationToken);
 
         Assert.Equal([1, 2, 3, 4], peer.OutboxCountsAtSend);
+        Assert.Equal([0, 1, 1, 2], peer.StationOperationCountsAtSend);
+        StationOperationRow[] operations = await context.StationOperations
+            .OrderBy(row => row.SlotOperationAttemptId)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, operations.Length);
+        Assert.Equal(SlotOperationType.Load, operations[0].OperationType);
+        Assert.Equal(SlotOperationType.Unload, operations[1].OperationType);
+        Assert.All(operations, operation => Assert.Equal("SUBLOT-001", operation.SublotId));
         Assert.Equal(4, peer.Lines.Count);
         using JsonDocument sublotEnvelope = JsonDocument.Parse(peer.Lines[0]);
         using JsonDocument slotEnvelope = JsonDocument.Parse(peer.Lines[1]);
@@ -414,10 +426,12 @@ public sealed class OnboardJourneyPublisherTests
         SlotOperationCommand loadWithoutCorrelation = new(
             null,
             "00000000-0000-4000-8000-000000000421",
+            "SUBLOT-001",
             "00000000-0000-4000-8000-000000000422",
             "00000000-0000-4000-8000-000000000423",
             SlotOperationType.Load,
             [1, 2],
+            0,
             new string('b', 64));
         SlotOperationCommand unsortedUnload = loadWithoutCorrelation with
         {
@@ -471,10 +485,12 @@ public sealed class OnboardJourneyPublisherTests
     {
         public List<string> Lines { get; } = [];
         public List<int> OutboxCountsAtSend { get; } = [];
+        public List<int> StationOperationCountsAtSend { get; } = [];
 
         public async Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
         {
             OutboxCountsAtSend.Add(await context.ProtocolOutbox.CountAsync(cancellationToken));
+            StationOperationCountsAtSend.Add(await context.StationOperations.CountAsync(cancellationToken));
             Lines.Add(Encoding.UTF8.GetString(ndjsonLine.Span));
         }
     }

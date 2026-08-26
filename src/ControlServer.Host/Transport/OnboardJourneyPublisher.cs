@@ -83,8 +83,10 @@ public sealed class OnboardJourneyPublisher(
     {
         ArgumentNullException.ThrowIfNull(command);
         ValidateUuid(command.DemandId, nameof(command.DemandId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(command.SublotId);
         ValidateUuid(command.OperationSessionId, nameof(command.OperationSessionId));
         ValidateUuid(command.SlotOperationAttemptId, nameof(command.SlotOperationAttemptId));
+        ArgumentOutOfRangeException.ThrowIfNegative(command.ForcedRecoveryGeneration);
         ValidateSha256(command.CommandContentSha256, nameof(command.CommandContentSha256));
         ValidateSlots(command.Slots);
 
@@ -112,7 +114,7 @@ public sealed class OnboardJourneyPublisher(
                 throw new InvalidDataException("Slot operation type is not supported.");
         }
 
-        return PublishEnvelopeAsync(
+        return PublishSlotOperationEnvelopeAsync(
             "SlotOperationCommand",
             messageId,
             correlationId,
@@ -129,6 +131,7 @@ public sealed class OnboardJourneyPublisher(
                 expectedFinalPhysicalState,
                 command.CommandContentSha256
             },
+            command,
             cancellationToken);
     }
 
@@ -270,6 +273,60 @@ public sealed class OnboardJourneyPublisher(
             messageType,
             candidateWire,
             sentAt,
+            cancellationToken).ConfigureAwait(false);
+        if (stored.AcknowledgedAt is not null)
+        {
+            return;
+        }
+        await peer.SendAsync(
+            Encoding.UTF8.GetBytes(stored.PayloadJson + "\n"),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task PublishSlotOperationEnvelopeAsync(
+        string messageType,
+        string messageId,
+        string? correlationId,
+        string agvId,
+        long sessionGeneration,
+        object payload,
+        SlotOperationCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ValidateUuid(messageId, nameof(messageId));
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+
+        ProtocolOutboxRow? existing = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)
+            .ConfigureAwait(false);
+        DateTimeOffset sentAt = existing?.CreatedAt ?? timeProvider.GetUtcNow();
+        string candidateWire = JsonSerializer.Serialize(new
+        {
+            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+            profileId = ProtocolCandidateIdentity.ProfileId,
+            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
+            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+            messageType,
+            messageId,
+            correlationId,
+            agvId,
+            sessionGeneration,
+            sentAt,
+            payload
+        }, SerializerOptions);
+        ProtocolOutboxRow stored = await store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                command.SlotOperationAttemptId,
+                command.DemandId,
+                command.SublotId,
+                command.Slots,
+                command.OperationType,
+                command.ForcedRecoveryGeneration,
+                command.CommandContentSha256,
+                sentAt),
+            messageId,
+            candidateWire,
             cancellationToken).ConfigureAwait(false);
         if (stored.AcknowledgedAt is not null)
         {

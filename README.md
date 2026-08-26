@@ -1,6 +1,6 @@
 # 8005 AGV ControlServer
 
-WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含候选协议下的 SQLite 持久状态核、五步恢复握手、可靠 inbox/outbox、Demand/RIoT 意图、多仓批次、断联收敛、原子完成、只读 MesIngest V2 适配器、可运行 Host、Fake Onboard 和逐切片 G2 入口。
+WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含正式协议下的 SQLite 持久状态核、五步恢复握手、可靠 inbox/outbox、Demand/RIoT 意图、多仓命令与 outbox 原子建立、车载 `OperationResult` 内容哈希核验、装货事实提交、卸货四事实原子完成、断联收敛、只读 MesIngest V2 适配器、可运行 Host、Fake Onboard 和逐切片 G2 入口。
 
 这仍不是整个双端 MVP Release Candidate：真实 RIoT 环境移动集成与车辆/Map/站点资格、真实 OnboardHmi、G3 和安装/现场验收仍是后续门禁。
 

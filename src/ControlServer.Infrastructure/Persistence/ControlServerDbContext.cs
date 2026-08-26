@@ -33,6 +33,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<ProtocolOutboxRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<StationOperationRow>().HasKey(row => row.SlotOperationAttemptId);
         modelBuilder.Entity<StationOperationRow>().Property(row => row.Status).HasConversion<string>();
+        modelBuilder.Entity<StationOperationRow>().Property(row => row.OperationType).HasConversion<string>();
         modelBuilder.Entity<UnloadBatchRow>().HasKey(row => row.UnloadBatchId);
         modelBuilder.Entity<StopClosureRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<TransportDemandCompletionRow>().HasKey(row => row.TransportDemandKey);
@@ -123,6 +124,7 @@ public sealed class StationOperationRow
     public required string DemandId { get; set; }
     public required string SublotId { get; set; }
     public required string TargetSlotsJson { get; set; }
+    public SlotOperationType OperationType { get; set; }
     public long ForcedRecoveryGeneration { get; set; }
     public required string ContentHash { get; set; }
     public StationOperationStatus Status { get; set; }
@@ -178,6 +180,10 @@ public sealed class OperationResultRow
     public required string AgvId { get; set; }
     public long ForcedRecoveryGeneration { get; set; }
     public required string ContentHash { get; set; }
+    public required string ResultContentSha256 { get; set; }
+    public required string OverallOutcome { get; set; }
+    public required string EvidenceJson { get; set; }
+    public DateTimeOffset ObservedAt { get; set; }
     public bool HistoricalOnly { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }
 }

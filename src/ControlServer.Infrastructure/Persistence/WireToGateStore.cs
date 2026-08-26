@@ -232,7 +232,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task PrepareSlotOperationAsync(
+    public async Task<ProtocolOutboxRow> PrepareSlotOperationAsync(
         StationOperationPlan plan, string messageId, string commandJson, CancellationToken cancellationToken)
     {
         int[] targetSlots = plan.TargetSlots.Distinct().Order().ToArray();
@@ -246,11 +246,35 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
             .ConfigureAwait(false);
         if (existing is not null)
         {
-            if (existing.ContentHash != plan.ContentHash)
+            int[] existingSlots = JsonSerializer.Deserialize<int[]>(existing.TargetSlotsJson) ?? [];
+            bool samePlan = existing.DemandId == plan.DemandId &&
+                            existing.SublotId == plan.SublotId &&
+                            existingSlots.SequenceEqual(targetSlots) &&
+                            existing.OperationType == plan.OperationType &&
+                            existing.ForcedRecoveryGeneration == plan.ForcedRecoveryGeneration &&
+                            existing.ContentHash == plan.ContentHash &&
+                            existing.CreatedAt == plan.CreatedAt;
+            if (!samePlan)
             {
                 throw new ProtocolContentConflictException("SlotOperationAttemptId was replayed with different content.");
             }
-            return;
+
+            ProtocolOutboxRow existingOutbox = await dbContext.ProtocolOutbox
+                .SingleAsync(row => row.MessageId == messageId, cancellationToken)
+                .ConfigureAwait(false);
+            if (existingOutbox.MessageType != "SlotOperationCommand" || existingOutbox.PayloadJson != commandJson)
+            {
+                throw new ProtocolContentConflictException(
+                    "Slot operation replay differs from its persisted outbound command.");
+            }
+            return existingOutbox;
+        }
+
+        if (await dbContext.ProtocolOutbox.AnyAsync(row => row.MessageId == messageId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            throw new ProtocolContentConflictException(
+                "Outbound MessageId is already bound without the matching slot operation.");
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -260,20 +284,23 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
             DemandId = plan.DemandId,
             SublotId = plan.SublotId,
             TargetSlotsJson = JsonSerializer.Serialize(targetSlots),
+            OperationType = plan.OperationType,
             ForcedRecoveryGeneration = plan.ForcedRecoveryGeneration,
             ContentHash = plan.ContentHash,
             Status = StationOperationStatus.Prepared,
             CreatedAt = plan.CreatedAt
         });
-        dbContext.ProtocolOutbox.Add(new ProtocolOutboxRow
+        ProtocolOutboxRow outbox = new()
         {
             MessageId = messageId,
             MessageType = "SlotOperationCommand",
             PayloadJson = commandJson,
             CreatedAt = plan.CreatedAt
-        });
+        };
+        dbContext.ProtocolOutbox.Add(outbox);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return outbox;
     }
 
     public async Task CommitSlotBatchAsync(
@@ -607,11 +634,160 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
             AgvId = agvId,
             ForcedRecoveryGeneration = forcedRecoveryGeneration,
             ContentHash = contentHash,
+            ResultContentSha256 = string.Empty,
+            OverallOutcome = "UNKNOWN",
+            EvidenceJson = "[]",
+            ObservedAt = receivedAt,
             HistoricalOnly = historicalOnly,
             ReceivedAt = receivedAt
         });
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return historicalOnly ? OperationResultDisposition.HistoricalOnly : OperationResultDisposition.Accepted;
+    }
+
+    public async Task<OperationResultDisposition> ApplyOperationResultAsync(
+        StationOperationResult result,
+        string agvId,
+        long forcedRecoveryGeneration,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        OperationResultRow? replay = await dbContext.OperationResults
+            .SingleOrDefaultAsync(
+                row => row.ResultId == result.ResultId ||
+                       row.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+                       row.ForcedRecoveryGeneration == forcedRecoveryGeneration,
+                cancellationToken).ConfigureAwait(false);
+        if (replay is not null)
+        {
+            bool same = replay.ResultId == result.ResultId &&
+                        replay.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+                        replay.AgvId == agvId &&
+                        replay.ForcedRecoveryGeneration == forcedRecoveryGeneration &&
+                        replay.ContentHash == result.WireContentSha256 &&
+                        replay.ResultContentSha256 == result.ResultContentSha256;
+            if (!same)
+            {
+                throw new ProtocolContentConflictException(
+                    "Operation result identity was replayed with different message or content.");
+            }
+            return OperationResultDisposition.Replay;
+        }
+
+        long currentGeneration = await dbContext.VehicleRecoveryGenerations
+            .Where(row => row.AgvId == agvId)
+            .Select(row => (long?)row.ForcedRecoveryGeneration)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? 0;
+        bool historicalOnly = forcedRecoveryGeneration < currentGeneration;
+        string evidenceJson = JsonSerializer.Serialize(result.SlotEvidence.OrderBy(item => item.SlotNumber));
+        dbContext.OperationResults.Add(new OperationResultRow
+        {
+            ResultId = result.ResultId,
+            SlotOperationAttemptId = result.SlotOperationAttemptId,
+            AgvId = agvId,
+            ForcedRecoveryGeneration = forcedRecoveryGeneration,
+            ContentHash = result.WireContentSha256,
+            ResultContentSha256 = result.ResultContentSha256,
+            OverallOutcome = result.OverallOutcome,
+            EvidenceJson = evidenceJson,
+            ObservedAt = result.ObservedAt,
+            HistoricalOnly = historicalOnly,
+            ReceivedAt = result.ObservedAt
+        });
+        if (historicalOnly)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResultDisposition.HistoricalOnly;
+        }
+
+        StationOperationRow operation = await dbContext.StationOperations
+            .SingleAsync(row => row.SlotOperationAttemptId == result.SlotOperationAttemptId, cancellationToken)
+            .ConfigureAwait(false);
+        if (operation.DemandId != result.DemandId ||
+            operation.OperationType != result.OperationType ||
+            operation.ForcedRecoveryGeneration != forcedRecoveryGeneration)
+        {
+            throw new BusinessIdentityConflictException(
+                "OperationResult does not match the persisted slot operation identity.");
+        }
+
+        int[] expectedSlots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
+        int[] actualSlots = result.SlotEvidence.Select(item => item.SlotNumber).Distinct().Order().ToArray();
+        SlotBusinessState expectedState = operation.OperationType == SlotOperationType.Load
+            ? SlotBusinessState.Occupied
+            : SlotBusinessState.Empty;
+        bool completedSafely = result.OverallOutcome == "COMPLETED" &&
+                               result.AllSlotsCompleted &&
+                               result.SlotEvidence.Count == expectedSlots.Length &&
+                               actualSlots.SequenceEqual(expectedSlots) &&
+                               result.SlotEvidence.All(item =>
+                                   item.State == expectedState && item.DoorLocked && item.UnlockOutputReset);
+        if (!completedSafely)
+        {
+            operation.Status = StationOperationStatus.RecoveryRequired;
+            AcceptedDemandRow? blockedDemand = await dbContext.AcceptedDemands
+                .SingleOrDefaultAsync(row => row.DemandId == result.DemandId, cancellationToken)
+                .ConfigureAwait(false);
+            if (blockedDemand is not null && blockedDemand.Status != DemandExecutionStatus.Succeeded)
+            {
+                blockedDemand.Status = DemandExecutionStatus.RecoveryRequired;
+            }
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResultDisposition.RecoveryRequired;
+        }
+
+        operation.Status = StationOperationStatus.Committed;
+        operation.EvidenceJson = evidenceJson;
+        operation.CommittedAt = result.ObservedAt;
+        if (operation.OperationType == SlotOperationType.Load)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResultDisposition.Accepted;
+        }
+
+        AcceptedDemandRow demand = await dbContext.AcceptedDemands
+            .SingleAsync(row => row.DemandId == result.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        TransportDemandCompletionRow? existingCompletion = await dbContext.TransportDemandCompletions
+            .SingleOrDefaultAsync(row => row.TransportDemandKey == demand.TransportDemandKey, cancellationToken)
+            .ConfigureAwait(false);
+        if (existingCompletion is not null)
+        {
+            bool sameCompletion = existingCompletion.DemandId == demand.DemandId &&
+                                  existingCompletion.DemandRevision == demand.DemandRevision &&
+                                  existingCompletion.Evidence == result.ResultContentSha256;
+            if (!sameCompletion)
+            {
+                throw new BusinessIdentityConflictException(
+                    "TransportDemandKey completion differs from the persisted unload result.");
+            }
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResultDisposition.Accepted;
+        }
+
+        dbContext.UnloadBatches.Add(new UnloadBatchRow
+        {
+            UnloadBatchId = result.SlotOperationAttemptId,
+            DemandId = result.DemandId,
+            EvidenceJson = evidenceJson,
+            CompletedAt = result.ObservedAt
+        });
+        dbContext.StopClosures.Add(new StopClosureRow
+        {
+            DemandId = result.DemandId,
+            CommittedAt = result.ObservedAt
+        });
+        demand.Status = DemandExecutionStatus.Succeeded;
+        dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
+        {
+            TransportDemandKey = demand.TransportDemandKey,
+            DemandId = demand.DemandId,
+            DemandRevision = demand.DemandRevision,
+            Evidence = result.ResultContentSha256,
+            CompletedAt = result.ObservedAt
+        });
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return OperationResultDisposition.Accepted;
     }
 
     public async Task<string> RecordRecoveryDecisionAsync(

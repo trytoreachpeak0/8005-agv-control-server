@@ -41,7 +41,7 @@ public sealed class WireToGateStoreTests
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
         StationOperationPlan plan = new(
-            "ATTEMPT-001", "D-001", "SUBLOT-001", [1, 2], 0, "plan-hash", fixture.Now);
+            "ATTEMPT-001", "D-001", "SUBLOT-001", [1, 2], SlotOperationType.Load, 0, "plan-hash", fixture.Now);
 
         await fixture.Store.PrepareSlotOperationAsync(plan, "MSG-CMD-001", "command-json", fixture.CancellationToken);
 
@@ -62,6 +62,68 @@ public sealed class WireToGateStoreTests
 
         StationOperationRow row = await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken);
         Assert.Equal(StationOperationStatus.Committed, row.Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task UnsafeCompletedOperationResultIsDurableButMovesDemandToRecovery()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                "D-001",
+                "SUBLOT-001|WIRE_TO_GATE",
+                7,
+                "history-1",
+                21,
+                fixture.Now),
+            new OrderIntent(
+                "LEG-001",
+                "D-001",
+                "W2G-D-001-PICKUP-1",
+                "TO_PICKUP",
+                "ST-PICKUP",
+                fixture.Now),
+            fixture.CancellationToken);
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-001",
+                "D-001",
+                "SUBLOT-001",
+                [1],
+                SlotOperationType.Load,
+                0,
+                "plan-hash",
+                fixture.Now),
+            "MSG-CMD-001",
+            "command-json",
+            fixture.CancellationToken);
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-001",
+                "ATTEMPT-001",
+                "D-001",
+                SlotOperationType.Load,
+                "COMPLETED",
+                [new SlotPhysicalEvidence(1, SlotBusinessState.Occupied, false, true)],
+                true,
+                fixture.Now.AddSeconds(1),
+                "result-hash",
+                "wire-hash"),
+            "AGV-001",
+            0,
+            fixture.CancellationToken);
+
+        Assert.Equal(OperationResultDisposition.RecoveryRequired, disposition);
+        Assert.Equal(
+            StationOperationStatus.RecoveryRequired,
+            (await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.RecoveryRequired,
+            (await fixture.Context.AcceptedDemands.SingleAsync(fixture.CancellationToken)).Status);
+        Assert.False((await fixture.Context.OperationResults.SingleAsync(fixture.CancellationToken)).HistoricalOnly);
     }
 
     [Fact]

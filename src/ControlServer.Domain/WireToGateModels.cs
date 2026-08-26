@@ -21,9 +21,22 @@ public sealed record StationOperationPlan(
     string DemandId,
     string SublotId,
     IReadOnlyList<int> TargetSlots,
+    SlotOperationType OperationType,
     long ForcedRecoveryGeneration,
     string ContentHash,
     DateTimeOffset CreatedAt);
+
+public sealed record StationOperationResult(
+    string ResultId,
+    string SlotOperationAttemptId,
+    string DemandId,
+    SlotOperationType OperationType,
+    string OverallOutcome,
+    IReadOnlyList<SlotPhysicalEvidence> SlotEvidence,
+    bool AllSlotsCompleted,
+    DateTimeOffset ObservedAt,
+    string ResultContentSha256,
+    string WireContentSha256);
 
 public enum StationOperationStatus
 {
@@ -109,10 +122,12 @@ public enum SlotOperationType
 public sealed record SlotOperationCommand(
     string? CorrelationId,
     string DemandId,
+    string SublotId,
     string OperationSessionId,
     string SlotOperationAttemptId,
     SlotOperationType OperationType,
     IReadOnlyList<int> Slots,
+    long ForcedRecoveryGeneration,
     string CommandContentSha256);
 
 public sealed record PreDepartureSafetyCheckCommand(
@@ -141,6 +156,7 @@ public enum ConnectionRecoveryStatus
 public enum OperationResultDisposition
 {
     Accepted,
+    RecoveryRequired,
     HistoricalOnly,
     Replay
 }

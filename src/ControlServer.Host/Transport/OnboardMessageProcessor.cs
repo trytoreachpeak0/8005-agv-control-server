@@ -192,15 +192,52 @@ public sealed class OnboardMessageProcessor(
             case "OperationResult":
                 {
                     string attemptId = RequiredString(payload, "slotOperationAttemptId");
+                    string demandId = RequiredString(payload, "demandId");
+                    SlotOperationType operationType = RequiredString(payload, "operationType") switch
+                    {
+                        "LOAD" => SlotOperationType.Load,
+                        "UNLOAD" => SlotOperationType.Unload,
+                        _ => throw new InvalidDataException("OperationResult operationType is not supported.")
+                    };
+                    string overallOutcome = RequiredString(payload, "overallOutcome");
+                    JsonElement[] slotResults = payload.GetProperty("slotResults").EnumerateArray().ToArray();
+                    SlotPhysicalEvidence[] evidence = slotResults
+                        .Select(item => new SlotPhysicalEvidence(
+                            item.GetProperty("slotNo").GetInt32(),
+                            RequiredString(item, "finalPhysicalState") switch
+                            {
+                                "EMPTY" => SlotBusinessState.Empty,
+                                "OCCUPIED" => SlotBusinessState.Occupied,
+                                "UNKNOWN" => SlotBusinessState.Unknown,
+                                _ => throw new InvalidDataException(
+                                    "OperationResult finalPhysicalState is not supported.")
+                            },
+                            RequiredString(item, "lockState") == "LOCKED",
+                            RequiredString(item, "unlockOutputState") == "RESET"))
+                        .ToArray();
+                    string resultContentSha256 = RequiredString(payload, "resultContentSha256");
+                    string computedResultHash = ComputeOperationResultContentHash(payload);
+                    if (!string.Equals(resultContentSha256, computedResultHash, StringComparison.Ordinal))
+                    {
+                        throw new ProtocolContentConflictException(
+                            "OperationResult resultContentSha256 does not match its business content.");
+                    }
                     long forcedGeneration = await store.GetForcedRecoveryGenerationAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
-                    await store.RecordOperationResultAsync(
-                        messageId,
-                        attemptId,
+                    await store.ApplyOperationResultAsync(
+                        new StationOperationResult(
+                            messageId,
+                            attemptId,
+                            demandId,
+                            operationType,
+                            overallOutcome,
+                            evidence,
+                            slotResults.All(item => RequiredString(item, "outcome") == "COMPLETED"),
+                            payload.GetProperty("observedAt").GetDateTimeOffset(),
+                            resultContentSha256,
+                            contentHash),
                         agvId,
                         forcedGeneration,
-                        contentHash,
-                        timeProvider.GetUtcNow(),
                         cancellationToken).ConfigureAwait(false);
                     return DurableAck(messageType, messageId, agvId, generation, contentHash);
                 }
@@ -409,6 +446,21 @@ public sealed class OnboardMessageProcessor(
         return string.IsNullOrWhiteSpace(value)
             ? throw new InvalidDataException($"Protocol field '{propertyName}' is required.")
             : value;
+    }
+
+    private static string ComputeOperationResultContentHash(JsonElement payload)
+    {
+        byte[] businessContent = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            demandId = payload.GetProperty("demandId"),
+            slotOperationAttemptId = payload.GetProperty("slotOperationAttemptId"),
+            operationType = payload.GetProperty("operationType"),
+            overallOutcome = payload.GetProperty("overallOutcome"),
+            slotResults = payload.GetProperty("slotResults"),
+            observedAt = payload.GetProperty("observedAt"),
+            journalCheckpoint = payload.GetProperty("journalCheckpoint")
+        }, SerializerOptions);
+        return Convert.ToHexString(SHA256.HashData(businessContent)).ToLowerInvariant();
     }
 
     private static bool FixedTimeEquals(string expected, string supplied)
