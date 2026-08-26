@@ -198,14 +198,14 @@ function New-TlsMaterial {
         $rootKey,
         [Security.Cryptography.HashAlgorithmName]::SHA256,
         [Security.Cryptography.RSASignaturePadding]::Pkcs1)
-    $rootRequest.CertificateExtensions.Add(
+    $null = $rootRequest.CertificateExtensions.Add(
         [Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true, $false, 0, $true))
-    $rootRequest.CertificateExtensions.Add(
+    $null = $rootRequest.CertificateExtensions.Add(
         [Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
             [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyCertSign -bor
             [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::CrlSign,
             $true))
-    $rootRequest.CertificateExtensions.Add(
+    $null = $rootRequest.CertificateExtensions.Add(
         [Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension]::new(
             $rootRequest.PublicKey,
             $false))
@@ -217,21 +217,21 @@ function New-TlsMaterial {
         $serverKey,
         [Security.Cryptography.HashAlgorithmName]::SHA256,
         [Security.Cryptography.RSASignaturePadding]::Pkcs1)
-    $serverRequest.CertificateExtensions.Add(
+    $null = $serverRequest.CertificateExtensions.Add(
         [Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true))
-    $serverRequest.CertificateExtensions.Add(
+    $null = $serverRequest.CertificateExtensions.Add(
         [Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
             [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor
             [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyEncipherment,
             $true))
     $oids = [Security.Cryptography.OidCollection]::new()
     $null = $oids.Add([Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.1'))
-    $serverRequest.CertificateExtensions.Add(
+    $null = $serverRequest.CertificateExtensions.Add(
         [Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($oids, $true))
     $san = [Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder]::new()
     $san.AddDnsName('localhost')
     $san.AddIpAddress([Net.IPAddress]::Loopback)
-    $serverRequest.CertificateExtensions.Add($san.Build())
+    $null = $serverRequest.CertificateExtensions.Add($san.Build())
     $serialNumber = [Security.Cryptography.RandomNumberGenerator]::GetBytes(16)
     $issuedServerCertificate = $serverRequest.Create(
         $rootCertificate,
@@ -271,7 +271,7 @@ function New-TlsMaterial {
     $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
     try {
         $chain.ChainPolicy.TrustMode = [Security.Cryptography.X509Certificates.X509ChainTrustMode]::CustomRootTrust
-        $chain.ChainPolicy.CustomTrustStore.Add($rootCertificate)
+        $null = $chain.ChainPolicy.CustomTrustStore.Add($rootCertificate)
         $chain.ChainPolicy.RevocationMode = [Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
         if (-not $chain.Build($serverCertificate)) {
             $statuses = @($chain.ChainStatus | ForEach-Object Status) -join ', '
