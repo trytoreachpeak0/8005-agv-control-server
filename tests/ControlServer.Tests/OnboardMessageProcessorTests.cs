@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
@@ -171,6 +172,137 @@ public sealed class OnboardMessageProcessorTests
             Assert.Equal("READY", readiness.RootElement.GetProperty("payload").GetProperty("readiness").GetString());
             Assert.Equal(SessionReadiness.Ready,
                 (await context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken)).Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task RecoveryStateReportAckDropRebindsAcrossSessionWithoutContentConflict()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_RECOVERY_REBIND_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+
+            OnboardConnectionState firstState = new();
+            await processor.ProcessAsync(
+                Envelope(
+                    "SessionHello",
+                    "00000000-0000-4000-8000-000000000021",
+                    null,
+                    new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = credential }),
+                firstState,
+                TestContext.Current.CancellationToken);
+            long firstGeneration = firstState.SessionGeneration!.Value;
+            await processor.ProcessAsync(
+                Envelope(
+                    "CapabilitySnapshot",
+                    "00000000-0000-4000-8000-000000000025",
+                    firstGeneration,
+                    new { capabilityVersion = 1 }),
+                firstState,
+                TestContext.Current.CancellationToken);
+            await processor.ProcessAsync(
+                Envelope(
+                    "SafetyStateSnapshot",
+                    "00000000-0000-4000-8000-000000000026",
+                    firstGeneration,
+                    new { safetyStateVersion = 1, safety = new { departureSafe = false } }),
+                firstState,
+                TestContext.Current.CancellationToken);
+            string firstReport = Envelope(
+                "RecoveryStateReport",
+                "00000000-0000-4000-8000-000000000022",
+                firstGeneration,
+                new
+                {
+                    reportId = "00000000-0000-4000-8000-000000000023",
+                    unsettledSlotOperationAttemptId = (string?)null,
+                    provenRecoveryCheckpoint = "NONE",
+                    activeUnlockSlots = Array.Empty<int>(),
+                    forcedRecoveryGeneration = 0,
+                    pendingResults = Array.Empty<object>()
+                });
+            string firstResponse = await processor.ProcessAsync(
+                firstReport,
+                firstState,
+                TestContext.Current.CancellationToken);
+
+            OnboardConnectionState reboundState = new();
+            await processor.ProcessAsync(
+                Envelope(
+                    "SessionHello",
+                    "00000000-0000-4000-8000-000000000024",
+                    null,
+                    new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = credential }),
+                reboundState,
+                TestContext.Current.CancellationToken);
+            long reboundGeneration = reboundState.SessionGeneration!.Value;
+            JsonNode reboundNode = JsonNode.Parse(firstReport)!;
+            reboundNode["sessionGeneration"] = reboundGeneration;
+            string reboundReport = reboundNode.ToJsonString();
+            string reboundResponse = await processor.ProcessAsync(
+                reboundReport,
+                reboundState,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotEqual(firstResponse, reboundResponse);
+            string reboundAcknowledgement = reboundResponse.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0];
+            using JsonDocument acknowledgement = JsonDocument.Parse(reboundAcknowledgement);
+            Assert.Equal(reboundGeneration, acknowledgement.RootElement.GetProperty("sessionGeneration").GetInt64());
+            Assert.Equal(
+                WireContentHash(reboundReport),
+                acknowledgement.RootElement.GetProperty("payload")
+                    .GetProperty("acceptedContentSha256").GetString());
+            string reboundReadiness = reboundResponse.Split('\n', StringSplitOptions.RemoveEmptyEntries)[1];
+            using JsonDocument readiness = JsonDocument.Parse(reboundReadiness);
+            Assert.Equal(1, readiness.RootElement.GetProperty("payload")
+                .GetProperty("acceptedCapabilityVersion").GetInt64());
+            Assert.Equal(1, readiness.RootElement.GetProperty("payload")
+                .GetProperty("acceptedSafetyStateVersion").GetInt64());
+            Assert.Equal(SessionReadiness.RecoveryRequired, (await context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken)).Readiness);
+
+            ProtocolInboxRow stored = await context.ProtocolInbox.SingleAsync(
+                row => row.MessageId == "00000000-0000-4000-8000-000000000022",
+                TestContext.Current.CancellationToken);
+            Assert.Equal(WireContentHash(reboundReport), stored.ContentHash);
+            Assert.Equal(reboundReport, stored.RequestJson);
+            Assert.Equal(reboundResponse, stored.FirstResponseJson);
+            Assert.Equal(reboundGeneration, (await context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken)).SessionGeneration);
+
+            JsonNode conflictingNode = JsonNode.Parse(reboundReport)!;
+            conflictingNode["payload"]!["forcedRecoveryGeneration"] = 1;
+            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
+                conflictingNode.ToJsonString(),
+                reboundState,
+                TestContext.Current.CancellationToken));
+            Assert.Single(await context.ProtocolInbox.Where(
+                row => row.MessageId == "00000000-0000-4000-8000-000000000022")
+                .ToArrayAsync(TestContext.Current.CancellationToken));
         }
         finally
         {

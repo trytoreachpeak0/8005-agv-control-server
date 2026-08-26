@@ -723,17 +723,37 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     public async Task<string> CaptureFirstResponseAsync(
         string messageId, string messageType, string requestJson, string contentHash,
         Func<Task<string>> responseFactory, DateTimeOffset receivedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, string>? replayEquivalenceHash = null,
+        Action<string>? equivalentReplayObserved = null)
     {
         ProtocolInboxRow? existing = await dbContext.ProtocolInbox
             .SingleOrDefaultAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
-            if (existing.ContentHash != contentHash)
+            if (existing.ContentHash == contentHash)
+            {
+                return existing.FirstResponseJson;
+            }
+
+            if (replayEquivalenceHash is null ||
+                replayEquivalenceHash(existing.RequestJson) != replayEquivalenceHash(requestJson))
             {
                 throw new ProtocolContentConflictException("MessageId was replayed with different normalized content.");
             }
-            return existing.FirstResponseJson;
+
+            await using var replayTransaction = await dbContext.Database
+                .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            equivalentReplayObserved?.Invoke(existing.FirstResponseJson);
+            string reboundResponse = await responseFactory().ConfigureAwait(false);
+            existing.MessageType = messageType;
+            existing.RequestJson = requestJson;
+            existing.ContentHash = contentHash;
+            existing.FirstResponseJson = reboundResponse;
+            existing.ReceivedAt = receivedAt;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await replayTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return reboundResponse;
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);

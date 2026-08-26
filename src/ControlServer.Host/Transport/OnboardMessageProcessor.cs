@@ -109,7 +109,11 @@ public sealed class OnboardMessageProcessor(
             () => ProcessCurrentSessionMessageAsync(
                 root, state, messageType, messageId, contentHash, cancellationToken),
             timeProvider.GetUtcNow(),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            messageType == "RecoveryStateReport" ? RecoveryReplayIdentityHash : null,
+            messageType == "RecoveryStateReport"
+                ? response => RestoreAcceptedSnapshotVersions(response, state)
+                : null).ConfigureAwait(false);
         bool hasDeferredRecoveryOutbound = OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
                                            OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
                                            messageType == "OperationResult" ||
@@ -424,6 +428,29 @@ public sealed class OnboardMessageProcessor(
                 vehicleBusinessStateRevision = 1
             });
 
+    private static void RestoreAcceptedSnapshotVersions(
+        string firstResponse,
+        OnboardConnectionState state)
+    {
+        string? readinessLine = firstResponse.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(line =>
+            {
+                using JsonDocument document = JsonDocument.Parse(line);
+                return document.RootElement.GetProperty("messageType").GetString() == "SessionReadiness";
+            });
+        if (readinessLine is null)
+        {
+            return;
+        }
+
+        using JsonDocument readiness = JsonDocument.Parse(readinessLine);
+        JsonElement payload = readiness.RootElement.GetProperty("payload");
+        long capabilityRevision = payload.GetProperty("acceptedCapabilityVersion").GetInt64();
+        long safetyRevision = payload.GetProperty("acceptedSafetyStateVersion").GetInt64();
+        state.CapabilityRevision = capabilityRevision > 0 ? capabilityRevision : null;
+        state.SafetyRevision = safetyRevision > 0 ? safetyRevision : null;
+    }
+
     private void ValidateSessionHello(JsonElement root)
     {
         ValidateEnvelopeIdentity(root);
@@ -539,6 +566,14 @@ public sealed class OnboardMessageProcessor(
             journalCheckpoint = payload.GetProperty("journalCheckpoint")
         }, SerializerOptions);
         return Convert.ToHexString(SHA256.HashData(businessContent)).ToLowerInvariant();
+    }
+
+    private static string RecoveryReplayIdentityHash(string line)
+    {
+        JsonNode root = JsonNode.Parse(line)
+            ?? throw new InvalidDataException("RecoveryStateReport JSON cannot be empty.");
+        root["sessionGeneration"] = 0;
+        return WireContentHash.Sha256(root.ToJsonString(SerializerOptions));
     }
 
     private static bool FixedTimeEquals(string expected, string supplied)

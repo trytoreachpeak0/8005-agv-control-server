@@ -113,10 +113,9 @@ public sealed partial class OnboardTcpServer(
         string? password = string.IsNullOrWhiteSpace(_options.ServerCertificatePasswordEnvironmentVariable)
             ? null
             : Environment.GetEnvironmentVariable(_options.ServerCertificatePasswordEnvironmentVariable);
-        X509Certificate2 certificate = new(
+        using X509Certificate2 certificate = OnboardTlsCertificateLoader.Load(
             _options.ServerCertificatePath,
-            password,
-            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.EphemeralKeySet);
+            password);
         SslStream sslStream = new(networkStream, leaveInnerStreamOpen: false);
         await sslStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
         {
@@ -158,4 +157,10 @@ public sealed partial class OnboardTcpServer(
     [LoggerMessage(EventId = 1003, Level = LogLevel.Warning,
         Message = "Onboard connection ended with a protocol or transport error.")]
     private static partial void LogConnectionEnded(ILogger logger, Exception error);
+}
+
+internal static class OnboardTlsCertificateLoader
+{
+    public static X509Certificate2 Load(string path, string? password) =>
+        new(path, password, X509KeyStorageFlags.MachineKeySet);
 }
