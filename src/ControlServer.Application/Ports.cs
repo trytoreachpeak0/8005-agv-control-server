@@ -4,6 +4,8 @@ namespace ControlServer.Application;
 
 public interface IMesIngestCatalog
 {
+    Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken);
+
     Task<AcceptedDemandSnapshot?> ReadCurrentAsync(string demandId, CancellationToken cancellationToken);
 }
 

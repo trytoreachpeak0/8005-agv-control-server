@@ -16,9 +16,7 @@ public sealed class ApplicationOrchestrationTests
         await connection.OpenAsync(TestContext.Current.CancellationToken);
         await using ControlServerDbContext context = await CreateContextAsync(connection);
         WireToGateStore store = new(context);
-        AcceptedDemandSnapshot discovered = new(
-            "D-001", "SUBLOT-001|WIRE_TO_GATE", 7, "history-1", 20,
-            new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero));
+        AcceptedDemandSnapshot discovered = Snapshot(catalogRevision: 20);
         RecordingMesCatalog catalog = new(discovered with { CatalogRevision = 21 });
         DemandIntakeService service = new(catalog, store);
 
@@ -29,7 +27,81 @@ public sealed class ApplicationOrchestrationTests
 
         Assert.Equal(DemandIntakeOutcome.Accepted, outcome);
         Assert.Equal(1, catalog.ReadCount);
-        Assert.Equal(21, (await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken)).CatalogRevision);
+        AcceptedDemandRow accepted = await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(21, accepted.CatalogRevision);
+        Assert.Equal("SERIES-001", accepted.SeriesId);
+        Assert.Equal("TRACE-001", accepted.ValuePollTraceId);
+        Assert.Contains("AREA-01", accepted.LiveMesFieldsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task IntakeCoordinatorPersistsFinalDecisionFactsBeforeRiotMutation()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        WireToGateStore store = new(context);
+        AcceptedDemandSnapshot discovered = Snapshot(catalogRevision: 20);
+        RecordingMesCatalog catalog = new(discovered with
+        {
+            CatalogRevision = 21,
+            AcceptedAt = discovered.AcceptedAt.AddMinutes(1)
+        });
+        CommitObservingRiotGateway gateway = new(async () =>
+        {
+            AcceptedDemandRow accepted = await context.AcceptedDemands
+                .SingleAsync(TestContext.Current.CancellationToken);
+            return accepted.CatalogRevision == 21 && accepted.ValueProjectionCommitId == "COMMIT-001";
+        });
+        JourneyIntakeCoordinator coordinator = new(
+            new DemandIntakeService(catalog, store),
+            new MovementDispatchService(store, gateway));
+        OrderIntent intent = new(
+            "LEG-001", "D-001", "UPPER-001", "TO_PICKUP", "ST-PICKUP", discovered.AcceptedAt,
+            "AGV-8005-01", 25, 12, 1, 1);
+
+        JourneyIntakeResult result = await coordinator.AcceptAndDispatchToPickupAsync(
+            discovered,
+            intent,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DemandIntakeOutcome.Accepted, result.IntakeOutcome);
+        Assert.Equal(MovementDispatchOutcome.Confirmed, result.MovementDispatch?.Outcome);
+        Assert.True(gateway.AcceptanceWasCommittedBeforeCreate);
+        Assert.Equal("CONFIRMED", (await context.OrderIntents.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task IntakeCoordinatorDoesNotDispatchWhenAnyDecisionFactChanged()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        WireToGateStore store = new(context);
+        AcceptedDemandSnapshot discovered = Snapshot(catalogRevision: 20);
+        RecordingMesCatalog catalog = new(discovered with
+        {
+            CatalogRevision = 21,
+            ValuePollTraceId = "TRACE-CHANGED"
+        });
+        CountingRiotGateway gateway = new();
+        JourneyIntakeCoordinator coordinator = new(
+            new DemandIntakeService(catalog, store),
+            new MovementDispatchService(store, gateway));
+
+        JourneyIntakeResult result = await coordinator.AcceptAndDispatchToPickupAsync(
+            discovered,
+            new OrderIntent("LEG-001", "D-001", "UPPER-001", "TO_PICKUP", "ST-PICKUP", discovered.AcceptedAt),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DemandIntakeOutcome.CandidateChanged, result.IntakeOutcome);
+        Assert.Null(result.MovementDispatch);
+        Assert.Equal(0, gateway.CallCount);
+        Assert.Empty(await context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -100,15 +172,95 @@ public sealed class ApplicationOrchestrationTests
         return context;
     }
 
-    private sealed class RecordingMesCatalog(AcceptedDemandSnapshot current) : IMesIngestCatalog
+    private static AcceptedDemandSnapshot Snapshot(string demandId = "D-001", long catalogRevision = 21)
+    {
+        DateTimeOffset createdAt = new(2026, 8, 25, 8, 0, 0, TimeSpan.Zero);
+        return new AcceptedDemandSnapshot(
+            demandId,
+            "SUBLOT-001|WIRE_TO_GATE",
+            7,
+            "11111111-1111-4111-8111-111111111111",
+            catalogRevision,
+            new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero),
+            "SERIES-001",
+            "WIRE_TO_GATE",
+            "SUBLOT-001",
+            1,
+            createdAt,
+            createdAt.AddMinutes(1),
+            "TRACE-001",
+            "COMMIT-001",
+            new LiveMesFieldSet("AREA-01", "EQP-01", "STEP-01", createdAt, "PKG-01"));
+    }
+
+    private sealed class RecordingMesCatalog(params AcceptedDemandSnapshot[] current) : IMesIngestCatalog
     {
         public int ReadCount { get; private set; }
+
+        public Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            ReadCount++;
+            AcceptedDemandSnapshot first = current.First();
+            return Task.FromResult(new DemandCatalogSnapshot(
+                first.HistoryEpoch,
+                first.CatalogRevision,
+                current));
+        }
 
         public Task<AcceptedDemandSnapshot?> ReadCurrentAsync(string demandId, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             ReadCount++;
-            return Task.FromResult<AcceptedDemandSnapshot?>(current.DemandId == demandId ? current : null);
+            return Task.FromResult(current.SingleOrDefault(candidate => candidate.DemandId == demandId));
+        }
+    }
+
+    private sealed class CommitObservingRiotGateway(Func<Task<bool>> acceptanceCheck) : IRiotMovementGateway
+    {
+        private int reconcileCount;
+
+        public bool AcceptanceWasCommittedBeforeCreate { get; private set; }
+
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
+            string upperId,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            reconcileCount++;
+            return Task.FromResult(reconcileCount == 1
+                ? new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null)
+                : new RiotOrderObservation(upperId, RiotOrderObservationKind.Active, "ORDER-001"));
+        }
+
+        public async Task<RiotOrderObservation> CreateAsync(
+            OrderIntent intent,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            AcceptanceWasCommittedBeforeCreate = await acceptanceCheck();
+            return new RiotOrderObservation(intent.UpperId, RiotOrderObservationKind.Active, "UNTRUSTED");
+        }
+    }
+
+    private sealed class CountingRiotGateway : IRiotMovementGateway
+    {
+        public int CallCount { get; private set; }
+
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
+            string upperId,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            CallCount++;
+            return Task.FromResult(new RiotOrderObservation(upperId, RiotOrderObservationKind.Unknown, null));
+        }
+
+        public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            CallCount++;
+            return Task.FromResult(new RiotOrderObservation(intent.UpperId, RiotOrderObservationKind.Unknown, null));
         }
     }
 

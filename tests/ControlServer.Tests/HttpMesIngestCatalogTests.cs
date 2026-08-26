@@ -25,6 +25,8 @@ public sealed class HttpMesIngestCatalogTests
         Assert.Equal("SUBLOT-001|WIRE_TO_GATE", current.TransportDemandKey);
         Assert.Equal(21, current.CatalogRevision);
         Assert.Equal(now, current.AcceptedAt);
+        Assert.Equal("SERIES-001", current.SeriesId);
+        Assert.Equal("AREA-01", current.LiveMesFields?.Area);
         Assert.Equal(
             [HttpMesIngestCatalog.ContractPath, HttpMesIngestCatalog.CatalogPath],
             handler.Paths);
@@ -82,8 +84,22 @@ public sealed class HttpMesIngestCatalogTests
                         new
                         {
                             demandId = "D-001",
+                            seriesId = "SERIES-001",
                             transportDemandKey = new { workType = "WIRE_TO_GATE", sublot = "SUBLOT-001" },
-                            demandRevision = 7
+                            generation = 1,
+                            demandRevision = 7,
+                            createdAt = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero),
+                            valueObservedAt = new DateTimeOffset(2026, 8, 25, 8, 1, 0, TimeSpan.Zero),
+                            valuePollTraceId = "TRACE-001",
+                            valueProjectionCommitId = "COMMIT-001",
+                            liveMesFields = new
+                            {
+                                area = "AREA-01",
+                                eqp = "EQP-01",
+                                step = "STEP-01",
+                                mesSourceDate = new DateTimeOffset(2026, 8, 25, 7, 59, 0, TimeSpan.Zero),
+                                package = "PKG-01"
+                            }
                         }
                     }
                 })

@@ -16,25 +16,45 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         OrderIntent orderIntent,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandSnapshot? current = await catalog.ReadCurrentAsync(discovered.DemandId, cancellationToken)
-            .ConfigureAwait(false);
+        DemandCatalogSnapshot finalCatalog = await catalog.ReadCatalogAsync(cancellationToken).ConfigureAwait(false);
+        AcceptedDemandSnapshot? current = finalCatalog.Items.SingleOrDefault(candidate =>
+            string.Equals(candidate.DemandId, discovered.DemandId, StringComparison.Ordinal));
         if (current is null)
         {
             return DemandIntakeOutcome.CandidateGone;
         }
 
-        bool sameDecisionFacts = current.DemandId == discovered.DemandId &&
-                                 current.TransportDemandKey == discovered.TransportDemandKey &&
-                                 current.DemandRevision == discovered.DemandRevision &&
-                                 current.HistoryEpoch == discovered.HistoryEpoch;
+        bool sameDecisionFacts = HasSameDecisionFacts(discovered, current) &&
+                                 string.Equals(finalCatalog.HistoryEpoch, discovered.HistoryEpoch, StringComparison.Ordinal);
         if (!sameDecisionFacts)
         {
             return DemandIntakeOutcome.CandidateChanged;
         }
 
-        await store.AcceptWithOrderIntentAsync(current, orderIntent, cancellationToken).ConfigureAwait(false);
+        AcceptedDemandSnapshot accepted = current with
+        {
+            HistoryEpoch = finalCatalog.HistoryEpoch,
+            CatalogRevision = finalCatalog.CatalogRevision
+        };
+        await store.AcceptWithOrderIntentAsync(accepted, orderIntent, cancellationToken).ConfigureAwait(false);
         return DemandIntakeOutcome.Accepted;
     }
+
+    private static bool HasSameDecisionFacts(
+        AcceptedDemandSnapshot discovered,
+        AcceptedDemandSnapshot current) =>
+        string.Equals(current.DemandId, discovered.DemandId, StringComparison.Ordinal) &&
+        string.Equals(current.SeriesId, discovered.SeriesId, StringComparison.Ordinal) &&
+        string.Equals(current.TransportDemandKey, discovered.TransportDemandKey, StringComparison.Ordinal) &&
+        string.Equals(current.WorkType, discovered.WorkType, StringComparison.Ordinal) &&
+        string.Equals(current.Sublot, discovered.Sublot, StringComparison.Ordinal) &&
+        current.Generation == discovered.Generation &&
+        current.DemandRevision == discovered.DemandRevision &&
+        current.CreatedAt == discovered.CreatedAt &&
+        current.ValueObservedAt == discovered.ValueObservedAt &&
+        string.Equals(current.ValuePollTraceId, discovered.ValuePollTraceId, StringComparison.Ordinal) &&
+        string.Equals(current.ValueProjectionCommitId, discovered.ValueProjectionCommitId, StringComparison.Ordinal) &&
+        Equals(current.LiveMesFields, discovered.LiveMesFields);
 }
 
 public enum MovementDispatchOutcome
@@ -121,5 +141,34 @@ public sealed class MovementDispatchService(
     {
         await store.MarkResultUnknownAsync(upperId, cancellationToken).ConfigureAwait(false);
         return new MovementDispatchResult(MovementDispatchOutcome.ResultUnknown, upperId, null);
+    }
+}
+
+public sealed record JourneyIntakeResult(
+    DemandIntakeOutcome IntakeOutcome,
+    MovementDispatchResult? MovementDispatch);
+
+public sealed class JourneyIntakeCoordinator(
+    DemandIntakeService intake,
+    MovementDispatchService movementDispatch)
+{
+    public async Task<JourneyIntakeResult> AcceptAndDispatchToPickupAsync(
+        AcceptedDemandSnapshot prevalidatedCandidate,
+        OrderIntent pickupIntent,
+        CancellationToken cancellationToken)
+    {
+        DemandIntakeOutcome intakeOutcome = await intake.AcceptAsync(
+            prevalidatedCandidate,
+            pickupIntent,
+            cancellationToken).ConfigureAwait(false);
+        if (intakeOutcome != DemandIntakeOutcome.Accepted)
+        {
+            return new JourneyIntakeResult(intakeOutcome, null);
+        }
+
+        MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
+            pickupIntent.UpperId,
+            cancellationToken).ConfigureAwait(false);
+        return new JourneyIntakeResult(intakeOutcome, dispatch);
     }
 }

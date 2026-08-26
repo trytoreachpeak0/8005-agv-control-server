@@ -52,10 +52,19 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
 public sealed class AcceptedDemandRow
 {
     public required string DemandId { get; set; }
+    public required string SeriesId { get; set; }
     public required string TransportDemandKey { get; set; }
+    public required string WorkType { get; set; }
+    public required string Sublot { get; set; }
+    public int Generation { get; set; }
     public long DemandRevision { get; set; }
     public required string HistoryEpoch { get; set; }
     public long CatalogRevision { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ValueObservedAt { get; set; }
+    public required string ValuePollTraceId { get; set; }
+    public required string ValueProjectionCommitId { get; set; }
+    public required string LiveMesFieldsJson { get; set; }
     public DateTimeOffset AcceptedAt { get; set; }
     public DemandExecutionStatus Status { get; set; }
 }

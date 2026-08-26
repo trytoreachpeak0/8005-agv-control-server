@@ -160,9 +160,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         if (existing is not null)
         {
             bool same = existing.DemandId == snapshot.DemandId &&
+                        existing.SeriesId == snapshot.SeriesId &&
                         existing.TransportDemandKey == snapshot.TransportDemandKey &&
+                        existing.WorkType == snapshot.WorkType &&
+                        existing.Sublot == snapshot.Sublot &&
+                        existing.Generation == snapshot.Generation &&
                         existing.DemandRevision == snapshot.DemandRevision &&
-                        existing.HistoryEpoch == snapshot.HistoryEpoch;
+                        existing.HistoryEpoch == snapshot.HistoryEpoch &&
+                        existing.CreatedAt == snapshot.CreatedAt &&
+                        existing.ValueObservedAt == snapshot.ValueObservedAt &&
+                        existing.ValuePollTraceId == snapshot.ValuePollTraceId &&
+                        existing.ValueProjectionCommitId == snapshot.ValueProjectionCommitId &&
+                        existing.LiveMesFieldsJson == JsonSerializer.Serialize(snapshot.LiveMesFields);
             if (!same)
             {
                 throw new BusinessIdentityConflictException("DemandId or TransportDemandKey is already bound to different content.");
@@ -183,10 +192,19 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         dbContext.AcceptedDemands.Add(new AcceptedDemandRow
         {
             DemandId = snapshot.DemandId,
+            SeriesId = snapshot.SeriesId,
             TransportDemandKey = snapshot.TransportDemandKey,
+            WorkType = snapshot.WorkType,
+            Sublot = snapshot.Sublot,
+            Generation = snapshot.Generation,
             DemandRevision = snapshot.DemandRevision,
             HistoryEpoch = snapshot.HistoryEpoch,
             CatalogRevision = snapshot.CatalogRevision,
+            CreatedAt = snapshot.CreatedAt,
+            ValueObservedAt = snapshot.ValueObservedAt,
+            ValuePollTraceId = snapshot.ValuePollTraceId,
+            ValueProjectionCommitId = snapshot.ValueProjectionCommitId,
+            LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
             AcceptedAt = snapshot.AcceptedAt,
             Status = DemandExecutionStatus.Accepted
         });
