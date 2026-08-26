@@ -59,10 +59,8 @@ public sealed class OnboardJourneyPublisherTests
         Assert.Null(row.AcknowledgedAt);
 
         string contentHash = Sha256(row.PayloadJson);
-        OnboardMessageProcessor processor = new(
-            store,
-            clock,
-            new ConfigurationBuilder().Build());
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            context, store, clock, new ConfigurationBuilder().Build());
         OnboardConnectionState state = new()
         {
             AgvId = "AGV-001",
@@ -384,7 +382,8 @@ public sealed class OnboardJourneyPublisherTests
                 request with { ExpectedSublot = "SUBLOT-DIFFERENT" },
                 TestContext.Current.CancellationToken));
 
-        OnboardMessageProcessor processor = new(store, clock, new ConfigurationBuilder().Build());
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            context, store, clock, new ConfigurationBuilder().Build());
         OnboardConnectionState state = new() { AgvId = "AGV-001", SessionGeneration = 12 };
         string response = await processor.ProcessAsync(
             Envelope(

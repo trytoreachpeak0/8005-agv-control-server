@@ -112,16 +112,28 @@ public sealed class MovementDispatchService(
         {
             return new MovementDispatchResult(MovementDispatchOutcome.Confirmed, upperId, intent.OrderId);
         }
+        if (intent.Status == "TERMINAL_RECONCILIATION_REQUIRED")
+        {
+            return new MovementDispatchResult(
+                MovementDispatchOutcome.TerminalReconciliationRequired,
+                upperId,
+                intent.OrderId);
+        }
 
         RiotOrderObservation observed = await gateway.ReconcileByUpperIdAsync(upperId, cancellationToken)
             .ConfigureAwait(false);
         return observed.Kind switch
         {
-            RiotOrderObservationKind.Active => await ConfirmAsync(observed, cancellationToken).ConfigureAwait(false),
-            RiotOrderObservationKind.NotFound => await CreateAfterConfirmedAbsenceAsync(intent.Intent, cancellationToken)
+            RiotOrderObservationKind.Active => await ConfirmAsync(intent.Intent, observed, cancellationToken)
                 .ConfigureAwait(false),
-            RiotOrderObservationKind.Terminal =>
-                new MovementDispatchResult(MovementDispatchOutcome.TerminalReconciliationRequired, upperId, observed.OrderId),
+            RiotOrderObservationKind.NotFound when intent.Status == "PENDING_RECONCILIATION" =>
+                await CreateAfterConfirmedAbsenceAsync(intent.Intent, cancellationToken).ConfigureAwait(false),
+            RiotOrderObservationKind.NotFound => await MarkUnknownAsync(upperId, cancellationToken)
+                .ConfigureAwait(false),
+            RiotOrderObservationKind.Terminal => await MarkTerminalAsync(
+                intent.Intent,
+                observed,
+                cancellationToken).ConfigureAwait(false),
             _ => await MarkUnknownAsync(upperId, cancellationToken).ConfigureAwait(false)
         };
     }
@@ -130,6 +142,7 @@ public sealed class MovementDispatchService(
         OrderIntent intent,
         CancellationToken cancellationToken)
     {
+        await store.MarkCreateAttemptedAsync(intent.UpperId, cancellationToken).ConfigureAwait(false);
         RiotOrderObservation accepted = await gateway.CreateAsync(intent, cancellationToken).ConfigureAwait(false);
         if (accepted.Kind is RiotOrderObservationKind.Unknown)
         {
@@ -142,27 +155,55 @@ public sealed class MovementDispatchService(
             .ConfigureAwait(false);
         return confirmed.Kind switch
         {
-            RiotOrderObservationKind.Active => await ConfirmAsync(confirmed, cancellationToken).ConfigureAwait(false),
-            RiotOrderObservationKind.Terminal =>
-                new MovementDispatchResult(MovementDispatchOutcome.TerminalReconciliationRequired, intent.UpperId, confirmed.OrderId),
+            RiotOrderObservationKind.Active => await ConfirmAsync(intent, confirmed, cancellationToken)
+                .ConfigureAwait(false),
+            RiotOrderObservationKind.Terminal => await MarkTerminalAsync(intent, confirmed, cancellationToken)
+                .ConfigureAwait(false),
             _ => await MarkUnknownAsync(intent.UpperId, cancellationToken).ConfigureAwait(false)
         };
     }
 
     private async Task<MovementDispatchResult> ConfirmAsync(
+        OrderIntent intent,
         RiotOrderObservation observation,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(observation.OrderId))
+        if (!MatchesFrozenIntent(intent, observation))
         {
             return await MarkUnknownAsync(observation.UpperId, cancellationToken).ConfigureAwait(false);
         }
-        await store.ConfirmAsync(observation.UpperId, observation.OrderId, cancellationToken).ConfigureAwait(false);
+        await store.ConfirmAsync(observation.UpperId, observation.OrderId!, cancellationToken).ConfigureAwait(false);
         return new MovementDispatchResult(
             MovementDispatchOutcome.Confirmed,
             observation.UpperId,
             observation.OrderId);
     }
+
+    private async Task<MovementDispatchResult> MarkTerminalAsync(
+        OrderIntent intent,
+        RiotOrderObservation observation,
+        CancellationToken cancellationToken)
+    {
+        if (!MatchesFrozenIntent(intent, observation))
+        {
+            return await MarkUnknownAsync(observation.UpperId, cancellationToken).ConfigureAwait(false);
+        }
+        await store.MarkTerminalReconciliationRequiredAsync(
+            observation.UpperId,
+            observation.OrderId!,
+            cancellationToken).ConfigureAwait(false);
+        return new MovementDispatchResult(
+            MovementDispatchOutcome.TerminalReconciliationRequired,
+            observation.UpperId,
+            observation.OrderId);
+    }
+
+    private static bool MatchesFrozenIntent(OrderIntent intent, RiotOrderObservation observation) =>
+        string.Equals(observation.UpperId, intent.UpperId, StringComparison.Ordinal) &&
+        !string.IsNullOrWhiteSpace(observation.OrderId) &&
+        string.Equals(observation.VehicleKey, intent.VehicleKey, StringComparison.Ordinal) &&
+        observation.MapId == intent.MapId &&
+        observation.DestinationStationId == intent.DestinationStationId;
 
     private async Task<MovementDispatchResult> MarkUnknownAsync(
         string upperId,

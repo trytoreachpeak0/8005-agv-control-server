@@ -63,7 +63,7 @@ public sealed partial class OnboardTcpServer(
         await using OnboardPeerConnection connection = new(stream);
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
-        OnboardConnectionState state = new();
+        OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
         bool attached = false;
         try
         {
@@ -85,15 +85,11 @@ public sealed partial class OnboardTcpServer(
                         OnboardPeerConnection.Encode(response),
                         cancellationToken).ConfigureAwait(false);
                 }
-                if (state.Readiness == ControlServer.Domain.SessionReadiness.Ready && !attached)
+                await processor.FlushDeferredOutboundAsync(state, cancellationToken).ConfigureAwait(false);
+                if (state.SessionGeneration is not null && !attached)
                 {
                     peer.Attach(connection);
                     attached = true;
-                }
-                else if (state.Readiness != ControlServer.Domain.SessionReadiness.Ready && attached)
-                {
-                    peer.Detach(connection);
-                    attached = false;
                 }
             }
         }

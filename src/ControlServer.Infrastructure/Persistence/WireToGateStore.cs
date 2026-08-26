@@ -100,13 +100,25 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
 
     public async Task ApplyRecoveryReportAsync(
         string agvId, long sessionGeneration, string reportId, long forcedRecoveryGeneration,
-        IReadOnlyCollection<string> pendingAttemptIds, IReadOnlyCollection<string> pendingResultIds,
+        string? unsettledSlotOperationAttemptId,
+        string? provenRecoveryCheckpoint,
+        IReadOnlyCollection<int> activeUnlockSlots,
+        IReadOnlyCollection<string> pendingAttemptIds,
+        IReadOnlyCollection<string> pendingResultIds,
         CancellationToken cancellationToken)
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
             .ConfigureAwait(false);
+        long currentGeneration = await dbContext.VehicleRecoveryGenerations
+            .Where(item => item.AgvId == agvId)
+            .Select(item => (long?)item.ForcedRecoveryGeneration)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? row.ForcedRecoveryGeneration;
         row.RecoveryReportId = reportId;
-        row.ForcedRecoveryGeneration = forcedRecoveryGeneration;
+        row.ForcedRecoveryGeneration = currentGeneration;
+        row.ReportedForcedRecoveryGeneration = forcedRecoveryGeneration;
+        row.UnsettledSlotOperationAttemptId = unsettledSlotOperationAttemptId;
+        row.ProvenRecoveryCheckpoint = provenRecoveryCheckpoint;
+        row.ActiveUnlockSlotsJson = JsonSerializer.Serialize(NormalizeSlots(activeUnlockSlots));
         row.PendingAttemptIdsJson = SerializeSorted(pendingAttemptIds);
         row.PendingResultIdsJson = SerializeSorted(pendingResultIds);
         row.Readiness = SessionReadiness.RecoveryRequired;
@@ -123,7 +135,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         bool noPendingFacts = DeserializeStrings(row.PendingAttemptIdsJson).Length == 0 &&
                               DeserializeStrings(row.PendingResultIdsJson).Length == 0;
         bool ready = row.CapabilityRevision is not null && row.SafetyRevision is not null &&
-                     row.RecoveryReportId is not null && row.DepartureSafe == true && noPendingFacts;
+                     row.RecoveryReportId is not null && row.DepartureSafe == true && noPendingFacts &&
+                     row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
         row.ReasonCode = ready ? "READY" : GetRecoveryReason(row, noPendingFacts);
         row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -145,6 +158,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .ConfigureAwait(false);
         return row.ForcedRecoveryGeneration;
     }
+
+    public Task<long> GetOperationForcedRecoveryGenerationAsync(
+        string slotOperationAttemptId,
+        CancellationToken cancellationToken) =>
+        dbContext.StationOperations
+            .Where(row => row.SlotOperationAttemptId == slotOperationAttemptId)
+            .Select(row => row.ForcedRecoveryGeneration)
+            .SingleAsync(cancellationToken);
 
     public Task AcceptWithOrderIntentAsync(
         AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, CancellationToken cancellationToken) =>
@@ -292,6 +313,40 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             row.Status = "RESULT_UNKNOWN";
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task MarkCreateAttemptedAsync(string upperId, CancellationToken cancellationToken)
+    {
+        OrderIntentRow row = await dbContext.OrderIntents
+            .SingleAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
+        if (row.Status != "PENDING_RECONCILIATION")
+        {
+            throw new BusinessIdentityConflictException(
+                "A RIoT create call is only allowed from the initial reconciled-not-found state.");
+        }
+        row.Status = "CREATE_ATTEMPTED";
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task MarkTerminalReconciliationRequiredAsync(
+        string upperId,
+        string orderId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(orderId);
+        OrderIntentRow row = await dbContext.OrderIntents
+            .SingleAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
+        if (row.Status == "CONFIRMED" && row.OrderId != orderId)
+        {
+            throw new BusinessIdentityConflictException("The stable upperId was reconciled to a different orderId.");
+        }
+        if (row.Status == "TERMINAL_RECONCILIATION_REQUIRED" && row.OrderId != orderId)
+        {
+            throw new BusinessIdentityConflictException("The terminal upperId was reconciled to a different orderId.");
+        }
+        row.Status = "TERMINAL_RECONCILIATION_REQUIRED";
+        row.OrderId = orderId;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ConfirmAsync(string upperId, string orderId, CancellationToken cancellationToken)
@@ -742,7 +797,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         CancellationToken cancellationToken)
     {
         ProtocolOutboxRow[] rows = await dbContext.ProtocolOutbox.AsNoTracking()
-            .Where(row => row.AcknowledgedAt == null)
+            .Where(row => row.AcknowledgedAt == null && row.FencedAt == null)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         return rows.Where(row =>
         {
@@ -777,6 +832,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 "VehicleBusinessStateSnapshot" => "vehicleBusinessStateRevision",
                 "CurrentStopWorklistSnapshot" => "worklistRevision",
                 "UpcomingStopPlanSnapshot" => "planRevision",
+                "ExceptionRecoverySessionSnapshot" => "recoverySessionRevision",
                 _ => throw new ProtocolContentConflictException(
                     "Only a persisted snapshot can be acknowledged with an applied revision.")
             };
@@ -812,6 +868,48 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
         row.ForcedRecoveryGeneration = generation;
         row.UpdatedAt = advancedAt;
+        SessionRecoveryRow? session = await dbContext.SessionRecoveries
+            .SingleOrDefaultAsync(item => item.AgvId == agvId, cancellationToken).ConfigureAwait(false);
+        if (session is not null)
+        {
+            session.ForcedRecoveryGeneration = generation;
+            session.Readiness = SessionReadiness.RecoveryRequired;
+            session.ReasonCode = "FORCED_RECOVERY_RECONCILIATION_REQUIRED";
+            session.UpdatedAt = advancedAt;
+        }
+        ProtocolOutboxRow[] pendingOutbound = await dbContext.ProtocolOutbox
+            .Where(item => item.AcknowledgedAt == null && item.FencedAt == null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (ProtocolOutboxRow outbound in pendingOutbound)
+        {
+            using JsonDocument document = JsonDocument.Parse(outbound.PayloadJson);
+            if (document.RootElement.GetProperty("agvId").GetString() == agvId)
+            {
+                outbound.FencedAt = advancedAt;
+            }
+        }
+        RecoveryWorkflowRow[] staleWorkflows = await dbContext.RecoveryWorkflows
+            .Where(item => item.AgvId == agvId &&
+                           item.ForcedRecoveryGeneration < generation &&
+                           item.State != RecoveryWorkflowState.Reconciled &&
+                           item.State != RecoveryWorkflowState.HistoricalOnly)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (RecoveryWorkflowRow workflow in staleWorkflows)
+        {
+            workflow.State = RecoveryWorkflowState.HistoricalOnly;
+            workflow.UpdatedAt = advancedAt;
+            if (workflow.CommandMessageId is not null)
+            {
+                ProtocolOutboxRow? command = await dbContext.ProtocolOutbox
+                    .SingleOrDefaultAsync(
+                        item => item.MessageId == workflow.CommandMessageId,
+                        cancellationToken).ConfigureAwait(false);
+                if (command is not null)
+                {
+                    command.FencedAt ??= advancedAt;
+                }
+            }
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -1243,6 +1341,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         if (row.CapabilityRevision is null) return "CAPABILITY_SNAPSHOT_REQUIRED";
         if (row.SafetyRevision is null) return "SAFETY_SNAPSHOT_REQUIRED";
         if (row.RecoveryReportId is null) return "RECOVERY_REPORT_REQUIRED";
+        if (row.ReportedForcedRecoveryGeneration != row.ForcedRecoveryGeneration)
+            return "FORCED_RECOVERY_GENERATION_MISMATCH";
         if (!noPendingFacts) return "PENDING_FACT_RECONCILIATION_REQUIRED";
         if (row.DepartureSafe != true) return "DEPARTURE_SAFETY_NOT_READY";
         return "RECOVERY_REQUIRED";

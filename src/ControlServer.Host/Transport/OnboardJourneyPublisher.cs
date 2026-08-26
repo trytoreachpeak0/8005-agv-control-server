@@ -14,6 +14,7 @@ public sealed class OnboardJourneyPublisher(
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] SublotEntryMethods = ["SCANNER", "KEYBOARD"];
+    private static readonly string[] LoadCorrectionSequence = ["EMPTY", "OCCUPIED"];
 
     public async Task ReplayPendingForSessionAsync(
         string agvId,
@@ -213,6 +214,196 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken);
     }
 
+    public Task<ProtocolOutboxRow> QueueSlotOperationResumeCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SlotOperationResumeAuthorization command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.ExceptionRecoverySessionId, nameof(command.ExceptionRecoverySessionId));
+        ValidateUuid(command.RecoveryActionId, nameof(command.RecoveryActionId));
+        ValidateUuid(command.DemandId, nameof(command.DemandId));
+        ValidateUuid(command.SlotOperationAttemptId, nameof(command.SlotOperationAttemptId));
+        if (command.ProvenRecoveryCheckpoint is not ("PREPARED" or "ACTIVE_UNLOCK_SET" or "SAFE_FINISH_REACHED"))
+            throw new InvalidDataException("Proven recovery checkpoint is not allowed by the protocol.");
+        ValidateSlots(command.Slots);
+        ValidateSha256(command.CommandContentSha256, nameof(command.CommandContentSha256));
+        return QueueEnvelopeAsync(
+            "SlotOperationResumeCommand", messageId, null, agvId, sessionGeneration,
+            new
+            {
+                command.ExceptionRecoverySessionId,
+                command.RecoveryActionId,
+                command.DemandId,
+                command.SlotOperationAttemptId,
+                command.ProvenRecoveryCheckpoint,
+                command.Slots,
+                command.CommandContentSha256
+            }, cancellationToken);
+    }
+
+    public Task<ProtocolOutboxRow> QueueExceptionRecoverySessionSnapshotAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        ExceptionRecoverySessionProjection projection,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        ValidateUuid(projection.ExceptionRecoverySessionId, nameof(projection.ExceptionRecoverySessionId));
+        ArgumentOutOfRangeException.ThrowIfNegative(projection.RecoverySessionRevision);
+        if (projection.State is not ("OPEN" or "ACTION_SELECTED" or "EXECUTING" or "CLOSED"))
+            throw new InvalidDataException("Recovery session state is not allowed by the protocol.");
+        if (projection.AdministratorRole is not ("MAINTENANCE_ADMINISTRATOR" or "SYSTEM_ADMINISTRATOR"))
+            throw new InvalidDataException("Recovery administrator role is not allowed by the protocol.");
+        ValidateUuid(projection.EventId, nameof(projection.EventId));
+        if (projection.DemandId is not null) ValidateUuid(projection.DemandId, nameof(projection.DemandId));
+        ValidateSlots(projection.Slots);
+        return QueueEnvelopeAsync(
+            "ExceptionRecoverySessionSnapshot", messageId, null, agvId, sessionGeneration,
+            new
+            {
+                projection.ExceptionRecoverySessionId,
+                projection.RecoverySessionRevision,
+                projection.State,
+                projection.AdministratorId,
+                projection.AdministratorRole,
+                projection.EventId,
+                projection.DemandId,
+                projection.Slots,
+                projection.SelectedAction,
+                projection.AllowedActions,
+                blockingFacts = projection.BlockingFacts.Select(fact => new
+                {
+                    fact.ReasonCode,
+                    fact.SubjectType,
+                    fact.SubjectId
+                })
+            }, cancellationToken);
+    }
+
+    public Task<ProtocolOutboxRow> QueueLoadCompensationCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        LoadCompensationAuthorizationCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.RecoveryActionId, nameof(command.RecoveryActionId));
+        ValidateUuid(command.ExceptionRecoverySessionId, nameof(command.ExceptionRecoverySessionId));
+        ValidateUuid(command.DemandId, nameof(command.DemandId));
+        ValidateUuid(command.SlotOperationAttemptId, nameof(command.SlotOperationAttemptId));
+        ValidateSlots(command.Slots);
+        ValidateSha256(command.CommandContentSha256, nameof(command.CommandContentSha256));
+        return QueueEnvelopeAsync(
+            "LoadCompensationCommand", messageId, null, agvId, sessionGeneration,
+            new
+            {
+                command.RecoveryActionId,
+                command.ExceptionRecoverySessionId,
+                command.DemandId,
+                command.SlotOperationAttemptId,
+                command.Slots,
+                expectedFinalPhysicalState = "EMPTY",
+                command.CommandContentSha256
+            }, cancellationToken);
+    }
+
+    public Task<ProtocolOutboxRow> QueueLoadCorrectionCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        LoadCorrectionAuthorizationCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.CorrectionId, nameof(command.CorrectionId));
+        ValidateUuid(command.DemandId, nameof(command.DemandId));
+        ValidateUuid(command.SlotOperationAttemptId, nameof(command.SlotOperationAttemptId));
+        ValidateSlots(command.Slots);
+        ValidateSha256(command.CommandContentSha256, nameof(command.CommandContentSha256));
+        return QueueEnvelopeAsync(
+            "LoadCorrectionCommand", messageId, null, agvId, sessionGeneration,
+            new
+            {
+                command.CorrectionId,
+                command.DemandId,
+                command.SlotOperationAttemptId,
+                command.Slots,
+                expectedSequence = LoadCorrectionSequence,
+                command.CommandContentSha256
+            }, cancellationToken);
+    }
+
+    public Task<ProtocolOutboxRow> QueueFaultCargoRecoveryCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        FaultCargoRecoveryAuthorizationCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.ExceptionRecoverySessionId, nameof(command.ExceptionRecoverySessionId));
+        ValidateUuid(command.RecoveryActionId, nameof(command.RecoveryActionId));
+        ValidateUuid(command.DemandId, nameof(command.DemandId));
+        ValidateUuid(command.HandoffId, nameof(command.HandoffId));
+        ValidateSlots(command.Slots);
+        ValidateSha256(command.CommandContentSha256, nameof(command.CommandContentSha256));
+        return QueueEnvelopeAsync(
+            "FaultCargoRecoveryCommand", messageId, null, agvId, sessionGeneration,
+            new
+            {
+                command.ExceptionRecoverySessionId,
+                command.RecoveryActionId,
+                command.DemandId,
+                command.Slots,
+                command.HandoffId,
+                command.CommandContentSha256
+            }, cancellationToken);
+    }
+
+    public Task<ProtocolOutboxRow> QueueForcedMechanicalRecoveryCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        ForcedMechanicalRecoveryAuthorizationCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.ExceptionRecoverySessionId, nameof(command.ExceptionRecoverySessionId));
+        ValidateUuid(command.RecoveryActionId, nameof(command.RecoveryActionId));
+        if (command.DemandId is not null) ValidateUuid(command.DemandId, nameof(command.DemandId));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(command.ForcedRecoveryGeneration);
+        ValidateSlots(command.Slots);
+        ValidateSha256(command.CommandContentSha256, nameof(command.CommandContentSha256));
+        return QueueEnvelopeAsync(
+            "ForcedMechanicalRecoveryCommand", messageId, null, agvId, sessionGeneration,
+            new
+            {
+                command.ExceptionRecoverySessionId,
+                command.RecoveryActionId,
+                command.DemandId,
+                command.ForcedRecoveryGeneration,
+                command.Slots,
+                command.CommandContentSha256
+            }, cancellationToken);
+    }
+
+    public async Task SendPersistedAsync(string messageId, CancellationToken cancellationToken)
+    {
+        ProtocolOutboxRow row = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)
+            .ConfigureAwait(false) ?? throw new KeyNotFoundException($"Outbound message '{messageId}' does not exist.");
+        if (row.AcknowledgedAt is not null || row.FencedAt is not null)
+        {
+            return;
+        }
+        await peer.SendAsync(Encoding.UTF8.GetBytes(row.PayloadJson + "\n"), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     public Task PublishCurrentStopWorklistAsync(
         string messageId,
         string agvId,
@@ -293,11 +484,28 @@ public sealed class OnboardJourneyPublisher(
         object payload,
         CancellationToken cancellationToken)
     {
+        ProtocolOutboxRow stored = await QueueEnvelopeAsync(
+            messageType, messageId, correlationId, agvId, sessionGeneration, payload, cancellationToken)
+            .ConfigureAwait(false);
+        if (stored.AcknowledgedAt is null && stored.FencedAt is null)
+            await peer.SendAsync(
+                Encoding.UTF8.GetBytes(stored.PayloadJson + "\n"),
+                cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ProtocolOutboxRow> QueueEnvelopeAsync(
+        string messageType,
+        string messageId,
+        string? correlationId,
+        string agvId,
+        long sessionGeneration,
+        object payload,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         ValidateUuid(messageId, nameof(messageId));
         ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
-
         ProtocolOutboxRow? existing = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)
             .ConfigureAwait(false);
         DateTimeOffset sentAt = existing?.CreatedAt ?? timeProvider.GetUtcNow();
@@ -315,19 +523,8 @@ public sealed class OnboardJourneyPublisher(
             sentAt,
             payload
         }, SerializerOptions);
-        ProtocolOutboxRow stored = await store.QueueOutboundEnvelopeAsync(
-            messageId,
-            messageType,
-            candidateWire,
-            sentAt,
-            cancellationToken).ConfigureAwait(false);
-        if (stored.AcknowledgedAt is not null)
-        {
-            return;
-        }
-        await peer.SendAsync(
-            Encoding.UTF8.GetBytes(stored.PayloadJson + "\n"),
-            cancellationToken).ConfigureAwait(false);
+        return await store.QueueOutboundEnvelopeAsync(
+            messageId, messageType, candidateWire, sentAt, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task PublishSlotOperationEnvelopeAsync(

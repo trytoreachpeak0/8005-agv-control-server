@@ -21,7 +21,7 @@ public sealed class WireToGateStoreTests
         await fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 1, 4, "cap-hash", fixture.CancellationToken);
         await fixture.Store.ApplySafetySnapshotAsync("AGV-001", 1, 9, true, "safe-hash", fixture.CancellationToken);
         await fixture.Store.ApplyRecoveryReportAsync(
-            "AGV-001", 1, "REPORT-001", 0, [], [], fixture.CancellationToken);
+            "AGV-001", 1, "REPORT-001", 0, null, null, [], [], [], fixture.CancellationToken);
         SessionReadinessDecision decision = await fixture.Store.DecideReadinessAsync(
             "AGV-001", 1, fixture.CancellationToken);
 

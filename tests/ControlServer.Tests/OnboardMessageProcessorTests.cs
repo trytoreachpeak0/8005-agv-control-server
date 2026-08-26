@@ -37,8 +37,9 @@ public sealed class OnboardMessageProcessorTests
                     ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
                 })
                 .Build();
-            OnboardMessageProcessor processor = new(
-                new WireToGateStore(context), new FixedTimeProvider(), configuration);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
             OnboardConnectionState state = new();
 
             await processor.ProcessAsync(
@@ -119,8 +120,9 @@ public sealed class OnboardMessageProcessorTests
                     ["ControlServerBuild:commit"] = "TEST_BUILD"
                 })
                 .Build();
-            OnboardMessageProcessor processor = new(
-                new WireToGateStore(context), new FixedTimeProvider(), configuration);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
             OnboardConnectionState state = new();
 
             string hello = Envelope(
@@ -157,6 +159,8 @@ public sealed class OnboardMessageProcessorTests
                     {
                         reportId = "00000000-0000-4000-8000-000000000005",
                         unsettledSlotOperationAttemptId = (string?)null,
+                        provenRecoveryCheckpoint = (string?)null,
+                        activeUnlockSlots = Array.Empty<int>(),
                         forcedRecoveryGeneration = 0,
                         pendingResults = Array.Empty<object>()
                     }),
@@ -198,8 +202,8 @@ public sealed class OnboardMessageProcessorTests
                 })
                 .Build();
             WireToGateStore store = new(context);
-            OnboardMessageProcessor processor = new(
-                store, new FixedTimeProvider(), configuration);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
             OnboardConnectionState state = new();
             await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
 
@@ -385,10 +389,8 @@ public sealed class OnboardMessageProcessorTests
             "00000000-0000-4000-8000-000000000305",
             "unload-command-json",
             TestContext.Current.CancellationToken);
-        OnboardMessageProcessor processor = new(
-            store,
-            new FixedTimeProvider(),
-            new ConfigurationBuilder().Build());
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            context, store, new FixedTimeProvider(), new ConfigurationBuilder().Build());
         OnboardConnectionState state = new()
         {
             AgvId = "AGV-001",
@@ -456,8 +458,9 @@ public sealed class OnboardMessageProcessorTests
                     ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
                 })
                 .Build();
-            OnboardMessageProcessor processor = new(
-                new WireToGateStore(context), new FixedTimeProvider(), configuration);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
             OnboardConnectionState state = new();
             await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
             string line = Envelope(
@@ -539,6 +542,8 @@ public sealed class OnboardMessageProcessorTests
                 {
                     reportId = Guid.NewGuid().ToString("D"),
                     unsettledSlotOperationAttemptId = (string?)null,
+                    provenRecoveryCheckpoint = (string?)null,
+                    activeUnlockSlots = Array.Empty<int>(),
                     forcedRecoveryGeneration = 0,
                     pendingResults = Array.Empty<object>()
                 }),

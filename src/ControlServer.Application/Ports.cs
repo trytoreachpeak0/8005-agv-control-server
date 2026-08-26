@@ -52,7 +52,14 @@ public interface IMovementIntentStore
 {
     Task<StoredMovementIntent?> GetByUpperIdAsync(string upperId, CancellationToken cancellationToken);
 
+    Task MarkCreateAttemptedAsync(string upperId, CancellationToken cancellationToken);
+
     Task MarkResultUnknownAsync(string upperId, CancellationToken cancellationToken);
+
+    Task MarkTerminalReconciliationRequiredAsync(
+        string upperId,
+        string orderId,
+        CancellationToken cancellationToken);
 
     Task ConfirmAsync(string upperId, string orderId, CancellationToken cancellationToken);
 }

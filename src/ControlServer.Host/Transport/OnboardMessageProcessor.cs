@@ -9,6 +9,7 @@ namespace ControlServer.Host.Transport;
 
 public sealed class OnboardMessageProcessor(
     WireToGateStore store,
+    OnboardRecoveryCoordinator recoveryCoordinator,
     TimeProvider timeProvider,
     IConfiguration configuration)
 {
@@ -97,15 +98,65 @@ public sealed class OnboardMessageProcessor(
 
         ValidateEnvelopeIdentity(root);
         RequireCurrentSession(root, state, agvId);
-        return await store.CaptureFirstResponseAsync(
+        string persistedRequest = messageType == "ExceptionRecoverySessionRequested"
+            ? RedactRecoveryAuthenticationProof(line)
+            : line;
+        string capturedResponse = await store.CaptureFirstResponseAsync(
             messageId,
             messageType,
-            line,
+            persistedRequest,
             contentHash,
             () => ProcessCurrentSessionMessageAsync(
                 root, state, messageType, messageId, contentHash, cancellationToken),
             timeProvider.GetUtcNow(),
             cancellationToken).ConfigureAwait(false);
+        bool hasDeferredRecoveryOutbound = OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
+                                           OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
+                                           messageType == "OperationResult" ||
+                                           messageType == "RecoveryStateReport";
+        if (hasDeferredRecoveryOutbound && state.DeferOutboundUntilResponseWritten)
+        {
+            state.DeferredRecoveryLine = line;
+        }
+        else if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
+                 OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
+                 messageType == "OperationResult")
+        {
+            await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (messageType == "RecoveryStateReport")
+        {
+            await recoveryCoordinator.ReplayPendingCommandsAsync(
+                agvId,
+                state.SessionGeneration!.Value,
+                cancellationToken).ConfigureAwait(false);
+        }
+        return capturedResponse;
+    }
+
+    public async Task FlushDeferredOutboundAsync(
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+        string? line = state.DeferredRecoveryLine;
+        state.DeferredRecoveryLine = null;
+        if (line is null) return;
+        using JsonDocument document = JsonDocument.Parse(line);
+        JsonElement root = document.RootElement;
+        string messageType = RequiredString(root, "messageType");
+        if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
+            OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
+            messageType == "OperationResult")
+        {
+            await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
+        }
+        else if (messageType == "RecoveryStateReport")
+        {
+            await recoveryCoordinator.ReplayPendingCommandsAsync(
+                RequiredString(root, "agvId"),
+                root.GetProperty("sessionGeneration").GetInt64(),
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task<string> ProcessCurrentSessionMessageAsync(
@@ -156,8 +207,17 @@ public sealed class OnboardMessageProcessor(
                         .EnumerateArray()
                         .Select(item => RequiredString(item, "messageId"))
                         .ToArray();
+                    string? unsettledAttemptId = payload.GetProperty("unsettledSlotOperationAttemptId").ValueKind == JsonValueKind.Null
+                        ? null
+                        : RequiredString(payload, "unsettledSlotOperationAttemptId");
+                    string? checkpoint = payload.GetProperty("provenRecoveryCheckpoint").ValueKind == JsonValueKind.Null
+                        ? null
+                        : RequiredString(payload, "provenRecoveryCheckpoint");
+                    int[] activeUnlockSlots = payload.GetProperty("activeUnlockSlots")
+                        .EnumerateArray().Select(item => item.GetInt32()).ToArray();
                     await store.ApplyRecoveryReportAsync(
                         agvId, generation, reportId, forcedGeneration,
+                        unsettledAttemptId, checkpoint, activeUnlockSlots,
                         pendingAttempts, pendingResults, cancellationToken).ConfigureAwait(false);
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
@@ -222,9 +282,9 @@ public sealed class OnboardMessageProcessor(
                         throw new ProtocolContentConflictException(
                             "OperationResult resultContentSha256 does not match its business content.");
                     }
-                    long forcedGeneration = await store.GetForcedRecoveryGenerationAsync(
-                        agvId, generation, cancellationToken).ConfigureAwait(false);
-                    await store.ApplyOperationResultAsync(
+                    long forcedGeneration = await store.GetOperationForcedRecoveryGenerationAsync(
+                        attemptId, cancellationToken).ConfigureAwait(false);
+                    OperationResultDisposition disposition = await store.ApplyOperationResultAsync(
                         new StationOperationResult(
                             messageId,
                             attemptId,
@@ -239,8 +299,25 @@ public sealed class OnboardMessageProcessor(
                         agvId,
                         forcedGeneration,
                         cancellationToken).ConfigureAwait(false);
+                    await recoveryCoordinator.ObserveOperationResultAsync(
+                        attemptId, disposition, cancellationToken).ConfigureAwait(false);
                     return DurableAck(messageType, messageId, agvId, generation, contentHash);
                 }
+            case "ExceptionRecoverySessionRequested":
+            case "RecoveryActionSubmitted":
+            case "HardwareRecoveryRecordSubmitted":
+            case "LoadCancellationStartRequested":
+            case "LoadCompensationRequested":
+            case "LoadCorrectionRequested":
+                return await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
+                    .ConfigureAwait(false);
+            case "FaultCargoRecoveryResult":
+            case "ForcedMechanicalRecoveryResult":
+            case "LoadCancellationResult":
+            case "LoadCompensationResult":
+            case "LoadCorrectionResult":
+                return await recoveryCoordinator.ProcessResultAsync(root, contentHash, cancellationToken)
+                    .ConfigureAwait(false);
             case "SafetyStateChanged":
                 {
                     long revision = payload.GetProperty("safetyStateVersion").GetInt64();
@@ -273,6 +350,7 @@ public sealed class OnboardMessageProcessor(
                         "VEHICLE_BUSINESS_STATE" => "VehicleBusinessStateSnapshot",
                         "CURRENT_STOP_WORKLIST" => "CurrentStopWorklistSnapshot",
                         "UPCOMING_STOP_PLAN" => "UpcomingStopPlanSnapshot",
+                        "EXCEPTION_RECOVERY_SESSION" => "ExceptionRecoverySessionSnapshot",
                         _ => throw new InvalidDataException("SnapshotAppliedAck snapshotKind is not supported.")
                     };
                     await store.AcknowledgeOutboundEnvelopeAsync(
@@ -480,6 +558,16 @@ public sealed class OnboardMessageProcessor(
         payload["credentialProof"] = "[REDACTED]";
         return root.ToJsonString(SerializerOptions);
     }
+
+    private static string RedactRecoveryAuthenticationProof(string line)
+    {
+        JsonNode root = JsonNode.Parse(line)
+            ?? throw new InvalidDataException("ExceptionRecoverySessionRequested JSON cannot be empty.");
+        JsonObject payload = root["payload"]?.AsObject()
+            ?? throw new InvalidDataException("ExceptionRecoverySessionRequested payload is required.");
+        payload["authenticationProof"] = "[REDACTED]";
+        return root.ToJsonString(SerializerOptions);
+    }
 }
 
 public sealed class OnboardConnectionState
@@ -489,4 +577,6 @@ public sealed class OnboardConnectionState
     public long? CapabilityRevision { get; set; }
     public long? SafetyRevision { get; set; }
     public SessionReadiness Readiness { get; set; } = SessionReadiness.RecoveryRequired;
+    public bool DeferOutboundUntilResponseWritten { get; set; }
+    public string? DeferredRecoveryLine { get; set; }
 }

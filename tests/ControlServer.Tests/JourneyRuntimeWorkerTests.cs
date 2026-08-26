@@ -301,6 +301,39 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task RestartReconcilesUnknownPickupCreateWithoutSecondOrderOrIdentityChange()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.Riot.LoseNextCreateResponse = true;
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        Assert.Equal("RESULT_UNKNOWN", (await fixture.Context.OrderIntents.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        OrderIntentRow reconciled = await fixture.Context.OrderIntents.SingleAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(before.DemandId, after.DemandId);
+        Assert.Equal(before.PickupUpperId, after.PickupUpperId);
+        Assert.Equal("CONFIRMED", reconciled.Status);
+        Assert.Equal("ORDER-TO_PICKUP", reconciled.OrderId);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Single(await fixture.Context.VehicleDispatchLeases.ToArrayAsync(
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task AcceptedDemandWithoutPersistedRuntimeFailsClosedInsteadOfBeingAdopted()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -896,6 +929,7 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         public RiotVehicleObservation Vehicle { get; set; }
+        public bool LoseNextCreateResponse { get; set; }
         public int TotalCreateCount => _creates.Values.Sum();
 
         public int CreateCount(string purpose) => _creates.GetValueOrDefault(purpose);
@@ -940,6 +974,12 @@ public sealed class JourneyRuntimeWorkerTests
                 MapId: intent.MapId,
                 DestinationStationId: intent.DestinationStationId);
             _orders[intent.UpperId] = active;
+            if (LoseNextCreateResponse)
+            {
+                LoseNextCreateResponse = false;
+                return Task.FromResult(new RiotOrderObservation(
+                    intent.UpperId, RiotOrderObservationKind.Unknown, null));
+            }
             return Task.FromResult(active);
         }
 

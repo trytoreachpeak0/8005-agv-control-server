@@ -33,6 +33,7 @@ builder.Services.AddScoped<JourneyRuntimeEngine>();
 builder.Services.Configure<OnboardTransportOptions>(builder.Configuration.GetSection(OnboardTransportOptions.SectionName));
 builder.Services.AddScoped<OnboardMessageProcessor>();
 builder.Services.AddScoped<OnboardJourneyPublisher>();
+builder.Services.AddScoped<OnboardRecoveryCoordinator>();
 builder.Services.AddSingleton<OnboardPeer>();
 builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();

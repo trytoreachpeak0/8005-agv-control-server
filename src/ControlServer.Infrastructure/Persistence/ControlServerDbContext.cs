@@ -20,6 +20,10 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<VehicleRecoveryGenerationRow> VehicleRecoveryGenerations => Set<VehicleRecoveryGenerationRow>();
     public DbSet<OperationResultRow> OperationResults => Set<OperationResultRow>();
     public DbSet<RecoveryDecisionRow> RecoveryDecisions => Set<RecoveryDecisionRow>();
+    public DbSet<ExceptionRecoverySessionRow> ExceptionRecoverySessions => Set<ExceptionRecoverySessionRow>();
+    public DbSet<RecoveryWorkflowRow> RecoveryWorkflows => Set<RecoveryWorkflowRow>();
+    public DbSet<HardwareRecoveryRecordRow> HardwareRecoveryRecords => Set<HardwareRecoveryRecordRow>();
+    public DbSet<RecoveryResultEvidenceRow> RecoveryResultEvidence => Set<RecoveryResultEvidenceRow>();
     public DbSet<JourneyBacklogRow> JourneyBacklog => Set<JourneyBacklogRow>();
     public DbSet<JourneyRuntimeRow> JourneyRuntimes => Set<JourneyRuntimeRow>();
     public DbSet<AdmissionPolicyStateRow> AdmissionPolicyState => Set<AdmissionPolicyStateRow>();
@@ -58,6 +62,13 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
             .HasIndex(row => new { row.SlotOperationAttemptId, row.ForcedRecoveryGeneration })
             .IsUnique();
         modelBuilder.Entity<RecoveryDecisionRow>().HasKey(row => row.RecoveryActionId);
+        modelBuilder.Entity<ExceptionRecoverySessionRow>().HasKey(row => row.ExceptionRecoverySessionId);
+        modelBuilder.Entity<ExceptionRecoverySessionRow>().HasIndex(row => row.RequestId).IsUnique();
+        modelBuilder.Entity<RecoveryWorkflowRow>().HasKey(row => row.WorkflowId);
+        modelBuilder.Entity<RecoveryWorkflowRow>().Property(row => row.State).HasConversion<string>();
+        modelBuilder.Entity<RecoveryWorkflowRow>().HasIndex(row => row.CommandMessageId).IsUnique();
+        modelBuilder.Entity<HardwareRecoveryRecordRow>().HasKey(row => row.RecordId);
+        modelBuilder.Entity<RecoveryResultEvidenceRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<JourneyBacklogRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<JourneyBacklogRow>().HasIndex(row => row.TransportDemandKey);
         modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.DemandId);
@@ -131,8 +142,12 @@ public sealed class SessionRecoveryRow
     public bool? DepartureSafe { get; set; }
     public string? RecoveryReportId { get; set; }
     public long ForcedRecoveryGeneration { get; set; }
+    public long ReportedForcedRecoveryGeneration { get; set; }
     public string PendingAttemptIdsJson { get; set; } = "[]";
     public string PendingResultIdsJson { get; set; } = "[]";
+    public string? UnsettledSlotOperationAttemptId { get; set; }
+    public string? ProvenRecoveryCheckpoint { get; set; }
+    public string ActiveUnlockSlotsJson { get; set; } = "[]";
     public SessionReadiness Readiness { get; set; }
     public string ReasonCode { get; set; } = "HANDSHAKE_INCOMPLETE";
     public DateTimeOffset UpdatedAt { get; set; }
@@ -155,6 +170,7 @@ public sealed class ProtocolOutboxRow
     public required string PayloadJson { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? AcknowledgedAt { get; set; }
+    public DateTimeOffset? FencedAt { get; set; }
 }
 
 public sealed class StationOperationRow
@@ -235,6 +251,79 @@ public sealed class RecoveryDecisionRow
     public required string ContentHash { get; set; }
     public required string Decision { get; set; }
     public DateTimeOffset DecidedAt { get; set; }
+}
+
+public sealed class ExceptionRecoverySessionRow
+{
+    public required string ExceptionRecoverySessionId { get; set; }
+    public required string RequestId { get; set; }
+    public required string RequestContentHash { get; set; }
+    public required string AgvId { get; set; }
+    public required string EventId { get; set; }
+    public string? DemandId { get; set; }
+    public required string SlotsJson { get; set; }
+    public required string AdministratorId { get; set; }
+    public required string AdministratorRole { get; set; }
+    public required string Reason { get; set; }
+    public required string State { get; set; }
+    public long Revision { get; set; }
+    public string? SelectedAction { get; set; }
+    public long ForcedRecoveryGeneration { get; set; }
+    public DateTimeOffset OpenedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class RecoveryWorkflowRow
+{
+    public required string WorkflowId { get; set; }
+    public required string WorkflowType { get; set; }
+    public string? ExceptionRecoverySessionId { get; set; }
+    public required string AgvId { get; set; }
+    public string? DemandId { get; set; }
+    public string? SlotOperationAttemptId { get; set; }
+    public required string SlotsJson { get; set; }
+    public long ForcedRecoveryGeneration { get; set; }
+    public RecoveryWorkflowState State { get; set; }
+    public required string RequestMessageId { get; set; }
+    public required string RequestContentHash { get; set; }
+    public string? CommandMessageId { get; set; }
+    public string? CommandMessageType { get; set; }
+    public string? CommandContentHash { get; set; }
+    public string? HandoffId { get; set; }
+    public string? ResultMessageId { get; set; }
+    public string? ResultContentHash { get; set; }
+    public string? Outcome { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class HardwareRecoveryRecordRow
+{
+    public required string RecordId { get; set; }
+    public required string ExceptionRecoverySessionId { get; set; }
+    public required string RecoveryActionId { get; set; }
+    public required string ContentHash { get; set; }
+    public required string OperatorId { get; set; }
+    public required string AdministratorRole { get; set; }
+    public required string SlotsJson { get; set; }
+    public required string ChecksJson { get; set; }
+    public required string ActionsJson { get; set; }
+    public required string ObservationsJson { get; set; }
+    public DateTimeOffset ObservedAt { get; set; }
+    public DateTimeOffset RecordedAt { get; set; }
+}
+
+public sealed class RecoveryResultEvidenceRow
+{
+    public required string MessageId { get; set; }
+    public required string WorkflowId { get; set; }
+    public required string MessageType { get; set; }
+    public long ForcedRecoveryGeneration { get; set; }
+    public required string ContentHash { get; set; }
+    public required string Outcome { get; set; }
+    public bool HistoricalOnly { get; set; }
+    public DateTimeOffset ObservedAt { get; set; }
+    public DateTimeOffset ReceivedAt { get; set; }
 }
 
 public sealed class JourneyBacklogRow

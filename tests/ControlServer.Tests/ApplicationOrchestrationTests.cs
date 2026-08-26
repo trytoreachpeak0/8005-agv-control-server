@@ -162,6 +162,98 @@ public sealed class ApplicationOrchestrationTests
         Assert.Equal(7, gateway.CreatedIntent.DispatchGeneration);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task UnknownCreateOutcomeSurvivesRestartAndConfirmedAbsenceDoesNotCreateAgain()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext firstContext = await CreateContextAsync(connection);
+        WireToGateStore firstStore = new(firstContext);
+        DateTimeOffset now = new(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        OrderIntent intent = new(
+            "LEG-001", "D-001", "UPPER-001", "TO_PICKUP", "ST-12", now,
+            "AGV-8005-01", 29, 12, 4, 7);
+        await firstStore.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot("D-001", "SUBLOT-001|WIRE_TO_GATE", 7, "history-1", 21, now),
+            intent,
+            TestContext.Current.CancellationToken);
+        UnknownCreateGateway gateway = new(intent);
+        MovementDispatchResult first = await new MovementDispatchService(firstStore, gateway)
+            .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.ResultUnknown, first.Outcome);
+        Assert.Equal(1, gateway.CreateCount);
+        await firstContext.DisposeAsync();
+        await using ControlServerDbContext restartedContext = await CreateContextAsync(connection);
+        MovementDispatchResult afterRestart = await new MovementDispatchService(
+                new WireToGateStore(restartedContext), gateway)
+            .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.ResultUnknown, afterRestart.Outcome);
+        Assert.Equal(intent.UpperId, afterRestart.UpperId);
+        Assert.Equal(1, gateway.CreateCount);
+        Assert.Equal("RESULT_UNKNOWN", (await restartedContext.OrderIntents.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task TerminalObservationIsPersistedAndFrozenIdentityMismatchNeverConfirms()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        WireToGateStore store = new(context);
+        DateTimeOffset now = new(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        OrderIntent terminalIntent = new(
+            "LEG-TERMINAL", "D-TERMINAL", "UPPER-TERMINAL", "TO_PICKUP", "ST-12", now,
+            "AGV-8005-01", 29, 12, 4, 7);
+        await store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot("D-TERMINAL", "SUBLOT-T|WIRE_TO_GATE", 1, "history-1", 1, now),
+            terminalIntent,
+            TestContext.Current.CancellationToken);
+        StaticRiotGateway exactTerminal = new(new RiotOrderObservation(
+            terminalIntent.UpperId, RiotOrderObservationKind.Terminal, "ORDER-T", 5,
+            terminalIntent.VehicleKey, terminalIntent.MapId, terminalIntent.DestinationStationId));
+
+        MovementDispatchResult terminal = await new MovementDispatchService(store, exactTerminal)
+            .ReconcileOrCreateAsync(terminalIntent.UpperId, TestContext.Current.CancellationToken);
+        MovementDispatchResult terminalReplay = await new MovementDispatchService(store, new ThrowingRiotGateway())
+            .ReconcileOrCreateAsync(terminalIntent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.TerminalReconciliationRequired, terminal.Outcome);
+        Assert.Equal(terminal, terminalReplay);
+        Assert.Equal("TERMINAL_RECONCILIATION_REQUIRED", (await context.OrderIntents.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+
+        await using SqliteConnection mismatchConnection = new("Data Source=:memory:");
+        await mismatchConnection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext mismatchContext = await CreateContextAsync(mismatchConnection);
+        WireToGateStore mismatchStore = new(mismatchContext);
+        OrderIntent mismatchIntent = terminalIntent with
+        {
+            MovementLegId = "LEG-MISMATCH",
+            DemandId = "D-MISMATCH",
+            UpperId = "UPPER-MISMATCH"
+        };
+        await mismatchStore.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot("D-MISMATCH", "SUBLOT-M|WIRE_TO_GATE", 1, "history-1", 1, now),
+            mismatchIntent,
+            TestContext.Current.CancellationToken);
+        StaticRiotGateway wrongVehicle = new(new RiotOrderObservation(
+            mismatchIntent.UpperId, RiotOrderObservationKind.Active, "ORDER-M", 3,
+            "DIFFERENT-VEHICLE", mismatchIntent.MapId, mismatchIntent.DestinationStationId));
+
+        MovementDispatchResult mismatch = await new MovementDispatchService(mismatchStore, wrongVehicle)
+            .ReconcileOrCreateAsync(mismatchIntent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.ResultUnknown, mismatch.Outcome);
+        Assert.Null((await mismatchContext.OrderIntents.SingleAsync(
+            TestContext.Current.CancellationToken)).OrderId);
+    }
+
     private static async Task<ControlServerDbContext> CreateContextAsync(SqliteConnection connection)
     {
         DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
@@ -230,7 +322,9 @@ public sealed class ApplicationOrchestrationTests
             reconcileCount++;
             return Task.FromResult(reconcileCount == 1
                 ? new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null)
-                : new RiotOrderObservation(upperId, RiotOrderObservationKind.Active, "ORDER-001"));
+                : new RiotOrderObservation(
+                    upperId, RiotOrderObservationKind.Active, "ORDER-001", 3,
+                    "AGV-8005-01", 25, 12));
         }
 
         public async Task<RiotOrderObservation> CreateAsync(
@@ -297,7 +391,9 @@ public sealed class ApplicationOrchestrationTests
             ReconcileCount++;
             return Task.FromResult(ReconcileCount == 1
                 ? new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null)
-                : new RiotOrderObservation(upperId, RiotOrderObservationKind.Active, "ORDER-001"));
+                : new RiotOrderObservation(
+                    upperId, RiotOrderObservationKind.Active, "ORDER-001", 3,
+                    "AGV-8005-01", 29, 12));
         }
 
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken)
@@ -308,5 +404,55 @@ public sealed class ApplicationOrchestrationTests
             return Task.FromResult(new RiotOrderObservation(
                 intent.UpperId, RiotOrderObservationKind.Active, "UNTRUSTED-MUTATION-ORDER"));
         }
+    }
+
+    private sealed class UnknownCreateGateway(OrderIntent intent) : IRiotMovementGateway
+    {
+        private int reconcileCount;
+        public int CreateCount { get; private set; }
+
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
+            string upperId,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            reconcileCount++;
+            Assert.Equal(intent.UpperId, upperId);
+            return Task.FromResult(new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null));
+        }
+
+        public Task<RiotOrderObservation> CreateAsync(OrderIntent created, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            CreateCount++;
+            Assert.Equal(intent, created);
+            return Task.FromResult(new RiotOrderObservation(created.UpperId, RiotOrderObservationKind.Unknown, null));
+        }
+    }
+
+    private sealed class StaticRiotGateway(RiotOrderObservation observation) : IRiotMovementGateway
+    {
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
+            string upperId,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Assert.Equal(observation.UpperId, upperId);
+            return Task.FromResult(observation);
+        }
+
+        public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Create must not be called for this branch.");
+    }
+
+    private sealed class ThrowingRiotGateway : IRiotMovementGateway
+    {
+        public Task<RiotOrderObservation> ReconcileByUpperIdAsync(
+            string upperId,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Persisted terminal state must not query RIoT again.");
+
+        public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Persisted terminal state must not create again.");
     }
 }

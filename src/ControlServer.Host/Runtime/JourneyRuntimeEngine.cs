@@ -267,6 +267,11 @@ public sealed class JourneyRuntimeEngine(
         switch (runtime.Stage)
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
+                if (!await EnsureMovementConfirmedAsync(
+                        runtime, runtime.PickupUpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
                 if (!await IsTrustedArrivalAsync(runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false))
                 {
                     return;
@@ -343,6 +348,11 @@ public sealed class JourneyRuntimeEngine(
                     : dispatch.Outcome.ToString();
                 break;
             case JourneyRuntimeStage.AwaitingGateArrival:
+                if (!await EnsureMovementConfirmedAsync(
+                        runtime, runtime.GateUpperId, "GATE", cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
                 if (!await IsTrustedArrivalAsync(runtime, "TO_GATE", session, cancellationToken).ConfigureAwait(false))
                 {
                     return;
@@ -455,6 +465,34 @@ public sealed class JourneyRuntimeEngine(
                onboard is not null && onboard.SessionGeneration == session.SessionGeneration &&
                onboard.VehicleStopped && onboard.AllTargetSlotsLocked && onboard.AllUnlockOutputsReset &&
                !onboard.UnknownPresent;
+    }
+
+    private async Task<bool> EnsureMovementConfirmedAsync(
+        JourneyRuntimeRow runtime,
+        string upperId,
+        string legName,
+        CancellationToken cancellationToken)
+    {
+        OrderIntentRow intent = await dbContext.OrderIntents.SingleAsync(
+            row => row.UpperId == upperId,
+            cancellationToken).ConfigureAwait(false);
+        if (intent.Status == "CONFIRMED" && intent.OrderId is not null)
+        {
+            return true;
+        }
+        MovementDispatchResult result = await movementDispatch.ReconcileOrCreateAsync(
+            upperId, cancellationToken).ConfigureAwait(false);
+        if (result.Outcome == MovementDispatchOutcome.Confirmed)
+        {
+            runtime.BlockReasonCode = null;
+            runtime.UpdatedAt = timeProvider.GetUtcNow();
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        runtime.BlockReasonCode = $"{legName}_{result.Outcome}";
+        runtime.UpdatedAt = timeProvider.GetUtcNow();
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return false;
     }
 
     private async Task PublishPickupStateAsync(
