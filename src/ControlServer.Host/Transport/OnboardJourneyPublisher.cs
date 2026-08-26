@@ -12,6 +12,7 @@ public sealed class OnboardJourneyPublisher(
     TimeProvider timeProvider)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly string[] SublotEntryMethods = ["SCANNER", "KEYBOARD"];
 
     public Task PublishVehicleBusinessStateAsync(
         string messageId,
@@ -39,6 +40,128 @@ public sealed class OnboardJourneyPublisher(
                 projection.ObservedAt
             },
             cancellationToken);
+
+    public Task PublishSublotEntryRequestAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SublotEntryRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateUuid(request.DemandId, nameof(request.DemandId));
+        ValidateUuid(request.OperationSessionId, nameof(request.OperationSessionId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.StationId);
+        ArgumentOutOfRangeException.ThrowIfNegative(request.WorklistRevision);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ExpectedSublot);
+
+        return PublishEnvelopeAsync(
+            "SublotEntryRequested",
+            messageId,
+            correlationId: null,
+            agvId,
+            sessionGeneration,
+            new
+            {
+                request.DemandId,
+                request.OperationSessionId,
+                request.StationId,
+                request.WorklistRevision,
+                request.ExpectedSublot,
+                entryMethods = SublotEntryMethods,
+                expiresOnRevisionChange = true
+            },
+            cancellationToken);
+    }
+
+    public Task PublishSlotOperationCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SlotOperationCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.DemandId, nameof(command.DemandId));
+        ValidateUuid(command.OperationSessionId, nameof(command.OperationSessionId));
+        ValidateUuid(command.SlotOperationAttemptId, nameof(command.SlotOperationAttemptId));
+        ValidateSha256(command.CommandContentSha256, nameof(command.CommandContentSha256));
+        ValidateSlots(command.Slots);
+
+        string operationType;
+        string expectedFinalPhysicalState;
+        string? correlationId;
+        switch (command.OperationType)
+        {
+            case SlotOperationType.Load:
+                ValidateUuid(command.CorrelationId, nameof(command.CorrelationId));
+                operationType = "LOAD";
+                expectedFinalPhysicalState = "OCCUPIED";
+                correlationId = command.CorrelationId;
+                break;
+            case SlotOperationType.Unload:
+                if (command.CorrelationId is not null)
+                {
+                    throw new InvalidDataException("UNLOAD SlotOperationCommand must not have a correlationId.");
+                }
+                operationType = "UNLOAD";
+                expectedFinalPhysicalState = "EMPTY";
+                correlationId = null;
+                break;
+            default:
+                throw new InvalidDataException("Slot operation type is not supported.");
+        }
+
+        return PublishEnvelopeAsync(
+            "SlotOperationCommand",
+            messageId,
+            correlationId,
+            agvId,
+            sessionGeneration,
+            new
+            {
+                command.DemandId,
+                command.OperationSessionId,
+                command.SlotOperationAttemptId,
+                operationType,
+                command.Slots,
+                expectedBasketCount = command.Slots.Count,
+                expectedFinalPhysicalState,
+                command.CommandContentSha256
+            },
+            cancellationToken);
+    }
+
+    public Task PublishPreDepartureSafetyCheckAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        PreDepartureSafetyCheckCommand command,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        ValidateUuid(command.PreDepartureSafetyCheckId, nameof(command.PreDepartureSafetyCheckId));
+        ValidateUuid(command.DemandId, nameof(command.DemandId));
+        ValidateUuid(command.MovementLegId, nameof(command.MovementLegId));
+        ArgumentOutOfRangeException.ThrowIfNegative(command.ExpectedSafetyStateVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(command.TargetStationId);
+
+        return PublishEnvelopeAsync(
+            "PreDepartureSafetyCheck",
+            messageId,
+            correlationId: null,
+            agvId,
+            sessionGeneration,
+            new
+            {
+                command.PreDepartureSafetyCheckId,
+                command.DemandId,
+                command.MovementLegId,
+                command.ExpectedSafetyStateVersion,
+                command.TargetStationId
+            },
+            cancellationToken);
+    }
 
     public Task PublishCurrentStopWorklistAsync(
         string messageId,
@@ -101,14 +224,28 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         object payload,
+        CancellationToken cancellationToken) =>
+        await PublishEnvelopeAsync(
+            messageType,
+            messageId,
+            correlationId: null,
+            agvId,
+            sessionGeneration,
+            payload,
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task PublishEnvelopeAsync(
+        string messageType,
+        string messageId,
+        string? correlationId,
+        string agvId,
+        long sessionGeneration,
+        object payload,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
-        if (!Guid.TryParseExact(messageId, "D", out _))
-        {
-            throw new InvalidDataException("Outbound messageId must be a UUID.");
-        }
+        ValidateUuid(messageId, nameof(messageId));
         ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
 
         ProtocolOutboxRow? existing = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)
@@ -122,7 +259,7 @@ public sealed class OnboardJourneyPublisher(
             protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
             messageType,
             messageId,
-            correlationId = (string?)null,
+            correlationId,
             agvId,
             sessionGeneration,
             sentAt,
@@ -141,5 +278,35 @@ public sealed class OnboardJourneyPublisher(
         await peer.SendAsync(
             Encoding.UTF8.GetBytes(stored.PayloadJson + "\n"),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void ValidateUuid(string? value, string parameterName)
+    {
+        if (!Guid.TryParseExact(value, "D", out _))
+        {
+            throw new InvalidDataException($"{parameterName} must be a UUID.");
+        }
+    }
+
+    private static void ValidateSha256(string value, string parameterName)
+    {
+        if (string.IsNullOrEmpty(value) ||
+            value.Length != 64 ||
+            value.Any(character => character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f')))
+        {
+            throw new InvalidDataException($"{parameterName} must be a lowercase SHA-256 value.");
+        }
+    }
+
+    private static void ValidateSlots(IReadOnlyList<int> slots)
+    {
+        ArgumentNullException.ThrowIfNull(slots);
+        if (slots.Count is < 1 or > 8 ||
+            slots.Any(slot => slot is < 1 or > 8) ||
+            slots.Distinct().Count() != slots.Count ||
+            !slots.SequenceEqual(slots.Order()))
+        {
+            throw new InvalidDataException("Slots must contain one to eight unique values in ascending order.");
+        }
     }
 }

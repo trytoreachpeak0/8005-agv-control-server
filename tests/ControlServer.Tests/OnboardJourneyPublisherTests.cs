@@ -219,6 +219,230 @@ public sealed class OnboardJourneyPublisherTests
         Assert.Null(row.AcknowledgedAt);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task CoreJourneyCommandsEmitFormalSchemaPayloadsWithExactCorrelationRules()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(
+            new WireToGateStore(context),
+            peer,
+            new AdvancingTimeProvider());
+        const string demandId = "00000000-0000-4000-8000-000000000401";
+        const string operationSessionId = "00000000-0000-4000-8000-000000000402";
+        const string sublotMessageId = "00000000-0000-4000-8000-000000000403";
+        const string slotMessageId = "00000000-0000-4000-8000-000000000404";
+        const string safetyMessageId = "00000000-0000-4000-8000-000000000405";
+        const string unloadMessageId = "00000000-0000-4000-8000-000000000409";
+
+        await publisher.PublishSublotEntryRequestAsync(
+            sublotMessageId,
+            "AGV-001",
+            11,
+            new SublotEntryRequest(demandId, operationSessionId, "PICKUP-01", 5, "SUBLOT-001"),
+            TestContext.Current.CancellationToken);
+        await publisher.PublishSlotOperationCommandAsync(
+            slotMessageId,
+            "AGV-001",
+            11,
+            new SlotOperationCommand(
+                sublotMessageId,
+                demandId,
+                operationSessionId,
+                "00000000-0000-4000-8000-000000000406",
+                SlotOperationType.Load,
+                [1, 3],
+                new string('a', 64)),
+            TestContext.Current.CancellationToken);
+        await publisher.PublishPreDepartureSafetyCheckAsync(
+            safetyMessageId,
+            "AGV-001",
+            11,
+            new PreDepartureSafetyCheckCommand(
+                "00000000-0000-4000-8000-000000000407",
+                demandId,
+                "00000000-0000-4000-8000-000000000408",
+                17,
+                "GATE-01"),
+            TestContext.Current.CancellationToken);
+        await publisher.PublishSlotOperationCommandAsync(
+            unloadMessageId,
+            "AGV-001",
+            11,
+            new SlotOperationCommand(
+                null,
+                demandId,
+                operationSessionId,
+                "00000000-0000-4000-8000-000000000410",
+                SlotOperationType.Unload,
+                [2, 4],
+                new string('c', 64)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal([1, 2, 3, 4], peer.OutboxCountsAtSend);
+        Assert.Equal(4, peer.Lines.Count);
+        using JsonDocument sublotEnvelope = JsonDocument.Parse(peer.Lines[0]);
+        using JsonDocument slotEnvelope = JsonDocument.Parse(peer.Lines[1]);
+        using JsonDocument safetyEnvelope = JsonDocument.Parse(peer.Lines[2]);
+        using JsonDocument unloadEnvelope = JsonDocument.Parse(peer.Lines[3]);
+        Assert.Null(sublotEnvelope.RootElement.GetProperty("correlationId").GetString());
+        Assert.Equal(
+            ["SCANNER", "KEYBOARD"],
+            sublotEnvelope.RootElement.GetProperty("payload").GetProperty("entryMethods")
+                .EnumerateArray().Select(item => item.GetString()!).ToArray());
+        Assert.True(sublotEnvelope.RootElement.GetProperty("payload")
+            .GetProperty("expiresOnRevisionChange").GetBoolean());
+        Assert.Equal(sublotMessageId, slotEnvelope.RootElement.GetProperty("correlationId").GetString());
+        Assert.Equal("LOAD", slotEnvelope.RootElement.GetProperty("payload").GetProperty("operationType").GetString());
+        Assert.Equal(2, slotEnvelope.RootElement.GetProperty("payload").GetProperty("expectedBasketCount").GetInt32());
+        Assert.Equal("OCCUPIED", slotEnvelope.RootElement.GetProperty("payload")
+            .GetProperty("expectedFinalPhysicalState").GetString());
+        Assert.Equal(17, safetyEnvelope.RootElement.GetProperty("payload")
+            .GetProperty("expectedSafetyStateVersion").GetInt64());
+        Assert.Null(unloadEnvelope.RootElement.GetProperty("correlationId").GetString());
+        Assert.Equal("UNLOAD", unloadEnvelope.RootElement.GetProperty("payload")
+            .GetProperty("operationType").GetString());
+        Assert.Equal("EMPTY", unloadEnvelope.RootElement.GetProperty("payload")
+            .GetProperty("expectedFinalPhysicalState").GetString());
+        Assert.Equal(
+            ["SublotEntryRequested", "SlotOperationCommand", "PreDepartureSafetyCheck", "SlotOperationCommand"],
+            new[] { sublotEnvelope, slotEnvelope, safetyEnvelope, unloadEnvelope }
+                .Select(envelope => envelope.RootElement.GetProperty("messageType").GetString()!)
+                .ToArray());
+        Assert.All(
+            new[] { sublotEnvelope, slotEnvelope, safetyEnvelope, unloadEnvelope },
+            envelope =>
+            {
+                Assert.Equal(ProtocolCandidateIdentity.ReleaseVersion,
+                    envelope.RootElement.GetProperty("protocolReleaseVersion").GetString());
+                Assert.Equal(ProtocolCandidateIdentity.ManifestSha256,
+                    envelope.RootElement.GetProperty("protocolReleaseManifestSha256").GetString());
+                Assert.Equal(11, envelope.RootElement.GetProperty("sessionGeneration").GetInt64());
+            });
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task DurableCommandIsPersistedBeforeByteExactReplayAndStopsAfterMatchingAck()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        AdvancingTimeProvider clock = new();
+        OnboardJourneyPublisher publisher = new(store, peer, clock);
+        const string messageId = "00000000-0000-4000-8000-000000000411";
+        SublotEntryRequest request = new(
+            "00000000-0000-4000-8000-000000000412",
+            "00000000-0000-4000-8000-000000000413",
+            "PICKUP-01",
+            8,
+            "SUBLOT-008");
+
+        await publisher.PublishSublotEntryRequestAsync(
+            messageId, "AGV-001", 12, request, TestContext.Current.CancellationToken);
+        await publisher.PublishSublotEntryRequestAsync(
+            messageId, "AGV-001", 12, request, TestContext.Current.CancellationToken);
+
+        ProtocolOutboxRow row = await context.ProtocolOutbox.SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal([1, 1], peer.OutboxCountsAtSend);
+        Assert.Equal(2, peer.Lines.Count);
+        Assert.Equal(row.PayloadJson + "\n", peer.Lines[0]);
+        Assert.Equal(peer.Lines[0], peer.Lines[1]);
+        await Assert.ThrowsAsync<ProtocolContentConflictException>(() =>
+            publisher.PublishSublotEntryRequestAsync(
+                messageId,
+                "AGV-001",
+                12,
+                request with { ExpectedSublot = "SUBLOT-DIFFERENT" },
+                TestContext.Current.CancellationToken));
+
+        OnboardMessageProcessor processor = new(store, clock, new ConfigurationBuilder().Build());
+        OnboardConnectionState state = new() { AgvId = "AGV-001", SessionGeneration = 12 };
+        string response = await processor.ProcessAsync(
+            Envelope(
+                "DurableAck",
+                "00000000-0000-4000-8000-000000000414",
+                messageId,
+                12,
+                new
+                {
+                    acceptedMessageId = messageId,
+                    acceptedMessageType = "SublotEntryRequested",
+                    acceptedContentSha256 = Sha256(row.PayloadJson),
+                    durablyAcceptedAt = "2026-08-26T08:00:00Z"
+                }),
+            state,
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(response);
+        Assert.NotNull(row.AcknowledgedAt);
+        await publisher.PublishSublotEntryRequestAsync(
+            messageId, "AGV-001", 12, request, TestContext.Current.CancellationToken);
+        Assert.Equal(2, peer.Lines.Count);
+    }
+
+    [Fact]
+    public async Task SlotOperationRejectsInvalidCorrelationAndSlotOrderBeforePersistence()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        OnboardJourneyPublisher publisher = new(
+            new WireToGateStore(context),
+            new RecordingPeer(context),
+            new AdvancingTimeProvider());
+        SlotOperationCommand loadWithoutCorrelation = new(
+            null,
+            "00000000-0000-4000-8000-000000000421",
+            "00000000-0000-4000-8000-000000000422",
+            "00000000-0000-4000-8000-000000000423",
+            SlotOperationType.Load,
+            [1, 2],
+            new string('b', 64));
+        SlotOperationCommand unsortedUnload = loadWithoutCorrelation with
+        {
+            OperationType = SlotOperationType.Unload,
+            Slots = [2, 1]
+        };
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            publisher.PublishSlotOperationCommandAsync(
+                "00000000-0000-4000-8000-000000000424",
+                "AGV-001",
+                1,
+                loadWithoutCorrelation,
+                TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            publisher.PublishSlotOperationCommandAsync(
+                "00000000-0000-4000-8000-000000000425",
+                "AGV-001",
+                1,
+                unsortedUnload,
+                TestContext.Current.CancellationToken));
+
+        Assert.Empty(context.ProtocolOutbox);
+    }
+
     private static string Envelope(
         string messageType,
         string messageId,

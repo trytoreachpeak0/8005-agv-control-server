@@ -93,6 +93,35 @@ public sealed record UpcomingStopPlanProjection(
     string? DemandId,
     IReadOnlyList<UpcomingMovementLeg> Legs);
 
+public sealed record SublotEntryRequest(
+    string DemandId,
+    string OperationSessionId,
+    string StationId,
+    long WorklistRevision,
+    string ExpectedSublot);
+
+public enum SlotOperationType
+{
+    Load,
+    Unload
+}
+
+public sealed record SlotOperationCommand(
+    string? CorrelationId,
+    string DemandId,
+    string OperationSessionId,
+    string SlotOperationAttemptId,
+    SlotOperationType OperationType,
+    IReadOnlyList<int> Slots,
+    string CommandContentSha256);
+
+public sealed record PreDepartureSafetyCheckCommand(
+    string PreDepartureSafetyCheckId,
+    string DemandId,
+    string MovementLegId,
+    long ExpectedSafetyStateVersion,
+    string TargetStationId);
+
 public enum DemandExecutionStatus
 {
     Accepted,
