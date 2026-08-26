@@ -3,6 +3,7 @@ using System;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ControlServer.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ControlServerDbContext))]
-    partial class ControlServerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826071119_DurableOnboardBusinessInbox")]
+    partial class DurableOnboardBusinessInbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.30");

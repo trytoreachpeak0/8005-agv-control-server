@@ -41,6 +41,9 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<ConnectionRecoveryRow>().Property(row => row.Status).HasConversion<string>();
         modelBuilder.Entity<VehicleRecoveryGenerationRow>().HasKey(row => row.AgvId);
         modelBuilder.Entity<OperationResultRow>().HasKey(row => row.ResultId);
+        modelBuilder.Entity<OperationResultRow>()
+            .HasIndex(row => new { row.SlotOperationAttemptId, row.ForcedRecoveryGeneration })
+            .IsUnique();
         modelBuilder.Entity<RecoveryDecisionRow>().HasKey(row => row.RecoveryActionId);
     }
 }
@@ -98,6 +101,8 @@ public sealed class SessionRecoveryRow
 public sealed class ProtocolInboxRow
 {
     public required string MessageId { get; set; }
+    public required string MessageType { get; set; }
+    public required string RequestJson { get; set; }
     public required string ContentHash { get; set; }
     public required string FirstResponseJson { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }

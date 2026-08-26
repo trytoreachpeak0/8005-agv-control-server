@@ -12,6 +12,8 @@ namespace ControlServer.Tests;
 
 public sealed class OnboardMessageProcessorTests
 {
+    private static readonly int[] FirstTwoSlots = [1, 2];
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
@@ -133,6 +135,12 @@ public sealed class OnboardMessageProcessorTests
             string replay = await processor.ProcessAsync(
                 hello, new OnboardConnectionState(), TestContext.Current.CancellationToken);
             Assert.Equal(accepted, replay);
+            ProtocolInboxRow storedHello = await context.ProtocolInbox.SingleAsync(
+                row => row.MessageId == "00000000-0000-4000-8000-000000000001",
+                TestContext.Current.CancellationToken);
+            Assert.Equal("SessionHello", storedHello.MessageType);
+            Assert.DoesNotContain(credential, storedHello.RequestJson, StringComparison.Ordinal);
+            Assert.Contains("[REDACTED]", storedHello.RequestJson, StringComparison.Ordinal);
 
             long generation = state.SessionGeneration!.Value;
             await processor.ProcessAsync(
@@ -165,6 +173,279 @@ public sealed class OnboardMessageProcessorTests
             Environment.SetEnvironmentVariable(credentialVariable, null);
         }
     }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task OnboardBusinessMessagesAreDurablyAcknowledgedAndOperationResultIsUniquePerAttempt()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_BUSINESS_MESSAGE_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            OnboardMessageProcessor processor = new(
+                new WireToGateStore(context), new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+            await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
+
+            const string attemptId = "00000000-0000-4000-8000-000000000120";
+            (string MessageType, string MessageId, object Payload)[] messages =
+            [
+                ("SublotSubmitted", "00000000-0000-4000-8000-000000000101", new
+                {
+                    demandId = "00000000-0000-4000-8000-000000000111",
+                    operationSessionId = "00000000-0000-4000-8000-000000000112",
+                    stationId = "PICKUP-01",
+                    worklistRevision = 2,
+                    sublot = "SUBLOT-001",
+                    entryMethod = "SCANNER",
+                    @operator = new
+                    {
+                        operatorId = "OP-001",
+                        verificationMethod = "BADGE",
+                        verifiedAt = "2026-08-25T09:00:00Z"
+                    }
+                }),
+                ("OperationProgress", "00000000-0000-4000-8000-000000000102", new
+                {
+                    slotOperationAttemptId = attemptId,
+                    phase = "VERIFYING",
+                    activeUnlockSlots = Array.Empty<int>(),
+                    completedSlots = new[] { 1, 2 },
+                    observedAt = "2026-08-25T09:00:00Z"
+                }),
+                ("PreDepartureSafetyCheckResult", "00000000-0000-4000-8000-000000000103", new
+                {
+                    preDepartureSafetyCheckId = "00000000-0000-4000-8000-000000000113",
+                    outcome = "SAFE",
+                    observedAt = "2026-08-25T09:00:00Z",
+                    safetyStateVersion = 1,
+                    validUntil = "2026-08-25T09:00:02Z",
+                    safety = Safety(departureSafe: true)
+                }),
+                ("SlotOperationCommandRejected", "00000000-0000-4000-8000-000000000104", new
+                {
+                    slotOperationAttemptId = attemptId,
+                    problem = new
+                    {
+                        reasonCode = "ACTION_NOT_ALLOWED_IN_STATE",
+                        fieldPath = (string?)null,
+                        displayMessage = (string?)null
+                    },
+                    observedCapabilityVersion = 1,
+                    conflictingContentSha256 = (string?)null
+                }),
+                ("OperationResult", attemptId, new
+                {
+                    demandId = "00000000-0000-4000-8000-000000000111",
+                    slotOperationAttemptId = attemptId,
+                    operationType = "LOAD",
+                    overallOutcome = "COMPLETED",
+                    slotResults = new[]
+                    {
+                        new
+                        {
+                            slotNo = 1,
+                            outcome = "SUCCEEDED",
+                            finalPhysicalState = "OCCUPIED",
+                            lockState = "LOCKED",
+                            unlockOutputState = "RESET",
+                            reasonCodes = Array.Empty<string>()
+                        }
+                    },
+                    observedAt = "2026-08-25T09:00:00Z",
+                    journalCheckpoint = "RESULT_RECORDED",
+                    resultContentSha256 = new string('a', 64)
+                })
+            ];
+
+            foreach ((string messageType, string messageId, object payload) in messages)
+            {
+                string line = Envelope(messageType, messageId, state.SessionGeneration, payload);
+                string response = await processor.ProcessAsync(
+                    line, state, TestContext.Current.CancellationToken);
+                using JsonDocument acknowledgement = JsonDocument.Parse(response);
+                JsonElement ackPayload = acknowledgement.RootElement.GetProperty("payload");
+                Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());
+                Assert.Equal(messageId, ackPayload.GetProperty("acceptedMessageId").GetString());
+                Assert.Equal(messageType, ackPayload.GetProperty("acceptedMessageType").GetString());
+                Assert.Equal(WireContentHash(line), ackPayload.GetProperty("acceptedContentSha256").GetString());
+
+                ProtocolInboxRow inbox = await context.ProtocolInbox.SingleAsync(
+                    row => row.MessageId == messageId,
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(messageType, inbox.MessageType);
+                Assert.Equal(line, inbox.RequestJson);
+            }
+
+            string operationResult = Envelope(
+                messages[^1].MessageType,
+                messages[^1].MessageId,
+                state.SessionGeneration,
+                messages[^1].Payload);
+            string replay = await processor.ProcessAsync(
+                operationResult, state, TestContext.Current.CancellationToken);
+            Assert.Equal(
+                (await context.ProtocolInbox.SingleAsync(
+                    row => row.MessageId == attemptId,
+                    TestContext.Current.CancellationToken)).FirstResponseJson,
+                replay);
+            Assert.Single(await context.OperationResults.ToListAsync(TestContext.Current.CancellationToken));
+
+            string conflictingResult = Envelope(
+                "OperationResult",
+                "00000000-0000-4000-8000-000000000121",
+                state.SessionGeneration,
+                messages[^1].Payload);
+            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
+                conflictingResult, state, TestContext.Current.CancellationToken));
+            Assert.Single(await context.OperationResults.ToListAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    public async Task UnsafeSafetyStateChangeIsAcknowledgedThenFailClosesSessionReadiness()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_SAFETY_CHANGE_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            OnboardMessageProcessor processor = new(
+                new WireToGateStore(context), new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+            await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
+            string line = Envelope(
+                "SafetyStateChanged",
+                "00000000-0000-4000-8000-000000000201",
+                state.SessionGeneration,
+                new
+                {
+                    safetyStateVersion = 2,
+                    observedAt = "2026-08-25T09:00:00Z",
+                    safety = Safety(departureSafe: false),
+                    affectedSlots = FirstTwoSlots
+                });
+
+            string response = await processor.ProcessAsync(
+                line, state, TestContext.Current.CancellationToken);
+
+            string[] responseLines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(2, responseLines.Length);
+            using JsonDocument acknowledgement = JsonDocument.Parse(responseLines[0]);
+            Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());
+            Assert.Equal(
+                WireContentHash(line),
+                acknowledgement.RootElement.GetProperty("payload").GetProperty("acceptedContentSha256").GetString());
+            using JsonDocument readiness = JsonDocument.Parse(responseLines[1]);
+            Assert.Equal("SessionReadiness", readiness.RootElement.GetProperty("messageType").GetString());
+            Assert.Equal(
+                "RECOVERY_REQUIRED",
+                readiness.RootElement.GetProperty("payload").GetProperty("readiness").GetString());
+            Assert.Equal(
+                "DEPARTURE_SAFETY_NOT_READY",
+                Assert.Single(readiness.RootElement.GetProperty("payload").GetProperty("reasonCodes")
+                    .EnumerateArray()).GetString());
+
+            SessionRecoveryRow stored = await context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(2, stored.SafetyRevision);
+            Assert.False(stored.DepartureSafe);
+            Assert.Equal(SessionReadiness.RecoveryRequired, stored.Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    private static async Task ReachReadyAsync(
+        OnboardMessageProcessor processor,
+        OnboardConnectionState state,
+        string credential,
+        CancellationToken cancellationToken)
+    {
+        await processor.ProcessAsync(
+            Envelope(
+                "SessionHello",
+                Guid.NewGuid().ToString("D"),
+                null,
+                new
+                {
+                    protocolReleaseIdentity = ReleaseIdentity(),
+                    credentialProof = credential
+                }),
+            state,
+            cancellationToken);
+        long generation = state.SessionGeneration!.Value;
+        await processor.ProcessAsync(
+            Envelope("CapabilitySnapshot", Guid.NewGuid().ToString("D"), generation,
+                new { capabilityVersion = 1 }),
+            state,
+            cancellationToken);
+        await processor.ProcessAsync(
+            Envelope("SafetyStateSnapshot", Guid.NewGuid().ToString("D"), generation,
+                new { safetyStateVersion = 1, safety = Safety(departureSafe: true) }),
+            state,
+            cancellationToken);
+        await processor.ProcessAsync(
+            Envelope("RecoveryStateReport", Guid.NewGuid().ToString("D"), generation,
+                new
+                {
+                    reportId = Guid.NewGuid().ToString("D"),
+                    unsettledSlotOperationAttemptId = (string?)null,
+                    forcedRecoveryGeneration = 0,
+                    pendingResults = Array.Empty<object>()
+                }),
+            state,
+            cancellationToken);
+    }
+
+    private static object Safety(bool departureSafe) => new
+    {
+        departureSafe,
+        vehicleStopped = departureSafe,
+        allTargetSlotsLocked = true,
+        allUnlockOutputsReset = true,
+        unknownPresent = !departureSafe,
+        reasonCodes = departureSafe ? Array.Empty<string>() : new[] { "VEHICLE_MOTION_UNKNOWN" }
+    };
+
+    private static string WireContentHash(string line) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(line))).ToLowerInvariant();
 
     private static string Envelope(string messageType, string messageId, long? generation, object payload) =>
         JsonSerializer.Serialize(new

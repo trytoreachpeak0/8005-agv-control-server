@@ -135,6 +135,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         return new SessionReadinessDecision(row.Readiness, row.ReasonCode);
     }
 
+    public async Task<long> GetForcedRecoveryGenerationAsync(
+        string agvId, long sessionGeneration, CancellationToken cancellationToken)
+    {
+        SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
+            .ConfigureAwait(false);
+        return row.ForcedRecoveryGeneration;
+    }
+
     public async Task AcceptWithOrderIntentAsync(
         AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, CancellationToken cancellationToken)
     {
@@ -414,6 +422,22 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         string messageId, string contentHash, Func<Task<string>> responseFactory,
         DateTimeOffset receivedAt, CancellationToken cancellationToken)
     {
+        return await CaptureFirstResponseAsync(
+                messageId,
+                "UNKNOWN",
+                string.Empty,
+                contentHash,
+                responseFactory,
+                receivedAt,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<string> CaptureFirstResponseAsync(
+        string messageId, string messageType, string requestJson, string contentHash,
+        Func<Task<string>> responseFactory, DateTimeOffset receivedAt,
+        CancellationToken cancellationToken)
+    {
         ProtocolInboxRow? existing = await dbContext.ProtocolInbox
             .SingleOrDefaultAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
@@ -430,6 +454,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         dbContext.ProtocolInbox.Add(new ProtocolInboxRow
         {
             MessageId = messageId,
+            MessageType = messageType,
+            RequestJson = requestJson,
             ContentHash = contentHash,
             FirstResponseJson = response,
             ReceivedAt = receivedAt
@@ -463,12 +489,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         string contentHash, DateTimeOffset receivedAt, CancellationToken cancellationToken)
     {
         OperationResultRow? replay = await dbContext.OperationResults
-            .SingleOrDefaultAsync(row => row.ResultId == resultId, cancellationToken).ConfigureAwait(false);
+            .SingleOrDefaultAsync(
+                row => row.ResultId == resultId ||
+                       row.SlotOperationAttemptId == slotOperationAttemptId &&
+                       row.ForcedRecoveryGeneration == forcedRecoveryGeneration,
+                cancellationToken).ConfigureAwait(false);
         if (replay is not null)
         {
-            if (replay.ContentHash != contentHash)
+            if (replay.ResultId != resultId || replay.SlotOperationAttemptId != slotOperationAttemptId ||
+                replay.ForcedRecoveryGeneration != forcedRecoveryGeneration || replay.ContentHash != contentHash)
             {
-                throw new ProtocolContentConflictException("Operation result was replayed with different content.");
+                throw new ProtocolContentConflictException(
+                    "Operation result identity was replayed with different message or content.");
             }
             return OperationResultDisposition.Replay;
         }

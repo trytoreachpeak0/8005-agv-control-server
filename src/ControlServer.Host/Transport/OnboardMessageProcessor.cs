@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 
@@ -34,6 +35,8 @@ public sealed class OnboardMessageProcessor(
                 ValidateSessionHello(root);
                 response = await store.CaptureFirstResponseAsync(
                     messageId,
+                    messageType,
+                    RedactSessionCredential(line),
                     contentHash,
                     async () =>
                     {
@@ -91,9 +94,12 @@ public sealed class OnboardMessageProcessor(
             return response;
         }
 
+        ValidateEnvelopeIdentity(root);
         RequireCurrentSession(root, state, agvId);
         return await store.CaptureFirstResponseAsync(
             messageId,
+            messageType,
+            line,
             contentHash,
             () => ProcessCurrentSessionMessageAsync(
                 root, state, messageType, messageId, contentHash, cancellationToken),
@@ -176,19 +182,94 @@ public sealed class OnboardMessageProcessor(
                         });
                     return $"{ack}\n{readiness}";
                 }
+            case "OperationProgress":
+            case "PreDepartureSafetyCheckResult":
+            case "SlotOperationCommandRejected":
+            case "SublotSubmitted":
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case "OperationResult":
+                {
+                    string attemptId = RequiredString(payload, "slotOperationAttemptId");
+                    long forcedGeneration = await store.GetForcedRecoveryGenerationAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    await store.RecordOperationResultAsync(
+                        messageId,
+                        attemptId,
+                        agvId,
+                        forcedGeneration,
+                        contentHash,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return DurableAck(messageType, messageId, agvId, generation, contentHash);
+                }
+            case "SafetyStateChanged":
+                {
+                    long revision = payload.GetProperty("safetyStateVersion").GetInt64();
+                    bool departureSafe = payload.GetProperty("safety").GetProperty("departureSafe").GetBoolean();
+                    await store.ApplySafetySnapshotAsync(
+                        agvId, generation, revision, departureSafe, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+                    state.SafetyRevision = revision;
+                    SessionReadinessDecision decision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
+                    if (decision.Readiness == SessionReadiness.Ready)
+                    {
+                        return ack;
+                    }
+
+                    string readiness = SerializeReadiness(agvId, generation, state, decision);
+                    return $"{ack}\n{readiness}";
+                }
             default:
-                throw new InvalidDataException($"Message type '{messageType}' is not allowed in the recovery handshake.");
+                throw new InvalidDataException($"Message type '{messageType}' is not supported by ControlServer.");
         }
     }
 
+    private string DurableAck(
+        string acceptedMessageType,
+        string acceptedMessageId,
+        string agvId,
+        long generation,
+        string contentHash) =>
+        SerializeEnvelope(
+            "DurableAck",
+            acceptedMessageId,
+            agvId,
+            generation,
+            new
+            {
+                acceptedMessageId,
+                acceptedMessageType,
+                acceptedContentSha256 = contentHash,
+                durablyAcceptedAt = timeProvider.GetUtcNow()
+            });
+
+    private string SerializeReadiness(
+        string agvId,
+        long generation,
+        OnboardConnectionState state,
+        SessionReadinessDecision decision) =>
+        SerializeEnvelope(
+            "SessionReadiness",
+            correlationId: null,
+            agvId,
+            generation,
+            new
+            {
+                readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
+                decidedAt = timeProvider.GetUtcNow(),
+                reasonCodes = decision.Readiness == SessionReadiness.Ready
+                    ? Array.Empty<string>()
+                    : [decision.ReasonCode],
+                acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
+                acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
+                vehicleBusinessStateRevision = 1
+            });
+
     private void ValidateSessionHello(JsonElement root)
     {
-        if (root.GetProperty("protocolVersion").GetInt32() != ProtocolCandidateIdentity.ProtocolVersion ||
-            RequiredString(root, "profileId") != ProtocolCandidateIdentity.ProfileId ||
-            RequiredString(root, "protocolReleaseManifestSha256") != ProtocolCandidateIdentity.ManifestSha256)
-        {
-            throw new ProtocolIdentityMismatchException("Envelope protocol identity differs from this build.");
-        }
+        ValidateEnvelopeIdentity(root);
         JsonElement payload = root.GetProperty("payload");
         JsonElement identity = payload.GetProperty("protocolReleaseIdentity");
         if (RequiredString(identity, "commit") != ProtocolCandidateIdentity.RepositoryCommit ||
@@ -206,6 +287,17 @@ public sealed class OnboardMessageProcessor(
         if (string.IsNullOrEmpty(expectedCredential) || !FixedTimeEquals(expectedCredential, suppliedCredential))
         {
             throw new ProtocolIdentityMismatchException("Onboard credential proof was not accepted.");
+        }
+    }
+
+    private static void ValidateEnvelopeIdentity(JsonElement root)
+    {
+        if (root.GetProperty("protocolVersion").GetInt32() != ProtocolCandidateIdentity.ProtocolVersion ||
+            RequiredString(root, "profileId") != ProtocolCandidateIdentity.ProfileId ||
+            RequiredString(root, "protocolReleaseManifestSha256") != ProtocolCandidateIdentity.ManifestSha256 ||
+            RequiredString(root, "protocolReleaseVersion") != ProtocolCandidateIdentity.ReleaseVersion)
+        {
+            throw new ProtocolIdentityMismatchException("Envelope protocol identity differs from this build.");
         }
     }
 
@@ -283,6 +375,16 @@ public sealed class OnboardMessageProcessor(
         byte[] suppliedBytes = Encoding.UTF8.GetBytes(supplied);
         return expectedBytes.Length == suppliedBytes.Length &&
                CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes);
+    }
+
+    private static string RedactSessionCredential(string line)
+    {
+        JsonNode root = JsonNode.Parse(line)
+            ?? throw new InvalidDataException("SessionHello JSON cannot be empty.");
+        JsonObject payload = root["payload"]?.AsObject()
+            ?? throw new InvalidDataException("SessionHello payload is required.");
+        payload["credentialProof"] = "[REDACTED]";
+        return root.ToJsonString(SerializerOptions);
     }
 }
 
