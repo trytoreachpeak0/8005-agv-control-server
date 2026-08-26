@@ -1,0 +1,22 @@
+{
+  "loopbackOnly": true,
+  "tls": {
+    "probeEnabled": true,
+    "certificateSha256": "ebd9897da380e0e8371920bebf4fe61c78b563d0005888cc2ce8f4a2df711996",
+    "trustScope": "No certificate-store mutation; exact SHA-256 pin in the SslStream probe",
+    "realOnboardAckDropTransport": "PLAINTEXT_LOOPBACK",
+    "realOnboardAckDropTlsCombination": "INCONCLUSIVE_NO_SUPPORTED_TRUSTED_LOOPBACK_CERTIFICATE"
+  },
+  "ports": {
+    "controlTls": 58205,
+    "controlHealth": 58207,
+    "faultProxyPlaintext": 58215,
+    "simulatorModbus": 1502,
+    "simulatorHttp": 58006
+  },
+  "journeyRuntimeEnabled": false,
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "movementCommandSent": false,
+  "vehicleSafetyEligibilityFabricated": false
+}

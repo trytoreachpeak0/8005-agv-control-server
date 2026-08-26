@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "1.0.0",
+  "status": "GATES_PASS_WRAPPER_POSTPROCESS_INCOMPLETE",
+  "onboard": {
+    "remoteBranch": "OnboardHmi_MVP",
+    "testedCommit": "15c6387801fa2154fb69441eac460fea9d0999c5",
+    "productFixCommit": "0584322e86bdf6e1f94b58a70381b42d353ba5df",
+    "runnerBindingCommit": "4d8629c158a02101819d475c1a2a8610b333cb48",
+    "productFixIsAncestorOfTestedCommit": true,
+    "coreAutocrlf": false
+  },
+  "authorChain": [
+    {
+      "commit": "0584322e86bdf6e1f94b58a70381b42d353ba5df",
+      "parent": "a1e32dd8960b11b2792f252837029d0a6f1dda90",
+      "author": "Kun Wang",
+      "email": "867963893@qq.com",
+      "subject": "fix: rebind durable replay to current session generation"
+    },
+    {
+      "commit": "4d8629c158a02101819d475c1a2a8610b333cb48",
+      "parent": "0584322e86bdf6e1f94b58a70381b42d353ba5df",
+      "author": "Kun Wang",
+      "email": "867963893@qq.com",
+      "subject": "chore: bind staged recovery runner to replay fix"
+    },
+    {
+      "commit": "15c6387801fa2154fb69441eac460fea9d0999c5",
+      "parent": "4d8629c158a02101819d475c1a2a8610b333cb48",
+      "author": "Kun Wang",
+      "email": "867963893@qq.com",
+      "subject": "chore: bind staged G3 evidence to build commit"
+    }
+  ],
+  "protocol": {
+    "tag": "protocol-v0.1.1",
+    "commit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "manifestSha256": "a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f"
+  },
+  "testPlatform": {
+    "dotnetSdk": "10.0.302",
+    "platform": "VSTest",
+    "frameworks": [
+      "xUnit v2",
+      "xUnit v3"
+    ]
+  },
+  "gates": {
+    "protocolG1": {
+      "status": "PASS",
+      "exitCode": 0,
+      "schemaCount": 60,
+      "messageTypeCount": 54,
+      "validExampleCount": 54,
+      "invalidExampleCount": 1341,
+      "trajectoryCount": 20,
+      "integrationSliceCount": 8
+    },
+    "releaseBuild": {
+      "status": "PASS",
+      "exitCode": 0,
+      "warnings": 0,
+      "errors": 0
+    },
+    "unitTests": {
+      "status": "PASS",
+      "passed": 62,
+      "failed": 0,
+      "skipped": 0
+    },
+    "w2gG2": {
+      "status": "PASS",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0
+    },
+    "format": {
+      "status": "PASS",
+      "exitCode": 0
+    }
+  },
+  "evidenceWrapper": {
+    "status": "INCOMPLETE_POSTPROCESS_ONLY",
+    "reason": "The official script completed G1, build, test, and format, then called Trim() on the empty output of git branch --show-current because the exact commit was checked out detached. No gate command failed."
+  },
+  "artifacts": [
+    {
+      "path": "raw/protocol-v0.1.1/20260826T142604953Z-15c6387801fa/logs/dotnet-build-release.log",
+      "sha256": "b0342c19ee1f5be9df854b0335696089c719115b43892a015ccc14f700e6f3ef",
+      "length": 3019
+    },
+    {
+      "path": "raw/protocol-v0.1.1/20260826T142604953Z-15c6387801fa/logs/dotnet-format-verify.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "raw/protocol-v0.1.1/20260826T142604953Z-15c6387801fa/logs/dotnet-test-release.log",
+      "sha256": "dfa7948c6aefd937b8dffec76d7b00c5f4fa1988ee1dc80d2a1c982d06be6da5",
+      "length": 788
+    },
+    {
+      "path": "raw/protocol-v0.1.1/20260826T142604953Z-15c6387801fa/logs/protocol-g1.log",
+      "sha256": "eedde54a6a57846f7922dd4a243f32fde709d645b058223c6af16bd686d91765",
+      "length": 1205
+    }
+  ]
+}
