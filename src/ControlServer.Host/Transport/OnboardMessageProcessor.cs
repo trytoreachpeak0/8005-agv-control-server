@@ -24,7 +24,7 @@ public sealed class OnboardMessageProcessor(
         string messageType = RequiredString(root, "messageType");
         string messageId = RequiredString(root, "messageId");
         string agvId = RequiredString(root, "agvId");
-        string contentHash = CanonicalJson.Sha256(line);
+        string contentHash = WireContentHash.Sha256(line);
 
         if (messageType == "SessionHello")
         {
@@ -119,63 +119,63 @@ public sealed class OnboardMessageProcessor(
                     "HeartbeatAck", messageId, agvId, generation,
                     new { receivedHeartbeatMessageId = messageId, serverTime = timeProvider.GetUtcNow() });
             case "CapabilitySnapshot":
-            {
-                long revision = payload.GetProperty("capabilityVersion").GetInt64();
-                await store.ApplyCapabilitySnapshotAsync(
-                    agvId, generation, revision, contentHash, cancellationToken).ConfigureAwait(false);
-                state.CapabilityRevision = revision;
-                return SnapshotAck(messageId, agvId, generation, "CAPABILITY", revision, contentHash);
-            }
-            case "SafetyStateSnapshot":
-            {
-                long revision = payload.GetProperty("safetyStateVersion").GetInt64();
-                bool departureSafe = payload.GetProperty("safety").GetProperty("departureSafe").GetBoolean();
-                await store.ApplySafetySnapshotAsync(
-                    agvId, generation, revision, departureSafe, contentHash, cancellationToken).ConfigureAwait(false);
-                state.SafetyRevision = revision;
-                return SnapshotAck(messageId, agvId, generation, "SAFETY", revision, contentHash);
-            }
-            case "RecoveryStateReport":
-            {
-                string reportId = RequiredString(payload, "reportId");
-                long forcedGeneration = payload.GetProperty("forcedRecoveryGeneration").GetInt64();
-                List<string> pendingAttempts = [];
-                if (payload.TryGetProperty("unsettledSlotOperationAttemptId", out JsonElement attempt) &&
-                    attempt.ValueKind == JsonValueKind.String)
                 {
-                    pendingAttempts.Add(attempt.GetString()!);
+                    long revision = payload.GetProperty("capabilityVersion").GetInt64();
+                    await store.ApplyCapabilitySnapshotAsync(
+                        agvId, generation, revision, contentHash, cancellationToken).ConfigureAwait(false);
+                    state.CapabilityRevision = revision;
+                    return SnapshotAck(messageId, agvId, generation, "CAPABILITY", revision, contentHash);
                 }
-                string[] pendingResults = payload.GetProperty("pendingResults")
-                    .EnumerateArray()
-                    .Select(item => RequiredString(item, "messageId"))
-                    .ToArray();
-                await store.ApplyRecoveryReportAsync(
-                    agvId, generation, reportId, forcedGeneration,
-                    pendingAttempts, pendingResults, cancellationToken).ConfigureAwait(false);
-                SessionReadinessDecision decision = await store.DecideReadinessAsync(
-                    agvId, generation, cancellationToken).ConfigureAwait(false);
-                string ack = SerializeEnvelope(
-                    "DurableAck", messageId, agvId, generation,
-                    new
+            case "SafetyStateSnapshot":
+                {
+                    long revision = payload.GetProperty("safetyStateVersion").GetInt64();
+                    bool departureSafe = payload.GetProperty("safety").GetProperty("departureSafe").GetBoolean();
+                    await store.ApplySafetySnapshotAsync(
+                        agvId, generation, revision, departureSafe, contentHash, cancellationToken).ConfigureAwait(false);
+                    state.SafetyRevision = revision;
+                    return SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
+                }
+            case "RecoveryStateReport":
+                {
+                    string reportId = RequiredString(payload, "reportId");
+                    long forcedGeneration = payload.GetProperty("forcedRecoveryGeneration").GetInt64();
+                    List<string> pendingAttempts = [];
+                    if (payload.TryGetProperty("unsettledSlotOperationAttemptId", out JsonElement attempt) &&
+                        attempt.ValueKind == JsonValueKind.String)
                     {
-                        acceptedMessageId = messageId,
-                        acceptedMessageType = messageType,
-                        acceptedContentSha256 = contentHash,
-                        durablyAcceptedAt = timeProvider.GetUtcNow()
-                    });
-                string readiness = SerializeEnvelope(
-                    "SessionReadiness", correlationId: null, agvId, generation,
-                    new
-                    {
-                        readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
-                        decidedAt = timeProvider.GetUtcNow(),
-                        reasonCodes = decision.Readiness == SessionReadiness.Ready ? Array.Empty<string>() : [decision.ReasonCode],
-                        acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
-                        acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
-                        vehicleBusinessStateRevision = 1
-                    });
-                return $"{ack}\n{readiness}";
-            }
+                        pendingAttempts.Add(attempt.GetString()!);
+                    }
+                    string[] pendingResults = payload.GetProperty("pendingResults")
+                        .EnumerateArray()
+                        .Select(item => RequiredString(item, "messageId"))
+                        .ToArray();
+                    await store.ApplyRecoveryReportAsync(
+                        agvId, generation, reportId, forcedGeneration,
+                        pendingAttempts, pendingResults, cancellationToken).ConfigureAwait(false);
+                    SessionReadinessDecision decision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    string ack = SerializeEnvelope(
+                        "DurableAck", messageId, agvId, generation,
+                        new
+                        {
+                            acceptedMessageId = messageId,
+                            acceptedMessageType = messageType,
+                            acceptedContentSha256 = contentHash,
+                            durablyAcceptedAt = timeProvider.GetUtcNow()
+                        });
+                    string readiness = SerializeEnvelope(
+                        "SessionReadiness", correlationId: null, agvId, generation,
+                        new
+                        {
+                            readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
+                            decidedAt = timeProvider.GetUtcNow(),
+                            reasonCodes = decision.Readiness == SessionReadiness.Ready ? Array.Empty<string>() : [decision.ReasonCode],
+                            acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
+                            acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
+                            vehicleBusinessStateRevision = 1
+                        });
+                    return $"{ack}\n{readiness}";
+                }
             default:
                 throw new InvalidDataException($"Message type '{messageType}' is not allowed in the recovery handshake.");
         }
