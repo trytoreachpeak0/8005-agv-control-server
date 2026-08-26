@@ -2,6 +2,8 @@ using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace ControlServer.Tests;
 
@@ -23,10 +25,150 @@ public sealed class DemandAcceptanceAtomicityTests
 
         await store.AcceptWithOrderIntentAsync(
             new AcceptedDemandSnapshot("D-001", "SUBLOT-001|WIRE_TO_GATE", 7, "history-1", 21, now),
-            new OrderIntent("LEG-001", "D-001", "W2G-D-001-PICKUP-1", "TO_PICKUP", "ST-PICKUP", now),
+            new OrderIntent(
+                "LEG-001", "D-001", "W2G-D-001-PICKUP-1", "TO_PICKUP", "ST-PICKUP", now,
+                "AGV-8005-01", 29, 12, 1, 1),
             TestContext.Current.CancellationToken);
 
         Assert.Equal(1, await dbContext.AcceptedDemands.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await dbContext.VehicleDispatchLeases.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(1, await dbContext.OrderIntents.CountAsync(TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task VehicleLeaseRejectsSecondDemandUntilSuccessfulUnloadReleasesIt()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext dbContext = new(options);
+        await dbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(dbContext);
+        DateTimeOffset now = new(2026, 8, 26, 10, 0, 0, TimeSpan.Zero);
+
+        await store.AcceptWithOrderIntentAsync(
+            Snapshot("D-001", "SUBLOT-001|WIRE_TO_GATE", now),
+            PickupIntent("D-001", "LEG-001", "W2G-D-001-PICKUP-1", now),
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => store.AcceptWithOrderIntentAsync(
+            Snapshot("D-002", "SUBLOT-002|WIRE_TO_GATE", now.AddMinutes(1)),
+            PickupIntent("D-002", "LEG-002", "W2G-D-002-PICKUP-1", now.AddMinutes(1)),
+            TestContext.Current.CancellationToken));
+        Assert.Equal(1, await dbContext.AcceptedDemands.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await dbContext.VehicleDispatchLeases.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await dbContext.OrderIntents.CountAsync(TestContext.Current.CancellationToken));
+
+        await store.CompleteDemandAfterUnloadAsync(
+            "UNLOAD-001",
+            "D-001",
+            "SUBLOT-001|WIRE_TO_GATE",
+            7,
+            [new SlotPhysicalEvidence(1, SlotBusinessState.Empty, true, true)],
+            "all-empty-locked-output-reset",
+            now.AddMinutes(2),
+            TestContext.Current.CancellationToken);
+
+        await store.AcceptWithOrderIntentAsync(
+            Snapshot("D-002", "SUBLOT-002|WIRE_TO_GATE", now.AddMinutes(3)),
+            PickupIntent("D-002", "LEG-002", "W2G-D-002-PICKUP-1", now.AddMinutes(3)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, await dbContext.AcceptedDemands.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            1,
+            await dbContext.VehicleDispatchLeases.CountAsync(
+                lease => lease.ReleasedAt == null,
+                TestContext.Current.CancellationToken));
+        Assert.Equal(2, await dbContext.OrderIntents.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task VehicleLeaseMigrationBackfillsAnUnresolvedAcceptedDemand()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext dbContext = new(options);
+        IMigrator migrator = dbContext.GetService<IMigrator>();
+        await migrator.MigrateAsync(
+            "20260826080712_ExactAcceptedDemandSnapshot",
+            TestContext.Current.CancellationToken);
+        DateTimeOffset now = new(2026, 8, 26, 10, 0, 0, TimeSpan.Zero);
+        dbContext.AcceptedDemands.Add(new AcceptedDemandRow
+        {
+            DemandId = "D-001",
+            SeriesId = "SERIES-001",
+            TransportDemandKey = "SUBLOT-001|WIRE_TO_GATE",
+            WorkType = "WIRE_TO_GATE",
+            Sublot = "SUBLOT-001",
+            Generation = 1,
+            DemandRevision = 7,
+            HistoryEpoch = "history-1",
+            CatalogRevision = 21,
+            CreatedAt = now.AddHours(-1),
+            ValueObservedAt = now.AddMinutes(-1),
+            ValuePollTraceId = "TRACE-001",
+            ValueProjectionCommitId = "COMMIT-001",
+            LiveMesFieldsJson = "{}",
+            AcceptedAt = now,
+            Status = DemandExecutionStatus.Accepted
+        });
+        dbContext.OrderIntents.Add(new OrderIntentRow
+        {
+            MovementLegId = "LEG-001",
+            DemandId = "D-001",
+            UpperId = "W2G-D-001-PICKUP-1",
+            Purpose = "TO_PICKUP",
+            TargetStationId = "ST-PICKUP",
+            VehicleKey = "AGV-8005-01",
+            MapId = 29,
+            DestinationStationId = 12,
+            AgvLifecycleGeneration = 1,
+            DispatchGeneration = 1,
+            CreatedAt = now
+        });
+        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        await migrator.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
+            .AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("D-001", lease.DemandId);
+        Assert.Equal("AGV-8005-01", lease.VehicleKey);
+        Assert.Null(lease.ReleasedAt);
+    }
+
+    private static AcceptedDemandSnapshot Snapshot(
+        string demandId,
+        string transportDemandKey,
+        DateTimeOffset acceptedAt) =>
+        new(demandId, transportDemandKey, 7, "history-1", 21, acceptedAt);
+
+    private static OrderIntent PickupIntent(
+        string demandId,
+        string movementLegId,
+        string upperId,
+        DateTimeOffset createdAt) =>
+        new(
+            movementLegId,
+            demandId,
+            upperId,
+            "TO_PICKUP",
+            "ST-PICKUP",
+            createdAt,
+            "AGV-8005-01",
+            29,
+            12,
+            1,
+            1);
 }

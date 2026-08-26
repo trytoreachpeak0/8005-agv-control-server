@@ -189,6 +189,17 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        VehicleDispatchLeaseRow? activeLease = await dbContext.VehicleDispatchLeases
+            .SingleOrDefaultAsync(
+                row => row.VehicleKey == orderIntent.VehicleKey && row.ReleasedAt == null,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (activeLease is not null)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved demand '{activeLease.DemandId}'.");
+        }
+
         dbContext.AcceptedDemands.Add(new AcceptedDemandRow
         {
             DemandId = snapshot.DemandId,
@@ -207,6 +218,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
             LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
             AcceptedAt = snapshot.AcceptedAt,
             Status = DemandExecutionStatus.Accepted
+        });
+        dbContext.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
+        {
+            DemandId = snapshot.DemandId,
+            VehicleKey = orderIntent.VehicleKey,
+            AcquiredAt = snapshot.AcceptedAt
         });
         dbContext.OrderIntents.Add(ToRow(orderIntent));
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -411,6 +428,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         });
         dbContext.StopClosures.Add(new StopClosureRow { DemandId = demandId, CommittedAt = completedAt });
         demand.Status = DemandExecutionStatus.Succeeded;
+        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
+            .SingleAsync(row => row.DemandId == demandId, cancellationToken)
+            .ConfigureAwait(false);
+        lease.ReleasedAt ??= completedAt;
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = transportDemandKey,
@@ -796,6 +817,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
             CommittedAt = result.ObservedAt
         });
         demand.Status = DemandExecutionStatus.Succeeded;
+        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
+            .SingleAsync(row => row.DemandId == result.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        lease.ReleasedAt ??= result.ObservedAt;
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = demand.TransportDemandKey,

@@ -7,6 +7,7 @@ namespace ControlServer.Infrastructure.Persistence;
 public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbContext> options) : DbContext(options)
 {
     public DbSet<AcceptedDemandRow> AcceptedDemands => Set<AcceptedDemandRow>();
+    public DbSet<VehicleDispatchLeaseRow> VehicleDispatchLeases => Set<VehicleDispatchLeaseRow>();
     public DbSet<OrderIntentRow> OrderIntents => Set<OrderIntentRow>();
     public DbSet<SessionRecoveryRow> SessionRecoveries => Set<SessionRecoveryRow>();
     public DbSet<ProtocolInboxRow> ProtocolInbox => Set<ProtocolInboxRow>();
@@ -25,6 +26,11 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<AcceptedDemandRow>().HasIndex(row => row.TransportDemandKey).IsUnique();
         modelBuilder.Entity<AcceptedDemandRow>().Property(row => row.Status).HasConversion<string>();
+        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasKey(row => row.DemandId);
+        modelBuilder.Entity<VehicleDispatchLeaseRow>()
+            .HasIndex(row => row.VehicleKey)
+            .IsUnique()
+            .HasFilter("ReleasedAt IS NULL");
         modelBuilder.Entity<OrderIntentRow>().HasKey(row => row.MovementLegId);
         modelBuilder.Entity<OrderIntentRow>().HasIndex(row => row.UpperId).IsUnique();
         modelBuilder.Entity<SessionRecoveryRow>().HasKey(row => row.AgvId);
@@ -67,6 +73,14 @@ public sealed class AcceptedDemandRow
     public required string LiveMesFieldsJson { get; set; }
     public DateTimeOffset AcceptedAt { get; set; }
     public DemandExecutionStatus Status { get; set; }
+}
+
+public sealed class VehicleDispatchLeaseRow
+{
+    public required string DemandId { get; set; }
+    public required string VehicleKey { get; set; }
+    public DateTimeOffset AcquiredAt { get; set; }
+    public DateTimeOffset? ReleasedAt { get; set; }
 }
 
 public sealed class OrderIntentRow
