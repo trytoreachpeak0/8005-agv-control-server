@@ -11,11 +11,16 @@ param(
     [string]$ControlServerCommit = 'ea3050de8e813247706680517000000a5d387b50',
     [string]$OnboardCommit = '15c6387801fa2154fb69441eac460fea9d0999c5',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279'
+    [string]$ProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279',
+    [switch]$InstallTemporaryCurrentUserRoot
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+
+if (-not $InstallTemporaryCurrentUserRoot) {
+    throw 'Real Onboard TLS validation requires explicit -InstallTemporaryCurrentUserRoot authorization. The runner installs one unique test root into CurrentUser/Root, records its fingerprint, and removes it in finally.'
+}
 
 $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
 $nodeExecutable = if ($null -ne $nodeCommand) {
