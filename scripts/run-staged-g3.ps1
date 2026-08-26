@@ -270,10 +270,12 @@ function New-TlsMaterial {
 
     $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
     try {
+        $chain.ChainPolicy.TrustMode = [Security.Cryptography.X509Certificates.X509ChainTrustMode]::CustomRootTrust
+        $chain.ChainPolicy.CustomTrustStore.Add($rootCertificate)
         $chain.ChainPolicy.RevocationMode = [Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
         if (-not $chain.Build($serverCertificate)) {
             $statuses = @($chain.ChainStatus | ForEach-Object Status) -join ', '
-            throw "The temporary loopback server certificate did not build to the current-user trusted root: $statuses"
+            throw "The temporary loopback server certificate did not build to the generated test root: $statuses"
         }
     }
     catch {

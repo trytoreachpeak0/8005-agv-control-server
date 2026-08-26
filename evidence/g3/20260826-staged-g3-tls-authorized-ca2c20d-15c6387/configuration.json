@@ -1,0 +1,26 @@
+{
+  "loopbackOnly": true,
+  "tls": {
+    "probeEnabled": true,
+    "certificateSha256": null,
+    "rootCertificateSha256": null,
+    "trustScope": null,
+    "temporaryTrustInstalled": false,
+    "temporaryTrustCleanupVerified": false,
+    "leafPinRequired": true,
+    "realOnboardAckDropTransport": "TLS_LOOPBACK",
+    "realOnboardAckDropTlsCombination": "FAIL_OR_INCONCLUSIVE"
+  },
+  "ports": {
+    "controlTls": 58205,
+    "controlHealth": 58207,
+    "faultProxyPlaintext": 58215,
+    "simulatorModbus": 1502,
+    "simulatorHttp": 58006
+  },
+  "journeyRuntimeEnabled": false,
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "movementCommandSent": false,
+  "vehicleSafetyEligibilityFabricated": false
+}
