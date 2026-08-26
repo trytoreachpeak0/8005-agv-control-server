@@ -53,6 +53,46 @@ public sealed record SafetyCheckObservation(
     DateTimeOffset ObservedAt,
     DateTimeOffset ValidUntil);
 
+public sealed record VehicleBusinessBlockingFact(
+    string ReasonCode,
+    string SubjectType,
+    string? SubjectId);
+
+public sealed record VehicleBusinessProjection(
+    long Revision,
+    string Readiness,
+    bool ManualChargingHold,
+    string BatteryState,
+    IReadOnlyList<VehicleBusinessBlockingFact> BlockingFacts,
+    DateTimeOffset ObservedAt);
+
+public sealed record CurrentStopWorklistItem(
+    string DemandId,
+    string TransportDemandKey,
+    string Sublot,
+    string WorkType,
+    string StopRole,
+    int ExpectedBasketCount);
+
+public sealed record CurrentStopWorklistProjection(
+    string StationId,
+    long Revision,
+    string? OperationSessionId,
+    IReadOnlyList<CurrentStopWorklistItem> Items);
+
+public sealed record UpcomingMovementLeg(
+    string MovementLegId,
+    string LegType,
+    int Sequence,
+    string StationId,
+    string MapId,
+    string State);
+
+public sealed record UpcomingStopPlanProjection(
+    long Revision,
+    string? DemandId,
+    IReadOnlyList<UpcomingMovementLeg> Legs);
+
 public enum DemandExecutionStatus
 {
     Accepted,

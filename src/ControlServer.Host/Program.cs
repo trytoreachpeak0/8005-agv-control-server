@@ -28,6 +28,9 @@ builder.Services.AddScoped<DemandIntakeService>();
 builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.Configure<OnboardTransportOptions>(builder.Configuration.GetSection(OnboardTransportOptions.SectionName));
 builder.Services.AddScoped<OnboardMessageProcessor>();
+builder.Services.AddScoped<OnboardJourneyPublisher>();
+builder.Services.AddSingleton<OnboardPeer>();
+builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((services, client) =>

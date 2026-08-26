@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using ControlServer.Application;
 using ControlServer.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -463,6 +465,95 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return response;
+    }
+
+    public async Task<ProtocolOutboxRow> QueueOutboundEnvelopeAsync(
+        string messageId,
+        string messageType,
+        string wireJson,
+        DateTimeOffset createdAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(wireJson);
+
+        ProtocolOutboxRow? existing = await dbContext.ProtocolOutbox
+            .SingleOrDefaultAsync(row => row.MessageId == messageId, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is not null)
+        {
+            if (existing.MessageType != messageType || existing.PayloadJson != wireJson)
+            {
+                throw new ProtocolContentConflictException(
+                    "Outbound MessageId was replayed with different type or wire content.");
+            }
+
+            return existing;
+        }
+
+        ProtocolOutboxRow row = new()
+        {
+            MessageId = messageId,
+            MessageType = messageType,
+            PayloadJson = wireJson,
+            CreatedAt = createdAt
+        };
+        dbContext.ProtocolOutbox.Add(row);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return row;
+    }
+
+    public Task<ProtocolOutboxRow?> FindOutboundEnvelopeAsync(
+        string messageId,
+        CancellationToken cancellationToken) =>
+        dbContext.ProtocolOutbox.SingleOrDefaultAsync(
+            row => row.MessageId == messageId,
+            cancellationToken);
+
+    public async Task AcknowledgeOutboundEnvelopeAsync(
+        string messageId,
+        string messageType,
+        string contentHash,
+        long? appliedRevision,
+        DateTimeOffset acknowledgedAt,
+        CancellationToken cancellationToken)
+    {
+        ProtocolOutboxRow row = await dbContext.ProtocolOutbox
+            .SingleAsync(item => item.MessageId == messageId, cancellationToken)
+            .ConfigureAwait(false);
+        string storedHash = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(row.PayloadJson)))
+            .ToLowerInvariant();
+        if (row.MessageType != messageType || storedHash != contentHash)
+        {
+            throw new ProtocolContentConflictException(
+                "Outbound acknowledgement does not match the persisted message type and wire content.");
+        }
+        if (appliedRevision is not null)
+        {
+            string revisionProperty = messageType switch
+            {
+                "VehicleBusinessStateSnapshot" => "vehicleBusinessStateRevision",
+                "CurrentStopWorklistSnapshot" => "worklistRevision",
+                "UpcomingStopPlanSnapshot" => "planRevision",
+                _ => throw new ProtocolContentConflictException(
+                    "Only a persisted snapshot can be acknowledged with an applied revision.")
+            };
+            using JsonDocument envelope = JsonDocument.Parse(row.PayloadJson);
+            long storedRevision = envelope.RootElement
+                .GetProperty("payload")
+                .GetProperty(revisionProperty)
+                .GetInt64();
+            if (storedRevision != appliedRevision)
+            {
+                throw new ProtocolContentConflictException(
+                    "Snapshot acknowledgement revision does not match the persisted projection.");
+            }
+        }
+
+        row.AcknowledgedAt ??= acknowledgedAt;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task AdvanceForcedRecoveryGenerationAsync(

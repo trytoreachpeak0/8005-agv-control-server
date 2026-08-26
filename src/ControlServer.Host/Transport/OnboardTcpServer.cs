@@ -11,6 +11,7 @@ namespace ControlServer.Host.Transport;
 public sealed partial class OnboardTcpServer(
     IOptions<OnboardTransportOptions> options,
     IServiceScopeFactory scopeFactory,
+    OnboardPeer peer,
     ILogger<OnboardTcpServer> logger) : BackgroundService
 {
     private readonly OnboardTransportOptions _options = options.Value;
@@ -59,27 +60,49 @@ public sealed partial class OnboardTcpServer(
     {
         await using Stream stream = await CreateTransportStreamAsync(client, cancellationToken).ConfigureAwait(false);
         using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-        await using StreamWriter writer = new(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), leaveOpen: true)
-        {
-            AutoFlush = true,
-            NewLine = "\n"
-        };
+        await using OnboardPeerConnection connection = new(stream);
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new();
-        while (!cancellationToken.IsCancellationRequested)
+        bool attached = false;
+        try
         {
-            string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (line is null)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                return;
+                string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+                if (line is null)
+                {
+                    return;
+                }
+                if (Encoding.UTF8.GetByteCount(line) > _options.MaxLineBytes)
+                {
+                    throw new InvalidDataException("Protocol line exceeds OnboardTransport:MaxLineBytes.");
+                }
+                string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(response))
+                {
+                    await connection.SendAsync(
+                        OnboardPeerConnection.Encode(response),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                if (state.Readiness == ControlServer.Domain.SessionReadiness.Ready && !attached)
+                {
+                    peer.Attach(connection);
+                    attached = true;
+                }
+                else if (state.Readiness != ControlServer.Domain.SessionReadiness.Ready && attached)
+                {
+                    peer.Detach(connection);
+                    attached = false;
+                }
             }
-            if (Encoding.UTF8.GetByteCount(line) > _options.MaxLineBytes)
+        }
+        finally
+        {
+            if (attached)
             {
-                throw new InvalidDataException("Protocol line exceeds OnboardTransport:MaxLineBytes.");
+                peer.Detach(connection);
             }
-            string response = await processor.ProcessAsync(line, state, cancellationToken).ConfigureAwait(false);
-            await writer.WriteLineAsync(response.AsMemory(), cancellationToken).ConfigureAwait(false);
         }
     }
 

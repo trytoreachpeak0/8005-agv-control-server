@@ -51,6 +51,7 @@ public sealed class OnboardMessageProcessor(
                                 ProtocolCandidateIdentity.ProfileId,
                                 ProtocolCandidateIdentity.ProtocolVersion),
                             cancellationToken).ConfigureAwait(false);
+                        state.Readiness = SessionReadiness.RecoveryRequired;
                         return SerializeEnvelope(
                             "SessionAccepted",
                             messageId,
@@ -160,6 +161,7 @@ public sealed class OnboardMessageProcessor(
                         pendingAttempts, pendingResults, cancellationToken).ConfigureAwait(false);
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = decision.Readiness;
                     string ack = SerializeEnvelope(
                         "DurableAck", messageId, agvId, generation,
                         new
@@ -212,6 +214,7 @@ public sealed class OnboardMessageProcessor(
                     state.SafetyRevision = revision;
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = decision.Readiness;
                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
                     if (decision.Readiness == SessionReadiness.Ready)
                     {
@@ -220,6 +223,45 @@ public sealed class OnboardMessageProcessor(
 
                     string readiness = SerializeReadiness(agvId, generation, state, decision);
                     return $"{ack}\n{readiness}";
+                }
+            case "SnapshotAppliedAck":
+                {
+                    string snapshotMessageId = RequiredString(payload, "snapshotMessageId");
+                    if (RequiredString(root, "correlationId") != snapshotMessageId)
+                    {
+                        throw new InvalidDataException("SnapshotAppliedAck correlationId must identify the snapshot.");
+                    }
+                    string snapshotMessageType = RequiredString(payload, "snapshotKind") switch
+                    {
+                        "VEHICLE_BUSINESS_STATE" => "VehicleBusinessStateSnapshot",
+                        "CURRENT_STOP_WORKLIST" => "CurrentStopWorklistSnapshot",
+                        "UPCOMING_STOP_PLAN" => "UpcomingStopPlanSnapshot",
+                        _ => throw new InvalidDataException("SnapshotAppliedAck snapshotKind is not supported.")
+                    };
+                    await store.AcknowledgeOutboundEnvelopeAsync(
+                        snapshotMessageId,
+                        snapshotMessageType,
+                        RequiredString(payload, "appliedContentSha256"),
+                        payload.GetProperty("appliedRevision").GetInt64(),
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return string.Empty;
+                }
+            case "DurableAck":
+                {
+                    string acceptedMessageId = RequiredString(payload, "acceptedMessageId");
+                    if (RequiredString(root, "correlationId") != acceptedMessageId)
+                    {
+                        throw new InvalidDataException("DurableAck correlationId must identify the accepted message.");
+                    }
+                    await store.AcknowledgeOutboundEnvelopeAsync(
+                        acceptedMessageId,
+                        RequiredString(payload, "acceptedMessageType"),
+                        RequiredString(payload, "acceptedContentSha256"),
+                        appliedRevision: null,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return string.Empty;
                 }
             default:
                 throw new InvalidDataException($"Message type '{messageType}' is not supported by ControlServer.");
@@ -394,4 +436,5 @@ public sealed class OnboardConnectionState
     public long? SessionGeneration { get; set; }
     public long? CapabilityRevision { get; set; }
     public long? SafetyRevision { get; set; }
+    public SessionReadiness Readiness { get; set; } = SessionReadiness.RecoveryRequired;
 }
