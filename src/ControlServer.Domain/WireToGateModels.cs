@@ -24,7 +24,17 @@ public sealed record StationOperationPlan(
     SlotOperationType OperationType,
     long ForcedRecoveryGeneration,
     string ContentHash,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    string? AdmissionStationId = null,
+    string? AdmissionTaskType = null);
+
+public sealed record StationTaskTypeAdmission(string StationId, string TaskType);
+
+public sealed record AdmissionPolicyDefinition(
+    long Version,
+    string DeploymentId,
+    IReadOnlyList<StationTaskTypeAdmission> Relations,
+    DateTimeOffset ImportedAt);
 
 public sealed record StationOperationResult(
     string ResultId,
@@ -144,6 +154,40 @@ public enum DemandExecutionStatus
     Cancelled,
     RecoveryRequired
 }
+
+public enum JourneyRuntimeStage
+{
+    AwaitingPickupArrival,
+    AwaitingSublot,
+    AwaitingLoadResult,
+    AwaitingDepartureSafety,
+    AwaitingGateArrival,
+    AwaitingUnloadResult,
+    Completed,
+    Blocked
+}
+
+public sealed record JourneyExecutionPlan(
+    string AgvId,
+    string VehicleKey,
+    long AgvLifecycleGeneration,
+    int MapId,
+    string MapIdentity,
+    string DispatchZone,
+    string RouteEvidenceId,
+    string PickupStationId,
+    int PickupStationRiotId,
+    string GateStationId,
+    int GateStationRiotId,
+    int ExpectedBasketCount,
+    IReadOnlyList<int> TargetSlots,
+    string OperationSessionId,
+    string PickupMovementLegId,
+    string PickupUpperId,
+    string GateMovementLegId,
+    string GateUpperId,
+    long DispatchGeneration,
+    DateTimeOffset CreatedAt);
 
 public enum ConnectionRecoveryStatus
 {

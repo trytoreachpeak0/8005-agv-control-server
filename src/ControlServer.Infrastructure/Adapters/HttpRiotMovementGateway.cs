@@ -10,12 +10,26 @@ namespace ControlServer.Infrastructure.Adapters;
 /// Minimal allowlisted RIoT order boundary for the WIRE_TO_GATE MVP. It deliberately
 /// has no automatic retry: a timed-out mutation remains unknown until reconciled by upperId.
 /// </summary>
-public sealed class HttpRiotMovementGateway(HttpClient httpClient) : IRiotMovementGateway
+public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts
 {
     public const string CreatePath = "/api/order/v1/add/byDefaultMissions";
     public const string ReconcilePathPrefix = "/api/order/v1/orderRecord/detailByUpperId/";
+    public const string VehiclePath = "/api/task/vehicles/getVehicleInfoByDeviceKey";
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private readonly HttpClient httpClient;
+    private readonly TimeProvider timeProvider;
+
+    public HttpRiotMovementGateway(HttpClient httpClient)
+        : this(httpClient, TimeProvider.System)
+    {
+    }
+
+    public HttpRiotMovementGateway(HttpClient httpClient, TimeProvider timeProvider)
+    {
+        this.httpClient = httpClient;
+        this.timeProvider = timeProvider;
+    }
 
     public async Task<RiotOrderObservation> ReconcileByUpperIdAsync(
         string upperId,
@@ -110,6 +124,58 @@ public sealed class HttpRiotMovementGateway(HttpClient httpClient) : IRiotMoveme
         }
     }
 
+    public async Task<RiotVehicleObservation> ReadVehicleAsync(
+        string vehicleKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        try
+        {
+            using HttpRequestMessage request = new(
+                HttpMethod.Get,
+                $"{VehiclePath}?key={Uri.EscapeDataString(vehicleKey)}");
+            using HttpResponseMessage response = await httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return UnknownVehicle(vehicleKey);
+            }
+            VehicleEnvelope? envelope = await response.Content.ReadFromJsonAsync<VehicleEnvelope>(
+                SerializerOptions, cancellationToken).ConfigureAwait(false);
+            VehicleDto? vehicle = envelope?.Result;
+            if (envelope is null || !IsSuccessCode(envelope.Code) || vehicle is null ||
+                !string.Equals(vehicle.DeviceKey, vehicleKey, StringComparison.Ordinal))
+            {
+                return UnknownVehicle(vehicleKey);
+            }
+            return new RiotVehicleObservation(
+                vehicleKey,
+                Connected: vehicle.Status == 1,
+                Enabled: vehicle.Enable == true,
+                ProcState: vehicle.ProcState ?? "UNKNOWN",
+                CurrentMap: vehicle.CurrentMap ?? string.Empty,
+                CurrentStationId: vehicle.CurrentPosition,
+                BatteryPercent: vehicle.Battery,
+                BatteryState: vehicle.BatteryState,
+                Speed: vehicle.Speed,
+                ObservedAt: timeProvider.GetUtcNow(),
+                LockStatus: vehicle.LockStatus,
+                OrderTaskId: vehicle.OrderTaskId);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return UnknownVehicle(vehicleKey);
+        }
+        catch (HttpRequestException)
+        {
+            return UnknownVehicle(vehicleKey);
+        }
+        catch (JsonException)
+        {
+            return UnknownVehicle(vehicleKey);
+        }
+    }
+
     private static RiotOrderObservation ToObservation(string expectedUpperId, RiotEnvelope? envelope)
     {
         if (envelope is null || !IsSuccessCode(envelope.Code) || envelope.Result is null ||
@@ -126,7 +192,18 @@ public sealed class HttpRiotMovementGateway(HttpClient httpClient) : IRiotMoveme
             2 or 4 or 5 or 6 or 8 => RiotOrderObservationKind.Terminal,
             _ => RiotOrderObservationKind.Unknown
         };
-        return new RiotOrderObservation(expectedUpperId, kind, envelope.Result.OrderId);
+        OrderMissionDto? movement = envelope.Result.Missions?.SingleOrDefault(mission => mission.Type == "move");
+        string? vehicleKey = string.IsNullOrWhiteSpace(envelope.Result.ExecuteVehicleKey)
+            ? envelope.Result.AppointVehicleKey
+            : envelope.Result.ExecuteVehicleKey;
+        return new RiotOrderObservation(
+            expectedUpperId,
+            kind,
+            envelope.Result.OrderId,
+            envelope.Result.OrderState,
+            vehicleKey,
+            movement?.MapId,
+            movement?.Destination ?? envelope.Result.EndStationNo);
     }
 
     private static bool IsSuccessCode(JsonElement code)
@@ -150,7 +227,46 @@ public sealed class HttpRiotMovementGateway(HttpClient httpClient) : IRiotMoveme
     private static RiotOrderObservation Unknown(string upperId) =>
         new(upperId, RiotOrderObservationKind.Unknown, null);
 
+    private RiotVehicleObservation UnknownVehicle(string vehicleKey) => new(
+        vehicleKey,
+        Connected: false,
+        Enabled: false,
+        ProcState: "UNKNOWN",
+        CurrentMap: string.Empty,
+        CurrentStationId: null,
+        BatteryPercent: null,
+        BatteryState: null,
+        Speed: null,
+        ObservedAt: timeProvider.GetUtcNow(),
+        LockStatus: null,
+        OrderTaskId: null);
+
     private sealed record RiotEnvelope(JsonElement Code, string? Message, RiotOrderDto? Result);
 
-    private sealed record RiotOrderDto(long? Id, string? OrderId, string? UpperId, int? OrderState);
+    private sealed record RiotOrderDto(
+        long? Id,
+        string? OrderId,
+        string? UpperId,
+        int? OrderState,
+        string? AppointVehicleKey,
+        string? ExecuteVehicleKey,
+        int? EndStationNo,
+        IReadOnlyList<OrderMissionDto>? Missions);
+
+    private sealed record OrderMissionDto(string? Type, int? MapId, int? Destination);
+
+    private sealed record VehicleEnvelope(JsonElement Code, string? Message, VehicleDto? Result);
+
+    private sealed record VehicleDto(
+        string? DeviceKey,
+        bool? Enable,
+        int? Status,
+        string? ProcState,
+        string? CurrentMap,
+        int? CurrentPosition,
+        int? Battery,
+        string? BatteryState,
+        double? Speed,
+        int? LockStatus,
+        string? OrderTaskId);
 }

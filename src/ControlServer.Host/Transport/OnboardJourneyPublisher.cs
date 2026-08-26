@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
@@ -13,6 +14,48 @@ public sealed class OnboardJourneyPublisher(
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] SublotEntryMethods = ["SCANNER", "KEYBOARD"];
+
+    public async Task ReplayPendingForSessionAsync(
+        string agvId,
+        long sessionGeneration,
+        IReadOnlySet<string> allowedMessageIds,
+        CancellationToken cancellationToken)
+    {
+        ProtocolOutboxRow[] pending = await store.GetPendingOutboundEnvelopesAsync(agvId, cancellationToken)
+            .ConfigureAwait(false);
+        foreach (ProtocolOutboxRow row in pending.Where(row => allowedMessageIds.Contains(row.MessageId)))
+        {
+            JsonObject envelope = JsonNode.Parse(row.PayloadJson)?.AsObject()
+                ?? throw new InvalidDataException("Persisted outbound envelope is empty.");
+            long storedGeneration = envelope["sessionGeneration"]?.GetValue<long>()
+                ?? throw new InvalidDataException("Persisted outbound envelope has no session generation.");
+            if (sessionGeneration < storedGeneration)
+            {
+                throw new StaleSessionGenerationException(
+                    "Cannot replay an outbound message into an older session generation.");
+            }
+            if (storedGeneration == sessionGeneration)
+            {
+                await peer.SendAsync(
+                    Encoding.UTF8.GetBytes(row.PayloadJson + "\n"),
+                    cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+            DateTimeOffset sentAt = timeProvider.GetUtcNow();
+            envelope["sessionGeneration"] = sessionGeneration;
+            envelope["sentAt"] = sentAt;
+            string wire = envelope.ToJsonString(SerializerOptions);
+            ProtocolOutboxRow current = await store.QueueOutboundEnvelopeAsync(
+                row.MessageId,
+                row.MessageType,
+                wire,
+                sentAt,
+                cancellationToken).ConfigureAwait(false);
+            await peer.SendAsync(
+                Encoding.UTF8.GetBytes(current.PayloadJson + "\n"),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     public Task PublishVehicleBusinessStateAsync(
         string messageId,
@@ -79,7 +122,9 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         SlotOperationCommand command,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? admissionStationId = null,
+        string? admissionTaskType = null)
     {
         ArgumentNullException.ThrowIfNull(command);
         ValidateUuid(command.DemandId, nameof(command.DemandId));
@@ -132,6 +177,8 @@ public sealed class OnboardJourneyPublisher(
                 command.CommandContentSha256
             },
             command,
+            admissionStationId,
+            admissionTaskType,
             cancellationToken);
     }
 
@@ -291,6 +338,8 @@ public sealed class OnboardJourneyPublisher(
         long sessionGeneration,
         object payload,
         SlotOperationCommand command,
+        string? admissionStationId,
+        string? admissionTaskType,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
@@ -324,7 +373,9 @@ public sealed class OnboardJourneyPublisher(
                 command.OperationType,
                 command.ForcedRecoveryGeneration,
                 command.CommandContentSha256,
-                sentAt),
+                sentAt,
+                admissionStationId,
+                admissionTaskType),
             messageId,
             candidateWire,
             cancellationToken).ConfigureAwait(false);

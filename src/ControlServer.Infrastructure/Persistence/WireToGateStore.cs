@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Security.Cryptography;
 using System.Text;
 using ControlServer.Application;
@@ -7,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Infrastructure.Persistence;
 
-public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandAcceptanceStore, IMovementIntentStore
+public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourneyAcceptanceStore, IMovementIntentStore
 {
     public async Task<long> GetNextSessionGenerationAsync(string agvId, CancellationToken cancellationToken)
     {
@@ -145,8 +146,22 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         return row.ForcedRecoveryGeneration;
     }
 
-    public async Task AcceptWithOrderIntentAsync(
-        AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, CancellationToken cancellationToken)
+    public Task AcceptWithOrderIntentAsync(
+        AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, CancellationToken cancellationToken) =>
+        AcceptCoreAsync(snapshot, orderIntent, journey: null, cancellationToken);
+
+    public Task AcceptWithOrderIntentAsync(
+        AcceptedDemandSnapshot snapshot,
+        OrderIntent orderIntent,
+        JourneyExecutionPlan journey,
+        CancellationToken cancellationToken) =>
+        AcceptCoreAsync(snapshot, orderIntent, journey, cancellationToken);
+
+    private async Task AcceptCoreAsync(
+        AcceptedDemandSnapshot snapshot,
+        OrderIntent orderIntent,
+        JourneyExecutionPlan? journey,
+        CancellationToken cancellationToken)
     {
         if (!string.Equals(snapshot.DemandId, orderIntent.DemandId, StringComparison.Ordinal))
         {
@@ -183,6 +198,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
             if (replayIntent is null || !Matches(replayIntent, orderIntent))
             {
                 throw new BusinessIdentityConflictException("Accepted demand replay does not match its original order intent.");
+            }
+
+            if (journey is not null)
+            {
+                JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes
+                    .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (runtime is null || !Matches(runtime, journey))
+                {
+                    throw new BusinessIdentityConflictException(
+                        "Accepted demand replay does not match its persisted journey runtime.");
+                }
             }
 
             return;
@@ -226,6 +253,19 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
             AcquiredAt = snapshot.AcceptedAt
         });
         dbContext.OrderIntents.Add(ToRow(orderIntent));
+        if (journey is not null)
+        {
+            dbContext.JourneyRuntimes.Add(ToRuntimeRow(snapshot.DemandId, journey));
+            JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
+                .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
+                .ConfigureAwait(false);
+            if (backlog is not null)
+            {
+                backlog.AcceptedAt = snapshot.AcceptedAt;
+                backlog.ReasonCode = "ACCEPTED";
+                backlog.LastSeenAt = snapshot.AcceptedAt;
+            }
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -267,6 +307,90 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task ApplyAdmissionPolicyAsync(
+        AdmissionPolicyDefinition definition,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        if (definition.Version <= 0) throw new ArgumentOutOfRangeException(nameof(definition));
+        ArgumentException.ThrowIfNullOrWhiteSpace(definition.DeploymentId);
+        StationTaskTypeAdmission[] relations = definition.Relations
+            .OrderBy(item => item.StationId, StringComparer.Ordinal)
+            .ThenBy(item => item.TaskType, StringComparer.Ordinal)
+            .ToArray();
+        if (relations.Any(item => string.IsNullOrWhiteSpace(item.StationId) ||
+                                  string.IsNullOrWhiteSpace(item.TaskType)) ||
+            relations.Distinct().Count() != relations.Length)
+        {
+            throw new BusinessIdentityConflictException("Admission policy relations must be unique and complete.");
+        }
+        string relationsJson = JsonSerializer.Serialize(relations);
+        string contentHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(relationsJson)))
+            .ToLowerInvariant();
+        AdmissionPolicyStateRow? current = await dbContext.AdmissionPolicyState
+            .SingleOrDefaultAsync(row => row.Id == 1, cancellationToken).ConfigureAwait(false);
+        if (current is not null)
+        {
+            if (definition.Version < current.Version)
+                throw new BusinessIdentityConflictException("Admission policy version cannot move backwards.");
+            if (definition.Version == current.Version)
+            {
+                if (current.ContentHash != contentHash || current.DeploymentId != definition.DeploymentId)
+                    throw new BusinessIdentityConflictException(
+                        "Admission policy version is already bound to different content or deployment identity.");
+                return;
+            }
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        string? previousHash = current?.ContentHash;
+        if (current is null)
+        {
+            current = new AdmissionPolicyStateRow
+            {
+                Id = 1,
+                DeploymentId = definition.DeploymentId,
+                ContentHash = contentHash
+            };
+            dbContext.AdmissionPolicyState.Add(current);
+        }
+        else
+        {
+            dbContext.StationTaskTypeAdmissions.RemoveRange(dbContext.StationTaskTypeAdmissions);
+        }
+        current.Version = definition.Version;
+        current.DeploymentId = definition.DeploymentId;
+        current.ContentHash = contentHash;
+        current.ImportedAt = definition.ImportedAt;
+        dbContext.StationTaskTypeAdmissions.AddRange(relations.Select(item =>
+            new StationTaskTypeAdmissionRow
+            {
+                StationId = item.StationId,
+                TaskType = item.TaskType,
+                PolicyVersion = definition.Version
+            }));
+        dbContext.AdmissionPolicyAudit.Add(new AdmissionPolicyAuditRow
+        {
+            Version = definition.Version,
+            DeploymentId = definition.DeploymentId,
+            PreviousContentHash = previousHash,
+            ContentHash = contentHash,
+            RelationsJson = relationsJson,
+            ImportedAt = definition.ImportedAt
+        });
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<bool> IsTaskTypeAllowedAsync(
+        string stationId,
+        string taskType,
+        CancellationToken cancellationToken) =>
+        dbContext.StationTaskTypeAdmissions.AnyAsync(
+            row => row.StationId == stationId && row.TaskType == taskType,
+            cancellationToken);
+
     public async Task<ProtocolOutboxRow> PrepareSlotOperationAsync(
         StationOperationPlan plan, string messageId, string commandJson, CancellationToken cancellationToken)
     {
@@ -274,6 +398,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         if (targetSlots.Length == 0 || targetSlots.Length != plan.TargetSlots.Count || targetSlots.Any(slot => slot is < 1 or > 8))
         {
             throw new BusinessIdentityConflictException("Target slots must be a unique non-empty subset of 1..8.");
+        }
+        bool hasAdmissionIdentity = plan.AdmissionStationId is not null || plan.AdmissionTaskType is not null;
+        if ((plan.AdmissionStationId is null) != (plan.AdmissionTaskType is null) ||
+            hasAdmissionIdentity && plan.OperationType != SlotOperationType.Load)
+        {
+            throw new BusinessIdentityConflictException(
+                "Only LOAD may carry a complete station/task admission identity.");
         }
 
         StationOperationRow? existing = await dbContext.StationOperations
@@ -287,21 +418,33 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
                             existingSlots.SequenceEqual(targetSlots) &&
                             existing.OperationType == plan.OperationType &&
                             existing.ForcedRecoveryGeneration == plan.ForcedRecoveryGeneration &&
-                            existing.ContentHash == plan.ContentHash &&
-                            existing.CreatedAt == plan.CreatedAt;
+                            existing.ContentHash == plan.ContentHash;
             if (!samePlan)
             {
                 throw new ProtocolContentConflictException("SlotOperationAttemptId was replayed with different content.");
+            }
+            if (hasAdmissionIdentity)
+            {
+                AdmissionDecisionSnapshotRow decision = await dbContext.AdmissionDecisionSnapshots
+                    .SingleAsync(row => row.SlotOperationAttemptId == plan.SlotOperationAttemptId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!decision.Allowed || decision.StationId != plan.AdmissionStationId ||
+                    decision.TaskType != plan.AdmissionTaskType)
+                {
+                    throw new BusinessIdentityConflictException(
+                        "Frozen admission decision does not match the replayed LOAD operation.");
+                }
             }
 
             ProtocolOutboxRow existingOutbox = await dbContext.ProtocolOutbox
                 .SingleAsync(row => row.MessageId == messageId, cancellationToken)
                 .ConfigureAwait(false);
-            if (existingOutbox.MessageType != "SlotOperationCommand" || existingOutbox.PayloadJson != commandJson)
-            {
-                throw new ProtocolContentConflictException(
-                    "Slot operation replay differs from its persisted outbound command.");
-            }
+            await RefreshOutboundEnvelopeAsync(
+                existingOutbox,
+                "SlotOperationCommand",
+                commandJson,
+                plan.CreatedAt,
+                cancellationToken).ConfigureAwait(false);
             return existingOutbox;
         }
 
@@ -313,6 +456,27 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        if (hasAdmissionIdentity)
+        {
+            AdmissionPolicyStateRow policy = await dbContext.AdmissionPolicyState
+                .SingleAsync(row => row.Id == 1, cancellationToken).ConfigureAwait(false);
+            bool allowed = await dbContext.StationTaskTypeAdmissions.AnyAsync(
+                row => row.StationId == plan.AdmissionStationId && row.TaskType == plan.AdmissionTaskType,
+                cancellationToken).ConfigureAwait(false);
+            if (!allowed)
+            {
+                throw new BusinessIdentityConflictException("TASK_TYPE_NOT_ALLOWED_AT_STATION");
+            }
+            dbContext.AdmissionDecisionSnapshots.Add(new AdmissionDecisionSnapshotRow
+            {
+                SlotOperationAttemptId = plan.SlotOperationAttemptId,
+                StationId = plan.AdmissionStationId!,
+                TaskType = plan.AdmissionTaskType!,
+                AdmissionPolicyVersion = policy.Version,
+                AdmittedAt = plan.CreatedAt,
+                Allowed = true
+            });
+        }
         dbContext.StationOperations.Add(new StationOperationRow
         {
             SlotOperationAttemptId = plan.SlotOperationAttemptId,
@@ -549,12 +713,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
             .ConfigureAwait(false);
         if (existing is not null)
         {
-            if (existing.MessageType != messageType || existing.PayloadJson != wireJson)
-            {
-                throw new ProtocolContentConflictException(
-                    "Outbound MessageId was replayed with different type or wire content.");
-            }
-
+            await RefreshOutboundEnvelopeAsync(
+                existing, messageType, wireJson, createdAt, cancellationToken).ConfigureAwait(false);
             return existing;
         }
 
@@ -576,6 +736,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         dbContext.ProtocolOutbox.SingleOrDefaultAsync(
             row => row.MessageId == messageId,
             cancellationToken);
+
+    public async Task<ProtocolOutboxRow[]> GetPendingOutboundEnvelopesAsync(
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        ProtocolOutboxRow[] rows = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.AcknowledgedAt == null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return rows.Where(row =>
+        {
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            return document.RootElement.GetProperty("agvId").GetString() == agvId;
+        }).OrderBy(row => row.CreatedAt).ThenBy(row => row.MessageId, StringComparer.Ordinal).ToArray();
+    }
 
     public async Task AcknowledgeOutboundEnvelopeAsync(
         string messageId,
@@ -901,6 +1075,130 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IDemandA
         row.AgvLifecycleGeneration == intent.AgvLifecycleGeneration &&
         row.DispatchGeneration == intent.DispatchGeneration &&
         row.CreatedAt == intent.CreatedAt;
+
+    private static bool Matches(JourneyRuntimeRow row, JourneyExecutionPlan journey) =>
+        row.AgvId == journey.AgvId &&
+        row.VehicleKey == journey.VehicleKey &&
+        row.AgvLifecycleGeneration == journey.AgvLifecycleGeneration &&
+        row.MapId == journey.MapId &&
+        row.MapIdentity == journey.MapIdentity &&
+        row.DispatchZone == journey.DispatchZone &&
+        row.RouteEvidenceId == journey.RouteEvidenceId &&
+        row.PickupStationId == journey.PickupStationId &&
+        row.PickupStationRiotId == journey.PickupStationRiotId &&
+        row.GateStationId == journey.GateStationId &&
+        row.GateStationRiotId == journey.GateStationRiotId &&
+        row.ExpectedBasketCount == journey.ExpectedBasketCount &&
+        (JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? []).SequenceEqual(journey.TargetSlots) &&
+        row.OperationSessionId == journey.OperationSessionId &&
+        row.PickupMovementLegId == journey.PickupMovementLegId &&
+        row.PickupUpperId == journey.PickupUpperId &&
+        row.GateMovementLegId == journey.GateMovementLegId &&
+        row.GateUpperId == journey.GateUpperId &&
+        row.DispatchGeneration == journey.DispatchGeneration;
+
+    private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)
+    {
+        string Id(string purpose) => DeterministicGuid($"{demandId}|{purpose}");
+        return new JourneyRuntimeRow
+        {
+            DemandId = demandId,
+            Stage = JourneyRuntimeStage.AwaitingPickupArrival,
+            AgvId = journey.AgvId,
+            VehicleKey = journey.VehicleKey,
+            AgvLifecycleGeneration = journey.AgvLifecycleGeneration,
+            MapId = journey.MapId,
+            MapIdentity = journey.MapIdentity,
+            DispatchZone = journey.DispatchZone,
+            RouteEvidenceId = journey.RouteEvidenceId,
+            PickupStationId = journey.PickupStationId,
+            PickupStationRiotId = journey.PickupStationRiotId,
+            GateStationId = journey.GateStationId,
+            GateStationRiotId = journey.GateStationRiotId,
+            ExpectedBasketCount = journey.ExpectedBasketCount,
+            TargetSlotsJson = JsonSerializer.Serialize(journey.TargetSlots),
+            OperationSessionId = journey.OperationSessionId,
+            PickupMovementLegId = journey.PickupMovementLegId,
+            PickupUpperId = journey.PickupUpperId,
+            GateMovementLegId = journey.GateMovementLegId,
+            GateUpperId = journey.GateUpperId,
+            DispatchGeneration = journey.DispatchGeneration,
+            VehicleBusinessRevision = 1,
+            WorklistRevision = 1,
+            PlanRevision = 1,
+            VehicleBusinessMessageId = Id("pickup-vehicle-state"),
+            WorklistMessageId = Id("pickup-worklist"),
+            PlanMessageId = Id("pickup-plan"),
+            SublotRequestMessageId = Id("pickup-sublot-request"),
+            LoadCommandMessageId = Id("load-command"),
+            LoadSlotOperationAttemptId = Id("load-attempt"),
+            PreDepartureSafetyCheckMessageId = Id("gate-safety-request"),
+            PreDepartureSafetyCheckId = Id("gate-safety-check"),
+            GateVehicleBusinessMessageId = Id("gate-vehicle-state"),
+            GateWorklistMessageId = Id("gate-worklist"),
+            GatePlanMessageId = Id("gate-plan"),
+            UnloadCommandMessageId = Id("unload-command"),
+            UnloadSlotOperationAttemptId = Id("unload-attempt"),
+            CreatedAt = journey.CreatedAt,
+            UpdatedAt = journey.CreatedAt
+        };
+    }
+
+    private static string DeterministicGuid(string value)
+    {
+        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        Span<byte> guidBytes = bytes.AsSpan(0, 16);
+        guidBytes[6] = (byte)((guidBytes[6] & 0x0f) | 0x50);
+        guidBytes[8] = (byte)((guidBytes[8] & 0x3f) | 0x80);
+        return new Guid(guidBytes).ToString("D");
+    }
+
+    private async Task RefreshOutboundEnvelopeAsync(
+        ProtocolOutboxRow existing,
+        string messageType,
+        string candidateWire,
+        DateTimeOffset candidateCreatedAt,
+        CancellationToken cancellationToken)
+    {
+        if (existing.MessageType != messageType)
+        {
+            throw new ProtocolContentConflictException(
+                "Outbound MessageId was replayed with a different message type.");
+        }
+        if (existing.PayloadJson == candidateWire)
+        {
+            return;
+        }
+        using JsonDocument storedDocument = JsonDocument.Parse(existing.PayloadJson);
+        using JsonDocument candidateDocument = JsonDocument.Parse(candidateWire);
+        JsonElement stored = storedDocument.RootElement;
+        JsonElement candidate = candidateDocument.RootElement;
+        long storedGeneration = stored.GetProperty("sessionGeneration").GetInt64();
+        long candidateGeneration = candidate.GetProperty("sessionGeneration").GetInt64();
+        bool sameSemanticMessage = SameString(stored, candidate, "protocolVersion") &&
+                                   SameString(stored, candidate, "profileId") &&
+                                   SameString(stored, candidate, "protocolReleaseVersion") &&
+                                   SameString(stored, candidate, "protocolReleaseManifestSha256") &&
+                                   SameString(stored, candidate, "messageType") &&
+                                   SameString(stored, candidate, "messageId") &&
+                                   SameString(stored, candidate, "correlationId") &&
+                                   SameString(stored, candidate, "agvId") &&
+                                   JsonNode.DeepEquals(
+                                       JsonNode.Parse(stored.GetProperty("payload").GetRawText()),
+                                       JsonNode.Parse(candidate.GetProperty("payload").GetRawText()));
+        if (!sameSemanticMessage || candidateGeneration <= storedGeneration || existing.AcknowledgedAt is not null)
+        {
+            throw new ProtocolContentConflictException(
+                "Outbound MessageId was replayed with different semantics or a non-advancing session generation.");
+        }
+        existing.PayloadJson = candidateWire;
+        existing.CreatedAt = candidateCreatedAt;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool SameString(JsonElement left, JsonElement right, string propertyName) =>
+        left.GetProperty(propertyName).GetRawText() == right.GetProperty(propertyName).GetRawText();
+
 
     private async Task<SessionRecoveryRow> GetCurrentSessionAsync(
         string agvId, long generation, CancellationToken cancellationToken)

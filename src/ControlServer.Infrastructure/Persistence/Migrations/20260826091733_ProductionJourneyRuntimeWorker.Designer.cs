@@ -3,6 +3,7 @@ using System;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ControlServer.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ControlServerDbContext))]
-    partial class ControlServerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260826091733_ProductionJourneyRuntimeWorker")]
+    partial class ProductionJourneyRuntimeWorker
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
@@ -82,85 +85,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("AcceptedDemands");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AdmissionDecisionSnapshotRow", b =>
-                {
-                    b.Property<string>("SlotOperationAttemptId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("AdmissionPolicyVersion")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("AdmittedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("Allowed")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("StationId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TaskType")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("SlotOperationAttemptId");
-
-                    b.ToTable("AdmissionDecisionSnapshots");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AdmissionPolicyAuditRow", b =>
-                {
-                    b.Property<long>("Version")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ContentHash")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DeploymentId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("ImportedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PreviousContentHash")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RelationsJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Version");
-
-                    b.ToTable("AdmissionPolicyAudit");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AdmissionPolicyStateRow", b =>
-                {
-                    b.Property<int>("Id")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ContentHash")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DeploymentId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("ImportedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Version")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("AdmissionPolicyState");
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.ConnectionRecoveryRow", b =>
@@ -683,22 +607,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasKey("SlotOperationAttemptId");
 
                     b.ToTable("StationOperations");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.StationTaskTypeAdmissionRow", b =>
-                {
-                    b.Property<string>("StationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TaskType")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("PolicyVersion")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("StationId", "TaskType");
-
-                    b.ToTable("StationTaskTypeAdmissions");
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.StopClosureRow", b =>

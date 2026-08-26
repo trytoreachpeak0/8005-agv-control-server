@@ -16,6 +16,16 @@ public interface IRiotMovementGateway
     Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken);
 }
 
+public interface IRiotVehicleFacts : IRiotMovementGateway
+{
+    Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken);
+}
+
+public interface ISublotBoxCountReader
+{
+    Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken);
+}
+
 public interface IOnboardPeer
 {
     Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken);
@@ -26,6 +36,15 @@ public interface IDemandAcceptanceStore
     Task AcceptWithOrderIntentAsync(
         AcceptedDemandSnapshot snapshot,
         OrderIntent orderIntent,
+        CancellationToken cancellationToken);
+}
+
+public interface IJourneyAcceptanceStore : IDemandAcceptanceStore
+{
+    Task AcceptWithOrderIntentAsync(
+        AcceptedDemandSnapshot snapshot,
+        OrderIntent orderIntent,
+        JourneyExecutionPlan journey,
         CancellationToken cancellationToken);
 }
 
@@ -49,6 +68,24 @@ public enum RiotOrderObservationKind
 public sealed record RiotOrderObservation(
     string UpperId,
     RiotOrderObservationKind Kind,
-    string? OrderId);
+    string? OrderId,
+    int? OrderState = null,
+    string? VehicleKey = null,
+    int? MapId = null,
+    int? DestinationStationId = null);
+
+public sealed record RiotVehicleObservation(
+    string VehicleKey,
+    bool Connected,
+    bool Enabled,
+    string ProcState,
+    string CurrentMap,
+    int? CurrentStationId,
+    int? BatteryPercent,
+    string? BatteryState,
+    double? Speed,
+    DateTimeOffset ObservedAt,
+    int? LockStatus = null,
+    string? OrderTaskId = null);
 
 public sealed record StoredMovementIntent(OrderIntent Intent, string Status, string? OrderId);

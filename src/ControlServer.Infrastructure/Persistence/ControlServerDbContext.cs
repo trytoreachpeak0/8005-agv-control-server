@@ -20,6 +20,12 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<VehicleRecoveryGenerationRow> VehicleRecoveryGenerations => Set<VehicleRecoveryGenerationRow>();
     public DbSet<OperationResultRow> OperationResults => Set<OperationResultRow>();
     public DbSet<RecoveryDecisionRow> RecoveryDecisions => Set<RecoveryDecisionRow>();
+    public DbSet<JourneyBacklogRow> JourneyBacklog => Set<JourneyBacklogRow>();
+    public DbSet<JourneyRuntimeRow> JourneyRuntimes => Set<JourneyRuntimeRow>();
+    public DbSet<AdmissionPolicyStateRow> AdmissionPolicyState => Set<AdmissionPolicyStateRow>();
+    public DbSet<StationTaskTypeAdmissionRow> StationTaskTypeAdmissions => Set<StationTaskTypeAdmissionRow>();
+    public DbSet<AdmissionPolicyAuditRow> AdmissionPolicyAudit => Set<AdmissionPolicyAuditRow>();
+    public DbSet<AdmissionDecisionSnapshotRow> AdmissionDecisionSnapshots => Set<AdmissionDecisionSnapshotRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -52,6 +58,16 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
             .HasIndex(row => new { row.SlotOperationAttemptId, row.ForcedRecoveryGeneration })
             .IsUnique();
         modelBuilder.Entity<RecoveryDecisionRow>().HasKey(row => row.RecoveryActionId);
+        modelBuilder.Entity<JourneyBacklogRow>().HasKey(row => row.DemandId);
+        modelBuilder.Entity<JourneyBacklogRow>().HasIndex(row => row.TransportDemandKey);
+        modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.DemandId);
+        modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Stage).HasConversion<string>();
+        modelBuilder.Entity<AdmissionPolicyStateRow>().HasKey(row => row.Id);
+        modelBuilder.Entity<AdmissionPolicyStateRow>().Property(row => row.Id).ValueGeneratedNever();
+        modelBuilder.Entity<StationTaskTypeAdmissionRow>().HasKey(row => new { row.StationId, row.TaskType });
+        modelBuilder.Entity<AdmissionPolicyAuditRow>().HasKey(row => row.Version);
+        modelBuilder.Entity<AdmissionPolicyAuditRow>().Property(row => row.Version).ValueGeneratedNever();
+        modelBuilder.Entity<AdmissionDecisionSnapshotRow>().HasKey(row => row.SlotOperationAttemptId);
     }
 }
 
@@ -219,6 +235,100 @@ public sealed class RecoveryDecisionRow
     public required string ContentHash { get; set; }
     public required string Decision { get; set; }
     public DateTimeOffset DecidedAt { get; set; }
+}
+
+public sealed class JourneyBacklogRow
+{
+    public required string DemandId { get; set; }
+    public required string TransportDemandKey { get; set; }
+    public DateTimeOffset FirstSeenAt { get; set; }
+    public DateTimeOffset DemandCreatedAt { get; set; }
+    public required string DecisionFingerprint { get; set; }
+    public required string ReasonCode { get; set; }
+    public DateTimeOffset LastSeenAt { get; set; }
+    public DateTimeOffset? AcceptedAt { get; set; }
+}
+
+public sealed class JourneyRuntimeRow
+{
+    public required string DemandId { get; set; }
+    public JourneyRuntimeStage Stage { get; set; }
+    public required string AgvId { get; set; }
+    public required string VehicleKey { get; set; }
+    public long AgvLifecycleGeneration { get; set; }
+    public int MapId { get; set; }
+    public required string MapIdentity { get; set; }
+    public required string DispatchZone { get; set; }
+    public required string RouteEvidenceId { get; set; }
+    public required string PickupStationId { get; set; }
+    public int PickupStationRiotId { get; set; }
+    public required string GateStationId { get; set; }
+    public int GateStationRiotId { get; set; }
+    public int ExpectedBasketCount { get; set; }
+    public required string TargetSlotsJson { get; set; }
+    public required string OperationSessionId { get; set; }
+    public required string PickupMovementLegId { get; set; }
+    public required string PickupUpperId { get; set; }
+    public required string GateMovementLegId { get; set; }
+    public required string GateUpperId { get; set; }
+    public long DispatchGeneration { get; set; }
+    public long VehicleBusinessRevision { get; set; }
+    public long WorklistRevision { get; set; }
+    public long PlanRevision { get; set; }
+    public required string VehicleBusinessMessageId { get; set; }
+    public required string WorklistMessageId { get; set; }
+    public required string PlanMessageId { get; set; }
+    public required string SublotRequestMessageId { get; set; }
+    public required string LoadCommandMessageId { get; set; }
+    public required string LoadSlotOperationAttemptId { get; set; }
+    public required string PreDepartureSafetyCheckMessageId { get; set; }
+    public required string PreDepartureSafetyCheckId { get; set; }
+    public required string GateVehicleBusinessMessageId { get; set; }
+    public required string GateWorklistMessageId { get; set; }
+    public required string GatePlanMessageId { get; set; }
+    public required string UnloadCommandMessageId { get; set; }
+    public required string UnloadSlotOperationAttemptId { get; set; }
+    public string? ConsumedSublotMessageId { get; set; }
+    public string? ConsumedSafetyResultMessageId { get; set; }
+    public string? BlockReasonCode { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class AdmissionPolicyStateRow
+{
+    public int Id { get; set; }
+    public long Version { get; set; }
+    public required string DeploymentId { get; set; }
+    public required string ContentHash { get; set; }
+    public DateTimeOffset ImportedAt { get; set; }
+}
+
+public sealed class StationTaskTypeAdmissionRow
+{
+    public required string StationId { get; set; }
+    public required string TaskType { get; set; }
+    public long PolicyVersion { get; set; }
+}
+
+public sealed class AdmissionPolicyAuditRow
+{
+    public long Version { get; set; }
+    public required string DeploymentId { get; set; }
+    public string? PreviousContentHash { get; set; }
+    public required string ContentHash { get; set; }
+    public required string RelationsJson { get; set; }
+    public DateTimeOffset ImportedAt { get; set; }
+}
+
+public sealed class AdmissionDecisionSnapshotRow
+{
+    public required string SlotOperationAttemptId { get; set; }
+    public required string StationId { get; set; }
+    public required string TaskType { get; set; }
+    public long AdmissionPolicyVersion { get; set; }
+    public DateTimeOffset AdmittedAt { get; set; }
+    public bool Allowed { get; set; }
 }
 
 public sealed class DemandAcceptanceStore(ControlServerDbContext dbContext) : IDemandAcceptanceStore

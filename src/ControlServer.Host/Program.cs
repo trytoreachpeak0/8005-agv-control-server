@@ -5,7 +5,9 @@ using ControlServer.Domain;
 using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
 using ControlServer.Host.Transport;
+using ControlServer.Host.Runtime;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -27,12 +29,18 @@ builder.Services.AddScoped<IMovementIntentStore>(services => services.GetRequire
 builder.Services.AddScoped<DemandIntakeService>();
 builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.AddScoped<JourneyIntakeCoordinator>();
+builder.Services.AddScoped<JourneyRuntimeEngine>();
 builder.Services.Configure<OnboardTransportOptions>(builder.Configuration.GetSection(OnboardTransportOptions.SectionName));
 builder.Services.AddScoped<OnboardMessageProcessor>();
 builder.Services.AddScoped<OnboardJourneyPublisher>();
 builder.Services.AddSingleton<OnboardPeer>();
 builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();
+builder.Services.AddOptions<JourneyRuntimeOptions>()
+    .Bind(builder.Configuration.GetSection(JourneyRuntimeOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<JourneyRuntimeOptions>, JourneyRuntimeOptionsValidator>();
+builder.Services.AddHostedService<JourneyRuntimeWorker>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((services, client) =>
 {
@@ -45,11 +53,26 @@ builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((service
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
     }
 });
-builder.Services.AddHttpClient<IRiotMovementGateway, HttpRiotMovementGateway>((services, client) =>
+builder.Services.AddHttpClient<HttpRiotMovementGateway>((services, client) =>
 {
     IConfiguration configuration = services.GetRequiredService<IConfiguration>();
     client.BaseAddress = new Uri(configuration["RIoT:baseUrl"] ?? "http://127.0.0.1:58888");
     string? secretVariable = configuration["RIoT:callApiKeyEnvironmentVariable"];
+    string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
+    if (!string.IsNullOrWhiteSpace(secret))
+    {
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+    }
+});
+builder.Services.AddScoped<IRiotMovementGateway>(services =>
+    services.GetRequiredService<HttpRiotMovementGateway>());
+builder.Services.AddScoped<IRiotVehicleFacts>(services =>
+    services.GetRequiredService<HttpRiotMovementGateway>());
+builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>((services, client) =>
+{
+    IConfiguration configuration = services.GetRequiredService<IConfiguration>();
+    client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:58004");
+    string? secretVariable = configuration["MesIngest:sharedSecretEnvironmentVariable"];
     string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
     if (!string.IsNullOrWhiteSpace(secret))
     {

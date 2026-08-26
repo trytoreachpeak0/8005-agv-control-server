@@ -16,6 +16,23 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         OrderIntent orderIntent,
         CancellationToken cancellationToken)
     {
+        return await AcceptCoreAsync(discovered, orderIntent, journey: null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public Task<DemandIntakeOutcome> AcceptJourneyAsync(
+        AcceptedDemandSnapshot discovered,
+        OrderIntent orderIntent,
+        JourneyExecutionPlan journey,
+        CancellationToken cancellationToken) =>
+        AcceptCoreAsync(discovered, orderIntent, journey, cancellationToken);
+
+    private async Task<DemandIntakeOutcome> AcceptCoreAsync(
+        AcceptedDemandSnapshot discovered,
+        OrderIntent orderIntent,
+        JourneyExecutionPlan? journey,
+        CancellationToken cancellationToken)
+    {
         DemandCatalogSnapshot finalCatalog = await catalog.ReadCatalogAsync(cancellationToken).ConfigureAwait(false);
         AcceptedDemandSnapshot? current = finalCatalog.Items.SingleOrDefault(candidate =>
             string.Equals(candidate.DemandId, discovered.DemandId, StringComparison.Ordinal));
@@ -36,7 +53,19 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
             HistoryEpoch = finalCatalog.HistoryEpoch,
             CatalogRevision = finalCatalog.CatalogRevision
         };
-        await store.AcceptWithOrderIntentAsync(accepted, orderIntent, cancellationToken).ConfigureAwait(false);
+        if (journey is null)
+        {
+            await store.AcceptWithOrderIntentAsync(accepted, orderIntent, cancellationToken).ConfigureAwait(false);
+        }
+        else if (store is IJourneyAcceptanceStore journeyStore)
+        {
+            await journeyStore.AcceptWithOrderIntentAsync(accepted, orderIntent, journey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            throw new InvalidOperationException("The configured demand store cannot atomically accept a journey.");
+        }
         return DemandIntakeOutcome.Accepted;
     }
 
@@ -160,6 +189,28 @@ public sealed class JourneyIntakeCoordinator(
         DemandIntakeOutcome intakeOutcome = await intake.AcceptAsync(
             prevalidatedCandidate,
             pickupIntent,
+            cancellationToken).ConfigureAwait(false);
+        if (intakeOutcome != DemandIntakeOutcome.Accepted)
+        {
+            return new JourneyIntakeResult(intakeOutcome, null);
+        }
+
+        MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
+            pickupIntent.UpperId,
+            cancellationToken).ConfigureAwait(false);
+        return new JourneyIntakeResult(intakeOutcome, dispatch);
+    }
+
+    public async Task<JourneyIntakeResult> AcceptAndDispatchToPickupAsync(
+        AcceptedDemandSnapshot prevalidatedCandidate,
+        OrderIntent pickupIntent,
+        JourneyExecutionPlan journey,
+        CancellationToken cancellationToken)
+    {
+        DemandIntakeOutcome intakeOutcome = await intake.AcceptJourneyAsync(
+            prevalidatedCandidate,
+            pickupIntent,
+            journey,
             cancellationToken).ConfigureAwait(false);
         if (intakeOutcome != DemandIntakeOutcome.Accepted)
         {

@@ -105,6 +105,83 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(RiotOrderObservationKind.NotFound, result.Kind);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task SuccessfulOrderObservationCarriesExactVehicleMapAndDestinationEvidence()
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse("""
+            {
+              "code":"0",
+              "result":{
+                "orderId":"ORDER-001",
+                "upperId":"UPPER-001",
+                "orderState":5,
+                "appointVehicleKey":"VEHICLE-KEY-01",
+                "executeVehicleKey":"VEHICLE-KEY-01",
+                "endStationNo":12,
+                "missions":[{"type":"move","mapId":29,"destination":12}]
+              }
+            }
+            """));
+        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Terminal, result.Kind);
+        Assert.Equal(5, result.OrderState);
+        Assert.Equal("VEHICLE-KEY-01", result.VehicleKey);
+        Assert.Equal(29, result.MapId);
+        Assert.Equal(12, result.DestinationStationId);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task VehicleReadUsesExactKeyAndReturnsArrivalAndBatteryFacts()
+    {
+        DateTimeOffset now = new(2026, 8, 26, 1, 0, 0, TimeSpan.Zero);
+        RecordingHandler handler = new((request, _) =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal(HttpRiotMovementGateway.VehiclePath, request.RequestUri?.AbsolutePath);
+            Assert.Equal("?key=VEHICLE-KEY-01", request.RequestUri?.Query);
+            return JsonResponse("""
+                {
+                  "code":"0",
+                  "result":{
+                    "deviceKey":"VEHICLE-KEY-01",
+                    "enable":true,
+                    "status":1,
+                    "procState":"IDLE",
+                    "currentMap":"MAP-29",
+                    "currentPosition":12,
+                    "battery":80,
+                    "batteryState":"NO_CHARGE",
+                    "speed":0,
+                    "lockStatus":0,
+                    "orderTaskId":null
+                  }
+                }
+                """);
+        });
+        HttpRiotMovementGateway gateway = new(CreateClient(handler), new FixedTimeProvider(now));
+
+        RiotVehicleObservation result = await gateway.ReadVehicleAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.True(result.Connected);
+        Assert.True(result.Enabled);
+        Assert.Equal("IDLE", result.ProcState);
+        Assert.Equal("MAP-29", result.CurrentMap);
+        Assert.Equal(12, result.CurrentStationId);
+        Assert.Equal(80, result.BatteryPercent);
+        Assert.Equal(0, result.LockStatus);
+        Assert.Null(result.OrderTaskId);
+        Assert.Equal(now, result.ObservedAt);
+    }
+
     private static HttpClient CreateClient(HttpMessageHandler handler) => new(handler)
     {
         BaseAddress = new Uri("http://riot.test")
@@ -132,5 +209,10 @@ public sealed class HttpRiotMovementGatewayTests
             CallCount++;
             return responseFactory(request, cancellationToken);
         }
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 }
