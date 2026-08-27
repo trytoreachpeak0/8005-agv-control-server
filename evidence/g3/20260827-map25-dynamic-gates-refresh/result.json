@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS",
+  "observedAt": "2026-08-27T09:52:36.4121134+00:00",
+  "productSourceCommit": "5c726218f59d10d5929e7f5c0a39c1ebd4df52f1",
+  "protocolTag": "protocol-v0.1.1",
+  "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "mesIngest": {
+    "exactContractValidated": true,
+    "contractVersion": "2026.08.new-mes-ingest.v2.3",
+    "schemaVersion": 29,
+    "requiredCapabilityCount": 10,
+    "sublotBoxCountCapabilityValidated": true,
+    "catalogRevision": 1469,
+    "totalItemCount": 271,
+    "wireToGateItemCount": 18
+  },
+  "map25": {
+    "mapId": 25,
+    "stationCount": 206,
+    "areaNamedMachineStationCount": 205,
+    "exactGateBinding": true,
+    "nScopedAreaCount": 11,
+    "uniqueAreaEqpCount": 11,
+    "conflictingAreaEqpCount": 0,
+    "uniquePickupCount": 11,
+    "missingPickupCount": 0,
+    "ambiguousPickupCount": 0
+  },
+  "packageCapacity": {
+    "approvedRuleCount": 28,
+    "currentDistinctPackageCount": 11,
+    "coveredDistinctPackageCount": 5,
+    "uncoveredDistinctPackageCount": 6,
+    "staticRouteAndCapacityReadyItemCount": 10
+  },
+  "vehicle": {
+    "identityMatched": true,
+    "connected": true,
+    "enabled": true,
+    "idle": true,
+    "currentMapMatched": true,
+    "evidenceFresh": true,
+    "batteryKnown": true,
+    "batteryPercent": 21,
+    "batteryThreshold": 30,
+    "batteryPolicySatisfied": false,
+    "speedZero": true,
+    "lockStatusClear": true,
+    "noOrderTask": true
+  },
+  "vehicleSafety": {
+    "directMotionState": "UNKNOWN",
+    "directSource": "RIOT_BEHAVIOR_LAB_R41",
+    "directReasonCount": 1,
+    "endpointHttpStatus": 200,
+    "motionState": "UNKNOWN",
+    "endpointSource": "RIOT_BEHAVIOR_LAB_R41",
+    "endpointReasonCount": 1,
+    "projectionMatchesDirect": true,
+    "failClosed": true,
+    "reasonCodes": [
+      "RIOT_MOVEMENT_NOT_FINISHED"
+    ]
+  },
+  "journeyRuntimeEnabled": false,
+  "sublotInstanceLookupRepeated": false,
+  "riotMutationPerformed": false,
+  "orderCreated": false,
+  "vehicleMoved": false
+}
