@@ -27,10 +27,7 @@ if (builder.Configuration.GetValue<bool>("OnboardSafetyProjection:enabled"))
     string? password = string.IsNullOrWhiteSpace(passwordVariable)
         ? null
         : Environment.GetEnvironmentVariable(passwordVariable);
-    X509Certificate2 certificate = new(
-        certificatePath,
-        password,
-        X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.EphemeralKeySet);
+    X509Certificate2 certificate = OnboardTlsCertificateLoader.Load(certificatePath, password);
     builder.WebHost.ConfigureKestrel(options =>
         options.ConfigureHttpsDefaults(https => https.ServerCertificate = certificate));
 }
