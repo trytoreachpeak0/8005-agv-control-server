@@ -59,11 +59,20 @@ AREA values are outside Map 25's DispatchZone.
 
 ## Remaining gates
 
+The ControlServer consumer is now locally updated to require the exact MesIngest
+v2.3/schema 29 capability id+version set, including `SUBLOT_BOX_COUNT|1.0`, and its
+configured read path is `/api/v2/sublot-box-count`. Its Release build passed with
+zero warnings/errors, focused contract tests passed `4/4`, and the complete Release
+suite passed `83/83` with zero skips. These are local compatibility results only;
+the live MesIngest service remains v2.2 and the v2.3 producer branch has not been
+published or deployed.
+
 - Open a new terminal (or refresh the sign-in session) before integration, then
   start the Host so it inherits the provisioned
   `CONTROL_SERVER_RIOT_CALL_API_KEY` user environment variable.
 - Confirm the seven missing AREA values are map defects or outside this Map's
   DispatchZone.
-- Supply the approved battery threshold, PACKAGE capacity rules,
-  SUBLOT_BOX_COUNT path, Onboard credential, and real stopped/parking provider.
+- Publish and deploy the MesIngest v2.3 `SUBLOT_BOX_COUNT` producer, then supply the
+  approved battery threshold, runtime PACKAGE capacity rules, Onboard credential,
+  and real stopped/parking provider.
 - Obtain separate authorization before any RIoT mutation or vehicle movement.

@@ -7,22 +7,23 @@ namespace ControlServer.Infrastructure.Adapters;
 
 public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider timeProvider) : IMesIngestCatalog
 {
-    public const string ContractVersion = "2026.08.new-mes-ingest.v2.2";
+    public const string ContractVersion = "2026.08.new-mes-ingest.v2.3";
     public const int SchemaVersion = 29;
     public const string ContractPath = "/api/v2/contract";
     public const string CatalogPath = "/api/v2/externally-readable-demand-catalog";
 
-    private static readonly string[] RequiredCapabilities =
+    private static readonly CapabilityDto[] RequiredCapabilities =
     [
-        "CONTRACT_DISCOVERY",
-        "CURRENT_INGEST_ATTENTION",
-        "DEMAND_SERIES",
-        "ERROR_SEARCH",
-        "EXTERNALLY_READABLE_DEMAND_CATALOG",
-        "POLL_HEALTH_AND_EVIDENCE",
-        "READABILITY_AUDIT",
-        "SERIES_ERROR_CATALOG",
-        "WATCH_OVERVIEW"
+        new("CONTRACT_DISCOVERY", "2.0"),
+        new("CURRENT_INGEST_ATTENTION", "2.0"),
+        new("DEMAND_SERIES", "2.0"),
+        new("ERROR_SEARCH", "2.1"),
+        new("EXTERNALLY_READABLE_DEMAND_CATALOG", "2.0"),
+        new("POLL_HEALTH_AND_EVIDENCE", "2.0"),
+        new("READABILITY_AUDIT", "2.0"),
+        new("SERIES_ERROR_CATALOG", "2.0"),
+        new("SUBLOT_BOX_COUNT", "1.0"),
+        new("WATCH_OVERVIEW", "2.0")
     ];
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -69,14 +70,17 @@ public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider tim
         ContractDto body = await response.Content.ReadFromJsonAsync<ContractDto>(SerializerOptions, cancellationToken)
             .ConfigureAwait(false)
             ?? throw new InvalidDataException("MesIngest contract discovery returned an empty body.");
-        string[] actualIds = body.Capabilities
-            .Select(capability => RequireText(capability.Id, "capabilities[].id"))
-            .Order(StringComparer.Ordinal)
+        CapabilityDto[] actual = body.Capabilities
+            .Select(capability => new CapabilityDto(
+                RequireText(capability.Id, "capabilities[].id"),
+                RequireText(capability.Version, "capabilities[].version")))
+            .OrderBy(capability => capability.Id, StringComparer.Ordinal)
             .ToArray();
-        string[] expectedIds = RequiredCapabilities.Order(StringComparer.Ordinal).ToArray();
-        bool versionsMatch = body.Capabilities.All(capability => capability.Version == "1.0");
+        CapabilityDto[] expected = RequiredCapabilities
+            .OrderBy(capability => capability.Id, StringComparer.Ordinal)
+            .ToArray();
         if (body.ContractVersion != ContractVersion || body.SchemaVersion != SchemaVersion ||
-            !versionsMatch || !actualIds.SequenceEqual(expectedIds, StringComparer.Ordinal))
+            !actual.SequenceEqual(expected))
         {
             throw new InvalidDataException("CONTRACT_VERSION_MISMATCH: MesIngest V2 identity or capability set differs.");
         }

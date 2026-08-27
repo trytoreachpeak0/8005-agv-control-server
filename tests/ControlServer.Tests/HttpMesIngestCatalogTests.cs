@@ -8,6 +8,20 @@ namespace ControlServer.Tests;
 
 public sealed class HttpMesIngestCatalogTests
 {
+    private static readonly (string Id, string Version)[] Capabilities =
+    [
+        ("CONTRACT_DISCOVERY", "2.0"),
+        ("CURRENT_INGEST_ATTENTION", "2.0"),
+        ("DEMAND_SERIES", "2.0"),
+        ("ERROR_SEARCH", "2.1"),
+        ("EXTERNALLY_READABLE_DEMAND_CATALOG", "2.0"),
+        ("POLL_HEALTH_AND_EVIDENCE", "2.0"),
+        ("READABILITY_AUDIT", "2.0"),
+        ("SERIES_ERROR_CATALOG", "2.0"),
+        ("SUBLOT_BOX_COUNT", "1.0"),
+        ("WATCH_OVERVIEW", "2.0")
+    ];
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task UsesOnlyFrozenV2GetContractAndReturnsFinalCatalogFact()
@@ -33,21 +47,31 @@ public sealed class HttpMesIngestCatalogTests
         Assert.All(handler.Methods, method => Assert.Equal(HttpMethod.Get, method));
     }
 
-    private sealed class RecordingHandler(Guid historyEpoch) : HttpMessageHandler
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task RejectsContractWithoutTheExactSublotBoxCountCapabilityVersion()
     {
-        private static readonly string[] Capabilities =
-        [
-            "CONTRACT_DISCOVERY",
-            "CURRENT_INGEST_ATTENTION",
-            "DEMAND_SERIES",
-            "ERROR_SEARCH",
-            "EXTERNALLY_READABLE_DEMAND_CATALOG",
-            "POLL_HEALTH_AND_EVIDENCE",
-            "READABILITY_AUDIT",
-            "SERIES_ERROR_CATALOG",
-            "WATCH_OVERVIEW"
-        ];
+        Guid historyEpoch = new("11111111-1111-4111-8111-111111111111");
+        (string Id, string Version)[] wrongCapabilities = Capabilities
+            .Select(capability => capability.Id == "SUBLOT_BOX_COUNT"
+                ? (capability.Id, "2.0")
+                : capability)
+            .ToArray();
+        RecordingHandler handler = new(historyEpoch, wrongCapabilities);
+        HttpClient client = new(handler) { BaseAddress = new Uri("http://mes-ingest.test") };
+        HttpMesIngestCatalog catalog = new(client, TimeProvider.System);
 
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            catalog.ReadCatalogAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("CONTRACT_VERSION_MISMATCH", error.Message, StringComparison.Ordinal);
+        Assert.Equal([HttpMesIngestCatalog.ContractPath], handler.Paths);
+    }
+
+    private sealed class RecordingHandler(
+        Guid historyEpoch,
+        IReadOnlyList<(string Id, string Version)>? capabilities = null) : HttpMessageHandler
+    {
         public List<string> Paths { get; } = [];
         public List<HttpMethod> Methods { get; } = [];
 
@@ -66,7 +90,12 @@ public sealed class HttpMesIngestCatalogTests
                     {
                         contractVersion = HttpMesIngestCatalog.ContractVersion,
                         schemaVersion = HttpMesIngestCatalog.SchemaVersion,
-                        capabilities = Capabilities.Select(id => new { id, version = "1.0" })
+                        capabilities = (capabilities ?? Capabilities)
+                            .Select(capability => new
+                            {
+                                id = capability.Id,
+                                version = capability.Version
+                            })
                     })
                 });
             }
