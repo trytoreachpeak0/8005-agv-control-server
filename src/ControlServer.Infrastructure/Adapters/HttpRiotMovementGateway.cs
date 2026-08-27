@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ControlServer.Infrastructure.Adapters;
 
@@ -32,6 +33,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     {
     }
 
+    [ActivatorUtilitiesConstructor]
     public HttpRiotMovementGateway(HttpClient httpClient, TimeProvider timeProvider)
     {
         this.httpClient = httpClient;

@@ -5,11 +5,26 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Adapters;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ControlServer.Tests;
 
 public sealed class HttpRiotMovementGatewayTests
 {
+    [Fact]
+    public void TypedHttpClientResolvesWhenTimeProviderIsRegistered()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton(TimeProvider.System);
+        services.AddHttpClient<HttpRiotMovementGateway>(client =>
+            client.BaseAddress = new Uri("http://riot.test"));
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        HttpRiotMovementGateway gateway = provider.GetRequiredService<HttpRiotMovementGateway>();
+
+        Assert.NotNull(gateway);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
     public async Task ReconcileUsesOnlyUpperIdEndpointAndParsesActiveOrder()
