@@ -46,7 +46,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((services, client) =>
 {
     IConfiguration configuration = services.GetRequiredService<IConfiguration>();
-    client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:58004");
+    client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
     string? secretVariable = configuration["MesIngest:sharedSecretEnvironmentVariable"];
     string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
     if (!string.IsNullOrWhiteSpace(secret))
@@ -69,10 +69,13 @@ builder.Services.AddScoped<IRiotMovementGateway>(services =>
     services.GetRequiredService<HttpRiotMovementGateway>());
 builder.Services.AddScoped<IRiotVehicleFacts>(services =>
     services.GetRequiredService<HttpRiotMovementGateway>());
+builder.Services.AddScoped<IRiotMapStationCatalog>(services =>
+    services.GetRequiredService<HttpRiotMovementGateway>());
+builder.Services.AddSingleton<MapStationResolver>();
 builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>((services, client) =>
 {
     IConfiguration configuration = services.GetRequiredService<IConfiguration>();
-    client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:58004");
+    client.BaseAddress = new Uri(configuration["MesIngest:baseUrl"] ?? "http://127.0.0.1:5088");
     string? secretVariable = configuration["MesIngest:sharedSecretEnvironmentVariable"];
     string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
     if (!string.IsNullOrWhiteSpace(secret))

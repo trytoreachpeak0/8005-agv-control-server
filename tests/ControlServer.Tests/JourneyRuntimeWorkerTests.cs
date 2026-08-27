@@ -41,13 +41,13 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_PICKUP"));
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
 
-        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", fixture.Options.PickupStationRiotId);
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = fixture.Options.PickupStationRiotId + 1 };
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId + 1 };
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
         Assert.DoesNotContain("SublotEntryRequested", await fixture.OutboxTypesAsync());
 
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = fixture.Options.PickupStationRiotId };
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
         await fixture.RecreateEngineAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
@@ -87,7 +87,7 @@ public sealed class JourneyRuntimeWorkerTests
             .SingleAsync(TestContext.Current.CancellationToken);
         Assert.True(admission.Allowed);
         Assert.Equal(1, admission.AdmissionPolicyVersion);
-        Assert.Equal(fixture.Options.PickupStationId, admission.StationId);
+        Assert.Equal(runtime.PickupStationId, admission.StationId);
         Assert.Equal("WIRE_TO_GATE", admission.TaskType);
 
         await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
@@ -203,7 +203,97 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Theory]
-    [InlineData("route-missing", "STATION_ROUTE_MAPPING_NOT_UNIQUE")]
+    [InlineData("AREA-01", "EQP-01", "AREA-01", 12)]
+    [InlineData("AREA-02", "EQP-02", "AREA-02_AREA-03", 13)]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task DynamicMapPickupResolutionFreezesEveryMatchingDemandStation(
+        string area,
+        string eqp,
+        string expectedStationName,
+        int expectedStationId)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10),
+            area,
+            eqp));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        OrderIntentRow pickup = await fixture.Context.OrderIntents.SingleAsync(
+            row => row.Purpose == "TO_PICKUP", TestContext.Current.CancellationToken);
+        Assert.Equal(expectedStationName, runtime.PickupStationId);
+        Assert.Equal(expectedStationId, runtime.PickupStationRiotId);
+        Assert.Equal(expectedStationName, pickup.TargetStationId);
+        Assert.Equal(expectedStationId, pickup.DestinationStationId);
+        Assert.Equal(25, pickup.MapId);
+        Assert.Matches("^MAPCAT-[0-9a-f]{64}$", runtime.RouteEvidenceId);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AmbiguousAreaStationMappingRemainsBackloggedAndNeverCreatesMovement()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(11, "AREA-01"),
+            new RiotMapStation(12, "AREA-01_AREA-02"),
+            new RiotMapStation(210, "关卡"));
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("AREA_STATION_NOT_UNIQUE", backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task MultipleEqpsForOneAreaRemainBackloggedAndNeverCreateMovement()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001",
+                "SUBLOT-001",
+                Now.AddMinutes(-10),
+                "AREA-01",
+                "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002",
+                "SUBLOT-002",
+                Now.AddMinutes(-9),
+                "AREA-01",
+                "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow[] backlog = await fixture.Context.JourneyBacklog
+            .OrderBy(row => row.DemandId)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, backlog.Length);
+        Assert.All(backlog, row => Assert.Equal("AREA_EQP_NOT_UNIQUE", row.ReasonCode));
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+    }
+
+    [Theory]
+    [InlineData("route-missing", "AREA_STATION_NOT_FOUND")]
     [InlineData("zone-not-admitted", "DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING")]
     [InlineData("vehicle-not-idle", "RIOT_VEHICLE_NOT_IDLE")]
     [InlineData("vehicle-map-mismatch", "RIOT_VEHICLE_MAP_MISMATCH")]
@@ -213,7 +303,6 @@ public sealed class JourneyRuntimeWorkerTests
     [InlineData("package-capacity-missing", "PACKAGE_CAPACITY_NOT_UNIQUE")]
     [InlineData("onboard-stale", "ONBOARD_FACTS_NOT_READY")]
     [InlineData("onboard-unsafe", "ONBOARD_DEPARTURE_UNSAFE")]
-    [InlineData("station-task-not-admitted", "TASK_TYPE_NOT_ALLOWED_AT_STATION")]
     [InlineData("slot-capacity", "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE")]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task EveryAdmissionGateFailsClosedBeforeAcceptance(
@@ -228,7 +317,9 @@ public sealed class JourneyRuntimeWorkerTests
         switch (scenario)
         {
             case "route-missing":
-                fixture.Options.Routes = [];
+                fixture.Riot.SetMapStations(
+                    new RiotMapStation(210, "关卡"),
+                    new RiotMapStation(300, "等待点"));
                 break;
             case "zone-not-admitted":
                 fixture.Options.AllowedDispatchZones = [];
@@ -256,9 +347,6 @@ public sealed class JourneyRuntimeWorkerTests
                 break;
             case "onboard-unsafe":
                 await fixture.SetOnboardUnknownAsync();
-                break;
-            case "station-task-not-admitted":
-                fixture.Options.StationTaskTypeAdmissions = [];
                 break;
             case "slot-capacity":
                 await fixture.KeepOnlyOneAvailableSlotAsync();
@@ -346,11 +434,11 @@ public sealed class JourneyRuntimeWorkerTests
                 demand.DemandId,
                 "W2G-LEGACY-PICKUP-1",
                 "TO_PICKUP",
-                fixture.Options.PickupStationId,
+                "AREA-01",
                 Now,
                 fixture.Options.VehicleKey,
                 fixture.Options.MapId,
-                fixture.Options.PickupStationRiotId,
+                12,
                 fixture.Options.AgvLifecycleGeneration,
                 fixture.Options.DispatchGeneration),
             TestContext.Current.CancellationToken);
@@ -374,8 +462,9 @@ public sealed class JourneyRuntimeWorkerTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", fixture.Options.PickupStationRiotId);
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = fixture.Options.PickupStationRiotId };
+        JourneyRuntimeRow initialRuntime = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", initialRuntime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = initialRuntime.PickupStationRiotId };
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         Dictionary<string, string> originalPayloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
@@ -496,7 +585,12 @@ public sealed class JourneyRuntimeWorkerTests
             return fixture;
         }
 
-        public AcceptedDemandSnapshot Demand(string demandId, string sublot, DateTimeOffset createdAt) => new(
+        public AcceptedDemandSnapshot Demand(
+            string demandId,
+            string sublot,
+            DateTimeOffset createdAt,
+            string area = "AREA-01",
+            string eqp = "EQP-01") => new(
             demandId,
             $"{sublot}|WIRE_TO_GATE",
             7,
@@ -511,7 +605,7 @@ public sealed class JourneyRuntimeWorkerTests
             createdAt.AddMinutes(1),
             $"TRACE-{demandId}",
             $"COMMIT-{demandId}",
-            new LiveMesFieldSet("AREA-01", "EQP-01", "STEP-01", createdAt, "PKG-01"));
+            new LiveMesFieldSet(area, eqp, "STEP-01", createdAt, "PKG-01"));
 
         public async Task RecreateEngineAsync()
         {
@@ -537,8 +631,9 @@ public sealed class JourneyRuntimeWorkerTests
         public async Task<JourneyRuntimeRow> AdvanceToDepartureSafetyAsync()
         {
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-            Riot.SetSuccessfulArrival("TO_PICKUP", Options.PickupStationRiotId);
-            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = Options.PickupStationRiotId };
+            JourneyRuntimeRow pickupRuntime = await RuntimeAsync();
+            Riot.SetSuccessfulArrival("TO_PICKUP", pickupRuntime.PickupStationRiotId);
+            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = pickupRuntime.PickupStationRiotId };
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             JourneyRuntimeRow runtime = await RuntimeAsync();
             await AddInboxAsync(
@@ -705,6 +800,8 @@ public sealed class JourneyRuntimeWorkerTests
                 Catalog,
                 BoxCounts,
                 Riot,
+                Riot,
+                new MapStationResolver(),
                 intake,
                 new MovementDispatchService(store, Riot),
                 store,
@@ -813,43 +910,22 @@ public sealed class JourneyRuntimeWorkerTests
         {
             Enabled = true,
             PollInterval = TimeSpan.FromSeconds(1),
-            AgvId = "AGV-8005-01",
-            VehicleKey = "VEHICLE-KEY-01",
-            AgvLifecycleGeneration = 4,
-            MapId = 29,
-            MapIdentity = "MAP-29",
-            PickupStationId = "PICKUP-01",
-            PickupStationRiotId = 12,
-            GateStationId = "GATE-01",
-            GateStationRiotId = 20,
+            AgvId = "老厂前线新多仓位1",
+            VehicleKey = "BROKERX-0c20ff0600d644869a6a80c186065d85",
+            AgvLifecycleGeneration = 1,
+            MapId = 25,
+            MapIdentity = "MAP-25",
+            GateStationId = "关卡",
+            GateStationRiotId = 210,
+            DispatchZone = "MAP-25-WIRE_TO_GATE",
             DispatchGeneration = 1,
             MinimumBatteryPercent = 40,
             MaximumEvidenceAge = TimeSpan.FromMinutes(2),
             SublotBoxCountPath = "/api/v2/sublot-box-count",
             AllowedWorkTypes = ["WIRE_TO_GATE"],
-            AllowedDispatchZones = ["ZONE-01"],
+            AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
             AdmissionPolicyVersion = 1,
             AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1",
-            StationTaskTypeAdmissions =
-            [
-                new StationTaskTypeAdmissionOptions
-                {
-                    StationId = "PICKUP-01",
-                    TaskType = "WIRE_TO_GATE"
-                }
-            ],
-            Routes =
-            [
-                new JourneyRouteOptions
-                {
-                    Area = "AREA-01",
-                    Eqp = "EQP-01",
-                    DispatchZone = "ZONE-01",
-                    PickupStationId = "PICKUP-01",
-                    PickupStationRiotId = 12,
-                    RouteEvidenceId = "ROUTE-29-12-20"
-                }
-            ],
             PackageCapacityRules =
             [
                 new PackageCapacityRuleOptions
@@ -902,12 +978,19 @@ public sealed class JourneyRuntimeWorkerTests
         }
     }
 
-    private sealed class RecordingRiot : IRiotMovementGateway, IRiotVehicleFacts
+    private sealed class RecordingRiot : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog
     {
         private readonly JourneyRuntimeOptions _options;
         private readonly FixedTimeProvider _clock;
         private readonly Dictionary<string, int> _creates = new(StringComparer.Ordinal);
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
+        private RiotMapStation[] _mapStations =
+        [
+            new RiotMapStation(12, "AREA-01"),
+            new RiotMapStation(13, "AREA-02_AREA-03"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(300, "等待点")
+        ];
 
         public RecordingRiot(JourneyRuntimeOptions options, FixedTimeProvider clock)
         {
@@ -933,6 +1016,20 @@ public sealed class JourneyRuntimeWorkerTests
         public int TotalCreateCount => _creates.Values.Sum();
 
         public int CreateCount(string purpose) => _creates.GetValueOrDefault(purpose);
+
+        public void SetMapStations(params RiotMapStation[] stations) => _mapStations = stations;
+
+        public Task<RiotMapStationCatalogSnapshot> ReadMapStationsAsync(
+            int mapId,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotMapStationCatalogSnapshot(
+                mapId,
+                _clock.GetUtcNow(),
+                new string('c', 64),
+                _mapStations));
+        }
 
         public void SetSuccessfulArrival(string purpose, int stationId)
         {

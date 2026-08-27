@@ -7,8 +7,8 @@ namespace ControlServer.Infrastructure.Adapters;
 
 public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider timeProvider) : IMesIngestCatalog
 {
-    public const string ContractVersion = "2026.08.new-mes-ingest.v2.0";
-    public const int SchemaVersion = 21;
+    public const string ContractVersion = "2026.08.new-mes-ingest.v2.2";
+    public const int SchemaVersion = 29;
     public const string ContractPath = "/api/v2/contract";
     public const string CatalogPath = "/api/v2/externally-readable-demand-catalog";
 

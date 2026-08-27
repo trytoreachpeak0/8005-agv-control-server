@@ -21,6 +21,13 @@ public interface IRiotVehicleFacts : IRiotMovementGateway
     Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken);
 }
 
+public interface IRiotMapStationCatalog
+{
+    Task<RiotMapStationCatalogSnapshot> ReadMapStationsAsync(
+        int mapId,
+        CancellationToken cancellationToken);
+}
+
 public interface ISublotBoxCountReader
 {
     Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken);
@@ -94,5 +101,13 @@ public sealed record RiotVehicleObservation(
     DateTimeOffset ObservedAt,
     int? LockStatus = null,
     string? OrderTaskId = null);
+
+public sealed record RiotMapStation(int StationId, string StationName);
+
+public sealed record RiotMapStationCatalogSnapshot(
+    int MapId,
+    DateTimeOffset ObservedAt,
+    string ContentSha256,
+    IReadOnlyList<RiotMapStation> Stations);
 
 public sealed record StoredMovementIntent(OrderIntent Intent, string Status, string? OrderId);

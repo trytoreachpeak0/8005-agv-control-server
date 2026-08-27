@@ -1,6 +1,6 @@
 # 8005 AGV ControlServer
 
-WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含正式协议下的 SQLite 持久状态核、五步恢复握手、可靠 inbox/outbox、生产 Journey Worker、Demand/RIoT 意图、多仓命令与 outbox 原子建立、车载 `OperationResult` 内容哈希核验、装货事实提交、卸货四事实原子完成、断联收敛、只读 MesIngest V2 适配器、可运行 Host、Fake Onboard 和逐切片 G2 入口。
+WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含正式协议下的 SQLite 持久状态核、五步恢复握手、可靠 inbox/outbox、生产 Journey Worker、RIoT Map/Station 目录解析、Demand/RIoT 意图、多仓命令与 outbox 原子建立、车载 `OperationResult` 内容哈希核验、装货事实提交、卸货四事实原子完成、断联收敛、只读 MesIngest V2.2 适配器、可运行 Host、Fake Onboard 和逐切片 G2 入口。
 
 这仍不是整个双端 MVP Release Candidate：真实 RIoT 环境移动集成与车辆/Map/站点资格、真实 OnboardHmi、G3 和安装/现场验收仍是后续门禁。
 
@@ -25,7 +25,7 @@ WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含正�
 dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
 ```
 
-本地端口默认为：Onboard NDJSON `127.0.0.1:58005`，健康/版本 HTTP `127.0.0.1:58007`。非 loopback 监听必须配置 TLS PFX；车载凭据由 `CONTROL_SERVER_ONBOARD_CREDENTIAL` 注入。SQLite 使用 EF Core 安装期迁移，不在运行时写 MesIngest。
+本地端口默认为：MesIngest V2.2 `127.0.0.1:5088`、Onboard NDJSON `127.0.0.1:58005`，健康/版本 HTTP `127.0.0.1:58007`。MesIngest 仅 loopback 绑定时不要求 SharedSecret；远程绑定仍必须使用外部 Bearer secret。非 loopback Onboard 监听必须配置 TLS PFX；车载凭据由 `CONTROL_SERVER_ONBOARD_CREDENTIAL` 注入。SQLite 使用 EF Core 安装期迁移，不在运行时写 MesIngest。
 
 启动 Host 后，可用 Fake Onboard 验证五步空恢复握手：
 
@@ -48,19 +48,20 @@ dotnet run --project .\tools\ControlServer.FakeOnboard -c Release -- --host 127.
 
 ## 生产 Journey Worker
 
-`JourneyRuntime` 默认 `enabled=false`。启用前必须在外部生产配置中完整提供以下受控身份与规则，且
-`MesIngest:sharedSecretEnvironmentVariable`、`RIoT:callApiKeyEnvironmentVariable` 和
-`OnboardTransport:credentialEnvironmentVariable` 所指环境变量都必须已注入；任一缺失都会令 Host
-启动验证失败，而不是退回默认车辆、地图、站点、容量或凭据：
+`JourneyRuntime` 默认 `enabled=false`。启用前必须在外部生产配置中完整提供以下受控身份与规则。RIoT
+和 Onboard 所指环境变量必须已注入；MesIngest 只有非 loopback 地址才要求 SharedSecret。任一必需值缺失
+都会令 Host 启动验证失败，而不是退回默认车辆、地图、站点、容量或凭据：
 
 - 指定 `agvId`、RIoT `vehicleKey`、`agvLifecycleGeneration`、`mapId` 与 RIoT 返回的 `mapIdentity`；
-- 固定 pickup/gate 业务站点和 RIoT 数字站点、正数 `dispatchGeneration`；
-- 显式 `WIRE_TO_GATE` 车辆任务白名单、DispatchZone 车辆白名单，以及 AREA/EQP 到 pickup 的唯一映射和具名路线证据；
-- 正数 `admissionPolicyVersion`、具名 `admissionPolicyDeploymentId`，以及唯一的
-  `stationTaskTypeAdmissions`。Worker 以版本化事务导入服务端 SQLite；同版本不同内容、版本倒退、未知站点／任务类型或重复关系均 fail closed；
+- 固定 `关卡` 的业务站点名与 RIoT 数字站点，及正数 `dispatchGeneration`；pickup 不再配置固定值；
+- 通过获准的 `GET /api/imap/v1/mapInfo/stations/{mapId}` 读取整张 Map 的 Station 清单。只有由一至三个合法 AREA 编码以下划线连接的名称才是机台站；Demand 的 AREA 必须唯一匹配，零个或多个匹配均阻断；普通公共站点不因此形成全图失败；
+- 显式 `WIRE_TO_GATE` 车辆任务白名单和单车 DispatchZone。每条 Demand 仍只冻结一个由 `AREA + EQP` 解析的机台站，并严格执行 `TO_PICKUP`、`TO_GATE` 两个单段订单；不会把多个匹配 Demand 合并成多站订单；
+- 正数 `admissionPolicyVersion` 和具名 `admissionPolicyDeploymentId`。Worker 从当前原子目录中的 AREA 机台站形成本次 WIRE_TO_GATE 站点准入集并以版本化事务导入 SQLite；同版本不同内容或版本倒退均 fail closed，地图变更不能静默换站；
 - 已批准电量阈值、Onboard/RIoT 事实最大新鲜度、精确/前缀 PACKAGE 容量规则；
 - `sublotBoxCountPath`：同一只读 MesIngest HTTP 身份下的 `SUBLOT_BOX_COUNT` 入口。响应必须精确返回
   `queryId=SUBLOT_BOX_COUNT`、原 Sublot、正整数 `maxBoxCount` 和 `observedAt`；失败、空值或身份不符均不开仓。
+
+当前受控现场身份已登记为 `老厂前线新多仓位1`、RIoT `vehicleKey=BROKERX-0c20ff0600d644869a6a80c186065d85`、首次生命周期代次 `1`、`mapId=25`、固定关卡 `关卡/210`。`mapIdentity`、CallApiKey、Onboard 凭据、容量和电量参数仍必须在启用前由现场事实补齐。
 
 Worker 使用 `BackgroundService`、Options 启动验证、scoped DI 与 EF SQLite migration。它先持久化 backlog，
 完成静态/动态硬准入及稳定排序，再通过已有 `JourneyIntakeCoordinator` 原子冻结 Demand、车辆租约、

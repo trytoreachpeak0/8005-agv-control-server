@@ -182,6 +182,54 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(now, result.ObservedAt);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ReadMapStationsUsesApprovedFullStationEndpointAndReturnsAtomicFingerprint()
+    {
+        DateTimeOffset now = new(2026, 8, 27, 1, 0, 0, TimeSpan.Zero);
+        RecordingHandler handler = new((request, _) =>
+        {
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("/api/imap/v1/mapInfo/stations/25", request.RequestUri?.AbsolutePath);
+            return JsonResponse("""
+                {
+                  "code":"0",
+                  "result":[
+                    {"id":210,"name":"关卡"},
+                    {"id":12,"name":"N1-3_N1-7"},
+                    {"id":11,"name":"C15-13"}
+                  ]
+                }
+                """);
+        });
+        HttpRiotMovementGateway gateway = new(CreateClient(handler), new FixedTimeProvider(now));
+
+        RiotMapStationCatalogSnapshot result = await gateway.ReadMapStationsAsync(
+            25, TestContext.Current.CancellationToken);
+
+        Assert.Equal(25, result.MapId);
+        Assert.Equal(now, result.ObservedAt);
+        Assert.Equal([11, 12, 210], result.Stations.Select(station => station.StationId));
+        Assert.Equal(["C15-13", "N1-3_N1-7", "关卡"], result.Stations.Select(station => station.StationName));
+        Assert.Matches("^[0-9a-f]{64}$", result.ContentSha256);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task ReadMapStationsRejectsDuplicateStationIdentityInsteadOfPublishingPartialCatalog()
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse("""
+            {"code":"0","result":[{"id":12,"name":"N1-3"},{"id":12,"name":"N1-7"}]}
+            """));
+        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+
+        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
+            () => gateway.ReadMapStationsAsync(25, TestContext.Current.CancellationToken));
+
+        Assert.Contains("unique station ids", error.Message, StringComparison.Ordinal);
+        Assert.Equal(1, handler.CallCount);
+    }
+
     private static HttpClient CreateClient(HttpMessageHandler handler) => new(handler)
     {
         BaseAddress = new Uri("http://riot.test")

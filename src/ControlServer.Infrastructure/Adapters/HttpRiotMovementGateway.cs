@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -10,11 +12,12 @@ namespace ControlServer.Infrastructure.Adapters;
 /// Minimal allowlisted RIoT order boundary for the WIRE_TO_GATE MVP. It deliberately
 /// has no automatic retry: a timed-out mutation remains unknown until reconciled by upperId.
 /// </summary>
-public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts
+public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog
 {
     public const string CreatePath = "/api/order/v1/add/byDefaultMissions";
     public const string ReconcilePathPrefix = "/api/order/v1/orderRecord/detailByUpperId/";
     public const string VehiclePath = "/api/task/vehicles/getVehicleInfoByDeviceKey";
+    public const string MapStationsPathPrefix = "/api/imap/v1/mapInfo/stations/";
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient httpClient;
@@ -176,6 +179,43 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
     }
 
+    public async Task<RiotMapStationCatalogSnapshot> ReadMapStationsAsync(
+        int mapId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(mapId);
+
+        using HttpRequestMessage request = new(HttpMethod.Get, MapStationsPathPrefix + mapId);
+        using HttpResponseMessage response = await httpClient.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        StationEnvelope? envelope = await response.Content.ReadFromJsonAsync<StationEnvelope>(
+            SerializerOptions, cancellationToken).ConfigureAwait(false);
+        if (envelope is null || !IsSuccessCode(envelope.Code) || envelope.Result is null)
+        {
+            throw new InvalidDataException("RIoT Map station catalog response was not successful.");
+        }
+
+        RiotMapStation[] stations = envelope.Result.Select(station =>
+            new RiotMapStation(
+                station.Id > 0
+                    ? station.Id
+                    : throw new InvalidDataException("RIoT Map station id must be positive."),
+                string.IsNullOrWhiteSpace(station.Name)
+                    ? throw new InvalidDataException("RIoT Map station name is required.")
+                    : station.Name)).OrderBy(station => station.StationId).ToArray();
+        if (stations.Length == 0 || stations.Select(station => station.StationId).Distinct().Count() != stations.Length)
+        {
+            throw new InvalidDataException("RIoT Map station catalog must be non-empty with unique station ids.");
+        }
+
+        string canonical = string.Join('\n', stations.Select(station =>
+            $"{mapId}\t{station.StationId}\t{station.StationName}"));
+        string fingerprint = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+        return new RiotMapStationCatalogSnapshot(mapId, timeProvider.GetUtcNow(), fingerprint, stations);
+    }
+
     private static RiotOrderObservation ToObservation(string expectedUpperId, RiotEnvelope? envelope)
     {
         if (envelope is null || !IsSuccessCode(envelope.Code) || envelope.Result is null ||
@@ -242,6 +282,10 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         OrderTaskId: null);
 
     private sealed record RiotEnvelope(JsonElement Code, string? Message, RiotOrderDto? Result);
+
+    private sealed record StationEnvelope(JsonElement Code, string? Message, IReadOnlyList<StationDto>? Result);
+
+    private sealed record StationDto(int Id, string? Name);
 
     private sealed record RiotOrderDto(
         long? Id,

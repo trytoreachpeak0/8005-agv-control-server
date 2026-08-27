@@ -19,11 +19,12 @@ public sealed class JourneyRuntimeOptionsTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
-    public void EnabledRuntimeRejectsMissingExternalSecretReferences()
+    public void EnabledRuntimeRejectsMissingRemoteExternalSecretReferencesButAllowsLoopbackMesIngest()
     {
         string suffix = Guid.NewGuid().ToString("N");
         Dictionary<string, string?> values = new()
         {
+            ["MesIngest:baseUrl"] = "http://127.0.0.1:5088",
             ["MesIngest:sharedSecretEnvironmentVariable"] = $"MISSING_MES_{suffix}",
             ["RIoT:callApiKeyEnvironmentVariable"] = $"MISSING_RIOT_{suffix}",
             ["OnboardTransport:credentialEnvironmentVariable"] = $"MISSING_ONBOARD_{suffix}"
@@ -34,8 +35,8 @@ public sealed class JourneyRuntimeOptionsTests
         Microsoft.Extensions.Options.ValidateOptionsResult result = validator.Validate(null, ValidEnabledOptions());
 
         Assert.True(result.Failed);
-        Assert.Equal(3, result.Failures.Count());
-        Assert.Contains(result.Failures, failure => failure.StartsWith("MesIngest:", StringComparison.Ordinal));
+        Assert.Equal(2, result.Failures.Count());
+        Assert.DoesNotContain(result.Failures, failure => failure.StartsWith("MesIngest:", StringComparison.Ordinal));
         Assert.Contains(result.Failures, failure => failure.StartsWith("RIoT:", StringComparison.Ordinal));
         Assert.Contains(result.Failures, failure => failure.StartsWith("OnboardTransport:", StringComparison.Ordinal));
     }
@@ -63,42 +64,21 @@ public sealed class JourneyRuntimeOptionsTests
         Enabled = true,
         PollInterval = TimeSpan.FromSeconds(1),
         MaximumEvidenceAge = TimeSpan.FromSeconds(30),
-        AgvId = "AGV-8005-01",
-        VehicleKey = "VEHICLE-KEY-01",
+        AgvId = "老厂前线新多仓位1",
+        VehicleKey = "BROKERX-0c20ff0600d644869a6a80c186065d85",
         AgvLifecycleGeneration = 1,
-        MapId = 29,
-        MapIdentity = "MAP-29",
-        PickupStationId = "PICKUP-01",
-        PickupStationRiotId = 12,
-        GateStationId = "GATE-01",
-        GateStationRiotId = 20,
+        MapId = 25,
+        MapIdentity = "MAP-25",
+        GateStationId = "关卡",
+        GateStationRiotId = 210,
+        DispatchZone = "MAP-25-WIRE_TO_GATE",
         DispatchGeneration = 1,
         MinimumBatteryPercent = 40,
         SublotBoxCountPath = "/api/v2/sublot-box-count",
         AllowedWorkTypes = ["WIRE_TO_GATE"],
-        AllowedDispatchZones = ["ZONE-01"],
+        AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
         AdmissionPolicyVersion = 1,
         AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1",
-        StationTaskTypeAdmissions =
-        [
-            new StationTaskTypeAdmissionOptions
-            {
-                StationId = "PICKUP-01",
-                TaskType = "WIRE_TO_GATE"
-            }
-        ],
-        Routes =
-        [
-            new JourneyRouteOptions
-            {
-                Area = "AREA-01",
-                Eqp = "EQP-01",
-                DispatchZone = "ZONE-01",
-                PickupStationId = "PICKUP-01",
-                PickupStationRiotId = 12,
-                RouteEvidenceId = "ROUTE-29-12-20"
-            }
-        ],
         PackageCapacityRules =
         [
             new PackageCapacityRuleOptions

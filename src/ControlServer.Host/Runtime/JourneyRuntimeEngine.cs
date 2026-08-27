@@ -15,6 +15,8 @@ public sealed class JourneyRuntimeEngine(
     IMesIngestCatalog catalog,
     ISublotBoxCountReader boxCountReader,
     IRiotVehicleFacts vehicleFacts,
+    IRiotMapStationCatalog mapStationCatalog,
+    MapStationResolver stationResolver,
     JourneyIntakeCoordinator intakeCoordinator,
     MovementDispatchService movementDispatch,
     WireToGateStore store,
@@ -32,6 +34,10 @@ public sealed class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2102, nameof(LogBoxCountFailed)),
         "SUBLOT_BOX_COUNT failed closed for demand {DemandId}.");
+    private static readonly Action<ILogger, Exception?> LogMapStationCatalogFailed = LoggerMessage.Define(
+        LogLevel.Warning,
+        new EventId(2103, nameof(LogMapStationCatalogFailed)),
+        "RIoT Map station catalog failed closed; no new journey action was taken.");
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
@@ -40,12 +46,33 @@ public sealed class JourneyRuntimeEngine(
         {
             return;
         }
+
+        RiotMapStationCatalogSnapshot currentMap;
+        RiotMapStation gate;
+        IReadOnlyList<RiotMapStation> machineStations;
+        try
+        {
+            currentMap = await mapStationCatalog.ReadMapStationsAsync(
+                runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);
+            gate = stationResolver.RequireFixedStation(
+                currentMap, runtimeOptions.GateStationRiotId, runtimeOptions.GateStationId);
+            machineStations = stationResolver.ParseAreaNamedMachineStations(currentMap);
+        }
+        catch (Exception error) when (
+            error is HttpRequestException or InvalidDataException or JsonException or StationResolutionException)
+        {
+            LogMapStationCatalogFailed(logger, error);
+            return;
+        }
+
         await store.ApplyAdmissionPolicyAsync(
             new AdmissionPolicyDefinition(
                 runtimeOptions.AdmissionPolicyVersion,
                 runtimeOptions.AdmissionPolicyDeploymentId,
-                runtimeOptions.StationTaskTypeAdmissions.Select(item =>
-                    new StationTaskTypeAdmission(item.StationId, item.TaskType)).ToArray(),
+                machineStations.Select(station => station.StationName)
+                    .Distinct(StringComparer.Ordinal)
+                    .Select(stationName => new StationTaskTypeAdmission(stationName, "WIRE_TO_GATE"))
+                    .ToArray(),
                 timeProvider.GetUtcNow()),
             cancellationToken).ConfigureAwait(false);
 
@@ -73,14 +100,17 @@ public sealed class JourneyRuntimeEngine(
                 throw new BusinessIdentityConflictException(
                     $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
             }
-            await DiscoverAndAcceptAsync(cancellationToken).ConfigureAwait(false);
+            await DiscoverAndAcceptAsync(currentMap, gate, cancellationToken).ConfigureAwait(false);
             return;
         }
 
         await AdvanceAsync(active[0], cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task DiscoverAndAcceptAsync(CancellationToken cancellationToken)
+    private async Task DiscoverAndAcceptAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        RiotMapStation gate,
+        CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
         DemandCatalogSnapshot snapshot;
@@ -101,7 +131,7 @@ public sealed class JourneyRuntimeEngine(
         foreach (AcceptedDemandSnapshot candidate in snapshot.Items)
         {
             string reason = "ELIGIBLE";
-            JourneyRouteOptions? route = null;
+            ResolvedJourneyRoute? route = null;
             int expectedBasketCount = 0;
             int[] targetSlots = [];
             if (!runtimeOptions.AllowedWorkTypes.Contains(candidate.WorkType, StringComparer.Ordinal) ||
@@ -118,17 +148,40 @@ public sealed class JourneyRuntimeEngine(
             }
             else
             {
-                JourneyRouteOptions[] routeMatches = runtimeOptions.Routes.Where(item =>
-                    string.Equals(item.Area, candidate.LiveMesFields.Area, StringComparison.Ordinal) &&
-                    string.Equals(item.Eqp, candidate.LiveMesFields.Eqp, StringComparison.Ordinal)).ToArray();
-                if (routeMatches.Length != 1)
+                string[] areaEqps = snapshot.Items.Where(item =>
+                        string.Equals(item.WorkType, "WIRE_TO_GATE", StringComparison.Ordinal) &&
+                        string.Equals(item.LiveMesFields?.Area, candidate.LiveMesFields.Area, StringComparison.Ordinal) &&
+                        !string.IsNullOrWhiteSpace(item.LiveMesFields?.Eqp))
+                    .Select(item => item.LiveMesFields!.Eqp!)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray();
+                if (areaEqps.Length != 1 ||
+                    !string.Equals(areaEqps[0], candidate.LiveMesFields.Eqp, StringComparison.Ordinal))
                 {
-                    reason = "STATION_ROUTE_MAPPING_NOT_UNIQUE";
+                    reason = "AREA_EQP_NOT_UNIQUE";
                 }
                 else
                 {
-                    route = routeMatches[0];
-                    reason = ValidateStaticRoute(route);
+                    try
+                    {
+                        RiotMapStation resolvedPickup = stationResolver.ResolveUniquePickup(
+                            currentMap, candidate.LiveMesFields.Area);
+                        route = new ResolvedJourneyRoute(
+                            runtimeOptions.DispatchZone,
+                            MapStationResolver.BuildRouteEvidenceId(
+                                currentMap,
+                                resolvedPickup,
+                                gate,
+                                candidate.LiveMesFields.Area,
+                                candidate.LiveMesFields.Eqp),
+                            resolvedPickup.StationName,
+                            resolvedPickup.StationId);
+                        reason = ValidateStaticRoute(route);
+                    }
+                    catch (StationResolutionException error)
+                    {
+                        reason = error.ReasonCode;
+                    }
                 }
             }
 
@@ -390,13 +443,10 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private string ValidateStaticRoute(JourneyRouteOptions route)
+    private string ValidateStaticRoute(ResolvedJourneyRoute route)
     {
         if (!runtimeOptions.AllowedDispatchZones.Contains(route.DispatchZone, StringComparer.Ordinal))
             return "DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING";
-        if (!string.Equals(route.PickupStationId, runtimeOptions.PickupStationId, StringComparison.Ordinal) ||
-            route.PickupStationRiotId != runtimeOptions.PickupStationRiotId)
-            return "PICKUP_STATION_MAPPING_CONFLICT";
         if (string.IsNullOrWhiteSpace(route.RouteEvidenceId))
             return "ROUTE_EVIDENCE_MISSING";
         return "ELIGIBLE";
@@ -978,10 +1028,16 @@ public sealed class JourneyRuntimeEngine(
 
     private sealed record EligibleCandidate(
         AcceptedDemandSnapshot Snapshot,
-        JourneyRouteOptions Route,
+        ResolvedJourneyRoute Route,
         int ExpectedBasketCount,
         int[] TargetSlots,
         DateTimeOffset FirstSeenAt);
+
+    private sealed record ResolvedJourneyRoute(
+        string DispatchZone,
+        string RouteEvidenceId,
+        string PickupStationId,
+        int PickupStationRiotId);
 
     private sealed record OnboardFacts(
         long SessionGeneration,
