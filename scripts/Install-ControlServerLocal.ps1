@@ -255,7 +255,7 @@ try {
         -StartupType Automatic | Out-Null
     $serviceCreated = $true
     $serviceRegistrySubKey = "SYSTEM\CurrentControlSet\Services\$serviceName"
-    $serviceEnvironment = @(
+    [string[]]$serviceEnvironment = @(
         "CONTROL_SERVER_RIOT_CALL_API_KEY=$riotUser",
         "CONTROL_SERVER_ONBOARD_CREDENTIAL=$onboardCredential",
         "CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD=$certificatePassword"
