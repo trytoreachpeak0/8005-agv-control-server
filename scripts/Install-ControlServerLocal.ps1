@@ -115,17 +115,21 @@ function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
 }
 
 function Invoke-LiveCheck {
-    $body = & "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy localhost --max-time 10 'https://localhost:58007/health/live'
-    if ($LASTEXITCODE -ne 0) { throw "Schannel HTTPS live check failed with exit code $LASTEXITCODE." }
+    $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
+        --noproxy localhost --max-time 10 'https://localhost:58007/health/live' 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Schannel HTTPS live check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
+    }
     $response = $body | ConvertFrom-Json
     if ($response.status -ne 'live') { throw 'HTTPS live check returned an unexpected response.' }
 }
 
 function Get-VersionCheck {
-    $body = & "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy localhost --max-time 10 'https://localhost:58007/version'
-    if ($LASTEXITCODE -ne 0) { throw "Schannel HTTPS version check failed with exit code $LASTEXITCODE." }
+    $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
+        --noproxy localhost --max-time 10 'https://localhost:58007/version' 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Schannel HTTPS version check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
+    }
     return $body | ConvertFrom-Json
 }
 
