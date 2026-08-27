@@ -203,8 +203,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Theory]
-    [InlineData("AREA-01", "EQP-01", "AREA-01", 12)]
-    [InlineData("AREA-02", "EQP-02", "AREA-02_AREA-03", 13)]
+    [InlineData("N1-1", "EQP-01", "N1-1", 12)]
+    [InlineData("N1-2", "EQP-02", "N1-2_N1-3", 13)]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task DynamicMapPickupResolutionFreezesEveryMatchingDemandStation(
         string area,
@@ -240,8 +240,8 @@ public sealed class JourneyRuntimeWorkerTests
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Riot.SetMapStations(
-            new RiotMapStation(11, "AREA-01"),
-            new RiotMapStation(12, "AREA-01_AREA-02"),
+            new RiotMapStation(11, "N1-1"),
+            new RiotMapStation(12, "N1-1_N1-2"),
             new RiotMapStation(210, "关卡"));
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001",
@@ -259,6 +259,78 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(0, fixture.Riot.TotalCreateCount);
     }
 
+    [Theory]
+    [InlineData("D11-10", "OUT_OF_SCOPE_AREA")]
+    [InlineData("Q18-10", "OUT_OF_SCOPE_AREA")]
+    [InlineData("N22-1", "AREA_STATION_NOT_FOUND")]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task OutOfScopeOrMap25UnresolvableAreaNeverCreatesMissingPackageNoise(
+        string area,
+        string expectedReason)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10),
+            area,
+            "EQP-01",
+            "UNKNOWN-PACKAGE"));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(expectedReason, backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.MissingPackages.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task InScopeResolvedUnknownPackageIsDeduplicatedAndNeverCreatesOrder()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10),
+            package: "UNKNOWN-PACKAGE"));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        MissingPackageRow missing = await fixture.Context.MissingPackages.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("UNKNOWN-PACKAGE", missing.Package);
+        Assert.Equal("PENDING", missing.Status);
+        Assert.Equal(Now, missing.FirstSeenAt);
+        Assert.Equal(Now, missing.LastSeenAt);
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task BatteryAtConfirmedThirtyPercentThresholdRemainsEligible()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.MinimumBatteryPercent = 30;
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 30 };
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        Assert.Single(await fixture.Context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, fixture.Riot.TotalCreateCount);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task MultipleEqpsForOneAreaRemainBackloggedAndNeverCreateMovement()
@@ -269,13 +341,13 @@ public sealed class JourneyRuntimeWorkerTests
                 "10000000-0000-4000-8000-000000000001",
                 "SUBLOT-001",
                 Now.AddMinutes(-10),
-                "AREA-01",
+                "N1-1",
                 "EQP-01"),
             fixture.Demand(
                 "10000000-0000-4000-8000-000000000002",
                 "SUBLOT-002",
                 Now.AddMinutes(-9),
-                "AREA-01",
+                "N1-1",
                 "EQP-02"));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         fixture.BoxCounts.Set("SUBLOT-002", 4);
@@ -311,7 +383,10 @@ public sealed class JourneyRuntimeWorkerTests
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         AcceptedDemandSnapshot demand = fixture.Demand(
-            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10));
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10),
+            package: scenario == "package-capacity-missing" ? "UNKNOWN-PACKAGE" : "PDFN5×6-8L(12R)");
         fixture.Catalog.Set(demand);
         fixture.BoxCounts.Set("SUBLOT-001", 8);
         switch (scenario)
@@ -340,7 +415,6 @@ public sealed class JourneyRuntimeWorkerTests
                 fixture.BoxCounts.Remove("SUBLOT-001");
                 break;
             case "package-capacity-missing":
-                fixture.Options.PackageCapacityRules = [];
                 break;
             case "onboard-stale":
                 await fixture.StaleOnboardFactsAsync();
@@ -434,7 +508,7 @@ public sealed class JourneyRuntimeWorkerTests
                 demand.DemandId,
                 "W2G-LEGACY-PICKUP-1",
                 "TO_PICKUP",
-                "AREA-01",
+                "N1-1",
                 Now,
                 fixture.Options.VehicleKey,
                 fixture.Options.MapId,
@@ -589,8 +663,9 @@ public sealed class JourneyRuntimeWorkerTests
             string demandId,
             string sublot,
             DateTimeOffset createdAt,
-            string area = "AREA-01",
-            string eqp = "EQP-01") => new(
+            string area = "N1-1",
+            string eqp = "EQP-01",
+            string package = "PDFN5×6-8L(12R)") => new(
             demandId,
             $"{sublot}|WIRE_TO_GATE",
             7,
@@ -605,7 +680,7 @@ public sealed class JourneyRuntimeWorkerTests
             createdAt.AddMinutes(1),
             $"TRACE-{demandId}",
             $"COMMIT-{demandId}",
-            new LiveMesFieldSet(area, eqp, "STEP-01", createdAt, "PKG-01"));
+            new LiveMesFieldSet(area, eqp, "STEP-01", createdAt, package));
 
         public async Task RecreateEngineAsync()
         {
@@ -799,6 +874,7 @@ public sealed class JourneyRuntimeWorkerTests
                 Context,
                 Catalog,
                 BoxCounts,
+                new PackageCapacityStore(Context),
                 Riot,
                 Riot,
                 new MapStationResolver(),
@@ -925,16 +1001,7 @@ public sealed class JourneyRuntimeWorkerTests
             AllowedWorkTypes = ["WIRE_TO_GATE"],
             AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
             AdmissionPolicyVersion = 1,
-            AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1",
-            PackageCapacityRules =
-            [
-                new PackageCapacityRuleOptions
-                {
-                    Pattern = "PKG-01",
-                    MatchType = "exact",
-                    MaxBoxesPerBasket = 4
-                }
-            ]
+            AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1"
         };
 
         public async ValueTask DisposeAsync()
@@ -986,8 +1053,8 @@ public sealed class JourneyRuntimeWorkerTests
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
         private RiotMapStation[] _mapStations =
         [
-            new RiotMapStation(12, "AREA-01"),
-            new RiotMapStation(13, "AREA-02_AREA-03"),
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
             new RiotMapStation(210, "关卡"),
             new RiotMapStation(300, "等待点")
         ];

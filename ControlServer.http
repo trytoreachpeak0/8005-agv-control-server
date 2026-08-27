@@ -1,0 +1,7 @@
+@baseUrl = https://control-server.example:58007
+@onboardCredential = replace-from-secure-environment
+
+### Read the fail-closed vehicle motion projection
+GET {{baseUrl}}/api/onboard/v1/vehicle-safety
+Authorization: Bearer {{onboardCredential}}
+

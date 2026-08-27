@@ -6,6 +6,12 @@ namespace ControlServer.Tests;
 public sealed class JourneyRuntimeOptionsTests
 {
     [Fact]
+    public void ConfirmedBatteryThresholdDefaultsToThirtyPercent()
+    {
+        Assert.Equal(30, new JourneyRuntimeOptions().MinimumBatteryPercent);
+    }
+
+    [Fact]
     public void DisabledRuntimeIsTheSafeDefaultWithoutDeploymentIdentity()
     {
         IConfiguration configuration = new ConfigurationBuilder().Build();
@@ -78,15 +84,6 @@ public sealed class JourneyRuntimeOptionsTests
         AllowedWorkTypes = ["WIRE_TO_GATE"],
         AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
         AdmissionPolicyVersion = 1,
-        AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1",
-        PackageCapacityRules =
-        [
-            new PackageCapacityRuleOptions
-            {
-                Pattern = "PKG-01",
-                MatchType = "exact",
-                MaxBoxesPerBasket = 4
-            }
-        ]
+        AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1"
     };
 }

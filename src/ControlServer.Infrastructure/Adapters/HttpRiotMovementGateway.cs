@@ -12,12 +12,16 @@ namespace ControlServer.Infrastructure.Adapters;
 /// Minimal allowlisted RIoT order boundary for the WIRE_TO_GATE MVP. It deliberately
 /// has no automatic retry: a timed-out mutation remains unknown until reconciled by upperId.
 /// </summary>
-public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog
+public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
+    IRiotVehicleSafetyFacts
 {
     public const string CreatePath = "/api/order/v1/add/byDefaultMissions";
     public const string ReconcilePathPrefix = "/api/order/v1/orderRecord/detailByUpperId/";
     public const string VehiclePath = "/api/task/vehicles/getVehicleInfoByDeviceKey";
     public const string MapStationsPathPrefix = "/api/imap/v1/mapInfo/stations/";
+    public const string VehicleSafetyPathPrefix = "/api/task/v1/task/getVehicleInfo/";
+    public const string NonFinalOrdersPath =
+        "/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9";
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient httpClient;
@@ -216,6 +220,86 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         return new RiotMapStationCatalogSnapshot(mapId, timeProvider.GetUtcNow(), fingerprint, stations);
     }
 
+    public async Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(
+        string vehicleKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
+        try
+        {
+            using HttpRequestMessage vehicleRequest = new(
+                HttpMethod.Get, VehicleSafetyPathPrefix + Uri.EscapeDataString(vehicleKey));
+            using HttpResponseMessage vehicleResponse = await httpClient.SendAsync(
+                vehicleRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            vehicleResponse.EnsureSuccessStatusCode();
+            SafetyVehicleEnvelope? vehicleEnvelope = await vehicleResponse.Content
+                .ReadFromJsonAsync<SafetyVehicleEnvelope>(SerializerOptions, cancellationToken)
+                .ConfigureAwait(false);
+            SafetyVehicleDto? vehicle = vehicleEnvelope?.Vehicle;
+            SafetyVehicleTaskDto? task = vehicleEnvelope?.VehicleTaskInfo;
+            if (vehicle is null || task is null ||
+                !string.Equals(task.Key, vehicleKey, StringComparison.Ordinal))
+            {
+                return UnknownSafety(vehicleKey, "RIOT_VEHICLE_IDENTITY_UNAVAILABLE");
+            }
+
+            using HttpRequestMessage ordersRequest = new(HttpMethod.Get, NonFinalOrdersPath);
+            using HttpResponseMessage ordersResponse = await httpClient.SendAsync(
+                ordersRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            ordersResponse.EnsureSuccessStatusCode();
+            NonFinalOrdersEnvelope? ordersEnvelope = await ordersResponse.Content
+                .ReadFromJsonAsync<NonFinalOrdersEnvelope>(SerializerOptions, cancellationToken)
+                .ConfigureAwait(false);
+            IReadOnlyList<NonFinalOrderDto>? orders = ordersEnvelope?.Result?.Records;
+            if (ordersEnvelope is null || !IsSuccessCode(ordersEnvelope.Code) || orders is null || orders.Count >= 100)
+            {
+                return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
+            }
+
+            bool hasNonFinalOrder = orders.Any(order =>
+                string.Equals(order.AppointVehicleKey, vehicleKey, StringComparison.Ordinal) ||
+                string.Equals(order.ExecuteVehicleKey, vehicleKey, StringComparison.Ordinal));
+            if (vehicle.Speed is not null && vehicle.Speed != 0 ||
+                string.Equals(vehicle.MovementState, "MT_RUNNING", StringComparison.Ordinal))
+            {
+                return new RiotVehicleSafetyObservation(
+                    vehicleKey,
+                    RiotVehicleMotionState.Moving,
+                    timeProvider.GetUtcNow(),
+                    "RIOT_BEHAVIOR_LAB_R41",
+                    ["RIOT_MOTION_ACTIVE"]);
+            }
+
+            List<string> reasons = [];
+            if (!string.Equals(task.ProcState, "IDLE", StringComparison.Ordinal)) reasons.Add("RIOT_PROC_NOT_IDLE");
+            if (task.ProcessingOrder != false) reasons.Add("RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE");
+            if (task.Enable != true) reasons.Add("RIOT_VEHICLE_NOT_ENABLED");
+            if (!string.Equals(task.IntegrationLevel, "ON_LINE", StringComparison.Ordinal)) reasons.Add("RIOT_VEHICLE_NOT_ONLINE");
+            if (!string.Equals(vehicle.EmergencyState, "OK", StringComparison.Ordinal)) reasons.Add("RIOT_EMERGENCY_NOT_OK");
+            if (!string.Equals(vehicle.BreakSwitchState, "MOVABLE", StringComparison.Ordinal)) reasons.Add("RIOT_BRAKE_NOT_MOVABLE");
+            if (!string.Equals(vehicle.ControlState, "CONTROL_STATE_OK", StringComparison.Ordinal)) reasons.Add("RIOT_CONTROL_NOT_OK");
+            if (!string.Equals(vehicle.LocationState, "LOCATION_STATE_RUNNING", StringComparison.Ordinal)) reasons.Add("RIOT_LOCATION_NOT_RUNNING");
+            if (vehicle.Speed is null || vehicle.Speed != 0) reasons.Add("RIOT_SPEED_NOT_ZERO");
+            if (!string.Equals(vehicle.MovementState, "MT_FINISHED", StringComparison.Ordinal)) reasons.Add("RIOT_MOVEMENT_NOT_FINISHED");
+            if (hasNonFinalOrder) reasons.Add("RIOT_NONFINAL_ORDER_PRESENT");
+
+            return new RiotVehicleSafetyObservation(
+                vehicleKey,
+                reasons.Count == 0 ? RiotVehicleMotionState.Stopped : RiotVehicleMotionState.Unknown,
+                timeProvider.GetUtcNow(),
+                "RIOT_BEHAVIOR_LAB_R41",
+                reasons);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return UnknownSafety(vehicleKey, "RIOT_READ_TIMEOUT");
+        }
+        catch (Exception error) when (error is HttpRequestException or JsonException or InvalidDataException)
+        {
+            return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
+        }
+    }
+
     private static RiotOrderObservation ToObservation(string expectedUpperId, RiotEnvelope? envelope)
     {
         if (envelope is null || !IsSuccessCode(envelope.Code) || envelope.Result is null ||
@@ -281,6 +365,13 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         LockStatus: null,
         OrderTaskId: null);
 
+    private RiotVehicleSafetyObservation UnknownSafety(string vehicleKey, string reason) => new(
+        vehicleKey,
+        RiotVehicleMotionState.Unknown,
+        timeProvider.GetUtcNow(),
+        "RIOT_BEHAVIOR_LAB_R41",
+        [reason]);
+
     private sealed record RiotEnvelope(JsonElement Code, string? Message, RiotOrderDto? Result);
 
     private sealed record StationEnvelope(JsonElement Code, string? Message, IReadOnlyList<StationDto>? Result);
@@ -313,4 +404,34 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         double? Speed,
         int? LockStatus,
         string? OrderTaskId);
+
+    private sealed record SafetyVehicleEnvelope(
+        SafetyVehicleDto? Vehicle,
+        SafetyVehicleTaskDto? VehicleTaskInfo);
+
+    private sealed record SafetyVehicleDto(
+        string? MovementState,
+        string? ControlState,
+        string? EmergencyState,
+        string? BreakSwitchState,
+        string? LocationState,
+        double? Speed);
+
+    private sealed record SafetyVehicleTaskDto(
+        string? Key,
+        string? ProcState,
+        bool? ProcessingOrder,
+        bool? Enable,
+        string? IntegrationLevel);
+
+    private sealed record NonFinalOrdersEnvelope(
+        JsonElement Code,
+        NonFinalOrdersResultDto? Result);
+
+    private sealed record NonFinalOrdersResultDto(IReadOnlyList<NonFinalOrderDto>? Records);
+
+    private sealed record NonFinalOrderDto(
+        string? AppointVehicleKey,
+        string? ExecuteVehicleKey,
+        int? OrderState);
 }

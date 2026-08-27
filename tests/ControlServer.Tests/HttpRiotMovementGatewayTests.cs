@@ -230,6 +230,104 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(1, handler.CallCount);
     }
 
+    [Fact]
+    public async Task VehicleSafetyReturnsStoppedOnlyForCompleteRound41Composite()
+    {
+        RecordingHandler handler = SafetyHandler("MT_FINISHED", speed: 0);
+        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+
+        RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotVehicleMotionState.Stopped, result.MotionState);
+        Assert.Empty(result.ReasonCodes);
+        Assert.Equal("RIOT_BEHAVIOR_LAB_R41", result.Source);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task VehicleSafetyReturnsUnknownForObservedMtNaEvenWhenEveryOtherFactIsSafe()
+    {
+        RecordingHandler handler = SafetyHandler("MT_NA", speed: 0);
+        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+
+        RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal(["RIOT_MOVEMENT_NOT_FINISHED"], result.ReasonCodes);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task VehicleSafetyReturnsMovingForMtRunningWithoutTreatingZeroSpeedAsStopped()
+    {
+        RecordingHandler handler = SafetyHandler("MT_RUNNING", speed: 0);
+        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+
+        RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotVehicleMotionState.Moving, result.MotionState);
+        Assert.Equal(["RIOT_MOTION_ACTIVE"], result.ReasonCodes);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task VehicleSafetyReturnsUnknownWhenNonFinalOrderCoverageCannotBeProved()
+    {
+        RecordingHandler handler = new((request, _) =>
+            request.RequestUri?.AbsolutePath.StartsWith(
+                HttpRiotMovementGateway.VehicleSafetyPathPrefix, StringComparison.Ordinal) == true
+                ? JsonResponse(SafeVehicleJson("MT_FINISHED", 0))
+                : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+
+        RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal(["RIOT_READ_FAILED"], result.ReasonCodes);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    private static RecordingHandler SafetyHandler(string movementState, double speed) => new((request, _) =>
+    {
+        if (request.RequestUri?.AbsolutePath.StartsWith(
+                HttpRiotMovementGateway.VehicleSafetyPathPrefix, StringComparison.Ordinal) == true)
+        {
+            Assert.Equal(
+                HttpRiotMovementGateway.VehicleSafetyPathPrefix + "VEHICLE-KEY-01",
+                request.RequestUri.AbsolutePath);
+            return JsonResponse(SafeVehicleJson(movementState, speed));
+        }
+
+        Assert.Equal("/api/order/v1/orderRecord", request.RequestUri?.AbsolutePath);
+        Assert.Contains("filterByState=1", request.RequestUri?.Query, StringComparison.Ordinal);
+        Assert.Contains("filterByState=9", request.RequestUri?.Query, StringComparison.Ordinal);
+        return JsonResponse("""{"code":"0","result":{"records":[]}}""");
+    });
+
+    private static string SafeVehicleJson(string movementState, double speed) => $$"""
+        {
+          "vehicle":{
+            "movementState":"{{movementState}}",
+            "controlState":"CONTROL_STATE_OK",
+            "emergencyState":"OK",
+            "breakSwitchState":"MOVABLE",
+            "locationState":"LOCATION_STATE_RUNNING",
+            "speed":{{speed}}
+          },
+          "vehicleTaskInfo":{
+            "key":"VEHICLE-KEY-01",
+            "procState":"IDLE",
+            "processingOrder":false,
+            "enable":true,
+            "integrationLevel":"ON_LINE"
+          }
+        }
+        """;
+
     private static HttpClient CreateClient(HttpMessageHandler handler) => new(handler)
     {
         BaseAddress = new Uri("http://riot.test")

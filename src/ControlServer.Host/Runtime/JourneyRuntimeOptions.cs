@@ -17,21 +17,13 @@ public sealed class JourneyRuntimeOptions
     public int GateStationRiotId { get; set; }
     public string DispatchZone { get; set; } = string.Empty;
     public long DispatchGeneration { get; set; }
-    public int MinimumBatteryPercent { get; set; }
+    public int MinimumBatteryPercent { get; set; } = 30;
     public TimeSpan MaximumEvidenceAge { get; set; } = TimeSpan.FromSeconds(30);
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];
     public long AdmissionPolicyVersion { get; set; }
     public string AdmissionPolicyDeploymentId { get; set; } = string.Empty;
-    public PackageCapacityRuleOptions[] PackageCapacityRules { get; set; } = [];
-}
-
-public sealed class PackageCapacityRuleOptions
-{
-    public string Pattern { get; set; } = string.Empty;
-    public string MatchType { get; set; } = string.Empty;
-    public int MaxBoxesPerBasket { get; set; }
 }
 
 public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration) : IValidateOptions<JourneyRuntimeOptions>
@@ -70,21 +62,12 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add("AllowedWorkTypes must explicitly include WIRE_TO_GATE.");
         if (!options.AllowedDispatchZones.Contains(options.DispatchZone, StringComparer.Ordinal))
             failures.Add("AllowedDispatchZones must explicitly include DispatchZone.");
-        if (options.PackageCapacityRules.Length == 0) failures.Add("PackageCapacityRules must not be empty.");
         RequireExternalSecretUnlessLoopback(
             "MesIngest:baseUrl",
             "MesIngest:sharedSecretEnvironmentVariable",
             failures);
         RequireExternalSecret("RIoT:callApiKeyEnvironmentVariable", failures);
         RequireExternalSecret("OnboardTransport:credentialEnvironmentVariable", failures);
-        foreach (PackageCapacityRuleOptions rule in options.PackageCapacityRules)
-        {
-            RequireText(rule.Pattern, "PackageCapacityRules[].Pattern", failures);
-            if (rule.MatchType is not ("exact" or "prefix"))
-                failures.Add("PackageCapacityRules[].MatchType must be exact or prefix.");
-            if (rule.MaxBoxesPerBasket <= 0)
-                failures.Add("PackageCapacityRules[].MaxBoxesPerBasket must be positive.");
-        }
         return failures.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(failures);

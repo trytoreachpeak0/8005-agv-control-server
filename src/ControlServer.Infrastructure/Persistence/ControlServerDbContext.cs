@@ -30,6 +30,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<StationTaskTypeAdmissionRow> StationTaskTypeAdmissions => Set<StationTaskTypeAdmissionRow>();
     public DbSet<AdmissionPolicyAuditRow> AdmissionPolicyAudit => Set<AdmissionPolicyAuditRow>();
     public DbSet<AdmissionDecisionSnapshotRow> AdmissionDecisionSnapshots => Set<AdmissionDecisionSnapshotRow>();
+    public DbSet<PackageCapacityRuleRow> PackageCapacityRules => Set<PackageCapacityRuleRow>();
+    public DbSet<MissingPackageRow> MissingPackages => Set<MissingPackageRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -79,6 +81,13 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<AdmissionPolicyAuditRow>().HasKey(row => row.Version);
         modelBuilder.Entity<AdmissionPolicyAuditRow>().Property(row => row.Version).ValueGeneratedNever();
         modelBuilder.Entity<AdmissionDecisionSnapshotRow>().HasKey(row => row.SlotOperationAttemptId);
+        modelBuilder.Entity<PackageCapacityRuleRow>().HasKey(row => row.RuleId);
+        modelBuilder.Entity<PackageCapacityRuleRow>()
+            .HasIndex(row => new { row.Pattern, row.MatchType })
+            .IsUnique()
+            .HasFilter("SupersededAt IS NULL");
+        modelBuilder.Entity<PackageCapacityRuleRow>().HasData(PackageCapacitySeed.Rows);
+        modelBuilder.Entity<MissingPackageRow>().HasKey(row => row.Package);
     }
 }
 
@@ -418,6 +427,26 @@ public sealed class AdmissionDecisionSnapshotRow
     public long AdmissionPolicyVersion { get; set; }
     public DateTimeOffset AdmittedAt { get; set; }
     public bool Allowed { get; set; }
+}
+
+public sealed class PackageCapacityRuleRow
+{
+    public required string RuleId { get; set; }
+    public required string Pattern { get; set; }
+    public required string MatchType { get; set; }
+    public int MaxBoxesPerBasket { get; set; }
+    public int Version { get; set; }
+    public required string Source { get; set; }
+    public DateTimeOffset EffectiveAt { get; set; }
+    public DateTimeOffset? SupersededAt { get; set; }
+}
+
+public sealed class MissingPackageRow
+{
+    public required string Package { get; set; }
+    public DateTimeOffset FirstSeenAt { get; set; }
+    public DateTimeOffset LastSeenAt { get; set; }
+    public required string Status { get; set; }
 }
 
 public sealed class DemandAcceptanceStore(ControlServerDbContext dbContext) : IDemandAcceptanceStore

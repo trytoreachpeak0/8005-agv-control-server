@@ -14,6 +14,7 @@ public sealed class JourneyRuntimeEngine(
     ControlServerDbContext dbContext,
     IMesIngestCatalog catalog,
     ISublotBoxCountReader boxCountReader,
+    IPackageCapacityStore packageCapacityStore,
     IRiotVehicleFacts vehicleFacts,
     IRiotMapStationCatalog mapStationCatalog,
     MapStationResolver stationResolver,
@@ -133,6 +134,7 @@ public sealed class JourneyRuntimeEngine(
             string reason = "ELIGIBLE";
             ResolvedJourneyRoute? route = null;
             int expectedBasketCount = 0;
+            int? packageCapacity = null;
             int[] targetSlots = [];
             if (!runtimeOptions.AllowedWorkTypes.Contains(candidate.WorkType, StringComparer.Ordinal) ||
                 !string.Equals(candidate.WorkType, "WIRE_TO_GATE", StringComparison.Ordinal))
@@ -145,6 +147,10 @@ public sealed class JourneyRuntimeEngine(
                      string.IsNullOrWhiteSpace(candidate.LiveMesFields.Package))
             {
                 reason = "REQUIRED_MES_FACT_MISSING";
+            }
+            else if (!candidate.LiveMesFields.Area.StartsWith('N'))
+            {
+                reason = "OUT_OF_SCOPE_AREA";
             }
             else
             {
@@ -187,6 +193,16 @@ public sealed class JourneyRuntimeEngine(
 
             if (reason == "ELIGIBLE" && route is not null)
             {
+                packageCapacity = await packageCapacityStore.ResolveAndTrackAsync(
+                    candidate.LiveMesFields!.Package!, now, cancellationToken).ConfigureAwait(false);
+                if (packageCapacity is null or <= 0)
+                {
+                    reason = "PACKAGE_CAPACITY_NOT_UNIQUE";
+                }
+            }
+
+            if (reason == "ELIGIBLE" && route is not null)
+            {
                 reason = ValidateDynamicFacts(onboard, vehicle, now);
             }
             if (reason == "ELIGIBLE" && route is not null &&
@@ -208,18 +224,15 @@ public sealed class JourneyRuntimeEngine(
                     LogBoxCountFailed(logger, candidate.DemandId, error);
                     maxBoxCount = null;
                 }
-                int? capacity = ResolvePackageCapacity(candidate.LiveMesFields!.Package!);
                 if (maxBoxCount is null or <= 0)
                 {
                     reason = "SUBLOT_BOX_COUNT_UNAVAILABLE";
                 }
-                else if (capacity is null or <= 0)
-                {
-                    reason = "PACKAGE_CAPACITY_NOT_UNIQUE";
-                }
                 else
                 {
-                    expectedBasketCount = checked((maxBoxCount.Value + capacity.Value - 1) / capacity.Value);
+                    int capacity = packageCapacity
+                        ?? throw new InvalidOperationException("Eligible PACKAGE must have a frozen capacity.");
+                    expectedBasketCount = checked((maxBoxCount.Value + capacity - 1) / capacity);
                     if (expectedBasketCount is < 1 or > 8)
                     {
                         reason = "EXPECTED_BASKET_COUNT_OUT_OF_RANGE";
@@ -831,17 +844,6 @@ public sealed class JourneyRuntimeEngine(
         dbContext.SessionRecoveries.SingleOrDefaultAsync(
             row => row.AgvId == agvId && row.Readiness == SessionReadiness.Ready,
             cancellationToken);
-
-    private int? ResolvePackageCapacity(string package)
-    {
-        PackageCapacityRuleOptions[] exact = runtimeOptions.PackageCapacityRules.Where(rule =>
-            rule.MatchType == "exact" && string.Equals(rule.Pattern, package, StringComparison.Ordinal)).ToArray();
-        if (exact.Length == 1) return exact[0].MaxBoxesPerBasket;
-        if (exact.Length > 1) return null;
-        PackageCapacityRuleOptions[] prefixes = runtimeOptions.PackageCapacityRules.Where(rule =>
-            rule.MatchType == "prefix" && package.StartsWith(rule.Pattern, StringComparison.Ordinal)).ToArray();
-        return prefixes.Length == 1 ? prefixes[0].MaxBoxesPerBasket : null;
-    }
 
     private async Task<JourneyBacklogRow> UpsertBacklogAsync(
         AcceptedDemandSnapshot candidate,

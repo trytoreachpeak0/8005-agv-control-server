@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Globalization;
+using System.Security.Cryptography.X509Certificates;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Adapters;
@@ -18,6 +19,21 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .Enrich.FromLogContext()
     .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
 builder.WebHost.UseUrls(builder.Configuration["Health:url"] ?? "http://127.0.0.1:58007");
+if (builder.Configuration.GetValue<bool>("OnboardSafetyProjection:enabled"))
+{
+    string certificatePath = builder.Configuration["OnboardTransport:serverCertificatePath"]
+        ?? throw new InvalidDataException("HTTPS projection requires the Onboard server certificate path.");
+    string? passwordVariable = builder.Configuration["OnboardTransport:serverCertificatePasswordEnvironmentVariable"];
+    string? password = string.IsNullOrWhiteSpace(passwordVariable)
+        ? null
+        : Environment.GetEnvironmentVariable(passwordVariable);
+    X509Certificate2 certificate = new(
+        certificatePath,
+        password,
+        X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.EphemeralKeySet);
+    builder.WebHost.ConfigureKestrel(options =>
+        options.ConfigureHttpsDefaults(https => https.ServerCertificate = certificate));
+}
 
 string configuredConnection = builder.Configuration.GetConnectionString("ControlServer")
     ?? "Data Source=%ProgramData%\\8005\\ControlServer\\data\\controlserver.db";
@@ -30,6 +46,8 @@ builder.Services.AddScoped<DemandIntakeService>();
 builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.AddScoped<JourneyIntakeCoordinator>();
 builder.Services.AddScoped<JourneyRuntimeEngine>();
+builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();
+builder.Services.AddScoped<PackageCapacityImportService>();
 builder.Services.Configure<OnboardTransportOptions>(builder.Configuration.GetSection(OnboardTransportOptions.SectionName));
 builder.Services.AddScoped<OnboardMessageProcessor>();
 builder.Services.AddScoped<OnboardJourneyPublisher>();
@@ -71,6 +89,12 @@ builder.Services.AddScoped<IRiotVehicleFacts>(services =>
     services.GetRequiredService<HttpRiotMovementGateway>());
 builder.Services.AddScoped<IRiotMapStationCatalog>(services =>
     services.GetRequiredService<HttpRiotMovementGateway>());
+builder.Services.AddScoped<IRiotVehicleSafetyFacts>(services =>
+    services.GetRequiredService<HttpRiotMovementGateway>());
+builder.Services.AddOptions<OnboardSafetyProjectionOptions>()
+    .Bind(builder.Configuration.GetSection(OnboardSafetyProjectionOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<OnboardSafetyProjectionOptions>, OnboardSafetyProjectionOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>((services, client) =>
 {
@@ -88,6 +112,13 @@ WebApplication app = builder.Build();
 app.UseSerilogRequestLogging();
 
 await EnsureDatabaseAsync(app.Services);
+
+if (PackageCapacityImportCommand.IsRequested(args))
+{
+    Environment.ExitCode = await PackageCapacityImportCommand.RunAsync(
+        args, app.Services, CancellationToken.None);
+    return;
+}
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>
@@ -127,6 +158,10 @@ app.MapGet("/api/runtime/sessions", async (ControlServerDbContext dbContext, Can
             row.UpdatedAt
         })
         .ToArrayAsync(cancellationToken));
+if (app.Configuration.GetValue<bool>("OnboardSafetyProjection:enabled"))
+{
+    app.MapOnboardVehicleSafety();
+}
 
 await app.RunAsync();
 

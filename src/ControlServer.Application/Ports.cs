@@ -33,6 +33,21 @@ public interface ISublotBoxCountReader
     Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken);
 }
 
+public interface IPackageCapacityStore
+{
+    Task<int?> ResolveAndTrackAsync(
+        string package,
+        DateTimeOffset observedAt,
+        CancellationToken cancellationToken);
+}
+
+public interface IRiotVehicleSafetyFacts
+{
+    Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(
+        string vehicleKey,
+        CancellationToken cancellationToken);
+}
+
 public interface IOnboardPeer
 {
     Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken);
@@ -101,6 +116,20 @@ public sealed record RiotVehicleObservation(
     DateTimeOffset ObservedAt,
     int? LockStatus = null,
     string? OrderTaskId = null);
+
+public enum RiotVehicleMotionState
+{
+    Stopped,
+    Moving,
+    Unknown
+}
+
+public sealed record RiotVehicleSafetyObservation(
+    string VehicleKey,
+    RiotVehicleMotionState MotionState,
+    DateTimeOffset ObservedAt,
+    string Source,
+    IReadOnlyList<string> ReasonCodes);
 
 public sealed record RiotMapStation(int StationId, string StationName);
 
