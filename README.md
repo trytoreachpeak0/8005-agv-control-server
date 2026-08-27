@@ -70,3 +70,29 @@ Sublot、LOAD、发车安全、`TO_GATE`、可信 gate 到站、UNLOAD 与四事
 业务 ID 继续；未确认的服务端消息保留 MessageId/payload，并按当前 sessionGeneration 重新封装。
 Sublot 提交时先按当前站点×任务类型策略预检；LOAD 的仓位操作、outbox 和允许决策快照在同一事务中
 复检并冻结策略版本，后续策略更新不会重解释已承诺的物理操作。
+
+## 本机 Windows Service 部署
+
+使用新目录生成绑定源提交和逐文件 SHA-256 的 `win-x64` 自包含包：
+
+```powershell
+.\scripts\Publish-ControlServer.ps1 -OutputPath <new-package-directory>
+```
+
+首次本机安装必须从提升权限的 PowerShell 运行，并显式确认开发根信任和 User→Machine RIoT
+秘密复制。安装器拒绝覆盖已有同名服务或安装目录，生成只含 `localhost` SAN 的专用开发证书，
+将公有根证书装入当前用户受信任根，收紧安装／数据／PFX ACL，以 `LocalSystem` 自动服务安装，
+并完成 HTTPS live、停止／启动、重启和版本回读。它保持 `JourneyRuntime.enabled=false`，不会调用
+RIoT mutation、创建订单或移动车辆：
+
+```powershell
+.\scripts\Install-ControlServerLocal.ps1 `
+  -PackagePath <package-directory> `
+  -ResultPath <new-result-json> `
+  -InstallCurrentUserRoot `
+  -CopyUserRiotSecretToMachine
+```
+
+私钥、PFX 密码、RIoT CallApiKey 和 Onboard credential 只存在于受 ACL 保护的外部位置或 Windows
+环境变量，不进入 Git、包清单或安装结果。迁移到最终机器时必须重新确认 ControlServer DNS／IP，
+签发匹配的新证书，并按精确 thumbprint 移除本机开发根；仅含 `localhost` 的证书不得复用到车载部署。
