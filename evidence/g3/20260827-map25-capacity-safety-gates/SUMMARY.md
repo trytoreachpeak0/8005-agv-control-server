@@ -65,12 +65,11 @@ The eight confirmed non-routable observations remain excluded from execution:
 
 ## Protected Onboard owner handoff
 
-Current protected repository HEAD is
-`8005-agv-onboard-hmi/OnboardHmi_MVP@a1e32dd8960b11b2792f252837029d0a6f1dda90`.
-The relevant Wang Kun product implementation is
-`045514770da9858a8a49196dede276192e4f2a1b`; current `App.xaml.cs` still constructs
-`UnavailableVehicleSafetySignalProvider`, whose source is `UNAVAILABLE` and whose state is
-always `Unknown`.
+Current protected remote repository HEAD is Wang Kun's
+`8005-agv-onboard-hmi/OnboardHmi_MVP@15c6387801fa2154fb69441eac460fea9d0999c5`.
+It includes the current-session-generation recovery replay fix. At that exact HEAD,
+`App.xaml.cs` still constructs `UnavailableVehicleSafetySignalProvider`, whose source is
+`UNAVAILABLE` and whose state is always `Unknown`.
 
 The Onboard owner must replace that composition root with an `IVehicleSafetySignalProvider`
 adapter for `GET /api/onboard/v1/vehicle-safety`, using formal certificate trust and the
