@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "completedAt": "2026-08-27T17:44:27+08:00",
+  "result": "PASS_WITH_EXTERNAL_SAFETY_BLOCKER",
+  "formalG3": "INCONCLUSIVE",
+  "identities": {
+    "deployedControlServerSource": "5c726218f59d10d5929e7f5c0a39c1ebd4df52f1",
+    "controlServerEvidenceBase": "f89ec2d48de29351c00f929e1fdb3e2f7751a173",
+    "onboardCommit": "594cd14e2dec17285dc1352134515e3cab4abfd2",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279"
+  },
+  "focusedValidation": {
+    "onboardTestsPassed": 18,
+    "onboardTestsFailed": 0,
+    "onboardTestsSkipped": 0,
+    "onboardReleaseBuildWarnings": 0,
+    "onboardReleaseBuildErrors": 0
+  },
+  "runtime": {
+    "configuredPort": 58005,
+    "portOverrideApplied": false,
+    "simulatorHealth": "READY",
+    "tcp58005Established": true,
+    "sessionGeneration": 2,
+    "sessionReadiness": "RecoveryRequired",
+    "sessionReasonCode": "DEPARTURE_SAFETY_NOT_READY",
+    "safetyProjectionMotion": "UNKNOWN",
+    "safetyProjectionReasonCodes": [
+      "RIOT_MOVEMENT_NOT_FINISHED"
+    ],
+    "journeyRuntimeEnabled": false
+  },
+  "authorizedWrites": {
+    "controlServerSessionRecovery": true,
+    "disposableOnboardJournal": true,
+    "simulatorState": true,
+    "riotMutation": false,
+    "orderCreated": false,
+    "vehicleMoved": false,
+    "vehicleTouchscreenAccessed": false
+  },
+  "cleanup": {
+    "onboardStopped": true,
+    "simulatorStopped": true,
+    "controlServerStillRunning": true,
+    "temporaryPortsReleased": [
+      1502,
+      58006
+    ]
+  }
+}
