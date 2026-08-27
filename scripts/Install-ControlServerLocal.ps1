@@ -264,12 +264,14 @@ try {
     Set-RestrictedDirectoryAcl $dataRoot
 
     $executable = Join-Path $installPath 'ControlServer.Host.exe'
-    New-Service -Name $serviceName -BinaryPathName ('"{0}"' -f $executable) `
+    $binaryPath = '"{0}" --contentRoot "{1}" --environment Production' -f $executable, $installPath
+    New-Service -Name $serviceName -BinaryPathName $binaryPath `
         -DisplayName $serviceName -Description '8005 AGV WIRE_TO_GATE ControlServer' `
         -StartupType Automatic | Out-Null
     $serviceCreated = $true
     $serviceRegistrySubKey = "SYSTEM\CurrentControlSet\Services\$serviceName"
     [string[]]$serviceEnvironment = @(
+        'DOTNET_ENVIRONMENT=Production',
         "CONTROL_SERVER_RIOT_CALL_API_KEY=$riotUser",
         "CONTROL_SERVER_ONBOARD_CREDENTIAL=$onboardCredential",
         "CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD=$certificatePassword"
@@ -279,7 +281,7 @@ try {
     try {
         $serviceRegistryKey.SetValue('Environment', $serviceEnvironment, [Microsoft.Win32.RegistryValueKind]::MultiString)
         Set-RestrictedRegistryAcl $serviceRegistryKey
-        $serviceEnvironmentVerified = @($serviceRegistryKey.GetValue('Environment')).Count -eq 3
+        $serviceEnvironmentVerified = @($serviceRegistryKey.GetValue('Environment')).Count -eq $serviceEnvironment.Count
     }
     finally {
         $serviceRegistryKey.Close()
