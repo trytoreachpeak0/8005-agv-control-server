@@ -96,3 +96,16 @@ RIoT mutation、创建订单或移动车辆：
 私钥、PFX 密码、RIoT CallApiKey 和 Onboard credential 只存在于受 ACL 保护的外部位置或 Windows
 环境变量，不进入 Git、包清单或安装结果。迁移到最终机器时必须重新确认 ControlServer DNS／IP，
 签发匹配的新证书，并按精确 thumbprint 移除本机开发根；仅含 `localhost` 的证书不得复用到车载部署。
+
+升级既有本机服务时使用新目录包和新结果路径。升级器在停服后以管理员 ACL 备份安装目录与完整数据根，
+保留现有 `appsettings.Production.json`、证书和秘密，失败时恢复原二进制与 SQLite：
+
+```powershell
+.\scripts\Update-ControlServerLocal.ps1 `
+  -PackagePath <new-package-directory> `
+  -ResultPath <new-result-json> `
+  -VerifySafetyProjectionReadOnly
+```
+
+`-VerifySafetyProjectionReadOnly` 只调用已认证的 `GET /api/onboard/v1/vehicle-safety`，不会启用 Journey
+Runtime、调用 RIoT mutation、创建订单或移动车辆。

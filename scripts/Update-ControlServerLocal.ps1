@@ -1,0 +1,251 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackagePath,
+    [Parameter(Mandatory = $true)]
+    [string]$ResultPath,
+    [string]$DiagnosticPath,
+    [switch]$VerifySafetyProjectionReadOnly
+)
+
+$ErrorActionPreference = 'Stop'
+$serviceName = '8005 AGV ControlServer'
+$installPath = 'C:\Program Files\8005 AGV\ControlServer'
+$dataRoot = 'C:\ProgramData\8005\ControlServer'
+$backupRoot = 'C:\ProgramData\8005\ControlServer-backups'
+$resolvedPackage = [IO.Path]::GetFullPath($PackagePath)
+$resolvedResult = [IO.Path]::GetFullPath($ResultPath)
+$resolvedDiagnostic = if ([string]::IsNullOrWhiteSpace($DiagnosticPath)) { $null } else { [IO.Path]::GetFullPath($DiagnosticPath) }
+$runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
+$backupPath = Join-Path $backupRoot "$runId-upgrade"
+$stagingPath = "C:\Program Files\8005 AGV\ControlServer.staging.$runId"
+$replacementInstalled = $false
+$serviceStopped = $false
+$backupComplete = $false
+
+function Write-Diagnostic([string]$Message) {
+    if ([string]::IsNullOrWhiteSpace($resolvedDiagnostic)) { return }
+    $directory = Split-Path -Parent $resolvedDiagnostic
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    $line = '{0} {1}{2}' -f [DateTimeOffset]::UtcNow.ToString('O'), $Message, [Environment]::NewLine
+    [IO.File]::AppendAllText($resolvedDiagnostic, $line, [Text.UTF8Encoding]::new($false))
+}
+
+function Assert-Administrator {
+    $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw 'Update-ControlServerLocal.ps1 must run elevated.'
+    }
+}
+
+function Set-RestrictedDirectoryAcl([string]$Path) {
+    $security = [Security.AccessControl.DirectorySecurity]::new()
+    $security.SetAccessRuleProtection($true, $false)
+    foreach ($sidValue in @('S-1-5-18', 'S-1-5-32-544')) {
+        $sid = [Security.Principal.SecurityIdentifier]::new($sidValue)
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new(
+            $sid,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow)
+        [void]$security.AddAccessRule($rule)
+    }
+    Set-Acl -LiteralPath $Path -AclObject $security
+}
+
+function Test-PackageManifest([string]$Path) {
+    $manifestPath = Join-Path $Path 'deployment-manifest.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw 'Package deployment-manifest.json is missing.'
+    }
+    $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
+    if ($manifest.schemaVersion -ne 1 -or $manifest.product -ne '8005 AGV ControlServer') {
+        throw 'Package manifest identity is invalid.'
+    }
+    $prefix = $Path.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    foreach ($file in $manifest.files) {
+        $candidate = [IO.Path]::GetFullPath((Join-Path $Path $file.path))
+        if (-not $candidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Package manifest contains an escaping path: $($file.path)"
+        }
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            throw "Package file is missing: $($file.path)"
+        }
+        $actual = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $file.sha256) { throw "Package file hash mismatch: $($file.path)" }
+    }
+    return $manifest
+}
+
+function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($Seconds)
+    do {
+        $service = Get-Service -Name $serviceName -ErrorAction Stop
+        if ($service.Status.ToString() -eq $ExpectedStatus) { return }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    throw "Service did not reach $ExpectedStatus within $Seconds seconds."
+}
+
+function Invoke-JsonGet([string]$Uri) {
+    $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
+        --noproxy localhost --ssl-revoke-best-effort --max-time 10 $Uri 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "Schannel GET failed with exit code $LASTEXITCODE`: $($body -join ' ')" }
+    return $body | ConvertFrom-Json
+}
+
+function Invoke-SafetyProjection {
+    $credential = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')
+    if ([string]::IsNullOrWhiteSpace($credential)) { throw 'Machine Onboard credential is missing.' }
+    $handler = [Net.Http.HttpClientHandler]::new()
+    $handler.CheckCertificateRevocationList = $false
+    $client = [Net.Http.HttpClient]::new($handler)
+    $client.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $credential)
+    try {
+        $response = $client.GetAsync('https://localhost:58007/api/onboard/v1/vehicle-safety').GetAwaiter().GetResult()
+        $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        if (-not $response.IsSuccessStatusCode) {
+            throw "Safety projection returned HTTP $([int]$response.StatusCode)."
+        }
+        $result = $body | ConvertFrom-Json
+        if ($result.motionState -notin @('STOPPED', 'MOVING', 'UNKNOWN')) {
+            throw 'Safety projection returned an invalid motion state.'
+        }
+        return $result
+    }
+    finally {
+        $client.Dispose()
+        $handler.Dispose()
+    }
+}
+
+Assert-Administrator
+foreach ($path in @($resolvedResult, $resolvedDiagnostic, $stagingPath, $backupPath)) {
+    if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path)) {
+        throw "Output already exists: $path"
+    }
+}
+if (-not (Get-Service -Name $serviceName -ErrorAction SilentlyContinue)) { throw 'ControlServer service is missing.' }
+if (-not (Test-Path -LiteralPath $installPath -PathType Container)) { throw 'ControlServer install path is missing.' }
+if (-not (Test-Path -LiteralPath $dataRoot -PathType Container)) { throw 'ControlServer data root is missing.' }
+$manifest = Test-PackageManifest $resolvedPackage
+$productionConfiguration = Join-Path $installPath 'appsettings.Production.json'
+if (-not (Test-Path -LiteralPath $productionConfiguration -PathType Leaf)) {
+    throw 'Installed production configuration is missing.'
+}
+$configuration = Get-Content -Raw -LiteralPath $productionConfiguration | ConvertFrom-Json
+if ($configuration.JourneyRuntime.enabled -ne $false) { throw 'JourneyRuntime must remain disabled during upgrade.' }
+Write-Diagnostic 'preflight-complete'
+
+try {
+    Stop-Service -Name $serviceName
+    Wait-ServiceState 'Stopped'
+    $serviceStopped = $true
+    Write-Diagnostic 'service-stopped'
+
+    New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
+    Set-RestrictedDirectoryAcl $backupPath
+    $installBackupPath = New-Item -ItemType Directory -Path (Join-Path $backupPath 'install')
+    $dataBackupPath = New-Item -ItemType Directory -Path (Join-Path $backupPath 'data-root')
+    foreach ($item in Get-ChildItem -LiteralPath $installPath -Force) {
+        Copy-Item -LiteralPath $item.FullName -Destination $installBackupPath.FullName -Recurse -Force
+    }
+    foreach ($item in Get-ChildItem -LiteralPath $dataRoot -Force) {
+        Copy-Item -LiteralPath $item.FullName -Destination $dataBackupPath.FullName -Recurse -Force
+    }
+    $backupComplete = $true
+    Write-Diagnostic 'backup-complete'
+
+    New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
+    foreach ($item in Get-ChildItem -LiteralPath $resolvedPackage -Force) {
+        Copy-Item -LiteralPath $item.FullName -Destination $stagingPath -Recurse -Force
+    }
+    Copy-Item -LiteralPath $productionConfiguration -Destination $stagingPath -Force
+    Set-RestrictedDirectoryAcl $stagingPath
+    Write-Diagnostic 'staging-complete'
+
+    Remove-Item -LiteralPath $installPath -Recurse -Force
+    Move-Item -LiteralPath $stagingPath -Destination $installPath
+    $replacementInstalled = $true
+    Write-Diagnostic 'replacement-installed'
+
+    Start-Service -Name $serviceName
+    Wait-ServiceState 'Running'
+    $live = Invoke-JsonGet 'https://localhost:58007/health/live'
+    if ($live.status -ne 'live') { throw 'Live endpoint returned an unexpected response.' }
+    $version = Invoke-JsonGet 'https://localhost:58007/version'
+    $safety = if ($VerifySafetyProjectionReadOnly) { Invoke-SafetyProjection } else { $null }
+    Restart-Service -Name $serviceName -Force
+    Wait-ServiceState 'Running'
+    $liveAfterRestart = Invoke-JsonGet 'https://localhost:58007/health/live'
+    if ($liveAfterRestart.status -ne 'live') { throw 'Post-restart live endpoint returned an unexpected response.' }
+    if ($VerifySafetyProjectionReadOnly) { $safety = Invoke-SafetyProjection }
+    Write-Diagnostic 'lifecycle-and-readonly-checks-complete'
+
+    $resultDirectory = Split-Path -Parent $resolvedResult
+    New-Item -ItemType Directory -Path $resultDirectory -Force | Out-Null
+    $result = [ordered]@{
+        schemaVersion = 1
+        result = 'PASS'
+        runId = $runId
+        sourceCommit = $manifest.sourceCommit
+        packageManifestSha256 = (Get-FileHash -LiteralPath (Join-Path $resolvedPackage 'deployment-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+        configurationSha256 = (Get-FileHash -LiteralPath (Join-Path $installPath 'appsettings.Production.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+        serviceStatus = (Get-Service -Name $serviceName).Status.ToString()
+        protocolTag = $version.protocolTag
+        protocolCommit = $version.protocolCommit
+        safetyProjection = if ($safety) { [ordered]@{
+            httpStatus = 200
+            motionState = $safety.motionState
+            source = $safety.source
+            reasonCount = @($safety.reasonCodes).Count
+        }} else { $null }
+        journeyRuntimeEnabled = $false
+        riotMutationPerformed = $false
+        orderCreated = $false
+        vehicleMoved = $false
+        backupPath = $backupPath
+        completedAt = [DateTimeOffset]::UtcNow.ToString('O')
+    }
+    [IO.File]::WriteAllText($resolvedResult, ($result | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
+    Write-Diagnostic 'result-written'
+}
+catch {
+    $original = $_
+    Write-Diagnostic ("failure: {0}" -f $original.Exception.Message)
+    try {
+        try { Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue } catch { }
+        if ($backupComplete) {
+            if (Test-Path -LiteralPath $installPath) {
+                Remove-Item -LiteralPath $installPath -Recurse -Force
+            }
+            New-Item -ItemType Directory -Path $installPath -Force | Out-Null
+            foreach ($item in Get-ChildItem -LiteralPath (Join-Path $backupPath 'install') -Force) {
+                Copy-Item -LiteralPath $item.FullName -Destination $installPath -Recurse -Force
+            }
+
+            if (Test-Path -LiteralPath $dataRoot) {
+                Remove-Item -LiteralPath $dataRoot -Recurse -Force
+            }
+            New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
+            foreach ($item in Get-ChildItem -LiteralPath (Join-Path $backupPath 'data-root') -Force) {
+                Copy-Item -LiteralPath $item.FullName -Destination $dataRoot -Recurse -Force
+            }
+        }
+        if (Test-Path -LiteralPath $stagingPath) {
+            Remove-Item -LiteralPath $stagingPath -Recurse -Force
+        }
+        if ($serviceStopped) {
+            Start-Service -Name $serviceName
+            Wait-ServiceState 'Running'
+        }
+        Write-Diagnostic 'rollback-complete'
+    }
+    catch {
+        $rollback = $_
+        Write-Diagnostic ("rollback-failure: {0}" -f $rollback.Exception.Message)
+        throw [AggregateException]::new('ControlServer upgrade and rollback both failed.', @($original.Exception, $rollback.Exception))
+    }
+    throw $original
+}
