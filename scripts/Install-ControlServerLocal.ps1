@@ -62,7 +62,7 @@ function Set-RestrictedDirectoryAcl([string]$Path) {
     Set-Acl -LiteralPath $Path -AclObject $security
 }
 
-function Set-RestrictedRegistryAcl([string]$Path) {
+function Set-RestrictedRegistryAcl([Microsoft.Win32.RegistryKey]$Key) {
     $security = [Security.AccessControl.RegistrySecurity]::new()
     $security.SetAccessRuleProtection($true, $false)
     foreach ($sidValue in @('S-1-5-18', 'S-1-5-32-544')) {
@@ -75,7 +75,7 @@ function Set-RestrictedRegistryAcl([string]$Path) {
             [Security.AccessControl.AccessControlType]::Allow)
         [void]$security.AddAccessRule($rule)
     }
-    Set-Acl -LiteralPath $Path -AclObject $security
+    $Key.SetAccessControl($security)
 }
 
 function Test-PackageManifest([string]$Path) {
@@ -119,10 +119,22 @@ function Invoke-LiveCheck {
     if ($response.status -ne 'live') { throw 'HTTPS live check returned an unexpected response.' }
 }
 
-function Remove-CertificateByThumbprint([string]$StorePath, [string]$Thumbprint) {
+function Remove-CertificateByThumbprint([string]$StoreName, [string]$Thumbprint) {
     if ([string]::IsNullOrWhiteSpace($Thumbprint)) { return }
-    $candidate = Join-Path $StorePath $Thumbprint
-    if (Test-Path -LiteralPath $candidate) { Remove-Item -LiteralPath $candidate -Force }
+    $store = [Security.Cryptography.X509Certificates.X509Store]::new(
+        $StoreName,
+        [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+    $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    try {
+        $matches = $store.Certificates.Find(
+            [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+            $Thumbprint,
+            $false)
+        foreach ($match in $matches) { $store.Remove($match) }
+    }
+    finally {
+        $store.Close()
+    }
 }
 
 Assert-Administrator
@@ -202,8 +214,8 @@ try {
     Export-Certificate -Cert $rootCertificate -FilePath $rootPublicPath -Type CERT | Out-Null
     $trustedRoot = Import-Certificate -FilePath $rootPublicPath -CertStoreLocation 'Cert:\CurrentUser\Root'
     $trustedRootThumbprint = $trustedRoot.Thumbprint
-    Remove-CertificateByThumbprint 'Cert:\CurrentUser\My' $leafCertificate.Thumbprint
-    Remove-CertificateByThumbprint 'Cert:\CurrentUser\My' $rootCertificate.Thumbprint
+    Remove-CertificateByThumbprint 'My' $leafCertificate.Thumbprint
+    Remove-CertificateByThumbprint 'My' $rootCertificate.Thumbprint
 
     [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $riotUser, 'Machine')
     [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $certificatePassword, 'Machine')
@@ -242,15 +254,22 @@ try {
         -DisplayName $serviceName -Description '8005 AGV WIRE_TO_GATE ControlServer' `
         -StartupType Automatic | Out-Null
     $serviceCreated = $true
-    $serviceRegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName"
+    $serviceRegistrySubKey = "SYSTEM\CurrentControlSet\Services\$serviceName"
     $serviceEnvironment = @(
         "CONTROL_SERVER_RIOT_CALL_API_KEY=$riotUser",
         "CONTROL_SERVER_ONBOARD_CREDENTIAL=$onboardCredential",
         "CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD=$certificatePassword"
     )
-    New-ItemProperty -LiteralPath $serviceRegistryPath -Name Environment -PropertyType MultiString `
-        -Value $serviceEnvironment -Force | Out-Null
-    Set-RestrictedRegistryAcl $serviceRegistryPath
+    $serviceRegistryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($serviceRegistrySubKey, $true)
+    if ($null -eq $serviceRegistryKey) { throw 'The new service registry key cannot be opened.' }
+    try {
+        $serviceRegistryKey.SetValue('Environment', $serviceEnvironment, [Microsoft.Win32.RegistryValueKind]::MultiString)
+        Set-RestrictedRegistryAcl $serviceRegistryKey
+        $serviceEnvironmentVerified = @($serviceRegistryKey.GetValue('Environment')).Count -eq 3
+    }
+    finally {
+        $serviceRegistryKey.Close()
+    }
     Write-Diagnostic 'service-installation-complete'
 
     Start-Service -Name $serviceName
@@ -294,7 +313,7 @@ try {
             riotMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'Machine'))
             onboardMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine'))
             certificatePasswordMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', 'Machine'))
-            serviceSpecificEnvironmentPresent = (Get-ItemProperty -LiteralPath $serviceRegistryPath -Name Environment -ErrorAction Stop).Environment.Count -eq 3
+            serviceSpecificEnvironmentPresent = $serviceEnvironmentVerified
             valuesDisclosed = $false
         }
         checks = @('package-hashes', 'sqlite-migrations-at-start', 'https-live-after-start', 'stop-start', 'restart', 'https-version')
@@ -311,30 +330,50 @@ try {
     Write-Output "ControlServer local deployment PASS. Result: $resolvedResult"
 }
 catch {
-    Write-Diagnostic ("failure: {0}" -f $_.Exception.Message)
-    if ($serviceCreated) {
-        Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-        & sc.exe delete $serviceName | Out-Null
+    $originalError = $_
+    $rollbackErrors = [Collections.Generic.List[string]]::new()
+    Write-Diagnostic ("failure: {0}" -f $originalError.Exception.Message)
+    try {
+        if ($serviceCreated) {
+            Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+            & sc.exe delete $serviceName | Out-Null
+        }
     }
-    if ($installCreated -and (Test-Path -LiteralPath $installPath)) {
-        Remove-Item -LiteralPath $installPath -Recurse -Force
+    catch { $rollbackErrors.Add("service: $($_.Exception.Message)") }
+    try {
+        if ($installCreated -and (Test-Path -LiteralPath $installPath)) {
+            Remove-Item -LiteralPath $installPath -Recurse -Force
+        }
     }
-    if (Test-Path -LiteralPath $dataRoot) {
-        Get-ChildItem -LiteralPath $dataRoot -Force | Remove-Item -Recurse -Force
-        if ($dataBackupCreated) {
-            foreach ($item in Get-ChildItem -LiteralPath (Join-Path $backupPath 'data-root') -Force) {
-                Copy-Item -LiteralPath $item.FullName -Destination $dataRoot -Recurse -Force
+    catch { $rollbackErrors.Add("install-path: $($_.Exception.Message)") }
+    try {
+        [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $oldRiotMachine, 'Machine')
+        [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $oldCertificatePassword, 'Machine')
+    }
+    catch { $rollbackErrors.Add("machine-environment: $($_.Exception.Message)") }
+    try {
+        Remove-CertificateByThumbprint 'Root' $trustedRootThumbprint
+        if ($leafCertificate) { Remove-CertificateByThumbprint 'My' $leafCertificate.Thumbprint }
+        if ($rootCertificate) { Remove-CertificateByThumbprint 'My' $rootCertificate.Thumbprint }
+    }
+    catch { $rollbackErrors.Add("certificates: $($_.Exception.Message)") }
+    try {
+        if (Test-Path -LiteralPath $dataRoot) {
+            Get-ChildItem -LiteralPath $dataRoot -Force | Remove-Item -Recurse -Force
+            if ($dataBackupCreated) {
+                foreach ($item in Get-ChildItem -LiteralPath (Join-Path $backupPath 'data-root') -Force) {
+                    Copy-Item -LiteralPath $item.FullName -Destination $dataRoot -Recurse -Force
+                }
+            }
+            elseif (-not $dataRootExisted) {
+                Remove-Item -LiteralPath $dataRoot -Force
             }
         }
-        elseif (-not $dataRootExisted) {
-            Remove-Item -LiteralPath $dataRoot -Force
-        }
     }
-    Remove-CertificateByThumbprint 'Cert:\CurrentUser\Root' $trustedRootThumbprint
-    if ($leafCertificate) { Remove-CertificateByThumbprint 'Cert:\CurrentUser\My' $leafCertificate.Thumbprint }
-    if ($rootCertificate) { Remove-CertificateByThumbprint 'Cert:\CurrentUser\My' $rootCertificate.Thumbprint }
-    [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $oldRiotMachine, 'Machine')
-    [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $oldCertificatePassword, 'Machine')
-    Write-Diagnostic 'rollback-complete'
-    throw
+    catch { $rollbackErrors.Add("data-root: $($_.Exception.Message)") }
+    Write-Diagnostic ("rollback-complete errors={0}" -f $rollbackErrors.Count)
+    if ($rollbackErrors.Count -gt 0) {
+        throw "Deployment failed and rollback reported: $($rollbackErrors -join '; ')"
+    }
+    throw $originalError
 }
