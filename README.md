@@ -61,7 +61,7 @@ dotnet run --project .\tools\ControlServer.FakeOnboard -c Release -- --host 127.
 - `sublotBoxCountPath`：同一只读 MesIngest HTTP 身份下的 `SUBLOT_BOX_COUNT` 入口。响应必须精确返回
   `queryId=SUBLOT_BOX_COUNT`、原 Sublot、正整数 `maxBoxCount` 和 `observedAt`；失败、空值或身份不符均不开仓。
 
-当前受控现场身份已登记并只读回验为 `老厂前线新多仓位1`、RIoT `vehicleKey=BROKERX-0c20ff0600d644869a6a80c186065d85`、首次生命周期代次 `1`、`mapId=25`、`mapIdentity=老厂前线new`、固定关卡 `关卡/210`。RIoT CallApiKey 已按部署负责人要求持久化到 Windows User 范围的 `CONTROL_SERVER_RIOT_CALL_API_KEY`，新启动的 Host 进程会继承该值；密钥正文不进入仓库。Onboard 凭据、容量和电量参数仍必须在启用前由外部配置及现场事实补齐。
+当前受控现场身份已登记并只读回验为 `老厂前线新多仓位1`、RIoT `vehicleKey=BROKERX-0c20ff0600d644869a6a80c186065d85`、首次生命周期代次 `1`、`mapId=25`、`mapIdentity=老厂前线new`、固定关卡 `关卡/210`。RIoT CallApiKey 已按部署负责人要求持久化到 Windows User 范围的 `CONTROL_SERVER_RIOT_CALL_API_KEY`；从新打开的终端或刷新后的登录会话启动 Host，即可继承该值，密钥正文不进入仓库。Onboard 凭据、容量和电量参数仍必须在启用前由外部配置及现场事实补齐。
 
 Worker 使用 `BackgroundService`、Options 启动验证、scoped DI 与 EF SQLite migration。它先持久化 backlog，
 完成静态/动态硬准入及稳定排序，再通过已有 `JourneyIntakeCoordinator` 原子冻结 Demand、车辆租约、

@@ -8,7 +8,8 @@ move a vehicle. The supplied CallApiKey was read through hidden console input
 for the two GET requests. At the deployment owner's explicit instruction it was
 then persisted as the Windows User-scope environment variable
 `CONTROL_SERVER_RIOT_CALL_API_KEY`; its value was not written to Git or to this
-evidence artifact. A newly started Host process inherits that user-level value.
+evidence artifact. Start the Host from a newly opened terminal or refreshed
+sign-in session so its process environment inherits that user-level value.
 
 ## Bound identity
 
@@ -58,8 +59,9 @@ AREA values are outside Map 25's DispatchZone.
 
 ## Remaining gates
 
-- Restart the Host from a new process before integration so it inherits the
-  provisioned `CONTROL_SERVER_RIOT_CALL_API_KEY` user environment variable.
+- Open a new terminal (or refresh the sign-in session) before integration, then
+  start the Host so it inherits the provisioned
+  `CONTROL_SERVER_RIOT_CALL_API_KEY` user environment variable.
 - Confirm the seven missing AREA values are map defects or outside this Map's
   DispatchZone.
 - Supply the approved battery threshold, PACKAGE capacity rules,
