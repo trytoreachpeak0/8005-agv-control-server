@@ -59,13 +59,15 @@ AREA values are outside Map 25's DispatchZone.
 
 ## Remaining gates
 
-The ControlServer consumer is now locally updated to require the exact MesIngest
+The ControlServer consumer is published at
+`ControlServer_MVP@74b937c42dbe8b26c9d60d0332f5926622ba043e` and requires the exact MesIngest
 v2.3/schema 29 capability id+version set, including `SUBLOT_BOX_COUNT|1.0`, and its
 configured read path is `/api/v2/sublot-box-count`. Its Release build passed with
 zero warnings/errors, focused contract tests passed `4/4`, and the complete Release
-suite passed `83/83` with zero skips. These are local compatibility results only;
-the live MesIngest service remains v2.2 and the v2.3 producer branch has not been
-published or deployed.
+suite passed `83/83` with zero skips. The remote branch was fetched back at the same
+commit. The live MesIngest service remains v2.2; the v2.3 producer is published at
+`codex/map25-sublot-box-count@cbf5717406db39b3182beac4233fa1fdb45b7406`
+but has not been deployed.
 
 - Open a new terminal (or refresh the sign-in session) before integration, then
   start the Host so it inherits the provisioned
