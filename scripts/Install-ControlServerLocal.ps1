@@ -189,12 +189,12 @@ try {
         -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyExportPolicy Exportable `
         -KeyUsage CertSign, CRLSign, DigitalSignature `
         -TextExtension @('2.5.29.19={critical}{text}ca=true&pathlength=0') `
-        -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter ([DateTimeOffset]::Now.AddYears(1))
+        -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter ((Get-Date).AddYears(1))
     $leafCertificate = New-SelfSignedCertificate -Type Custom -Subject 'CN=localhost' -DnsName 'localhost' `
         -Signer $rootCertificate -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 `
         -KeyExportPolicy Exportable -KeyUsage DigitalSignature, KeyEncipherment `
         -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.1') `
-        -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter ([DateTimeOffset]::Now.AddMonths(6))
+        -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter ((Get-Date).AddMonths(6))
     Write-Diagnostic 'certificate-generation-complete'
 
     Export-PfxCertificate -Cert $leafCertificate -FilePath $certificatePath -Password $securePassword | Out-Null
