@@ -98,6 +98,7 @@ function Invoke-JsonGet([string]$Uri) {
 function Invoke-SafetyProjection {
     $credential = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')
     if ([string]::IsNullOrWhiteSpace($credential)) { throw 'Machine Onboard credential is missing.' }
+    Add-Type -AssemblyName System.Net.Http
     $handler = [System.Net.Http.HttpClientHandler]::new()
     $handler.CheckCertificateRevocationList = $false
     $client = [System.Net.Http.HttpClient]::new($handler)
