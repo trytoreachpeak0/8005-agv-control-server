@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "result": "FAIL_BEFORE_ORDER_CREATION",
+  "observedAt": "2026-08-27T10:31:35+00:00",
+  "formalG3": "INCONCLUSIVE_WITH_CORE_SESSION_FAILURE",
+  "identities": {
+    "deployedControlServerSource": "5c726218f59d10d5929e7f5c0a39c1ebd4df52f1",
+    "onboardCommit": "594cd14e2dec17285dc1352134515e3cab4abfd2",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279"
+  },
+  "authorization": {
+    "scope": "ONE_EMPTY_MAP25_WIRE_TO_GATE_JOURNEY",
+    "journeyRuntimeEnableAuthorized": true,
+    "riotOrderCreationAuthorized": true,
+    "vehicleMovementAuthorized": true,
+    "realMaterialAuthorized": false
+  },
+  "finalPreflight": {
+    "staticReadyItemCount": 13,
+    "batteryPercent": 15,
+    "minimumBatteryPercent": 10,
+    "batteryPolicySatisfied": true,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrderTask": true,
+    "motionState": "STOPPED",
+    "reasonCodes": []
+  },
+  "sessionFailure": {
+    "firstReadyGeneration": 5,
+    "secondReadyGeneration": 25,
+    "lastObservedReconnectGeneration": 38,
+    "lastObservedReadiness": "RecoveryRequired",
+    "lastObservedReason": "HANDSHAKE_INCOMPLETE",
+    "failingMessageType": "SafetyStateChanged",
+    "onboardObservedFailure": "CONTROL_SERVER_CLOSED_CONNECTION_BEFORE_DURABLE_ACK",
+    "journeyRuntimeCreated": false,
+    "backlogCreated": false,
+    "orderIntentCreated": false
+  },
+  "ownerDiagnosis": {
+    "owningRepository": "https://github.com/trytoreachpeak0/8005-agv-onboard-hmi",
+    "readOnlyInspectionOnly": true,
+    "messageIdDerivation": "StableUuid(safety-state-changed:{safetyStateVersion})",
+    "freshJournalInitialSafetyStateVersion": 1,
+    "contentChangesAcrossRuns": true,
+    "suspectedFailure": "GLOBAL_MESSAGE_ID_REUSED_WITH_DIFFERENT_CONTENT"
+  },
+  "cleanup": {
+    "journeyRuntimeEnabled": false,
+    "onboardStopped": true,
+    "simulatorStopped": true,
+    "temporaryPortsReleased": [
+      1502,
+      58006
+    ],
+    "controlServerRunning": true,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrderTask": true,
+    "vehicleMotionState": "STOPPED",
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  }
+}
