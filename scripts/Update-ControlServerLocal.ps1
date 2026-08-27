@@ -98,10 +98,10 @@ function Invoke-JsonGet([string]$Uri) {
 function Invoke-SafetyProjection {
     $credential = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')
     if ([string]::IsNullOrWhiteSpace($credential)) { throw 'Machine Onboard credential is missing.' }
-    $handler = [Net.Http.HttpClientHandler]::new()
+    $handler = [System.Net.Http.HttpClientHandler]::new()
     $handler.CheckCertificateRevocationList = $false
-    $client = [Net.Http.HttpClient]::new($handler)
-    $client.DefaultRequestHeaders.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $credential)
+    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $credential)
     try {
         $response = $client.GetAsync('https://localhost:58007/api/onboard/v1/vehicle-safety').GetAwaiter().GetResult()
         $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
