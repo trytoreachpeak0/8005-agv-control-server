@@ -115,8 +115,18 @@ function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
 }
 
 function Invoke-LiveCheck {
-    $response = Invoke-RestMethod -Uri 'https://localhost:58007/health/live' -Method Get -TimeoutSec 10
+    $body = & "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
+        --noproxy localhost --max-time 10 'https://localhost:58007/health/live'
+    if ($LASTEXITCODE -ne 0) { throw "Schannel HTTPS live check failed with exit code $LASTEXITCODE." }
+    $response = $body | ConvertFrom-Json
     if ($response.status -ne 'live') { throw 'HTTPS live check returned an unexpected response.' }
+}
+
+function Get-VersionCheck {
+    $body = & "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
+        --noproxy localhost --max-time 10 'https://localhost:58007/version'
+    if ($LASTEXITCODE -ne 0) { throw "Schannel HTTPS version check failed with exit code $LASTEXITCODE." }
+    return $body | ConvertFrom-Json
 }
 
 function Remove-CertificateByThumbprint([string]$StoreName, [string]$Thumbprint) {
@@ -285,7 +295,7 @@ try {
     Invoke-LiveCheck
     Write-Diagnostic 'service-lifecycle-checks-complete'
 
-    $version = Invoke-RestMethod -Uri 'https://localhost:58007/version' -Method Get -TimeoutSec 10
+    $version = Get-VersionCheck
     $resultDirectory = Split-Path -Parent $resolvedResult
     New-Item -ItemType Directory -Path $resultDirectory -Force | Out-Null
     $result = [ordered]@{
