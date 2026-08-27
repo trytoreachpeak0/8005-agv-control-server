@@ -4,6 +4,7 @@ param(
     [string]$PackagePath,
     [Parameter(Mandatory = $true)]
     [string]$ResultPath,
+    [string]$DiagnosticPath,
     [switch]$InstallCurrentUserRoot,
     [switch]$CopyUserRiotSecretToMachine
 )
@@ -17,6 +18,7 @@ $certificatePath = Join-Path $certificateDirectory 'localhost.pfx'
 $backupRoot = 'C:\ProgramData\8005\ControlServer-backups'
 $resolvedPackage = [IO.Path]::GetFullPath($PackagePath)
 $resolvedResult = [IO.Path]::GetFullPath($ResultPath)
+$resolvedDiagnostic = if ([string]::IsNullOrWhiteSpace($DiagnosticPath)) { $null } else { [IO.Path]::GetFullPath($DiagnosticPath) }
 $runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 $backupPath = Join-Path $backupRoot $runId
 $rootCertificate = $null
@@ -34,6 +36,14 @@ function Assert-Administrator {
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         throw 'Install-ControlServerLocal.ps1 must run from an elevated PowerShell process.'
     }
+}
+
+function Write-Diagnostic([string]$Message) {
+    if ([string]::IsNullOrWhiteSpace($resolvedDiagnostic)) { return }
+    $directory = Split-Path -Parent $resolvedDiagnostic
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    $line = '{0} {1}{2}' -f [DateTimeOffset]::UtcNow.ToString('O'), $Message, [Environment]::NewLine
+    [IO.File]::AppendAllText($resolvedDiagnostic, $line, [Text.UTF8Encoding]::new($false))
 }
 
 function Set-RestrictedDirectoryAcl([string]$Path) {
@@ -144,6 +154,7 @@ $onboardCredential = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOA
 if ([string]::IsNullOrWhiteSpace($onboardCredential)) {
     throw 'Machine-scope CONTROL_SERVER_ONBOARD_CREDENTIAL is missing.'
 }
+Write-Diagnostic 'preflight-complete'
 
 try {
     New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
@@ -156,12 +167,14 @@ try {
             $dataBackupCreated = $true
         }
     }
+    Write-Diagnostic 'backup-complete'
 
     New-Item -ItemType Directory -Path $installPath -Force | Out-Null
     $installCreated = $true
     foreach ($item in Get-ChildItem -LiteralPath $resolvedPackage -Force) {
         Copy-Item -LiteralPath $item.FullName -Destination $installPath -Recurse -Force
     }
+    Write-Diagnostic 'package-copy-complete'
 
     New-Item -ItemType Directory -Path $certificateDirectory -Force | Out-Null
     Set-RestrictedDirectoryAcl $certificateDirectory
@@ -182,6 +195,7 @@ try {
         -KeyExportPolicy Exportable -KeyUsage DigitalSignature, KeyEncipherment `
         -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.1') `
         -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter ([DateTimeOffset]::Now.AddMonths(6))
+    Write-Diagnostic 'certificate-generation-complete'
 
     Export-PfxCertificate -Cert $leafCertificate -FilePath $certificatePath -Password $securePassword | Out-Null
     $rootPublicPath = Join-Path $certificateDirectory 'localhost-development-root.cer'
@@ -193,6 +207,7 @@ try {
 
     [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $riotUser, 'Machine')
     [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $certificatePassword, 'Machine')
+    Write-Diagnostic 'machine-secret-injection-complete'
 
     $configuration = [ordered]@{
         Health = [ordered]@{ url = 'https://localhost:58007' }
@@ -217,6 +232,7 @@ try {
         $configurationPath,
         ($configuration | ConvertTo-Json -Depth 6),
         [Text.UTF8Encoding]::new($false))
+    Write-Diagnostic 'configuration-complete'
 
     Set-RestrictedDirectoryAcl $installPath
     Set-RestrictedDirectoryAcl $dataRoot
@@ -235,6 +251,7 @@ try {
     New-ItemProperty -LiteralPath $serviceRegistryPath -Name Environment -PropertyType MultiString `
         -Value $serviceEnvironment -Force | Out-Null
     Set-RestrictedRegistryAcl $serviceRegistryPath
+    Write-Diagnostic 'service-installation-complete'
 
     Start-Service -Name $serviceName
     Wait-ServiceState 'Running'
@@ -247,6 +264,7 @@ try {
     Restart-Service -Name $serviceName -Force
     Wait-ServiceState 'Running'
     Invoke-LiveCheck
+    Write-Diagnostic 'service-lifecycle-checks-complete'
 
     $version = Invoke-RestMethod -Uri 'https://localhost:58007/version' -Method Get -TimeoutSec 10
     $resultDirectory = Split-Path -Parent $resolvedResult
@@ -289,9 +307,11 @@ try {
         backupPath = $backupPath
     }
     [IO.File]::WriteAllText($resolvedResult, ($result | ConvertTo-Json -Depth 7), [Text.UTF8Encoding]::new($false))
+    Write-Diagnostic 'result-written'
     Write-Output "ControlServer local deployment PASS. Result: $resolvedResult"
 }
 catch {
+    Write-Diagnostic ("failure: {0}" -f $_.Exception.Message)
     if ($serviceCreated) {
         Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
         & sc.exe delete $serviceName | Out-Null
@@ -315,5 +335,6 @@ catch {
     if ($rootCertificate) { Remove-CertificateByThumbprint 'Cert:\CurrentUser\My' $rootCertificate.Thumbprint }
     [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $oldRiotMachine, 'Machine')
     [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $oldCertificatePassword, 'Machine')
+    Write-Diagnostic 'rollback-complete'
     throw
 }
