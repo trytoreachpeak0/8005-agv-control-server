@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "completedAt": "2026-08-27T16:53:06+08:00",
+  "result": "PASS_WITH_EXTERNAL_SAFETY_BLOCKER",
+  "formalG3": "INCONCLUSIVE",
+  "identities": {
+    "deployedControlServerSource": "5c726218f59d10d5929e7f5c0a39c1ebd4df52f1",
+    "controlServerEvidenceBase": "ab8aab684ae9319cb29af60af3d4afa223f11b64",
+    "onboardCommit": "6005c7a89558593f199b04b1810426bc2f4072ae",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279"
+  },
+  "focusedValidation": {
+    "onboardTestsPassed": 25,
+    "onboardTestsFailed": 0,
+    "onboardTestsSkipped": 0,
+    "onboardReleaseBuildWarnings": 0,
+    "onboardReleaseBuildErrors": 0,
+    "slotsReleaseBuildWarnings": 0,
+    "slotsReleaseBuildErrors": 0
+  },
+  "runtime": {
+    "simulatorHealth": "READY",
+    "tcp58005Established": true,
+    "sessionGeneration": 1,
+    "sessionReadiness": "RecoveryRequired",
+    "sessionReasonCode": "DEPARTURE_SAFETY_NOT_READY",
+    "safetyProjectionMotion": "UNKNOWN",
+    "safetyProjectionReasonCodes": [
+      "RIOT_MOVEMENT_NOT_FINISHED"
+    ],
+    "journeyRuntimeEnabled": false
+  },
+  "authorizedWrites": {
+    "controlServerSessionRecovery": true,
+    "disposableOnboardJournal": true,
+    "simulatorState": true,
+    "riotMutation": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "cleanup": {
+    "onboardStopped": true,
+    "simulatorStopped": true,
+    "temporaryPortsReleased": [
+      1502,
+      58006
+    ]
+  },
+  "protectedOwnerDefect": {
+    "repository": "https://github.com/trytoreachpeak0/8005-agv-onboard-hmi",
+    "files": [
+      "src/SQCD.Agv.Wpf/appsettings.json",
+      "src/SQCD.Agv.Wpf/appsettings.Production.example.json"
+    ],
+    "configuredPort": 58015,
+    "controlServerPort": 58005,
+    "agentWriteAllowed": false
+  }
+}
