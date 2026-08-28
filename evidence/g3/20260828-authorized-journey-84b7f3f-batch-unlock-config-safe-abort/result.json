@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "formalG3Result": "INCONCLUSIVE",
+  "observedAt": "2026-08-28T13:17:16.0976326+08:00",
+  "controlServerProductCommit": "6a5de0149288e3fdcedb6f9ea694259f71f9bee2",
+  "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+  "authorization": {
+    "journeyRuntime": true,
+    "riotOrderCreation": true,
+    "emptyVehicleJourneyCount": 1,
+    "stopOnAmbiguity": true
+  },
+  "preflight": {
+    "result": "PASS",
+    "minimumBatteryPercent": 10,
+    "staticReadyItemCount": 6,
+    "excludedMissingPickupCount": 3
+  },
+  "attempt": {
+    "effectiveRuntimeEnabled": true,
+    "sessionGeneration": 57,
+    "sessionReadiness": "Ready",
+    "sessionReasonCode": "READY",
+    "departureSafe": true,
+    "monitorSamplesBeforeStop": 50,
+    "journeyRuntimeRowCreated": false,
+    "orderCount": 0,
+    "operationCount": 0,
+    "completeCandidateOnboardFactsNotReadyCount": 6,
+    "abortReason": "NO_INTAKE_WITHIN_AUTHORIZED_WINDOW"
+  },
+  "rootCause": {
+    "owner": "LOCAL_INTEGRATION_CONFIGURATION",
+    "configuredSupportsBatchUnlock": false,
+    "requiredSupportsBatchUnlock": true,
+    "controlServerFailClosedReason": "ONBOARD_FACTS_NOT_READY",
+    "productCodeChangeRequired": false
+  },
+  "localCorrection": {
+    "supportsBatchUnlockExplicitlyEnabled": true,
+    "syntaxValidated": true,
+    "offlineConfigurationValidated": true,
+    "helperSha256": "e31ee9a38408c54f4c6f5ff54615f0ab6a5a6418073efd6e0022bd3df407ca6a",
+    "runtimeRetestPerformed": false
+  },
+  "finalState": {
+    "result": "PASS",
+    "journeyRuntimeEnabled": false,
+    "peerProcessCount": 0,
+    "temporaryPortsFree": true,
+    "stopMarkerPresent": true,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "newJourneyAuthorizationRequired": true
+}
