@@ -334,11 +334,6 @@ public sealed class OnboardMessageProcessor(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
                     state.Readiness = decision.Readiness;
                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
-                    if (decision.Readiness == SessionReadiness.Ready)
-                    {
-                        return ack;
-                    }
-
                     string readiness = SerializeReadiness(agvId, generation, state, decision);
                     return $"{ack}\n{readiness}";
                 }

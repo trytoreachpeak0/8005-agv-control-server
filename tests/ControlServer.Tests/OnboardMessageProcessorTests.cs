@@ -639,6 +639,91 @@ public sealed class OnboardMessageProcessorTests
         }
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    public async Task SafeSafetyStateChangeAcknowledgesAndPublishesReadyTransition()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_SAFE_CHANGE_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+            await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
+            await processor.ProcessAsync(
+                Envelope(
+                    "SafetyStateChanged",
+                    "00000000-0000-4000-8000-000000000202",
+                    state.SessionGeneration,
+                    new
+                    {
+                        safetyStateVersion = 2,
+                        observedAt = "2026-08-25T09:00:00Z",
+                        safety = Safety(departureSafe: false),
+                        affectedSlots = FirstTwoSlots
+                    }),
+                state,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(SessionReadiness.RecoveryRequired, state.Readiness);
+            string safeLine = Envelope(
+                "SafetyStateChanged",
+                "00000000-0000-4000-8000-000000000203",
+                state.SessionGeneration,
+                new
+                {
+                    safetyStateVersion = 3,
+                    observedAt = "2026-08-25T09:00:01Z",
+                    safety = Safety(departureSafe: true),
+                    affectedSlots = FirstTwoSlots
+                });
+
+            string response = await processor.ProcessAsync(
+                safeLine, state, TestContext.Current.CancellationToken);
+
+            string[] responseLines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(2, responseLines.Length);
+            using JsonDocument acknowledgement = JsonDocument.Parse(responseLines[0]);
+            Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());
+            Assert.Equal(
+                WireContentHash(safeLine),
+                acknowledgement.RootElement.GetProperty("payload").GetProperty("acceptedContentSha256").GetString());
+            using JsonDocument readiness = JsonDocument.Parse(responseLines[1]);
+            Assert.Equal("SessionReadiness", readiness.RootElement.GetProperty("messageType").GetString());
+            JsonElement readinessPayload = readiness.RootElement.GetProperty("payload");
+            Assert.Equal("READY", readinessPayload.GetProperty("readiness").GetString());
+            Assert.Equal(3, readinessPayload.GetProperty("acceptedSafetyStateVersion").GetInt64());
+            Assert.Empty(readinessPayload.GetProperty("reasonCodes").EnumerateArray());
+
+            SessionRecoveryRow stored = await context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(3, stored.SafetyRevision);
+            Assert.True(stored.DepartureSafe);
+            Assert.Equal(SessionReadiness.Ready, stored.Readiness);
+            Assert.Equal(SessionReadiness.Ready, state.Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
     private static async Task ReachReadyAsync(
         OnboardMessageProcessor processor,
         OnboardConnectionState state,
