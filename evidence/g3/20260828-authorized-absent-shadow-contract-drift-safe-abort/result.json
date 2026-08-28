@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "completedAt": "2026-08-28T19:52:23.6904734+08:00",
+  "reasonCode": "MES_INGEST_CONTRACT_MISMATCH",
+  "testedIdentity": {
+    "controlServerCommit": "9056d3d4c5b96281069023fefb531aae13f5e7a9",
+    "packageManifestSha256": "b872d08bfd7c26c6e7c387994084582765df10b77087c9018f65d08949b91988",
+    "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+    "simulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "configurationSha256": "24f58da4fa143e810dedf66f5bebea95667b64e1edccf6a9c642d2d15deefb67"
+  },
+  "contract": {
+    "expectedVersion": "2026.08.new-mes-ingest.v2.3",
+    "actualVersion": "2026.08.new-mes-ingest.v2.4",
+    "expectedSchemaVersion": 29,
+    "actualSchemaVersion": 29,
+    "mismatchedCapabilityCount": 4
+  },
+  "shadowState": {
+    "sessionCount": 1,
+    "sessionGeneration": 1,
+    "sessionReadiness": "Ready",
+    "departureSafe": true,
+    "acceptedDemandCount": 0,
+    "backlogCount": 0,
+    "journeyRuntimeCount": 0,
+    "orderIntentCount": 0,
+    "dispatchAuditCount": 0,
+    "experimentalAuthorizationCount": 0,
+    "activeLeaseCount": 0,
+    "stationOperationCount": 0
+  },
+  "sideEffects": {
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false,
+    "productionDatabaseModified": false,
+    "installedJourneyRuntimeChanged": false,
+    "temporaryPortsReleased": true
+  },
+  "validation": {
+    "focusedTestsPassed": 2,
+    "fullTestsPassed": 218,
+    "failed": 0,
+    "skipped": 0,
+    "powershellAstPassed": true,
+    "proxySelfTestPassed": true,
+    "stateDiagnosisPassed": true,
+    "exactPermitFixturePassed": true,
+    "extraCreateAuditRejected": true
+  },
+  "authorizationReusable": false,
+  "rawIdentityIncluded": false,
+  "credentialsIncluded": false
+}

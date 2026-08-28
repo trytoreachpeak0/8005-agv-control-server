@@ -8,13 +8,16 @@ namespace ControlServer.Tests;
 
 public sealed class HttpMesIngestCatalogTests
 {
+    private const string ExpectedContractVersion = "2026.08.new-mes-ingest.v2.4";
+    private const int ExpectedSchemaVersion = 29;
+
     private static readonly (string Id, string Version)[] Capabilities =
     [
         ("CONTRACT_DISCOVERY", "2.0"),
-        ("CURRENT_INGEST_ATTENTION", "2.0"),
-        ("DEMAND_SERIES", "2.0"),
-        ("ERROR_SEARCH", "2.1"),
-        ("EXTERNALLY_READABLE_DEMAND_CATALOG", "2.0"),
+        ("CURRENT_INGEST_ATTENTION", "2.1"),
+        ("DEMAND_SERIES", "2.1"),
+        ("ERROR_SEARCH", "2.2"),
+        ("EXTERNALLY_READABLE_DEMAND_CATALOG", "2.1"),
         ("POLL_HEALTH_AND_EVIDENCE", "2.0"),
         ("READABILITY_AUDIT", "2.0"),
         ("SERIES_ERROR_CATALOG", "2.0"),
@@ -88,8 +91,8 @@ public sealed class HttpMesIngestCatalogTests
                 {
                     Content = JsonContent.Create(new
                     {
-                        contractVersion = HttpMesIngestCatalog.ContractVersion,
-                        schemaVersion = HttpMesIngestCatalog.SchemaVersion,
+                        contractVersion = ExpectedContractVersion,
+                        schemaVersion = ExpectedSchemaVersion,
                         capabilities = (capabilities ?? Capabilities)
                             .Select(capability => new
                             {
@@ -104,7 +107,7 @@ public sealed class HttpMesIngestCatalogTests
             {
                 Content = JsonContent.Create(new
                 {
-                    contractVersion = HttpMesIngestCatalog.ContractVersion,
+                    contractVersion = ExpectedContractVersion,
                     historyEpoch,
                     catalogRevision = 21,
                     count = 1,

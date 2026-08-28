@@ -7,7 +7,7 @@ namespace ControlServer.Infrastructure.Adapters;
 
 public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider timeProvider) : IMesIngestCatalog
 {
-    public const string ContractVersion = "2026.08.new-mes-ingest.v2.3";
+    public const string ContractVersion = "2026.08.new-mes-ingest.v2.4";
     public const int SchemaVersion = 29;
     public const string ContractPath = "/api/v2/contract";
     public const string CatalogPath = "/api/v2/externally-readable-demand-catalog";
@@ -15,10 +15,10 @@ public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider tim
     private static readonly CapabilityDto[] RequiredCapabilities =
     [
         new("CONTRACT_DISCOVERY", "2.0"),
-        new("CURRENT_INGEST_ATTENTION", "2.0"),
-        new("DEMAND_SERIES", "2.0"),
-        new("ERROR_SEARCH", "2.1"),
-        new("EXTERNALLY_READABLE_DEMAND_CATALOG", "2.0"),
+        new("CURRENT_INGEST_ATTENTION", "2.1"),
+        new("DEMAND_SERIES", "2.1"),
+        new("ERROR_SEARCH", "2.2"),
+        new("EXTERNALLY_READABLE_DEMAND_CATALOG", "2.1"),
         new("POLL_HEALTH_AND_EVIDENCE", "2.0"),
         new("READABILITY_AUDIT", "2.0"),
         new("SERIES_ERROR_CATALOG", "2.0"),
