@@ -45,7 +45,10 @@ def extract(args: argparse.Namespace) -> None:
             SELECT MovementLegId, DemandId, UpperId, Purpose, VehicleKey,
                    AgvLifecycleGeneration,
                    DispatchGeneration, Status, DispatchAuditVersion,
-                   CreateAttemptId, CreateAttemptCount, ExperimentalCreateAuthorizationId
+                   DispatchAuditSequence, OrderId, CreateAttemptId,
+                   CreateAttemptCount, CreateDispatchArmedAt, LastCreateOutcome,
+                   LastCreateOutcomeAt, LastCreateReceiptJson,
+                   LastReconciliationOutcome, ExperimentalCreateAuthorizationId
             FROM OrderIntents
             """,
         )
@@ -79,7 +82,15 @@ def extract(args: argparse.Namespace) -> None:
             raise SystemExit("Shadow pickup intent did not fail closed as RESULT_UNKNOWN.")
         if intent["DispatchAuditVersion"] != 1:
             raise SystemExit("Shadow pickup intent is not on dispatch audit version 1.")
-        if (intent["CreateAttemptCount"] or 0) != 0 or intent["CreateAttemptId"] is not None:
+        if (
+            intent["CreateAttemptCount"] != 0
+            or intent["CreateAttemptId"] is not None
+            or intent["OrderId"] is not None
+            or intent["CreateDispatchArmedAt"] is not None
+            or intent["LastCreateOutcome"] is not None
+            or intent["LastCreateOutcomeAt"] is not None
+            or intent["LastCreateReceiptJson"] is not None
+        ):
             raise SystemExit("Shadow pass reached a Create attempt; no permit may be derived.")
         if intent["ExperimentalCreateAuthorizationId"] is not None:
             raise SystemExit("Shadow pass unexpectedly used an experimental authorization.")
@@ -87,26 +98,56 @@ def extract(args: argparse.Namespace) -> None:
         audit = rows(
             shadow,
             """
-            SELECT MovementLegId, Phase, Outcome, ReceiptOperation, ReceiptClassification,
-                   HttpStatusCode, BusinessCode, ResultPresent, FailureCategory
+            SELECT MovementLegId, DemandId, UpperId, DispatchGeneration, Sequence,
+                   AttemptId, AttemptNumber, Phase, Outcome, ReceiptOperation,
+                   OccurredAt, RequestSemanticSha256, ReceiptClassification,
+                   ReceiptObservedAt, HttpStatusCode, BusinessCode,
+                   ResultPresent, ReturnedOrderId, FailureCategory,
+                   ExperimentalAuthorizationId, EligibilityBasis
             FROM RiotDispatchAuditEvents ORDER BY Sequence
             """,
         )
-        exact_absent = (
-            len(audit) == 1
-            and audit[0]["MovementLegId"] == intent["MovementLegId"]
-            and audit[0]["Phase"] == "PRE_CREATE_RECONCILIATION"
-            and audit[0]["Outcome"] == "UNKNOWN"
-            and audit[0]["ReceiptOperation"] == "RECONCILE"
-            and audit[0]["ReceiptClassification"] == "AbsentAtObservation"
-            and audit[0]["HttpStatusCode"] is None
-            and audit[0]["BusinessCode"] is None
-            and audit[0]["ResultPresent"] == 0
-            and audit[0]["FailureCategory"] is None
+        expected_reconciliation = (
+            "PreCreateReconciliationUnknown"
+            if len(audit) == 1
+            else "PostCreateReconciliationUnknown"
         )
-        if not exact_absent:
+        exact_absent = len(audit) >= 1 and all(
+            row["MovementLegId"] == intent["MovementLegId"]
+            and row["DemandId"] == intent["DemandId"]
+            and row["UpperId"] == intent["UpperId"]
+            and row["DispatchGeneration"] == intent["DispatchGeneration"]
+            and row["Sequence"] == index
+            and row["AttemptId"] is None
+            and row["AttemptNumber"] is None
+            and row["OccurredAt"] is not None
+            and row["RequestSemanticSha256"] is None
+            and row["Phase"]
+            == (
+                "PRE_CREATE_RECONCILIATION"
+                if index == 1
+                else "POST_CREATE_RECONCILIATION"
+            )
+            and row["Outcome"] == "UNKNOWN"
+            and row["ReceiptOperation"] == "RECONCILE"
+            and row["ReceiptClassification"] == "AbsentAtObservation"
+            and row["ReceiptObservedAt"] is not None
+            and row["HttpStatusCode"] is None
+            and row["BusinessCode"] is None
+            and row["ResultPresent"] == 0
+            and row["ReturnedOrderId"] is None
+            and row["FailureCategory"] is None
+            and row["ExperimentalAuthorizationId"] is None
+            and row["EligibilityBasis"] is None
+            for index, row in enumerate(audit, start=1)
+        )
+        if (
+            not exact_absent
+            or intent["DispatchAuditSequence"] != len(audit)
+            or intent["LastReconciliationOutcome"] != expected_reconciliation
+        ):
             raise SystemExit(
-                "Shadow pass did not retain exactly one pre-create AbsentAtObservation audit."
+                "Shadow pass did not retain one PRE and only exact read-only POST absent audits."
             )
 
         overlap = production.execute(
@@ -150,6 +191,7 @@ def extract(args: argparse.Namespace) -> None:
             "shadowAcceptedDemandCount": len(accepted),
             "shadowActiveLeaseCount": len(leases),
             "shadowAuditEventCount": len(audit),
+            "shadowPostCreateReconciliationCount": len(audit) - 1,
             "shadowCreateAttemptCount": 0,
             "exactAbsentAtObservation": True,
             "productionIdentityOverlap": False,

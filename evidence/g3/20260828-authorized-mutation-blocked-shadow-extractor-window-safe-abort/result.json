@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "permitIssued": false,
+  "completedAt": "2026-08-28T13:16:24.1630149Z",
+  "reasonCode": "PERMIT_EXTRACTOR_MISSED_SINGLE_AUDIT_WINDOW",
+  "testedIdentity": {
+    "controlServerCommit": "8577b413697996a6dad4e57953eefa77f86100cd",
+    "packageManifestSha256": "30b33a60ac0f7fcda88353d2179a68f74e8d7ad5f1bdc6562c28e695b92a52e9",
+    "runnerSha256": "d177d4a489bb090b4396d04e14306e965b455cf28780cf9cedf6333d2978d344",
+    "stateToolSha256": "e4d131a183c7f7d0975c55c6aea5ad2bb4ea6c5568f38e217c972a22cc8c78ad",
+    "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+    "simulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "shadowState": {
+    "sessionGeneration": 1,
+    "sessionReadiness": "Ready",
+    "departureSafe": true,
+    "acceptedDemandCount": 1,
+    "journeyRuntimeCount": 1,
+    "pickupIntentCount": 1,
+    "activeLeaseCount": 1,
+    "stationOperationCount": 0,
+    "experimentalAuthorizationCount": 0,
+    "createAttemptCount": 0,
+    "auditEventCount": 76,
+    "preCreateAbsentCount": 1,
+    "postCreateAbsentCount": 75,
+    "createPhaseCount": 0
+  },
+  "egress": {
+    "forwardedReadCount": 169,
+    "blockedReadCount": 0,
+    "blockedMutationCount": 0,
+    "forwardedMutationCount": 0
+  },
+  "sideEffects": {
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMovementObserved": false,
+    "vehicleMovementCausedByRun": false,
+    "productionDatabaseModified": false,
+    "installedJourneyRuntimeChanged": false,
+    "temporaryPortsReleased": true
+  },
+  "safety": {
+    "sampleCount": 38,
+    "installedEffectiveStateBeforeSha256": "079c53b0512d2fc028906553622f0824127a2a7b9a925a75ca808f05745efd64",
+    "installedEffectiveStateAfterSha256": "079c53b0512d2fc028906553622f0824127a2a7b9a925a75ca808f05745efd64",
+    "cleanupFailureCount": 1,
+    "cleanupFailureIsFinalExtractorRejection": true
+  },
+  "authorizationConsumed": true,
+  "rawIdentityIncluded": false,
+  "credentialsIncluded": false
+}
