@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT_NO_INTAKE",
+  "observedAt": "2026-08-28T11:28:00.5179398+08:00",
+  "controlServerCommit": "4347a8fb9fcb80cb9f95680a6fd8b1a0b970358b",
+  "onboardCommit": "777eff8bdc955e6bb6fdab74ec222e0bb6748def",
+  "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "orchestration": {
+    "shell": "PowerShell 7.6.5",
+    "baseConfigEnabled": true,
+    "productionOverrideEnabled": true,
+    "minimumBatteryPercent": 10,
+    "workerExecutionProvedByBacklog": true,
+    "monitorSamples": 237
+  },
+  "session": {
+    "generation": 51,
+    "readiness": "Ready",
+    "departureSafe": true
+  },
+  "intakeObservation": {
+    "runtimeCount": 0,
+    "orderCount": 0,
+    "operationCount": 0,
+    "unresolvedAcceptedDemandCount": 0,
+    "orphanedUnresolvedDemandCount": 0,
+    "activeVehicleDispatchLeaseCount": 0,
+    "initialBacklogCount": 267,
+    "backlogExceeded": 270,
+    "persistedReasonCode": "DEMAND_DECISION_FACT_CHANGED",
+    "persistedReasonReliable": false,
+    "exactNoIntakeCause": "INCONCLUSIVE"
+  },
+  "catalogComparison": {
+    "durationSeconds": 25,
+    "firstRevision": 1815,
+    "secondRevision": 1816,
+    "firstCount": 272,
+    "secondCount": 270,
+    "commonDemandCount": 270,
+    "missingFromSecond": 2,
+    "changedDecisionFieldCountAmongCommon": 0
+  },
+  "confirmedDefect": {
+    "owner": "ControlServer",
+    "area": "JourneyRuntimeEngine backlog fingerprint",
+    "description": "volatile catalog read metadata changes the fingerprint and overwrites the current eligibility reason",
+    "productFixImplemented": false
+  },
+  "finalSafeState": {
+    "baseConfigEnabled": false,
+    "productionOverrideEnabled": false,
+    "journeyRuntimeEnabled": false,
+    "serviceRunning": true,
+    "liveHttpStatus": 200,
+    "peerProcessCount": 0,
+    "temporaryPortListenerCount": 0,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "newAuthorizationRequired": true
+}
