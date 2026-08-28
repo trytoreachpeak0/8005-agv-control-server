@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "result": "BLOCKED",
+  "classification": "ONBOARD_SAFETY_PROVIDER_STARTUP_RECOVERY",
+  "observedAtStart": "2026-08-28T10:10:22+08:00",
+  "observedAtCleanup": "2026-08-28T10:13:38+08:00",
+  "inputs": {
+    "onboardCommit": "f16425cf0848fe9dd810dec241fd0d92639fc11d",
+    "installedControlServerSourceCommit": "5c726218f59d10d5929e7f5c0a39c1ebd4df52f1",
+    "integrationParentCommit": "51466ccf861d574cff3c1947fa676d8b0c822328",
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "simulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "preflight": {
+    "result": "PASS",
+    "catalogRevision": 1750,
+    "fullyAdmittedCandidateCount": 4,
+    "batteryPercent": 14,
+    "testMinimumBatteryPercent": 10,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyMotion": "STOPPED",
+    "safetyReasonCount": 0
+  },
+  "session": {
+    "connected": true,
+    "maximumObservedGeneration": 46,
+    "readiness": "RecoveryRequired",
+    "reasonCode": "DEPARTURE_SAFETY_NOT_READY",
+    "handshakeIncompleteObserved": false,
+    "messageIdentityConflictObserved": false
+  },
+  "effects": {
+    "runtimeCreated": false,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "operationCreated": false,
+    "vehicleMoved": false
+  },
+  "cleanup": {
+    "journeyRuntimeEnabled": false,
+    "controlServerRunning": true,
+    "peersStopped": true,
+    "temporaryPortsReleased": true,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyMotion": "STOPPED",
+    "safetyReasonCount": 0
+  }
+}
