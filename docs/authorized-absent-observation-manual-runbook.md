@@ -25,6 +25,7 @@
 ## 冻结输入
 
 - ControlServer 产品：`1a0158c87c36fb2e3e0f4ddca1f7ed9c84d5672b`
+  （其后的仓库提交只改文档，不改变任何部署字节）
 - package manifest SHA-256：`3475c33e1962eafb0e076afb94bea496af8730a0551dd990c1fe822005f84c4b`
 - OnboardHmi：`84b7f3f66ff2f867b18121760f38e26e0bbd6fa5`
 - slots-simulator：`fb5f7c593742bf98bc3957b8729a38aad5321f28`
