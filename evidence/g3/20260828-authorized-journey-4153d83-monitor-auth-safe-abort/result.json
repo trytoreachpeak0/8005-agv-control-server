@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "formalG3Outcome": "INCONCLUSIVE",
+  "observedAt": "2026-08-28T13:52:52+08:00",
+  "authorization": {
+    "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+    "deployedControlServerCommit": "4153d8369262a5a574589258b6c32651bc043c79",
+    "supportsBatchUnlock": true,
+    "emptyVehicleJourney": true,
+    "stopOnAnySafetyAmbiguity": true
+  },
+  "deployment": {
+    "result": "PASS",
+    "packageManifestSha256": "7b966c865e0c2e8d7d4305c68838daad1ba84141a3fd4c5d1df68f2ede61dcc0"
+  },
+  "peerHelper": {
+    "sha256": "e31ee9a38408c54f4c6f5ff54615f0ab6a5a6418073efd6e0022bd3df407ca6a",
+    "configurationSha256": "349b0e5d26b159c142d2aa16114fb855bd3b6792c922ef314daab8c74b23a5df",
+    "sessionGeneration": 61,
+    "sessionReadiness": "Ready",
+    "sessionReasonCode": "READY",
+    "simulatorHealth": "READY"
+  },
+  "protectedProbeAtAbortDecision": {
+    "fresh": true,
+    "journeyRuntimeEnabled": true,
+    "sessionGeneration": 61,
+    "readiness": "Ready",
+    "reasonCode": "READY",
+    "departureSafe": true,
+    "runtimePresent": false,
+    "orderCount": 0,
+    "operationCount": 0
+  },
+  "abortTrigger": {
+    "kind": "INDEPENDENT_HTTPS_MONITOR_AUTHENTICATION_AMBIGUITY",
+    "httpStatus": 401,
+    "cause": "The monitor supplied CONTROL_SERVER_RIOT_CALL_API_KEY to an endpoint that requires CONTROL_SERVER_ONBOARD_CREDENTIAL.",
+    "productSafetyFailure": false,
+    "retryAttempted": false
+  },
+  "orchestratorFinal": {
+    "result": "STOP_REQUESTED",
+    "samples": 33,
+    "terminalStage": null,
+    "failure": null,
+    "journeyRuntimeDisabled": true
+  },
+  "postStop": {
+    "effectiveStateInspection": "PASS",
+    "baseJourneyRuntimeEnabled": false,
+    "productionJourneyRuntimeEnabled": false,
+    "minimumBatteryPercent": 10,
+    "serviceState": "Running",
+    "liveStatus": "live",
+    "peerProcessCount": 0,
+    "temporaryListenerCount": 0,
+    "atomicPreflight": "PASS",
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrderTask": true,
+    "directMotionState": "STOPPED",
+    "httpsMotionState": "STOPPED",
+    "reasonCount": 0,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false,
+    "stopMarkerPresent": true
+  },
+  "offlineCredentialCorrectionCheck": {
+    "runtimeEnabled": false,
+    "credentialName": "CONTROL_SERVER_ONBOARD_CREDENTIAL",
+    "httpStatus": 200,
+    "motionState": "STOPPED",
+    "reasonCount": 0
+  },
+  "credentialsIncluded": false
+}
