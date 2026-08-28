@@ -558,6 +558,67 @@
         "resolved": "3.0.0",
         "contentHash": "irv0HuqoH8Ig5i2fO+8dmDNdFdsrO+DoQcedwIlb810qpZHBNQHZLW7C/AHBQDgLLpw2T96vmMAy/aE4Yj55Sg=="
       },
+      "Microsoft.Kiota.Abstractions": {
+        "type": "Transitive",
+        "resolved": "1.17.4",
+        "contentHash": "AOOWOOXX9Ut6o6zhRGvvpQ/59D5RD4iiSss+JsKgMCLDObM7s7X6lPBHSj311vRuKcHtmeHKvurLxYL/DWQsSA==",
+        "dependencies": {
+          "Std.UriTemplate": "2.0.5"
+        }
+      },
+      "Microsoft.Kiota.Bundle": {
+        "type": "Transitive",
+        "resolved": "1.17.4",
+        "contentHash": "x4zZLC2i2H9g/9bipAU/0uSYad85SpJBk7X2yKO48OpT2G0gx+WZcDOMrTTDAYiJxu3h7fSOM+foC9tp6i2YIA==",
+        "dependencies": {
+          "Microsoft.Kiota.Abstractions": "1.17.4",
+          "Microsoft.Kiota.Http.HttpClientLibrary": "1.17.4",
+          "Microsoft.Kiota.Serialization.Form": "1.17.4",
+          "Microsoft.Kiota.Serialization.Json": "1.17.4",
+          "Microsoft.Kiota.Serialization.Multipart": "1.17.4",
+          "Microsoft.Kiota.Serialization.Text": "1.17.4"
+        }
+      },
+      "Microsoft.Kiota.Http.HttpClientLibrary": {
+        "type": "Transitive",
+        "resolved": "1.17.4",
+        "contentHash": "msSSDg5LiuPhQTiw5lwDnFO5i3bEBovRto+/XOCHBgn2rfSNF+QrR1NQAbun86YS5+0jid1UVTKVNoJ9DT37Ag==",
+        "dependencies": {
+          "Microsoft.Kiota.Abstractions": "1.17.4"
+        }
+      },
+      "Microsoft.Kiota.Serialization.Form": {
+        "type": "Transitive",
+        "resolved": "1.17.4",
+        "contentHash": "tbmbxPihes7hcAXDgAC3gwDhPbwWrakjKlXT26w+Zav+mNDS/H4cFkMAIQp4KqEDUwvPbpGB8caDcmV/68r2pQ==",
+        "dependencies": {
+          "Microsoft.Kiota.Abstractions": "1.17.4"
+        }
+      },
+      "Microsoft.Kiota.Serialization.Json": {
+        "type": "Transitive",
+        "resolved": "1.17.4",
+        "contentHash": "SKNy75CPRaKGqvJzYDvCPeA0XWxULO/rnomRRkVjNYKQBSc7JeYdFET21Vj7acnAYTcvFLuOjbx9e6EdzxvZhQ==",
+        "dependencies": {
+          "Microsoft.Kiota.Abstractions": "1.17.4"
+        }
+      },
+      "Microsoft.Kiota.Serialization.Multipart": {
+        "type": "Transitive",
+        "resolved": "1.17.4",
+        "contentHash": "ht4ZnBWd4IO/8gwO/XXiUIBcH0hpt0+3fZUlpOeAGSGwU0orICARDAE6K3p/xIFcdQx64MkqiobyGSOrgKJN6w==",
+        "dependencies": {
+          "Microsoft.Kiota.Abstractions": "1.17.4"
+        }
+      },
+      "Microsoft.Kiota.Serialization.Text": {
+        "type": "Transitive",
+        "resolved": "1.17.4",
+        "contentHash": "Li2DDCzyt9bs8D0ZCIlwgb0tfFoKoLPkn8zJJndopUDNixfxl+Xp9FBT+dnbyZRYpk6L0j55Vmw16e2j2D0E3w==",
+        "dependencies": {
+          "Microsoft.Kiota.Abstractions": "1.17.4"
+        }
+      },
       "Mono.TextTemplating": {
         "type": "Transitive",
         "resolved": "2.2.1",
@@ -588,6 +649,19 @@
         "dependencies": {
           "Polly.Core": "8.4.2",
           "System.Threading.RateLimiting": "8.0.0"
+        }
+      },
+      "RIoT.Sdk.Core": {
+        "type": "Transitive",
+        "resolved": "0.1.0-controlserver.2",
+        "contentHash": "8twte7LYeXgVEHPAlfywknCVxqM+F9aYQGrBK3jyLoyDVuvqUXf90O6vKip6ZFT7uiYVG/XLtiypXOInIratbg=="
+      },
+      "RIoT.Sdk.Generated": {
+        "type": "Transitive",
+        "resolved": "0.1.0-controlserver.2",
+        "contentHash": "mQhu1qZ3wDKCGFljTpbC5njaGFP4pQBGG0sLp/2yDaB9fBL+L8496/RdRbjalbJhAQCWAf9m2Apc9tIxxR0MyA==",
+        "dependencies": {
+          "Microsoft.Kiota.Bundle": "1.17.4"
         }
       },
       "Serilog": {
@@ -687,6 +761,11 @@
         "dependencies": {
           "SQLitePCLRaw.core": "2.1.12"
         }
+      },
+      "Std.UriTemplate": {
+        "type": "Transitive",
+        "resolved": "2.0.5",
+        "contentHash": "PtqPdWNBObRcDHjyjbgOz2XoCJQaiA+HNDPQve/O7yGCkospfHDCuH9ULVx1msImwHHG+uhpDjiZX7bpLN/cnw=="
       },
       "System.CodeDom": {
         "type": "Transitive",
@@ -818,7 +897,8 @@
           "ControlServer.Application": "[1.0.0, )",
           "ControlServer.Domain": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Sqlite": "[8.0.30, )",
-          "Microsoft.Extensions.Http.Resilience": "[8.10.0, )"
+          "Microsoft.Extensions.Http.Resilience": "[8.10.0, )",
+          "RIoT.Sdk.Facade": "[0.1.0-controlserver.2, )"
         }
       },
       "Microsoft.EntityFrameworkCore.Sqlite": {
@@ -841,6 +921,17 @@
           "Microsoft.Extensions.Http.Diagnostics": "8.10.0",
           "Microsoft.Extensions.ObjectPool": "8.0.10",
           "Microsoft.Extensions.Resilience": "8.10.0"
+        }
+      },
+      "RIoT.Sdk.Facade": {
+        "type": "CentralTransitive",
+        "requested": "[0.1.0-controlserver.2, )",
+        "resolved": "0.1.0-controlserver.2",
+        "contentHash": "GkEO2DZIg2n1kvtHJ6qgXcVivBqjc7JYDi5z6lRW+lYOcjpenrfSq+6N7yk321DJe58atfgEQWJLQQJT2T4Sgg==",
+        "dependencies": {
+          "Microsoft.Kiota.Bundle": "1.17.4",
+          "RIoT.Sdk.Core": "0.1.0-controlserver.2",
+          "RIoT.Sdk.Generated": "0.1.0-controlserver.2"
         }
       }
     },

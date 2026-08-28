@@ -1,42 +1,36 @@
-using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Kiota.Abstractions;
+using RIoT.Sdk.Core;
+using RIoT.Sdk.Facade;
 
 namespace ControlServer.Infrastructure.Adapters;
 
 /// <summary>
-/// Minimal allowlisted RIoT order boundary for the WIRE_TO_GATE MVP. It deliberately
-/// has no automatic retry: a timed-out mutation remains unknown until reconciled by upperId.
+/// ControlServer's fail-closed domain adapter over the versioned RIoT SDK. The SDK owns
+/// transport, authentication, endpoint serialization, and response parsing; this adapter
+/// owns only ControlServer observation semantics.
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
     IRiotVehicleSafetyFacts
 {
-    public const string CreatePath = "/api/order/v1/add/byDefaultMissions";
-    public const string ReconcilePathPrefix = "/api/order/v1/orderRecord/detailByUpperId/";
-    public const string VehiclePath = "/api/task/vehicles/getVehicleInfoByDeviceKey";
-    public const string MapStationsPathPrefix = "/api/imap/v1/mapInfo/stations/";
-    public const string VehicleSafetyPathPrefix = "/api/task/v1/task/getVehicleInfo/";
-    public const string NonFinalOrdersPath =
-        "/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9";
-
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
-    private readonly HttpClient httpClient;
+    private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
+    private readonly RiotSession riotSession;
     private readonly TimeProvider timeProvider;
 
-    public HttpRiotMovementGateway(HttpClient httpClient)
-        : this(httpClient, TimeProvider.System)
+    public HttpRiotMovementGateway(RiotSession riotSession)
+        : this(riotSession, TimeProvider.System)
     {
     }
 
     [ActivatorUtilitiesConstructor]
-    public HttpRiotMovementGateway(HttpClient httpClient, TimeProvider timeProvider)
+    public HttpRiotMovementGateway(RiotSession riotSession, TimeProvider timeProvider)
     {
-        this.httpClient = httpClient;
+        this.riotSession = riotSession;
         this.timeProvider = timeProvider;
     }
 
@@ -47,33 +41,23 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         ArgumentException.ThrowIfNullOrWhiteSpace(upperId);
         try
         {
-            using HttpRequestMessage request = new(
-                HttpMethod.Get,
-                ReconcilePathPrefix + Uri.EscapeDataString(upperId));
-            using HttpResponseMessage response = await httpClient.SendAsync(
-                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            if (response.StatusCode == HttpStatusCode.NotFound)
+            OrderLookupResult lookup = await riotSession.Order.FindOrderByUpperIdAsync(
+                upperId, cancellationToken).ConfigureAwait(false);
+            return lookup.Status switch
             {
-                return new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null);
-            }
-            if (!response.IsSuccessStatusCode)
-            {
-                return Unknown(upperId);
-            }
-
-            RiotEnvelope? envelope = await response.Content.ReadFromJsonAsync<RiotEnvelope>(
-                SerializerOptions, cancellationToken).ConfigureAwait(false);
-            return ToObservation(upperId, envelope);
+                OrderLookupStatus.NotFound =>
+                    new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null),
+                OrderLookupStatus.Found when lookup.Order is not null =>
+                    ToObservation(upperId, lookup.Order),
+                OrderLookupStatus.AbsentAtObservation or OrderLookupStatus.Indeterminate => Unknown(upperId),
+                _ => Unknown(upperId)
+            };
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return Unknown(upperId);
+            throw;
         }
-        catch (HttpRequestException)
-        {
-            return Unknown(upperId);
-        }
-        catch (JsonException)
+        catch (Exception error) when (IsSdkFailure(error))
         {
             return Unknown(upperId);
         }
@@ -85,49 +69,38 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     {
         ArgumentNullException.ThrowIfNull(intent);
         ValidateFrozenIntent(intent);
-        var body = new
-        {
-            appointVehicleKey = intent.VehicleKey,
-            isAppointEnable = 1,
-            lockStatus = 0,
-            orderName = intent.UpperId,
-            upperId = intent.UpperId,
-            mission = new[]
-            {
-                new
-                {
-                    type = "move",
-                    mapId = intent.MapId,
-                    destination = intent.DestinationStationId
-                }
-            }
-        };
-
         try
         {
-            using HttpRequestMessage request = new(HttpMethod.Post, CreatePath)
-            {
-                Content = JsonContent.Create(body, options: SerializerOptions)
-            };
-            using HttpResponseMessage response = await httpClient.SendAsync(
-                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            OrderRef created = await riotSession.Order.CreateMoveOrderAsync(
+                intent.UpperId,
+                intent.VehicleKey,
+                intent.MapId,
+                intent.DestinationStationId,
+                intent.UpperId,
+                cancellationToken).ConfigureAwait(false);
+
+            RiotOrderObservationKind kind = ToObservationKind(created.OrderState);
+            if (kind == RiotOrderObservationKind.Unknown ||
+                string.IsNullOrWhiteSpace(created.OrderId) ||
+                !string.Equals(created.UpperId, intent.UpperId, StringComparison.Ordinal))
             {
                 return Unknown(intent.UpperId);
             }
-            RiotEnvelope? envelope = await response.Content.ReadFromJsonAsync<RiotEnvelope>(
-                SerializerOptions, cancellationToken).ConfigureAwait(false);
-            return ToObservation(intent.UpperId, envelope);
+
+            return new RiotOrderObservation(
+                intent.UpperId,
+                kind,
+                created.OrderId,
+                created.OrderState,
+                intent.VehicleKey,
+                intent.MapId,
+                intent.DestinationStationId);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return Unknown(intent.UpperId);
+            throw;
         }
-        catch (HttpRequestException)
-        {
-            return Unknown(intent.UpperId);
-        }
-        catch (JsonException)
+        catch (Exception error) when (IsSdkFailure(error))
         {
             return Unknown(intent.UpperId);
         }
@@ -140,23 +113,9 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
         try
         {
-            using HttpRequestMessage request = new(
-                HttpMethod.Get,
-                $"{VehiclePath}?key={Uri.EscapeDataString(vehicleKey)}");
-            using HttpResponseMessage response = await httpClient.SendAsync(
-                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
-            {
-                return UnknownVehicle(vehicleKey);
-            }
-            VehicleEnvelope? envelope = await response.Content.ReadFromJsonAsync<VehicleEnvelope>(
-                SerializerOptions, cancellationToken).ConfigureAwait(false);
-            VehicleDto? vehicle = envelope?.Result;
-            if (envelope is null || !IsSuccessCode(envelope.Code) || vehicle is null ||
-                !string.Equals(vehicle.DeviceKey, vehicleKey, StringComparison.Ordinal))
-            {
-                return UnknownVehicle(vehicleKey);
-            }
+            VehicleCard vehicle = await riotSession.Tasks.GetVehicleCardAsync(
+                vehicleKey, cancellationToken).ConfigureAwait(false);
+            DateTimeOffset observedAt = timeProvider.GetUtcNow();
             return new RiotVehicleObservation(
                 vehicleKey,
                 Connected: vehicle.Status == 1,
@@ -164,22 +123,18 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 ProcState: vehicle.ProcState ?? "UNKNOWN",
                 CurrentMap: vehicle.CurrentMap ?? string.Empty,
                 CurrentStationId: vehicle.CurrentPosition,
-                BatteryPercent: vehicle.Battery,
+                BatteryPercent: vehicle.BatteryPercent,
                 BatteryState: vehicle.BatteryState,
                 Speed: vehicle.Speed,
-                ObservedAt: timeProvider.GetUtcNow(),
+                ObservedAt: observedAt,
                 LockStatus: vehicle.LockStatus,
                 OrderTaskId: vehicle.OrderTaskId);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return UnknownVehicle(vehicleKey);
+            throw;
         }
-        catch (HttpRequestException)
-        {
-            return UnknownVehicle(vehicleKey);
-        }
-        catch (JsonException)
+        catch (Exception error) when (IsSdkFailure(error))
         {
             return UnknownVehicle(vehicleKey);
         }
@@ -191,22 +146,26 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(mapId);
 
-        using HttpRequestMessage request = new(HttpMethod.Get, MapStationsPathPrefix + mapId);
-        using HttpResponseMessage response = await httpClient.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        StationEnvelope? envelope = await response.Content.ReadFromJsonAsync<StationEnvelope>(
-            SerializerOptions, cancellationToken).ConfigureAwait(false);
-        if (envelope is null || !IsSuccessCode(envelope.Code) || envelope.Result is null)
+        IReadOnlyList<Station> sdkStations;
+        try
         {
-            throw new InvalidDataException("RIoT Map station catalog response was not successful.");
+            sdkStations = await riotSession.Maps.ListStationsStrictAsync(
+                mapId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsSdkFailure(error))
+        {
+            throw new InvalidDataException("RIoT Map station catalog response was not valid.", error);
         }
 
-        RiotMapStation[] stations = envelope.Result.Select(station =>
+        RiotMapStation[] stations = sdkStations.Select(station =>
             new RiotMapStation(
-                station.Id > 0
-                    ? station.Id
-                    : throw new InvalidDataException("RIoT Map station id must be positive."),
+                station.MapId == mapId && station.StationId > 0
+                    ? station.StationId
+                    : throw new InvalidDataException("RIoT Map station identity is invalid."),
                 string.IsNullOrWhiteSpace(station.Name)
                     ? throw new InvalidDataException("RIoT Map station name is required.")
                     : station.Name)).OrderBy(station => station.StationId).ToArray();
@@ -219,7 +178,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             $"{mapId}\t{station.StationId}\t{station.StationName}"));
         string fingerprint = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
-        return new RiotMapStationCatalogSnapshot(mapId, timeProvider.GetUtcNow(), fingerprint, stations);
+        DateTimeOffset observedAt = timeProvider.GetUtcNow();
+        return new RiotMapStationCatalogSnapshot(mapId, observedAt, fingerprint, stations);
     }
 
     public async Task<RiotVehicleSafetyObservation> ReadVehicleSafetyAsync(
@@ -229,39 +189,22 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         ArgumentException.ThrowIfNullOrWhiteSpace(vehicleKey);
         try
         {
-            using HttpRequestMessage vehicleRequest = new(
-                HttpMethod.Get, VehicleSafetyPathPrefix + Uri.EscapeDataString(vehicleKey));
-            using HttpResponseMessage vehicleResponse = await httpClient.SendAsync(
-                vehicleRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            vehicleResponse.EnsureSuccessStatusCode();
-            SafetyVehicleEnvelope? vehicleEnvelope = await vehicleResponse.Content
-                .ReadFromJsonAsync<SafetyVehicleEnvelope>(SerializerOptions, cancellationToken)
-                .ConfigureAwait(false);
-            SafetyVehicleDto? vehicle = vehicleEnvelope?.Vehicle;
-            SafetyVehicleTaskDto? task = vehicleEnvelope?.VehicleTaskInfo;
-            if (vehicle is null || task is null ||
-                !string.Equals(task.Key, vehicleKey, StringComparison.Ordinal))
-            {
-                return UnknownSafety(vehicleKey, "RIOT_VEHICLE_IDENTITY_UNAVAILABLE");
-            }
-
-            using HttpRequestMessage ordersRequest = new(HttpMethod.Get, NonFinalOrdersPath);
-            using HttpResponseMessage ordersResponse = await httpClient.SendAsync(
-                ordersRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            ordersResponse.EnsureSuccessStatusCode();
-            NonFinalOrdersEnvelope? ordersEnvelope = await ordersResponse.Content
-                .ReadFromJsonAsync<NonFinalOrdersEnvelope>(SerializerOptions, cancellationToken)
-                .ConfigureAwait(false);
-            IReadOnlyList<NonFinalOrderDto>? orders = ordersEnvelope?.Result?.Records;
-            if (ordersEnvelope is null || !IsSuccessCode(ordersEnvelope.Code) || orders is null || orders.Count >= 100)
+            VehicleExecutionFacts vehicle = await riotSession.Tasks.GetVehicleExecutionFactsAsync(
+                vehicleKey, cancellationToken).ConfigureAwait(false);
+            OrderStatePage orders = await riotSession.Order.ListOrdersByStatesAsync(
+                NonFinalOrderStates,
+                pageNum: 1,
+                pageSize: 100,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!orders.CoversAllRecords)
             {
                 return UnknownSafety(vehicleKey, "RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN");
             }
 
-            bool hasNonFinalOrder = orders.Any(order =>
+            bool hasNonFinalOrder = orders.Records.Any(order =>
                 string.Equals(order.AppointVehicleKey, vehicleKey, StringComparison.Ordinal) ||
                 string.Equals(order.ExecuteVehicleKey, vehicleKey, StringComparison.Ordinal));
-            if (vehicle.Speed is not null && vehicle.Speed != 0 ||
+            if ((vehicle.Speed is not null && vehicle.Speed != 0) ||
                 string.Equals(vehicle.MovementState, "MT_RUNNING", StringComparison.Ordinal))
             {
                 return new RiotVehicleSafetyObservation(
@@ -273,10 +216,10 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             }
 
             List<string> reasons = [];
-            if (!string.Equals(task.ProcState, "IDLE", StringComparison.Ordinal)) reasons.Add("RIOT_PROC_NOT_IDLE");
-            if (task.ProcessingOrder != false) reasons.Add("RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE");
-            if (task.Enable != true) reasons.Add("RIOT_VEHICLE_NOT_ENABLED");
-            if (!string.Equals(task.IntegrationLevel, "ON_LINE", StringComparison.Ordinal)) reasons.Add("RIOT_VEHICLE_NOT_ONLINE");
+            if (!string.Equals(vehicle.ProcState, "IDLE", StringComparison.Ordinal)) reasons.Add("RIOT_PROC_NOT_IDLE");
+            if (vehicle.ProcessingOrder != false) reasons.Add("RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE");
+            if (vehicle.Enable != true) reasons.Add("RIOT_VEHICLE_NOT_ENABLED");
+            if (!string.Equals(vehicle.IntegrationLevel, "ON_LINE", StringComparison.Ordinal)) reasons.Add("RIOT_VEHICLE_NOT_ONLINE");
             if (!string.Equals(vehicle.EmergencyState, "OK", StringComparison.Ordinal)) reasons.Add("RIOT_EMERGENCY_NOT_OK");
             if (!string.Equals(vehicle.BreakSwitchState, "MOVABLE", StringComparison.Ordinal)) reasons.Add("RIOT_BRAKE_NOT_MOVABLE");
             if (!string.Equals(vehicle.ControlState, "CONTROL_STATE_OK", StringComparison.Ordinal)) reasons.Add("RIOT_CONTROL_NOT_OK");
@@ -292,53 +235,61 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 "RIOT_BEHAVIOR_LAB_R41",
                 reasons);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (IsTimeout(error))
         {
             return UnknownSafety(vehicleKey, "RIOT_READ_TIMEOUT");
         }
-        catch (Exception error) when (error is HttpRequestException or JsonException or InvalidDataException)
+        catch (Exception error) when (IsSdkFailure(error))
         {
             return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
         }
     }
 
-    private static RiotOrderObservation ToObservation(string expectedUpperId, RiotEnvelope? envelope)
+    private static RiotOrderObservation ToObservation(string expectedUpperId, OrderSnapshot order)
     {
-        if (envelope is null || !IsSuccessCode(envelope.Code) || envelope.Result is null ||
-            string.IsNullOrWhiteSpace(envelope.Result.OrderId) ||
-            !string.Equals(envelope.Result.UpperId, expectedUpperId, StringComparison.Ordinal) ||
-            envelope.Result.OrderState is null)
+        RiotOrderObservationKind kind = ToObservationKind(order.OrderState);
+        string? vehicleKey = string.IsNullOrWhiteSpace(order.ExecuteVehicleKey)
+            ? order.AppointVehicleKey
+            : order.ExecuteVehicleKey;
+        OrderMissionSnapshot[] movements = order.Missions
+            .Where(mission => string.Equals(mission.Type, "move", StringComparison.Ordinal))
+            .ToArray();
+        if (kind == RiotOrderObservationKind.Unknown ||
+            string.IsNullOrWhiteSpace(order.OrderId) ||
+            !string.Equals(order.UpperId, expectedUpperId, StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(vehicleKey) ||
+            movements.Length != 1 ||
+            movements[0].MapId is not > 0)
         {
             return Unknown(expectedUpperId);
         }
 
-        RiotOrderObservationKind kind = envelope.Result.OrderState.Value switch
+        int? destination = movements[0].Destination ?? order.EndStationNo;
+        if (destination is not > 0)
         {
-            1 or 3 or 7 or 9 or 10 => RiotOrderObservationKind.Active,
-            2 or 4 or 5 or 6 or 8 => RiotOrderObservationKind.Terminal,
-            _ => RiotOrderObservationKind.Unknown
-        };
-        OrderMissionDto? movement = envelope.Result.Missions?.SingleOrDefault(mission => mission.Type == "move");
-        string? vehicleKey = string.IsNullOrWhiteSpace(envelope.Result.ExecuteVehicleKey)
-            ? envelope.Result.AppointVehicleKey
-            : envelope.Result.ExecuteVehicleKey;
+            return Unknown(expectedUpperId);
+        }
+
         return new RiotOrderObservation(
             expectedUpperId,
             kind,
-            envelope.Result.OrderId,
-            envelope.Result.OrderState,
+            order.OrderId,
+            order.OrderState,
             vehicleKey,
-            movement?.MapId,
-            movement?.Destination ?? envelope.Result.EndStationNo);
+            movements[0].MapId,
+            destination);
     }
 
-    private static bool IsSuccessCode(JsonElement code)
+    private static RiotOrderObservationKind ToObservationKind(int orderState) => orderState switch
     {
-        string value = code.ValueKind == JsonValueKind.String
-            ? code.GetString() ?? string.Empty
-            : code.GetRawText();
-        return value.Trim() is "0" or "200" or "OK" or "ok" or "success" or "SUCCESS";
-    }
+        1 or 3 or 7 or 9 or 10 => RiotOrderObservationKind.Active,
+        2 or 4 or 5 or 6 or 8 => RiotOrderObservationKind.Terminal,
+        _ => RiotOrderObservationKind.Unknown
+    };
 
     private static void ValidateFrozenIntent(OrderIntent intent)
     {
@@ -349,6 +300,15 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             throw new ArgumentOutOfRangeException(nameof(intent), "RIoT map and destination identifiers must be positive.");
         }
     }
+
+    private static bool IsTimeout(Exception error) =>
+        error is OperationCanceledException ||
+        error.InnerException is OperationCanceledException ||
+        error is RiotApiException { BusinessCode: "riot-read-timeout" };
+
+    private static bool IsSdkFailure(Exception error) =>
+        error is RiotApiException or ApiException or HttpRequestException or IOException or JsonException or
+            InvalidOperationException or OperationCanceledException;
 
     private static RiotOrderObservation Unknown(string upperId) =>
         new(upperId, RiotOrderObservationKind.Unknown, null);
@@ -373,67 +333,4 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         timeProvider.GetUtcNow(),
         "RIOT_BEHAVIOR_LAB_R41",
         [reason]);
-
-    private sealed record RiotEnvelope(JsonElement Code, string? Message, RiotOrderDto? Result);
-
-    private sealed record StationEnvelope(JsonElement Code, string? Message, IReadOnlyList<StationDto>? Result);
-
-    private sealed record StationDto(int Id, string? Name);
-
-    private sealed record RiotOrderDto(
-        long? Id,
-        string? OrderId,
-        string? UpperId,
-        int? OrderState,
-        string? AppointVehicleKey,
-        string? ExecuteVehicleKey,
-        int? EndStationNo,
-        IReadOnlyList<OrderMissionDto>? Missions);
-
-    private sealed record OrderMissionDto(string? Type, int? MapId, int? Destination);
-
-    private sealed record VehicleEnvelope(JsonElement Code, string? Message, VehicleDto? Result);
-
-    private sealed record VehicleDto(
-        string? DeviceKey,
-        bool? Enable,
-        int? Status,
-        string? ProcState,
-        string? CurrentMap,
-        int? CurrentPosition,
-        int? Battery,
-        string? BatteryState,
-        double? Speed,
-        int? LockStatus,
-        string? OrderTaskId);
-
-    private sealed record SafetyVehicleEnvelope(
-        SafetyVehicleDto? Vehicle,
-        SafetyVehicleTaskDto? VehicleTaskInfo);
-
-    private sealed record SafetyVehicleDto(
-        string? MovementState,
-        string? ControlState,
-        string? EmergencyState,
-        string? BreakSwitchState,
-        string? LocationState,
-        double? Speed);
-
-    private sealed record SafetyVehicleTaskDto(
-        string? Key,
-        string? ProcState,
-        bool? ProcessingOrder,
-        bool? Enable,
-        string? IntegrationLevel);
-
-    private sealed record NonFinalOrdersEnvelope(
-        JsonElement Code,
-        NonFinalOrdersResultDto? Result);
-
-    private sealed record NonFinalOrdersResultDto(IReadOnlyList<NonFinalOrderDto>? Records);
-
-    private sealed record NonFinalOrderDto(
-        string? AppointVehicleKey,
-        string? ExecuteVehicleKey,
-        int? OrderState);
 }

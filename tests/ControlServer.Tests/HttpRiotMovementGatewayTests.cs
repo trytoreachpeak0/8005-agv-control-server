@@ -1,33 +1,19 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Adapters;
-using Microsoft.Extensions.DependencyInjection;
+using RIoT.Sdk.Core;
+using RIoT.Sdk.Facade;
 
 namespace ControlServer.Tests;
 
 public sealed class HttpRiotMovementGatewayTests
 {
     [Fact]
-    public void TypedHttpClientResolvesWhenTimeProviderIsRegistered()
-    {
-        ServiceCollection services = new();
-        services.AddSingleton(TimeProvider.System);
-        services.AddHttpClient<HttpRiotMovementGateway>(client =>
-            client.BaseAddress = new Uri("http://riot.test"));
-        using ServiceProvider provider = services.BuildServiceProvider();
-
-        HttpRiotMovementGateway gateway = provider.GetRequiredService<HttpRiotMovementGateway>();
-
-        Assert.NotNull(gateway);
-    }
-
-    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
-    public async Task ReconcileUsesOnlyUpperIdEndpointAndParsesActiveOrder()
+    public async Task ReconcileUsesSdkUpperIdEndpointAndParsesCompleteActiveOrder()
     {
         RecordingHandler handler = new((request, _) =>
         {
@@ -35,31 +21,125 @@ public sealed class HttpRiotMovementGatewayTests
             Assert.Equal(
                 "/api/order/v1/orderRecord/detailByUpperId/UPPER-001",
                 request.RequestUri?.AbsolutePath);
-            return JsonResponse("""
-                {"code":"0","message":"成功","result":{"id":488004,"orderId":"ORDER-001","upperId":"UPPER-001","orderState":1}}
-                """);
+            return JsonResponse(FoundOrderJson(orderState: 1));
         });
-        HttpClient client = CreateClient(handler);
-        HttpRiotMovementGateway gateway = new(client);
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
 
         RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
             "UPPER-001", TestContext.Current.CancellationToken);
 
         Assert.Equal(RiotOrderObservationKind.Active, result.Kind);
         Assert.Equal("ORDER-001", result.OrderId);
+        Assert.Equal(1, result.OrderState);
+        Assert.Equal("VEHICLE-KEY-01", result.VehicleKey);
+        Assert.Equal(29, result.MapId);
+        Assert.Equal(12, result.DestinationStationId);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("{\"code\":\"0\",\"message\":\"成功\"}")]
+    [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":null}")]
+    [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":[]}")]
+    [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":{\"upperId\":\"UPPER-001\"}}")]
+    [InlineData("{\"code\":\"0\",\"result\":{\"id\":1,\"orderId\":\"ORDER-001\",\"upperId\":\"OTHER\",\"orderState\":1,\"appointVehicleKey\":\"VEHICLE-KEY-01\",\"missions\":[{\"type\":\"move\",\"mapId\":29,\"destination\":12}]}}")]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task ReconcileAbsentOrIndeterminateSdkObservationRemainsUnknownPendingContractConfirmation(
+        string body)
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(body));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal("UPPER-001", result.UpperId);
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
         Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
-    public async Task CreateUsesFrozenIntentExactBodyAndBearerCredential()
+    public async Task ReconcileHttp404IsConfirmedNotFound()
+    {
+        RecordingHandler handler = new((request, _) =>
+        {
+            Assert.Equal("/api/order/v1/orderRecord/detailByUpperId/UPPER-404", request.RequestUri?.AbsolutePath);
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-404", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.NotFound, result.Kind);
+        Assert.Null(result.OrderId);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task FoundOrderUsesEndStationFallbackForSingleMoveWithoutDestination()
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(FoundOrderJson(
+            orderState: 5,
+            missionsJson: "[{\"type\":\"move\",\"mapId\":29,\"destination\":null}]",
+            endStationNo: 12)));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Terminal, result.Kind);
+        Assert.Equal(5, result.OrderState);
+        Assert.Equal(12, result.DestinationStationId);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("[]", 12, "VEHICLE-KEY-01", null, 1)]
+    [InlineData("[{\"type\":\"act\",\"mapId\":29,\"destination\":12}]", 12, "VEHICLE-KEY-01", null, 1)]
+    [InlineData("[{\"type\":\"move\",\"mapId\":29,\"destination\":12},{\"type\":\"move\",\"mapId\":29,\"destination\":13}]", 12, "VEHICLE-KEY-01", null, 1)]
+    [InlineData("[{\"type\":\"move\",\"mapId\":0,\"destination\":12}]", 12, "VEHICLE-KEY-01", null, 1)]
+    [InlineData("[{\"type\":\"move\",\"mapId\":29,\"destination\":null}]", null, "VEHICLE-KEY-01", null, 1)]
+    [InlineData("[{\"type\":\"move\",\"mapId\":29,\"destination\":12}]", 12, null, null, 1)]
+    [InlineData("[{\"type\":\"move\",\"mapId\":29,\"destination\":12}]", 12, "VEHICLE-KEY-01", null, 99)]
+    public async Task FoundOrderWithIncompleteOrAmbiguousEvidenceRemainsUnknown(
+        string missionsJson,
+        int? endStationNo,
+        string? appointedVehicle,
+        string? executeVehicle,
+        int orderState)
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(FoundOrderJson(
+            orderState,
+            missionsJson,
+            endStationNo,
+            appointedVehicle,
+            executeVehicle)));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task CreateUsesSdkFrozenIntentBodyAndReturnsFrozenEvidence()
     {
         RecordingHandler handler = new(async (request, cancellationToken) =>
         {
             Assert.Equal(HttpMethod.Post, request.Method);
             Assert.Equal("/api/order/v1/add/byDefaultMissions", request.RequestUri?.AbsolutePath);
-            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
-            Assert.Equal("test-call-api-key", request.Headers.Authorization?.Parameter);
             string body = await request.Content!.ReadAsStringAsync(cancellationToken);
             using JsonDocument document = JsonDocument.Parse(body);
             JsonElement root = document.RootElement;
@@ -72,116 +152,110 @@ public sealed class HttpRiotMovementGatewayTests
             Assert.Equal("move", mission.GetProperty("type").GetString());
             Assert.Equal(29, mission.GetProperty("mapId").GetInt32());
             Assert.Equal(12, mission.GetProperty("destination").GetInt32());
-            return JsonResponse("""
-                {"code":"0","message":"成功","result":{"id":488004,"orderId":"ORDER-001","upperId":"UPPER-001","orderState":1}}
-                """);
+            return JsonResponse(CreateSuccessJson("UPPER-001"));
         });
-        HttpClient client = CreateClient(handler);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-call-api-key");
-        HttpRiotMovementGateway gateway = new(client);
-        OrderIntent intent = new(
-            "LEG-001", "D-001", "UPPER-001", "TO_PICKUP", "ST-12",
-            new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero),
-            "AGV-8005-01", 29, 12, 4, 7);
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
 
-        RiotOrderObservation result = await gateway.CreateAsync(intent, TestContext.Current.CancellationToken);
+        RiotOrderObservation result = await gateway.CreateAsync(
+            CreateIntent(), TestContext.Current.CancellationToken);
 
         Assert.Equal(RiotOrderObservationKind.Active, result.Kind);
+        Assert.Equal("ORDER-001", result.OrderId);
+        Assert.Equal("AGV-8005-01", result.VehicleKey);
+        Assert.Equal(29, result.MapId);
+        Assert.Equal(12, result.DestinationStationId);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("{\"code\":\"0\",\"result\":null}")]
+    [InlineData("{\"code\":\"0\",\"result\":{\"id\":1,\"upperId\":\"UPPER-001\",\"orderState\":1}}")]
+    [InlineData("{\"code\":\"0\",\"result\":{\"id\":1,\"orderId\":\"ORDER-001\",\"upperId\":\"OTHER\",\"orderState\":1}}")]
+    [InlineData("{\"code\":\"0\",\"result\":{\"id\":1,\"orderId\":\"ORDER-001\",\"upperId\":\"UPPER-001\",\"orderState\":99}}")]
+    public async Task CreateEmptyIncompleteOrMismatchedSdkResultRemainsUnknownWithoutRetry(string body)
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(body));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.CreateAsync(
+            CreateIntent(), TestContext.Current.CancellationToken);
+
+        Assert.Equal("UPPER-001", result.UpperId);
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
         Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
     public async Task CreateTimeoutRemainsUnknownWithoutRetry()
     {
         RecordingHandler handler = new((_, _) =>
             Task.FromException<HttpResponseMessage>(new TaskCanceledException("simulated timeout")));
-        HttpRiotMovementGateway gateway = new(CreateClient(handler));
-        OrderIntent intent = new(
-            "LEG-001", "D-001", "UPPER-001", "TO_PICKUP", "ST-12",
-            DateTimeOffset.UtcNow, "AGV-8005-01", 29, 12, 4, 7);
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
 
-        RiotOrderObservation result = await gateway.CreateAsync(intent, TestContext.Current.CancellationToken);
+        RiotOrderObservation result = await gateway.CreateAsync(
+            CreateIntent(), TestContext.Current.CancellationToken);
 
         Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
         Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    public async Task OnlyHttp404IsConfirmedNotFound()
+    public async Task CreateSdkHttpFailureRemainsUnknownWithoutRetry()
     {
-        RecordingHandler handler = new((_, _) => new HttpResponseMessage(HttpStatusCode.NotFound));
-        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+        RecordingHandler handler = new((_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+        {
+            Content = new StringContent("{}", Encoding.UTF8, "application/json")
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
 
-        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
-            "UPPER-404", TestContext.Current.CancellationToken);
+        RiotOrderObservation result = await gateway.CreateAsync(
+            CreateIntent(), TestContext.Current.CancellationToken);
 
-        Assert.Equal(RiotOrderObservationKind.NotFound, result.Kind);
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task CreatePropagatesCallerCancellationWithoutRetry()
+    {
+        using CancellationTokenSource source = new();
+        RecordingHandler handler = new((_, cancellationToken) =>
+        {
+            source.Cancel();
+            return Task.FromCanceled<HttpResponseMessage>(cancellationToken);
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            gateway.CreateAsync(CreateIntent(), source.Token));
+
+        Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    public async Task SuccessfulOrderObservationCarriesExactVehicleMapAndDestinationEvidence()
+    public async Task VehicleFactsAreMappedAndObservedAfterSdkReadCompletes()
     {
-        RecordingHandler handler = new((_, _) => JsonResponse("""
-            {
-              "code":"0",
-              "result":{
-                "orderId":"ORDER-001",
-                "upperId":"UPPER-001",
-                "orderState":5,
-                "appointVehicleKey":"VEHICLE-KEY-01",
-                "executeVehicleKey":"VEHICLE-KEY-01",
-                "endStationNo":12,
-                "missions":[{"type":"move","mapId":29,"destination":12}]
-              }
-            }
-            """));
-        HttpRiotMovementGateway gateway = new(CreateClient(handler));
-
-        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
-            "UPPER-001", TestContext.Current.CancellationToken);
-
-        Assert.Equal(RiotOrderObservationKind.Terminal, result.Kind);
-        Assert.Equal(5, result.OrderState);
-        Assert.Equal("VEHICLE-KEY-01", result.VehicleKey);
-        Assert.Equal(29, result.MapId);
-        Assert.Equal(12, result.DestinationStationId);
-    }
-
-    [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    public async Task VehicleReadUsesExactKeyAndReturnsArrivalAndBatteryFacts()
-    {
-        DateTimeOffset now = new(2026, 8, 26, 1, 0, 0, TimeSpan.Zero);
+        DateTimeOffset before = new(2026, 8, 28, 1, 0, 0, TimeSpan.Zero);
+        DateTimeOffset after = before.AddSeconds(1);
+        MutableTimeProvider clock = new(before);
         RecordingHandler handler = new((request, _) =>
         {
-            Assert.Equal(HttpMethod.Get, request.Method);
-            Assert.Equal(HttpRiotMovementGateway.VehiclePath, request.RequestUri?.AbsolutePath);
+            Assert.Equal("/api/task/vehicles/getVehicleInfoByDeviceKey", request.RequestUri?.AbsolutePath);
             Assert.Equal("?key=VEHICLE-KEY-01", request.RequestUri?.Query);
-            return JsonResponse("""
-                {
-                  "code":"0",
-                  "result":{
-                    "deviceKey":"VEHICLE-KEY-01",
-                    "enable":true,
-                    "status":1,
-                    "procState":"IDLE",
-                    "currentMap":"MAP-29",
-                    "currentPosition":12,
-                    "battery":80,
-                    "batteryState":"NO_CHARGE",
-                    "speed":0,
-                    "lockStatus":0,
-                    "orderTaskId":null
-                  }
-                }
-                """);
+            clock.Set(after);
+            return JsonResponse(VehicleCardJson("VEHICLE-KEY-01"));
         });
-        HttpRiotMovementGateway gateway = new(CreateClient(handler), new FixedTimeProvider(now));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session, clock);
 
         RiotVehicleObservation result = await gateway.ReadVehicleAsync(
             "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
@@ -192,64 +266,94 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal("MAP-29", result.CurrentMap);
         Assert.Equal(12, result.CurrentStationId);
         Assert.Equal(80, result.BatteryPercent);
+        Assert.Equal("NO_CHARGE", result.BatteryState);
+        Assert.Equal(0d, result.Speed);
         Assert.Equal(0, result.LockStatus);
         Assert.Null(result.OrderTaskId);
-        Assert.Equal(now, result.ObservedAt);
+        Assert.Equal(after, result.ObservedAt);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task VehicleIdentityMismatchReturnsFailClosedUnknownFacts()
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(VehicleCardJson("OTHER")));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotVehicleObservation result = await gateway.ReadVehicleAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.False(result.Connected);
+        Assert.False(result.Enabled);
+        Assert.Equal("UNKNOWN", result.ProcState);
+        Assert.Null(result.CurrentStationId);
+        Assert.Null(result.Speed);
+        Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
-    public async Task ReadMapStationsUsesApprovedFullStationEndpointAndReturnsAtomicFingerprint()
+    public async Task StrictMapCatalogIsCanonicalAndObservedAfterSdkReadCompletes()
     {
-        DateTimeOffset now = new(2026, 8, 27, 1, 0, 0, TimeSpan.Zero);
+        DateTimeOffset before = new(2026, 8, 28, 2, 0, 0, TimeSpan.Zero);
+        DateTimeOffset after = before.AddSeconds(1);
+        MutableTimeProvider clock = new(before);
         RecordingHandler handler = new((request, _) =>
         {
-            Assert.Equal(HttpMethod.Get, request.Method);
             Assert.Equal("/api/imap/v1/mapInfo/stations/25", request.RequestUri?.AbsolutePath);
+            clock.Set(after);
             return JsonResponse("""
-                {
-                  "code":"0",
-                  "result":[
-                    {"id":210,"name":"关卡"},
-                    {"id":12,"name":"N1-3_N1-7"},
-                    {"id":11,"name":"C15-13"}
-                  ]
-                }
+                {"code":"0","result":[
+                  {"id":210,"name":"关卡"},{"id":12,"name":"N1-3_N1-7"},{"id":11,"name":"C15-13"}]}
                 """);
         });
-        HttpRiotMovementGateway gateway = new(CreateClient(handler), new FixedTimeProvider(now));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session, clock);
 
         RiotMapStationCatalogSnapshot result = await gateway.ReadMapStationsAsync(
             25, TestContext.Current.CancellationToken);
 
-        Assert.Equal(25, result.MapId);
-        Assert.Equal(now, result.ObservedAt);
         Assert.Equal([11, 12, 210], result.Stations.Select(station => station.StationId));
         Assert.Equal(["C15-13", "N1-3_N1-7", "关卡"], result.Stations.Select(station => station.StationName));
-        Assert.Matches("^[0-9a-f]{64}$", result.ContentSha256);
+        Assert.Equal("8e1df56b366705969098327145588a67612a05b172c8958aa1f0aec64f3e6d30", result.ContentSha256);
+        Assert.Equal(after, result.ObservedAt);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("{\"code\":\"0\",\"result\":null}")]
+    [InlineData("{\"code\":\"0\",\"result\":[]}")]
+    [InlineData("{\"code\":\"0\",\"result\":[{\"id\":0,\"name\":\"BAD\"}]}")]
+    [InlineData("{\"code\":\"0\",\"result\":[{\"id\":12,\"name\":\"\"}]}")]
+    [InlineData("{\"code\":\"0\",\"result\":[{\"id\":12,\"name\":\"N1-3\"},{\"id\":12,\"name\":\"N1-7\"}]}")]
+    public async Task StrictMapCatalogRejectsInvalidCatalogWithoutPublishingPartialResult(string body)
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(body));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            gateway.ReadMapStationsAsync(25, TestContext.Current.CancellationToken));
+
         Assert.Equal(1, handler.CallCount);
     }
 
     [Fact]
-    public async Task ReadMapStationsRejectsDuplicateStationIdentityInsteadOfPublishingPartialCatalog()
+    public async Task VehicleSafetyRequiresCompleteCompositeAndUsesPostSecondReadTime()
     {
-        RecordingHandler handler = new((_, _) => JsonResponse("""
-            {"code":"0","result":[{"id":12,"name":"N1-3"},{"id":12,"name":"N1-7"}]}
-            """));
-        HttpRiotMovementGateway gateway = new(CreateClient(handler));
-
-        InvalidDataException error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => gateway.ReadMapStationsAsync(25, TestContext.Current.CancellationToken));
-
-        Assert.Contains("unique station ids", error.Message, StringComparison.Ordinal);
-        Assert.Equal(1, handler.CallCount);
-    }
-
-    [Fact]
-    public async Task VehicleSafetyReturnsStoppedOnlyForCompleteRound41Composite()
-    {
-        RecordingHandler handler = SafetyHandler("MT_FINISHED", speed: 0);
-        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+        DateTimeOffset before = new(2026, 8, 28, 3, 0, 0, TimeSpan.Zero);
+        DateTimeOffset afterVehicle = before.AddSeconds(1);
+        DateTimeOffset afterOrders = before.AddSeconds(2);
+        MutableTimeProvider clock = new(before);
+        RecordingHandler handler = SafetyHandler(
+            clock,
+            afterVehicle,
+            afterOrders,
+            SafeVehicleJson("MT_FINISHED", 0),
+            CompleteOrdersJson());
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session, clock);
 
         RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
             "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
@@ -257,14 +361,100 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(RiotVehicleMotionState.Stopped, result.MotionState);
         Assert.Empty(result.ReasonCodes);
         Assert.Equal("RIOT_BEHAVIOR_LAB_R41", result.Source);
+        Assert.Equal(afterOrders, result.ObservedAt);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task VehicleSafetyPreservesEveryFailClosedCompositeReason()
+    {
+        const string unsafeVehicle = """
+            {
+              "vehicle":{"movementState":"MT_NA","controlState":"CONTROL_STATE_ERR",
+                "emergencyState":"CAN_RECOVER","breakSwitchState":"UNMOVABLE",
+                "locationState":"ERROR","speed":null},
+              "vehicleTaskInfo":{"key":"VEHICLE-KEY-01","procState":"PROCESSING_ORDER",
+                "processingOrder":true,"enable":false,"integrationLevel":"OFF_LINE"}
+            }
+            """;
+        const string matchingOrder = """
+            {"code":"0","result":{"current":1,"size":100,"total":1,"records":[
+              {"id":1,"orderId":"ORDER-1","upperId":"UPPER-1","orderState":1,
+               "appointVehicleKey":"VEHICLE-KEY-01","executeVehicleKey":null}]}}
+            """;
+        RecordingHandler handler = SafetyHandler(null, null, null, unsafeVehicle, matchingOrder);
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal(
+        [
+            "RIOT_PROC_NOT_IDLE",
+            "RIOT_PROCESSING_ORDER_UNKNOWN_OR_ACTIVE",
+            "RIOT_VEHICLE_NOT_ENABLED",
+            "RIOT_VEHICLE_NOT_ONLINE",
+            "RIOT_EMERGENCY_NOT_OK",
+            "RIOT_BRAKE_NOT_MOVABLE",
+            "RIOT_CONTROL_NOT_OK",
+            "RIOT_LOCATION_NOT_RUNNING",
+            "RIOT_SPEED_NOT_ZERO",
+            "RIOT_MOVEMENT_NOT_FINISHED",
+            "RIOT_NONFINAL_ORDER_PRESENT"
+        ], result.ReasonCodes);
+        Assert.Equal(2, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task VehicleSafetyReturnsReadTimeoutWhenSdkReadTimesOut()
+    {
+        RecordingHandler handler = new((_, _) =>
+            Task.FromException<HttpResponseMessage>(new TaskCanceledException("simulated timeout")));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal(["RIOT_READ_TIMEOUT"], result.ReasonCodes);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task VehicleSafetyReturnsReadFailedWhenSdkOrderReadFails()
+    {
+        RecordingHandler handler = new((request, _) =>
+            request.RequestUri?.AbsolutePath == "/api/task/v1/task/getVehicleInfo/VEHICLE-KEY-01"
+                ? JsonResponse(SafeVehicleJson("MT_FINISHED", 0))
+                : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
+        Assert.Equal(["RIOT_READ_FAILED"], result.ReasonCodes);
         Assert.Equal(2, handler.CallCount);
     }
 
     [Fact]
     public async Task VehicleSafetyReturnsUnknownForObservedMtNaEvenWhenEveryOtherFactIsSafe()
     {
-        RecordingHandler handler = SafetyHandler("MT_NA", speed: 0);
-        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+        RecordingHandler handler = SafetyHandler(
+            clock: null,
+            afterVehicle: null,
+            afterOrders: null,
+            SafeVehicleJson("MT_NA", 0),
+            CompleteOrdersJson());
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
 
         RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
             "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
@@ -275,10 +465,16 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Fact]
-    public async Task VehicleSafetyReturnsMovingForMtRunningWithoutTreatingZeroSpeedAsStopped()
+    public async Task VehicleSafetyReturnsMovingForRunningMotionEvenAtZeroReportedSpeed()
     {
-        RecordingHandler handler = SafetyHandler("MT_RUNNING", speed: 0);
-        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+        RecordingHandler handler = SafetyHandler(
+            clock: null,
+            afterVehicle: null,
+            afterOrders: null,
+            SafeVehicleJson("MT_RUNNING", 0),
+            CompleteOrdersJson());
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
 
         RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
             "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
@@ -289,64 +485,100 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Fact]
-    public async Task VehicleSafetyReturnsUnknownWhenNonFinalOrderCoverageCannotBeProved()
+    public async Task VehicleSafetyReturnsUnknownWhenSdkPageDoesNotCoverAllRecords()
     {
-        RecordingHandler handler = new((request, _) =>
-            request.RequestUri?.AbsolutePath.StartsWith(
-                HttpRiotMovementGateway.VehicleSafetyPathPrefix, StringComparison.Ordinal) == true
-                ? JsonResponse(SafeVehicleJson("MT_FINISHED", 0))
-                : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
-        HttpRiotMovementGateway gateway = new(CreateClient(handler));
+        RecordingHandler handler = SafetyHandler(
+            clock: null,
+            afterVehicle: null,
+            afterOrders: null,
+            SafeVehicleJson("MT_FINISHED", 0),
+            """{"code":"0","result":{"current":1,"size":100,"total":101,"records":[]}}""");
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
 
         RiotVehicleSafetyObservation result = await gateway.ReadVehicleSafetyAsync(
             "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
 
         Assert.Equal(RiotVehicleMotionState.Unknown, result.MotionState);
-        Assert.Equal(["RIOT_READ_FAILED"], result.ReasonCodes);
+        Assert.Equal(["RIOT_NONFINAL_ORDER_COVERAGE_UNKNOWN"], result.ReasonCodes);
         Assert.Equal(2, handler.CallCount);
     }
 
-    private static RecordingHandler SafetyHandler(string movementState, double speed) => new((request, _) =>
+    private static RecordingHandler SafetyHandler(
+        MutableTimeProvider? clock,
+        DateTimeOffset? afterVehicle,
+        DateTimeOffset? afterOrders,
+        string vehicleBody,
+        string ordersBody) => new((request, _) =>
     {
-        if (request.RequestUri?.AbsolutePath.StartsWith(
-                HttpRiotMovementGateway.VehicleSafetyPathPrefix, StringComparison.Ordinal) == true)
+        if (request.RequestUri?.AbsolutePath == "/api/task/v1/task/getVehicleInfo/VEHICLE-KEY-01")
         {
-            Assert.Equal(
-                HttpRiotMovementGateway.VehicleSafetyPathPrefix + "VEHICLE-KEY-01",
-                request.RequestUri.AbsolutePath);
-            return JsonResponse(SafeVehicleJson(movementState, speed));
+            if (afterVehicle.HasValue) clock!.Set(afterVehicle.Value);
+            return JsonResponse(vehicleBody);
         }
 
         Assert.Equal("/api/order/v1/orderRecord", request.RequestUri?.AbsolutePath);
-        Assert.Contains("filterByState=1", request.RequestUri?.Query, StringComparison.Ordinal);
-        Assert.Contains("filterByState=9", request.RequestUri?.Query, StringComparison.Ordinal);
-        return JsonResponse("""{"code":"0","result":{"records":[]}}""");
+        string[] pairs = request.RequestUri!.Query.TrimStart('?').Split('&');
+        Assert.Contains("filterByState=1", pairs);
+        Assert.Contains("filterByState=3", pairs);
+        Assert.Contains("filterByState=7", pairs);
+        Assert.Contains("filterByState=9", pairs);
+        if (afterOrders.HasValue) clock!.Set(afterOrders.Value);
+        return JsonResponse(ordersBody);
     });
 
-    private static string SafeVehicleJson(string movementState, double speed) => $$"""
+    private static string FoundOrderJson(
+        int orderState,
+        string missionsJson = "[{\"type\":\"move\",\"mapId\":29,\"destination\":12}]",
+        int? endStationNo = 12,
+        string? appointedVehicle = "APPOINTED-VEHICLE-KEY",
+        string? executeVehicle = "VEHICLE-KEY-01")
+    {
+        string end = endStationNo.HasValue ? endStationNo.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "null";
+        string appointed = appointedVehicle is null ? "null" : $"\"{appointedVehicle}\"";
+        string execute = executeVehicle is null ? "null" : $"\"{executeVehicle}\"";
+        return $$$"""
+            {"code":"0","result":{"id":488004,"orderId":"ORDER-001","upperId":"UPPER-001",
+            "orderState":{{{orderState}}},"appointVehicleKey":{{{appointed}}},"executeVehicleKey":{{{execute}}},
+            "endStationNo":{{{end}}},"missions":{{{missionsJson}}}}}
+            """;
+    }
+
+    private static string CreateSuccessJson(string upperId) => $$$"""
+        {"code":"0","result":{"id":488004,"orderId":"ORDER-001","upperId":"{{{upperId}}}","orderState":1}}
+        """;
+
+    private static string VehicleCardJson(string deviceKey) => $$$"""
+        {"code":"0","result":{"deviceKey":"{{{deviceKey}}}","enable":true,"status":1,
+        "procState":"IDLE","currentMap":"MAP-29","currentPosition":12,"battery":80,
+        "batteryState":"NO_CHARGE","speed":0,"lockStatus":0,"orderTaskId":null}}
+        """;
+
+    private static string SafeVehicleJson(string movementState, double speed) => $$$"""
         {
-          "vehicle":{
-            "movementState":"{{movementState}}",
-            "controlState":"CONTROL_STATE_OK",
-            "emergencyState":"OK",
-            "breakSwitchState":"MOVABLE",
-            "locationState":"LOCATION_STATE_RUNNING",
-            "speed":{{speed}}
-          },
-          "vehicleTaskInfo":{
-            "key":"VEHICLE-KEY-01",
-            "procState":"IDLE",
-            "processingOrder":false,
-            "enable":true,
-            "integrationLevel":"ON_LINE"
-          }
+          "vehicle":{"movementState":"{{{movementState}}}","controlState":"CONTROL_STATE_OK",
+            "emergencyState":"OK","breakSwitchState":"MOVABLE",
+            "locationState":"LOCATION_STATE_RUNNING","speed":{{{speed}}}},
+          "vehicleTaskInfo":{"key":"VEHICLE-KEY-01","procState":"IDLE",
+            "processingOrder":false,"enable":true,"integrationLevel":"ON_LINE"}
         }
         """;
 
-    private static HttpClient CreateClient(HttpMessageHandler handler) => new(handler)
-    {
-        BaseAddress = new Uri("http://riot.test")
-    };
+    private static string CompleteOrdersJson() =>
+        """{"code":"0","result":{"current":1,"size":100,"total":0,"records":[]}}""";
+
+    private static OrderIntent CreateIntent() => new(
+        "LEG-001", "D-001", "UPPER-001", "TO_PICKUP", "ST-12",
+        new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero),
+        "AGV-8005-01", 29, 12, 4, 7);
+
+    private static RiotSession CreateSession(HttpMessageHandler handler) => new(
+        new RiotOptions
+        {
+            BaseUrl = "http://riot.test",
+            CallApiKey = "test-call-api-key"
+        },
+        handler);
 
     private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
     {
@@ -372,8 +604,12 @@ public sealed class HttpRiotMovementGatewayTests
         }
     }
 
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => now;
+        private DateTimeOffset current = now;
+
+        public void Set(DateTimeOffset value) => current = value;
+
+        public override DateTimeOffset GetUtcNow() => current;
     }
 }

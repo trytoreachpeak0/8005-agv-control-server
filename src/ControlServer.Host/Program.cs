@@ -69,25 +69,7 @@ builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((service
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
     }
 });
-builder.Services.AddHttpClient<HttpRiotMovementGateway>((services, client) =>
-{
-    IConfiguration configuration = services.GetRequiredService<IConfiguration>();
-    client.BaseAddress = new Uri(configuration["RIoT:baseUrl"] ?? "http://127.0.0.1:58888");
-    string? secretVariable = configuration["RIoT:callApiKeyEnvironmentVariable"];
-    string? secret = string.IsNullOrWhiteSpace(secretVariable) ? null : Environment.GetEnvironmentVariable(secretVariable);
-    if (!string.IsNullOrWhiteSpace(secret))
-    {
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
-    }
-});
-builder.Services.AddScoped<IRiotMovementGateway>(services =>
-    services.GetRequiredService<HttpRiotMovementGateway>());
-builder.Services.AddScoped<IRiotVehicleFacts>(services =>
-    services.GetRequiredService<HttpRiotMovementGateway>());
-builder.Services.AddScoped<IRiotMapStationCatalog>(services =>
-    services.GetRequiredService<HttpRiotMovementGateway>());
-builder.Services.AddScoped<IRiotVehicleSafetyFacts>(services =>
-    services.GetRequiredService<HttpRiotMovementGateway>());
+builder.Services.AddRiotSdkIntegration(builder.Configuration);
 builder.Services.AddOptions<OnboardSafetyProjectionOptions>()
     .Bind(builder.Configuration.GetSection(OnboardSafetyProjectionOptions.SectionName))
     .ValidateOnStart();
