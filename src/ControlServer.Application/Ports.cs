@@ -196,6 +196,13 @@ public enum RiotOrderObservationKind
     NotFound,
     Active,
     Terminal,
+
+    /// <summary>
+    /// RIoT refused a create because the frozen upperId is already held (BC-ORDER-004).
+    /// Definitive: no second order was created, and the existing order is not returned,
+    /// so the caller must reconcile by upperId to learn its state.
+    /// </summary>
+    AlreadyExists,
     Unknown
 }
 

@@ -35,6 +35,9 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         this.timeProvider = timeProvider;
     }
 
+    /// <summary>RIoT business code for "订单已存在" on byDefaultMissions (BC-ORDER-004).</summary>
+    private const string OrderAlreadyExistsBusinessCode = "0610008";
+
     public async Task<RiotOrderObservation> ReconcileByUpperIdAsync(
         string upperId,
         CancellationToken cancellationToken)
@@ -115,6 +118,22 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (RiotApiException error) when (error.BusinessCode == OrderAlreadyExistsBusinessCode)
+        {
+            // BC-ORDER-004: RIoT enforces upperId idempotency server-side. "订单已存在" is a
+            // definitive statement that no second order was created; the existing order object
+            // is deliberately not returned, so the caller reconciles by upperId for its state.
+            return new RiotOrderObservation(
+                intent.UpperId,
+                RiotOrderObservationKind.AlreadyExists,
+                null,
+                Receipt: Receipt(
+                    "CREATE",
+                    "OrderAlreadyExists",
+                    httpStatusCode: 200,
+                    businessCode: OrderAlreadyExistsBusinessCode,
+                    resultPresent: false));
         }
         catch (Exception error) when (IsSdkFailure(error))
         {

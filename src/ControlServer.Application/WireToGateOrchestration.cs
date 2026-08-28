@@ -124,6 +124,7 @@ public sealed class MovementDispatchService
 {
     private static readonly TimeSpan EvidenceWriteTimeout = TimeSpan.FromSeconds(5);
     private const string ExperimentalAbsentEligibilityBasis = "EXPERIMENTAL_ABSENT_AT_OBSERVATION";
+    private const string IdempotentAbsentEligibilityBasis = "ABSENT_AT_OBSERVATION_IDEMPOTENT_CREATE";
     private readonly IMovementIntentStore store;
     private readonly IRiotMovementGateway gateway;
     private readonly TimeProvider timeProvider;
@@ -223,8 +224,24 @@ public sealed class MovementDispatchService
                 cancellationToken,
                 intent.ExperimentalAuthorizationId,
                 intent.EligibilityBasis).ConfigureAwait(false),
+            // BC-ORDER-004: RIoT enforces upperId idempotency server-side, so dispatching a
+            // create can never produce a second order. An exact absent-at-observation read
+            // (HTTP 200 / business code 0, no result) therefore does not have to prove absence
+            // before dispatching: the worst case is a definitive "订单已存在" business failure,
+            // which reconciles to the order that already holds this frozen upperId.
+            RiotOrderObservationKind.Unknown when intent.Status == "PENDING_RECONCILIATION" &&
+                                                  intent.DispatchAuditVersion == 1 &&
+                                                  intent.CreateAttemptCount == 0 &&
+                                                  IsExactAbsentAtObservation(upperId, observed) =>
+                await CreateAfterConfirmedAbsenceAsync(
+                        intent.Intent,
+                        observed,
+                        cancellationToken,
+                        RiotDispatchAuditOutcome.Unknown,
+                        IdempotentAbsentEligibilityBasis)
+                    .ConfigureAwait(false),
             RiotOrderObservationKind.Unknown when experimentalAuthorization is not null &&
-                                                  IsExactExperimentalAbsence(upperId, observed) =>
+                                                  IsExactAbsentAtObservation(upperId, observed) =>
                 await CreateAfterExperimentalAbsenceAsync(
                         intent.Intent,
                         observed,
@@ -332,16 +349,19 @@ public sealed class MovementDispatchService
     private async Task<MovementDispatchResult> CreateAfterConfirmedAbsenceAsync(
         OrderIntent intent,
         RiotOrderObservation confirmedAbsence,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RiotDispatchAuditOutcome absenceOutcome = RiotDispatchAuditOutcome.NotFound,
+        string? eligibilityBasis = null)
     {
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         await store.RecordReconciliationAsync(
             intent.UpperId,
             Audit(
                 RiotDispatchAuditPhase.PreCreateReconciliation,
-                RiotDispatchAuditOutcome.NotFound,
+                absenceOutcome,
                 absenceRecordedAt,
-                confirmedAbsence),
+                confirmedAbsence,
+                eligibilityBasis: eligibilityBasis),
             markResultUnknown: false,
             cancellationToken).ConfigureAwait(false);
 
@@ -603,7 +623,7 @@ public sealed class MovementDispatchService
         authorization.DispatchGeneration == intent.DispatchGeneration &&
         authorization.ExpiresAt > evaluatedAt;
 
-    private static bool IsExactExperimentalAbsence(
+    private static bool IsExactAbsentAtObservation(
         string expectedUpperId,
         RiotOrderObservation observation) =>
         observation.Kind == RiotOrderObservationKind.Unknown &&
