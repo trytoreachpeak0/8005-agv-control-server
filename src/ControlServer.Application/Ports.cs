@@ -74,17 +74,88 @@ public interface IMovementIntentStore
 {
     Task<StoredMovementIntent?> GetByUpperIdAsync(string upperId, CancellationToken cancellationToken);
 
-    Task MarkCreateAttemptedAsync(string upperId, CancellationToken cancellationToken);
+    Task RecordReconciliationAsync(
+        string upperId,
+        DispatchAuditWrite audit,
+        bool markResultUnknown,
+        CancellationToken cancellationToken);
 
-    Task MarkResultUnknownAsync(string upperId, CancellationToken cancellationToken);
+    Task<CreateDispatchAttempt> ArmCreateDispatchAsync(
+        string upperId,
+        string requestSemanticSha256,
+        DateTimeOffset armedAt,
+        CancellationToken cancellationToken);
+
+    Task RecordCreateStartedAsync(
+        string upperId,
+        CreateDispatchAttempt attempt,
+        DateTimeOffset startedAt,
+        CancellationToken cancellationToken);
+
+    Task RecordCreateResponseAsync(
+        string upperId,
+        CreateDispatchAttempt attempt,
+        DispatchAuditWrite audit,
+        bool markResultUnknown,
+        CancellationToken cancellationToken);
 
     Task MarkTerminalReconciliationRequiredAsync(
         string upperId,
         string orderId,
+        DispatchAuditWrite audit,
         CancellationToken cancellationToken);
 
-    Task ConfirmAsync(string upperId, string orderId, CancellationToken cancellationToken);
+    Task ConfirmAsync(
+        string upperId,
+        string orderId,
+        DispatchAuditWrite audit,
+        CancellationToken cancellationToken);
 }
+
+public enum RiotDispatchAuditPhase
+{
+    PreCreateReconciliation,
+    CreateDispatch,
+    CreateRequest,
+    CreateResponse,
+    PostCreateReconciliation
+}
+
+public enum RiotDispatchAuditOutcome
+{
+    Unknown,
+    NotFound,
+    Armed,
+    Started,
+    Accepted,
+    Confirmed,
+    Terminal,
+    LegacyAuditUnavailable
+}
+
+public sealed record RiotOrderCallReceipt(
+    string Operation,
+    string Classification,
+    DateTimeOffset ObservedAt,
+    int? HttpStatusCode = null,
+    string? BusinessCode = null,
+    bool? ResultPresent = null,
+    string? FailureCategory = null);
+
+public sealed record DispatchAuditWrite(
+    RiotDispatchAuditPhase Phase,
+    RiotDispatchAuditOutcome Outcome,
+    DateTimeOffset OccurredAt,
+    string? AttemptId = null,
+    string? RequestSemanticSha256 = null,
+    string? ReturnedOrderId = null,
+    RiotOrderCallReceipt? Receipt = null);
+
+public sealed record CreateDispatchAttempt(
+    string AttemptId,
+    int AttemptNumber,
+    string RequestSemanticSha256,
+    DateTimeOffset ArmedAt);
 
 public enum RiotOrderObservationKind
 {
@@ -101,7 +172,8 @@ public sealed record RiotOrderObservation(
     int? OrderState = null,
     string? VehicleKey = null,
     int? MapId = null,
-    int? DestinationStationId = null);
+    int? DestinationStationId = null,
+    RiotOrderCallReceipt? Receipt = null);
 
 public sealed record RiotVehicleObservation(
     string VehicleKey,
@@ -139,4 +211,10 @@ public sealed record RiotMapStationCatalogSnapshot(
     string ContentSha256,
     IReadOnlyList<RiotMapStation> Stations);
 
-public sealed record StoredMovementIntent(OrderIntent Intent, string Status, string? OrderId);
+public sealed record StoredMovementIntent(
+    OrderIntent Intent,
+    string Status,
+    string? OrderId,
+    int? DispatchAuditVersion,
+    string? CreateAttemptId,
+    int? CreateAttemptCount);

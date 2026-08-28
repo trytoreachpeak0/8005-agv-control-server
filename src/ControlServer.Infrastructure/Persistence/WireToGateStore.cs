@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Infrastructure.Persistence;
@@ -301,36 +302,121 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             : new StoredMovementIntent(
                 ToDomain(row),
                 row.Status,
-                row.OrderId);
+                row.OrderId,
+                row.DispatchAuditVersion,
+                row.CreateAttemptId,
+                row.CreateAttemptCount);
     }
 
-    public async Task MarkResultUnknownAsync(string upperId, CancellationToken cancellationToken)
+    public async Task RecordReconciliationAsync(
+        string upperId,
+        DispatchAuditWrite audit,
+        bool markResultUnknown,
+        CancellationToken cancellationToken)
     {
         OrderIntentRow row = await dbContext.OrderIntents
             .SingleAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
-        if (row.Status != "CONFIRMED")
+        if (markResultUnknown && row.Status != "CONFIRMED")
         {
             row.Status = "RESULT_UNKNOWN";
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
+        ApplyReconciliationSummary(row, audit);
+        await AppendAuditEventAsync(row, audit, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task MarkCreateAttemptedAsync(string upperId, CancellationToken cancellationToken)
+    public async Task<CreateDispatchAttempt> ArmCreateDispatchAsync(
+        string upperId,
+        string requestSemanticSha256,
+        DateTimeOffset armedAt,
+        CancellationToken cancellationToken)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestSemanticSha256);
         OrderIntentRow row = await dbContext.OrderIntents
             .SingleAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
-        if (row.Status != "PENDING_RECONCILIATION")
+        if (row.Status != "PENDING_RECONCILIATION" ||
+            row.DispatchAuditVersion != 1 ||
+            row.CreateAttemptCount != 0 ||
+            row.CreateAttemptId is not null)
         {
             throw new BusinessIdentityConflictException(
-                "A RIoT create call is only allowed from the initial reconciled-not-found state.");
+                "A RIoT create call is only allowed once from an audit-versioned initial reconciled-not-found state.");
         }
+
+        CreateDispatchAttempt attempt = new(
+            Guid.NewGuid().ToString("D"),
+            1,
+            requestSemanticSha256,
+            armedAt);
         row.Status = "CREATE_ATTEMPTED";
+        row.CreateAttemptId = attempt.AttemptId;
+        row.CreateAttemptCount = attempt.AttemptNumber;
+        row.CreateDispatchArmedAt = armedAt;
+        row.LastCreateOutcome = "DispatchArmed";
+        row.LastCreateOutcomeAt = armedAt;
+        await AppendAuditEventAsync(
+            row,
+            new DispatchAuditWrite(
+                RiotDispatchAuditPhase.CreateDispatch,
+                RiotDispatchAuditOutcome.Armed,
+                armedAt,
+                attempt.AttemptId,
+                requestSemanticSha256),
+            cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return attempt;
+    }
+
+    public async Task RecordCreateStartedAsync(
+        string upperId,
+        CreateDispatchAttempt attempt,
+        DateTimeOffset startedAt,
+        CancellationToken cancellationToken)
+    {
+        OrderIntentRow row = await GetMatchingAttemptAsync(upperId, attempt, cancellationToken).ConfigureAwait(false);
+        row.LastCreateOutcome = "CreateRequestStarted";
+        row.LastCreateOutcomeAt = startedAt;
+        await AppendAuditEventAsync(
+            row,
+            new DispatchAuditWrite(
+                RiotDispatchAuditPhase.CreateRequest,
+                RiotDispatchAuditOutcome.Started,
+                startedAt,
+                attempt.AttemptId,
+                attempt.RequestSemanticSha256),
+            cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RecordCreateResponseAsync(
+        string upperId,
+        CreateDispatchAttempt attempt,
+        DispatchAuditWrite audit,
+        bool markResultUnknown,
+        CancellationToken cancellationToken)
+    {
+        if (audit.Phase != RiotDispatchAuditPhase.CreateResponse || audit.AttemptId != attempt.AttemptId)
+        {
+            throw new ArgumentException("Create response audit identity is invalid.", nameof(audit));
+        }
+        OrderIntentRow row = await GetMatchingAttemptAsync(upperId, attempt, cancellationToken).ConfigureAwait(false);
+        if (markResultUnknown && row.Status != "CONFIRMED")
+        {
+            row.Status = "RESULT_UNKNOWN";
+        }
+        row.LastCreateOutcome = audit.Outcome == RiotDispatchAuditOutcome.Accepted
+            ? "CreateResponseAccepted"
+            : "CreateResponseUnknown";
+        row.LastCreateOutcomeAt = audit.OccurredAt;
+        row.LastCreateReceiptJson = SerializeReceipt(audit.Receipt);
+        await AppendAuditEventAsync(row, audit, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task MarkTerminalReconciliationRequiredAsync(
         string upperId,
         string orderId,
+        DispatchAuditWrite audit,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(orderId);
@@ -346,10 +432,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
         row.Status = "TERMINAL_RECONCILIATION_REQUIRED";
         row.OrderId = orderId;
+        ApplyReconciliationSummary(row, audit);
+        await AppendAuditEventAsync(row, audit, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task ConfirmAsync(string upperId, string orderId, CancellationToken cancellationToken)
+    public async Task ConfirmAsync(
+        string upperId,
+        string orderId,
+        DispatchAuditWrite audit,
+        CancellationToken cancellationToken)
     {
         OrderIntentRow row = await dbContext.OrderIntents
             .SingleAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
@@ -359,6 +451,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
         row.Status = "CONFIRMED";
         row.OrderId = orderId;
+        ApplyReconciliationSummary(row, audit);
+        await AppendAuditEventAsync(row, audit, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -1153,6 +1247,109 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         return decision;
     }
 
+    private async Task<OrderIntentRow> GetMatchingAttemptAsync(
+        string upperId,
+        CreateDispatchAttempt attempt,
+        CancellationToken cancellationToken)
+    {
+        OrderIntentRow row = await dbContext.OrderIntents
+            .SingleAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
+        if (row.CreateAttemptId != attempt.AttemptId ||
+            row.CreateAttemptCount != attempt.AttemptNumber ||
+            row.CreateDispatchArmedAt != attempt.ArmedAt)
+        {
+            throw new BusinessIdentityConflictException("RIoT create audit attempt identity does not match the armed intent.");
+        }
+        return row;
+    }
+
+    private async Task AppendAuditEventAsync(
+        OrderIntentRow row,
+        DispatchAuditWrite audit,
+        CancellationToken cancellationToken)
+    {
+        long lastSequence = await dbContext.RiotDispatchAuditEvents
+            .Where(item => item.MovementLegId == row.MovementLegId)
+            .Select(item => (long?)item.Sequence)
+            .MaxAsync(cancellationToken)
+            .ConfigureAwait(false) ?? 0;
+        RiotOrderCallReceipt? receipt = RiotAuditSanitizer.Receipt(audit.Receipt);
+        dbContext.RiotDispatchAuditEvents.Add(new RiotDispatchAuditEventRow
+        {
+            AuditEventId = Guid.NewGuid().ToString("D"),
+            MovementLegId = row.MovementLegId,
+            DemandId = row.DemandId,
+            UpperId = row.UpperId,
+            DispatchGeneration = row.DispatchGeneration,
+            Sequence = checked(lastSequence + 1),
+            AttemptId = audit.AttemptId,
+            AttemptNumber = audit.AttemptId is null ? null : row.CreateAttemptCount,
+            Phase = AuditPhase(audit.Phase),
+            Outcome = AuditOutcome(audit.Outcome),
+            OccurredAt = audit.OccurredAt,
+            RequestSemanticSha256 = audit.RequestSemanticSha256,
+            ReceiptOperation = receipt?.Operation,
+            ReceiptClassification = receipt?.Classification,
+            ReceiptObservedAt = receipt?.ObservedAt,
+            HttpStatusCode = receipt?.HttpStatusCode,
+            BusinessCode = receipt?.BusinessCode,
+            ResultPresent = receipt?.ResultPresent,
+            ReturnedOrderId = audit.ReturnedOrderId,
+            FailureCategory = receipt?.FailureCategory
+        });
+    }
+
+    private static void ApplyReconciliationSummary(OrderIntentRow row, DispatchAuditWrite audit)
+    {
+        row.LastReconciliationOutcome = audit.Outcome switch
+        {
+            RiotDispatchAuditOutcome.LegacyAuditUnavailable => "LegacyAuditUnavailable",
+            RiotDispatchAuditOutcome.NotFound when audit.Phase == RiotDispatchAuditPhase.PreCreateReconciliation =>
+                "PreCreateReconciliationNotFound",
+            RiotDispatchAuditOutcome.Unknown when audit.Phase == RiotDispatchAuditPhase.PreCreateReconciliation =>
+                "PreCreateReconciliationUnknown",
+            RiotDispatchAuditOutcome.Confirmed when audit.Phase == RiotDispatchAuditPhase.PreCreateReconciliation =>
+                "PreCreateReconciliationConfirmed",
+            RiotDispatchAuditOutcome.Terminal when audit.Phase == RiotDispatchAuditPhase.PreCreateReconciliation =>
+                "PreCreateReconciliationTerminal",
+            RiotDispatchAuditOutcome.Confirmed => "PostCreateReconciliationConfirmed",
+            RiotDispatchAuditOutcome.Terminal => "PostCreateReconciliationTerminal",
+            RiotDispatchAuditOutcome.NotFound => "PostCreateReconciliationNotFound",
+            _ => "PostCreateReconciliationUnknown"
+        };
+        row.LastReconciliationOutcomeAt = audit.OccurredAt;
+        row.LastReconciliationReceiptJson = SerializeReceipt(audit.Receipt);
+    }
+
+    private static string? SerializeReceipt(RiotOrderCallReceipt? receipt)
+    {
+        RiotOrderCallReceipt? sanitized = RiotAuditSanitizer.Receipt(receipt);
+        return sanitized is null ? null : JsonSerializer.Serialize(sanitized);
+    }
+
+    private static string AuditPhase(RiotDispatchAuditPhase phase) => phase switch
+    {
+        RiotDispatchAuditPhase.PreCreateReconciliation => "PRE_CREATE_RECONCILIATION",
+        RiotDispatchAuditPhase.CreateDispatch => "CREATE_DISPATCH",
+        RiotDispatchAuditPhase.CreateRequest => "CREATE_REQUEST",
+        RiotDispatchAuditPhase.CreateResponse => "CREATE_RESPONSE",
+        RiotDispatchAuditPhase.PostCreateReconciliation => "POST_CREATE_RECONCILIATION",
+        _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
+    };
+
+    private static string AuditOutcome(RiotDispatchAuditOutcome outcome) => outcome switch
+    {
+        RiotDispatchAuditOutcome.Unknown => "UNKNOWN",
+        RiotDispatchAuditOutcome.NotFound => "NOT_FOUND",
+        RiotDispatchAuditOutcome.Armed => "ARMED",
+        RiotDispatchAuditOutcome.Started => "STARTED",
+        RiotDispatchAuditOutcome.Accepted => "ACCEPTED",
+        RiotDispatchAuditOutcome.Confirmed => "CONFIRMED",
+        RiotDispatchAuditOutcome.Terminal => "TERMINAL",
+        RiotDispatchAuditOutcome.LegacyAuditUnavailable => "LEGACY_AUDIT_UNAVAILABLE",
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
+    };
+
     private static OrderIntentRow ToRow(OrderIntent intent) => new()
     {
         MovementLegId = intent.MovementLegId,
@@ -1165,7 +1362,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         DestinationStationId = intent.DestinationStationId,
         AgvLifecycleGeneration = intent.AgvLifecycleGeneration,
         DispatchGeneration = intent.DispatchGeneration,
-        CreatedAt = intent.CreatedAt
+        CreatedAt = intent.CreatedAt,
+        DispatchAuditVersion = 1,
+        CreateAttemptCount = 0
     };
 
     private static OrderIntent ToDomain(OrderIntentRow row) => new(

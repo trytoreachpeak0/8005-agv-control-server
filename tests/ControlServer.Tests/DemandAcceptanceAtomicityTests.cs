@@ -102,41 +102,28 @@ public sealed class DemandAcceptanceAtomicityTests
         await migrator.MigrateAsync(
             "20260826080712_ExactAcceptedDemandSnapshot",
             TestContext.Current.CancellationToken);
-        DateTimeOffset now = new(2026, 8, 26, 10, 0, 0, TimeSpan.Zero);
-        dbContext.AcceptedDemands.Add(new AcceptedDemandRow
-        {
-            DemandId = "D-001",
-            SeriesId = "SERIES-001",
-            TransportDemandKey = "SUBLOT-001|WIRE_TO_GATE",
-            WorkType = "WIRE_TO_GATE",
-            Sublot = "SUBLOT-001",
-            Generation = 1,
-            DemandRevision = 7,
-            HistoryEpoch = "history-1",
-            CatalogRevision = 21,
-            CreatedAt = now.AddHours(-1),
-            ValueObservedAt = now.AddMinutes(-1),
-            ValuePollTraceId = "TRACE-001",
-            ValueProjectionCommitId = "COMMIT-001",
-            LiveMesFieldsJson = "{}",
-            AcceptedAt = now,
-            Status = DemandExecutionStatus.Accepted
-        });
-        dbContext.OrderIntents.Add(new OrderIntentRow
-        {
-            MovementLegId = "LEG-001",
-            DemandId = "D-001",
-            UpperId = "W2G-D-001-PICKUP-1",
-            Purpose = "TO_PICKUP",
-            TargetStationId = "ST-PICKUP",
-            VehicleKey = "AGV-8005-01",
-            MapId = 29,
-            DestinationStationId = 12,
-            AgvLifecycleGeneration = 1,
-            DispatchGeneration = 1,
-            CreatedAt = now
-        });
-        await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        // Seed through the historical schema. Using the current EF model here would try to
+        // write columns that intentionally do not exist until later migrations.
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO AcceptedDemands
+                (DemandId, SeriesId, TransportDemandKey, WorkType, Sublot, Generation,
+                 DemandRevision, HistoryEpoch, CatalogRevision, CreatedAt, ValueObservedAt,
+                 ValuePollTraceId, ValueProjectionCommitId, LiveMesFieldsJson, AcceptedAt, Status)
+            VALUES
+                ('D-001', 'SERIES-001', 'SUBLOT-001|WIRE_TO_GATE', 'WIRE_TO_GATE', 'SUBLOT-001', 1,
+                 7, 'history-1', 21, '2026-08-26 09:00:00+00:00', '2026-08-26 09:59:00+00:00',
+                 'TRACE-001', 'COMMIT-001', '{{}}', '2026-08-26 10:00:00+00:00', 'Accepted');
+
+            INSERT INTO OrderIntents
+                (MovementLegId, DemandId, UpperId, Purpose, TargetStationId, VehicleKey,
+                 MapId, DestinationStationId, AgvLifecycleGeneration, DispatchGeneration,
+                 CreatedAt, Status, OrderId)
+            VALUES
+                ('LEG-001', 'D-001', 'W2G-D-001-PICKUP-1', 'TO_PICKUP', 'ST-PICKUP', 'AGV-8005-01',
+                 29, 12, 1, 1, '2026-08-26 10:00:00+00:00', 'PENDING_RECONCILIATION', NULL);
+            """,
+            TestContext.Current.CancellationToken);
 
         await migrator.MigrateAsync(cancellationToken: TestContext.Current.CancellationToken);
 

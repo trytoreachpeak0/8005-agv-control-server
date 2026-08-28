@@ -35,6 +35,9 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal("VEHICLE-KEY-01", result.VehicleKey);
         Assert.Equal(29, result.MapId);
         Assert.Equal(12, result.DestinationStationId);
+        Assert.Equal("RECONCILE", result.Receipt?.Operation);
+        Assert.Equal("Found", result.Receipt?.Classification);
+        Assert.True(result.Receipt?.ResultPresent);
         Assert.Equal(1, handler.CallCount);
     }
 
@@ -78,6 +81,50 @@ public sealed class HttpRiotMovementGatewayTests
 
         Assert.Equal(RiotOrderObservationKind.NotFound, result.Kind);
         Assert.Null(result.OrderId);
+        Assert.Equal("NotFound", result.Receipt?.Classification);
+        Assert.Equal(404, result.Receipt?.HttpStatusCode);
+        Assert.False(result.Receipt?.ResultPresent);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task ReconcileHttpFailureReturnsSanitizedReceiptWithoutRetry()
+    {
+        RecordingHandler handler = new((_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("{\"secret\":\"TOP-SECRET-MARKER\"}", Encoding.UTF8, "application/json")
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Equal("SdkFailure", result.Receipt?.Classification);
+        Assert.Equal(500, result.Receipt?.HttpStatusCode);
+        Assert.Null(result.Receipt?.BusinessCode);
+        Assert.Equal("RIOT_API_FAILURE", result.Receipt?.FailureCategory);
+        Assert.DoesNotContain("TOP-SECRET-MARKER", result.Receipt?.ToString(), StringComparison.Ordinal);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("{\"code\":\"TOP-SECRET-MARKER\",\"message\":\"failed\",\"result\":null}")]
+    [InlineData("{\"code\":{\"secret\":\"TOP-SECRET-MARKER\"},\"message\":\"failed\",\"result\":null}")]
+    public async Task ReconcileDropsUntrustedBusinessCodeFromSanitizedReceipt(string body)
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(body));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Equal("SdkFailure", result.Receipt?.Classification);
+        Assert.Null(result.Receipt?.BusinessCode);
+        Assert.DoesNotContain("TOP-SECRET-MARKER", result.Receipt?.ToString(), StringComparison.Ordinal);
         Assert.Equal(1, handler.CallCount);
     }
 
@@ -165,6 +212,31 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal("AGV-8005-01", result.VehicleKey);
         Assert.Equal(29, result.MapId);
         Assert.Equal(12, result.DestinationStationId);
+        Assert.Equal("CREATE", result.Receipt?.Operation);
+        Assert.Equal("SdkAccepted", result.Receipt?.Classification);
+        Assert.True(result.Receipt?.ResultPresent);
+        Assert.Null(result.Receipt?.HttpStatusCode);
+        Assert.Null(result.Receipt?.BusinessCode);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task CreateNullResultReturnsSanitizedUnknownReceiptWithoutRetry()
+    {
+        const string response = "{\"code\":\"0\",\"message\":\"TOP-SECRET-MARKER\",\"result\":null}";
+        RecordingHandler handler = new((_, _) => JsonResponse(response));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.CreateAsync(
+            CreateIntent(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Equal("SdkFailure", result.Receipt?.Classification);
+        Assert.Equal("order-ref-missing", result.Receipt?.BusinessCode);
+        Assert.False(result.Receipt?.ResultPresent);
+        Assert.Equal("PROTOCOL_FAILURE", result.Receipt?.FailureCategory);
+        Assert.DoesNotContain("TOP-SECRET-MARKER", result.Receipt?.ToString(), StringComparison.Ordinal);
         Assert.Equal(1, handler.CallCount);
     }
 
@@ -185,6 +257,7 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal("UPPER-001", result.UpperId);
         Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
         Assert.Null(result.OrderId);
+        Assert.NotNull(result.Receipt);
         Assert.Equal(1, handler.CallCount);
     }
 
@@ -201,6 +274,8 @@ public sealed class HttpRiotMovementGatewayTests
 
         Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
         Assert.Null(result.OrderId);
+        Assert.Equal("SdkFailure", result.Receipt?.Classification);
+        Assert.Equal("TIMEOUT", result.Receipt?.FailureCategory);
         Assert.Equal(1, handler.CallCount);
     }
 
@@ -209,7 +284,7 @@ public sealed class HttpRiotMovementGatewayTests
     {
         RecordingHandler handler = new((_, _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
         {
-            Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            Content = new StringContent("{\"secret\":\"TOP-SECRET-MARKER\"}", Encoding.UTF8, "application/json")
         });
         await using RiotSession session = CreateSession(handler);
         HttpRiotMovementGateway gateway = new(session);
@@ -219,6 +294,10 @@ public sealed class HttpRiotMovementGatewayTests
 
         Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
         Assert.Null(result.OrderId);
+        Assert.Equal("SdkFailure", result.Receipt?.Classification);
+        Assert.Equal(503, result.Receipt?.HttpStatusCode);
+        Assert.Equal("HTTP_API_FAILURE", result.Receipt?.FailureCategory);
+        Assert.DoesNotContain("TOP-SECRET-MARKER", result.Receipt?.ToString(), StringComparison.Ordinal);
         Assert.Equal(1, handler.CallCount);
     }
 

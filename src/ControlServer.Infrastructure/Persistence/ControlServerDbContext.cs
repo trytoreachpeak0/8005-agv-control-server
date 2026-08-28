@@ -9,6 +9,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<AcceptedDemandRow> AcceptedDemands => Set<AcceptedDemandRow>();
     public DbSet<VehicleDispatchLeaseRow> VehicleDispatchLeases => Set<VehicleDispatchLeaseRow>();
     public DbSet<OrderIntentRow> OrderIntents => Set<OrderIntentRow>();
+    public DbSet<RiotDispatchAuditEventRow> RiotDispatchAuditEvents => Set<RiotDispatchAuditEventRow>();
     public DbSet<SessionRecoveryRow> SessionRecoveries => Set<SessionRecoveryRow>();
     public DbSet<ProtocolInboxRow> ProtocolInbox => Set<ProtocolInboxRow>();
     public DbSet<ProtocolOutboxRow> ProtocolOutbox => Set<ProtocolOutboxRow>();
@@ -45,6 +46,16 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
             .HasFilter("ReleasedAt IS NULL");
         modelBuilder.Entity<OrderIntentRow>().HasKey(row => row.MovementLegId);
         modelBuilder.Entity<OrderIntentRow>().HasIndex(row => row.UpperId).IsUnique();
+        modelBuilder.Entity<OrderIntentRow>().Property(row => row.CreateAttemptCount).IsConcurrencyToken();
+        modelBuilder.Entity<OrderIntentRow>()
+            .HasIndex(row => row.CreateAttemptId)
+            .IsUnique()
+            .HasFilter("CreateAttemptId IS NOT NULL");
+        modelBuilder.Entity<RiotDispatchAuditEventRow>().HasKey(row => row.AuditEventId);
+        modelBuilder.Entity<RiotDispatchAuditEventRow>()
+            .HasIndex(row => new { row.MovementLegId, row.Sequence })
+            .IsUnique();
+        modelBuilder.Entity<RiotDispatchAuditEventRow>().HasIndex(row => row.AttemptId);
         modelBuilder.Entity<SessionRecoveryRow>().HasKey(row => row.AgvId);
         modelBuilder.Entity<SessionRecoveryRow>().Property(row => row.Readiness).HasConversion<string>();
         modelBuilder.Entity<ProtocolInboxRow>().HasKey(row => row.MessageId);
@@ -134,6 +145,40 @@ public sealed class OrderIntentRow
     public DateTimeOffset CreatedAt { get; set; }
     public string Status { get; set; } = "PENDING_RECONCILIATION";
     public string? OrderId { get; set; }
+    public int? DispatchAuditVersion { get; set; }
+    public string? CreateAttemptId { get; set; }
+    public int? CreateAttemptCount { get; set; }
+    public DateTimeOffset? CreateDispatchArmedAt { get; set; }
+    public string? LastCreateOutcome { get; set; }
+    public DateTimeOffset? LastCreateOutcomeAt { get; set; }
+    public string? LastCreateReceiptJson { get; set; }
+    public string? LastReconciliationOutcome { get; set; }
+    public DateTimeOffset? LastReconciliationOutcomeAt { get; set; }
+    public string? LastReconciliationReceiptJson { get; set; }
+}
+
+public sealed class RiotDispatchAuditEventRow
+{
+    public required string AuditEventId { get; set; }
+    public required string MovementLegId { get; set; }
+    public required string DemandId { get; set; }
+    public required string UpperId { get; set; }
+    public long DispatchGeneration { get; set; }
+    public long Sequence { get; set; }
+    public string? AttemptId { get; set; }
+    public int? AttemptNumber { get; set; }
+    public required string Phase { get; set; }
+    public required string Outcome { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+    public string? RequestSemanticSha256 { get; set; }
+    public string? ReceiptOperation { get; set; }
+    public string? ReceiptClassification { get; set; }
+    public DateTimeOffset? ReceiptObservedAt { get; set; }
+    public int? HttpStatusCode { get; set; }
+    public string? BusinessCode { get; set; }
+    public bool? ResultPresent { get; set; }
+    public string? ReturnedOrderId { get; set; }
+    public string? FailureCategory { get; set; }
 }
 
 public sealed class SessionRecoveryRow

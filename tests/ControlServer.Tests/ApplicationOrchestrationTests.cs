@@ -185,6 +185,10 @@ public sealed class ApplicationOrchestrationTests
 
         Assert.Equal(MovementDispatchOutcome.ResultUnknown, first.Outcome);
         Assert.Equal(1, gateway.CreateCount);
+        Assert.Equal(1, (await firstContext.OrderIntents.SingleAsync(
+            TestContext.Current.CancellationToken)).CreateAttemptCount);
+        Assert.Equal(4, await firstContext.RiotDispatchAuditEvents.CountAsync(
+            TestContext.Current.CancellationToken));
         await firstContext.DisposeAsync();
         await using ControlServerDbContext restartedContext = await CreateContextAsync(connection);
         MovementDispatchResult afterRestart = await new MovementDispatchService(
@@ -194,8 +198,17 @@ public sealed class ApplicationOrchestrationTests
         Assert.Equal(MovementDispatchOutcome.ResultUnknown, afterRestart.Outcome);
         Assert.Equal(intent.UpperId, afterRestart.UpperId);
         Assert.Equal(1, gateway.CreateCount);
-        Assert.Equal("RESULT_UNKNOWN", (await restartedContext.OrderIntents.SingleAsync(
-            TestContext.Current.CancellationToken)).Status);
+        OrderIntentRow restarted = await restartedContext.OrderIntents.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("RESULT_UNKNOWN", restarted.Status);
+        Assert.Equal(1, restarted.CreateAttemptCount);
+        Assert.Equal("CreateResponseUnknown", restarted.LastCreateOutcome);
+        RiotDispatchAuditEventRow[] restartAudit = await restartedContext.RiotDispatchAuditEvents
+            .OrderBy(item => item.Sequence)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal([1L, 2L, 3L, 4L, 5L], restartAudit.Select(item => item.Sequence));
+        Assert.Equal("POST_CREATE_RECONCILIATION", restartAudit[^1].Phase);
+        Assert.Equal("UNKNOWN", restartAudit[^1].Outcome);
     }
 
     [Fact]

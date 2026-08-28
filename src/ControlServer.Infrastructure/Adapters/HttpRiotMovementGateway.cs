@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Infrastructure.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Kiota.Abstractions;
 using RIoT.Sdk.Core;
@@ -46,11 +47,23 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             return lookup.Status switch
             {
                 OrderLookupStatus.NotFound =>
-                    new RiotOrderObservation(upperId, RiotOrderObservationKind.NotFound, null),
+                    new RiotOrderObservation(
+                        upperId,
+                        RiotOrderObservationKind.NotFound,
+                        null,
+                        Receipt: Receipt("RECONCILE", "NotFound", httpStatusCode: 404, resultPresent: false)),
                 OrderLookupStatus.Found when lookup.Order is not null =>
-                    ToObservation(upperId, lookup.Order),
-                OrderLookupStatus.AbsentAtObservation or OrderLookupStatus.Indeterminate => Unknown(upperId),
-                _ => Unknown(upperId)
+                    ToObservation(
+                        upperId,
+                        lookup.Order,
+                        Receipt("RECONCILE", "Found", resultPresent: true)),
+                OrderLookupStatus.AbsentAtObservation => Unknown(
+                    upperId,
+                    Receipt("RECONCILE", "AbsentAtObservation", resultPresent: false)),
+                OrderLookupStatus.Indeterminate => Unknown(
+                    upperId,
+                    Receipt("RECONCILE", "Indeterminate", resultPresent: true)),
+                _ => Unknown(upperId, Receipt("RECONCILE", "Unknown"))
             };
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -59,7 +72,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
         catch (Exception error) when (IsSdkFailure(error))
         {
-            return Unknown(upperId);
+            return Unknown(upperId, FailureReceipt("RECONCILE", error));
         }
     }
 
@@ -84,7 +97,9 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 string.IsNullOrWhiteSpace(created.OrderId) ||
                 !string.Equals(created.UpperId, intent.UpperId, StringComparison.Ordinal))
             {
-                return Unknown(intent.UpperId);
+                return Unknown(
+                    intent.UpperId,
+                    Receipt("CREATE", "SdkIndeterminate", resultPresent: true, failureCategory: "IDENTITY_INVALID"));
             }
 
             return new RiotOrderObservation(
@@ -94,7 +109,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                 created.OrderState,
                 intent.VehicleKey,
                 intent.MapId,
-                intent.DestinationStationId);
+                intent.DestinationStationId,
+                Receipt("CREATE", "SdkAccepted", resultPresent: true));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -102,7 +118,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
         catch (Exception error) when (IsSdkFailure(error))
         {
-            return Unknown(intent.UpperId);
+            return Unknown(intent.UpperId, FailureReceipt("CREATE", error));
         }
     }
 
@@ -249,7 +265,10 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
     }
 
-    private static RiotOrderObservation ToObservation(string expectedUpperId, OrderSnapshot order)
+    private static RiotOrderObservation ToObservation(
+        string expectedUpperId,
+        OrderSnapshot order,
+        RiotOrderCallReceipt receipt)
     {
         RiotOrderObservationKind kind = ToObservationKind(order.OrderState);
         string? vehicleKey = string.IsNullOrWhiteSpace(order.ExecuteVehicleKey)
@@ -265,13 +284,21 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             movements.Length != 1 ||
             movements[0].MapId is not > 0)
         {
-            return Unknown(expectedUpperId);
+            return Unknown(expectedUpperId, receipt with
+            {
+                Classification = "Indeterminate",
+                FailureCategory = "IDENTITY_INVALID"
+            });
         }
 
         int? destination = movements[0].Destination ?? order.EndStationNo;
         if (destination is not > 0)
         {
-            return Unknown(expectedUpperId);
+            return Unknown(expectedUpperId, receipt with
+            {
+                Classification = "Indeterminate",
+                FailureCategory = "DESTINATION_MISSING"
+            });
         }
 
         return new RiotOrderObservation(
@@ -281,7 +308,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             order.OrderState,
             vehicleKey,
             movements[0].MapId,
-            destination);
+            destination,
+            receipt);
     }
 
     private static RiotOrderObservationKind ToObservationKind(int orderState) => orderState switch
@@ -310,8 +338,55 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         error is RiotApiException or ApiException or HttpRequestException or IOException or JsonException or
             InvalidOperationException or OperationCanceledException;
 
-    private static RiotOrderObservation Unknown(string upperId) =>
-        new(upperId, RiotOrderObservationKind.Unknown, null);
+    private RiotOrderCallReceipt Receipt(
+        string operation,
+        string classification,
+        int? httpStatusCode = null,
+        string? businessCode = null,
+        bool? resultPresent = null,
+        string? failureCategory = null) =>
+        new(
+            operation,
+            classification,
+            timeProvider.GetUtcNow(),
+            httpStatusCode,
+            businessCode,
+            resultPresent,
+            failureCategory);
+
+    private RiotOrderCallReceipt FailureReceipt(string operation, Exception error)
+    {
+        int? httpStatusCode = error switch
+        {
+            RiotApiException riot => riot.StatusCode,
+            ApiException api => api.ResponseStatusCode,
+            _ => null
+        };
+        string? rawBusinessCode = error is RiotApiException riotError ? riotError.BusinessCode : null;
+        string? businessCode = RiotAuditSanitizer.BusinessCode(rawBusinessCode);
+        string failureCategory = IsTimeout(error)
+            ? "TIMEOUT"
+            : error switch
+            {
+                HttpRequestException or IOException => "TRANSPORT_FAILURE",
+                JsonException => "PROTOCOL_FAILURE",
+                RiotApiException { BusinessCode: "order-ref-missing" } => "PROTOCOL_FAILURE",
+                RiotApiException => "RIOT_API_FAILURE",
+                ApiException => "HTTP_API_FAILURE",
+                _ => "SDK_FAILURE"
+            };
+        bool? resultPresent = rawBusinessCode == "order-ref-missing" ? false : null;
+        return Receipt(
+            operation,
+            "SdkFailure",
+            httpStatusCode,
+            businessCode,
+            resultPresent,
+            failureCategory);
+    }
+
+    private static RiotOrderObservation Unknown(string upperId, RiotOrderCallReceipt? receipt = null) =>
+        new(upperId, RiotOrderObservationKind.Unknown, null, Receipt: receipt);
 
     private RiotVehicleObservation UnknownVehicle(string vehicleKey) => new(
         vehicleKey,
