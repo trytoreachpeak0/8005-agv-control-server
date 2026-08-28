@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "observedAt": "2026-08-28T11:06:21.5825619+08:00",
+  "controlServerCommit": "4347a8fb9fcb80cb9f95680a6fd8b1a0b970358b",
+  "onboardCommit": "777eff8bdc955e6bb6fdab74ec222e0bb6748def",
+  "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "preflight": {
+    "result": "PASS",
+    "catalogRevision": 1799,
+    "fullyAdmittedCandidateCount": 4,
+    "batteryPercent": 29,
+    "minimumBatteryPercent": 10,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true
+  },
+  "attempt": {
+    "journeyRuntimeEnabled": true,
+    "sessionGeneration": 48,
+    "sessionReadiness": "RecoveryRequired",
+    "sessionReasonCode": "DEPARTURE_SAFETY_NOT_READY",
+    "safetyStateChangedAcknowledged": true,
+    "safetyStateVersion": 2,
+    "departureSafe": false,
+    "vehicleStopped": false,
+    "unknownPresent": true,
+    "safetyReasonCodes": [
+      "VEHICLE_STATE_UNKNOWN"
+    ],
+    "orchestratorSamples": 51,
+    "terminalResult": "STOP_REQUESTED"
+  },
+  "diagnosis": {
+    "owner": "local journey helper",
+    "cause": "vehicle safety key was written to unused vehicleKey instead of expectedVehicleKey",
+    "helperCorrected": true,
+    "helperSyntaxValidated": true,
+    "correctedAttemptExecuted": false
+  },
+  "finalSafeState": {
+    "journeyRuntimeEnabled": false,
+    "serviceRunning": true,
+    "liveHttpStatus": 200,
+    "peerProcessCount": 0,
+    "temporaryPortListenerCount": 0,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "newAuthorizationRequired": true
+}
