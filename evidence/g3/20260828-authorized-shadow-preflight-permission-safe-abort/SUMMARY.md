@@ -28,4 +28,3 @@ inspections produced the same canonical hash; native JSON booleans passed and
 the string `"false"` was rejected; the retained ACL passed the exact-rule
 assertion. Independent safety review returned GO for a future
 mutation-blocked shadow using the final clean runner identity.
-
