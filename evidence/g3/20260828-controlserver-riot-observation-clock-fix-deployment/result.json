@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS",
+  "observedAt": "2026-08-28T14:19:32+08:00",
+  "product": {
+    "branch": "ControlServer_MVP",
+    "commit": "193d6bbb1430b807b4db471975707cb6ce8c36fd",
+    "change": "Validate the initial RIoT vehicle observation against a current time captured after the vehicle read."
+  },
+  "tests": {
+    "framework": "xUnit v3 on VSTest",
+    "sdk": "8.0.424",
+    "regression": "VehicleReadsThatAdvanceClockUsePostReadTimeForAdmission",
+    "redBeforeFix": {
+      "passed": 0,
+      "failed": 1,
+      "failure": "AcceptedDemand collection was empty"
+    },
+    "focusedFinal": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "journeyRuntimeWorkerTestsFinal": {
+      "passed": 33,
+      "failed": 0,
+      "skipped": 0
+    },
+    "controlServerTestsFinal": {
+      "passed": 108,
+      "failed": 0,
+      "skipped": 0
+    },
+    "format": "PASS",
+    "releaseNonIncrementalBuild": {
+      "result": "PASS",
+      "warnings": 0,
+      "errors": 0
+    }
+  },
+  "package": {
+    "runtimeIdentifier": "win-x64",
+    "selfContained": true,
+    "declaredFileCount": 371,
+    "actualPayloadFileCount": 371,
+    "actualTotalFileCount": 372,
+    "manifestSha256": "2a10eddda8019afb7d228df778d0fdcc8fb3595c07ce8c9083a4b9c11ea8c16b",
+    "duplicatePathCount": 0,
+    "missingFileCount": 0,
+    "lengthMismatchCount": 0,
+    "hashMismatchCount": 0,
+    "undeclaredPayloadCount": 0,
+    "declaredMissingFromActualCount": 0,
+    "onlyExtraFile": "deployment-manifest.json"
+  },
+  "deployment": {
+    "result": "PASS",
+    "runId": "20260828T061757Z",
+    "sourceCommit": "193d6bbb1430b807b4db471975707cb6ce8c36fd",
+    "packageManifestSha256": "2a10eddda8019afb7d228df778d0fdcc8fb3595c07ce8c9083a4b9c11ea8c16b",
+    "serviceStatus": "Running",
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "safetyHttpStatus": 200,
+    "safetyMotionState": "STOPPED",
+    "safetyReasonCount": 0,
+    "journeyRuntimeEnabled": false,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "thresholdRestore": {
+    "result": "PASS",
+    "baseJourneyRuntimeEnabled": false,
+    "productionJourneyRuntimeEnabled": false,
+    "minimumBatteryPercent": 10,
+    "serviceStatus": "Running",
+    "liveHttpStatus": 200
+  },
+  "postDeployment": {
+    "effectiveStateInspection": "PASS",
+    "atomicPreflight": "PASS",
+    "vehicleIdentityMatched": true,
+    "vehicleConnected": true,
+    "vehicleEnabled": true,
+    "vehicleIdle": true,
+    "currentMapMatched": true,
+    "vehicleEvidenceFresh": true,
+    "batteryPercent": 46,
+    "batteryThreshold": 10,
+    "speedZero": true,
+    "lockStatusClear": true,
+    "noOrderTask": true,
+    "directMotionState": "STOPPED",
+    "httpsMotionState": "STOPPED",
+    "safetyReasonCount": 0,
+    "peerProcessCount": 0,
+    "temporaryListenerCount": 0,
+    "stopMarkerPresent": true,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "realJourneyAuthorized": false,
+  "credentialsIncluded": false
+}
