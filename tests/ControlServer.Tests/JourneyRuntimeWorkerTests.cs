@@ -7,6 +7,7 @@ using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -178,6 +179,92 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal("OUT_OF_SCOPE_WORK_TYPE", backlog[0].ReasonCode);
         Assert.Equal("ACCEPTED", backlog[1].ReasonCode);
         Assert.Equal("ELIGIBLE", backlog[2].ReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task VolatileCatalogReadMetadataDoesNotOverwriteCurrentBacklogReason()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AcceptedDemandSnapshot demand = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10));
+        fixture.Catalog.Set(demand);
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = null };
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyBacklogRow initial = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("BATTERY_FACT_UNKNOWN", initial.ReasonCode);
+        string initialFingerprint = initial.DecisionFingerprint;
+
+        fixture.Catalog.Set(demand with
+        {
+            CatalogRevision = demand.CatalogRevision + 1,
+            AcceptedAt = demand.AcceptedAt.AddMinutes(1)
+        });
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow volatileRefresh = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("BATTERY_FACT_UNKNOWN", volatileRefresh.ReasonCode);
+        Assert.Equal(initialFingerprint, volatileRefresh.DecisionFingerprint);
+
+        AcceptedDemandSnapshot changedDecision = demand with
+        {
+            CatalogRevision = demand.CatalogRevision + 2,
+            AcceptedAt = demand.AcceptedAt.AddMinutes(2),
+            DemandRevision = demand.DemandRevision + 1
+        };
+        fixture.Catalog.Set(changedDecision);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow changed = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("DEMAND_DECISION_FACT_CHANGED", changed.ReasonCode);
+        Assert.NotEqual(initialFingerprint, changed.DecisionFingerprint);
+        string changedFingerprint = changed.DecisionFingerprint;
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow stableAgain = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("BATTERY_FACT_UNKNOWN", stableAgain.ReasonCode);
+        Assert.Equal(changedFingerprint, stableAgain.DecisionFingerprint);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task LargeCatalogBatchesBacklogPersistenceBeforeAcceptingEligibleJourney()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AcceptedDemandSnapshot[] outOfScope = Enumerable.Range(1, 250)
+            .Select(index => fixture.Demand(
+                $"20000000-0000-4000-8000-{index:D12}",
+                $"IGNORED-{index:D3}",
+                Now.AddMinutes(-20)) with
+            {
+                WorkType = "OTHER",
+                TransportDemandKey = $"IGNORED-{index:D3}|OTHER"
+            })
+            .ToArray();
+        AcceptedDemandSnapshot eligible = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10));
+        fixture.Catalog.Set([.. outOfScope, eligible]);
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.SaveChanges.Reset();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(eligible.DemandId, (await fixture.RuntimeAsync()).DemandId);
+        Assert.Equal(251, await fixture.Context.JourneyBacklog.CountAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(1, fixture.Riot.TotalCreateCount);
+        Assert.InRange(fixture.SaveChanges.Count, 1, 10);
     }
 
     [Fact]
@@ -616,7 +703,8 @@ public sealed class JourneyRuntimeWorkerTests
             RecordingRiot riot,
             RecordingPeer peer,
             JourneyRuntimeOptions options,
-            FixedTimeProvider clock)
+            FixedTimeProvider clock,
+            SaveChangesCounter saveChanges)
         {
             Connection = connection;
             Context = context;
@@ -626,6 +714,7 @@ public sealed class JourneyRuntimeWorkerTests
             Peer = peer;
             Options = options;
             Clock = clock;
+            SaveChanges = saveChanges;
             Engine = CreateEngine();
         }
 
@@ -637,14 +726,19 @@ public sealed class JourneyRuntimeWorkerTests
         public RecordingPeer Peer { get; }
         public JourneyRuntimeOptions Options { get; }
         public FixedTimeProvider Clock { get; }
+        public SaveChangesCounter SaveChanges { get; }
         public JourneyRuntimeEngine Engine { get; private set; }
 
         public static async Task<RuntimeFixture> CreateAsync()
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
+            SaveChangesCounter saveChanges = new();
             DbContextOptions<ControlServerDbContext> dbOptions =
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
+                new DbContextOptionsBuilder<ControlServerDbContext>()
+                    .UseSqlite(connection)
+                    .AddInterceptors(saveChanges)
+                    .Options;
             ControlServerDbContext context = new(dbOptions);
             await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
             JourneyRuntimeOptions options = ValidOptions();
@@ -654,8 +748,9 @@ public sealed class JourneyRuntimeWorkerTests
             RecordingRiot riot = new(options, clock);
             RecordingPeer peer = new();
             RuntimeFixture fixture = new(
-                connection, context, catalog, boxCounts, riot, peer, options, clock);
+                connection, context, catalog, boxCounts, riot, peer, options, clock, saveChanges);
             await fixture.SeedRecoveredPeerAsync();
+            saveChanges.Reset();
             return fixture;
         }
 
@@ -1008,6 +1103,31 @@ public sealed class JourneyRuntimeWorkerTests
         {
             await Context.DisposeAsync();
             await Connection.DisposeAsync();
+        }
+    }
+
+    private sealed class SaveChangesCounter : SaveChangesInterceptor
+    {
+        public int Count { get; private set; }
+
+        public void Reset() => Count = 0;
+
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData,
+            InterceptionResult<int> result)
+        {
+            Count++;
+            return result;
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            _ = cancellationToken;
+            Count++;
+            return ValueTask.FromResult(result);
         }
     }
 

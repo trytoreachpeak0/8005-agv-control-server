@@ -128,6 +128,9 @@ public sealed class JourneyRuntimeEngine(
         OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
             runtimeOptions.VehicleKey, cancellationToken).ConfigureAwait(false);
+        Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
+            .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
+            .ConfigureAwait(false);
         List<EligibleCandidate> eligible = [];
         foreach (AcceptedDemandSnapshot candidate in snapshot.Items)
         {
@@ -248,13 +251,14 @@ public sealed class JourneyRuntimeEngine(
                 }
             }
 
-            JourneyBacklogRow backlog = await UpsertBacklogAsync(candidate, reason, now, cancellationToken)
-                .ConfigureAwait(false);
+            JourneyBacklogRow backlog = UpsertBacklog(backlogByDemandId, candidate, reason, now);
             if (reason == "ELIGIBLE" && route is not null)
             {
                 eligible.Add(new EligibleCandidate(candidate, route, expectedBasketCount, targetSlots, backlog.FirstSeenAt));
             }
         }
+
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         if (eligible.Count == 0)
         {
@@ -845,17 +849,14 @@ public sealed class JourneyRuntimeEngine(
             row => row.AgvId == agvId && row.Readiness == SessionReadiness.Ready,
             cancellationToken);
 
-    private async Task<JourneyBacklogRow> UpsertBacklogAsync(
+    private JourneyBacklogRow UpsertBacklog(
+        Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         AcceptedDemandSnapshot candidate,
         string reason,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
+        DateTimeOffset now)
     {
-        string fingerprint = Convert.ToHexString(SHA256.HashData(
-            JsonSerializer.SerializeToUtf8Bytes(candidate, SerializerOptions))).ToLowerInvariant();
-        JourneyBacklogRow? row = await dbContext.JourneyBacklog.SingleOrDefaultAsync(
-            item => item.DemandId == candidate.DemandId, cancellationToken).ConfigureAwait(false);
-        if (row is null)
+        string fingerprint = DecisionFingerprint(candidate);
+        if (!backlogByDemandId.TryGetValue(candidate.DemandId, out JourneyBacklogRow? row))
         {
             row = new JourneyBacklogRow
             {
@@ -868,21 +869,40 @@ public sealed class JourneyRuntimeEngine(
                 LastSeenAt = now
             };
             dbContext.JourneyBacklog.Add(row);
+            backlogByDemandId.Add(candidate.DemandId, row);
         }
         else
         {
-            if (row.TransportDemandKey != candidate.TransportDemandKey || row.DecisionFingerprint != fingerprint)
-            {
-                row.ReasonCode = "DEMAND_DECISION_FACT_CHANGED";
-            }
-            else
-            {
-                row.ReasonCode = reason;
-            }
+            bool decisionFactsChanged = row.TransportDemandKey != candidate.TransportDemandKey ||
+                                        row.DecisionFingerprint != fingerprint;
+            row.TransportDemandKey = candidate.TransportDemandKey;
+            row.DemandCreatedAt = candidate.CreatedAt;
+            row.DecisionFingerprint = fingerprint;
+            row.ReasonCode = decisionFactsChanged ? "DEMAND_DECISION_FACT_CHANGED" : reason;
             row.LastSeenAt = now;
         }
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return row;
+    }
+
+    private static string DecisionFingerprint(AcceptedDemandSnapshot candidate)
+    {
+        byte[] content = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            candidate.DemandId,
+            candidate.HistoryEpoch,
+            candidate.SeriesId,
+            candidate.TransportDemandKey,
+            candidate.WorkType,
+            candidate.Sublot,
+            candidate.Generation,
+            candidate.DemandRevision,
+            candidate.CreatedAt,
+            candidate.ValueObservedAt,
+            candidate.ValuePollTraceId,
+            candidate.ValueProjectionCommitId,
+            candidate.LiveMesFields
+        }, SerializerOptions);
+        return Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
     }
 
     private async Task SetBacklogReasonAsync(
