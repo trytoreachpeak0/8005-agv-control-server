@@ -269,6 +269,44 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task VehicleReadsThatAdvanceClockUsePostReadTimeForAdmission()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.MaximumEvidenceAge = TimeSpan.FromSeconds(30);
+        AcceptedDemandSnapshot demand = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10));
+        fixture.Catalog.Set(demand);
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        DateTimeOffset beforeVehicleReads = fixture.Clock.GetUtcNow();
+        fixture.Riot.BeforeReadVehicle = () => fixture.Clock.Advance(TimeSpan.FromMilliseconds(1));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        AcceptedDemandRow accepted = await fixture.DemandRowAsync();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(
+            row => row.Purpose == "TO_PICKUP",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(demand.DemandId, accepted.DemandId);
+        Assert.Equal(DemandExecutionStatus.Accepted, accepted.Status);
+        Assert.Equal(demand.DemandId, runtime.DemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, runtime.Stage);
+        Assert.Equal(demand.DemandId, pickup.DemandId);
+        Assert.Equal("CONFIRMED", pickup.Status);
+        Assert.Equal("ORDER-TO_PICKUP", pickup.OrderId);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+        Assert.Equal(1, fixture.Riot.TotalCreateCount);
+        Assert.True(fixture.Clock.GetUtcNow() > beforeVehicleReads);
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("ACCEPTED", backlog.ReasonCode);
+        Assert.NotNull(backlog.AcceptedAt);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task CandidateProcessingThatExpiresDynamicFactsDoesNotAcceptOrDispatch()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1262,6 +1300,7 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         public RiotVehicleObservation Vehicle { get; set; }
+        public Action? BeforeReadVehicle { get; set; }
         public bool LoseNextCreateResponse { get; set; }
         public int TotalCreateCount => _creates.Values.Sum();
 
@@ -1297,6 +1336,7 @@ public sealed class JourneyRuntimeWorkerTests
         public Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            BeforeReadVehicle?.Invoke();
             return Task.FromResult(Vehicle with { VehicleKey = vehicleKey, ObservedAt = _clock.GetUtcNow() });
         }
 

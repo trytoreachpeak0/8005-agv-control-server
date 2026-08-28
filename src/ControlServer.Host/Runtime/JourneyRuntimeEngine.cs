@@ -128,6 +128,7 @@ public sealed class JourneyRuntimeEngine(
         OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
             runtimeOptions.VehicleKey, cancellationToken).ConfigureAwait(false);
+        DateTimeOffset dynamicFactsNow = timeProvider.GetUtcNow();
         Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
             .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
             .ConfigureAwait(false);
@@ -206,7 +207,7 @@ public sealed class JourneyRuntimeEngine(
 
             if (reason == "ELIGIBLE" && route is not null)
             {
-                reason = ValidateDynamicFacts(onboard, vehicle, now);
+                reason = ValidateDynamicFacts(onboard, vehicle, dynamicFactsNow);
             }
             if (reason == "ELIGIBLE" && route is not null &&
                 !await store.IsTaskTypeAllowedAsync(
