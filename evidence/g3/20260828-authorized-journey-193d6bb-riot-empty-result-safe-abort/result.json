@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "formalG3Outcome": "INCONCLUSIVE",
+  "safetyClassification": "SAFE_NOW_ORPHAN_NOT_YET_EXCLUDED",
+  "observedAt": "2026-08-28T14:30:27+08:00",
+  "authorization": {
+    "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+    "deployedControlServerCommit": "193d6bbb1430b807b4db471975707cb6ce8c36fd",
+    "supportsBatchUnlock": true,
+    "emptyVehicleJourney": true,
+    "correctedSafetyCredentialName": "CONTROL_SERVER_ONBOARD_CREDENTIAL",
+    "stopOnAnySafetyAmbiguity": true
+  },
+  "preflight": {
+    "result": "PASS",
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrderTask": true,
+    "batteryPercent": 46,
+    "batteryThreshold": 10,
+    "directMotionState": "STOPPED",
+    "httpsMotionState": "STOPPED",
+    "reasonCount": 0,
+    "staticRouteAndCapacityReadyItemCount": 6
+  },
+  "peers": {
+    "helperSha256": "e31ee9a38408c54f4c6f5ff54615f0ab6a5a6418073efd6e0022bd3df407ca6a",
+    "configurationSha256": "cae74ba1cec1d31d30005a50703dc4a51b540a3df722adebfae1b9daf341f0f9",
+    "sessionGeneration": 65,
+    "sessionReadiness": "Ready",
+    "sessionReasonCode": "READY",
+    "simulatorHealth": "READY"
+  },
+  "runtime": {
+    "acceptedDemandPersisted": true,
+    "demandStatus": "Accepted",
+    "stage": "AwaitingPickupArrival",
+    "blockReasonCode": "PICKUP_ResultUnknown",
+    "expectedBasketCount": 2,
+    "targetSlotCount": 2,
+    "orderIntentCount": 1,
+    "orderIntentPurpose": "TO_PICKUP",
+    "orderIntentStatus": "RESULT_UNKNOWN",
+    "orderConfirmed": false,
+    "operationCount": 0,
+    "completionObserved": false
+  },
+  "monitor": {
+    "sha256": "7f55a1bde64cd7aeb60b2dd978cb917e885b9bf827e6754059b5d9fbc6eb55ba",
+    "result": "SAFE_ABORT",
+    "requestedAbortReason": "PICKUP_ORDER_RESULT_UNKNOWN",
+    "recordedAbortReason": "ORCHESTRATOR_STOP_REQUESTED",
+    "samples": 138,
+    "runtimeSeen": true,
+    "maximumPersistedOrderIntentCount": 1,
+    "lastStage": "AwaitingPickupArrival",
+    "lastMotionState": "STOPPED",
+    "generationChanged": false,
+    "credentialsIncluded": false
+  },
+  "riotReconciliationRead": {
+    "operation": "GET detailByUpperId",
+    "httpStatus": 200,
+    "businessCode": "0",
+    "responseLength": 55,
+    "topLevelKeys": [
+      "code",
+      "message",
+      "msgDetail",
+      "tid"
+    ],
+    "resultFieldPresent": false,
+    "sensitiveValuesIncluded": false
+  },
+  "mutationAssessment": {
+    "persistedOrderIntentObserved": true,
+    "confirmedRiotOrderObserved": false,
+    "nonFinalRiotOrderObserved": false,
+    "liveVehicleOrderTaskObserved": false,
+    "createPostProven": null,
+    "createOutcome": "INDETERMINATE",
+    "vehicleMovementObserved": false,
+    "outboundMutationAuditAvailable": false
+  },
+  "sourceFinding": {
+    "reconcileNotFoundRule": "HTTP_404_ONLY",
+    "successfulEnvelopeWithoutResult": "UNKNOWN",
+    "createRequiresPendingIntentAndConfirmedNotFound": true,
+    "existingSafetyTest": "OnlyHttp404IsConfirmedNotFound",
+    "owner": "8005-agv-control-server",
+    "mostLikelyCause": "The live absence shape is not recognized as NotFound, so reconciliation fail-closes before create.",
+    "recommendedAdapterChange": "Only the reconciliation GET may map HTTP 200/business code 0 with missing or null result to NotFound; create responses with missing result must remain Unknown.",
+    "externalConfirmationRequired": "RIoT operator must confirm the semantics of HTTP 200/code 0 without result and provide durable order audit for the frozen upperId or an official maximum queue-settlement bound."
+  },
+  "orchestratorFinal": {
+    "result": "STOP_REQUESTED",
+    "samples": 83,
+    "terminalStage": "AwaitingPickupArrival",
+    "failure": null,
+    "journeyRuntimeDisabled": true
+  },
+  "postStop": {
+    "effectiveStateInspection": "PASS",
+    "baseJourneyRuntimeEnabled": false,
+    "productionJourneyRuntimeEnabled": false,
+    "minimumBatteryPercent": 10,
+    "serviceState": "Running",
+    "liveStatus": "live",
+    "stopMarkerPresent": true,
+    "peerProcessCount": 0,
+    "temporaryListenerCount": 0,
+    "delayedReadOnlyPreflightObservedAt": "2026-08-28T14:30:27.3582865+08:00",
+    "lastDelayedHttpsSafetyObservedAt": "2026-08-28T14:32:48+08:00",
+    "lastDelayedObservationAgeFromIntent": "00:08:38",
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrderTask": true,
+    "directMotionState": "STOPPED",
+    "httpsMotionState": "STOPPED",
+    "reasonCount": 0,
+    "vehicleMoved": false,
+    "orphanOrderPermanentlyExcluded": false
+  }
+}
