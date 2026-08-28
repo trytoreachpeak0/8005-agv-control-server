@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS_WITH_OPERATIONAL_CONSTRAINT",
+  "observedAt": "2026-08-28T13:07:24.9123396+08:00",
+  "controlServerProductCommit": "6a5de0149288e3fdcedb6f9ea694259f71f9bee2",
+  "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+  "peerStarterSha256": "5f2722c37aba0784e51ee1dd760bd47b23860befdf9be6074fdd7baac4357503",
+  "preflight": {
+    "result": "PASS",
+    "minimumBatteryPercent": 10,
+    "staticReadyItemCount": 6,
+    "journeyRuntimeEnabled": false
+  },
+  "peerDrill": {
+    "consoleProjectionComplete": true,
+    "sessionGeneration": 56,
+    "sessionReadiness": "Ready",
+    "sessionReasonCode": "READY",
+    "simulatorReady": true,
+    "stableSamples": 6,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "journalSafetyChangeAcknowledged": true,
+    "departureSafe": true,
+    "vehicleStopped": true,
+    "unknownPresent": false
+  },
+  "observability": {
+    "publicSessionEndpointExposesDepartureSafe": false,
+    "sessionUpdatedAtIsRuntimeEvidenceTimestamp": false,
+    "runtimeEvidenceMaximumAgeSeconds": 30,
+    "realAttemptMustIntakeImmediatelyAfterFreshReady": true
+  },
+  "finalState": {
+    "result": "PASS",
+    "journeyRuntimeEnabled": false,
+    "peerProcessCount": 0,
+    "temporaryPortsFree": true,
+    "stopMarkerPresent": true,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "formalG3Result": "INCONCLUSIVE",
+  "newJourneyAuthorizationRequired": true
+}
