@@ -88,8 +88,8 @@ $boundaryCheckCount = 0
 $safetySampleCount = 0
 $productionDatabaseBefore = $null
 $productionDatabaseAfter = $null
-$installedConfigurationBefore = $null
-$installedConfigurationAfter = $null
+$installedEffectiveStateBeforeSha256 = $null
+$installedEffectiveStateAfterSha256 = $null
 $installedStateBefore = $null
 $installedStateAfter = $null
 $cleanupFailures = [Collections.Generic.List[string]]::new()
@@ -456,14 +456,46 @@ function Invoke-EffectiveStateInspection {
 }
 
 function Assert-InstalledSafeState($Effective) {
-    if ([string]$Effective.result -ne 'PASS' -or
-        [bool]$Effective.baseJourneyRuntimeEnabled -or
-        [bool]$Effective.productionJourneyRuntimeEnabled -or
+    if ($Effective.baseJourneyRuntimeEnabled -isnot [bool] -or
+        $Effective.productionJourneyRuntimeEnabled -isnot [bool] -or
+        $Effective.serviceAccountIsLocalSystem -isnot [bool] -or
+        $Effective.bothRequiredPortsPresent -isnot [bool] -or
+        $Effective.requiredPortsOwnedOnlyByService -isnot [bool] -or
+        [int]$Effective.schemaVersion -ne 1 -or
+        [string]$Effective.result -ne 'PASS' -or
+        $Effective.baseJourneyRuntimeEnabled -ne $false -or
+        $Effective.productionJourneyRuntimeEnabled -ne $false -or
         [int]$Effective.minimumBatteryPercent -ne 10 -or
         [string]$Effective.serviceState -ne 'Running' -or
-        [string]$Effective.liveStatus -ne 'live') {
+        [string]$Effective.serviceStartMode -ne 'Auto' -or
+        $Effective.serviceAccountIsLocalSystem -ne $true -or
+        $Effective.bothRequiredPortsPresent -ne $true -or
+        $Effective.requiredPortsOwnedOnlyByService -ne $true -or
+        [string]$Effective.liveStatus -ne 'live' -or
+        [string]$Effective.privilegeBroker -ne 'FIXED_SYSTEM_SCHEDULED_TASK') {
         throw 'The installed ControlServer is not in the required disabled safe state.'
     }
+}
+
+function Get-InstalledEffectiveStateSha256($Effective) {
+    $canonical = [ordered]@{
+        schemaVersion = [int]$Effective.schemaVersion
+        result = [string]$Effective.result
+        baseJourneyRuntimeEnabled = [bool]$Effective.baseJourneyRuntimeEnabled
+        productionJourneyRuntimeEnabled = [bool]$Effective.productionJourneyRuntimeEnabled
+        minimumBatteryPercent = [int]$Effective.minimumBatteryPercent
+        serviceState = [string]$Effective.serviceState
+        serviceStartMode = [string]$Effective.serviceStartMode
+        serviceAccountIsLocalSystem = [bool]$Effective.serviceAccountIsLocalSystem
+        bothRequiredPortsPresent = [bool]$Effective.bothRequiredPortsPresent
+        requiredPortsOwnedOnlyByService = [bool]$Effective.requiredPortsOwnedOnlyByService
+        liveStatus = [string]$Effective.liveStatus
+        privilegeBroker = [string]$Effective.privilegeBroker
+    }
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes(
+        ($canonical | ConvertTo-Json -Compress))
+    return [Convert]::ToHexString(
+        [Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
 }
 
 function Start-ExactPeers {
@@ -689,15 +721,12 @@ try {
 
     $installedStateBefore = Invoke-EffectiveStateInspection
     Assert-InstalledSafeState $installedStateBefore
+    $installedEffectiveStateBeforeSha256 = Get-InstalledEffectiveStateSha256 $installedStateBefore
     Assert-SafetyStopped
     $productionDatabaseBefore = Get-FileBundleSha256 @(
         $productionDatabase,
         "$productionDatabase-wal",
         "$productionDatabase-shm")
-    $installedConfigurationBefore = Get-FileBundleSha256 @(
-        'C:\Program Files\8005 AGV\ControlServer\appsettings.json',
-        'C:\Program Files\8005 AGV\ControlServer\appsettings.Production.json')
-
     $riotApiKey = Get-RequiredMachineSecret 'CONTROL_SERVER_RIOT_CALL_API_KEY'
     $onboardCredential = Get-RequiredMachineSecret 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
     $certificatePassword = Get-RequiredMachineSecret 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
@@ -967,11 +996,9 @@ finally {
     }
     catch { $cleanupFailures.Add('Production database post-check failed.') }
     try {
-        $installedConfigurationAfter = Get-FileBundleSha256 @(
-            'C:\Program Files\8005 AGV\ControlServer\appsettings.json',
-            'C:\Program Files\8005 AGV\ControlServer\appsettings.Production.json')
         $installedStateAfter = Invoke-EffectiveStateInspection
         Assert-InstalledSafeState $installedStateAfter
+        $installedEffectiveStateAfterSha256 = Get-InstalledEffectiveStateSha256 $installedStateAfter
     }
     catch { $cleanupFailures.Add('Installed ControlServer post-check failed.') }
     try { Assert-SafetyStopped }
@@ -982,11 +1009,12 @@ finally {
         $null
     } else { $productionDatabaseBefore -ne $productionDatabaseAfter }
     $installedJourneyRuntimeChanged = if (
-        $null -eq $installedConfigurationBefore -or $null -eq $installedConfigurationAfter -or
+        $null -eq $installedEffectiveStateBeforeSha256 -or
+        $null -eq $installedEffectiveStateAfterSha256 -or
         $null -eq $installedStateBefore -or $null -eq $installedStateAfter) {
         $null
     } else {
-        $installedConfigurationBefore -ne $installedConfigurationAfter -or
+        $installedEffectiveStateBeforeSha256 -ne $installedEffectiveStateAfterSha256 -or
         [bool]$installedStateBefore.baseJourneyRuntimeEnabled -or
         [bool]$installedStateBefore.productionJourneyRuntimeEnabled -or
         [bool]$installedStateAfter.baseJourneyRuntimeEnabled -or
@@ -1024,8 +1052,8 @@ finally {
     if ($runRootPreexisting) {
         throw 'Refusing to write evidence into a pre-existing run root.'
     }
-    try { Ensure-RestrictedRunRoot }
-    catch { throw 'Unable to secure the run root for final evidence.' }
+    try { Assert-RestrictedDirectoryAcl $root }
+    catch { throw 'The run root is not secure enough for final evidence.' }
     $sanitized = if (Test-Path -LiteralPath $sanitizedPlanPath) {
         [IO.File]::ReadAllText($sanitizedPlanPath) | ConvertFrom-Json
     } else { $null }
@@ -1066,6 +1094,8 @@ finally {
         proxyBlockedMutationCount = if ($null -eq $proxyStatus) { $null } else { [int]$proxyStatus.blockedMutationCount }
         proxyForwardedMutationCount = if ($null -eq $proxyStatus) { $null } else { [int]$proxyStatus.forwardedMutationCount }
         installedJourneyRuntimeChanged = $installedJourneyRuntimeChanged
+        installedEffectiveStateBeforeSha256 = $installedEffectiveStateBeforeSha256
+        installedEffectiveStateAfterSha256 = $installedEffectiveStateAfterSha256
         productionDatabaseModified = $productionDatabaseModified
         realRiotMutationPerformed = if ($noRiotMutationProven) { $false } else { $null }
         orderCreated = if ($noRiotMutationProven) { $false } else { $null }

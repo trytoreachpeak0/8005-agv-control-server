@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT_BEFORE_HOST",
+  "completedAt": "2026-08-28T12:48:18.2460476Z",
+  "reasonCode": "PREFLIGHT_RUNNER_PERMISSION_ASSUMPTIONS",
+  "testedIdentity": {
+    "controlServerCommit": "931052df53472f317a82bf4b4cb26d79138bcb67",
+    "packageManifestSha256": "9c38f3b4cb6e7dac9c3f5e6e2d85cdd33e7a2d2bcfb9499d9b2d7bfb6ee83998",
+    "runnerSha256": "d3ec03b932d72fbec872c602c9887e682bd961470bdaa0f27ca6c77128bd291e"
+  },
+  "execution": {
+    "hostPackageCopied": false,
+    "hostEverStarted": false,
+    "proxyEverStarted": false,
+    "onboardEverStarted": false,
+    "simulatorEverStarted": false,
+    "shadowDatabaseCreated": false,
+    "permitCreated": false,
+    "riotRequestPerformed": false,
+    "temporaryPortsReleased": true
+  },
+  "postState": {
+    "installedEffectiveStateSha256": "079c53b0512d2fc028906553622f0824127a2a7b9a925a75ca808f05745efd64",
+    "baseJourneyRuntimeEnabled": false,
+    "productionJourneyRuntimeEnabled": false,
+    "serviceState": "Running",
+    "liveStatus": "live",
+    "vehicleMotionState": "STOPPED",
+    "vehicleSafetyReasonCount": 0,
+    "runRootAclProtected": true,
+    "runRootAclRuleCount": 3
+  },
+  "validation": {
+    "powershellAstPassed": true,
+    "effectiveStateHashStableAcrossTwoReads": true,
+    "stringFalseRejected": true,
+    "exactAclAssertionPassed": true,
+    "independentSafetyReview": "GO_FOR_FUTURE_MUTATION_BLOCKED_SHADOW"
+  },
+  "authorizationConsumed": false,
+  "rawIdentityIncluded": false,
+  "credentialsIncluded": false
+}
