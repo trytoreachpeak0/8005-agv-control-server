@@ -38,7 +38,8 @@ param(
     [string] $ExpectedPythonExeSha256,
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^[0-9a-f]{64}$')]
-    [string] $ExpectedPythonRuntimeSha256
+    [string] $ExpectedPythonRuntimeSha256,
+    [switch] $PreflightOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,6 +100,7 @@ $expectedVehicleKey = $null
 $maximumSafetyEvidenceAge = [TimeSpan]::Zero
 $finalStateExtractionPassed = $false
 $finalProxyStatusCaptured = $false
+$preflightComplete = $false
 
 function Wait-ExactListeningPort(
     [int] $Port,
@@ -398,28 +400,54 @@ function Read-SafetyProjection {
         if ([int]$response.StatusCode -ne 200) {
             throw "Installed safety endpoint returned HTTP $([int]$response.StatusCode)."
         }
-        $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json
+        $rawBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        $document = [Text.Json.JsonDocument]::Parse($rawBody)
+        try {
+            $rootElement = $document.RootElement
+            $vehicleKey = $rootElement.GetProperty('vehicleKey').GetString()
+            $source = $rootElement.GetProperty('source').GetString()
+            $motionState = $rootElement.GetProperty('motionState').GetString()
+            $observedAtText = $rootElement.GetProperty('observedAt').GetString()
+            $reasonCodes = $rootElement.GetProperty('reasonCodes')
+            if ($reasonCodes.ValueKind -ne [Text.Json.JsonValueKind]::Array -or
+                -not [regex]::IsMatch(
+                    $observedAtText,
+                    '(?:Z|[+-]\d{2}:\d{2})$',
+                    [Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
+                throw 'Installed safety projection has an invalid reason or timestamp shape.'
+            }
+            $reasonCount = $reasonCodes.GetArrayLength()
+        }
+        finally {
+            $document.Dispose()
+        }
         $observedAt = [DateTimeOffset]::Parse(
-            [string]$body.observedAt,
+            $observedAtText,
             [Globalization.CultureInfo]::InvariantCulture,
-            [Globalization.DateTimeStyles]::AssumeUniversal)
+            [Globalization.DateTimeStyles]::None)
         $now = [DateTimeOffset]::UtcNow
         if (-not [string]::Equals(
-                [string]$body.vehicleKey,
+                $vehicleKey,
                 $script:expectedVehicleKey,
                 [StringComparison]::Ordinal) -or
-            [string]$body.source -ne 'RIOT_BEHAVIOR_LAB_R41' -or
+            -not [string]::Equals(
+                $source,
+                'RIOT_BEHAVIOR_LAB_R41',
+                [StringComparison]::Ordinal) -or
             $observedAt -gt $now -or
             ($now - $observedAt) -gt $script:maximumSafetyEvidenceAge -or
-            [string]$body.motionState -ne 'STOPPED' -or
-            @($body.reasonCodes).Count -ne 0) {
+            -not [string]::Equals(
+                $motionState,
+                'STOPPED',
+                [StringComparison]::Ordinal) -or
+            $reasonCount -ne 0) {
             throw 'Installed safety projection has the wrong identity, source, freshness, or stop state.'
         }
         return [pscustomobject]@{
-            vehicleKey = [string]$body.vehicleKey
-            motionState = [string]$body.motionState
-            reasonCount = @($body.reasonCodes).Count
-            source = [string]$body.source
+            vehicleKey = $vehicleKey
+            motionState = $motionState
+            reasonCount = $reasonCount
+            source = $source
             observedAt = $observedAt.ToString('O')
         }
     }
@@ -767,6 +795,14 @@ try {
         -Environment (New-ChildEnvironment @{})
     if ($proxySelfTest.ExitCode -ne 0) { throw 'The read-only proxy self-test failed.' }
 
+    if ($PreflightOnly) {
+        $riotApiKey = $null
+        $onboardCredential = $null
+        $certificatePassword = $null
+        $preflightComplete = $true
+        throw [OperationCanceledException]::new('PREFLIGHT_ONLY_COMPLETE')
+    }
+
     $dummyRiotKey = [Convert]::ToHexString(
         [Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
     $proxyArguments = @{
@@ -908,7 +944,18 @@ try {
     $result = 'PASS'
 }
 catch {
-    $failure = $_.Exception.Message
+    if ($preflightComplete -and
+        $_.Exception -is [OperationCanceledException] -and
+        [string]::Equals(
+            $_.Exception.Message,
+            'PREFLIGHT_ONLY_COMPLETE',
+            [StringComparison]::Ordinal)) {
+        $result = 'PREFLIGHT_PASS'
+        $failure = $null
+    }
+    else {
+        $failure = $_.Exception.Message
+    }
 }
 finally {
     foreach ($processEntry in @(
@@ -1060,6 +1107,7 @@ finally {
     $final = [ordered]@{
         schemaVersion = 2
         result = $result
+        preflightOnly = [bool]$PreflightOnly
         completedAt = [DateTimeOffset]::UtcNow
         runRoot = $root
         failure = $failure
@@ -1104,7 +1152,11 @@ finally {
         vehicleMovementCausedByRun = if ($noRiotMutationProven) { $false } else { $null }
         temporaryPortsReleased = $temporaryPortsReleased
         cleanupFailureCount = $cleanupFailures.Count
-        authorizationReusable = if ($hostEverStarted) { $false } else { $null }
+        authorizationReusable = if ($hostEverStarted) {
+            $false
+        } elseif ($result -eq 'PREFLIGHT_PASS') {
+            $true
+        } else { $null }
         rawIdentityIncluded = $false
         runArtifactsMayContainOperationalIdentity = $true
         credentialsIncluded = $false
@@ -1116,4 +1168,4 @@ finally {
     [pscustomobject]$final | ConvertTo-Json -Depth 20
 }
 
-if ($result -ne 'PASS') { exit 1 }
+if ($result -notin @('PASS', 'PREFLIGHT_PASS')) { exit 1 }

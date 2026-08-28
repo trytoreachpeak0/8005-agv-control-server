@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT_BEFORE_HOST",
+  "completedAt": "2026-08-28T12:59:26.2096695Z",
+  "reasonCode": "SAFETY_TIMESTAMP_OFFSET_LOST_DURING_JSON_CONVERSION",
+  "testedIdentity": {
+    "controlServerCommit": "04b1b7e47de682b0e6000c97ac9981b62e5dd577",
+    "packageManifestSha256": "998a66e6f58c44323eed3b7070a4360a8b36e129aad1f49f3f02bf68647d0f2a",
+    "runnerSha256": "12c515035473f7fc205b866634fb6aa5845b2f9aea52f958790e62c8fcc96ad9"
+  },
+  "preflight": {
+    "toolIdentityVerified": true,
+    "mesIngestContractPreflightPassed": true,
+    "installedEffectiveStateBeforeSha256": "079c53b0512d2fc028906553622f0824127a2a7b9a925a75ca808f05745efd64",
+    "installedEffectiveStateAfterSha256": "079c53b0512d2fc028906553622f0824127a2a7b9a925a75ca808f05745efd64"
+  },
+  "execution": {
+    "hostPackageCopied": false,
+    "hostEverStarted": false,
+    "proxyEverStarted": false,
+    "onboardEverStarted": false,
+    "simulatorEverStarted": false,
+    "shadowDatabaseCreated": false,
+    "permitCreated": false,
+    "riotRequestPerformed": false,
+    "temporaryPortsReleased": true
+  },
+  "validation": {
+    "oldFunctionLiveSamplesPassed": 0,
+    "oldFunctionLiveSamplesFailed": 40,
+    "correctedFunctionLiveSamplesPassed": 40,
+    "correctedFunctionLiveSamplesFailed": 0,
+    "explicitOffsetRequired": true,
+    "independentSafetyReview": "GO_FOR_FUTURE_MUTATION_BLOCKED_SHADOW"
+  },
+  "authorizationConsumed": false,
+  "rawIdentityIncluded": false,
+  "credentialsIncluded": false
+}
