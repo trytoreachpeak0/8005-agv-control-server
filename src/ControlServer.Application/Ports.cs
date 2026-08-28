@@ -16,6 +16,23 @@ public interface IRiotMovementGateway
     Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken);
 }
 
+public sealed record ExperimentalRiotCreateAuthorization(
+    string AuthorizationId,
+    int AuthorizationVersion,
+    string UpperId,
+    string DemandId,
+    string MovementLegId,
+    long AgvLifecycleGeneration,
+    long DispatchGeneration,
+    DateTimeOffset ExpiresAt);
+
+public interface IExperimentalRiotCreateAuthorizationSource
+{
+    Task<ExperimentalRiotCreateAuthorization?> GetAuthorizationAsync(
+        string upperId,
+        CancellationToken cancellationToken);
+}
+
 public interface IRiotVehicleFacts : IRiotMovementGateway
 {
     Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken);
@@ -74,6 +91,11 @@ public interface IMovementIntentStore
 {
     Task<StoredMovementIntent?> GetByUpperIdAsync(string upperId, CancellationToken cancellationToken);
 
+    Task PersistExperimentalCreateAuthorizationAsync(
+        ExperimentalRiotCreateAuthorization authorization,
+        DateTimeOffset persistedAt,
+        CancellationToken cancellationToken);
+
     Task RecordReconciliationAsync(
         string upperId,
         DispatchAuditWrite audit,
@@ -83,6 +105,14 @@ public interface IMovementIntentStore
     Task<CreateDispatchAttempt> ArmCreateDispatchAsync(
         string upperId,
         string requestSemanticSha256,
+        DateTimeOffset armedAt,
+        CancellationToken cancellationToken);
+
+    Task<CreateDispatchAttempt> ArmExperimentalCreateDispatchAsync(
+        string upperId,
+        string requestSemanticSha256,
+        ExperimentalRiotCreateAuthorization authorization,
+        string eligibilityBasis,
         DateTimeOffset armedAt,
         CancellationToken cancellationToken);
 
@@ -149,13 +179,17 @@ public sealed record DispatchAuditWrite(
     string? AttemptId = null,
     string? RequestSemanticSha256 = null,
     string? ReturnedOrderId = null,
-    RiotOrderCallReceipt? Receipt = null);
+    RiotOrderCallReceipt? Receipt = null,
+    string? ExperimentalAuthorizationId = null,
+    string? EligibilityBasis = null);
 
 public sealed record CreateDispatchAttempt(
     string AttemptId,
     int AttemptNumber,
     string RequestSemanticSha256,
-    DateTimeOffset ArmedAt);
+    DateTimeOffset ArmedAt,
+    string? ExperimentalAuthorizationId = null,
+    string? EligibilityBasis = null);
 
 public enum RiotOrderObservationKind
 {
@@ -217,4 +251,6 @@ public sealed record StoredMovementIntent(
     string? OrderId,
     int? DispatchAuditVersion,
     string? CreateAttemptId,
-    int? CreateAttemptCount);
+    int? CreateAttemptCount,
+    string? ExperimentalAuthorizationId = null,
+    string? EligibilityBasis = null);

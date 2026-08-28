@@ -10,6 +10,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<VehicleDispatchLeaseRow> VehicleDispatchLeases => Set<VehicleDispatchLeaseRow>();
     public DbSet<OrderIntentRow> OrderIntents => Set<OrderIntentRow>();
     public DbSet<RiotDispatchAuditEventRow> RiotDispatchAuditEvents => Set<RiotDispatchAuditEventRow>();
+    public DbSet<ExperimentalRiotCreateAuthorizationRow> ExperimentalRiotCreateAuthorizations =>
+        Set<ExperimentalRiotCreateAuthorizationRow>();
     public DbSet<SessionRecoveryRow> SessionRecoveries => Set<SessionRecoveryRow>();
     public DbSet<ProtocolInboxRow> ProtocolInbox => Set<ProtocolInboxRow>();
     public DbSet<ProtocolOutboxRow> ProtocolOutbox => Set<ProtocolOutboxRow>();
@@ -46,16 +48,35 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
             .HasFilter("ReleasedAt IS NULL");
         modelBuilder.Entity<OrderIntentRow>().HasKey(row => row.MovementLegId);
         modelBuilder.Entity<OrderIntentRow>().HasIndex(row => row.UpperId).IsUnique();
+        modelBuilder.Entity<OrderIntentRow>().Property(row => row.Status).IsConcurrencyToken();
         modelBuilder.Entity<OrderIntentRow>().Property(row => row.CreateAttemptCount).IsConcurrencyToken();
+        modelBuilder.Entity<OrderIntentRow>().Property(row => row.DispatchAuditSequence).IsConcurrencyToken();
+        modelBuilder.Entity<OrderIntentRow>().Property(row => row.ExperimentalCreateAuthorizationId).IsConcurrencyToken();
         modelBuilder.Entity<OrderIntentRow>()
             .HasIndex(row => row.CreateAttemptId)
             .IsUnique()
             .HasFilter("CreateAttemptId IS NOT NULL");
+        modelBuilder.Entity<OrderIntentRow>()
+            .HasIndex(row => row.ExperimentalCreateAuthorizationId)
+            .IsUnique()
+            .HasFilter("ExperimentalCreateAuthorizationId IS NOT NULL");
         modelBuilder.Entity<RiotDispatchAuditEventRow>().HasKey(row => row.AuditEventId);
         modelBuilder.Entity<RiotDispatchAuditEventRow>()
             .HasIndex(row => new { row.MovementLegId, row.Sequence })
             .IsUnique();
         modelBuilder.Entity<RiotDispatchAuditEventRow>().HasIndex(row => row.AttemptId);
+        modelBuilder.Entity<RiotDispatchAuditEventRow>().HasIndex(row => row.ExperimentalAuthorizationId);
+        modelBuilder.Entity<ExperimentalRiotCreateAuthorizationRow>().HasKey(row => row.AuthorizationId);
+        modelBuilder.Entity<ExperimentalRiotCreateAuthorizationRow>()
+            .HasIndex(row => row.UpperId)
+            .IsUnique();
+        modelBuilder.Entity<ExperimentalRiotCreateAuthorizationRow>()
+            .HasIndex(row => row.ConsumedByAttemptId)
+            .IsUnique()
+            .HasFilter("ConsumedByAttemptId IS NOT NULL");
+        modelBuilder.Entity<ExperimentalRiotCreateAuthorizationRow>()
+            .Property(row => row.ConsumedByAttemptId)
+            .IsConcurrencyToken();
         modelBuilder.Entity<SessionRecoveryRow>().HasKey(row => row.AgvId);
         modelBuilder.Entity<SessionRecoveryRow>().Property(row => row.Readiness).HasConversion<string>();
         modelBuilder.Entity<ProtocolInboxRow>().HasKey(row => row.MessageId);
@@ -146,6 +167,8 @@ public sealed class OrderIntentRow
     public string Status { get; set; } = "PENDING_RECONCILIATION";
     public string? OrderId { get; set; }
     public int? DispatchAuditVersion { get; set; }
+    public long? DispatchAuditSequence { get; set; }
+    public string? ExperimentalCreateAuthorizationId { get; set; }
     public string? CreateAttemptId { get; set; }
     public int? CreateAttemptCount { get; set; }
     public DateTimeOffset? CreateDispatchArmedAt { get; set; }
@@ -179,6 +202,23 @@ public sealed class RiotDispatchAuditEventRow
     public bool? ResultPresent { get; set; }
     public string? ReturnedOrderId { get; set; }
     public string? FailureCategory { get; set; }
+    public string? ExperimentalAuthorizationId { get; set; }
+    public string? EligibilityBasis { get; set; }
+}
+
+public sealed class ExperimentalRiotCreateAuthorizationRow
+{
+    public required string AuthorizationId { get; set; }
+    public int AuthorizationVersion { get; set; }
+    public required string UpperId { get; set; }
+    public required string DemandId { get; set; }
+    public required string MovementLegId { get; set; }
+    public long AgvLifecycleGeneration { get; set; }
+    public long DispatchGeneration { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset PersistedAt { get; set; }
+    public DateTimeOffset? ConsumedAt { get; set; }
+    public string? ConsumedByAttemptId { get; set; }
 }
 
 public sealed class SessionRecoveryRow

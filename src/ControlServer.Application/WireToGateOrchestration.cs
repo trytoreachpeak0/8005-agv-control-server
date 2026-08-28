@@ -123,12 +123,14 @@ public sealed record MovementDispatchResult(
 public sealed class MovementDispatchService
 {
     private static readonly TimeSpan EvidenceWriteTimeout = TimeSpan.FromSeconds(5);
+    private const string ExperimentalAbsentEligibilityBasis = "EXPERIMENTAL_ABSENT_AT_OBSERVATION";
     private readonly IMovementIntentStore store;
     private readonly IRiotMovementGateway gateway;
     private readonly TimeProvider timeProvider;
+    private readonly IExperimentalRiotCreateAuthorizationSource experimentalAuthorizationSource;
 
     public MovementDispatchService(IMovementIntentStore store, IRiotMovementGateway gateway)
-        : this(store, gateway, TimeProvider.System)
+        : this(store, gateway, TimeProvider.System, DenyExperimentalRiotCreateAuthorizationSource.Instance)
     {
     }
 
@@ -136,10 +138,20 @@ public sealed class MovementDispatchService
         IMovementIntentStore store,
         IRiotMovementGateway gateway,
         TimeProvider timeProvider)
+        : this(store, gateway, timeProvider, DenyExperimentalRiotCreateAuthorizationSource.Instance)
+    {
+    }
+
+    public MovementDispatchService(
+        IMovementIntentStore store,
+        IRiotMovementGateway gateway,
+        TimeProvider timeProvider,
+        IExperimentalRiotCreateAuthorizationSource experimentalAuthorizationSource)
     {
         this.store = store;
         this.gateway = gateway;
         this.timeProvider = timeProvider;
+        this.experimentalAuthorizationSource = experimentalAuthorizationSource;
     }
 
     public async Task<MovementDispatchResult> ReconcileOrCreateAsync(
@@ -160,6 +172,9 @@ public sealed class MovementDispatchService
                 intent.OrderId);
         }
 
+        ExperimentalRiotCreateAuthorization? experimentalAuthorization =
+            await PersistFreshExperimentalAuthorizationAsync(intent, cancellationToken).ConfigureAwait(false);
+
         RiotOrderObservation observed = await gateway.ReconcileByUpperIdAsync(upperId, cancellationToken)
             .ConfigureAwait(false);
         RiotDispatchAuditPhase reconciliationPhase = intent.Status == "PENDING_RECONCILIATION"
@@ -172,7 +187,9 @@ public sealed class MovementDispatchService
                     observed,
                     reconciliationPhase,
                     intent.CreateAttemptId,
-                    cancellationToken)
+                    cancellationToken,
+                    intent.ExperimentalAuthorizationId,
+                    intent.EligibilityBasis)
                 .ConfigureAwait(false),
             RiotOrderObservationKind.NotFound when intent.Status == "PENDING_RECONCILIATION" &&
                                                    intent.DispatchAuditVersion == 1 &&
@@ -194,23 +211,122 @@ public sealed class MovementDispatchService
                     RiotDispatchAuditPhase.PostCreateReconciliation,
                     RiotDispatchAuditOutcome.Unknown,
                     intent.CreateAttemptId,
-                    cancellationToken)
+                    cancellationToken,
+                    intent.ExperimentalAuthorizationId,
+                    intent.EligibilityBasis)
                 .ConfigureAwait(false),
             RiotOrderObservationKind.Terminal => await MarkTerminalAsync(
                 intent.Intent,
                 observed,
                 reconciliationPhase,
                 intent.CreateAttemptId,
-                cancellationToken).ConfigureAwait(false),
+                cancellationToken,
+                intent.ExperimentalAuthorizationId,
+                intent.EligibilityBasis).ConfigureAwait(false),
+            RiotOrderObservationKind.Unknown when experimentalAuthorization is not null &&
+                                                  IsExactExperimentalAbsence(upperId, observed) =>
+                await CreateAfterExperimentalAbsenceAsync(
+                        intent.Intent,
+                        observed,
+                        experimentalAuthorization,
+                        cancellationToken)
+                    .ConfigureAwait(false),
             _ => await MarkUnknownAsync(
                     upperId,
                     observed,
                     reconciliationPhase,
                     RiotDispatchAuditOutcome.Unknown,
                     intent.CreateAttemptId,
-                    cancellationToken)
+                    cancellationToken,
+                    intent.ExperimentalAuthorizationId,
+                    intent.EligibilityBasis)
                 .ConfigureAwait(false)
         };
+    }
+
+    private async Task<ExperimentalRiotCreateAuthorization?> PersistFreshExperimentalAuthorizationAsync(
+        StoredMovementIntent storedIntent,
+        CancellationToken cancellationToken)
+    {
+        if (ReferenceEquals(
+                experimentalAuthorizationSource,
+                DenyExperimentalRiotCreateAuthorizationSource.Instance) ||
+            storedIntent.Status != "PENDING_RECONCILIATION" ||
+            storedIntent.DispatchAuditVersion != 1 ||
+            storedIntent.CreateAttemptCount != 0 ||
+            storedIntent.CreateAttemptId is not null)
+        {
+            return null;
+        }
+
+        ExperimentalRiotCreateAuthorization? authorization =
+            await experimentalAuthorizationSource.GetAuthorizationAsync(
+                    storedIntent.Intent.UpperId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (authorization is null)
+        {
+            return null;
+        }
+
+        DateTimeOffset persistedAt = timeProvider.GetUtcNow();
+        if (!MatchesExperimentalAuthorization(storedIntent.Intent, authorization, persistedAt))
+        {
+            return null;
+        }
+
+        await store.PersistExperimentalCreateAuthorizationAsync(
+            authorization,
+            persistedAt,
+            cancellationToken).ConfigureAwait(false);
+        return authorization;
+    }
+
+    private async Task<MovementDispatchResult> CreateAfterExperimentalAbsenceAsync(
+        OrderIntent intent,
+        RiotOrderObservation confirmedAbsence,
+        ExperimentalRiotCreateAuthorization authorization,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
+        if (!MatchesExperimentalAuthorization(intent, authorization, absenceRecordedAt))
+        {
+            return await MarkUnknownAsync(
+                    intent.UpperId,
+                    confirmedAbsence,
+                    RiotDispatchAuditPhase.PreCreateReconciliation,
+                    RiotDispatchAuditOutcome.Unknown,
+                    attemptId: null,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await store.RecordReconciliationAsync(
+            intent.UpperId,
+            Audit(
+                RiotDispatchAuditPhase.PreCreateReconciliation,
+                RiotDispatchAuditOutcome.Unknown,
+                absenceRecordedAt,
+                confirmedAbsence,
+                experimentalAuthorizationId: authorization.AuthorizationId,
+                eligibilityBasis: ExperimentalAbsentEligibilityBasis),
+            markResultUnknown: true,
+            cancellationToken).ConfigureAwait(false);
+
+        DateTimeOffset armedAt = timeProvider.GetUtcNow();
+        CreateDispatchAttempt attempt = await store.ArmExperimentalCreateDispatchAsync(
+            intent.UpperId,
+            ComputeRequestSemanticSha256(intent),
+            authorization,
+            ExperimentalAbsentEligibilityBasis,
+            armedAt,
+            cancellationToken).ConfigureAwait(false);
+        attempt = attempt with
+        {
+            ExperimentalAuthorizationId = authorization.AuthorizationId,
+            EligibilityBasis = ExperimentalAbsentEligibilityBasis
+        };
+        return await DispatchCreateAttemptAsync(intent, attempt, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<MovementDispatchResult> CreateAfterConfirmedAbsenceAsync(
@@ -235,6 +351,14 @@ public sealed class MovementDispatchService
             ComputeRequestSemanticSha256(intent),
             armedAt,
             cancellationToken).ConfigureAwait(false);
+        return await DispatchCreateAttemptAsync(intent, attempt, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<MovementDispatchResult> DispatchCreateAttemptAsync(
+        OrderIntent intent,
+        CreateDispatchAttempt attempt,
+        CancellationToken cancellationToken)
+    {
         await store.RecordCreateStartedAsync(
             intent.UpperId,
             attempt,
@@ -324,7 +448,7 @@ public sealed class MovementDispatchService
                     FailureCategory: "CALLER_CANCELLATION"));
             await RecordReconciliationAfterDispatchAsync(
                 intent.UpperId,
-                attempt.AttemptId,
+                attempt,
                 cancelled,
                 RiotDispatchAuditOutcome.Unknown,
                 markResultUnknown: true).ConfigureAwait(false);
@@ -337,16 +461,20 @@ public sealed class MovementDispatchService
                     confirmed,
                     RiotDispatchAuditPhase.PostCreateReconciliation,
                     attempt.AttemptId,
-                    cancellationToken)
+                    cancellationToken,
+                    attempt.ExperimentalAuthorizationId,
+                    attempt.EligibilityBasis)
                 .ConfigureAwait(false),
             RiotOrderObservationKind.Terminal => await MarkTerminalAsync(
                     intent,
                     confirmed,
                     RiotDispatchAuditPhase.PostCreateReconciliation,
                     attempt.AttemptId,
-                    cancellationToken)
+                    cancellationToken,
+                    attempt.ExperimentalAuthorizationId,
+                    attempt.EligibilityBasis)
                 .ConfigureAwait(false),
-            _ => await MarkUnknownAfterDispatchAsync(intent.UpperId, attempt.AttemptId, confirmed)
+            _ => await MarkUnknownAfterDispatchAsync(intent.UpperId, attempt, confirmed)
                 .ConfigureAwait(false)
         };
     }
@@ -356,7 +484,9 @@ public sealed class MovementDispatchService
         RiotOrderObservation observation,
         RiotDispatchAuditPhase phase,
         string? attemptId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? experimentalAuthorizationId = null,
+        string? eligibilityBasis = null)
     {
         if (!MatchesFrozenIntent(intent, observation))
         {
@@ -366,7 +496,9 @@ public sealed class MovementDispatchService
                     phase,
                     RiotDispatchAuditOutcome.Unknown,
                     attemptId,
-                    cancellationToken)
+                    cancellationToken,
+                    experimentalAuthorizationId,
+                    eligibilityBasis)
                 .ConfigureAwait(false);
         }
         DispatchAuditWrite audit = Audit(
@@ -374,7 +506,9 @@ public sealed class MovementDispatchService
             RiotDispatchAuditOutcome.Confirmed,
             timeProvider.GetUtcNow(),
             observation,
-            attemptId);
+            attemptId,
+            experimentalAuthorizationId,
+            eligibilityBasis);
         if (phase == RiotDispatchAuditPhase.PostCreateReconciliation)
         {
             await RecordAfterDispatchAsync(token => store.ConfirmAsync(
@@ -402,7 +536,9 @@ public sealed class MovementDispatchService
         RiotOrderObservation observation,
         RiotDispatchAuditPhase phase,
         string? attemptId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? experimentalAuthorizationId = null,
+        string? eligibilityBasis = null)
     {
         if (!MatchesFrozenIntent(intent, observation))
         {
@@ -412,7 +548,9 @@ public sealed class MovementDispatchService
                     phase,
                     RiotDispatchAuditOutcome.Unknown,
                     attemptId,
-                    cancellationToken)
+                    cancellationToken,
+                    experimentalAuthorizationId,
+                    eligibilityBasis)
                 .ConfigureAwait(false);
         }
         DispatchAuditWrite audit = Audit(
@@ -420,7 +558,9 @@ public sealed class MovementDispatchService
             RiotDispatchAuditOutcome.Terminal,
             timeProvider.GetUtcNow(),
             observation,
-            attemptId);
+            attemptId,
+            experimentalAuthorizationId,
+            eligibilityBasis);
         if (phase == RiotDispatchAuditPhase.PostCreateReconciliation)
         {
             await RecordAfterDispatchAsync(token => store.MarkTerminalReconciliationRequiredAsync(
@@ -450,15 +590,53 @@ public sealed class MovementDispatchService
         observation.MapId == intent.MapId &&
         observation.DestinationStationId == intent.DestinationStationId;
 
+    private static bool MatchesExperimentalAuthorization(
+        OrderIntent intent,
+        ExperimentalRiotCreateAuthorization authorization,
+        DateTimeOffset evaluatedAt) =>
+        !string.IsNullOrWhiteSpace(authorization.AuthorizationId) &&
+        authorization.AuthorizationVersion == 1 &&
+        string.Equals(authorization.UpperId, intent.UpperId, StringComparison.Ordinal) &&
+        string.Equals(authorization.DemandId, intent.DemandId, StringComparison.Ordinal) &&
+        string.Equals(authorization.MovementLegId, intent.MovementLegId, StringComparison.Ordinal) &&
+        authorization.AgvLifecycleGeneration == intent.AgvLifecycleGeneration &&
+        authorization.DispatchGeneration == intent.DispatchGeneration &&
+        authorization.ExpiresAt > evaluatedAt;
+
+    private static bool IsExactExperimentalAbsence(
+        string expectedUpperId,
+        RiotOrderObservation observation) =>
+        observation.Kind == RiotOrderObservationKind.Unknown &&
+        string.Equals(observation.UpperId, expectedUpperId, StringComparison.Ordinal) &&
+        observation.OrderId is null &&
+        observation.Receipt is
+        {
+            Operation: "RECONCILE",
+            Classification: "AbsentAtObservation",
+            HttpStatusCode: null,
+            BusinessCode: null,
+            ResultPresent: false,
+            FailureCategory: null
+        };
+
     private async Task<MovementDispatchResult> MarkUnknownAsync(
         string upperId,
         RiotOrderObservation observation,
         RiotDispatchAuditPhase phase,
         RiotDispatchAuditOutcome outcome,
         string? attemptId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? experimentalAuthorizationId = null,
+        string? eligibilityBasis = null)
     {
-        DispatchAuditWrite audit = Audit(phase, outcome, timeProvider.GetUtcNow(), observation, attemptId);
+        DispatchAuditWrite audit = Audit(
+            phase,
+            outcome,
+            timeProvider.GetUtcNow(),
+            observation,
+            attemptId,
+            experimentalAuthorizationId,
+            eligibilityBasis);
         if (phase == RiotDispatchAuditPhase.PostCreateReconciliation)
         {
             await RecordAfterDispatchAsync(token => store.RecordReconciliationAsync(
@@ -480,12 +658,12 @@ public sealed class MovementDispatchService
 
     private async Task<MovementDispatchResult> MarkUnknownAfterDispatchAsync(
         string upperId,
-        string attemptId,
+        CreateDispatchAttempt attempt,
         RiotOrderObservation observation)
     {
         await RecordReconciliationAfterDispatchAsync(
             upperId,
-            attemptId,
+            attempt,
             observation,
             RiotDispatchAuditOutcome.Unknown,
             markResultUnknown: true).ConfigureAwait(false);
@@ -506,13 +684,15 @@ public sealed class MovementDispatchService
                 outcome,
                 timeProvider.GetUtcNow(),
                 observation,
-                attempt.AttemptId),
+                attempt.AttemptId,
+                attempt.ExperimentalAuthorizationId,
+                attempt.EligibilityBasis),
             markResultUnknown,
             token));
 
     private Task RecordReconciliationAfterDispatchAsync(
         string upperId,
-        string attemptId,
+        CreateDispatchAttempt attempt,
         RiotOrderObservation observation,
         RiotDispatchAuditOutcome outcome,
         bool markResultUnknown) =>
@@ -523,7 +703,9 @@ public sealed class MovementDispatchService
                 outcome,
                 timeProvider.GetUtcNow(),
                 observation,
-                attemptId),
+                attempt.AttemptId,
+                attempt.ExperimentalAuthorizationId,
+                attempt.EligibilityBasis),
             markResultUnknown,
             token));
 
@@ -532,7 +714,9 @@ public sealed class MovementDispatchService
         RiotDispatchAuditOutcome outcome,
         DateTimeOffset occurredAt,
         RiotOrderObservation observation,
-        string? attemptId = null) =>
+        string? attemptId = null,
+        string? experimentalAuthorizationId = null,
+        string? eligibilityBasis = null) =>
         new(
             phase,
             outcome,
@@ -543,7 +727,9 @@ public sealed class MovementDispatchService
                 phase is RiotDispatchAuditPhase.CreateResponse ? "CREATE" : "RECONCILE",
                 observation.Kind.ToString(),
                 occurredAt,
-                ResultPresent: observation.OrderId is not null));
+                ResultPresent: observation.OrderId is not null),
+            ExperimentalAuthorizationId: experimentalAuthorizationId,
+            EligibilityBasis: eligibilityBasis);
 
     private static string ComputeRequestSemanticSha256(OrderIntent intent)
     {
@@ -570,6 +756,19 @@ public sealed class MovementDispatchService
     {
         using CancellationTokenSource evidenceWrite = new(EvidenceWriteTimeout);
         await write(evidenceWrite.Token).ConfigureAwait(false);
+    }
+
+    private sealed class DenyExperimentalRiotCreateAuthorizationSource : IExperimentalRiotCreateAuthorizationSource
+    {
+        public static DenyExperimentalRiotCreateAuthorizationSource Instance { get; } = new();
+
+        public Task<ExperimentalRiotCreateAuthorization?> GetAuthorizationAsync(
+            string upperId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<ExperimentalRiotCreateAuthorization?>(null);
+        }
     }
 }
 

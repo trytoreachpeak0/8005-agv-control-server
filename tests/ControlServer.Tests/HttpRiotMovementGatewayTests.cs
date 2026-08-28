@@ -64,6 +64,54 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(1, handler.CallCount);
     }
 
+    [Theory]
+    [InlineData("{\"code\":\"0\",\"message\":\"成功\"}")]
+    [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":null}")]
+    public async Task ReconcileSdkAbsentProducesExactExperimentalEligibilityReceipt(string body)
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(body));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal("UPPER-001", result.UpperId);
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
+        Assert.NotNull(result.Receipt);
+        Assert.Equal("RECONCILE", result.Receipt.Operation);
+        Assert.Equal("AbsentAtObservation", result.Receipt.Classification);
+        Assert.False(result.Receipt.ResultPresent);
+        Assert.Null(result.Receipt.HttpStatusCode);
+        Assert.Null(result.Receipt.BusinessCode);
+        Assert.Null(result.Receipt.FailureCategory);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":[]}")]
+    [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":{\"upperId\":\"UPPER-001\"}}")]
+    [InlineData("{\"code\":\"0\",\"result\":{\"id\":1,\"orderId\":\"ORDER-001\",\"upperId\":\"OTHER\",\"orderState\":1,\"appointVehicleKey\":\"VEHICLE-KEY-01\",\"missions\":[{\"type\":\"move\",\"mapId\":29,\"destination\":12}]}}")]
+    public async Task ReconcileSdkIndeterminateCannotMasqueradeAsExperimentalAbsence(string body)
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(body));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
+        Assert.NotNull(result.Receipt);
+        Assert.Equal("RECONCILE", result.Receipt.Operation);
+        Assert.Equal("Indeterminate", result.Receipt.Classification);
+        Assert.True(result.Receipt.ResultPresent);
+        Assert.NotEqual("AbsentAtObservation", result.Receipt.Classification);
+        Assert.Equal(1, handler.CallCount);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
     public async Task ReconcileHttp404IsConfirmedNotFound()

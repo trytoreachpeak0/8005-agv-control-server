@@ -359,6 +359,119 @@ public sealed class RiotDispatchAuditTests
     }
 
     [Fact]
+    public async Task StaleGenericArmCannotOverwriteConcurrentResultUnknownWhenAttemptCountIsUnchanged()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext winningContext = new(options);
+        await winningContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore winningStore = new(winningContext);
+        OrderIntent intent = await AcceptIntentAsync(winningStore);
+        await using ControlServerDbContext staleContext = new(options);
+        OrderIntentRow staleSnapshot = await staleContext.OrderIntents
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("PENDING_RECONCILIATION", staleSnapshot.Status);
+        Assert.Equal(0, staleSnapshot.CreateAttemptCount);
+        WireToGateStore staleStore = new(staleContext);
+
+        await winningStore.RecordReconciliationAsync(
+            intent.UpperId,
+            new DispatchAuditWrite(
+                RiotDispatchAuditPhase.PreCreateReconciliation,
+                RiotDispatchAuditOutcome.Unknown,
+                Now,
+                Receipt: Receipt("RECONCILE", "Indeterminate", resultPresent: true)),
+            markResultUnknown: true,
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+            staleStore.ArmCreateDispatchAsync(
+                intent.UpperId,
+                new string('a', 64),
+                Now.AddMilliseconds(1),
+                TestContext.Current.CancellationToken));
+
+        await using ControlServerDbContext verificationContext = new(options);
+        OrderIntentRow final = await verificationContext.OrderIntents
+            .AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("RESULT_UNKNOWN", final.Status);
+        Assert.Equal(0, final.CreateAttemptCount);
+        Assert.Null(final.CreateAttemptId);
+        RiotDispatchAuditEventRow audit = await verificationContext.RiotDispatchAuditEvents
+            .AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("PRE_CREATE_RECONCILIATION", audit.Phase);
+        Assert.Equal("UNKNOWN", audit.Outcome);
+        Assert.DoesNotContain(
+            verificationContext.RiotDispatchAuditEvents,
+            item => item.Phase == "CREATE_DISPATCH");
+    }
+
+    [Fact]
+    public async Task StaleGenericArmCannotOverwriteConcurrentAuditRevisionWhenStatusAndAttemptCountAreUnchanged()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext winningContext = new(options);
+        await winningContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore winningStore = new(winningContext);
+        OrderIntent intent = await AcceptIntentAsync(winningStore);
+        OrderIntentRow initial = await winningContext.OrderIntents
+            .AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(0L, initial.DispatchAuditSequence);
+        await using ControlServerDbContext staleContext = new(options);
+        OrderIntentRow staleSnapshot = await staleContext.OrderIntents
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("PENDING_RECONCILIATION", staleSnapshot.Status);
+        Assert.Equal(0, staleSnapshot.CreateAttemptCount);
+        Assert.Equal(0L, staleSnapshot.DispatchAuditSequence);
+        WireToGateStore staleStore = new(staleContext);
+
+        await winningStore.RecordReconciliationAsync(
+            intent.UpperId,
+            new DispatchAuditWrite(
+                RiotDispatchAuditPhase.PreCreateReconciliation,
+                RiotDispatchAuditOutcome.Unknown,
+                Now,
+                Receipt: Receipt("RECONCILE", "Indeterminate", resultPresent: true)),
+            markResultUnknown: false,
+            TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+            staleStore.ArmCreateDispatchAsync(
+                intent.UpperId,
+                new string('a', 64),
+                Now.AddMilliseconds(1),
+                TestContext.Current.CancellationToken));
+
+        await using ControlServerDbContext verificationContext = new(options);
+        OrderIntentRow final = await verificationContext.OrderIntents
+            .AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1L, final.DispatchAuditSequence);
+        Assert.Equal("PENDING_RECONCILIATION", final.Status);
+        Assert.Equal(0, final.CreateAttemptCount);
+        Assert.Null(final.CreateAttemptId);
+        RiotDispatchAuditEventRow audit = await verificationContext.RiotDispatchAuditEvents
+            .AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1L, audit.Sequence);
+        Assert.Equal("PRE_CREATE_RECONCILIATION", audit.Phase);
+        Assert.Equal("UNKNOWN", audit.Outcome);
+        Assert.DoesNotContain(
+            verificationContext.RiotDispatchAuditEvents,
+            item => item.Phase == "CREATE_DISPATCH");
+    }
+
+    [Fact]
     public async Task LegacyMigrationLeavesAuditUnknownAndConfirmedAbsenceNeverCreates()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");

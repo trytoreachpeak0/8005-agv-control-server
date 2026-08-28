@@ -5,6 +5,7 @@ using System.Text;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Security;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Infrastructure.Persistence;
@@ -297,15 +298,123 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     {
         OrderIntentRow? row = await dbContext.OrderIntents
             .SingleOrDefaultAsync(item => item.UpperId == upperId, cancellationToken).ConfigureAwait(false);
-        return row is null
-            ? null
-            : new StoredMovementIntent(
-                ToDomain(row),
-                row.Status,
-                row.OrderId,
-                row.DispatchAuditVersion,
-                row.CreateAttemptId,
-                row.CreateAttemptCount);
+        if (row is null)
+        {
+            return null;
+        }
+
+        ExperimentalRiotCreateAuthorizationRow? authorization = await dbContext.ExperimentalRiotCreateAuthorizations
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                item => row.CreateAttemptId != null &&
+                        item.UpperId == upperId &&
+                        item.ConsumedByAttemptId == row.CreateAttemptId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new StoredMovementIntent(
+            ToDomain(row),
+            row.Status,
+            row.OrderId,
+            row.DispatchAuditVersion,
+            row.CreateAttemptId,
+            row.CreateAttemptCount,
+            authorization?.AuthorizationId,
+            authorization is null ? null : "EXPERIMENTAL_ABSENT_AT_OBSERVATION");
+    }
+
+    public async Task PersistExperimentalCreateAuthorizationAsync(
+        ExperimentalRiotCreateAuthorization authorization,
+        DateTimeOffset persistedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(authorization);
+        ValidateExperimentalAuthorizationShape(authorization, persistedAt);
+
+        OrderIntentRow row = await dbContext.OrderIntents
+            .SingleAsync(item => item.UpperId == authorization.UpperId, cancellationToken)
+            .ConfigureAwait(false);
+        AcceptedDemandRow demand = await dbContext.AcceptedDemands
+            .AsNoTracking()
+            .SingleAsync(item => item.DemandId == row.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        bool hasAuditHistory = await dbContext.RiotDispatchAuditEvents
+            .AsNoTracking()
+            .AnyAsync(item => item.MovementLegId == row.MovementLegId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!MatchesExperimentalAuthorization(row, authorization) ||
+            !IsFreshExperimentalIntent(row, demand, hasAuditHistory) ||
+            row.ExperimentalCreateAuthorizationId is not null &&
+            row.ExperimentalCreateAuthorizationId != authorization.AuthorizationId)
+        {
+            throw new BusinessIdentityConflictException(
+                "The experimental RIoT create authorization requires one exact fresh audit-versioned intent.");
+        }
+
+        ExperimentalRiotCreateAuthorizationRow? byAuthorization = await dbContext.ExperimentalRiotCreateAuthorizations
+            .SingleOrDefaultAsync(
+                item => item.AuthorizationId == authorization.AuthorizationId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        ExperimentalRiotCreateAuthorizationRow? byUpperId = await dbContext.ExperimentalRiotCreateAuthorizations
+            .SingleOrDefaultAsync(
+                item => item.UpperId == authorization.UpperId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        ExperimentalRiotCreateAuthorizationRow? existing = byAuthorization ?? byUpperId;
+        if (existing is not null)
+        {
+            if ((byAuthorization is not null && byUpperId is not null &&
+                 byAuthorization.AuthorizationId != byUpperId.AuthorizationId) ||
+                !MatchesExperimentalAuthorization(existing, authorization) ||
+                existing.ConsumedAt is not null ||
+                existing.ConsumedByAttemptId is not null ||
+                row.ExperimentalCreateAuthorizationId != authorization.AuthorizationId ||
+                !IsFreshExperimentalIntent(row, demand, hasAuditHistory))
+            {
+                throw new BusinessIdentityConflictException(
+                    "An experimental RIoT create authorization cannot be rebound, revived, or reused.");
+            }
+            return;
+        }
+
+        if (row.ExperimentalCreateAuthorizationId is not null ||
+            !IsFreshExperimentalIntent(row, demand, hasAuditHistory))
+        {
+            throw new BusinessIdentityConflictException(
+                "The experimental RIoT create authorization requires one exact fresh audit-versioned intent.");
+        }
+
+        row.ExperimentalCreateAuthorizationId = authorization.AuthorizationId;
+        dbContext.ExperimentalRiotCreateAuthorizations.Add(new ExperimentalRiotCreateAuthorizationRow
+        {
+            AuthorizationId = authorization.AuthorizationId,
+            AuthorizationVersion = authorization.AuthorizationVersion,
+            UpperId = authorization.UpperId,
+            DemandId = authorization.DemandId,
+            MovementLegId = authorization.MovementLegId,
+            AgvLifecycleGeneration = authorization.AgvLifecycleGeneration,
+            DispatchGeneration = authorization.DispatchGeneration,
+            ExpiresAt = authorization.ExpiresAt,
+            PersistedAt = persistedAt
+        });
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await RequireExactCommittedFreshAuthorizationAsync(authorization, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (DbUpdateException error) when (error.InnerException is SqliteException
+        {
+            SqliteErrorCode: 19,
+            SqliteExtendedErrorCode: 1555 or 2067
+        })
+        {
+            await RequireExactCommittedFreshAuthorizationAsync(authorization, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     public async Task RecordReconciliationAsync(
@@ -367,6 +476,103 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         return attempt;
     }
 
+    public async Task<CreateDispatchAttempt> ArmExperimentalCreateDispatchAsync(
+        string upperId,
+        string requestSemanticSha256,
+        ExperimentalRiotCreateAuthorization authorization,
+        string eligibilityBasis,
+        DateTimeOffset armedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestSemanticSha256);
+        ArgumentNullException.ThrowIfNull(authorization);
+        if (eligibilityBasis != "EXPERIMENTAL_ABSENT_AT_OBSERVATION")
+        {
+            throw new BusinessIdentityConflictException("The experimental create eligibility basis is invalid.");
+        }
+        ValidateExperimentalAuthorizationShape(authorization, armedAt);
+
+        OrderIntentRow row = await dbContext.OrderIntents
+            .SingleAsync(item => item.UpperId == upperId, cancellationToken)
+            .ConfigureAwait(false);
+        ExperimentalRiotCreateAuthorizationRow permit = await dbContext.ExperimentalRiotCreateAuthorizations
+            .SingleAsync(
+                item => item.AuthorizationId == authorization.AuthorizationId && item.UpperId == upperId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        RiotDispatchAuditEventRow[] priorEvents = await dbContext.RiotDispatchAuditEvents
+            .Where(item => item.MovementLegId == row.MovementLegId)
+            .OrderBy(item => item.Sequence)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        bool exactPreRead = priorEvents.Length == 1 &&
+                            priorEvents[0].Phase == "PRE_CREATE_RECONCILIATION" &&
+                            priorEvents[0].Outcome == "UNKNOWN" &&
+                            priorEvents[0].AttemptId is null &&
+                            priorEvents[0].ReceiptOperation == "RECONCILE" &&
+                            priorEvents[0].ReceiptClassification == "AbsentAtObservation" &&
+                            priorEvents[0].HttpStatusCode is null &&
+                            priorEvents[0].BusinessCode is null &&
+                            priorEvents[0].ResultPresent == false &&
+                            priorEvents[0].ReturnedOrderId is null &&
+                            priorEvents[0].FailureCategory is null &&
+                            priorEvents[0].ExperimentalAuthorizationId == authorization.AuthorizationId &&
+                            priorEvents[0].EligibilityBasis == eligibilityBasis;
+        if (row.Status != "RESULT_UNKNOWN" ||
+            row.OrderId is not null ||
+            row.DispatchAuditVersion != 1 ||
+            row.DispatchAuditSequence != 1 ||
+            row.ExperimentalCreateAuthorizationId != authorization.AuthorizationId ||
+            row.CreateAttemptCount != 0 ||
+            row.CreateAttemptId is not null ||
+            !MatchesExperimentalAuthorization(row, authorization) ||
+            !MatchesExperimentalAuthorization(permit, authorization) ||
+            permit.ConsumedAt is not null ||
+            permit.ConsumedByAttemptId is not null ||
+            !exactPreRead)
+        {
+            throw new BusinessIdentityConflictException(
+                "The experimental RIoT create authorization is not eligible for one audited dispatch.");
+        }
+
+        CreateDispatchAttempt attempt = new(
+            Guid.NewGuid().ToString("D"),
+            1,
+            requestSemanticSha256,
+            armedAt,
+            authorization.AuthorizationId,
+            eligibilityBasis);
+        row.Status = "CREATE_ATTEMPTED";
+        row.CreateAttemptId = attempt.AttemptId;
+        row.CreateAttemptCount = attempt.AttemptNumber;
+        row.CreateDispatchArmedAt = armedAt;
+        row.LastCreateOutcome = "DispatchArmed";
+        row.LastCreateOutcomeAt = armedAt;
+        permit.ConsumedAt = armedAt;
+        permit.ConsumedByAttemptId = attempt.AttemptId;
+        await AppendAuditEventAsync(
+            row,
+            new DispatchAuditWrite(
+                RiotDispatchAuditPhase.CreateDispatch,
+                RiotDispatchAuditOutcome.Armed,
+                armedAt,
+                attempt.AttemptId,
+                requestSemanticSha256,
+                ExperimentalAuthorizationId: authorization.AuthorizationId,
+                EligibilityBasis: eligibilityBasis),
+            cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new BusinessIdentityConflictException(
+                "A concurrent RIoT create decision consumed or invalidated the experimental authorization.");
+        }
+        return attempt;
+    }
+
     public async Task RecordCreateStartedAsync(
         string upperId,
         CreateDispatchAttempt attempt,
@@ -374,6 +580,21 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         CancellationToken cancellationToken)
     {
         OrderIntentRow row = await GetMatchingAttemptAsync(upperId, attempt, cancellationToken).ConfigureAwait(false);
+        if (attempt.ExperimentalAuthorizationId is not null)
+        {
+            ExperimentalRiotCreateAuthorizationRow permit = await dbContext.ExperimentalRiotCreateAuthorizations
+                .SingleAsync(
+                    item => item.AuthorizationId == attempt.ExperimentalAuthorizationId &&
+                            item.ConsumedByAttemptId == attempt.AttemptId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (attempt.EligibilityBasis != "EXPERIMENTAL_ABSENT_AT_OBSERVATION" ||
+                permit.ExpiresAt <= startedAt)
+            {
+                throw new BusinessIdentityConflictException(
+                    "The experimental RIoT create authorization expired or changed before START could be committed.");
+            }
+        }
         row.LastCreateOutcome = "CreateRequestStarted";
         row.LastCreateOutcomeAt = startedAt;
         await AppendAuditEventAsync(
@@ -383,7 +604,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 RiotDispatchAuditOutcome.Started,
                 startedAt,
                 attempt.AttemptId,
-                attempt.RequestSemanticSha256),
+                attempt.RequestSemanticSha256,
+                ExperimentalAuthorizationId: attempt.ExperimentalAuthorizationId,
+                EligibilityBasis: attempt.EligibilityBasis),
             cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -398,6 +621,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         if (audit.Phase != RiotDispatchAuditPhase.CreateResponse || audit.AttemptId != attempt.AttemptId)
         {
             throw new ArgumentException("Create response audit identity is invalid.", nameof(audit));
+        }
+        if (audit.ExperimentalAuthorizationId != attempt.ExperimentalAuthorizationId ||
+            audit.EligibilityBasis != attempt.EligibilityBasis)
+        {
+            throw new ArgumentException("Create response authorization evidence is invalid.", nameof(audit));
         }
         OrderIntentRow row = await GetMatchingAttemptAsync(upperId, attempt, cancellationToken).ConfigureAwait(false);
         if (markResultUnknown && row.Status != "CONFIRMED")
@@ -1268,11 +1496,21 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         DispatchAuditWrite audit,
         CancellationToken cancellationToken)
     {
-        long lastSequence = await dbContext.RiotDispatchAuditEvents
-            .Where(item => item.MovementLegId == row.MovementLegId)
-            .Select(item => (long?)item.Sequence)
-            .MaxAsync(cancellationToken)
-            .ConfigureAwait(false) ?? 0;
+        long nextSequence;
+        if (row.DispatchAuditSequence is null)
+        {
+            long lastSequence = await dbContext.RiotDispatchAuditEvents
+                .Where(item => item.MovementLegId == row.MovementLegId)
+                .Select(item => (long?)item.Sequence)
+                .MaxAsync(cancellationToken)
+                .ConfigureAwait(false) ?? 0;
+            nextSequence = checked(lastSequence + 1);
+        }
+        else
+        {
+            nextSequence = checked(row.DispatchAuditSequence.Value + 1);
+            row.DispatchAuditSequence = nextSequence;
+        }
         RiotOrderCallReceipt? receipt = RiotAuditSanitizer.Receipt(audit.Receipt);
         dbContext.RiotDispatchAuditEvents.Add(new RiotDispatchAuditEventRow
         {
@@ -1281,7 +1519,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             DemandId = row.DemandId,
             UpperId = row.UpperId,
             DispatchGeneration = row.DispatchGeneration,
-            Sequence = checked(lastSequence + 1),
+            Sequence = nextSequence,
             AttemptId = audit.AttemptId,
             AttemptNumber = audit.AttemptId is null ? null : row.CreateAttemptCount,
             Phase = AuditPhase(audit.Phase),
@@ -1295,9 +1533,102 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             BusinessCode = receipt?.BusinessCode,
             ResultPresent = receipt?.ResultPresent,
             ReturnedOrderId = audit.ReturnedOrderId,
-            FailureCategory = receipt?.FailureCategory
+            FailureCategory = receipt?.FailureCategory,
+            ExperimentalAuthorizationId = audit.ExperimentalAuthorizationId,
+            EligibilityBasis = audit.EligibilityBasis
         });
     }
+
+    private static void ValidateExperimentalAuthorizationShape(
+        ExperimentalRiotCreateAuthorization authorization,
+        DateTimeOffset decisionAt)
+    {
+        if (authorization.AuthorizationVersion != 1 ||
+            string.IsNullOrWhiteSpace(authorization.AuthorizationId) ||
+            string.IsNullOrWhiteSpace(authorization.UpperId) ||
+            string.IsNullOrWhiteSpace(authorization.DemandId) ||
+            string.IsNullOrWhiteSpace(authorization.MovementLegId) ||
+            authorization.AgvLifecycleGeneration <= 0 ||
+            authorization.DispatchGeneration <= 0 ||
+            authorization.ExpiresAt <= decisionAt)
+        {
+            throw new BusinessIdentityConflictException(
+                "The experimental RIoT create authorization identity, version, generations, or expiry is invalid.");
+        }
+    }
+
+    private async Task RequireExactCommittedFreshAuthorizationAsync(
+        ExperimentalRiotCreateAuthorization authorization,
+        CancellationToken cancellationToken)
+    {
+        dbContext.ChangeTracker.Clear();
+        OrderIntentRow? row = await dbContext.OrderIntents
+            .SingleOrDefaultAsync(item => item.UpperId == authorization.UpperId, cancellationToken)
+            .ConfigureAwait(false);
+        AcceptedDemandRow? demand = row is null
+            ? null
+            : await dbContext.AcceptedDemands
+                .AsNoTracking()
+                .SingleOrDefaultAsync(item => item.DemandId == row.DemandId, cancellationToken)
+                .ConfigureAwait(false);
+        bool hasAuditHistory = row is not null && await dbContext.RiotDispatchAuditEvents
+            .AsNoTracking()
+            .AnyAsync(item => item.MovementLegId == row.MovementLegId, cancellationToken)
+            .ConfigureAwait(false);
+        ExperimentalRiotCreateAuthorizationRow[] permits = await dbContext.ExperimentalRiotCreateAuthorizations
+            .AsNoTracking()
+            .Where(item => item.AuthorizationId == authorization.AuthorizationId ||
+                           item.UpperId == authorization.UpperId)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (row is null ||
+            demand is null ||
+            permits.Length != 1 ||
+            !MatchesExperimentalAuthorization(row, authorization) ||
+            !MatchesExperimentalAuthorization(permits[0], authorization) ||
+            permits[0].ConsumedAt is not null ||
+            permits[0].ConsumedByAttemptId is not null ||
+            row.ExperimentalCreateAuthorizationId != authorization.AuthorizationId ||
+            !IsFreshExperimentalIntent(row, demand, hasAuditHistory))
+        {
+            throw new BusinessIdentityConflictException(
+                "A concurrent experimental RIoT create authorization did not preserve one exact fresh identity.");
+        }
+    }
+
+    private static bool IsFreshExperimentalIntent(
+        OrderIntentRow row,
+        AcceptedDemandRow demand,
+        bool hasAuditHistory) =>
+        row.Status == "PENDING_RECONCILIATION" &&
+        row.OrderId is null &&
+        row.DispatchAuditVersion == 1 &&
+        row.DispatchAuditSequence == 0 &&
+        row.CreateAttemptCount == 0 &&
+        row.CreateAttemptId is null &&
+        demand.Generation != 65 &&
+        !hasAuditHistory;
+
+    private static bool MatchesExperimentalAuthorization(
+        OrderIntentRow row,
+        ExperimentalRiotCreateAuthorization authorization) =>
+        row.UpperId == authorization.UpperId &&
+        row.DemandId == authorization.DemandId &&
+        row.MovementLegId == authorization.MovementLegId &&
+        row.AgvLifecycleGeneration == authorization.AgvLifecycleGeneration &&
+        row.DispatchGeneration == authorization.DispatchGeneration;
+
+    private static bool MatchesExperimentalAuthorization(
+        ExperimentalRiotCreateAuthorizationRow row,
+        ExperimentalRiotCreateAuthorization authorization) =>
+        row.AuthorizationId == authorization.AuthorizationId &&
+        row.AuthorizationVersion == authorization.AuthorizationVersion &&
+        row.UpperId == authorization.UpperId &&
+        row.DemandId == authorization.DemandId &&
+        row.MovementLegId == authorization.MovementLegId &&
+        row.AgvLifecycleGeneration == authorization.AgvLifecycleGeneration &&
+        row.DispatchGeneration == authorization.DispatchGeneration &&
+        row.ExpiresAt == authorization.ExpiresAt;
 
     private static void ApplyReconciliationSummary(OrderIntentRow row, DispatchAuditWrite audit)
     {
@@ -1364,6 +1695,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         DispatchGeneration = intent.DispatchGeneration,
         CreatedAt = intent.CreatedAt,
         DispatchAuditVersion = 1,
+        DispatchAuditSequence = 0,
         CreateAttemptCount = 0
     };
 
