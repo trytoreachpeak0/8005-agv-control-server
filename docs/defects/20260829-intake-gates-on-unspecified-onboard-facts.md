@@ -1,6 +1,6 @@
 # 缺陷：受理门禁建立在协议未定义的车载事实之上
 
-Status: open
+Status: fixed
 Owner repository: `8005-agv-control-server`
 Found by: [`零 mutation 双端演练`](../../evidence/g3/20260829-zero-mutation-peer-rehearsal/SUMMARY.md)
 Product at discovery: `ControlServer_MVP@1a0158c87c36fb2e3e0f4ddca1f7ed9c84d5672b`
@@ -94,6 +94,14 @@ Demand 判为 `ONBOARD_FACTS_NOT_READY`，从而在现场完全无法受理。�
 （`ValidateDynamicFacts` 中的 `RIOT_VEHICLE_FACT_STALE` 分支），该处用法是正确的。
 
 ---
+
+## 修复
+
+`ControlServer_MVP@9a42582654d7ca793499556522beb1547403fafb`（D-1／D-2 落地于 `74ddda2`，
+其自身引入的活性扫描缺陷修正于 `9a42582`）。出厂车载配置下的验证见
+[`受理门禁修复验证`](../../evidence/g3/20260829-intake-gate-fix-verification/SUMMARY.md)：
+受理数由 0 变为 1，旅程推进到 `AwaitingPickupArrival` 并停在 `PICKUP_CreateDispatchDisabled`，
+运行 2 分 35 秒后仍在正常推进，证明 30 秒受理窗口已解除。
 
 ## 影响
 
