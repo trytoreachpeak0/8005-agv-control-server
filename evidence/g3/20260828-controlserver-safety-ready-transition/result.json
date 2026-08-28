@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "result": "BLOCKED_FIXED_NOT_DEPLOYED",
+  "classification": "CONTROLSERVER_READY_TRANSITION_NOT_PUBLISHED",
+  "observedAtStart": "2026-08-28T10:44:00+08:00",
+  "observedAtCleanup": "2026-08-28T10:50:06+08:00",
+  "inputs": {
+    "onboardCommit": "777eff8bdc955e6bb6fdab74ec222e0bb6748def",
+    "installedControlServerSourceCommit": "5c726218f59d10d5929e7f5c0a39c1ebd4df52f1",
+    "integrationParentCommit": "755067c22d146473fa8d07293a9f81f442624efe",
+    "controlServerFixCommit": "4347a8fb9fcb80cb9f95680a6fd8b1a0b970358b",
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "simulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "preflight": {
+    "result": "PASS",
+    "catalogRevision": 1780,
+    "fullyAdmittedCandidateCount": 2,
+    "batteryPercent": 31,
+    "testMinimumBatteryPercent": 10,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyMotion": "STOPPED",
+    "safetyReasonCount": 0
+  },
+  "session": {
+    "connected": true,
+    "maximumObservedGeneration": 47,
+    "readiness": "RecoveryRequired",
+    "reasonCode": "DEPARTURE_SAFETY_NOT_READY",
+    "runtimeCreated": false,
+    "orderCount": 0,
+    "operationCount": 0
+  },
+  "simulator": {
+    "slotCount": 8,
+    "closedDoorCount": 8,
+    "activeLockFeedbackCount": 8,
+    "activeUnlockOutputCount": 0,
+    "faultCount": 0
+  },
+  "fixValidation": {
+    "focusedPassed": 1,
+    "neighboringPassed": 2,
+    "fullTestPassed": 103,
+    "failed": 0,
+    "skipped": 0,
+    "formatPassed": true,
+    "releaseBuildWarnings": 0,
+    "releaseBuildErrors": 0
+  },
+  "effects": {
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "operationCreated": false,
+    "vehicleMoved": false
+  },
+  "cleanup": {
+    "journeyRuntimeEnabled": false,
+    "controlServerRunning": true,
+    "mesIngestRunning": true,
+    "peersStopped": true,
+    "temporaryPortsReleased": true,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "batteryPercent": 31,
+    "safetyMotion": "STOPPED",
+    "safetyReasonCount": 0,
+    "stopMarkerPresent": true
+  }
+}
