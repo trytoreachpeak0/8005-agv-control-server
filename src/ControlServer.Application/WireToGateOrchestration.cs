@@ -112,7 +112,25 @@ public enum MovementDispatchOutcome
 {
     Confirmed,
     ResultUnknown,
-    TerminalReconciliationRequired
+    TerminalReconciliationRequired,
+
+    /// <summary>
+    /// The observation was create-eligible but the operational create-dispatch gate is closed,
+    /// so no RIoT mutation was attempted and the intent keeps its create eligibility.
+    /// </summary>
+    CreateDispatchDisabled
+}
+
+/// <summary>
+/// Operational gate for RIoT create dispatch. It is independent of the journey runtime so an
+/// operator can run a mutation-free rehearsal with the runtime enabled, then open this gate for
+/// the single authorized create. It never widens what a create is allowed to do: the persisted
+/// at-most-once guards still bound an intent to one create attempt.
+/// </summary>
+public sealed record RiotCreateDispatchPolicy(bool CreateEnabled)
+{
+    public static readonly RiotCreateDispatchPolicy Denied = new(false);
+    public static readonly RiotCreateDispatchPolicy Allowed = new(true);
 }
 
 public sealed record MovementDispatchResult(
@@ -129,6 +147,7 @@ public sealed class MovementDispatchService
     private readonly IRiotMovementGateway gateway;
     private readonly TimeProvider timeProvider;
     private readonly IExperimentalRiotCreateAuthorizationSource experimentalAuthorizationSource;
+    private readonly RiotCreateDispatchPolicy createDispatchPolicy;
 
     public MovementDispatchService(IMovementIntentStore store, IRiotMovementGateway gateway)
         : this(store, gateway, TimeProvider.System, DenyExperimentalRiotCreateAuthorizationSource.Instance)
@@ -143,16 +162,32 @@ public sealed class MovementDispatchService
     {
     }
 
+    /// <summary>
+    /// Constructs the service without an operational create-dispatch gate, which is how the
+    /// unit tests exercise dispatch behaviour directly. The Host never uses this overload: it
+    /// resolves the overload below so the gate is always an explicit, configured decision.
+    /// </summary>
     public MovementDispatchService(
         IMovementIntentStore store,
         IRiotMovementGateway gateway,
         TimeProvider timeProvider,
         IExperimentalRiotCreateAuthorizationSource experimentalAuthorizationSource)
+        : this(store, gateway, timeProvider, experimentalAuthorizationSource, RiotCreateDispatchPolicy.Allowed)
+    {
+    }
+
+    public MovementDispatchService(
+        IMovementIntentStore store,
+        IRiotMovementGateway gateway,
+        TimeProvider timeProvider,
+        IExperimentalRiotCreateAuthorizationSource experimentalAuthorizationSource,
+        RiotCreateDispatchPolicy createDispatchPolicy)
     {
         this.store = store;
         this.gateway = gateway;
         this.timeProvider = timeProvider;
         this.experimentalAuthorizationSource = experimentalAuthorizationSource;
+        this.createDispatchPolicy = createDispatchPolicy;
     }
 
     public async Task<MovementDispatchResult> ReconcileOrCreateAsync(
@@ -305,6 +340,11 @@ public sealed class MovementDispatchService
         ExperimentalRiotCreateAuthorization authorization,
         CancellationToken cancellationToken)
     {
+        if (!createDispatchPolicy.CreateEnabled)
+        {
+            return CreateDispatchDisabled(intent);
+        }
+
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         if (!MatchesExperimentalAuthorization(intent, authorization, absenceRecordedAt))
         {
@@ -353,6 +393,11 @@ public sealed class MovementDispatchService
         RiotDispatchAuditOutcome absenceOutcome = RiotDispatchAuditOutcome.NotFound,
         string? eligibilityBasis = null)
     {
+        if (!createDispatchPolicy.CreateEnabled)
+        {
+            return CreateDispatchDisabled(intent);
+        }
+
         DateTimeOffset absenceRecordedAt = timeProvider.GetUtcNow();
         await store.RecordReconciliationAsync(
             intent.UpperId,
@@ -373,6 +418,14 @@ public sealed class MovementDispatchService
             cancellationToken).ConfigureAwait(false);
         return await DispatchCreateAttemptAsync(intent, attempt, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Refuses a create because the operational gate is closed. Nothing is written: the audit
+    /// chain, the intent status and the at-most-once counters stay exactly as they were, so a
+    /// mutation-free rehearsal leaves the intent still eligible for the later authorized create.
+    /// </summary>
+    private static MovementDispatchResult CreateDispatchDisabled(OrderIntent intent) =>
+        new(MovementDispatchOutcome.CreateDispatchDisabled, intent.UpperId, null);
 
     private async Task<MovementDispatchResult> DispatchCreateAttemptAsync(
         OrderIntent intent,

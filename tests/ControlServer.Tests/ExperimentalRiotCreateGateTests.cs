@@ -467,6 +467,131 @@ public sealed class ExperimentalRiotCreateGateTests
         Assert.NotNull(permit.ConsumedAt);
     }
 
+    [Fact]
+    public async Task ClosedCreateDispatchGateRefusesAnExactAbsentCreateAndWritesNothing()
+    {
+        await using SharedDatabase database = await SharedDatabase.CreateAsync();
+        await using ControlServerDbContext context = database.CreateContext();
+        WireToGateStore store = new(context);
+        OrderIntent intent = await AcceptIntentAsync(store);
+        DelegateGateway gateway = GatewayFor(_ => Absent(intent), _ => CreateUnknown(intent));
+        OrderIntentRow before = await SnapshotAsync(context);
+        int auditEventsBefore = await context.RiotDispatchAuditEvents
+            .CountAsync(TestContext.Current.CancellationToken);
+
+        MovementDispatchResult result = await GatedService(store, gateway, RiotCreateDispatchPolicy.Denied)
+            .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.CreateDispatchDisabled, result.Outcome);
+        Assert.Null(result.OrderId);
+        Assert.Equal(0, gateway.CreateCount);
+        Assert.Equal(1, gateway.ReconcileCount);
+        OrderIntentRow after = await SnapshotAsync(context);
+        Assert.Equal(before.Status, after.Status);
+        Assert.Equal(before.CreateAttemptCount, after.CreateAttemptCount);
+        Assert.Equal(before.CreateAttemptId, after.CreateAttemptId);
+        Assert.Equal(before.DispatchAuditVersion, after.DispatchAuditVersion);
+        Assert.Equal(before.DispatchAuditSequence, after.DispatchAuditSequence);
+        Assert.Equal(
+            auditEventsBefore,
+            await context.RiotDispatchAuditEvents.CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ClosedCreateDispatchGateRefusesANotFoundCreate()
+    {
+        await using SharedDatabase database = await SharedDatabase.CreateAsync();
+        await using ControlServerDbContext context = database.CreateContext();
+        WireToGateStore store = new(context);
+        OrderIntent intent = await AcceptIntentAsync(store);
+        RiotOrderObservation notFound = new(
+            intent.UpperId,
+            RiotOrderObservationKind.NotFound,
+            null,
+            Receipt: Receipt("RECONCILE", "NotFound", httpStatusCode: 404));
+        DelegateGateway gateway = GatewayFor(_ => notFound, _ => CreateUnknown(intent));
+
+        MovementDispatchResult result = await GatedService(store, gateway, RiotCreateDispatchPolicy.Denied)
+            .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.CreateDispatchDisabled, result.Outcome);
+        Assert.Equal(0, gateway.CreateCount);
+        Assert.Equal("PENDING_RECONCILIATION", (await SnapshotAsync(context)).Status);
+    }
+
+    [Fact]
+    public async Task ClosedCreateDispatchGateRefusesTheExperimentalPermitCreate()
+    {
+        await using SharedDatabase database = await SharedDatabase.CreateAsync();
+        await using ControlServerDbContext context = database.CreateContext();
+        WireToGateStore store = new(context);
+        OrderIntent intent = await AcceptIntentAsync(store);
+        DelegateGateway gateway = GatewayFor(_ => Absent(intent), _ => CreateUnknown(intent));
+
+        MovementDispatchResult result = await new MovementDispatchService(
+                store,
+                gateway,
+                new FixedTimeProvider(Now),
+                new StaticAuthorizationSource(Authorization(intent)),
+                RiotCreateDispatchPolicy.Denied)
+            .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.CreateDispatchDisabled, result.Outcome);
+        Assert.Equal(0, gateway.CreateCount);
+    }
+
+    [Fact]
+    public async Task RehearsalsUnderAClosedGateLeaveTheIntentEligibleForTheAuthorizedCreate()
+    {
+        await using SharedDatabase database = await SharedDatabase.CreateAsync();
+        await using ControlServerDbContext context = database.CreateContext();
+        WireToGateStore store = new(context);
+        OrderIntent intent = await AcceptIntentAsync(store);
+        RiotOrderObservation confirmed = Observation(
+            intent,
+            RiotOrderObservationKind.Active,
+            "ORDER-NEW",
+            Receipt("RECONCILE", "Found", resultPresent: true));
+        DelegateGateway gateway = new(
+            (call, _, _) => Task.FromResult(call <= 3 ? Absent(intent) : confirmed),
+            (_, _, _) => Task.FromResult(Observation(
+                intent,
+                RiotOrderObservationKind.Active,
+                "ORDER-NEW",
+                Receipt("CREATE", "SdkAccepted", resultPresent: true))));
+
+        for (int rehearsal = 0; rehearsal < 2; rehearsal++)
+        {
+            MovementDispatchResult refused = await GatedService(store, gateway, RiotCreateDispatchPolicy.Denied)
+                .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+            Assert.Equal(MovementDispatchOutcome.CreateDispatchDisabled, refused.Outcome);
+        }
+
+        MovementDispatchResult authorized = await GatedService(store, gateway, RiotCreateDispatchPolicy.Allowed)
+            .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.Confirmed, authorized.Outcome);
+        Assert.Equal("ORDER-NEW", authorized.OrderId);
+        Assert.Equal(1, gateway.CreateCount);
+        OrderIntentRow row = await SnapshotAsync(context);
+        Assert.Equal("CONFIRMED", row.Status);
+        Assert.Equal(1, row.CreateAttemptCount);
+    }
+
+    private static MovementDispatchService GatedService(
+        WireToGateStore store,
+        IRiotMovementGateway gateway,
+        RiotCreateDispatchPolicy policy) =>
+        new(
+            store,
+            gateway,
+            new FixedTimeProvider(Now),
+            new StaticAuthorizationSource(null),
+            policy);
+
+    private static Task<OrderIntentRow> SnapshotAsync(ControlServerDbContext context) =>
+        context.OrderIntents.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
+
     private static MovementDispatchService Service(
         WireToGateStore store,
         IRiotMovementGateway gateway,

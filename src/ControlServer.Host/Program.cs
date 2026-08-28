@@ -58,6 +58,7 @@ builder.Services.AddOptions<JourneyRuntimeOptions>()
 builder.Services.AddSingleton<IValidateOptions<JourneyRuntimeOptions>, JourneyRuntimeOptionsValidator>();
 builder.Services.AddHostedService<JourneyRuntimeWorker>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddRiotCreateDispatchGate(builder.Configuration);
 builder.Services.AddRiotAbsentAtObservationCreateExperiment(builder.Configuration);
 builder.Services.AddHttpClient<IMesIngestCatalog, HttpMesIngestCatalog>((services, client) =>
 {
