@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS",
+  "observedAt": "2026-08-28T13:43:03.8622849+08:00",
+  "productCommit": "4153d8369262a5a574589258b6c32651bc043c79",
+  "testFirst": {
+    "preFixFocusedFailed": 1,
+    "postFixFocusedPassed": 2,
+    "journeyRuntimeClassPassed": 32,
+    "fullSuitePassed": 107,
+    "failed": 0,
+    "skipped": 0,
+    "formatVerified": true,
+    "releaseBuildWarnings": 0,
+    "releaseBuildErrors": 0
+  },
+  "safetyGates": {
+    "postCandidateProcessingReread": true,
+    "postFinalCatalogReread": true,
+    "sameSessionGenerationRequired": true,
+    "selectedSlotsStillAvailableRequired": true,
+    "onboardAndRiotFactsRevalidated": true,
+    "failClosedReason": "FINAL_DYNAMIC_FACTS_NOT_READY"
+  },
+  "package": {
+    "runtimeIdentifier": "win-x64",
+    "selfContained": true,
+    "declaredFileCount": 371,
+    "manifestSha256": "7b966c865e0c2e8d7d4305c68838daad1ba84141a3fd4c5d1df68f2ede61dcc0",
+    "hashMismatchCount": 0
+  },
+  "deployment": {
+    "result": "PASS",
+    "sourceCommitMatched": true,
+    "manifestMatched": true,
+    "serviceState": "Running",
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "journeyRuntimeEnabled": false,
+    "minimumBatteryPercentRestored": 10,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "postDeploymentPreflight": {
+    "result": "PASS",
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true,
+    "journeyRuntimeEnabled": false,
+    "staticReadyItemCount": 12,
+    "excludedMissingPickupCount": 4,
+    "stopMarkerPresent": true,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "newJourneyAuthorizationRequired": true
+}
