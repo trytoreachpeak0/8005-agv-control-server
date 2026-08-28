@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "formalG3Outcome": "INCONCLUSIVE",
+  "observedAt": "2026-08-28T14:01:33+08:00",
+  "authorization": {
+    "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+    "deployedControlServerCommit": "4153d8369262a5a574589258b6c32651bc043c79",
+    "supportsBatchUnlock": true,
+    "emptyVehicleJourney": true,
+    "correctedSafetyCredentialName": "CONTROL_SERVER_ONBOARD_CREDENTIAL",
+    "stopOnAnySafetyAmbiguity": true
+  },
+  "preflight": {
+    "result": "PASS",
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrderTask": true,
+    "batteryPercent": 49,
+    "batteryThreshold": 10,
+    "directMotionState": "STOPPED",
+    "httpsMotionState": "STOPPED",
+    "reasonCount": 0,
+    "staticRouteAndCapacityReadyItemCount": 16,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "monitor": {
+    "sha256": "7f55a1bde64cd7aeb60b2dd978cb917e885b9bf827e6754059b5d9fbc6eb55ba",
+    "result": "SAFE_ABORT",
+    "abortReason": "NO_INTAKE_BEFORE_ONBOARD_EVIDENCE_DEADLINE",
+    "samples": 23,
+    "expectedGeneration": 63,
+    "runtimeSeen": false,
+    "maximumOrderCount": 0,
+    "lastStage": null,
+    "lastMotionState": "STOPPED",
+    "credentialsIncluded": false
+  },
+  "peers": {
+    "helperSha256": "e31ee9a38408c54f4c6f5ff54615f0ab6a5a6418073efd6e0022bd3df407ca6a",
+    "configurationSha256": "e43ce30481ede92bf60e8dd5b796c2acd571d378991aeb917e81b8dfe1048fb8",
+    "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+    "simulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "sessionGeneration": 63,
+    "sessionReadiness": "Ready",
+    "sessionReasonCode": "READY",
+    "simulatorHealth": "READY"
+  },
+  "lastProtectedProbe": {
+    "observedAt": "2026-08-28T14:01:06.3518018+08:00",
+    "sessionGeneration": 63,
+    "readiness": "Ready",
+    "reasonCode": "READY",
+    "departureSafe": true,
+    "runtimePresent": false,
+    "orderCount": 0,
+    "operationCount": 0,
+    "riotVehicleFactStaleCount": 16,
+    "riotVehicleFactStaleLatestObservedAt": "2026-08-28T14:01:04.948078+08:00"
+  },
+  "sourceFinding": {
+    "reasonCode": "RIOT_VEHICLE_FACT_STALE",
+    "cause": "DiscoverAndAcceptAsync captures now before asynchronous catalog and vehicle reads, while ReadVehicleAsync stamps ObservedAt after its HTTP response; the later fresh observation is rejected by vehicle.ObservedAt > now.",
+    "initialDynamicGatePreventsEligibility": true,
+    "finalDynamicGateReached": false,
+    "httpsSafetyProjectionIsIndependent": true,
+    "confidence": "HIGH"
+  },
+  "orchestratorFinal": {
+    "result": "STOP_REQUESTED",
+    "samples": 28,
+    "terminalStage": null,
+    "failure": null,
+    "journeyRuntimeDisabled": true
+  },
+  "postStop": {
+    "effectiveStateInspection": "PASS",
+    "atomicPreflight": "PASS",
+    "baseJourneyRuntimeEnabled": false,
+    "productionJourneyRuntimeEnabled": false,
+    "minimumBatteryPercent": 10,
+    "serviceState": "Running",
+    "liveStatus": "live",
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrderTask": true,
+    "directMotionState": "STOPPED",
+    "httpsMotionState": "STOPPED",
+    "reasonCount": 0,
+    "peerProcessCount": 0,
+    "temporaryListenerCount": 0,
+    "stopMarkerPresent": true,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  }
+}
