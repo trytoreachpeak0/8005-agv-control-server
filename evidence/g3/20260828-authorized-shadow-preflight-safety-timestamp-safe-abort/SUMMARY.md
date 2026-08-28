@@ -22,4 +22,3 @@ Exact ordinal vehicle, source, and motion-state checks remain, as do the
 not-future, maximum-age, `STOPPED`, and zero-reason gates. The extracted
 production function passed 40 consecutive live read-only samples after the
 fix. Independent safety review found no remaining P0/P1 in this change.
-
