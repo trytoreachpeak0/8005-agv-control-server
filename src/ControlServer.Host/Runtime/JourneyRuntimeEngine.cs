@@ -827,13 +827,33 @@ public sealed class JourneyRuntimeEngine(
         using JsonDocument safetyDocument = JsonDocument.Parse(safetyRow.RequestJson);
         JsonElement capabilityPayload = capabilityDocument.RootElement.GetProperty("payload");
         JsonElement safetyPayload = safetyDocument.RootElement.GetProperty("payload");
+        // The two snapshots are session-scoped facts, not polled evidence: the protocol states no
+        // cadence for them and Onboard sends each once per session, so ageing them out would cap
+        // every session's admission window at MaximumEvidenceAge. What must still be bounded is
+        // session *liveness* -- a dead peer leaves a Ready row and its last snapshots behind, and
+        // CurrentReadySessionAsync has no liveness component of its own. So the age limit applies
+        // to the last thing we heard from this session generation (Heartbeat arrives periodically,
+        // and any inbound message counts, which also covers the window before the first one).
+        // Content stays current through the session: both snapshots are read for this exact
+        // SessionGeneration, a new generation supersedes them, and an unsafe SafetyStateChanged
+        // fail-closes the session out of Ready. MaximumEvidenceAge still separately governs the
+        // RIoT vehicle observation in ValidateDynamicFacts, which genuinely is polled.
+        //
+        // supportsBatchUnlock is deliberately not consulted: protocol-v0.1.1 declares it with no
+        // semantics and its own canonical example sets it false, while the real question -- can
+        // the vehicle operate this slot set -- is answered against AvailableSlots when the command
+        // is actually sent. See docs/defects/20260829-intake-gates-on-unspecified-onboard-facts.md.
         DateTimeOffset now = timeProvider.GetUtcNow();
         DateTimeOffset capabilityAt = capabilityPayload.GetProperty("observedAt").GetDateTimeOffset();
         DateTimeOffset safetyAt = safetyPayload.GetProperty("observedAt").GetDateTimeOffset();
-        if (capabilityAt > now || safetyAt > now ||
-            now - capabilityAt > runtimeOptions.MaximumEvidenceAge ||
-            now - safetyAt > runtimeOptions.MaximumEvidenceAge ||
-            !capabilityPayload.GetProperty("supportsBatchUnlock").GetBoolean())
+        if (capabilityAt > now || safetyAt > now)
+        {
+            return null;
+        }
+        DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
+            runtimeOptions.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        if (lastInboundAt is null || lastInboundAt > now ||
+            now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
         {
             return null;
         }
@@ -886,6 +906,36 @@ public sealed class JourneyRuntimeEngine(
             return RequiredString(root, "agvId") == agvId &&
                    root.GetProperty("sessionGeneration").GetInt64() == generation;
         });
+    }
+
+    /// <summary>
+    /// Server-observed liveness of one session generation: when any inbound message from it was
+    /// last received. Uses the receive time rather than a payload timestamp so a stopped or
+    /// misconfigured peer clock cannot make a dead session look alive.
+    /// </summary>
+    private async Task<DateTimeOffset?> LatestInboundAtForSessionAsync(
+        string agvId,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        DateTimeOffset? latest = null;
+        foreach (ProtocolInboxRow row in rows)
+        {
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+            JsonElement root = document.RootElement;
+            if (RequiredString(root, "agvId") != agvId ||
+                root.GetProperty("sessionGeneration").GetInt64() != generation)
+            {
+                continue;
+            }
+            if (latest is null || row.ReceivedAt > latest.Value)
+            {
+                latest = row.ReceivedAt;
+            }
+        }
+        return latest;
     }
 
     private Task<SessionRecoveryRow?> CurrentReadySessionAsync(string agvId, CancellationToken cancellationToken) =>

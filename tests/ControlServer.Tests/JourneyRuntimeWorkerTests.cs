@@ -307,6 +307,51 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task SnapshotsFromEarlierInALiveSessionStillAdmit()
+    {
+        // Onboard sends CapabilitySnapshot and SafetyStateSnapshot once per session and the
+        // protocol mandates no cadence, so their payload age is not evidence of anything. As long
+        // as the session is still being heard from, admission must proceed.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.MaximumEvidenceAge = TimeSpan.FromSeconds(30);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AgeOnboardSnapshotPayloadsAsync();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("ACCEPTED", (await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task SupportsBatchUnlockFalseDoesNotBlockAdmission()
+    {
+        // protocol-v0.1.1 declares supportsBatchUnlock with no semantics and its own canonical
+        // example sets it false. Whether the vehicle can operate a given slot set is decided
+        // against AvailableSlots when the command is sent, not by this flag.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.ClearSupportsBatchUnlockAsync();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("ACCEPTED", (await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task CandidateProcessingThatExpiresDynamicFactsDoesNotAcceptOrDispatch()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -554,7 +599,7 @@ public sealed class JourneyRuntimeWorkerTests
     [InlineData("riot-order-occupied", "RIOT_VEHICLE_ORDER_OCCUPIED")]
     [InlineData("box-count-missing", "SUBLOT_BOX_COUNT_UNAVAILABLE")]
     [InlineData("package-capacity-missing", "PACKAGE_CAPACITY_NOT_UNIQUE")]
-    [InlineData("onboard-stale", "ONBOARD_FACTS_NOT_READY")]
+    [InlineData("onboard-silent", "ONBOARD_FACTS_NOT_READY")]
     [InlineData("onboard-unsafe", "ONBOARD_DEPARTURE_UNSAFE")]
     [InlineData("slot-capacity", "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE")]
     [Trait("IntegrationSlice", "W2G-IS-01")]
@@ -597,8 +642,8 @@ public sealed class JourneyRuntimeWorkerTests
                 break;
             case "package-capacity-missing":
                 break;
-            case "onboard-stale":
-                await fixture.StaleOnboardFactsAsync();
+            case "onboard-silent":
+                await fixture.SilenceOnboardSessionAsync();
                 break;
             case "onboard-unsafe":
                 await fixture.SetOnboardUnknownAsync();
@@ -925,7 +970,26 @@ public sealed class JourneyRuntimeWorkerTests
             return await RuntimeAsync();
         }
 
-        public async Task StaleOnboardFactsAsync()
+        /// <summary>
+        /// Simulates a peer that has gone quiet: the session row still says Ready and its
+        /// snapshots are still on file, but nothing has been received from it for an hour.
+        /// </summary>
+        public async Task SilenceOnboardSessionAsync()
+        {
+            ProtocolInboxRow[] rows = await Context.ProtocolInbox
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            foreach (ProtocolInboxRow row in rows)
+            {
+                row.ReceivedAt = Clock.GetUtcNow().AddHours(-1);
+            }
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// Backdates only the snapshot payload timestamps, leaving the session live. Onboard sends
+        /// each snapshot once per session, so this is the normal steady state, not a hazard.
+        /// </summary>
+        public async Task AgeOnboardSnapshotPayloadsAsync()
         {
             ProtocolInboxRow[] rows = await Context.ProtocolInbox
                 .Where(row => row.MessageType == "CapabilitySnapshot" || row.MessageType == "SafetyStateSnapshot")
@@ -934,6 +998,24 @@ public sealed class JourneyRuntimeWorkerTests
             {
                 JsonObject root = JsonNode.Parse(row.RequestJson)!.AsObject();
                 root["payload"]!["observedAt"] = Clock.GetUtcNow().AddHours(-1);
+                row.RequestJson = root.ToJsonString(SerializerOptions);
+            }
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// Sets the undefined <c>supportsBatchUnlock</c> capability flag to false, which is the
+        /// value Onboard ships and the value the protocol's own canonical example carries.
+        /// </summary>
+        public async Task ClearSupportsBatchUnlockAsync()
+        {
+            ProtocolInboxRow[] rows = await Context.ProtocolInbox
+                .Where(row => row.MessageType == "CapabilitySnapshot")
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            foreach (ProtocolInboxRow row in rows)
+            {
+                JsonObject root = JsonNode.Parse(row.RequestJson)!.AsObject();
+                root["payload"]!["supportsBatchUnlock"] = false;
                 row.RequestJson = root.ToJsonString(SerializerOptions);
             }
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
