@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "formalG3Result": "INCONCLUSIVE",
+  "observedAt": "2026-08-28T13:25:40.6278833+08:00",
+  "controlServerProductCommit": "6a5de0149288e3fdcedb6f9ea694259f71f9bee2",
+  "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+  "authorization": {
+    "supportsBatchUnlock": true,
+    "journeyRuntime": true,
+    "riotOrderCreation": true,
+    "emptyVehicleJourneyCount": 1,
+    "stopOnAmbiguity": true
+  },
+  "preflight": {
+    "result": "PASS",
+    "staticReadyItemCount": 8,
+    "excludedMissingPickupCount": 3
+  },
+  "attempt": {
+    "effectiveRuntimeEnabled": true,
+    "runtimeConfigurationBatchUnlock": true,
+    "sessionGeneration": 59,
+    "sessionReadiness": "Ready",
+    "sessionReasonCode": "READY",
+    "departureSafe": true,
+    "journeyRuntimeRowCreated": false,
+    "orderCount": 0,
+    "operationCount": 0,
+    "onboardFactsNotReadyCount": 9,
+    "runtimeEnabledAt": "2026-08-28T13:22:29.9150505+08:00",
+    "sessionReadyAt": "2026-08-28T13:23:06+08:00",
+    "onboardFactsNotReadyObservedAt": "2026-08-28T13:23:51+08:00",
+    "maximumEvidenceAgeSeconds": 30,
+    "orchestratorProbeSamples": 35,
+    "orchestratorOutcome": "STOP_REQUESTED"
+  },
+  "safetyFinding": {
+    "owner": "CONTROLSERVER",
+    "longDiscoveryIterationObserved": true,
+    "dynamicFactsReadBeforeCatalogLoop": true,
+    "finalDynamicFactsRereadBeforeMutation": false,
+    "reverseStartupOrderSafeWithoutFix": false,
+    "productFixRequired": true
+  },
+  "finalState": {
+    "result": "PASS",
+    "journeyRuntimeEnabled": false,
+    "peerProcessCount": 0,
+    "temporaryPortsFree": true,
+    "stopMarkerPresent": true,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "productFixAuthorizationRequired": true,
+  "newJourneyAuthorizationRequired": true
+}
