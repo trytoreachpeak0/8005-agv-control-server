@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS",
+  "classification": "LOCAL_CONTROLSERVER_RIOT_CREATE_AUDIT_DEPLOYMENT",
+  "observedAt": "2026-08-28T17:03:45+08:00",
+  "product": {
+    "branch": "ControlServer_MVP",
+    "commit": "f07fe36ee9e8ba953a0e289d5641bf91caf513a3",
+    "parentCommit": "beb696587b58c37b962b50e002fa0651cbfe04d5",
+    "change": "Durable append-only audit around every potential RIoT create call"
+  },
+  "tests": {
+    "framework": "xUnit v3 on VSTest",
+    "sdk": "8.0.424",
+    "passed": 156,
+    "failed": 0,
+    "skipped": 0,
+    "format": "PASS",
+    "releaseBuild": {
+      "result": "PASS",
+      "warnings": 0,
+      "errors": 0
+    },
+    "behaviorChangingMutationsKilled": 18,
+    "equivalentMutations": 1
+  },
+  "migration": {
+    "id": "20260828082910_DurableRiotCreateAttemptAudit",
+    "freshDatabaseMigrationCount": 10,
+    "pendingModelChanges": false,
+    "legacyAuditFieldsNullable": true,
+    "perLegSequenceIndexUnique": true
+  },
+  "package": {
+    "runtimeIdentifier": "win-x64",
+    "selfContained": true,
+    "sourceCommit": "f07fe36ee9e8ba953a0e289d5641bf91caf513a3",
+    "manifestSha256": "18f366b037c92964ef89b3e8d4b2e6d9d6afdbc6f27e98f99c4b75bcb31b0ff0",
+    "declaredPayloadFileCount": 382,
+    "missingFileCount": 0,
+    "hashMismatchCount": 0,
+    "undeclaredPayloadCount": 0
+  },
+  "deployment": {
+    "result": "PASS",
+    "runId": "20260828T085940Z",
+    "sourceCommit": "f07fe36ee9e8ba953a0e289d5641bf91caf513a3",
+    "packageManifestSha256": "18f366b037c92964ef89b3e8d4b2e6d9d6afdbc6f27e98f99c4b75bcb31b0ff0",
+    "serviceStatus": "Running",
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "safetyHttpStatus": 200,
+    "safetyMotionState": "STOPPED",
+    "safetyReasonCount": 0,
+    "diagnosticOrderValid": true,
+    "rollbackObserved": false
+  },
+  "installedPayload": {
+    "manifestMatched": true,
+    "exactPayloadFileCount": 381,
+    "approvedThresholdOnlyDeviation": true,
+    "installedFileSetExact": true
+  },
+  "finalState": {
+    "baseJourneyRuntimeEnabled": false,
+    "productionJourneyRuntimeEnabled": false,
+    "minimumBatteryPercent": 10,
+    "serviceState": "Running",
+    "serviceStartMode": "Automatic",
+    "serviceAccount": "LocalSystem",
+    "requiredPortsLoopbackOnly": true,
+    "requiredPortsOwnedByService": true,
+    "liveStatus": "live",
+    "allVersionFieldsMatch": true,
+    "stopMarkerPresent": true,
+    "journeyOrchestratorRunning": false,
+    "onboardProcessCount": 0,
+    "simulatorProcessCount": 0,
+    "temporaryPeerListenerCount": 0,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "realJourneyAuthorized": false,
+  "credentialsIncluded": false
+}
