@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS",
+  "classification": "LOCAL_CONTROLSERVER_ABSENT_OBSERVATION_EXPERIMENT_DEPLOYMENT",
+  "observedAt": "2026-08-28T19:08:37+08:00",
+  "authorization": {
+    "repository": "8005-agv-control-server",
+    "branch": "ControlServer_MVP",
+    "implementationTestPushPackageAndLocalDeploy": true,
+    "journeyRuntimeMustRemainDisabled": true,
+    "realRiotMutationAuthorized": false,
+    "orderCreationAuthorized": false,
+    "vehicleMovementAuthorized": false,
+    "protectedRepositoryWritesAuthorized": false
+  },
+  "product": {
+    "commit": "9056d3d4c5b96281069023fefb531aae13f5e7a9",
+    "remoteBranches": [
+      "ControlServer_MVP",
+      "codex/riot-sdk-integration"
+    ],
+    "change": "Default-off audited one-shot experimental Create gate for exact SDK AbsentAtObservation evidence",
+    "experimentalCreateEnabledByDefault": false
+  },
+  "protocol": {
+    "releaseVersion": "0.1.1",
+    "tag": "protocol-v0.1.1",
+    "commit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "manifestSha256": "a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f",
+    "schemaBundleSha256": "e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c",
+    "vectorsSha256": "fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e"
+  },
+  "tests": {
+    "framework": "xUnit v3 on VSTest",
+    "sdk": "8.0.424",
+    "focusedRelated": {
+      "passed": 160,
+      "failed": 0,
+      "skipped": 0
+    },
+    "completeRelease": {
+      "passed": 218,
+      "failed": 0,
+      "skipped": 0
+    },
+    "lockedRestore": "PASS",
+    "format": "PASS",
+    "releaseBuild": {
+      "result": "PASS",
+      "warnings": 0,
+      "errors": 0
+    },
+    "behaviorChangingMutationsKilled": 15,
+    "behaviorChangingMutationsSurvived": 0,
+    "realRiotContacted": false
+  },
+  "migration": {
+    "id": "20260828103631_ExperimentalAbsentObservationCreateAuthorization",
+    "freshDatabaseMigrationCount": 11,
+    "pendingModelChanges": false,
+    "permitUniquenessConstraintsPresent": true,
+    "legacyAuditFieldsNullable": true
+  },
+  "g2": {
+    "result": "PASS",
+    "passedSlices": 8,
+    "totalSlices": 8,
+    "passedTests": 116,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "implementationCommit": "9056d3d4c5b96281069023fefb531aae13f5e7a9",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "sliceTestCounts": {
+      "W2G-IS-00": 5,
+      "W2G-IS-01": 45,
+      "W2G-IS-02": 12,
+      "W2G-IS-03": 19,
+      "W2G-IS-04": 5,
+      "W2G-IS-05": 7,
+      "W2G-IS-06": 17,
+      "W2G-IS-07": 6
+    }
+  },
+  "package": {
+    "runtimeIdentifier": "win-x64",
+    "selfContained": true,
+    "sourceCommit": "9056d3d4c5b96281069023fefb531aae13f5e7a9",
+    "manifestSha256": "b872d08bfd7c26c6e7c387994084582765df10b77087c9018f65d08949b91988",
+    "declaredPayloadFileCount": 382,
+    "actualPayloadFileCount": 382,
+    "missingFileCount": 0,
+    "hashMismatchCount": 0,
+    "undeclaredPayloadCount": 0
+  },
+  "deployment": {
+    "result": "PASS",
+    "runId": "20260828T110202Z",
+    "sourceCommit": "9056d3d4c5b96281069023fefb531aae13f5e7a9",
+    "packageManifestSha256": "b872d08bfd7c26c6e7c387994084582765df10b77087c9018f65d08949b91988",
+    "serviceStatus": "Running",
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "safetyHttpStatus": 200,
+    "safetyMotionState": "STOPPED",
+    "safetyReasonCount": 0,
+    "diagnosticOrderValid": true,
+    "rollbackObserved": false,
+    "journeyRuntimeEnabled": false,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "installedPayload": {
+    "manifestMatched": true,
+    "declaredPayloadFileCount": 382,
+    "exactPayloadFileCount": 381,
+    "approvedThresholdOnlyDeviation": true,
+    "installedFileSetExact": true,
+    "unexpectedFileCount": 0,
+    "missingFileCount": 0,
+    "hashMismatchCount": 0
+  },
+  "finalState": {
+    "baseJourneyRuntimeEnabled": false,
+    "productionJourneyRuntimeEnabled": false,
+    "experimentalCreateEnabled": false,
+    "minimumBatteryPercent": 10,
+    "serviceState": "Running",
+    "serviceStartMode": "Automatic",
+    "serviceAccount": "LocalSystem",
+    "requiredPortsLoopbackOnly": true,
+    "requiredPortsOwnedOnlyByService": true,
+    "liveStatus": "live",
+    "allVersionFieldsMatch": true,
+    "stopMarkerPresent": true,
+    "journeyOrchestratorRunning": false,
+    "onboardProcessCount": 0,
+    "simulatorProcessCount": 0,
+    "temporaryPeerListenerCount": 0,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  },
+  "gateDisposition": {
+    "g3": "INCONCLUSIVE",
+    "rc": "INCONCLUSIVE",
+    "reason": "No authorized live cross-repository journey, real RIoT mutation, order creation, or vehicle movement was performed."
+  },
+  "realJourneyAuthorized": false,
+  "protectedRepositoriesModified": false,
+  "credentialsIncluded": false,
+  "rawConfigurationIncluded": false,
+  "vehicleIdentityIncluded": false,
+  "backupLocationIncluded": false
+}
