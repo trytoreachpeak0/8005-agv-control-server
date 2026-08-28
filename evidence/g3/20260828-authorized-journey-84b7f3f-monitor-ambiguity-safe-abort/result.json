@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "result": "SAFE_ABORT",
+  "formalG3Result": "INCONCLUSIVE",
+  "observedAt": "2026-08-28T12:57:40.3971608+08:00",
+  "controlServerProductCommit": "6a5de0149288e3fdcedb6f9ea694259f71f9bee2",
+  "onboardCommit": "84b7f3f66ff2f867b18121760f38e26e0bbd6fa5",
+  "authorization": {
+    "journeyRuntime": true,
+    "riotOrderCreation": true,
+    "emptyVehicleJourneyCount": 1,
+    "stopOnAmbiguity": true
+  },
+  "preflight": {
+    "result": "PASS",
+    "thresholdPercent": 10,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true,
+    "staticReadyItemCount": 5,
+    "excludedMissingPickupCount": 1
+  },
+  "attempt": {
+    "effectiveRuntimeEnabled": true,
+    "newSessionGeneration": 53,
+    "sessionReachedReady": true,
+    "peerStarterExitCode": 0,
+    "peerStarterConsoleProjectionUsable": false,
+    "peerStarterProjectionCorrectedAfterAbort": true,
+    "abortReason": "PEER_STARTER_RESULT_PROJECTION_AMBIGUOUS",
+    "orchestratorProbeSamples": 22,
+    "orchestratorOutcome": "STOP_REQUESTED"
+  },
+  "finalState": {
+    "result": "PASS",
+    "journeyRuntimeEnabled": false,
+    "serviceRunning": true,
+    "peerProcessCount": 0,
+    "temporaryPortsFree": true,
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "safetyState": "STOPPED",
+    "safetyReasonCount": 0,
+    "safetySourcesMatch": true,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false,
+    "stopMarkerPresent": true
+  },
+  "newJourneyAuthorizationRequired": true
+}
