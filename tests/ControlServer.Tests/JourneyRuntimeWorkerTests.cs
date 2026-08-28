@@ -330,6 +330,24 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task InboundEnvelopesWithoutASessionGenerationDoNotBreakLiveness()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AddInboxRowWithoutSessionGenerationAsync();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("ACCEPTED", (await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken)).ReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task SupportsBatchUnlockFalseDoesNotBlockAdmission()
     {
         // protocol-v0.1.1 declares supportsBatchUnlock with no semantics and its own canonical
@@ -968,6 +986,34 @@ public sealed class JourneyRuntimeWorkerTests
             await ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             return await RuntimeAsync();
+        }
+
+        /// <summary>
+        /// Stores an inbound envelope whose <c>sessionGeneration</c> is null, which is what the
+        /// inbox holds before a generation is assigned. Liveness scans every message type, so it
+        /// must skip these rather than fail on the missing number.
+        /// </summary>
+        public async Task AddInboxRowWithoutSessionGenerationAsync()
+        {
+            string messageId = Guid.NewGuid().ToString("D");
+            Context.ProtocolInbox.Add(new ProtocolInboxRow
+            {
+                MessageId = messageId,
+                MessageType = "SessionHello",
+                RequestJson = JsonSerializer.Serialize(new
+                {
+                    messageType = "SessionHello",
+                    messageId,
+                    agvId = Options.AgvId,
+                    sessionGeneration = (long?)null,
+                    sentAt = Now,
+                    payload = new { }
+                }, SerializerOptions),
+                ContentHash = new string('b', 64),
+                FirstResponseJson = "{}",
+                ReceivedAt = Clock.GetUtcNow()
+            });
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         /// <summary>

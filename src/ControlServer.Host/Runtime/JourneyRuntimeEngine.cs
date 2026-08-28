@@ -925,8 +925,15 @@ public sealed class JourneyRuntimeEngine(
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            if (RequiredString(root, "agvId") != agvId ||
-                root.GetProperty("sessionGeneration").GetInt64() != generation)
+            // This scans every inbound message, so unlike the per-type readers it meets envelopes
+            // that carry no generation yet (or none at all). Those prove nothing about this
+            // session's liveness and are skipped rather than throwing.
+            if (!root.TryGetProperty("agvId", out JsonElement agv) ||
+                agv.ValueKind != JsonValueKind.String ||
+                agv.GetString() != agvId ||
+                !root.TryGetProperty("sessionGeneration", out JsonElement sessionGeneration) ||
+                sessionGeneration.ValueKind != JsonValueKind.Number ||
+                sessionGeneration.GetInt64() != generation)
             {
                 continue;
             }
