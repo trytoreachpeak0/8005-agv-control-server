@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS",
+  "classification": "LOCAL_CONTROLSERVER_UPGRADE",
+  "observedAt": "2026-08-28T10:55:13+08:00",
+  "product": {
+    "sourceCommit": "4347a8fb9fcb80cb9f95680a6fd8b1a0b970358b",
+    "parentCommit": "5ebd4a01d21624a92d0bc58fb5828a2ee2f4ba3e",
+    "packageManifestSha256": "29abd09e017636ae4eb7d09534400ca137fcaea01ec87b7710efddef78a3ca24",
+    "runtimeIdentifier": "win-x64",
+    "selfContained": true,
+    "declaredFileCount": 371,
+    "preDeployFileHashMismatchCount": 0
+  },
+  "protocol": {
+    "tag": "protocol-v0.1.1",
+    "commit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "profileId": "WIRE_TO_GATE_MVP"
+  },
+  "service": {
+    "state": "Running",
+    "startMode": "Automatic",
+    "account": "LocalSystem",
+    "transportPortListening": true,
+    "httpsPortListening": true
+  },
+  "safety": {
+    "vehicleIdle": true,
+    "speedZero": true,
+    "noOrder": true,
+    "batteryPercent": 30,
+    "directMotion": "STOPPED",
+    "httpsMotion": "STOPPED",
+    "projectionMatches": true,
+    "reasonCodeCount": 0
+  },
+  "effects": {
+    "journeyRuntimeEnabled": false,
+    "onboardStarted": false,
+    "simulatorStarted": false,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false
+  }
+}
