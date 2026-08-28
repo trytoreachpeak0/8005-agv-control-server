@@ -143,6 +143,9 @@ public sealed class MovementDispatchService
     private static readonly TimeSpan EvidenceWriteTimeout = TimeSpan.FromSeconds(5);
     private const string ExperimentalAbsentEligibilityBasis = "EXPERIMENTAL_ABSENT_AT_OBSERVATION";
     private const string IdempotentAbsentEligibilityBasis = "ABSENT_AT_OBSERVATION_IDEMPOTENT_CREATE";
+
+    /// <summary>RIoT orderState for SUCCESS: 1 QUEUEING -> 3 EXECUTING -> 5 SUCCESS.</summary>
+    private const int SuccessfulOrderState = 5;
     private readonly IMovementIntentStore store;
     private readonly IRiotMovementGateway gateway;
     private readonly TimeProvider timeProvider;
@@ -251,6 +254,23 @@ public sealed class MovementDispatchService
                     intent.ExperimentalAuthorizationId,
                     intent.EligibilityBasis)
                 .ConfigureAwait(false),
+            // orderState 5 is SUCCESS, not an outcome that needs a human. It shares the Terminal
+            // kind with CANCELLED, FAILED and DELETED, which do, so it is split out here: a
+            // movement that RIoT reports as completed for this exact frozen intent confirms the
+            // leg. Physical arrival is still proven separately by IsTrustedArrivalAsync, which
+            // requires the vehicle to be stopped at the target station with no active order.
+            // Without this, a leg whose order completes before the first post-create
+            // reconciliation -- a vehicle already standing at its target, say -- would dead-end
+            // in TERMINAL_RECONCILIATION_REQUIRED despite having succeeded.
+            RiotOrderObservationKind.Terminal when observed.OrderState == SuccessfulOrderState =>
+                await ConfirmAsync(
+                    intent.Intent,
+                    observed,
+                    reconciliationPhase,
+                    intent.CreateAttemptId,
+                    cancellationToken,
+                    intent.ExperimentalAuthorizationId,
+                    intent.EligibilityBasis).ConfigureAwait(false),
             RiotOrderObservationKind.Terminal => await MarkTerminalAsync(
                 intent.Intent,
                 observed,

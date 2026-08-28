@@ -468,6 +468,38 @@ public sealed class ExperimentalRiotCreateGateTests
     }
 
     [Fact]
+    public async Task ASucceededOrderConfirmsTheLegInsteadOfRequiringReconciliation()
+    {
+        // orderState 5 is SUCCESS. It shares the Terminal kind with CANCELLED and FAILED, which
+        // do need a human, so a completed movement must not be filed alongside them -- otherwise
+        // a leg whose order finishes before the first post-create reconciliation dead-ends.
+        await using SharedDatabase database = await SharedDatabase.CreateAsync();
+        await using ControlServerDbContext context = database.CreateContext();
+        WireToGateStore store = new(context);
+        OrderIntent intent = await AcceptIntentAsync(store);
+        RiotOrderObservation succeeded = Observation(
+            intent,
+            RiotOrderObservationKind.Terminal,
+            "ORDER-DONE",
+            Receipt("RECONCILE", "Found", resultPresent: true)) with
+        { OrderState = 5 };
+        DelegateGateway gateway = GatewayFor(_ => succeeded, _ => CreateUnknown(intent));
+
+        MovementDispatchResult result = await new MovementDispatchService(
+                store,
+                gateway,
+                new FixedTimeProvider(Now))
+            .ReconcileOrCreateAsync(intent.UpperId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(MovementDispatchOutcome.Confirmed, result.Outcome);
+        Assert.Equal("ORDER-DONE", result.OrderId);
+        Assert.Equal(0, gateway.CreateCount);
+        OrderIntentRow row = await SnapshotAsync(context);
+        Assert.Equal("CONFIRMED", row.Status);
+        Assert.Equal("ORDER-DONE", row.OrderId);
+    }
+
+    [Fact]
     public async Task ClosedCreateDispatchGateRefusesAnExactAbsentCreateAndWritesNothing()
     {
         await using SharedDatabase database = await SharedDatabase.CreateAsync();
@@ -687,7 +719,8 @@ public sealed class ExperimentalRiotCreateGateTests
             intent.UpperId,
             kind,
             orderId,
-            kind == RiotOrderObservationKind.Terminal ? 5 : 3,
+            // 2 CANCELLED, not 5 SUCCESS: a terminal state that genuinely needs reconciliation.
+            kind == RiotOrderObservationKind.Terminal ? 2 : 3,
             intent.VehicleKey,
             intent.MapId,
             intent.DestinationStationId,

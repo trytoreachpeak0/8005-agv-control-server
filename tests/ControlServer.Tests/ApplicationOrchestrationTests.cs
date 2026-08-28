@@ -228,7 +228,7 @@ public sealed class ApplicationOrchestrationTests
             terminalIntent,
             TestContext.Current.CancellationToken);
         StaticRiotGateway exactTerminal = new(new RiotOrderObservation(
-            terminalIntent.UpperId, RiotOrderObservationKind.Terminal, "ORDER-T", 5,
+            terminalIntent.UpperId, RiotOrderObservationKind.Terminal, "ORDER-T", 2,
             terminalIntent.VehicleKey, terminalIntent.MapId, terminalIntent.DestinationStationId));
 
         MovementDispatchResult terminal = await new MovementDispatchService(store, exactTerminal)

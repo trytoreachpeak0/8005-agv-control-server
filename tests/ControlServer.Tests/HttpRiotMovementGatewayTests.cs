@@ -42,6 +42,50 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Theory]
+    [InlineData("--")]
+    [InlineData(" -- ")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task QueueingOrderWithoutABoundVehicleIsIdentifiedByItsAppointedKey(string? executeVehicle)
+    {
+        // BC-ORDER-012 / BC-ORDER-013: a QUEUEING order reports "--" in executeVehicleKey until
+        // RIoT binds a vehicle. Reading that placeholder as a real key made the observation fail
+        // its frozen-intent match right after a successful create.
+        RecordingHandler handler = new((_, _) => JsonResponse(FoundOrderJson(
+            orderState: 1,
+            appointedVehicle: "VEHICLE-KEY-01",
+            executeVehicle: executeVehicle)));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Active, result.Kind);
+        Assert.Equal("VEHICLE-KEY-01", result.VehicleKey);
+        Assert.Equal("ORDER-001", result.OrderId);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task OnceRiotBindsAVehicleTheExecutingKeyWinsOverTheAppointedOne()
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(FoundOrderJson(
+            orderState: 3,
+            appointedVehicle: "APPOINTED-VEHICLE-KEY",
+            executeVehicle: "EXECUTING-VEHICLE-KEY")));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal("EXECUTING-VEHICLE-KEY", result.VehicleKey);
+    }
+
+    [Theory]
     [InlineData("{\"code\":\"0\",\"message\":\"成功\"}")]
     [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":null}")]
     [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":[]}")]

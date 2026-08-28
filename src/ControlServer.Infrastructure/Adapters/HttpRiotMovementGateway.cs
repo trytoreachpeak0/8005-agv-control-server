@@ -20,6 +20,9 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     IRiotVehicleSafetyFacts
 {
     private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
+
+    /// <summary>Placeholder RIoT reports in executeVehicleKey before a vehicle is bound.</summary>
+    private const string UnassignedVehicleKeyPlaceholder = "--";
     private readonly RiotSession riotSession;
     private readonly TimeProvider timeProvider;
 
@@ -290,9 +293,9 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         RiotOrderCallReceipt receipt)
     {
         RiotOrderObservationKind kind = ToObservationKind(order.OrderState);
-        string? vehicleKey = string.IsNullOrWhiteSpace(order.ExecuteVehicleKey)
-            ? order.AppointVehicleKey
-            : order.ExecuteVehicleKey;
+        string? vehicleKey = IsAssignedVehicleKey(order.ExecuteVehicleKey)
+            ? order.ExecuteVehicleKey
+            : order.AppointVehicleKey;
         OrderMissionSnapshot[] movements = order.Missions
             .Where(mission => string.Equals(mission.Type, "move", StringComparison.Ordinal))
             .ToArray();
@@ -330,6 +333,19 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             destination,
             receipt);
     }
+
+    /// <summary>
+    /// Whether RIoT has actually bound a vehicle to the order. BC-ORDER-012 and BC-ORDER-013
+    /// record that a QUEUEING order carries the literal "--" placeholder in executeVehicleKey
+    /// until dispatch binds one, so until then the appointed key is what identifies the order --
+    /// exactly the "appointVehicleKey == ours || executeVehicleKey == ours" rule BC-ORDER-013
+    /// prescribes. Reading the placeholder as a vehicle key made every freshly created order
+    /// fail its frozen-intent match, which marked the intent RESULT_UNKNOWN seconds after a
+    /// successful create and left the journey unable to ever confirm its own movement.
+    /// </summary>
+    private static bool IsAssignedVehicleKey(string? executeVehicleKey) =>
+        !string.IsNullOrWhiteSpace(executeVehicleKey) &&
+        !string.Equals(executeVehicleKey.Trim(), UnassignedVehicleKeyPlaceholder, StringComparison.Ordinal);
 
     private static RiotOrderObservationKind ToObservationKind(int orderState) => orderState switch
     {
