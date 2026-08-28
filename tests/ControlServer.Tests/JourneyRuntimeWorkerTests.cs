@@ -269,6 +269,62 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task CandidateProcessingThatExpiresDynamicFactsDoesNotAcceptOrDispatch()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.MaximumEvidenceAge = TimeSpan.FromSeconds(30);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.BoxCounts.BeforeRead = () => fixture.Clock.Advance(TimeSpan.FromSeconds(31));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("FINAL_DYNAMIC_FACTS_NOT_READY", backlog.ReasonCode);
+        Assert.Null(backlog.AcceptedAt);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task FinalCatalogRefreshThatExpiresDynamicFactsDoesNotAcceptOrDispatch()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.MaximumEvidenceAge = TimeSpan.FromSeconds(30);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.Catalog.BeforeRead = readCount =>
+        {
+            if (readCount == 2)
+            {
+                fixture.Clock.Advance(TimeSpan.FromSeconds(31));
+            }
+        };
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("FINAL_DYNAMIC_FACTS_NOT_READY", backlog.ReasonCode);
+        Assert.Null(backlog.AcceptedAt);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task UnknownOrStaleDynamicFactsFailClosedWithoutAcceptingOrDispatching()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1134,12 +1190,16 @@ public sealed class JourneyRuntimeWorkerTests
     private sealed class RecordingCatalog : IMesIngestCatalog
     {
         private AcceptedDemandSnapshot[] _items = [];
+        private int _readCount;
+
+        public Action<int>? BeforeRead { get; set; }
 
         public void Set(params AcceptedDemandSnapshot[] items) => _items = items;
 
         public Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            BeforeRead?.Invoke(++_readCount);
             string epoch = _items.FirstOrDefault()?.HistoryEpoch ?? "11111111-1111-4111-8111-111111111111";
             return Task.FromResult(new DemandCatalogSnapshot(epoch, 21, _items));
         }
@@ -1155,12 +1215,15 @@ public sealed class JourneyRuntimeWorkerTests
     {
         private readonly Dictionary<string, int> _counts = new(StringComparer.Ordinal);
 
+        public Action? BeforeRead { get; set; }
+
         public void Set(string sublot, int count) => _counts[sublot] = count;
         public void Remove(string sublot) => _counts.Remove(sublot);
 
         public Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            BeforeRead?.Invoke();
             return Task.FromResult(_counts.TryGetValue(sublot, out int count) ? (int?)count : null);
         }
     }
@@ -1289,6 +1352,10 @@ public sealed class JourneyRuntimeWorkerTests
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => utcNow;
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan elapsed) => _utcNow += elapsed;
     }
 }

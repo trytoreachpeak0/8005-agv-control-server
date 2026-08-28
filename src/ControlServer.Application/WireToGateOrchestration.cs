@@ -6,7 +6,8 @@ public enum DemandIntakeOutcome
 {
     Accepted,
     CandidateGone,
-    CandidateChanged
+    CandidateChanged,
+    FinalAdmissionRejected
 }
 
 public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAcceptanceStore store)
@@ -16,7 +17,12 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         OrderIntent orderIntent,
         CancellationToken cancellationToken)
     {
-        return await AcceptCoreAsync(discovered, orderIntent, journey: null, cancellationToken)
+        return await AcceptCoreAsync(
+                discovered,
+                orderIntent,
+                journey: null,
+                finalAdmissionGate: null,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -25,12 +31,21 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         OrderIntent orderIntent,
         JourneyExecutionPlan journey,
         CancellationToken cancellationToken) =>
-        AcceptCoreAsync(discovered, orderIntent, journey, cancellationToken);
+        AcceptCoreAsync(discovered, orderIntent, journey, finalAdmissionGate: null, cancellationToken);
+
+    public Task<DemandIntakeOutcome> AcceptJourneyAsync(
+        AcceptedDemandSnapshot discovered,
+        OrderIntent orderIntent,
+        JourneyExecutionPlan journey,
+        Func<CancellationToken, Task<bool>> finalAdmissionGate,
+        CancellationToken cancellationToken) =>
+        AcceptCoreAsync(discovered, orderIntent, journey, finalAdmissionGate, cancellationToken);
 
     private async Task<DemandIntakeOutcome> AcceptCoreAsync(
         AcceptedDemandSnapshot discovered,
         OrderIntent orderIntent,
         JourneyExecutionPlan? journey,
+        Func<CancellationToken, Task<bool>>? finalAdmissionGate,
         CancellationToken cancellationToken)
     {
         DemandCatalogSnapshot finalCatalog = await catalog.ReadCatalogAsync(cancellationToken).ConfigureAwait(false);
@@ -46,6 +61,11 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         if (!sameDecisionFacts)
         {
             return DemandIntakeOutcome.CandidateChanged;
+        }
+        if (finalAdmissionGate is not null &&
+            !await finalAdmissionGate(cancellationToken).ConfigureAwait(false))
+        {
+            return DemandIntakeOutcome.FinalAdmissionRejected;
         }
 
         AcceptedDemandSnapshot accepted = current with
@@ -252,6 +272,30 @@ public sealed class JourneyIntakeCoordinator(
             prevalidatedCandidate,
             pickupIntent,
             journey,
+            cancellationToken).ConfigureAwait(false);
+        if (intakeOutcome != DemandIntakeOutcome.Accepted)
+        {
+            return new JourneyIntakeResult(intakeOutcome, null);
+        }
+
+        MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
+            pickupIntent.UpperId,
+            cancellationToken).ConfigureAwait(false);
+        return new JourneyIntakeResult(intakeOutcome, dispatch);
+    }
+
+    public async Task<JourneyIntakeResult> AcceptAndDispatchToPickupAsync(
+        AcceptedDemandSnapshot prevalidatedCandidate,
+        OrderIntent pickupIntent,
+        JourneyExecutionPlan journey,
+        Func<CancellationToken, Task<bool>> finalAdmissionGate,
+        CancellationToken cancellationToken)
+    {
+        DemandIntakeOutcome intakeOutcome = await intake.AcceptJourneyAsync(
+            prevalidatedCandidate,
+            pickupIntent,
+            journey,
+            finalAdmissionGate,
             cancellationToken).ConfigureAwait(false);
         if (intakeOutcome != DemandIntakeOutcome.Accepted)
         {

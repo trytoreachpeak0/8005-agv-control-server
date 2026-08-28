@@ -276,14 +276,30 @@ public sealed class JourneyRuntimeEngine(
             .ThenBy(item => item.Snapshot.CreatedAt)
             .ThenBy(item => item.Snapshot.DemandId, StringComparer.Ordinal)
             .First();
-        JourneyExecutionPlan plan = CreatePlan(selected, now);
+        long expectedSessionGeneration = onboard?.SessionGeneration
+            ?? throw new InvalidOperationException("An eligible candidate requires current Onboard facts.");
+        if (!await FinalDynamicFactsReadyAsync(
+                expectedSessionGeneration,
+                selected.TargetSlots,
+                cancellationToken).ConfigureAwait(false))
+        {
+            await SetBacklogReasonAsync(
+                selected.Snapshot.DemandId,
+                "FINAL_DYNAMIC_FACTS_NOT_READY",
+                timeProvider.GetUtcNow(),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        DateTimeOffset intakeAt = timeProvider.GetUtcNow();
+        JourneyExecutionPlan plan = CreatePlan(selected, intakeAt);
         OrderIntent pickup = new(
             plan.PickupMovementLegId,
             selected.Snapshot.DemandId,
             plan.PickupUpperId,
             "TO_PICKUP",
             plan.PickupStationId,
-            now,
+            intakeAt,
             plan.VehicleKey,
             plan.MapId,
             plan.PickupStationRiotId,
@@ -293,15 +309,24 @@ public sealed class JourneyRuntimeEngine(
             selected.Snapshot,
             pickup,
             plan,
+            token => FinalDynamicFactsReadyAsync(
+                expectedSessionGeneration,
+                selected.TargetSlots,
+                token),
             cancellationToken).ConfigureAwait(false);
         if (result.IntakeOutcome != DemandIntakeOutcome.Accepted)
         {
             await SetBacklogReasonAsync(
                 selected.Snapshot.DemandId,
-                result.IntakeOutcome == DemandIntakeOutcome.CandidateGone
-                    ? "FINAL_CATALOG_CANDIDATE_GONE"
-                    : "FINAL_CATALOG_DECISION_FACT_CHANGED",
-                now,
+                result.IntakeOutcome switch
+                {
+                    DemandIntakeOutcome.CandidateGone => "FINAL_CATALOG_CANDIDATE_GONE",
+                    DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
+                    DemandIntakeOutcome.FinalAdmissionRejected => "FINAL_DYNAMIC_FACTS_NOT_READY",
+                    _ => throw new InvalidOperationException(
+                        $"Unsupported intake outcome '{result.IntakeOutcome}'.")
+                },
+                timeProvider.GetUtcNow(),
                 cancellationToken).ConfigureAwait(false);
             return;
         }
@@ -492,6 +517,24 @@ public sealed class JourneyRuntimeEngine(
         if (vehicle.LockStatus is null || vehicle.LockStatus != 0 || !string.IsNullOrWhiteSpace(vehicle.OrderTaskId))
             return "RIOT_VEHICLE_ORDER_OCCUPIED";
         return "ELIGIBLE";
+    }
+
+    private async Task<bool> FinalDynamicFactsReadyAsync(
+        long expectedSessionGeneration,
+        IReadOnlyCollection<int> targetSlots,
+        CancellationToken cancellationToken)
+    {
+        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        if (onboard is null || onboard.SessionGeneration != expectedSessionGeneration ||
+            targetSlots.Any(slot => !onboard.AvailableSlots.Contains(slot)))
+        {
+            return false;
+        }
+
+        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
+            runtimeOptions.VehicleKey,
+            cancellationToken).ConfigureAwait(false);
+        return ValidateDynamicFacts(onboard, vehicle, timeProvider.GetUtcNow()) == "ELIGIBLE";
     }
 
     private async Task<bool> IsTrustedArrivalAsync(
