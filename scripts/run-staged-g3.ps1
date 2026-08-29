@@ -1632,26 +1632,6 @@ try {
     } while (-not $proxyReady -and [DateTimeOffset]::UtcNow -lt $proxyDeadline)
     if (-not $proxyReady) { throw 'Loopback fault proxy did not become ready.' }
 
-    # A second listener rather than a second connection through the first one: RunProxyAsync awaits
-    # each connection to completion before accepting the next, and the onboard peer holds its
-    # connection open for the whole run.
-    $businessProxyStopping = [Threading.CancellationTokenSource]::new()
-    $businessProxyTask = [StagedG3TlsHarness]::RunProxyAsync(
-        $businessProxyPort,
-        $controlPort,
-        $tlsMaterial.PfxPath,
-        $tlsMaterial.Password,
-        $tlsMaterial.Fingerprint,
-        $businessProxyTranscript,
-        $businessProxyStopping.Token)
-    $businessProxyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
-    do {
-        $businessProxyReady = @(Read-Ndjson $businessProxyTranscript |
-            Where-Object event -EQ 'proxy-listening').Count -eq 1
-        if (-not $businessProxyReady) { Start-Sleep -Milliseconds 100 }
-    } while (-not $businessProxyReady -and [DateTimeOffset]::UtcNow -lt $businessProxyDeadline)
-    if (-not $businessProxyReady) { throw 'Business fault proxy did not become ready.' }
-
     $onboard = Start-Process -FilePath 'dotnet' `
         -ArgumentList @(Join-Path $onboardPublish 'SQCD.Agv.Wpf.dll') `
         -WorkingDirectory $onboardPublish `
@@ -1737,6 +1717,38 @@ try {
         sessionGenerations = @($replayedReports.sessionGeneration | Sort-Object -Unique)
         sessionAfterFault = $sessionEvidence
     }
+
+    # OnboardTcpServer.ExecuteAsync awaits each accepted connection to completion before accepting
+    # the next, so the server holds exactly one onboard peer at a time; a synthetic peer opened while
+    # the real one is connected never gets past the TLS handshake. Release the peer and its proxy
+    # first, then give the business plane the server to itself.
+    Stop-ProcessSafely -Process $onboard
+    $onboard = $null
+    $proxyStopping.Cancel()
+    try { $proxyTask.Wait(5000) | Out-Null } catch { }
+    $proxyStopping.Dispose()
+    $proxyStopping = $null
+    $proxyTask = $null
+    # Killing the peer closes its socket, but the server still has to unwind HandleClientAsync before
+    # its accept loop comes back round.
+    Start-Sleep -Seconds 2
+
+    $businessProxyStopping = [Threading.CancellationTokenSource]::new()
+    $businessProxyTask = [StagedG3TlsHarness]::RunProxyAsync(
+        $businessProxyPort,
+        $controlPort,
+        $tlsMaterial.PfxPath,
+        $tlsMaterial.Password,
+        $tlsMaterial.Fingerprint,
+        $businessProxyTranscript,
+        $businessProxyStopping.Token)
+    $businessProxyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+    do {
+        $businessProxyReady = @(Read-Ndjson $businessProxyTranscript |
+            Where-Object event -EQ 'proxy-listening').Count -eq 1
+        if (-not $businessProxyReady) { Start-Sleep -Milliseconds 100 }
+    } while (-not $businessProxyReady -and [DateTimeOffset]::UtcNow -lt $businessProxyDeadline)
+    if (-not $businessProxyReady) { throw 'Business fault proxy did not become ready.' }
 
     $businessProbeJson = [StagedG3TlsHarness]::RunBusinessProbeAsync(
         $businessProxyPort,
