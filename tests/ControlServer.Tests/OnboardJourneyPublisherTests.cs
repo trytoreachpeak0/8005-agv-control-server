@@ -493,6 +493,125 @@ public sealed class OnboardJourneyPublisherTests
         Assert.Empty(context.ProtocolOutbox);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task SnapshotWireIsReproducibleByThePeerThatAcknowledgesIt()
+    {
+        // The acknowledgement requires the peer to reproduce our wire byte for byte, so the
+        // hash has to be computed the way the peer computes it -- by parsing our line into the
+        // contract envelope, whose payload stays a JsonElement, and re-serialising that. Hashing
+        // our own stored bytes only proves we agree with ourselves. observedAt is a
+        // DateTimeOffset, and a converter writes the '+' in its offset verbatim while a
+        // JsonElement writes it through the encoder, so the two forms used to differ and the
+        // first acknowledgement after arrival tore the connection down.
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        AdvancingTimeProvider clock = new();
+        OnboardJourneyPublisher publisher = new(store, peer, clock);
+        const string messageId = "00000000-0000-4000-8000-000000000341";
+
+        await publisher.PublishVehicleBusinessStateAsync(
+            messageId,
+            "AGV-001",
+            1,
+            new VehicleBusinessProjection(6, "READY", false, "SUFFICIENT", []),
+            TestContext.Current.CancellationToken);
+
+        ProtocolOutboxRow row = await context.ProtocolOutbox.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(Sha256(row.PayloadJson), PeerContentSha256(row.PayloadJson));
+
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            context, store, clock, new ConfigurationBuilder().Build());
+        OnboardConnectionState state = new() { AgvId = "AGV-001", SessionGeneration = 1 };
+        string response = await processor.ProcessAsync(
+            Envelope(
+                "SnapshotAppliedAck",
+                "00000000-0000-4000-8000-000000000342",
+                messageId,
+                1,
+                new
+                {
+                    snapshotMessageId = messageId,
+                    snapshotKind = "VEHICLE_BUSINESS_STATE",
+                    appliedRevision = 6,
+                    appliedContentSha256 = PeerContentSha256(row.PayloadJson)
+                }),
+            state,
+            TestContext.Current.CancellationToken);
+
+        Assert.Empty(response);
+        Assert.NotNull(row.AcknowledgedAt);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task ReplayIntoANewGenerationLeavesTheWireThePublisherWouldWriteAgain()
+    {
+        // ReplayPendingForSessionAsync rebinds a pending envelope through JsonNode, which writes
+        // every payload string through the encoder. When that landed on different bytes than the
+        // publisher produces, the next republish at the same generation was no longer an
+        // early-returning no-op: it reached the generation check and was refused, once per runtime
+        // iteration, for as long as the journey stayed at the stage.
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(store, peer, new AdvancingTimeProvider());
+        const string messageId = "00000000-0000-4000-8000-000000000351";
+        VehicleBusinessProjection projection = new(6, "READY", false, "SUFFICIENT", []);
+
+        await publisher.PublishVehicleBusinessStateAsync(
+            messageId, "AGV-001", 1, projection, TestContext.Current.CancellationToken);
+        await publisher.ReplayPendingForSessionAsync(
+            "AGV-001", 2, new HashSet<string> { messageId }, TestContext.Current.CancellationToken);
+        ProtocolOutboxRow row = await context.ProtocolOutbox.SingleAsync(
+            TestContext.Current.CancellationToken);
+        string replayed = row.PayloadJson;
+
+        await publisher.PublishVehicleBusinessStateAsync(
+            messageId, "AGV-001", 2, projection, TestContext.Current.CancellationToken);
+
+        Assert.Equal(replayed, row.PayloadJson);
+        Assert.Equal(Sha256(replayed), PeerContentSha256(replayed));
+    }
+
+    /// <summary>
+    /// Hashes a wire line the way the peer does: parse it into the contract envelope, whose
+    /// payload stays a JsonElement, and re-serialise that.
+    /// </summary>
+    private static string PeerContentSha256(string wireLine) =>
+        Sha256(JsonSerializer.Serialize(
+            JsonSerializer.Deserialize<PeerEnvelope>(wireLine, PeerSerializerOptions)!,
+            PeerSerializerOptions));
+
+    private static readonly JsonSerializerOptions PeerSerializerOptions = new(JsonSerializerDefaults.Web);
+
+    private sealed record PeerEnvelope(
+        int ProtocolVersion,
+        string ProfileId,
+        string ProtocolReleaseVersion,
+        string ProtocolReleaseManifestSha256,
+        string MessageType,
+        string MessageId,
+        string? CorrelationId,
+        string AgvId,
+        long? SessionGeneration,
+        DateTimeOffset SentAt,
+        JsonElement Payload);
+
     private static string Envelope(
         string messageType,
         string messageId,

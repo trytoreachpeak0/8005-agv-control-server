@@ -42,7 +42,13 @@ public sealed class OnboardJourneyPublisher(
                     cancellationToken).ConfigureAwait(false);
                 continue;
             }
-            DateTimeOffset sentAt = timeProvider.GetUtcNow();
+            // Rebinding is a transport concern: only the session generation may move. sentAt stays
+            // frozen because the snapshot payload is stamped from it, so a fresh clock read here
+            // left the rebound payload carrying the old observedAt while the next republish
+            // computed a new one -- a semantic conflict the publisher then hit once per runtime
+            // iteration. It is also re-assigned as a DateTimeOffset rather than left as the parsed
+            // node so the converter, not the encoder, writes it, matching what SerializeWire emits.
+            DateTimeOffset sentAt = row.CreatedAt;
             envelope["sessionGeneration"] = sessionGeneration;
             envelope["sentAt"] = sentAt;
             string wire = envelope.ToJsonString(SerializerOptions);
@@ -549,8 +555,35 @@ public sealed class OnboardJourneyPublisher(
         ProtocolOutboxRow? existing = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)
             .ConfigureAwait(false);
         DateTimeOffset sentAt = existing?.CreatedAt ?? timeProvider.GetUtcNow();
-        object payload = payloadFactory(sentAt);
-        string candidateWire = JsonSerializer.Serialize(new
+        string candidateWire = SerializeWire(
+            messageType, messageId, correlationId, agvId, sessionGeneration, sentAt, payloadFactory(sentAt));
+        return await store.QueueOutboundEnvelopeAsync(
+            messageId, messageType, candidateWire, sentAt, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds the wire line the peer has to be able to reproduce byte for byte.
+    /// </summary>
+    /// <remarks>
+    /// The peer parses our line into a typed envelope whose payload stays a JsonElement, then
+    /// re-serialises that envelope to report the content hash it applied. A JsonElement is written
+    /// through the encoder, so anything a converter emits verbatim -- the '+' in a DateTimeOffset
+    /// offset -- comes back as its six-character unicode escape, so the peer can never reproduce
+    /// our bytes. That failed the acknowledgement and dropped the connection. Materialising it first,
+    /// the way the contract type itself builds it, makes the line reproducible. It also makes the
+    /// line a fixed point of the replay rewrite in ReplayPendingForSessionAsync, so re-publishing at
+    /// the same generation stays a byte-identical no-op instead of a change that
+    /// RefreshOutboundEnvelopeAsync then refuses as a non-advancing session generation.
+    /// </remarks>
+    private static string SerializeWire(
+        string messageType,
+        string messageId,
+        string? correlationId,
+        string agvId,
+        long sessionGeneration,
+        DateTimeOffset sentAt,
+        object payload) =>
+        JsonSerializer.Serialize(new
         {
             protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
             profileId = ProtocolCandidateIdentity.ProfileId,
@@ -562,11 +595,8 @@ public sealed class OnboardJourneyPublisher(
             agvId,
             sessionGeneration,
             sentAt,
-            payload
+            payload = JsonSerializer.SerializeToElement(payload, SerializerOptions)
         }, SerializerOptions);
-        return await store.QueueOutboundEnvelopeAsync(
-            messageId, messageType, candidateWire, sentAt, cancellationToken).ConfigureAwait(false);
-    }
 
     private async Task PublishSlotOperationEnvelopeAsync(
         string messageType,
@@ -588,20 +618,8 @@ public sealed class OnboardJourneyPublisher(
         ProtocolOutboxRow? existing = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)
             .ConfigureAwait(false);
         DateTimeOffset sentAt = existing?.CreatedAt ?? timeProvider.GetUtcNow();
-        string candidateWire = JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-            messageType,
-            messageId,
-            correlationId,
-            agvId,
-            sessionGeneration,
-            sentAt,
-            payload
-        }, SerializerOptions);
+        string candidateWire = SerializeWire(
+            messageType, messageId, correlationId, agvId, sessionGeneration, sentAt, payload);
         ProtocolOutboxRow stored = await store.PrepareSlotOperationAsync(
             new StationOperationPlan(
                 command.SlotOperationAttemptId,
