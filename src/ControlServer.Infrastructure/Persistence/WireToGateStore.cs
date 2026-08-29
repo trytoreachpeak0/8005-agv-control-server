@@ -86,7 +86,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
 
     public async Task ApplySafetySnapshotAsync(
         string agvId, long sessionGeneration, long revision, bool departureSafe, string contentHash,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<string>? reasonCodes = null,
+        bool? unknownPresent = null)
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
             .ConfigureAwait(false);
@@ -94,6 +96,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.SafetyRevision = revision;
         row.SafetyHash = contentHash;
         row.DepartureSafe = departureSafe;
+        row.SafetyReasonCodesJson = reasonCodes is null ? null : SerializeSorted(reasonCodes);
+        row.SafetyUnknownPresent = unknownPresent;
         row.Readiness = SessionReadiness.RecoveryRequired;
         row.ReasonCode = "HANDSHAKE_INCOMPLETE";
         row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -136,11 +140,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .ConfigureAwait(false);
         bool noPendingFacts = DeserializeStrings(row.PendingAttemptIdsJson).Length == 0 &&
                               DeserializeStrings(row.PendingResultIdsJson).Length == 0;
+        bool departureUsable = row.DepartureSafe == true ||
+                               await IsUnsafetyExplainedByOwnCommandAsync(row, cancellationToken)
+                                   .ConfigureAwait(false);
         bool ready = row.CapabilityRevision is not null && row.SafetyRevision is not null &&
-                     row.RecoveryReportId is not null && row.DepartureSafe == true && noPendingFacts &&
+                     row.RecoveryReportId is not null && departureUsable && noPendingFacts &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
-        row.ReasonCode = ready ? "READY" : GetRecoveryReason(row, noPendingFacts);
+        row.ReasonCode = ready ? "READY" : GetRecoveryReason(row, noPendingFacts, departureUsable);
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new SessionReadinessDecision(row.Readiness, row.ReasonCode);
@@ -1887,7 +1894,46 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
     }
 
-    private static string GetRecoveryReason(SessionRecoveryRow row, bool noPendingFacts)
+    /// <summary>
+    /// A slot operation cannot be carried out without unlocking a slot, and an unlocked slot is
+    /// correctly reported as unsafe to depart. Treating that as a session failure made the command
+    /// destroy its own precondition: the peer refused to continue the very operation this server
+    /// asked for, and the journey could never leave the load stage.
+    /// </summary>
+    /// <remarks>
+    /// The relaxation is deliberately narrow. It applies only while this server has an authorized
+    /// operation in flight, only when every reported reason is one that operation explains, and
+    /// never when any evidence was unknown. It changes session readiness alone -- departure itself
+    /// is still authorized from a separate, freshness-bounded PreDepartureSafetyCheckResult in
+    /// AuthorizeMovementAsync, which this does not touch.
+    /// </remarks>
+    private static readonly string[] OperationInducedUnsafety =
+        ["LOCK_NOT_CLOSED", "UNLOCK_OUTPUT_NOT_RESET"];
+
+    private async Task<bool> IsUnsafetyExplainedByOwnCommandAsync(
+        SessionRecoveryRow row,
+        CancellationToken cancellationToken)
+    {
+        if (row.SafetyUnknownPresent != false)
+        {
+            return false;
+        }
+        if (row.SafetyReasonCodesJson is null)
+        {
+            return false;
+        }
+        string[] reasonCodes = DeserializeStrings(row.SafetyReasonCodesJson);
+        if (reasonCodes.Length == 0 ||
+            !reasonCodes.All(code => OperationInducedUnsafety.Contains(code, StringComparer.Ordinal)))
+        {
+            return false;
+        }
+        return await dbContext.StationOperations
+            .AnyAsync(item => item.Status == StationOperationStatus.Prepared, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static string GetRecoveryReason(SessionRecoveryRow row, bool noPendingFacts, bool departureUsable)
     {
         if (row.CapabilityRevision is null) return "CAPABILITY_SNAPSHOT_REQUIRED";
         if (row.SafetyRevision is null) return "SAFETY_SNAPSHOT_REQUIRED";
@@ -1895,7 +1941,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         if (row.ReportedForcedRecoveryGeneration != row.ForcedRecoveryGeneration)
             return "FORCED_RECOVERY_GENERATION_MISMATCH";
         if (!noPendingFacts) return "PENDING_FACT_RECONCILIATION_REQUIRED";
-        if (row.DepartureSafe != true) return "DEPARTURE_SAFETY_NOT_READY";
+        if (!departureUsable) return "DEPARTURE_SAFETY_NOT_READY";
         return "RECOVERY_REQUIRED";
     }
 

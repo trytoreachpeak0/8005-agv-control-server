@@ -192,9 +192,11 @@ public sealed partial class OnboardMessageProcessor(
             case "SafetyStateSnapshot":
                 {
                     long revision = payload.GetProperty("safetyStateVersion").GetInt64();
-                    bool departureSafe = payload.GetProperty("safety").GetProperty("departureSafe").GetBoolean();
+                    JsonElement safety = payload.GetProperty("safety");
+                    bool departureSafe = safety.GetProperty("departureSafe").GetBoolean();
                     await store.ApplySafetySnapshotAsync(
-                        agvId, generation, revision, departureSafe, contentHash, cancellationToken).ConfigureAwait(false);
+                        agvId, generation, revision, departureSafe, contentHash, cancellationToken,
+                        SafetyReasonCodes(safety), SafetyUnknownPresent(safety)).ConfigureAwait(false);
                     state.SafetyRevision = revision;
                     return SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
                 }
@@ -326,9 +328,11 @@ public sealed partial class OnboardMessageProcessor(
             case "SafetyStateChanged":
                 {
                     long revision = payload.GetProperty("safetyStateVersion").GetInt64();
-                    bool departureSafe = payload.GetProperty("safety").GetProperty("departureSafe").GetBoolean();
+                    JsonElement safety = payload.GetProperty("safety");
+                    bool departureSafe = safety.GetProperty("departureSafe").GetBoolean();
                     await store.ApplySafetySnapshotAsync(
-                        agvId, generation, revision, departureSafe, contentHash, cancellationToken)
+                        agvId, generation, revision, departureSafe, contentHash, cancellationToken,
+                        SafetyReasonCodes(safety), SafetyUnknownPresent(safety))
                         .ConfigureAwait(false);
                     state.SafetyRevision = revision;
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
@@ -558,6 +562,25 @@ public sealed partial class OnboardMessageProcessor(
         schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256,
         vectorsSha256 = ProtocolCandidateIdentity.VectorsSha256
     };
+
+    /// <summary>
+    /// Why the peer says the vehicle is unsafe to depart. Both this and unknownPresent used to be
+    /// dropped, which left the session unable to tell unsafety caused by a slot operation this
+    /// server itself commanded from unsafety that must fail the session closed.
+    /// </summary>
+    private static string[] SafetyReasonCodes(JsonElement safety) =>
+        safety.TryGetProperty("reasonCodes", out JsonElement codes) && codes.ValueKind == JsonValueKind.Array
+            ? codes.EnumerateArray()
+                .Where(code => code.ValueKind == JsonValueKind.String)
+                .Select(code => code.GetString()!)
+                .ToArray()
+            : [];
+
+    private static bool? SafetyUnknownPresent(JsonElement safety) =>
+        safety.TryGetProperty("unknownPresent", out JsonElement unknown) &&
+        unknown.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? unknown.GetBoolean()
+            : null;
 
     private static string RequiredString(JsonElement element, string propertyName)
     {

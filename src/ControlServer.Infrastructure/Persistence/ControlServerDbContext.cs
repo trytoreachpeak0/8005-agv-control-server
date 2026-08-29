@@ -234,6 +234,15 @@ public sealed class SessionRecoveryRow
     public long? SafetyRevision { get; set; }
     public string? SafetyHash { get; set; }
     public bool? DepartureSafe { get; set; }
+
+    /// <summary>
+    /// Why the peer reported the vehicle unsafe to depart, and whether any of its evidence was
+    /// unknown. Both were discarded before, which left the session unable to tell unsafety this
+    /// server's own in-flight slot operation causes from unsafety that must fail the session.
+    /// </summary>
+    public string? SafetyReasonCodesJson { get; set; }
+
+    public bool? SafetyUnknownPresent { get; set; }
     public string? RecoveryReportId { get; set; }
     public long ForcedRecoveryGeneration { get; set; }
     public long ReportedForcedRecoveryGeneration { get; set; }
