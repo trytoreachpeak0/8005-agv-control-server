@@ -410,11 +410,15 @@ function Read-ControlDatabase {
 function Read-OnboardJournal {
     if (-not (Test-Path -LiteralPath $onboardJournalPath -PathType Leaf)) { return $null }
 
+    # Invoke-SqliteRows emits the row array as a single object, so it is indexed rather than wrapped
+    # in @(): wrapping a command that already returns an array nests it one level deeper.
+    $metadataRows = Invoke-SqliteRows -DatabasePath $onboardJournalPath `
+        -Sql 'SELECT JournalEpoch FROM WireToGateJournalMetadata WHERE Id = 1' `
+        -Columns @('journalEpoch')
+
     return [ordered]@{
         file = Get-FileFingerprint -Path $onboardJournalPath
-        journalEpoch = @(Invoke-SqliteRows -DatabasePath $onboardJournalPath `
-            -Sql 'SELECT JournalEpoch FROM WireToGateJournalMetadata WHERE Id = 1' `
-            -Columns @('journalEpoch')) | ForEach-Object { $_['journalEpoch'] } | Select-Object -First 1
+        journalEpoch = if ($metadataRows.Count -eq 1) { $metadataRows[0]['journalEpoch'] } else { $null }
         outboxRows = Invoke-SqliteRows -DatabasePath $onboardJournalPath `
             -Sql 'SELECT DeduplicationKey, MessageType, MessageId, ContentSha256, Acknowledged FROM WireToGateDurableOutbox ORDER BY CreatedAt' `
             -Columns @('deduplicationKey', 'messageType', 'messageId', 'contentSha256', 'acknowledged')
