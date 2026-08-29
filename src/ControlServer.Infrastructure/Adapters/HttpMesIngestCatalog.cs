@@ -126,7 +126,7 @@ public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider tim
         string workType = RequireText(key.WorkType, "transportDemandKey.workType");
         string sublot = RequireText(key.Sublot, "transportDemandKey.sublot");
         return new AcceptedDemandSnapshot(
-            RequireText(item.DemandId, "demandId"),
+            RequireDemandId(item.DemandId),
             $"{sublot}|{workType}",
             item.DemandRevision,
             historyEpoch,
@@ -142,6 +142,18 @@ public sealed class HttpMesIngestCatalog(HttpClient httpClient, TimeProvider tim
             RequireText(item.ValueProjectionCommitId, "valueProjectionCommitId"),
             new LiveMesFieldSet(fields.Area, fields.Eqp, fields.Step, fields.MesSourceDate, fields.Package));
     }
+
+    /// <summary>
+    /// MesIngest reports the demand id unhyphenated. Every WIRE_TO_GATE payload carrying a demandId
+    /// is a canonical UUID, and every inbound demandId this server reads is parsed as one before it
+    /// is compared against what we stored -- so the stored form never matched, and the pickup stage
+    /// could not publish its sublot entry request at all. Normalising once here keeps a demand to a
+    /// single identity everywhere inside the server, whatever spelling the catalog uses.
+    /// </summary>
+    private static string RequireDemandId(string? value) =>
+        Guid.TryParse(RequireText(value, "demandId"), out Guid demandId)
+            ? demandId.ToString("D")
+            : throw new InvalidDataException("MesIngest field 'demandId' must be a UUID.");
 
     private static string RequireText(string? value, string fieldName) =>
         string.IsNullOrWhiteSpace(value)

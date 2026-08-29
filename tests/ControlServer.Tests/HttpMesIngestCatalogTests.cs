@@ -35,10 +35,14 @@ public sealed class HttpMesIngestCatalogTests
         DateTimeOffset now = new(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
         HttpMesIngestCatalog catalog = new(client, new FixedTimeProvider(now));
 
+        // The catalog reports the demand id unhyphenated, but every WIRE_TO_GATE payload and every
+        // inbound demandId this server reads is a canonical UUID, so the id is normalised at this
+        // boundary and callers address a demand by that one form.
         AcceptedDemandSnapshot? current = await catalog.ReadCurrentAsync(
-            "D-001", TestContext.Current.CancellationToken);
+            "94993971-b362-4edf-81bc-712d160e444a", TestContext.Current.CancellationToken);
 
         Assert.NotNull(current);
+        Assert.Equal("94993971-b362-4edf-81bc-712d160e444a", current.DemandId);
         Assert.Equal("SUBLOT-001|WIRE_TO_GATE", current.TransportDemandKey);
         Assert.Equal(21, current.CatalogRevision);
         Assert.Equal(now, current.AcceptedAt);
@@ -115,7 +119,8 @@ public sealed class HttpMesIngestCatalogTests
                     {
                         new
                         {
-                            demandId = "D-001",
+                            // MesIngest reports the id unhyphenated, the way the field catalog does.
+                            demandId = "94993971b3624edf81bc712d160e444a",
                             seriesId = "SERIES-001",
                             transportDemandKey = new { workType = "WIRE_TO_GATE", sublot = "SUBLOT-001" },
                             generation = 1,
