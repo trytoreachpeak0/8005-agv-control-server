@@ -1,0 +1,47 @@
+{
+  "loopbackOnly": true,
+  "tls": {
+    "probeEnabled": true,
+    "certificateSha256": "b3da8dfd05696607b4247098ca8d227efbb5ae51b90ca74fc52c76433e3570c9",
+    "rootCertificateSha256": "9b73afedc1e100d6c5238eed5700eacdef742bc0e44584bd1999b175bed03fda",
+    "trustScope": "CurrentUser/Root",
+    "temporaryTrustInstalled": true,
+    "temporaryTrustCleanupVerified": true,
+    "leafPinRequired": true,
+    "realOnboardAckDropTransport": "TLS_LOOPBACK",
+    "realOnboardAckDropTlsCombination": "PASS"
+  },
+  "ports": {
+    "controlTls": 58205,
+    "controlHealth": 58207,
+    "faultProxyPlaintext": 58215,
+    "businessFaultProxy": 58216,
+    "simulatorModbus": 1502,
+    "simulatorHttp": 58006
+  },
+  "faultInjection": {
+    "parameterisedByMessageType": true,
+    "actions": [
+      "drop-and-close",
+      "drop",
+      "delay",
+      "hold-until-next"
+    ],
+    "businessMessagePlane": [
+      "SublotSubmitted",
+      "OperationProgress",
+      "PreDepartureSafetyCheckResult",
+      "SlotOperationCommandRejected"
+    ],
+    "businessMessagesDrivenBySyntheticPeer": true,
+    "businessMessagesNotReachableInStagedRun": [
+      "OperationResult",
+      "SlotOperationCommand"
+    ]
+  },
+  "journeyRuntimeEnabled": false,
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "movementCommandSent": false,
+  "vehicleSafetyEligibilityFabricated": false
+}

@@ -71,6 +71,14 @@ foreach ($value in @($ControlServerCommit, $OnboardCommit, $SimulatorCommit, $Pr
     }
 }
 
+# The published peers come from exact clones at the commits above, but this runner and its embedded
+# harness execute from the working tree, so their identity has to be read back rather than restated.
+# Read it before anything is written: an EvidenceRoot inside this repository would otherwise show up
+# as untracked content and report every run as dirty.
+$harnessCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw "Unable to read the harness commit from $ControlServerRepository" }
+$harnessWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
+
 if (Test-Path -LiteralPath $StageRoot) {
     throw "StageRoot must not already exist: $StageRoot"
 }
@@ -2034,11 +2042,8 @@ $result = [ordered]@{
         onboardEvidenceBinding = $OnboardCommit
         slotsSimulator = $SimulatorCommit
         protocol = $ProtocolCommit
-        # The published peers come from exact clones at the commits above, but this runner and its
-        # embedded harness execute from the working tree, so their identity has to be read back
-        # rather than restated. A dirty tree makes the harness unattributable, and the flag says so.
-        harness = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
-        harnessWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
+        harness = $harnessCommit
+        harnessWorktreeCleanAtStart = $harnessWorktreeClean
     }
     protocol = [ordered]@{
         tag = $protocolTag
