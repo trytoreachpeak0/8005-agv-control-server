@@ -17,6 +17,79 @@ public sealed class OnboardMessageProcessorTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
+    public async Task ProtocolProblemIsRecordedWithoutAnsweringOrDroppingTheSession()
+    {
+        // protocol-v0.1.1 defines ProtocolProblem as how the peer reports a rejection. Throwing
+        // on it killed the transport, so the peer reconnected in a loop and the complaint that
+        // explained the rejection was lost.
+        const string credentialVariable = "CONTROL_SERVER_TEST_ONBOARD_PROBLEM_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+
+            await processor.ProcessAsync(
+                Envelope(
+                    "SessionHello",
+                    "00000000-0000-4000-8000-000000000090",
+                    null,
+                    new
+                    {
+                        protocolReleaseIdentity = ReleaseIdentity(),
+                        credentialProof = credential
+                    }),
+                state,
+                TestContext.Current.CancellationToken);
+
+            string response = await processor.ProcessAsync(
+                Envelope(
+                    "ProtocolProblem",
+                    "00000000-0000-4000-8000-000000000091",
+                    state.SessionGeneration,
+                    new
+                    {
+                        rejectedMessageId = "00000000-0000-4000-8000-000000000092",
+                        rejectedMessageType = (string?)null,
+                        problem = new
+                        {
+                            reasonCode = "W2G-PROTOCOL-0001",
+                            fieldPath = (string?)null,
+                            displayMessage = (string?)null
+                        },
+                        expectedProtocolVersion = 1,
+                        expectedProfileId = "WIRE_TO_GATE_MVP",
+                        expectedProtocolReleaseManifestSha256 = new string('a', 64)
+                    }),
+                state,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(string.Empty, response);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
     public async Task SnapshotAppliedAcksUseExactWireContentHashAndProtocolKinds()
     {

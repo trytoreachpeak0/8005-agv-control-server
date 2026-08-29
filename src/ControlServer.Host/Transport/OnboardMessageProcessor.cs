@@ -7,11 +7,12 @@ using ControlServer.Infrastructure.Persistence;
 
 namespace ControlServer.Host.Transport;
 
-public sealed class OnboardMessageProcessor(
+public sealed partial class OnboardMessageProcessor(
     WireToGateStore store,
     OnboardRecoveryCoordinator recoveryCoordinator,
     TimeProvider timeProvider,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    ILogger<OnboardMessageProcessor> logger)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly string _serverInstanceId = Guid.NewGuid().ToString("D");
@@ -377,6 +378,24 @@ public sealed class OnboardMessageProcessor(
                         cancellationToken).ConfigureAwait(false);
                     return string.Empty;
                 }
+            case "ProtocolProblem":
+                {
+                    // protocol-v0.1.1 defines ProtocolProblem as how a peer reports that it
+                    // rejected one of our messages. Falling through to "unsupported" threw, which
+                    // killed the transport and sent the session into a reconnect loop -- and threw
+                    // away the only diagnostic saying why the rejection happened. It carries no
+                    // obligation, so record it and keep the session; the envelope itself is
+                    // already persisted in the inbox by the caller.
+                    JsonElement problem = payload.GetProperty("problem");
+                    LogOnboardRejection(
+                        logger,
+                        NullableString(payload, "rejectedMessageType") ?? "(unstated)",
+                        RequiredString(payload, "rejectedMessageId"),
+                        RequiredString(problem, "reasonCode"),
+                        NullableString(problem, "fieldPath") ?? "(none)",
+                        NullableString(problem, "displayMessage") ?? "(none)");
+                    return string.Empty;
+                }
             default:
                 throw new InvalidDataException($"Message type '{messageType}' is not supported by ControlServer.");
         }
@@ -546,6 +565,26 @@ public sealed class OnboardMessageProcessor(
         return string.IsNullOrWhiteSpace(value)
             ? throw new InvalidDataException($"Protocol field '{propertyName}' is required.")
             : value;
+    }
+
+    [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
+        Message = "Onboard rejected {RejectedMessageType} {RejectedMessageId}: {ReasonCode} at {FieldPath} -- {DisplayMessage}")]
+    private static partial void LogOnboardRejection(
+        ILogger logger,
+        string rejectedMessageType,
+        string rejectedMessageId,
+        string reasonCode,
+        string fieldPath,
+        string displayMessage);
+
+    /// <summary>
+    /// Reads a field the protocol declares as `string | null`, so an explicit null is a value
+    /// rather than a violation.
+    /// </summary>
+    private static string? NullableString(JsonElement element, string propertyName)
+    {
+        JsonElement value = element.GetProperty(propertyName);
+        return value.ValueKind == JsonValueKind.Null ? null : value.GetString();
     }
 
     private static string ComputeOperationResultContentHash(JsonElement payload)
