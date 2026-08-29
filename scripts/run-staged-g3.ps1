@@ -58,6 +58,7 @@ $vectorsSha256 = 'fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d35
 $controlPort = 58205
 $healthPort = 58207
 $proxyPort = 58215
+$businessProxyPort = 58216
 $modbusPort = 1502
 $simulatorHttpPort = 58006
 $agvId = 'AGV-8005-STAGED-G3-TLS-01'
@@ -403,6 +404,7 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -411,8 +413,69 @@ using System.Threading.Tasks;
 public static class StagedG3TlsHarness
 {
     private static readonly object LogGate = new();
+    private static readonly object FaultGate = new();
+    private static readonly List<FaultRule> Faults = new();
     private static int _connectionSequence;
-    private static int _droppedRecoveryAck;
+
+    /// <summary>
+    /// One injected transport fault, armed once and consumed by the first matching line.
+    /// </summary>
+    /// <remarks>
+    /// The drop decision used to be three hard-coded lines inside the pump that only ever named the
+    /// DurableAck for a RecoveryStateReport, so no other message type could be faulted and delay and
+    /// reorder had nowhere to live. A rule table keeps the pump generic; the runner arms whichever
+    /// rules a given vector needs. Fired is a field rather than a property because the one-shot latch
+    /// is taken with Interlocked.CompareExchange.
+    /// </remarks>
+    public sealed class FaultRule
+    {
+        public string Direction = string.Empty;
+        public string MessageType = string.Empty;
+        public string? AcceptedMessageType;
+        public string Action = string.Empty;
+        public int DelayMilliseconds;
+        public int Fired;
+    }
+
+    public static void AddFault(
+        string direction,
+        string messageType,
+        string? acceptedMessageType,
+        string action,
+        int delayMilliseconds)
+    {
+        lock (FaultGate)
+        {
+            Faults.Add(new FaultRule
+            {
+                Direction = direction,
+                MessageType = messageType,
+                // PowerShell marshals $null into a string parameter as the empty string, so a rule
+                // armed from the runner would otherwise carry "" and never match an accepted type.
+                // Empty and null both mean "any accepted type".
+                AcceptedMessageType = string.IsNullOrEmpty(acceptedMessageType) ? null : acceptedMessageType,
+                Action = action,
+                DelayMilliseconds = delayMilliseconds
+            });
+        }
+    }
+
+    private static FaultRule? MatchFault(string direction, Dictionary<string, object?> metadata)
+    {
+        lock (FaultGate)
+        {
+            foreach (FaultRule rule in Faults)
+            {
+                if (rule.Direction != direction) continue;
+                if (!Equals(metadata.GetValueOrDefault("messageType"), rule.MessageType)) continue;
+                if (rule.AcceptedMessageType is not null &&
+                    !Equals(metadata.GetValueOrDefault("acceptedMessageType"), rule.AcceptedMessageType)) continue;
+                if (Interlocked.CompareExchange(ref rule.Fired, 1, 0) != 0) continue;
+                return rule;
+            }
+        }
+        return null;
+    }
 
     public static async Task<string> RunProbeAsync(
         int port,
@@ -555,6 +618,340 @@ public static class StagedG3TlsHarness
         });
     }
 
+    /// <summary>
+    /// Drives the WIRE_TO_GATE business message plane through the fault proxy as a synthetic peer.
+    /// </summary>
+    /// <remarks>
+    /// A staged run sets JourneyRuntime:enabled false and points MesIngest and RIoT at a dead port,
+    /// so no demand exists and the server never emits business traffic of its own. The four message
+    /// types exercised here are the ones whose handler is a bare DurableAck, so they need no demand,
+    /// no station operation and no vehicle. OperationResult and SlotOperationCommand are deliberately
+    /// absent: see coverageLimits in the returned document.
+    /// </remarks>
+    public static async Task<string> RunBusinessProbeAsync(
+        int port,
+        string expectedFingerprint,
+        string credential,
+        string transcriptPath,
+        CancellationToken cancellationToken)
+    {
+        File.WriteAllText(transcriptPath, string.Empty, new UTF8Encoding(false));
+        const string agvId = "AGV-8005-STAGED-G3-BUSINESS";
+        string[] businessTypes =
+        {
+            "SublotSubmitted",
+            "OperationProgress",
+            "PreDepartureSafetyCheckResult",
+            "SlotOperationCommandRejected"
+        };
+
+        var duplicateCases = new List<Dictionary<string, object?>>();
+        var conflictCases = new List<Dictionary<string, object?>>();
+        int helloSequence = 0;
+        foreach (string messageType in businessTypes)
+        {
+            string messageId = StableGuid("business:" + messageType);
+            string original;
+            string conflicting;
+            string firstAck;
+            string secondAck;
+            bool sameConnectionClosed;
+            await using (Connection connection = await Connection.OpenAsync(
+                port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            {
+                long generation = await HandshakeAsync(
+                    connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
+                    .ConfigureAwait(false);
+                original = Business(messageType, messageId, agvId, generation, 1);
+                await connection.WriteAsync(original, cancellationToken).ConfigureAwait(false);
+                firstAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(5), cancellationToken)
+                    .ConfigureAwait(false);
+                await connection.WriteAsync(original, cancellationToken).ConfigureAwait(false);
+                secondAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(5), cancellationToken)
+                    .ConfigureAwait(false);
+                conflicting = Business(messageType, messageId, agvId, generation, 2);
+                await connection.WriteAsync(conflicting, cancellationToken).ConfigureAwait(false);
+                sameConnectionClosed = await connection
+                    .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            }
+
+            bool repeatConnectionClosed;
+            await using (Connection connection = await Connection.OpenAsync(
+                port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            {
+                long generation = await HandshakeAsync(
+                    connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
+                    .ConfigureAwait(false);
+                await connection.WriteAsync(
+                    Business(messageType, messageId, agvId, generation, 2), cancellationToken).ConfigureAwait(false);
+                repeatConnectionClosed = await connection
+                    .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            }
+
+            bool duplicatePass = firstAck == secondAck &&
+                Property(firstAck, "messageType") == "DurableAck" &&
+                NestedProperty(firstAck, "payload", "acceptedMessageType") == messageType &&
+                NestedProperty(firstAck, "payload", "acceptedMessageId") == messageId;
+            var duplicate = new Dictionary<string, object?>
+            {
+                ["case"] = "business-duplicate-" + messageType,
+                ["status"] = duplicatePass ? "PASS" : "FAIL",
+                ["messageType"] = messageType,
+                ["messageId"] = messageId,
+                ["requestSha256"] = Sha256(original),
+                ["byteExactResponseReplay"] = firstAck == secondAck,
+                ["responseSha256"] = Sha256(firstAck)
+            };
+            duplicateCases.Add(duplicate);
+            Log(transcriptPath, duplicate);
+
+            bool conflictPass = sameConnectionClosed && repeatConnectionClosed;
+            var conflict = new Dictionary<string, object?>
+            {
+                ["case"] = "business-conflict-" + messageType,
+                ["status"] = conflictPass ? "PASS" : "FAIL",
+                ["messageType"] = messageType,
+                ["messageId"] = messageId,
+                ["conflictingRequestSha256"] = Sha256(conflicting),
+                ["firstSameConnectionClosed"] = sameConnectionClosed,
+                ["repeatConnectionClosed"] = repeatConnectionClosed
+            };
+            conflictCases.Add(conflict);
+            Log(transcriptPath, conflict);
+        }
+
+        // The faults are armed only now: the duplicate and conflict traffic above would otherwise
+        // consume the one-shot rules that the three vectors below depend on.
+        string dropMessageId = StableGuid("business:ack-drop");
+        AddFault("server-to-client", "DurableAck", "PreDepartureSafetyCheckResult", "drop", 0);
+        string? suppressedAck;
+        string replayedAck;
+        await using (Connection connection = await Connection.OpenAsync(
+            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+        {
+            long generation = await HandshakeAsync(
+                connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
+                .ConfigureAwait(false);
+            string line = Business("PreDepartureSafetyCheckResult", dropMessageId, agvId, generation, 1);
+            await connection.WriteAsync(line, cancellationToken).ConfigureAwait(false);
+            suppressedAck = await connection.ReadAsync(TimeSpan.FromSeconds(3), cancellationToken)
+                .ConfigureAwait(false);
+            // Same bytes on the same session generation, so the inbox has to hand back the stored
+            // first response rather than acknowledging a second time; durablyAcceptedAt would move
+            // if the server recomputed it, and the proxy transcript holds the dropped ack's hash.
+            await connection.WriteAsync(line, cancellationToken).ConfigureAwait(false);
+            replayedAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        bool ackDropPass = suppressedAck is null &&
+            Property(replayedAck, "messageType") == "DurableAck" &&
+            NestedProperty(replayedAck, "payload", "acceptedMessageId") == dropMessageId &&
+            NestedProperty(replayedAck, "payload", "acceptedMessageType") == "PreDepartureSafetyCheckResult";
+
+        const int injectedDelayMilliseconds = 900;
+        string delayMessageId = StableGuid("business:delayed");
+        AddFault("client-to-server", "SlotOperationCommandRejected", null, "delay", injectedDelayMilliseconds);
+        string delayedAck;
+        long observedDelayMilliseconds;
+        await using (Connection connection = await Connection.OpenAsync(
+            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+        {
+            long generation = await HandshakeAsync(
+                connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
+                .ConfigureAwait(false);
+            string line = Business("SlotOperationCommandRejected", delayMessageId, agvId, generation, 1);
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            await connection.WriteAsync(line, cancellationToken).ConfigureAwait(false);
+            delayedAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(15), cancellationToken)
+                .ConfigureAwait(false);
+            stopwatch.Stop();
+            observedDelayMilliseconds = stopwatch.ElapsedMilliseconds;
+        }
+        bool delayPass = Property(delayedAck, "messageType") == "DurableAck" &&
+            NestedProperty(delayedAck, "payload", "acceptedMessageId") == delayMessageId &&
+            observedDelayMilliseconds >= injectedDelayMilliseconds;
+
+        string heldMessageId = StableGuid("business:reordered-held");
+        string overtakingMessageId = StableGuid("business:reordered-overtaking");
+        AddFault("client-to-server", "SublotSubmitted", null, "hold-until-next", 0);
+        string firstReorderAck;
+        string secondReorderAck;
+        await using (Connection connection = await Connection.OpenAsync(
+            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+        {
+            long generation = await HandshakeAsync(
+                connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
+                .ConfigureAwait(false);
+            await connection.WriteAsync(
+                Business("SublotSubmitted", heldMessageId, agvId, generation, 1),
+                cancellationToken).ConfigureAwait(false);
+            await connection.WriteAsync(
+                Business("OperationProgress", overtakingMessageId, agvId, generation, 1),
+                cancellationToken).ConfigureAwait(false);
+            firstReorderAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
+            secondReorderAck = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        bool reorderPass =
+            Property(firstReorderAck, "messageType") == "DurableAck" &&
+            Property(secondReorderAck, "messageType") == "DurableAck" &&
+            NestedProperty(firstReorderAck, "payload", "acceptedMessageId") == overtakingMessageId &&
+            NestedProperty(secondReorderAck, "payload", "acceptedMessageId") == heldMessageId;
+
+        bool duplicatesPass = duplicateCases.All(item => Equals(item["status"], "PASS"));
+        bool conflictsPass = conflictCases.All(item => Equals(item["status"], "PASS"));
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = "1.0.0",
+            ["status"] = duplicatesPass && conflictsPass && ackDropPass && delayPass && reorderPass
+                ? "PASS"
+                : "FAIL",
+            ["agvId"] = agvId,
+            ["businessMessageTypes"] = businessTypes,
+            ["duplicates"] = duplicateCases,
+            ["conflicts"] = conflictCases,
+            ["ackDropInSessionReplay"] = new Dictionary<string, object?>
+            {
+                ["status"] = ackDropPass ? "PASS" : "FAIL",
+                ["messageType"] = "PreDepartureSafetyCheckResult",
+                ["messageId"] = dropMessageId,
+                ["firstAckSuppressed"] = suppressedAck is null,
+                ["replayedAckSha256"] = Sha256(replayedAck)
+            },
+            ["delayedDelivery"] = new Dictionary<string, object?>
+            {
+                ["status"] = delayPass ? "PASS" : "FAIL",
+                ["messageType"] = "SlotOperationCommandRejected",
+                ["messageId"] = delayMessageId,
+                ["injectedDelayMilliseconds"] = injectedDelayMilliseconds,
+                ["observedRoundTripMilliseconds"] = observedDelayMilliseconds
+            },
+            ["reorderedDelivery"] = new Dictionary<string, object?>
+            {
+                ["status"] = reorderPass ? "PASS" : "FAIL",
+                ["heldMessageType"] = "SublotSubmitted",
+                ["heldMessageId"] = heldMessageId,
+                ["overtakingMessageType"] = "OperationProgress",
+                ["overtakingMessageId"] = overtakingMessageId,
+                ["firstAcknowledgedMessageId"] = NestedProperty(firstReorderAck, "payload", "acceptedMessageId"),
+                ["secondAcknowledgedMessageId"] = NestedProperty(secondReorderAck, "payload", "acceptedMessageId")
+            },
+            ["coverageLimits"] = new Dictionary<string, object?>
+            {
+                ["OperationResult"] =
+                    "Not reachable in a staged run. OnboardMessageProcessor resolves the forced recovery " +
+                    "generation with SingleAsync over StationOperations, so an OperationResult for a " +
+                    "fabricated attempt throws before any acknowledgement. StationOperations rows are only " +
+                    "written by PrepareSlotOperationAsync, which needs an accepted demand from MesIngest " +
+                    "and RIoT.",
+                ["SlotOperationCommand"] =
+                    "Not reachable in a staged run. It is only published by JourneyRuntimeEngine, which is " +
+                    "disabled here, or replayed by OnboardRecoveryCoordinator from an outbox row that the " +
+                    "same demand-bearing path creates."
+            }
+        });
+    }
+
+    private static async Task<long> HandshakeAsync(
+        Connection connection,
+        string agvId,
+        string helloMessageId,
+        string credential,
+        CancellationToken cancellationToken)
+    {
+        await connection.WriteAsync(
+            Hello(agvId, helloMessageId, Protocol.Release, Protocol.Manifest, credential),
+            cancellationToken).ConfigureAwait(false);
+        string accepted = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(5), cancellationToken)
+            .ConfigureAwait(false);
+        if (Property(accepted, "messageType") != "SessionAccepted")
+        {
+            throw new InvalidOperationException("The business probe was not granted a session.");
+        }
+        return NumberProperty(accepted, "sessionGeneration");
+    }
+
+    private static string Business(
+        string messageType, string messageId, string agvId, long generation, int variant) =>
+        Envelope(
+            Protocol.Release,
+            Protocol.Manifest,
+            messageType,
+            messageId,
+            agvId,
+            generation,
+            BusinessPayload(messageType, variant));
+
+    /// <summary>
+    /// Protocol-shaped payloads for the four business messages, where variant 2 differs from
+    /// variant 1 in exactly one business field so a same-messageId replay is a genuine conflict.
+    /// </summary>
+    private static Dictionary<string, object?> BusinessPayload(string messageType, int variant)
+    {
+        switch (messageType)
+        {
+            case "SublotSubmitted":
+                return new Dictionary<string, object?>
+                {
+                    ["demandId"] = "STAGED-G3-DEMAND",
+                    ["operationSessionId"] = StableGuid("business:operation-session"),
+                    ["stationId"] = "STAGED-G3-STATION",
+                    ["worklistRevision"] = variant,
+                    ["sublot"] = "STAGED-G3-SUBLOT",
+                    ["entryMethod"] = "SCANNER",
+                    ["operator"] = new Dictionary<string, object?>
+                    {
+                        ["operatorId"] = "STAGED-G3-OPERATOR",
+                        ["verificationMethod"] = "BADGE",
+                        ["verifiedAt"] = "2026-08-26T12:00:00Z"
+                    }
+                };
+            case "OperationProgress":
+                return new Dictionary<string, object?>
+                {
+                    ["slotOperationAttemptId"] = StableGuid("business:attempt"),
+                    ["phase"] = variant == 1 ? "VERIFYING" : "UNLOCKING",
+                    ["activeUnlockSlots"] = Array.Empty<int>(),
+                    ["completedSlots"] = new[] { 1, 2 },
+                    ["observedAt"] = "2026-08-26T12:00:00Z"
+                };
+            case "PreDepartureSafetyCheckResult":
+                return new Dictionary<string, object?>
+                {
+                    ["preDepartureSafetyCheckId"] = StableGuid("business:pre-departure-check"),
+                    ["outcome"] = "SAFE",
+                    ["observedAt"] = "2026-08-26T12:00:00Z",
+                    ["safetyStateVersion"] = variant,
+                    ["validUntil"] = "2026-08-26T12:00:02Z",
+                    ["safety"] = new Dictionary<string, object?>
+                    {
+                        ["departureSafe"] = true,
+                        ["vehicleStopped"] = true,
+                        ["allTargetSlotsLocked"] = true,
+                        ["allUnlockOutputsReset"] = true,
+                        ["unknownPresent"] = false,
+                        ["reasonCodes"] = Array.Empty<string>()
+                    }
+                };
+            case "SlotOperationCommandRejected":
+                return new Dictionary<string, object?>
+                {
+                    ["slotOperationAttemptId"] = StableGuid("business:attempt"),
+                    ["problem"] = new Dictionary<string, object?>
+                    {
+                        ["reasonCode"] = "ACTION_NOT_ALLOWED_IN_STATE",
+                        ["fieldPath"] = null,
+                        ["displayMessage"] = null
+                    },
+                    ["observedCapabilityVersion"] = variant,
+                    ["conflictingContentSha256"] = null
+                };
+            default:
+                throw new InvalidOperationException("Unsupported business message type: " + messageType);
+        }
+    }
+
     public static async Task RunProxyAsync(
         int listenPort,
         int upstreamPort,
@@ -647,10 +1044,10 @@ public static class StagedG3TlsHarness
                 });
                 Task clientToServer = PumpAsync(
                     downstreamTls, upstreamTls, "client-to-server", transcriptPath,
-                    connectionId, false, connectionStopping.Token);
+                    connectionId, connectionStopping.Token);
                 Task serverToClient = PumpAsync(
                     upstreamTls, downstreamTls, "server-to-client", transcriptPath,
-                    connectionId, true, connectionStopping.Token);
+                    connectionId, connectionStopping.Token);
                 await Task.WhenAny(clientToServer, serverToClient).ConfigureAwait(false);
                 connectionStopping.Cancel();
                 downstream.Close();
@@ -741,10 +1138,10 @@ public static class StagedG3TlsHarness
                 NetworkStream upstreamStream = upstream.GetStream();
                 Task clientToServer = PumpAsync(
                     downstreamStream, upstreamStream, "client-to-server", transcriptPath,
-                    connectionId, false, connectionStopping.Token);
+                    connectionId, connectionStopping.Token);
                 Task serverToClient = PumpAsync(
                     upstreamStream, downstreamStream, "server-to-client", transcriptPath,
-                    connectionId, true, connectionStopping.Token);
+                    connectionId, connectionStopping.Token);
                 await Task.WhenAny(clientToServer, serverToClient).ConfigureAwait(false);
                 connectionStopping.Cancel();
                 downstream.Close();
@@ -780,7 +1177,6 @@ public static class StagedG3TlsHarness
         string direction,
         string transcriptPath,
         int connectionId,
-        bool injectDrop,
         CancellationToken cancellationToken)
     {
         using StreamReader reader = new(source, new UTF8Encoding(false), false, 65536, true);
@@ -789,20 +1185,72 @@ public static class StagedG3TlsHarness
             AutoFlush = true,
             NewLine = "\n"
         };
+        string? held = null;
+        Dictionary<string, object?>? heldMetadata = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-            if (line is null) return;
+            if (line is null)
+            {
+                if (held is not null)
+                {
+                    Log(transcriptPath, Restate(heldMetadata!, "held-and-lost-on-close"));
+                }
+                return;
+            }
             var metadata = Describe(line, direction, connectionId);
-            bool drop = injectDrop &&
-                Equals(metadata.GetValueOrDefault("messageType"), "DurableAck") &&
-                Equals(metadata.GetValueOrDefault("acceptedMessageType"), "RecoveryStateReport") &&
-                Interlocked.CompareExchange(ref _droppedRecoveryAck, 1, 0) == 0;
-            metadata["action"] = drop ? "dropped-and-connection-closed" : "forwarded";
-            Log(transcriptPath, metadata);
-            if (drop) return;
-            await writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
+            // A held line is already the reorder subject, so the line that releases it is never
+            // itself a fault candidate; that keeps a single rule from consuming both halves.
+            FaultRule? rule = held is null ? MatchFault(direction, metadata) : null;
+            if (rule is null)
+            {
+                metadata["action"] = held is null ? "forwarded" : "forwarded-ahead-of-held";
+                Log(transcriptPath, metadata);
+                await writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
+                if (held is not null)
+                {
+                    Log(transcriptPath, Restate(heldMetadata!, "forwarded-after-reorder"));
+                    await writer.WriteLineAsync(held.AsMemory(), cancellationToken).ConfigureAwait(false);
+                    held = null;
+                    heldMetadata = null;
+                }
+                continue;
+            }
+
+            switch (rule.Action)
+            {
+                case "drop-and-close":
+                    metadata["action"] = "dropped-and-connection-closed";
+                    Log(transcriptPath, metadata);
+                    return;
+                case "drop":
+                    metadata["action"] = "dropped";
+                    Log(transcriptPath, metadata);
+                    continue;
+                case "delay":
+                    metadata["action"] = "delayed";
+                    metadata["delayMilliseconds"] = rule.DelayMilliseconds;
+                    Log(transcriptPath, metadata);
+                    await Task.Delay(rule.DelayMilliseconds, cancellationToken).ConfigureAwait(false);
+                    await writer.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
+                    continue;
+                case "hold-until-next":
+                    metadata["action"] = "held-for-reorder";
+                    Log(transcriptPath, metadata);
+                    held = line;
+                    heldMetadata = metadata;
+                    continue;
+                default:
+                    throw new InvalidOperationException("Unknown fault action: " + rule.Action);
+            }
         }
+    }
+
+    private static Dictionary<string, object?> Restate(Dictionary<string, object?> metadata, string action)
+    {
+        var restated = new Dictionary<string, object?>(metadata);
+        restated["action"] = action;
+        return restated;
     }
 
     private static Dictionary<string, object?> Describe(string line, string direction, int connectionId)
@@ -1039,7 +1487,11 @@ $onboard = $null
 $simulator = $null
 $proxyStopping = $null
 $proxyTask = $null
+$businessProxyStopping = $null
+$businessProxyTask = $null
 $probeResult = $null
+$businessProbeResult = $null
+$businessAckDropObservation = $null
 $runtimeObservation = $null
 $runError = $null
 $protocolG1Status = 'NOT_RUN'
@@ -1047,6 +1499,8 @@ $version = $null
 $simulatorHealth = $null
 $proxyTranscript = Join-Path $EvidenceRoot 'fault-proxy-events.ndjson'
 $probeTranscript = Join-Path $EvidenceRoot 'probe-events.ndjson'
+$businessProxyTranscript = Join-Path $EvidenceRoot 'business-fault-proxy-events.ndjson'
+$businessProbeTranscript = Join-Path $EvidenceRoot 'business-probe-events.ndjson'
 
 try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
@@ -1157,6 +1611,11 @@ try {
         -WindowStyle Hidden -PassThru
     $simulatorHealth = Wait-HttpJson -Uri "http://127.0.0.1:$simulatorHttpPort/api/v1/health"
 
+    # The real onboard peer only ever sends SessionHello, the two snapshots, RecoveryStateReport and
+    # Heartbeat, so a rule naming any business message type cannot fire on its traffic. That is what
+    # lets the recovery vector and the business vectors share one armed rule table.
+    [StagedG3TlsHarness]::AddFault('server-to-client', 'DurableAck', 'RecoveryStateReport', 'drop-and-close', 0)
+
     $proxyStopping = [Threading.CancellationTokenSource]::new()
     $proxyTask = [StagedG3TlsHarness]::RunProxyAsync(
         $proxyPort,
@@ -1172,6 +1631,26 @@ try {
         if (-not $proxyReady) { Start-Sleep -Milliseconds 100 }
     } while (-not $proxyReady -and [DateTimeOffset]::UtcNow -lt $proxyDeadline)
     if (-not $proxyReady) { throw 'Loopback fault proxy did not become ready.' }
+
+    # A second listener rather than a second connection through the first one: RunProxyAsync awaits
+    # each connection to completion before accepting the next, and the onboard peer holds its
+    # connection open for the whole run.
+    $businessProxyStopping = [Threading.CancellationTokenSource]::new()
+    $businessProxyTask = [StagedG3TlsHarness]::RunProxyAsync(
+        $businessProxyPort,
+        $controlPort,
+        $tlsMaterial.PfxPath,
+        $tlsMaterial.Password,
+        $tlsMaterial.Fingerprint,
+        $businessProxyTranscript,
+        $businessProxyStopping.Token)
+    $businessProxyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+    do {
+        $businessProxyReady = @(Read-Ndjson $businessProxyTranscript |
+            Where-Object event -EQ 'proxy-listening').Count -eq 1
+        if (-not $businessProxyReady) { Start-Sleep -Milliseconds 100 }
+    } while (-not $businessProxyReady -and [DateTimeOffset]::UtcNow -lt $businessProxyDeadline)
+    if (-not $businessProxyReady) { throw 'Business fault proxy did not become ready.' }
 
     $onboard = Start-Process -FilePath 'dotnet' `
         -ArgumentList @(Join-Path $onboardPublish 'SQCD.Agv.Wpf.dll') `
@@ -1258,6 +1737,51 @@ try {
         sessionGenerations = @($replayedReports.sessionGeneration | Sort-Object -Unique)
         sessionAfterFault = $sessionEvidence
     }
+
+    $businessProbeJson = [StagedG3TlsHarness]::RunBusinessProbeAsync(
+        $businessProxyPort,
+        $tlsMaterial.Fingerprint,
+        $credential,
+        $businessProbeTranscript,
+        [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+    [IO.File]::WriteAllText(
+        (Join-Path $EvidenceRoot 'business-probe-result.json'),
+        $businessProbeJson,
+        [Text.UTF8Encoding]::new($false))
+    $businessProbeResult = $businessProbeJson | ConvertFrom-Json
+
+    # The probe cannot see the acknowledgement the proxy swallowed, so the byte-exactness of the
+    # replay is proven from the transcript's hash of the dropped line, not from the probe alone.
+    $businessEvents = Read-Ndjson $businessProxyTranscript
+    $businessDropped = @($businessEvents | Where-Object {
+        $_.event -eq 'message' -and $_.direction -eq 'server-to-client' -and
+        $_.messageType -eq 'DurableAck' -and
+        $_.acceptedMessageType -eq 'PreDepartureSafetyCheckResult' -and $_.action -eq 'dropped'
+    })
+    $businessDelayed = @($businessEvents | Where-Object {
+        $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
+        $_.messageType -eq 'SlotOperationCommandRejected' -and $_.action -eq 'delayed'
+    })
+    $businessHeld = @($businessEvents | Where-Object {
+        $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
+        $_.messageType -eq 'SublotSubmitted' -and $_.action -eq 'held-for-reorder'
+    })
+    $businessReleased = @($businessEvents | Where-Object {
+        $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
+        $_.messageType -eq 'SublotSubmitted' -and $_.action -eq 'forwarded-after-reorder'
+    })
+    $businessAckDropObservation = [ordered]@{
+        droppedAckCount = $businessDropped.Count
+        droppedAckMessageId = if ($businessDropped.Count -eq 1) { $businessDropped[0].acceptedMessageId } else { $null }
+        droppedAckWireSha256 = if ($businessDropped.Count -eq 1) { $businessDropped[0].wireSha256 } else { $null }
+        replayedAckSha256 = $businessProbeResult.ackDropInSessionReplay.replayedAckSha256
+        byteExactStoredAckReplay = $businessDropped.Count -eq 1 -and
+            $businessDropped[0].wireSha256 -eq $businessProbeResult.ackDropInSessionReplay.replayedAckSha256
+        delayedForwardCount = $businessDelayed.Count
+        injectedDelayMilliseconds = if ($businessDelayed.Count -eq 1) { $businessDelayed[0].delayMilliseconds } else { $null }
+        heldForReorderCount = $businessHeld.Count
+        releasedAfterReorderCount = $businessReleased.Count
+    }
 }
 catch {
     $runError = $_
@@ -1272,6 +1796,13 @@ finally {
             try { $proxyTask.Wait(5000) | Out-Null } catch { }
         }
         $proxyStopping.Dispose()
+    }
+    if ($null -ne $businessProxyStopping) {
+        $businessProxyStopping.Cancel()
+        if ($null -ne $businessProxyTask) {
+            try { $businessProxyTask.Wait(5000) | Out-Null } catch { }
+        }
+        $businessProxyStopping.Dispose()
     }
     Remove-TlsMaterial -Material $tlsMaterial
 }
@@ -1314,8 +1845,24 @@ if (Test-Path -LiteralPath $databasePath) {
             }
         }
         finally { $reader.Dispose(); $command.Dispose() }
+        $businessRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT MessageType, MessageId, ContentHash, COUNT(*) FROM ProtocolInbox WHERE MessageType IN ('SublotSubmitted', 'OperationProgress', 'PreDepartureSafetyCheckResult', 'SlotOperationCommandRejected') GROUP BY MessageType, MessageId, ContentHash ORDER BY MessageType, MessageId"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $businessRows += [ordered]@{
+                    messageType = $reader.GetString(0)
+                    messageId = $reader.GetString(1)
+                    contentHash = $reader.GetString(2)
+                    rowCount = $reader.GetInt64(3)
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
         $databaseObservation = [ordered]@{
             recoveryStateReportInboxRows = $recoveryRows
+            businessMessageInboxRows = $businessRows
             currentSessionGeneration = [long](Invoke-Scalar "SELECT SessionGeneration FROM SessionRecoveries WHERE AgvId = '$agvId'")
             currentSessionReadiness = [string](Invoke-Scalar "SELECT Readiness FROM SessionRecoveries WHERE AgvId = '$agvId'")
             currentSessionReasonCode = [string](Invoke-Scalar "SELECT ReasonCode FROM SessionRecoveries WHERE AgvId = '$agvId'")
@@ -1350,9 +1897,35 @@ $noMovementPass = $null -ne $databaseObservation -and
     $databaseObservation.acceptedDemandCount -eq 0 -and
     $databaseObservation.stationOperationCount -eq 0
 $probePass = $null -ne $probeResult -and $probeResult.status -eq 'PASS'
+
+$businessProbePass = $null -ne $businessProbeResult -and $businessProbeResult.status -eq 'PASS'
+$businessDuplicatePass = $null -ne $businessProbeResult -and
+    @($businessProbeResult.duplicates).Count -eq 4 -and
+    @($businessProbeResult.duplicates | Where-Object status -NE 'PASS').Count -eq 0
+$businessConflictPass = $null -ne $businessProbeResult -and
+    @($businessProbeResult.conflicts).Count -eq 4 -and
+    @($businessProbeResult.conflicts | Where-Object status -NE 'PASS').Count -eq 0
+$businessAckDropPass = $null -ne $businessProbeResult -and
+    $businessProbeResult.ackDropInSessionReplay.status -eq 'PASS' -and
+    $null -ne $businessAckDropObservation -and
+    $businessAckDropObservation.droppedAckCount -eq 1 -and
+    $businessAckDropObservation.byteExactStoredAckReplay
+$businessDelayPass = $null -ne $businessProbeResult -and
+    $businessProbeResult.delayedDelivery.status -eq 'PASS' -and
+    $null -ne $businessAckDropObservation -and
+    $businessAckDropObservation.delayedForwardCount -eq 1
+$businessReorderPass = $null -ne $businessProbeResult -and
+    $businessProbeResult.reorderedDelivery.status -eq 'PASS' -and
+    $null -ne $businessAckDropObservation -and
+    $businessAckDropObservation.heldForReorderCount -eq 1 -and
+    $businessAckDropObservation.releasedAfterReorderCount -eq 1
+
+$businessPass = $businessProbePass -and $businessDuplicatePass -and $businessConflictPass -and
+    $businessAckDropPass -and $businessDelayPass -and $businessReorderPass
+
 $status = if ($null -ne $runError) {
     'INCONCLUSIVE_RUNNER_ERROR'
-} elseif ($probePass -and $replayPass -and $noMovementPass) {
+} elseif ($probePass -and $replayPass -and $noMovementPass -and $businessPass) {
     'STAGED_G3_TLS_RECOVERY_REPLAY_PASS'
 } else {
     'STAGED_SLICE_FAIL'
@@ -1375,8 +1948,20 @@ $configuration = [ordered]@{
         controlTls = $controlPort
         controlHealth = $healthPort
         faultProxyPlaintext = $proxyPort
+        businessFaultProxy = $businessProxyPort
         simulatorModbus = $modbusPort
         simulatorHttp = $simulatorHttpPort
+    }
+    faultInjection = [ordered]@{
+        parameterisedByMessageType = $true
+        actions = @('drop-and-close', 'drop', 'delay', 'hold-until-next')
+        businessMessagePlane = @(
+            'SublotSubmitted',
+            'OperationProgress',
+            'PreDepartureSafetyCheckResult',
+            'SlotOperationCommandRejected')
+        businessMessagesDrivenBySyntheticPeer = $true
+        businessMessagesNotReachableInStagedRun = @('OperationResult', 'SlotOperationCommand')
     }
     journeyRuntimeEnabled = $false
     realExternalCredentialsUsed = $false
@@ -1437,6 +2022,11 @@ $result = [ordered]@{
         onboardEvidenceBinding = $OnboardCommit
         slotsSimulator = $SimulatorCommit
         protocol = $ProtocolCommit
+        # The published peers come from exact clones at the commits above, but this runner and its
+        # embedded harness execute from the working tree, so their identity has to be read back
+        # rather than restated. A dirty tree makes the harness unattributable, and the flag says so.
+        harness = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
+        harnessWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
     }
     protocol = [ordered]@{
         tag = $protocolTag
@@ -1455,10 +2045,17 @@ $result = [ordered]@{
         sameMessageIdDifferentContentStableConflict = if ($probePass -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         recoveryStateReportFirstAckDropReplay = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         recoveryStateReportFirstAckDropReplayOverTls = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        businessMessageSameMessageIdSameContentReplay = if ($businessDuplicatePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        businessMessageSameMessageIdDifferentContentStableConflict = if ($businessConflictPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        businessMessageAckDropInSessionReplay = if ($businessAckDropPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        businessMessageDelayedDeliveryAccepted = if ($businessDelayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        businessMessageReorderedDeliveryAccepted = if ($businessReorderPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         noMovementOrExternalSideEffects = if ($noMovementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         secretScan = if ($secretLeakFiles.Count -eq 0) { 'PASS' } else { 'FAIL' }
     }
     probe = $probeResult
+    businessProbe = $businessProbeResult
+    businessFaultInjection = $businessAckDropObservation
     recoveryReplay = $runtimeObservation
     database = $databaseObservation
     simulatorHealth = $simulatorHealth
