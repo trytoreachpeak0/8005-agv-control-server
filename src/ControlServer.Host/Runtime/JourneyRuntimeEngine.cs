@@ -413,6 +413,12 @@ public sealed class JourneyRuntimeEngine(
                             runtime.GateStationId),
                         cancellationToken).ConfigureAwait(false);
                     SetStage(runtime, JourneyRuntimeStage.AwaitingDepartureSafety, now);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    // The answer arrives in tens of milliseconds and is stamped with the peer's own
+                    // short validity window. Returning here and reading it on the next poll spent
+                    // that entire window waiting, so the evidence was always expired by the time it
+                    // was judged and the journey never left this stage. Judge it while it is valid.
+                    goto case JourneyRuntimeStage.AwaitingDepartureSafety;
                 }
                 else
                 {
@@ -420,8 +426,9 @@ public sealed class JourneyRuntimeEngine(
                 }
                 break;
             case JourneyRuntimeStage.AwaitingDepartureSafety:
-                SafetyCheckObservation? safety = await FindSafeDepartureResultAsync(runtime, session, now, cancellationToken)
-                    .ConfigureAwait(false);
+                SafetyCheckObservation? safety = await AwaitSafeDepartureResultAsync(
+                    runtime, session, cancellationToken).ConfigureAwait(false);
+                now = timeProvider.GetUtcNow();
                 if (safety is null)
                 {
                     if (runtime.BlockReasonCode is not null)
@@ -752,6 +759,40 @@ public sealed class JourneyRuntimeEngine(
             runtime.BlockReasonCode = "SUBLOT_SUBMISSION_MISMATCH";
         }
         return null;
+    }
+
+    /// <summary>
+    /// Waits briefly for the peer's answer to the pre-departure safety check, then judges it.
+    /// </summary>
+    /// <remarks>
+    /// The peer stamps its answer with a validity window of its own choosing, and the protocol puts
+    /// no floor under that window. Its window is shorter than one poll interval, so reading the
+    /// answer on the next iteration always found it expired and the journey stopped at this stage
+    /// with PRE_DEPARTURE_SAFETY_NOT_VALID. Waiting here consumes the evidence while it is still
+    /// valid rather than asking the peer for a longer window, which would only make the evidence
+    /// staler. An answer that is present but not safe stops the wait immediately -- this shortens
+    /// the gap between asking and judging, and relaxes nothing.
+    /// </remarks>
+    private async Task<SafetyCheckObservation?> AwaitSafeDepartureResultAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        // Bounded by attempts rather than by the clock: a test clock does not advance on its own,
+        // and a wait that never ends is worse than a stage that does not advance.
+        TimeSpan step = TimeSpan.FromMilliseconds(50);
+        int attempts = Math.Max(1, (int)(runtimeOptions.DepartureSafetyResultWait / step));
+        for (int attempt = 0; ; attempt++)
+        {
+            runtime.BlockReasonCode = null;
+            SafetyCheckObservation? safety = await FindSafeDepartureResultAsync(
+                runtime, session, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+            if (safety is not null || runtime.BlockReasonCode is not null || attempt >= attempts)
+            {
+                return safety;
+            }
+            await Task.Delay(step, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task<SafetyCheckObservation?> FindSafeDepartureResultAsync(

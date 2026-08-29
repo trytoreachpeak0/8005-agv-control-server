@@ -19,6 +19,14 @@ public sealed class JourneyRuntimeOptions
     public long DispatchGeneration { get; set; }
     public int MinimumBatteryPercent { get; set; } = 30;
     public TimeSpan MaximumEvidenceAge { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How long a runtime iteration waits, right after asking for a pre-departure safety check, for
+    /// the peer's answer. The peer stamps that answer with its own short validity window, so coming
+    /// back for it a whole poll interval later read evidence that had already expired. The peer
+    /// answers in tens of milliseconds; this only has to cover that.
+    /// </summary>
+    public TimeSpan DepartureSafetyResultWait { get; set; } = TimeSpan.FromMilliseconds(1500);
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];
@@ -51,6 +59,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         }
         if (options.PollInterval < TimeSpan.FromMilliseconds(100)) failures.Add("PollInterval must be at least 100 ms.");
         if (options.MaximumEvidenceAge <= TimeSpan.Zero) failures.Add("MaximumEvidenceAge must be positive.");
+        if (options.DepartureSafetyResultWait <= TimeSpan.Zero ||
+            options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))
+        {
+            failures.Add("DepartureSafetyResultWait must be positive and at most 10 s.");
+        }
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
         if (options.MapId <= 0) failures.Add("MapId must be positive.");
         if (options.GateStationRiotId <= 0) failures.Add("GateStationRiotId must be positive.");

@@ -149,6 +149,61 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task DepartureSafetyAnsweredPromptlyIsJudgedWhileItIsStillValid()
+    {
+        // The peer answers a pre-departure safety check in tens of milliseconds and stamps the
+        // answer with a validity window of its own, which is shorter than one poll interval. The
+        // engine used to publish the check and come back for the answer on its next iteration, by
+        // which time the window had closed -- the journey stopped at AwaitingDepartureSafety with
+        // PRE_DEPARTURE_SAFETY_NOT_VALID and no movement was ever authorized. Every earlier test
+        // staged the answer with a window a minute wide, so none of them could show it.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.Peer.OnMessageSent = async line =>
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement root = document.RootElement;
+            if (root.GetProperty("messageType").GetString() != "PreDepartureSafetyCheck")
+            {
+                return;
+            }
+            DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
+            await fixture.AddInboxAsync(
+                Guid.NewGuid().ToString("D"),
+                "PreDepartureSafetyCheckResult",
+                new
+                {
+                    preDepartureSafetyCheckId = root.GetProperty("payload")
+                        .GetProperty("preDepartureSafetyCheckId").GetString(),
+                    outcome = "SAFE",
+                    observedAt = answeredAt,
+                    safetyStateVersion = 7,
+                    // The window the real peer grants: shorter than the engine's poll interval.
+                    validUntil = answeredAt.AddSeconds(2),
+                    safety = new
+                    {
+                        departureSafe = true,
+                        vehicleStopped = true,
+                        allTargetSlotsLocked = true,
+                        allUnlockOutputsReset = true,
+                        unknownPresent = false,
+                        reasonCodes = Array.Empty<string>()
+                    }
+                },
+                root.GetProperty("messageId").GetString());
+        };
+
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, runtime.Stage);
+        Assert.Null(runtime.BlockReasonCode);
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_GATE"));
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task HardAdmissionFiltersBeforeStableBacklogOrderingAndRemoteSideEffects()
     {
@@ -1510,11 +1565,21 @@ public sealed class JourneyRuntimeWorkerTests
     {
         public List<byte[]> Lines { get; } = [];
 
-        public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
+        /// <summary>
+        /// Lets a test answer a command the moment it is sent, the way the real peer does. Without
+        /// it an answer can only be staged before an iteration, which hides everything that depends
+        /// on how long the server takes to come back and read it.
+        /// </summary>
+        public Func<string, Task>? OnMessageSent { get; set; }
+
+        public async Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
             Lines.Add(ndjsonLine.ToArray());
-            return Task.CompletedTask;
+            if (OnMessageSent is not null)
+            {
+                await OnMessageSent(System.Text.Encoding.UTF8.GetString(ndjsonLine.Span)).ConfigureAwait(false);
+            }
         }
     }
 
