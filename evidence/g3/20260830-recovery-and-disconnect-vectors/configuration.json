@@ -1,0 +1,67 @@
+{
+  "loopbackOnly": true,
+  "tls": {
+    "probeEnabled": true,
+    "certificateSha256": "3f395f9e2df81051d49ce5c7bcf217acf2d12f7efed5912a86109755cc6e616e",
+    "rootCertificateSha256": "83e97998b9b9574e2febc7bfbcdebc4a07924fbb5d75fc4ae4e59b30e7337fa5",
+    "trustScope": "CurrentUser/Root",
+    "temporaryTrustInstalled": true,
+    "temporaryTrustCleanupVerified": true,
+    "leafPinRequired": true,
+    "realOnboardAckDropTransport": "TLS_LOOPBACK",
+    "realOnboardAckDropTlsCombination": "PASS"
+  },
+  "ports": {
+    "controlTls": 58205,
+    "controlHealth": 58207,
+    "faultProxyPlaintext": 58215,
+    "businessFaultProxy": 58216,
+    "simulatorModbus": 1502,
+    "simulatorHttp": 58006
+  },
+  "faultInjection": {
+    "parameterisedByMessageType": true,
+    "actions": [
+      "drop-and-close",
+      "drop",
+      "delay",
+      "hold-until-next"
+    ],
+    "businessMessagePlane": [
+      "SublotSubmitted",
+      "OperationProgress",
+      "PreDepartureSafetyCheckResult",
+      "SlotOperationCommandRejected"
+    ],
+    "businessMessagesDrivenBySyntheticPeer": true,
+    "businessMessagesNotReachableInStagedRun": [
+      "OperationResult",
+      "SlotOperationCommand"
+    ],
+    "recoveryMessagePlane": [
+      "ExceptionRecoverySessionRequested",
+      "RecoveryActionSubmitted",
+      "HardwareRecoveryRecordSubmitted",
+      "LoadCancellationStartRequested",
+      "LoadCompensationRequested",
+      "LoadCorrectionRequested",
+      "ForcedMechanicalRecoveryResult",
+      "ForcedMechanicalRecoveryCommand"
+    ],
+    "recoveryMessagesDrivenBySyntheticPeer": true,
+    "recoveryAcceptedPathsNotReachableInStagedRun": [
+      "RESUME_AFTER_REPAIR",
+      "COMPENSATE_LOAD_ALL_EMPTY",
+      "FAULT_CARGO_HANDOFF",
+      "LOAD_CANCELLATION",
+      "LOAD_CORRECTION",
+      "RiotUnknownReconciliation"
+    ],
+    "recoveryAdministratorProofFromEnvironment": true
+  },
+  "journeyRuntimeEnabled": false,
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "movementCommandSent": false,
+  "vehicleSafetyEligibilityFabricated": false
+}
