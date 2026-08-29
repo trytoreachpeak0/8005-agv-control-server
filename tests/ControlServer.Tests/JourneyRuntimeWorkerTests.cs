@@ -149,6 +149,35 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task CommandsAnsweredByABusinessResultAreNotLeftPendingForReplay()
+    {
+        // SublotEntryRequested, SlotOperationCommand and PreDepartureSafetyCheck are answered with a
+        // business result, never a DurableAck, so their outbox rows stayed unacknowledged forever
+        // and were replayed into every later session carrying a new session generation. The peer
+        // refused that as a business id whose content had changed and dropped the connection, so a
+        // journey standing at the gate was torn down on every reconnect by a command it had already
+        // obeyed -- and the unload command queued behind it was never reached.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        string[] stillPending = await fixture.Context.ProtocolOutbox
+            .Where(row => row.AcknowledgedAt == null && row.FencedAt == null)
+            .Select(row => row.MessageType)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+
+        // The sublot request and the load command have both been answered by now.
+        Assert.DoesNotContain("SublotEntryRequested", stillPending);
+        Assert.DoesNotContain("SlotOperationCommand", stillPending);
+        // The safety check has not been answered yet, so it is still legitimately pending.
+        Assert.Contains("PreDepartureSafetyCheck", stillPending);
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
     public async Task DepartureSafetyAnsweredPromptlyIsJudgedWhileItIsStillValid()
     {

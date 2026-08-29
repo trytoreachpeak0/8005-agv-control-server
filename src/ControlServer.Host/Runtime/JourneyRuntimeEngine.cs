@@ -389,6 +389,11 @@ public sealed class JourneyRuntimeEngine(
                 }
                 await PublishLoadAsync(runtime, session, sublot.MessageId, cancellationToken).ConfigureAwait(false);
                 runtime.ConsumedSublotMessageId = sublot.MessageId;
+                // The submission is this command's answer. Leaving the command unsettled replayed it
+                // into every later session, where the peer refused it as a business id whose content
+                // had changed and tore the session down.
+                await store.SettleAnsweredCommandAsync(
+                    runtime.SublotRequestMessageId, now, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
                 break;
             case JourneyRuntimeStage.AwaitingLoadResult:
@@ -401,6 +406,8 @@ public sealed class JourneyRuntimeEngine(
                 }
                 else if (load?.Status == StationOperationStatus.Committed)
                 {
+                    await store.SettleAnsweredCommandAsync(
+                        runtime.LoadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
                     await publisher.PublishPreDepartureSafetyCheckAsync(
                         runtime.PreDepartureSafetyCheckMessageId,
                         runtime.AgvId,
@@ -445,6 +452,8 @@ public sealed class JourneyRuntimeEngine(
                     runtime.GateUpperId, cancellationToken).ConfigureAwait(false);
                 runtime.ConsumedSafetyResultMessageId = await FindSafetyResultMessageIdAsync(
                     runtime.PreDepartureSafetyCheckId, cancellationToken).ConfigureAwait(false);
+                await store.SettleAnsweredCommandAsync(
+                    runtime.PreDepartureSafetyCheckMessageId, now, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingGateArrival, now);
                 runtime.BlockReasonCode = dispatch.Outcome == MovementDispatchOutcome.Confirmed
                     ? null
@@ -480,6 +489,8 @@ public sealed class JourneyRuntimeEngine(
                     {
                         return;
                     }
+                    await store.SettleAnsweredCommandAsync(
+                        runtime.UnloadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
                     SetStage(runtime, JourneyRuntimeStage.Completed, now);
                 }
                 break;

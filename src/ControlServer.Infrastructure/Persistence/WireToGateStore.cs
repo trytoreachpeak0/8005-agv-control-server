@@ -1155,6 +1155,34 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }).OrderBy(row => row.CreatedAt).ThenBy(row => row.MessageId, StringComparer.Ordinal).ToArray();
     }
 
+    /// <summary>
+    /// Settles a command whose answer is a business result rather than a DurableAck.
+    /// </summary>
+    /// <remarks>
+    /// SublotEntryRequested, SlotOperationCommand and PreDepartureSafetyCheck are answered with
+    /// SublotSubmitted, OperationResult and PreDepartureSafetyCheckResult. None of those is a
+    /// DurableAck, so the outbox rows stayed unacknowledged forever and were replayed into every
+    /// later session -- carrying a new session generation, which the peer refused as a business id
+    /// whose content had changed. A journey that had long since consumed the answer was torn down
+    /// on every reconnect by a command it had already obeyed. The answer this server has already
+    /// validated and acted on is the acknowledgement.
+    /// </remarks>
+    public async Task SettleAnsweredCommandAsync(
+        string messageId,
+        DateTimeOffset answeredAt,
+        CancellationToken cancellationToken)
+    {
+        ProtocolOutboxRow? row = await dbContext.ProtocolOutbox
+            .SingleOrDefaultAsync(item => item.MessageId == messageId, cancellationToken)
+            .ConfigureAwait(false);
+        if (row is null || row.AcknowledgedAt is not null)
+        {
+            return;
+        }
+        row.AcknowledgedAt = answeredAt;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task AcknowledgeOutboundEnvelopeAsync(
         string messageId,
         string messageType,
