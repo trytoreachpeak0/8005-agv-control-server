@@ -35,8 +35,7 @@ public sealed class OnboardJourneyPublisherTests
             "READY",
             false,
             "SUFFICIENT",
-            [],
-            clock.GetUtcNow());
+            []);
 
         await publisher.PublishVehicleBusinessStateAsync(
             messageId,
@@ -115,7 +114,7 @@ public sealed class OnboardJourneyPublisherTests
             "00000000-0000-4000-8000-000000000323",
             "AGV-001",
             9,
-            new VehicleBusinessProjection(3, "READY", false, "SUFFICIENT", [], clock.GetUtcNow()),
+            new VehicleBusinessProjection(3, "READY", false, "SUFFICIENT", []),
             TestContext.Current.CancellationToken);
         await publisher.PublishCurrentStopWorklistAsync(
             "00000000-0000-4000-8000-000000000324",
@@ -169,6 +168,44 @@ public sealed class OnboardJourneyPublisherTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task UnchangedSnapshotRepublishesIntoAnAdvancingSessionGeneration()
+    {
+        // The snapshot keeps one deterministic messageId per journey stage, so after a reconnect
+        // the same state is published again under a newer generation. It used to carry a fresh
+        // observedAt, which made the payload differ every time and be refused as a semantic
+        // conflict -- an arrived journey then looped between reconnects forever. AdvancingTime-
+        // Provider moves on every read, so this fails if the timestamp leaks back into the payload.
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using ControlServerDbContext context = new(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(store, peer, new AdvancingTimeProvider());
+        const string messageId = "00000000-0000-4000-8000-000000000331";
+        VehicleBusinessProjection projection = new(2, "READY", false, "SUFFICIENT", []);
+
+        await publisher.PublishVehicleBusinessStateAsync(
+            messageId, "AGV-001", 1, projection, TestContext.Current.CancellationToken);
+        await publisher.PublishVehicleBusinessStateAsync(
+            messageId, "AGV-001", 2, projection, TestContext.Current.CancellationToken);
+        await publisher.PublishVehicleBusinessStateAsync(
+            messageId, "AGV-001", 3, projection, TestContext.Current.CancellationToken);
+
+        ProtocolOutboxRow row = await context.ProtocolOutbox.SingleAsync(
+            TestContext.Current.CancellationToken);
+        using JsonDocument stored = JsonDocument.Parse(row.PayloadJson);
+        Assert.Equal(3, stored.RootElement.GetProperty("sessionGeneration").GetInt64());
+        Assert.Equal(
+            stored.RootElement.GetProperty("sentAt").GetDateTimeOffset(),
+            stored.RootElement.GetProperty("payload").GetProperty("observedAt").GetDateTimeOffset());
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
     public async Task SnapshotReplayWithDifferentContentOrAcknowledgementHashIsRejected()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -183,7 +220,7 @@ public sealed class OnboardJourneyPublisherTests
         AdvancingTimeProvider clock = new();
         OnboardJourneyPublisher publisher = new(store, peer, clock);
         const string messageId = "00000000-0000-4000-8000-000000000311";
-        VehicleBusinessProjection original = new(1, "READY", false, "SUFFICIENT", [], clock.GetUtcNow());
+        VehicleBusinessProjection original = new(1, "READY", false, "SUFFICIENT", []);
         await publisher.PublishVehicleBusinessStateAsync(
             messageId, "AGV-001", 1, original, TestContext.Current.CancellationToken);
 

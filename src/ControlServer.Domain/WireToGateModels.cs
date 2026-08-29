@@ -81,13 +81,17 @@ public sealed record VehicleBusinessBlockingFact(
     string SubjectType,
     string? SubjectId);
 
+/// <summary>
+/// Carries no observation timestamp: the snapshot keeps one deterministic messageId per journey
+/// stage, so its wire payload has to be reproducible for that revision. The publisher stamps
+/// observedAt from the envelope's frozen sentAt instead.
+/// </summary>
 public sealed record VehicleBusinessProjection(
     long Revision,
     string Readiness,
     bool ManualChargingHold,
     string BatteryState,
-    IReadOnlyList<VehicleBusinessBlockingFact> BlockingFacts,
-    DateTimeOffset ObservedAt);
+    IReadOnlyList<VehicleBusinessBlockingFact> BlockingFacts);
 
 public sealed record CurrentStopWorklistItem(
     string DemandId,

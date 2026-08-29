@@ -617,7 +617,7 @@ public sealed class JourneyRuntimeEngine(
             runtime.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision, "READY", false, "SUFFICIENT", [], timeProvider.GetUtcNow()),
+            new VehicleBusinessProjection(runtime.VehicleBusinessRevision, "READY", false, "SUFFICIENT", []),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishCurrentStopWorklistAsync(
             runtime.WorklistMessageId,
@@ -684,7 +684,7 @@ public sealed class JourneyRuntimeEngine(
             runtime.GateVehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision + 1, "READY", false, "SUFFICIENT", [], timeProvider.GetUtcNow()),
+            new VehicleBusinessProjection(runtime.VehicleBusinessRevision + 1, "READY", false, "SUFFICIENT", []),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishCurrentStopWorklistAsync(
             runtime.GateWorklistMessageId,

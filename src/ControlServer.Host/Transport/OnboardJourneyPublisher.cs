@@ -64,12 +64,17 @@ public sealed class OnboardJourneyPublisher(
         long sessionGeneration,
         VehicleBusinessProjection projection,
         CancellationToken cancellationToken) =>
-        PublishSnapshotAsync(
+        PublishStampedSnapshotAsync(
             "VehicleBusinessStateSnapshot",
             messageId,
             agvId,
             sessionGeneration,
-            new
+            // observedAt comes from the envelope's frozen sentAt rather than a fresh clock read.
+            // This snapshot keeps one deterministic messageId per journey stage, so a payload
+            // carrying the current time differs on every re-publish and is refused as a semantic
+            // conflict -- which left an arrived journey looping between reconnects, never able to
+            // re-send the snapshot the peer was waiting on.
+            sentAt => new
             {
                 vehicleBusinessStateRevision = projection.Revision,
                 readiness = projection.Readiness,
@@ -81,7 +86,7 @@ public sealed class OnboardJourneyPublisher(
                     fact.SubjectType,
                     fact.SubjectId
                 }),
-                projection.ObservedAt
+                ObservedAt = sentAt
             },
             cancellationToken);
 
@@ -466,13 +471,25 @@ public sealed class OnboardJourneyPublisher(
         long sessionGeneration,
         object payload,
         CancellationToken cancellationToken) =>
-        await PublishEnvelopeAsync(
+        await PublishStampedSnapshotAsync(
+            messageType, messageId, agvId, sessionGeneration, _ => payload, cancellationToken)
+            .ConfigureAwait(false);
+
+    /// <summary>Builds the payload from the envelope's frozen sentAt, so re-publishes reproduce it.</summary>
+    private async Task PublishStampedSnapshotAsync(
+        string messageType,
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        Func<DateTimeOffset, object> payloadFactory,
+        CancellationToken cancellationToken) =>
+        await PublishStampedEnvelopeAsync(
             messageType,
             messageId,
             correlationId: null,
             agvId,
             sessionGeneration,
-            payload,
+            payloadFactory,
             cancellationToken).ConfigureAwait(false);
 
     private async Task PublishEnvelopeAsync(
@@ -482,10 +499,22 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         object payload,
+        CancellationToken cancellationToken) =>
+        await PublishStampedEnvelopeAsync(
+            messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken)
+            .ConfigureAwait(false);
+
+    private async Task PublishStampedEnvelopeAsync(
+        string messageType,
+        string messageId,
+        string? correlationId,
+        string agvId,
+        long sessionGeneration,
+        Func<DateTimeOffset, object> payloadFactory,
         CancellationToken cancellationToken)
     {
         ProtocolOutboxRow stored = await QueueEnvelopeAsync(
-            messageType, messageId, correlationId, agvId, sessionGeneration, payload, cancellationToken)
+            messageType, messageId, correlationId, agvId, sessionGeneration, payloadFactory, cancellationToken)
             .ConfigureAwait(false);
         if (stored.AcknowledgedAt is null && stored.FencedAt is null)
             await peer.SendAsync(
@@ -493,13 +522,24 @@ public sealed class OnboardJourneyPublisher(
                 cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<ProtocolOutboxRow> QueueEnvelopeAsync(
+    private Task<ProtocolOutboxRow> QueueEnvelopeAsync(
         string messageType,
         string messageId,
         string? correlationId,
         string agvId,
         long sessionGeneration,
         object payload,
+        CancellationToken cancellationToken) =>
+        QueueEnvelopeAsync(
+            messageType, messageId, correlationId, agvId, sessionGeneration, _ => payload, cancellationToken);
+
+    private async Task<ProtocolOutboxRow> QueueEnvelopeAsync(
+        string messageType,
+        string messageId,
+        string? correlationId,
+        string agvId,
+        long sessionGeneration,
+        Func<DateTimeOffset, object> payloadFactory,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
@@ -509,6 +549,7 @@ public sealed class OnboardJourneyPublisher(
         ProtocolOutboxRow? existing = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)
             .ConfigureAwait(false);
         DateTimeOffset sentAt = existing?.CreatedAt ?? timeProvider.GetUtcNow();
+        object payload = payloadFactory(sentAt);
         string candidateWire = JsonSerializer.Serialize(new
         {
             protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
