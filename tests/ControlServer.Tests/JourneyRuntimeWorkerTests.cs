@@ -193,7 +193,8 @@ public sealed class JourneyRuntimeWorkerTests
                         reasonCodes = Array.Empty<string>()
                     }
                 },
-                root.GetProperty("messageId").GetString());
+                // The real peer correlates by the check id, not by the messageId of the request.
+                root.GetProperty("payload").GetProperty("preDepartureSafetyCheckId").GetString());
         };
 
         JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();

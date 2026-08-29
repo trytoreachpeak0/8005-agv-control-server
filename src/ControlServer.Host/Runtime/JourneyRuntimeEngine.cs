@@ -815,7 +815,16 @@ public sealed class JourneyRuntimeEngine(
             JsonElement safety = payload.GetProperty("safety");
             DateTimeOffset observedAt = payload.GetProperty("observedAt").GetDateTimeOffset();
             DateTimeOffset validUntil = payload.GetProperty("validUntil").GetDateTimeOffset();
-            bool valid = RequiredString(root, "correlationId") == runtime.PreDepartureSafetyCheckMessageId &&
+            // The protocol requires a correlationId here but never says what it correlates to, and
+            // its own valid example points it at neither the request's messageId nor the check id.
+            // The peer correlates by the check id; we demanded the request's messageId, so a
+            // perfectly good SAFE answer was refused and no departure could ever be authorized.
+            // Both readings are accepted. This loses no identity: the check id already had to match
+            // above, and it is unique to this journey's leg, so the correlationId was only ever a
+            // second name for a fact already proven.
+            string correlationId = RequiredString(root, "correlationId");
+            bool valid = (correlationId == runtime.PreDepartureSafetyCheckMessageId ||
+                          correlationId == runtime.PreDepartureSafetyCheckId) &&
                          RequiredString(root, "agvId") == runtime.AgvId &&
                          root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
                          RequiredString(payload, "outcome") == "SAFE" &&
