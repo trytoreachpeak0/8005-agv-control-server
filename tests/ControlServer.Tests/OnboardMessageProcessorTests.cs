@@ -869,6 +869,10 @@ public sealed class OnboardMessageProcessorTests
                 reasonCodes = Array.Empty<string>()
             })
             .ToArray();
+        // The peer hashes CLR values before they reach the wire, so its observedAt is written by the
+        // DateTimeOffset converter and keeps the '+' of its offset verbatim, while the wire carries
+        // that same character escaped. A timestamp in UTC has no '+' at all and hides the
+        // difference completely, which is how the mismatch reached the field: keep a real offset.
         var withoutHash = new
         {
             demandId,
@@ -876,7 +880,7 @@ public sealed class OnboardMessageProcessorTests
             operationType,
             overallOutcome = "COMPLETED",
             slotResults,
-            observedAt = "2026-08-25T09:00:00Z",
+            observedAt = new DateTimeOffset(2026, 8, 25, 17, 0, 0, TimeSpan.FromHours(8)),
             journalCheckpoint = "RESULT_RECORDED"
         };
         return new
@@ -888,13 +892,24 @@ public sealed class OnboardMessageProcessorTests
             withoutHash.slotResults,
             withoutHash.observedAt,
             withoutHash.journalCheckpoint,
-            resultContentSha256 = WireContentHash(JsonSerializer.Serialize(withoutHash))
+            resultContentSha256 = Convert.ToHexString(
+                    SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(withoutHash, PeerSerializerOptions)))
+                .ToLowerInvariant()
         };
     }
+
+    /// <summary>Web defaults, the options both ends use.</summary>
+    private static readonly JsonSerializerOptions PeerSerializerOptions = new(JsonSerializerDefaults.Web);
 
     private static string WireContentHash(string line) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(line))).ToLowerInvariant();
 
+    /// <summary>
+    /// Builds a line the way the peer does: the payload is materialised as a JsonElement first, so
+    /// its strings are written through the encoder exactly as they arrive on the real wire. Passing
+    /// the payload object straight through would let a converter write characters the encoder
+    /// escapes, and the test would then exercise bytes no peer ever sends.
+    /// </summary>
     private static string Envelope(string messageType, string messageId, long? generation, object payload) =>
         JsonSerializer.Serialize(new
         {
@@ -908,7 +923,7 @@ public sealed class OnboardMessageProcessorTests
             agvId = "AGV-001",
             sessionGeneration = generation,
             sentAt = "2026-08-25T09:00:00Z",
-            payload
+            payload = JsonSerializer.SerializeToElement(payload, PeerSerializerOptions)
         });
 
     private static object ReleaseIdentity() => new

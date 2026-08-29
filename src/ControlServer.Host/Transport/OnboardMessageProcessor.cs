@@ -610,17 +610,39 @@ public sealed partial class OnboardMessageProcessor(
         return value.ValueKind == JsonValueKind.Null ? null : value.GetString();
     }
 
+    /// <summary>
+    /// Recomputes the peer's resultContentSha256 over the same business content it hashed.
+    /// </summary>
+    /// <remarks>
+    /// The peer hashes CLR values before they reach the wire, so its observedAt is written by the
+    /// DateTimeOffset converter and keeps the '+' of its offset verbatim. Copying the received
+    /// JsonElement into the anonymous object instead re-wrote that string through the encoder,
+    /// which escapes '+', so the two hashes could never agree and every OperationResult was refused
+    /// as a content conflict -- the connection died on the first completed load, then again every
+    /// two seconds as the peer replayed it. Decoding each field back to a CLR value reproduces what
+    /// the peer hashed; it also stops any other escapable character inside slotResults from
+    /// reintroducing the same class of drift.
+    /// </remarks>
     private static string ComputeOperationResultContentHash(JsonElement payload)
     {
         byte[] businessContent = JsonSerializer.SerializeToUtf8Bytes(new
         {
-            demandId = payload.GetProperty("demandId"),
-            slotOperationAttemptId = payload.GetProperty("slotOperationAttemptId"),
-            operationType = payload.GetProperty("operationType"),
-            overallOutcome = payload.GetProperty("overallOutcome"),
-            slotResults = payload.GetProperty("slotResults"),
-            observedAt = payload.GetProperty("observedAt"),
-            journalCheckpoint = payload.GetProperty("journalCheckpoint")
+            demandId = RequiredString(payload, "demandId"),
+            slotOperationAttemptId = RequiredString(payload, "slotOperationAttemptId"),
+            operationType = RequiredString(payload, "operationType"),
+            overallOutcome = RequiredString(payload, "overallOutcome"),
+            slotResults = payload.GetProperty("slotResults").EnumerateArray().Select(slot => new
+            {
+                slotNo = slot.GetProperty("slotNo").GetInt32(),
+                outcome = RequiredString(slot, "outcome"),
+                finalPhysicalState = RequiredString(slot, "finalPhysicalState"),
+                lockState = RequiredString(slot, "lockState"),
+                unlockOutputState = RequiredString(slot, "unlockOutputState"),
+                reasonCodes = slot.GetProperty("reasonCodes").EnumerateArray()
+                    .Select(code => code.GetString()!).ToArray()
+            }).ToArray(),
+            observedAt = payload.GetProperty("observedAt").GetDateTimeOffset(),
+            journalCheckpoint = RequiredString(payload, "journalCheckpoint")
         }, SerializerOptions);
         return Convert.ToHexString(SHA256.HashData(businessContent)).ToLowerInvariant();
     }

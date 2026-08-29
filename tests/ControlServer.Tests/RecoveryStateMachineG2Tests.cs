@@ -719,17 +719,10 @@ public sealed class RecoveryStateMachineG2Tests
             observedAt = Now.AddSeconds(1),
             journalCheckpoint = "RESULT_RECORDED"
         };
-        JsonElement normalized = JsonSerializer.SerializeToElement(withoutHash, SerializerOptions);
-        byte[] businessContent = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            demandId = normalized.GetProperty("demandId"),
-            slotOperationAttemptId = normalized.GetProperty("slotOperationAttemptId"),
-            operationType = normalized.GetProperty("operationType"),
-            overallOutcome = normalized.GetProperty("overallOutcome"),
-            slotResults = normalized.GetProperty("slotResults"),
-            observedAt = normalized.GetProperty("observedAt"),
-            journalCheckpoint = normalized.GetProperty("journalCheckpoint")
-        }, SerializerOptions);
+        // The peer hashes these CLR values directly, before anything reaches the wire. Round-tripping
+        // them through a JsonElement first only reproduced what the server itself used to do, so the
+        // two sides agreed here while disagreeing on any timestamp that carries an offset.
+        byte[] businessContent = JsonSerializer.SerializeToUtf8Bytes(withoutHash, SerializerOptions);
         return new
         {
             withoutHash.demandId,
