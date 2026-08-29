@@ -36,6 +36,21 @@ if (($env:PATH -split ';') -notcontains $nodeDirectory) {
     $env:PATH = "$nodeDirectory;$env:PATH"
 }
 
+# G1 needs pnpm as well as node. Where pnpm is not on PATH, fall back to the copy that ships
+# beside the bundled node as a plain package, invoked as `node pnpm.cjs`.
+$pnpmCommand = Get-Command pnpm -ErrorAction SilentlyContinue
+if ($null -ne $pnpmCommand) {
+    $pnpmFilePath = $pnpmCommand.Source
+    $pnpmPrefixArguments = @()
+} else {
+    $bundledPnpm = Join-Path (Split-Path -Parent $nodeDirectory) 'node_modules\pnpm\bin\pnpm.cjs'
+    if (-not (Test-Path -LiteralPath $bundledPnpm -PathType Leaf)) {
+        throw "A pnpm executable is required for protocol G1: $bundledPnpm"
+    }
+    $pnpmFilePath = $nodeExecutable
+    $pnpmPrefixArguments = @($bundledPnpm)
+}
+
 $protocolTag = 'protocol-v0.1.1'
 $manifestSha256 = 'a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f'
 $schemaBundleSha256 = 'e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c'
@@ -1037,8 +1052,12 @@ try {
     if ($tagCommit -ne $ProtocolCommit) {
         throw "$protocolTag resolves to $tagCommit, expected $ProtocolCommit"
     }
-    $g1Output = Invoke-LoggedCommand -Name 'protocol-g1' -WorkingDirectory $protocolSource -FilePath 'pnpm' `
-        -Arguments @('g1') -LogPath (Join-Path $logsRoot 'protocol-g1.log')
+    # The exact clone carries no node_modules, and G1 validates against ajv, so restore first.
+    Invoke-LoggedCommand -Name 'protocol-install' -WorkingDirectory $protocolSource -FilePath $pnpmFilePath `
+        -Arguments ($pnpmPrefixArguments + @('install', '--frozen-lockfile')) `
+        -LogPath (Join-Path $logsRoot 'protocol-install.log') | Out-Null
+    $g1Output = Invoke-LoggedCommand -Name 'protocol-g1' -WorkingDirectory $protocolSource -FilePath $pnpmFilePath `
+        -Arguments ($pnpmPrefixArguments + @('g1')) -LogPath (Join-Path $logsRoot 'protocol-g1.log')
     $g1Text = $g1Output -join [Environment]::NewLine
     if ($g1Text -notmatch '"status"\s*:\s*"PASS"' -or
         $g1Text -notmatch [regex]::Escape($manifestSha256)) {
