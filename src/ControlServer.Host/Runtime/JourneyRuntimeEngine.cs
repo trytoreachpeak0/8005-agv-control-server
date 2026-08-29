@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
@@ -641,7 +641,7 @@ public sealed class JourneyRuntimeEngine(
             runtime.WorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.PickupStationId, "PICKUP"),
+            Worklist(runtime, demand, runtime.PickupStationId, "PICKUP", runtime.WorklistRevision),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             runtime.PlanMessageId,
@@ -708,7 +708,7 @@ public sealed class JourneyRuntimeEngine(
             runtime.GateWorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.GateStationId, "GATE"),
+            Worklist(runtime, demand, runtime.GateStationId, "GATE", runtime.WorklistRevision + 1),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             runtime.GatePlanMessageId,
@@ -1119,13 +1119,23 @@ public sealed class JourneyRuntimeEngine(
         runtime.AgvLifecycleGeneration,
         runtime.DispatchGeneration);
 
+    /// <summary>
+    /// The worklist for one stop. The revision is explicit because the gate stop is a different
+    /// worklist from the pickup stop -- different station, different role -- and the peer keys a
+    /// snapshot's identity on its type and revision. Publishing both at the same revision made the
+    /// peer reject the second as a revision whose content had changed, which was right of it: a
+    /// revision that does not advance is a promise that the content did not. The connection died on
+    /// that rejection, and the unload command queued behind it was never reached, so the gate stage
+    /// could not start. The sibling projections at this stop already advance the same way.
+    /// </summary>
     private static CurrentStopWorklistProjection Worklist(
         JourneyRuntimeRow runtime,
         AcceptedDemandRow demand,
         string station,
-        string role) => new(
+        string role,
+        long revision) => new(
             station,
-            runtime.WorklistRevision,
+            revision,
             runtime.OperationSessionId,
             [new CurrentStopWorklistItem(
                 demand.DemandId,

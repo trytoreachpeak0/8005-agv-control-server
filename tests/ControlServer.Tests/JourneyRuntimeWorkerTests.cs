@@ -149,6 +149,38 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task EachStopPublishesItsWorklistUnderItsOwnRevision()
+    {
+        // The peer keys a snapshot's identity on its type and revision, so two worklists published
+        // at the same revision are a claim that their content is identical. The pickup and gate
+        // worklists carry a different station, a different role and a different stop: publishing
+        // both at revision 1 made the peer reject the second, correctly, and the connection died on
+        // that rejection with the unload command still queued behind it.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.RunToGateUnloadAsync();
+
+        (string StationId, long Revision)[] worklists = fixture.Peer.Lines
+            .Select(line => JsonDocument.Parse(System.Text.Encoding.UTF8.GetString(line)))
+            .Where(document => document.RootElement.GetProperty("messageType").GetString()
+                == "CurrentStopWorklistSnapshot")
+            .Select(document => document.RootElement.GetProperty("payload"))
+            .Select(payload => (
+                payload.GetProperty("stationId").GetString()!,
+                payload.GetProperty("worklistRevision").GetInt64()))
+            .Distinct()
+            .ToArray();
+
+        Assert.Equal(2, worklists.Length);
+        Assert.Equal(2, worklists.Select(item => item.StationId).Distinct().Count());
+        Assert.Equal(2, worklists.Select(item => item.Revision).Distinct().Count());
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
     public async Task CommandsAnsweredByABusinessResultAreNotLeftPendingForReplay()
     {
@@ -1069,6 +1101,38 @@ public sealed class JourneyRuntimeWorkerTests
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             StationOperationRow load = await OperationAsync(SlotOperationType.Load);
             await ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            return await RuntimeAsync();
+        }
+
+        /// <summary>Carries the journey on to the gate, where the unload command is issued.</summary>
+        public async Task<JourneyRuntimeRow> RunToGateUnloadAsync()
+        {
+            JourneyRuntimeRow runtime = await AdvanceToDepartureSafetyAsync();
+            await AddInboxAsync(
+                Guid.NewGuid().ToString("D"),
+                "PreDepartureSafetyCheckResult",
+                new
+                {
+                    preDepartureSafetyCheckId = runtime.PreDepartureSafetyCheckId,
+                    outcome = "SAFE",
+                    observedAt = Clock.GetUtcNow(),
+                    safetyStateVersion = 7,
+                    validUntil = Clock.GetUtcNow().AddMinutes(1),
+                    safety = new
+                    {
+                        departureSafe = true,
+                        vehicleStopped = true,
+                        allTargetSlotsLocked = true,
+                        allUnlockOutputsReset = true,
+                        unknownPresent = false,
+                        reasonCodes = Array.Empty<string>()
+                    }
+                },
+                runtime.PreDepartureSafetyCheckMessageId);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            Riot.SetSuccessfulArrival("TO_GATE", Options.GateStationRiotId);
+            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = Options.GateStationRiotId };
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             return await RuntimeAsync();
         }
