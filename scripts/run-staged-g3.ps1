@@ -1425,8 +1425,6 @@ $result = [ordered]@{
     commits = [ordered]@{
         controlServer = $ControlServerCommit
         onboardEvidenceBinding = $OnboardCommit
-        onboardRunnerBinding = '4d8629c158a02101819d475c1a2a8610b333cb48'
-        onboardProductFix = '0584322e86bdf6e1f94b58a70381b42d353ba5df'
         slotsSimulator = $SimulatorCommit
         protocol = $ProtocolCommit
     }
