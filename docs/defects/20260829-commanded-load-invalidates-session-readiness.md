@@ -1,6 +1,11 @@
 # 服务端命令的装货操作会摧毁自己的执行前提
 
-状态：**未修复**，等待归属确认后实施。
+状态：**已修复**，`ControlServer_MVP@060dba9659b569f2a639c9b9a3f01fdc9fb77628`。现场复跑验证仍待安排。
+
+归属由用户授权本仓判定。协议只定义 `departureSafe` 这一事实，`SessionReadiness` 的 schema 并不规定
+就绪度如何计算，`DEPARTURE_SAFETY_NOT_READY` 是本仓自选的字符串，因此该规则完全是本仓的实现决定，
+不涉及协议审批，也不需要车载仓配合：本仓的修改既必要（车载端单方面改拦不住本仓降级会话并停住旅程）
+又充分（本仓不降级则车载端前提成立，装货可继续）。
 
 ## 一句话
 
@@ -127,6 +132,26 @@ bool departureSafeOrExplainedByOwnCommand =
 - **车载端在操作期间不上报 `departureSafe=false`**：不可取。装货期间确实不能开走，压制该事实等于说谎。
 - **服务端完全不把 `departureSafe` 纳入会话就绪**：过宽。空闲车辆开着仓门应当 fail-close，该信号仍有
   价值，只是需要按「是否由自己的命令解释」收窄。
+
+## 已实施的修改
+
+`ControlServer_MVP@060dba9`，按上述方案落地，未偏离：
+
+- `SessionRecoveries` 新增可空列 `SafetyReasonCodesJson`、`SafetyUnknownPresent`，迁移
+  `ScopedOperationInducedUnsafety`；旧行为 NULL，而放宽要求 `SafetyUnknownPresent == false`，
+  故历史数据默认不放宽（fail-closed）。
+- `SafetyStateSnapshot` 与 `SafetyStateChanged` 两条入站路径不再丢弃 `reasonCodes` 与
+  `unknownPresent`，一并持久化。
+- `DecideReadinessAsync` 用 `IsUnsafetyExplainedByOwnCommandAsync` 收窄判定；原因码逻辑不变。
+- `AuthorizeMovementAsync` 一行未动。
+
+门禁：Release 构建 0 warning / 0 error、`dotnet format` 通过、完整测试 **225/225、0 skip**、
+全新库与降级/升级两条迁移路径均通过（`Down` 可逆）、W2G-IS-00～07 八片 G2 全部 PASS 并绑定
+`060dba9`（合计 133 个筛选测试、0 skip）。
+
+三条新测试：正向那条（本仓自己命令造成的不安全）在去掉放宽后**变红**；两条反向保护测试
+（原因码超出集合、`unknownPresent=true`、无原因码、旧行、无在执行操作）在两种情况下都绿——
+它们断言的正是**不该改变**的行为。
 
 ## 复现
 
