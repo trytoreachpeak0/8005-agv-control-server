@@ -276,6 +276,16 @@ function New-TlsMaterial {
         [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
     try {
         $rootStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+        # A run that is killed rather than allowed to fail never reaches Remove-TlsMaterial, so its
+        # root stays behind; six such roots had accumulated by 2026-08-29. Sweep expired ones from
+        # earlier runs before adding this one. Expiry is the safe predicate: these roots live eight
+        # hours, so an expired one cannot belong to a run still in progress.
+        foreach ($stale in @($rootStore.Certificates)) {
+            if ($stale.Subject.StartsWith('CN=8005 staged G3 loopback root ', [StringComparison]::Ordinal) -and
+                $stale.NotAfter -lt [DateTime]::Now) {
+                $rootStore.Remove($stale)
+            }
+        }
         $rootStore.Add($rootCertificate)
     }
     finally {
