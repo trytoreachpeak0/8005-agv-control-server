@@ -62,6 +62,8 @@ $businessProxyPort = 58216
 $modbusPort = 1502
 $simulatorHttpPort = 58006
 $agvId = 'AGV-8005-STAGED-G3-TLS-01'
+# Must stay in step with the constant inside StagedG3TlsHarness.RunRecoveryProbeAsync.
+$recoveryAgvId = 'AGV-8005-STAGED-G3-RECOVERY'
 $runStartedAt = [DateTimeOffset]::UtcNow
 $runId = $runStartedAt.ToString('yyyyMMddTHHmmssfffZ')
 
@@ -861,6 +863,656 @@ public static class StagedG3TlsHarness
         });
     }
 
+    /// <summary>
+    /// Drives the recovery request and result plane as a synthetic peer: session authorisation, the
+    /// action families the protocol defines, one forced mechanical recovery interrupted mid-command
+    /// by a transport disconnect, and a stale-generation result.
+    /// </summary>
+    /// <remarks>
+    /// Everything asserted end to end here is deliberately demand-free. A recovery session scoped to
+    /// a demand needs a blocked JourneyRuntime row and a StationOperations row, and both only exist
+    /// once MesIngest and RIoT have accepted a demand, so the demand-scoped half of the plane is
+    /// asserted at its authorisation boundary instead -- which is itself a safety property, since a
+    /// recovery session must not open against a demand the server has never accepted. What stays
+    /// uncovered is named in coverageLimits rather than faked with a fabricated StationOperations row,
+    /// which would also destroy the meaning of the noMovementOrExternalSideEffects assertion.
+    /// FORCED_MECHANICAL_RECOVERY is the one action whose accepted path needs no demand, so it
+    /// carries the disconnect, the monotonic generation and the historical-only result vectors.
+    /// </remarks>
+    public static async Task<string> RunRecoveryProbeAsync(
+        int port,
+        string expectedFingerprint,
+        string credential,
+        string authenticationProof,
+        string transcriptPath,
+        CancellationToken cancellationToken)
+    {
+        File.WriteAllText(transcriptPath, string.Empty, new UTF8Encoding(false));
+        const string agvId = "AGV-8005-STAGED-G3-RECOVERY";
+        const string administratorId = "STAGED-G3-RECOVERY-ADMINISTRATOR";
+        string eventId = StableGuid("recovery:event");
+        string requestId = StableGuid("recovery:request");
+        string absentDemandId = StableGuid("recovery:absent-demand");
+        string absentAttemptId = StableGuid("recovery:absent-attempt");
+        int[] scope = { 1 };
+        int[] outOfScope = { 2 };
+        int helloSequence = 0;
+
+        var authorisationCases = new List<Dictionary<string, object?>>();
+        var actionBoundaryCases = new List<Dictionary<string, object?>>();
+        var demandScopedCases = new List<Dictionary<string, object?>>();
+        var hardwareCases = new List<Dictionary<string, object?>>();
+        string? sessionId;
+        string openedResponse;
+        string replayedOpenResponse;
+
+        await using (Connection connection = await Connection.OpenAsync(
+            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+        {
+            long generation = await HandshakeAsync(
+                connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
+                .ConfigureAwait(false);
+
+            string rejected = await ExchangeAsync(
+                connection,
+                SessionRequest(
+                    agvId, StableGuid("recovery:request-bad-proof"), generation,
+                    StableGuid("recovery:request-bad-proof-id"), eventId, null, scope,
+                    authenticationProof + "-rejected", administratorId),
+                "ExceptionRecoverySessionRejected", cancellationToken).ConfigureAwait(false);
+            authorisationCases.Add(Case(
+                transcriptPath, "recovery-session-authentication-required", rejected,
+                NestedProperty(rejected, "payload", "problem", "reasonCode") == "RECOVERY_AUTHENTICATION_REQUIRED",
+                new Dictionary<string, object?>
+                {
+                    ["observedReasonCode"] = NestedProperty(rejected, "payload", "problem", "reasonCode")
+                }));
+
+            string demandRejected = await ExchangeAsync(
+                connection,
+                SessionRequest(
+                    agvId, StableGuid("recovery:request-absent-demand"), generation,
+                    StableGuid("recovery:request-absent-demand-id"), eventId, absentDemandId, scope,
+                    authenticationProof, administratorId),
+                "ExceptionRecoverySessionRejected", cancellationToken).ConfigureAwait(false);
+            authorisationCases.Add(Case(
+                transcriptPath, "recovery-session-refused-for-unaccepted-demand", demandRejected,
+                NestedProperty(demandRejected, "payload", "problem", "reasonCode") == "RECOVERY_DEMAND_NOT_BLOCKED",
+                new Dictionary<string, object?>
+                {
+                    ["observedReasonCode"] = NestedProperty(demandRejected, "payload", "problem", "reasonCode")
+                }));
+
+            openedResponse = await ExchangeAsync(
+                connection,
+                SessionRequest(
+                    agvId, StableGuid("recovery:request-open"), generation, requestId, eventId, null, scope,
+                    authenticationProof, administratorId),
+                "ExceptionRecoverySessionOpened", cancellationToken).ConfigureAwait(false);
+            sessionId = NestedProperty(openedResponse, "payload", "exceptionRecoverySessionId");
+            authorisationCases.Add(Case(
+                transcriptPath, "recovery-session-opened-without-demand", openedResponse,
+                sessionId is not null &&
+                NestedProperty(openedResponse, "payload", "requestId") == requestId,
+                new Dictionary<string, object?> { ["exceptionRecoverySessionId"] = sessionId }));
+
+            // A different messageId carrying the same requestId and the same business content goes
+            // past the inbox and reaches the coordinator's own replay branch, so this asserts the
+            // session is idempotent in requestId rather than only in messageId.
+            replayedOpenResponse = await ExchangeAsync(
+                connection,
+                SessionRequest(
+                    agvId, StableGuid("recovery:request-open-replay"), generation, requestId, eventId, null, scope,
+                    authenticationProof, administratorId),
+                "ExceptionRecoverySessionOpened", cancellationToken).ConfigureAwait(false);
+            authorisationCases.Add(Case(
+                transcriptPath, "recovery-session-requestid-replay-idempotent", replayedOpenResponse,
+                NestedProperty(replayedOpenResponse, "payload", "exceptionRecoverySessionId") == sessionId &&
+                NestedProperty(replayedOpenResponse, "payload", "requestId") == requestId &&
+                NumberNestedProperty(replayedOpenResponse, "payload", "recoverySessionRevision") ==
+                    NumberNestedProperty(openedResponse, "payload", "recoverySessionRevision"),
+                new Dictionary<string, object?>
+                {
+                    ["exceptionRecoverySessionId"] =
+                        NestedProperty(replayedOpenResponse, "payload", "exceptionRecoverySessionId")
+                }));
+
+            string alreadyOpen = await ExchangeAsync(
+                connection,
+                SessionRequest(
+                    agvId, StableGuid("recovery:request-second"), generation,
+                    StableGuid("recovery:request-second-id"), eventId, null, scope,
+                    authenticationProof, administratorId),
+                "ExceptionRecoverySessionRejected", cancellationToken).ConfigureAwait(false);
+            authorisationCases.Add(Case(
+                transcriptPath, "recovery-session-single-open-per-vehicle", alreadyOpen,
+                NestedProperty(alreadyOpen, "payload", "problem", "reasonCode") == "RECOVERY_SESSION_ALREADY_OPEN",
+                new Dictionary<string, object?>
+                {
+                    ["observedReasonCode"] = NestedProperty(alreadyOpen, "payload", "problem", "reasonCode")
+                }));
+        }
+
+        bool requestConflictClosed;
+        await using (Connection connection = await Connection.OpenAsync(
+            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+        {
+            long generation = await HandshakeAsync(
+                connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
+                .ConfigureAwait(false);
+            await connection.WriteAsync(
+                SessionRequest(
+                    agvId, StableGuid("recovery:request-conflict"), generation, requestId, eventId, null, outOfScope,
+                    authenticationProof, administratorId),
+                cancellationToken).ConfigureAwait(false);
+            requestConflictClosed = await connection
+                .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        }
+        authorisationCases.Add(Case(
+            transcriptPath, "recovery-session-requestid-content-conflict", null, requestConflictClosed,
+            new Dictionary<string, object?> { ["connectionClosed"] = requestConflictClosed }));
+
+        string? acceptedFirstActionId;
+        bool commandConnectionClosed;
+        await using (Connection connection = await Connection.OpenAsync(
+            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+        {
+            long generation = await HandshakeAsync(
+                connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (string action in new[]
+            {
+                "RESUME_AFTER_REPAIR", "COMPENSATE_LOAD_ALL_EMPTY", "FAULT_CARGO_HANDOFF"
+            })
+            {
+                string response = await ExchangeAsync(
+                    connection,
+                    ActionSubmit(
+                        agvId, StableGuid("recovery:action-boundary:" + action), generation,
+                        StableGuid("recovery:action-boundary-id:" + action), sessionId!, action,
+                        eventId, null, scope, administratorId),
+                    "RecoveryActionRejected", cancellationToken).ConfigureAwait(false);
+                actionBoundaryCases.Add(Case(
+                    transcriptPath, "recovery-action-requires-demand-" + action, response,
+                    NestedProperty(response, "payload", "problem", "reasonCode") == "ACTION_NOT_ALLOWED_IN_STATE",
+                    new Dictionary<string, object?>
+                    {
+                        ["action"] = action,
+                        ["observedReasonCode"] = NestedProperty(response, "payload", "problem", "reasonCode")
+                    }));
+            }
+
+            string scopeMismatch = await ExchangeAsync(
+                connection,
+                ActionSubmit(
+                    agvId, StableGuid("recovery:action-scope-mismatch"), generation,
+                    StableGuid("recovery:action-scope-mismatch-id"), sessionId!, "FORCED_MECHANICAL_RECOVERY",
+                    eventId, null, outOfScope, administratorId),
+                "RecoveryActionRejected", cancellationToken).ConfigureAwait(false);
+            actionBoundaryCases.Add(Case(
+                transcriptPath, "recovery-action-scope-mismatch", scopeMismatch,
+                NestedProperty(scopeMismatch, "payload", "problem", "reasonCode") == "RECOVERY_SCOPE_MISMATCH",
+                new Dictionary<string, object?>
+                {
+                    ["action"] = "FORCED_MECHANICAL_RECOVERY",
+                    ["observedReasonCode"] = NestedProperty(scopeMismatch, "payload", "problem", "reasonCode")
+                }));
+
+            string cancellation = await ExchangeAsync(
+                connection,
+                LoadCancellationRequest(
+                    agvId, StableGuid("recovery:load-cancellation"), generation,
+                    StableGuid("recovery:load-cancellation-id"), absentDemandId, absentAttemptId, administratorId),
+                "LoadCancellationAuthorization", cancellationToken).ConfigureAwait(false);
+            demandScopedCases.Add(Case(
+                transcriptPath, "load-cancellation-refused-without-accepted-demand", cancellation,
+                NestedProperty(cancellation, "payload", "decision") == "REJECTED" &&
+                NestedProperty(cancellation, "payload", "problem", "reasonCode") == "ACTION_NOT_ALLOWED_IN_STATE",
+                new Dictionary<string, object?>
+                {
+                    ["messageType"] = "LoadCancellationStartRequested",
+                    ["observedDecision"] = NestedProperty(cancellation, "payload", "decision")
+                }));
+
+            string correction = await ExchangeAsync(
+                connection,
+                LoadCorrectionRequest(
+                    agvId, StableGuid("recovery:load-correction"), generation,
+                    StableGuid("recovery:load-correction-id"), absentDemandId, absentAttemptId, scope,
+                    administratorId),
+                "LoadCorrectionRejected", cancellationToken).ConfigureAwait(false);
+            demandScopedCases.Add(Case(
+                transcriptPath, "load-correction-refused-without-committed-operation", correction,
+                NestedProperty(correction, "payload", "problem", "reasonCode") == "ACTION_NOT_ALLOWED_IN_STATE",
+                new Dictionary<string, object?>
+                {
+                    ["messageType"] = "LoadCorrectionRequested",
+                    ["observedReasonCode"] = NestedProperty(correction, "payload", "problem", "reasonCode")
+                }));
+
+            string compensation = await ExchangeAsync(
+                connection,
+                LoadCompensationRequest(
+                    agvId, StableGuid("recovery:load-compensation"), generation,
+                    StableGuid("recovery:load-compensation-id"), sessionId!, absentDemandId, absentAttemptId,
+                    administratorId),
+                "LoadCompensationRejected", cancellationToken).ConfigureAwait(false);
+            demandScopedCases.Add(Case(
+                transcriptPath, "load-compensation-refused-without-authorised-workflow", compensation,
+                NestedProperty(compensation, "payload", "problem", "reasonCode") == "ACTION_NOT_ALLOWED_IN_STATE",
+                new Dictionary<string, object?>
+                {
+                    ["messageType"] = "LoadCompensationRequested",
+                    ["observedReasonCode"] = NestedProperty(compensation, "payload", "problem", "reasonCode")
+                }));
+
+            // Armed only now, so none of the refused actions above can consume the one-shot rule.
+            AddFault("server-to-client", "ForcedMechanicalRecoveryCommand", null, "drop-and-close", 0);
+            string accepted = await ExchangeAsync(
+                connection,
+                ActionSubmit(
+                    agvId, StableGuid("recovery:forced-one"), generation,
+                    StableGuid("recovery:forced-one-id"), sessionId!, "FORCED_MECHANICAL_RECOVERY",
+                    eventId, null, scope, administratorId),
+                "RecoveryActionAccepted", cancellationToken).ConfigureAwait(false);
+            acceptedFirstActionId = NestedProperty(accepted, "payload", "recoveryActionId");
+            commandConnectionClosed = await connection
+                .ExpectClosedAsync(TimeSpan.FromSeconds(10), cancellationToken).ConfigureAwait(false);
+            Log(transcriptPath, new Dictionary<string, object?>
+            {
+                ["case"] = "forced-mechanical-command-lost-to-disconnect",
+                ["status"] = commandConnectionClosed ? "PASS" : "FAIL",
+                ["recoveryActionId"] = acceptedFirstActionId,
+                ["connectionClosed"] = commandConnectionClosed
+            });
+        }
+
+        // Killing the connection from the proxy leaves the server unwinding its single accept slot.
+        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+
+        string firstActionId = StableGuid("recovery:forced-one-id");
+        string secondActionId = StableGuid("recovery:forced-two-id");
+        string currentResultMessageId = StableGuid("recovery:forced-two-result");
+        string? replayedCommand;
+        string staleResultAck;
+        string currentResultAck;
+        string replayedResultAck;
+        await using (Connection connection = await Connection.OpenAsync(
+            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+        {
+            long generation = await HandshakeAsync(
+                connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
+                .ConfigureAwait(false);
+            await connection.WriteAsync(
+                RecoveryReport(agvId, StableGuid("recovery:report-one"), generation,
+                    StableGuid("recovery:report-one-id"), 1),
+                cancellationToken).ConfigureAwait(false);
+            replayedCommand = await ReadUntilAsync(
+                connection, "ForcedMechanicalRecoveryCommand", TimeSpan.FromSeconds(15), cancellationToken)
+                .ConfigureAwait(false);
+            Log(transcriptPath, new Dictionary<string, object?>
+            {
+                ["case"] = "forced-mechanical-command-replayed-after-reconnect",
+                ["status"] = replayedCommand is not null &&
+                    NestedProperty(replayedCommand, "payload", "recoveryActionId") == firstActionId
+                    ? "PASS" : "FAIL",
+                ["recoveryActionId"] = NestedProperty(replayedCommand, "payload", "recoveryActionId"),
+                ["forcedRecoveryGeneration"] = replayedCommand is null
+                    ? null
+                    : (object)NumberNestedProperty(replayedCommand, "payload", "forcedRecoveryGeneration"),
+                ["sessionGeneration"] = replayedCommand is null
+                    ? null
+                    : (object)NumberProperty(replayedCommand, "sessionGeneration"),
+                ["responseSha256"] = replayedCommand is null ? null : Sha256(replayedCommand)
+            });
+
+            await ExchangeAsync(
+                connection,
+                ActionSubmit(
+                    agvId, StableGuid("recovery:forced-two"), generation, secondActionId, sessionId!,
+                    "FORCED_MECHANICAL_RECOVERY", eventId, null, scope, administratorId),
+                "RecoveryActionAccepted", cancellationToken).ConfigureAwait(false);
+
+            staleResultAck = await ExchangeAsync(
+                connection,
+                ForcedResult(
+                    agvId, StableGuid("recovery:forced-one-result"), generation, sessionId!, firstActionId,
+                    1, scope, administratorId, "2026-08-26T12:00:00Z"),
+                "DurableAck", cancellationToken).ConfigureAwait(false);
+            currentResultAck = await ExchangeAsync(
+                connection,
+                ForcedResult(
+                    agvId, currentResultMessageId, generation, sessionId!, secondActionId,
+                    2, scope, administratorId, "2026-08-26T12:00:01Z"),
+                "DurableAck", cancellationToken).ConfigureAwait(false);
+            replayedResultAck = await ExchangeAsync(
+                connection,
+                ForcedResult(
+                    agvId, currentResultMessageId, generation, sessionId!, secondActionId,
+                    2, scope, administratorId, "2026-08-26T12:00:01Z"),
+                "DurableAck", cancellationToken).ConfigureAwait(false);
+
+            string recorded = await ExchangeAsync(
+                connection,
+                HardwareRecord(
+                    agvId, StableGuid("recovery:hardware-record"), generation,
+                    StableGuid("recovery:hardware-record-id"), sessionId!, secondActionId, scope, administratorId),
+                "HardwareRecoveryRecordResult", cancellationToken).ConfigureAwait(false);
+            hardwareCases.Add(Case(
+                transcriptPath, "hardware-recovery-record-recorded", recorded,
+                NestedProperty(recorded, "payload", "outcome") == "RECORDED",
+                new Dictionary<string, object?> { ["observedOutcome"] = NestedProperty(recorded, "payload", "outcome") }));
+
+            string scopeRejected = await ExchangeAsync(
+                connection,
+                HardwareRecord(
+                    agvId, StableGuid("recovery:hardware-record-mismatch"), generation,
+                    StableGuid("recovery:hardware-record-mismatch-id"), sessionId!, secondActionId,
+                    outOfScope, administratorId),
+                "HardwareRecoveryRecordResult", cancellationToken).ConfigureAwait(false);
+            hardwareCases.Add(Case(
+                transcriptPath, "hardware-recovery-record-scope-rejected", scopeRejected,
+                NestedProperty(scopeRejected, "payload", "outcome") == "REJECTED" &&
+                NestedProperty(scopeRejected, "payload", "problem", "reasonCode") == "RECOVERY_SCOPE_MISMATCH",
+                new Dictionary<string, object?>
+                {
+                    ["observedOutcome"] = NestedProperty(scopeRejected, "payload", "outcome"),
+                    ["observedReasonCode"] = NestedProperty(scopeRejected, "payload", "problem", "reasonCode")
+                }));
+        }
+
+        bool resultConflictClosed;
+        await using (Connection connection = await Connection.OpenAsync(
+            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+        {
+            long generation = await HandshakeAsync(
+                connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
+                .ConfigureAwait(false);
+            await connection.WriteAsync(
+                ForcedResult(
+                    agvId, currentResultMessageId, generation, sessionId!, secondActionId,
+                    2, scope, administratorId, "2026-08-26T12:00:09Z"),
+                cancellationToken).ConfigureAwait(false);
+            resultConflictClosed = await connection
+                .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        }
+
+        bool authorisationPass = authorisationCases.All(item => Equals(item["status"], "PASS"));
+        bool actionBoundaryPass = actionBoundaryCases.All(item => Equals(item["status"], "PASS"));
+        bool demandScopedPass = demandScopedCases.All(item => Equals(item["status"], "PASS"));
+        bool hardwarePass = hardwareCases.All(item => Equals(item["status"], "PASS"));
+        bool disconnectPass = commandConnectionClosed &&
+            acceptedFirstActionId == firstActionId &&
+            replayedCommand is not null &&
+            NestedProperty(replayedCommand, "payload", "recoveryActionId") == firstActionId &&
+            NumberNestedProperty(replayedCommand, "payload", "forcedRecoveryGeneration") == 1;
+        bool staleResultPass =
+            NestedProperty(staleResultAck, "payload", "acceptedMessageType") == "ForcedMechanicalRecoveryResult" &&
+            NestedProperty(staleResultAck, "payload", "acceptedMessageId") == StableGuid("recovery:forced-one-result");
+        bool currentResultPass =
+            NestedProperty(currentResultAck, "payload", "acceptedMessageId") == currentResultMessageId;
+        bool resultReplayPass = currentResultAck == replayedResultAck && resultConflictClosed;
+
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["schemaVersion"] = "1.0.0",
+            ["status"] = authorisationPass && actionBoundaryPass && demandScopedPass && hardwarePass &&
+                disconnectPass && staleResultPass && currentResultPass && resultReplayPass
+                ? "PASS"
+                : "FAIL",
+            ["agvId"] = agvId,
+            ["exceptionRecoverySessionId"] = sessionId,
+            ["sessionAuthorisation"] = authorisationCases,
+            ["actionBoundary"] = actionBoundaryCases,
+            ["demandScopedAuthorisationBoundary"] = demandScopedCases,
+            ["hardwareRecoveryRecord"] = hardwareCases,
+            ["disconnectDuringRecoveryCommand"] = new Dictionary<string, object?>
+            {
+                ["status"] = disconnectPass ? "PASS" : "FAIL",
+                ["recoveryActionId"] = firstActionId,
+                ["connectionClosedBeforeCommandArrived"] = commandConnectionClosed,
+                ["commandReplayedAfterReconnect"] = replayedCommand is not null,
+                ["replayedCommandRecoveryActionId"] =
+                    NestedProperty(replayedCommand, "payload", "recoveryActionId"),
+                ["replayedCommandForcedRecoveryGeneration"] = replayedCommand is null
+                    ? null
+                    : (object)NumberNestedProperty(replayedCommand, "payload", "forcedRecoveryGeneration"),
+                ["replayedCommandSha256"] = replayedCommand is null ? null : Sha256(replayedCommand)
+            },
+            ["forcedRecoveryGenerationBranches"] = new Dictionary<string, object?>
+            {
+                ["status"] = staleResultPass && currentResultPass && resultReplayPass ? "PASS" : "FAIL",
+                ["firstRecoveryActionId"] = firstActionId,
+                ["secondRecoveryActionId"] = secondActionId,
+                ["staleGenerationResultAcknowledged"] = staleResultPass,
+                ["currentGenerationResultAcknowledged"] = currentResultPass,
+                ["resultReplayByteExact"] = currentResultAck == replayedResultAck,
+                ["resultContentConflictClosedConnection"] = resultConflictClosed,
+                ["currentResultAckSha256"] = Sha256(currentResultAck)
+            },
+            ["coverageLimits"] = new Dictionary<string, object?>
+            {
+                ["DisconnectDuringSlotOperation"] =
+                    "Not reachable in a staged run. Interrupting a slot operation needs a StationOperations " +
+                    "row in RecoveryRequired, and StationOperations is only written by " +
+                    "PrepareSlotOperationAsync from a demand accepted through MesIngest and RIoT. The " +
+                    "disconnect vector is therefore taken on the forced mechanical recovery command, which " +
+                    "is the one authorised recovery command that needs no demand.",
+                ["ResumeCompensationCorrectionCancellationAndFaultCargoAcceptedPaths"] =
+                    "Only their refusal branches are reachable. Each accepted path needs a persisted " +
+                    "StationOperations row -- RESUME_AFTER_REPAIR additionally needs a proven recovery " +
+                    "checkpoint on the session -- so a staged run can assert that they are refused without " +
+                    "a demand, not that they complete with one.",
+                ["RiotUnknownReconciliation"] =
+                    "Not reachable in a staged run. RIoT is pointed at a dead port and no demand exists, so " +
+                    "no create attempt is made and no UNKNOWN disposition can arise. The behaviour is " +
+                    "recorded in the audit chain of evidence/g3/20260829-authorized-single-real-create and " +
+                    "still needs a demand-bearing run against the real RIoT to become an asserted vector."
+            }
+        });
+    }
+
+    private static Dictionary<string, object?> Case(
+        string transcriptPath,
+        string name,
+        string? response,
+        bool passed,
+        Dictionary<string, object?> detail)
+    {
+        var item = new Dictionary<string, object?>(detail)
+        {
+            ["case"] = name,
+            ["status"] = passed ? "PASS" : "FAIL",
+            ["responseType"] = response is null ? null : Property(response, "messageType"),
+            ["responseSha256"] = response is null ? null : Sha256(response)
+        };
+        Log(transcriptPath, item);
+        return item;
+    }
+
+    /// <summary>
+    /// Writes one line and returns the first response of the expected type, skipping the snapshots and
+    /// acknowledgements the server pushes alongside a recovery response.
+    /// </summary>
+    private static async Task<string> ExchangeAsync(
+        Connection connection,
+        string line,
+        string expectedMessageType,
+        CancellationToken cancellationToken)
+    {
+        await connection.WriteAsync(line, cancellationToken).ConfigureAwait(false);
+        return await ReadUntilAsync(connection, expectedMessageType, TimeSpan.FromSeconds(10), cancellationToken)
+            .ConfigureAwait(false) ??
+            throw new EndOfStreamException("Expected a " + expectedMessageType + " response.");
+    }
+
+    private static async Task<string?> ReadUntilAsync(
+        Connection connection,
+        string expectedMessageType,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+        while (true)
+        {
+            TimeSpan remaining = deadline - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero) return null;
+            string? line = await connection.ReadAsync(remaining, cancellationToken).ConfigureAwait(false);
+            if (line is null) return null;
+            if (Property(line, "messageType") == expectedMessageType) return line;
+        }
+    }
+
+    private static Dictionary<string, object?> OperatorContext(string operatorId) =>
+        new()
+        {
+            ["operatorId"] = operatorId,
+            ["verificationMethod"] = "BADGE",
+            ["verifiedAt"] = "2026-08-26T12:00:00Z"
+        };
+
+    private static string SessionRequest(
+        string agvId, string messageId, long generation, string requestId, string eventId,
+        string? demandId, int[] slots, string authenticationProof, string administratorId) =>
+        Envelope(
+            Protocol.Release, Protocol.Manifest, "ExceptionRecoverySessionRequested", messageId, agvId, generation,
+            new Dictionary<string, object?>
+            {
+                ["requestId"] = requestId,
+                ["administrator"] = OperatorContext(administratorId),
+                ["administratorRole"] = "MAINTENANCE_ADMINISTRATOR",
+                ["eventId"] = eventId,
+                ["demandId"] = demandId,
+                ["slots"] = slots,
+                ["reason"] = "STAGED_G3_RECOVERY_VECTOR",
+                ["authenticationProof"] = authenticationProof
+            });
+
+    private static string ActionSubmit(
+        string agvId, string messageId, long generation, string recoveryActionId, string sessionId,
+        string action, string eventId, string? demandId, int[] slots, string operatorId) =>
+        Envelope(
+            Protocol.Release, Protocol.Manifest, "RecoveryActionSubmitted", messageId, agvId, generation,
+            new Dictionary<string, object?>
+            {
+                ["recoveryActionId"] = recoveryActionId,
+                ["exceptionRecoverySessionId"] = sessionId,
+                ["action"] = action,
+                ["eventId"] = eventId,
+                ["demandId"] = demandId,
+                ["slots"] = slots,
+                ["operator"] = OperatorContext(operatorId),
+                ["reason"] = "STAGED_G3_RECOVERY_VECTOR"
+            });
+
+    private static string ForcedResult(
+        string agvId, string messageId, long generation, string sessionId, string recoveryActionId,
+        long forcedRecoveryGeneration, int[] slots, string operatorId, string observedAt) =>
+        Envelope(
+            Protocol.Release, Protocol.Manifest, "ForcedMechanicalRecoveryResult", messageId, agvId, generation,
+            new Dictionary<string, object?>
+            {
+                ["exceptionRecoverySessionId"] = sessionId,
+                ["recoveryActionId"] = recoveryActionId,
+                ["forcedRecoveryGeneration"] = forcedRecoveryGeneration,
+                ["outcome"] = "MECHANICALLY_ISOLATED",
+                ["slots"] = slots,
+                ["operator"] = OperatorContext(operatorId),
+                ["observedAt"] = observedAt,
+                // A forced mechanical recovery is an isolation, never a proof that the vehicle is
+                // empty or ready; the server must keep the workflow unreconciled on exactly this.
+                ["electronicEmptyProven"] = false,
+                ["vehicleReadyProven"] = false
+            });
+
+    private static string RecoveryReport(
+        string agvId, string messageId, long generation, string reportId, long forcedRecoveryGeneration) =>
+        Envelope(
+            Protocol.Release, Protocol.Manifest, "RecoveryStateReport", messageId, agvId, generation,
+            new Dictionary<string, object?>
+            {
+                ["reportId"] = reportId,
+                ["observedAt"] = "2026-08-26T12:00:00Z",
+                ["unsettledSlotOperationAttemptId"] = null,
+                ["provenRecoveryCheckpoint"] = null,
+                ["activeUnlockSlots"] = Array.Empty<int>(),
+                ["forcedRecoveryGeneration"] = forcedRecoveryGeneration,
+                ["pendingResults"] = Array.Empty<object>(),
+                ["journalContentSha256"] = new string('0', 64)
+            });
+
+    private static string LoadCancellationRequest(
+        string agvId, string messageId, long generation, string cancellationId, string demandId,
+        string slotOperationAttemptId, string operatorId) =>
+        Envelope(
+            Protocol.Release, Protocol.Manifest, "LoadCancellationStartRequested", messageId, agvId, generation,
+            new Dictionary<string, object?>
+            {
+                ["cancellationId"] = cancellationId,
+                ["demandId"] = demandId,
+                ["slotOperationAttemptId"] = slotOperationAttemptId,
+                ["operator"] = OperatorContext(operatorId),
+                ["reason"] = "STAGED_G3_RECOVERY_VECTOR"
+            });
+
+    private static string LoadCorrectionRequest(
+        string agvId, string messageId, long generation, string correctionId, string demandId,
+        string slotOperationAttemptId, int[] slots, string operatorId) =>
+        Envelope(
+            Protocol.Release, Protocol.Manifest, "LoadCorrectionRequested", messageId, agvId, generation,
+            new Dictionary<string, object?>
+            {
+                ["correctionId"] = correctionId,
+                ["demandId"] = demandId,
+                ["slotOperationAttemptId"] = slotOperationAttemptId,
+                ["slots"] = slots,
+                ["operator"] = OperatorContext(operatorId),
+                ["reason"] = "STAGED_G3_RECOVERY_VECTOR"
+            });
+
+    private static string LoadCompensationRequest(
+        string agvId, string messageId, long generation, string recoveryActionId, string sessionId,
+        string demandId, string slotOperationAttemptId, string operatorId) =>
+        Envelope(
+            Protocol.Release, Protocol.Manifest, "LoadCompensationRequested", messageId, agvId, generation,
+            new Dictionary<string, object?>
+            {
+                ["recoveryActionId"] = recoveryActionId,
+                ["exceptionRecoverySessionId"] = sessionId,
+                ["demandId"] = demandId,
+                ["slotOperationAttemptId"] = slotOperationAttemptId,
+                ["operator"] = OperatorContext(operatorId)
+            });
+
+    private static string HardwareRecord(
+        string agvId, string messageId, long generation, string recordId, string sessionId,
+        string recoveryActionId, int[] slots, string operatorId) =>
+        Envelope(
+            Protocol.Release, Protocol.Manifest, "HardwareRecoveryRecordSubmitted", messageId, agvId, generation,
+            new Dictionary<string, object?>
+            {
+                ["recordId"] = recordId,
+                ["exceptionRecoverySessionId"] = sessionId,
+                ["recoveryActionId"] = recoveryActionId,
+                ["operator"] = OperatorContext(operatorId),
+                ["administratorRole"] = "MAINTENANCE_ADMINISTRATOR",
+                ["slots"] = slots,
+                ["checksPerformed"] = new[] { "STAGED_G3_MECHANICAL_ISOLATION_VERIFIED" },
+                ["actionsPerformed"] = new[] { "STAGED_G3_MECHANICAL_ISOLATION_APPLIED" },
+                ["observations"] = new[] { "STAGED_G3_NO_PHYSICAL_ACTION_TAKEN" },
+                ["observedAt"] = "2026-08-26T12:00:00Z"
+            });
+
+    private static long NumberNestedProperty(string? json, params string[] names)
+    {
+        if (json is null) throw new EndOfStreamException("Expected JSON response.");
+        using JsonDocument document = JsonDocument.Parse(json);
+        JsonElement current = document.RootElement;
+        foreach (string name in names) current = current.GetProperty(name);
+        return current.GetInt64();
+    }
+
     private static async Task<long> HandshakeAsync(
         Connection connection,
         string agvId,
@@ -1489,6 +2141,9 @@ public static class StagedG3TlsHarness
 Add-Type -TypeDefinition $harnessSource -Language CSharp
 
 $credential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+# The recovery administrator proof is a server-side secret compared in fixed time. It is generated
+# per run, never written to evidence, and the inbox stores the request with the field redacted.
+$recoveryProof = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
 $tlsMaterial = $null
 $control = $null
 $onboard = $null
@@ -1499,7 +2154,9 @@ $businessProxyStopping = $null
 $businessProxyTask = $null
 $probeResult = $null
 $businessProbeResult = $null
+$recoveryProbeResult = $null
 $businessAckDropObservation = $null
+$recoveryFaultObservation = $null
 $runtimeObservation = $null
 $runError = $null
 $protocolG1Status = 'NOT_RUN'
@@ -1509,6 +2166,7 @@ $proxyTranscript = Join-Path $EvidenceRoot 'fault-proxy-events.ndjson'
 $probeTranscript = Join-Path $EvidenceRoot 'probe-events.ndjson'
 $businessProxyTranscript = Join-Path $EvidenceRoot 'business-fault-proxy-events.ndjson'
 $businessProbeTranscript = Join-Path $EvidenceRoot 'business-probe-events.ndjson'
+$recoveryProbeTranscript = Join-Path $EvidenceRoot 'recovery-probe-events.ndjson'
 
 try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
@@ -1571,6 +2229,7 @@ try {
 
     $controlEnvironment = @{
         'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential
+        'CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF' = $recoveryProof
         'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD' = $tlsMaterial.Password
         'ConnectionStrings__ControlServer' = 'Data Source=' + (Join-Path $runtimeRoot 'controlserver.db')
         'Health__url' = "http://127.0.0.1:$healthPort"
@@ -1802,6 +2461,45 @@ try {
         heldForReorderCount = $businessHeld.Count
         releasedAfterReorderCount = $businessReleased.Count
     }
+
+    # The recovery plane reuses the business proxy: the server serves one peer at a time, the probes
+    # run in sequence, and one transcript keeps the injected disconnect and its replay in the same
+    # ordered record.
+    $recoveryProbeJson = [StagedG3TlsHarness]::RunRecoveryProbeAsync(
+        $businessProxyPort,
+        $tlsMaterial.Fingerprint,
+        $credential,
+        $recoveryProof,
+        $recoveryProbeTranscript,
+        [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+    [IO.File]::WriteAllText(
+        (Join-Path $EvidenceRoot 'recovery-probe-result.json'),
+        $recoveryProbeJson,
+        [Text.UTF8Encoding]::new($false))
+    $recoveryProbeResult = $recoveryProbeJson | ConvertFrom-Json
+
+    $recoveryEvents = Read-Ndjson $businessProxyTranscript
+    $recoveryDropped = @($recoveryEvents | Where-Object {
+        $_.event -eq 'message' -and $_.direction -eq 'server-to-client' -and
+        $_.messageType -eq 'ForcedMechanicalRecoveryCommand' -and
+        $_.action -eq 'dropped-and-connection-closed'
+    })
+    $recoveryForwarded = @($recoveryEvents | Where-Object {
+        $_.event -eq 'message' -and $_.direction -eq 'server-to-client' -and
+        $_.messageType -eq 'ForcedMechanicalRecoveryCommand' -and $_.action -eq 'forwarded'
+    })
+    $droppedCommandId = if ($recoveryDropped.Count -eq 1) { $recoveryDropped[0].messageId } else { $null }
+    $replayedCommands = @($recoveryForwarded | Where-Object messageId -EQ $droppedCommandId)
+    $recoveryFaultObservation = [ordered]@{
+        droppedCommandCount = $recoveryDropped.Count
+        droppedCommandMessageId = $droppedCommandId
+        droppedCommandWireSha256 = if ($recoveryDropped.Count -eq 1) { $recoveryDropped[0].wireSha256 } else { $null }
+        replayedCommandCount = $replayedCommands.Count
+        replayedCommandWireSha256 = @($replayedCommands.wireSha256 | Sort-Object -Unique)
+        replayedCommandSessionGenerations = @($replayedCommands.sessionGeneration | Sort-Object -Unique)
+        droppedCommandSessionGeneration = if ($recoveryDropped.Count -eq 1) { $recoveryDropped[0].sessionGeneration } else { $null }
+        forwardedCommandMessageIds = @($recoveryForwarded.messageId | Sort-Object -Unique)
+    }
 }
 catch {
     $runError = $_
@@ -1880,6 +2578,74 @@ if (Test-Path -LiteralPath $databasePath) {
             }
         }
         finally { $reader.Dispose(); $command.Dispose() }
+        $recoveryWorkflowRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT WorkflowId, WorkflowType, State, ForcedRecoveryGeneration, CommandMessageId, ResultMessageId, DemandId, SlotOperationAttemptId FROM RecoveryWorkflows ORDER BY CreatedAt"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $recoveryWorkflowRows += [ordered]@{
+                    workflowId = $reader.GetString(0)
+                    workflowType = $reader.GetString(1)
+                    state = $reader.GetString(2)
+                    forcedRecoveryGeneration = $reader.GetInt64(3)
+                    commandMessageId = if ($reader.IsDBNull(4)) { $null } else { $reader.GetString(4) }
+                    resultMessageId = if ($reader.IsDBNull(5)) { $null } else { $reader.GetString(5) }
+                    demandId = if ($reader.IsDBNull(6)) { $null } else { $reader.GetString(6) }
+                    slotOperationAttemptId = if ($reader.IsDBNull(7)) { $null } else { $reader.GetString(7) }
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
+        $recoveryEvidenceRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT MessageId, WorkflowId, MessageType, ForcedRecoveryGeneration, Outcome, HistoricalOnly FROM RecoveryResultEvidence ORDER BY ReceivedAt"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $recoveryEvidenceRows += [ordered]@{
+                    messageId = $reader.GetString(0)
+                    workflowId = $reader.GetString(1)
+                    messageType = $reader.GetString(2)
+                    forcedRecoveryGeneration = $reader.GetInt64(3)
+                    outcome = $reader.GetString(4)
+                    historicalOnly = [bool]$reader.GetInt64(5)
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
+        $recoverySessionRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT ExceptionRecoverySessionId, AgvId, State, Revision, SelectedAction, DemandId, ForcedRecoveryGeneration FROM ExceptionRecoverySessions ORDER BY OpenedAt"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $recoverySessionRows += [ordered]@{
+                    exceptionRecoverySessionId = $reader.GetString(0)
+                    agvId = $reader.GetString(1)
+                    state = $reader.GetString(2)
+                    revision = $reader.GetInt64(3)
+                    selectedAction = if ($reader.IsDBNull(4)) { $null } else { $reader.GetString(4) }
+                    demandId = if ($reader.IsDBNull(5)) { $null } else { $reader.GetString(5) }
+                    forcedRecoveryGeneration = $reader.GetInt64(6)
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
+        $recoveryCommandOutboxRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT MessageId, MessageType, COUNT(*) FROM ProtocolOutbox WHERE MessageType = 'ForcedMechanicalRecoveryCommand' GROUP BY MessageId, MessageType ORDER BY MessageId"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $recoveryCommandOutboxRows += [ordered]@{
+                    messageId = $reader.GetString(0)
+                    messageType = $reader.GetString(1)
+                    rowCount = $reader.GetInt64(2)
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
         $databaseObservation = [ordered]@{
             recoveryStateReportInboxRows = $recoveryRows
             businessMessageInboxRows = $businessRows
@@ -1889,6 +2655,14 @@ if (Test-Path -LiteralPath $databasePath) {
             orderIntentCount = [long](Invoke-Scalar 'SELECT COUNT(*) FROM OrderIntents')
             acceptedDemandCount = [long](Invoke-Scalar 'SELECT COUNT(*) FROM AcceptedDemands')
             stationOperationCount = [long](Invoke-Scalar 'SELECT COUNT(*) FROM StationOperations')
+            recoveryWorkflowRows = $recoveryWorkflowRows
+            recoveryResultEvidenceRows = $recoveryEvidenceRows
+            exceptionRecoverySessionRows = $recoverySessionRows
+            forcedMechanicalRecoveryCommandOutboxRows = $recoveryCommandOutboxRows
+            hardwareRecoveryRecordCount = [long](Invoke-Scalar 'SELECT COUNT(*) FROM HardwareRecoveryRecords')
+            vehicleForcedRecoveryGeneration = [long](Invoke-Scalar "SELECT COALESCE((SELECT ForcedRecoveryGeneration FROM VehicleRecoveryGenerations WHERE AgvId = '$recoveryAgvId'), -1)")
+            closedExceptionRecoverySessionCount = [long](Invoke-Scalar "SELECT COUNT(*) FROM ExceptionRecoverySessions WHERE State = 'CLOSED'")
+            reconciledRecoveryWorkflowCount = [long](Invoke-Scalar "SELECT COUNT(*) FROM RecoveryWorkflows WHERE State = 'Reconciled'")
         }
     }
     finally { $connection.Dispose() }
@@ -1943,9 +2717,83 @@ $businessReorderPass = $null -ne $businessProbeResult -and
 $businessPass = $businessProbePass -and $businessDuplicatePass -and $businessConflictPass -and
     $businessAckDropPass -and $businessDelayPass -and $businessReorderPass
 
+$recoveryProbePass = $null -ne $recoveryProbeResult -and $recoveryProbeResult.status -eq 'PASS'
+$recoveryAuthorisationPass = $null -ne $recoveryProbeResult -and
+    @($recoveryProbeResult.sessionAuthorisation).Count -eq 6 -and
+    @($recoveryProbeResult.sessionAuthorisation | Where-Object status -NE 'PASS').Count -eq 0
+$recoveryActionBoundaryPass = $null -ne $recoveryProbeResult -and
+    @($recoveryProbeResult.actionBoundary).Count -eq 4 -and
+    @($recoveryProbeResult.actionBoundary | Where-Object status -NE 'PASS').Count -eq 0 -and
+    @($recoveryProbeResult.demandScopedAuthorisationBoundary).Count -eq 3 -and
+    @($recoveryProbeResult.demandScopedAuthorisationBoundary | Where-Object status -NE 'PASS').Count -eq 0
+$recoveryHardwareRecordPass = $null -ne $recoveryProbeResult -and
+    @($recoveryProbeResult.hardwareRecoveryRecord).Count -eq 2 -and
+    @($recoveryProbeResult.hardwareRecoveryRecord | Where-Object status -NE 'PASS').Count -eq 0 -and
+    $null -ne $databaseObservation -and $databaseObservation.hardwareRecoveryRecordCount -eq 1
+
+# The command the proxy swallowed and the command the server re-sent after the reconnect have to be
+# the same persisted outbox row, so the identity is taken from the transcript rather than the probe:
+# one drop, one message id, and a second delivery of that same id on a later session generation.
+$recoveryDisconnectPass = $null -ne $recoveryProbeResult -and
+    $recoveryProbeResult.disconnectDuringRecoveryCommand.status -eq 'PASS' -and
+    $null -ne $recoveryFaultObservation -and
+    $recoveryFaultObservation.droppedCommandCount -eq 1 -and
+    $recoveryFaultObservation.replayedCommandCount -ge 1 -and
+    $recoveryFaultObservation.replayedCommandSessionGenerations.Count -ge 1 -and
+    $recoveryFaultObservation.droppedCommandSessionGeneration -lt
+        ($recoveryFaultObservation.replayedCommandSessionGenerations | Measure-Object -Maximum).Maximum -and
+    $null -ne $databaseObservation -and
+    @($databaseObservation.forcedMechanicalRecoveryCommandOutboxRows).Count -eq 2 -and
+    @($databaseObservation.forcedMechanicalRecoveryCommandOutboxRows | Where-Object { $_.rowCount -ne 1 }).Count -eq 0
+
+$firstRecoveryActionId = if ($null -ne $recoveryProbeResult) {
+    $recoveryProbeResult.forcedRecoveryGenerationBranches.firstRecoveryActionId
+} else { $null }
+$secondRecoveryActionId = if ($null -ne $recoveryProbeResult) {
+    $recoveryProbeResult.forcedRecoveryGenerationBranches.secondRecoveryActionId
+} else { $null }
+# These rows are ordered dictionaries rather than the parsed JSON objects used elsewhere, so they are
+# filtered with a script block: the -Property form of Where-Object is not reliable on a dictionary.
+$staleWorkflow = @($databaseObservation.recoveryWorkflowRows | Where-Object { $_.workflowId -eq $firstRecoveryActionId })
+$currentWorkflow = @($databaseObservation.recoveryWorkflowRows | Where-Object { $_.workflowId -eq $secondRecoveryActionId })
+$staleEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Object { $_.workflowId -eq $firstRecoveryActionId })
+$currentEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Object { $_.workflowId -eq $secondRecoveryActionId })
+
+# Monotonic advance, and a result that names the superseded generation may only become historical
+# evidence: it must not reconcile the workflow, close the session, or move the vehicle generation.
+$recoveryGenerationPass = $null -ne $recoveryProbeResult -and
+    $recoveryProbeResult.forcedRecoveryGenerationBranches.status -eq 'PASS' -and
+    $null -ne $databaseObservation -and
+    $databaseObservation.vehicleForcedRecoveryGeneration -eq 2 -and
+    $staleWorkflow.Count -eq 1 -and $staleWorkflow[0].state -eq 'HistoricalOnly' -and
+    $staleWorkflow[0].forcedRecoveryGeneration -eq 1 -and
+    $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'RecoveryRequired' -and
+    $currentWorkflow[0].forcedRecoveryGeneration -eq 2 -and
+    $staleEvidence.Count -eq 1 -and $staleEvidence[0].historicalOnly -and
+    $staleEvidence[0].forcedRecoveryGeneration -eq 1 -and
+    $currentEvidence.Count -eq 1 -and -not $currentEvidence[0].historicalOnly -and
+    $currentEvidence[0].forcedRecoveryGeneration -eq 2
+
+# A forced mechanical recovery is an isolation, not a completion: nothing in this plane may close the
+# session, reconcile a workflow, create an order or a demand, or touch a station operation.
+$recoveryNoFalseClosurePass = $null -ne $databaseObservation -and
+    @($databaseObservation.exceptionRecoverySessionRows).Count -eq 1 -and
+    $databaseObservation.exceptionRecoverySessionRows[0].agvId -eq $recoveryAgvId -and
+    $databaseObservation.exceptionRecoverySessionRows[0].state -eq 'EXECUTING' -and
+    $null -eq $databaseObservation.exceptionRecoverySessionRows[0].demandId -and
+    $databaseObservation.closedExceptionRecoverySessionCount -eq 0 -and
+    $databaseObservation.reconciledRecoveryWorkflowCount -eq 0 -and
+    @($databaseObservation.recoveryWorkflowRows).Count -eq 2 -and
+    @($databaseObservation.recoveryWorkflowRows | Where-Object { $null -ne $_.demandId }).Count -eq 0 -and
+    @($databaseObservation.recoveryWorkflowRows | Where-Object { $null -ne $_.slotOperationAttemptId }).Count -eq 0
+
+$recoveryPass = $recoveryProbePass -and $recoveryAuthorisationPass -and $recoveryActionBoundaryPass -and
+    $recoveryHardwareRecordPass -and $recoveryDisconnectPass -and $recoveryGenerationPass -and
+    $recoveryNoFalseClosurePass
+
 $status = if ($null -ne $runError) {
     'INCONCLUSIVE_RUNNER_ERROR'
-} elseif ($probePass -and $replayPass -and $noMovementPass -and $businessPass) {
+} elseif ($probePass -and $replayPass -and $noMovementPass -and $businessPass -and $recoveryPass) {
     'STAGED_G3_TLS_RECOVERY_REPLAY_PASS'
 } else {
     'STAGED_SLICE_FAIL'
@@ -1982,6 +2830,24 @@ $configuration = [ordered]@{
             'SlotOperationCommandRejected')
         businessMessagesDrivenBySyntheticPeer = $true
         businessMessagesNotReachableInStagedRun = @('OperationResult', 'SlotOperationCommand')
+        recoveryMessagePlane = @(
+            'ExceptionRecoverySessionRequested',
+            'RecoveryActionSubmitted',
+            'HardwareRecoveryRecordSubmitted',
+            'LoadCancellationStartRequested',
+            'LoadCompensationRequested',
+            'LoadCorrectionRequested',
+            'ForcedMechanicalRecoveryResult',
+            'ForcedMechanicalRecoveryCommand')
+        recoveryMessagesDrivenBySyntheticPeer = $true
+        recoveryAcceptedPathsNotReachableInStagedRun = @(
+            'RESUME_AFTER_REPAIR',
+            'COMPENSATE_LOAD_ALL_EMPTY',
+            'FAULT_CARGO_HANDOFF',
+            'LOAD_CANCELLATION',
+            'LOAD_CORRECTION',
+            'RiotUnknownReconciliation')
+        recoveryAdministratorProofFromEnvironment = $true
     }
     journeyRuntimeEnabled = $false
     realExternalCredentialsUsed = $false
@@ -2000,6 +2866,7 @@ foreach ($file in @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File)) {
     try {
         $text = Get-Content -LiteralPath $file.FullName -Raw
         if ($text.Contains($credential, [StringComparison]::Ordinal) -or
+            $text.Contains($recoveryProof, [StringComparison]::Ordinal) -or
             ($null -ne $tlsMaterial -and $text.Contains($tlsMaterial.Password, [StringComparison]::Ordinal))) {
             $secretLeakFiles.Add([IO.Path]::GetRelativePath($EvidenceRoot, $file.FullName).Replace('\', '/'))
         }
@@ -2067,12 +2934,21 @@ $result = [ordered]@{
         businessMessageAckDropInSessionReplay = if ($businessAckDropPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         businessMessageDelayedDeliveryAccepted = if ($businessDelayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         businessMessageReorderedDeliveryAccepted = if ($businessReorderPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        recoverySessionAuthorisationBoundary = if ($recoveryAuthorisationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        recoveryActionsRefusedWithoutPersistedOperation = if ($recoveryActionBoundaryPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        hardwareRecoveryRecordScopeEnforced = if ($recoveryHardwareRecordPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        recoveryCommandSurvivesMidFlightDisconnect = if ($recoveryDisconnectPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         noMovementOrExternalSideEffects = if ($noMovementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         secretScan = if ($secretLeakFiles.Count -eq 0) { 'PASS' } else { 'FAIL' }
     }
     probe = $probeResult
     businessProbe = $businessProbeResult
+    recoveryProbe = $recoveryProbeResult
     businessFaultInjection = $businessAckDropObservation
+    recoveryFaultInjection = $recoveryFaultObservation
     recoveryReplay = $runtimeObservation
     database = $databaseObservation
     simulatorHealth = $simulatorHealth
