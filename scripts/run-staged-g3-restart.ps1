@@ -337,7 +337,9 @@ function Invoke-SqliteRows {
                 }
                 $rows += $row
             }
-            return $rows
+            # Comma operator: a bare single-row result is unwrapped on return, and an ordered
+            # dictionary indexed with [0] then yields its first *value* instead of the row.
+            return ,$rows
         }
         finally {
             $reader.Dispose()
@@ -538,6 +540,8 @@ try {
     $phase1Window = Measure-StableWindow -Samples $stableWindowSamples
     $peerExitObservations += [ordered]@{
         phase = 'fresh-start'
+        onboardProcessId = $onboard.Id
+        controlProcessId = $control.Id
         onboardExited = $onboard.HasExited
         controlExited = $control.HasExited
     }
@@ -548,6 +552,7 @@ try {
     }
 
     # Phase 2: the onboard process is killed and restarted against the same journal file.
+    $retiredOnboard = $onboard
     Stop-ProcessSafely -Process $onboard
     Start-Sleep -Seconds 2
     $journalBeforeOnboardRestart = Read-OnboardJournal
@@ -556,8 +561,12 @@ try {
     $phase2Window = Measure-StableWindow -Samples $stableWindowSamples
     $peerExitObservations += [ordered]@{
         phase = 'onboard-process-restart-same-journal'
+        onboardProcessId = $onboard.Id
+        controlProcessId = $control.Id
         onboardExited = $onboard.HasExited
         controlExited = $control.HasExited
+        retiredOnboardProcessId = $retiredOnboard.Id
+        retiredOnboardExited = $retiredOnboard.HasExited
     }
     $phase2 = [ordered]@{
         phase = 'onboard-process-restart-same-journal'
@@ -567,6 +576,7 @@ try {
 
     # Phase 3: the ControlServer process is killed and restarted against the same SQLite file while
     # the onboard peer stays up and has to reconnect on its own.
+    $retiredControl = $control
     Stop-ProcessSafely -Process $control
     Start-Sleep -Seconds 4
     $controlDatabaseBeforeServerRestart = Read-ControlDatabase
@@ -575,8 +585,12 @@ try {
     $phase3Window = Measure-StableWindow -Samples $stableWindowSamples
     $peerExitObservations += [ordered]@{
         phase = 'controlserver-process-restart-same-database'
+        onboardProcessId = $onboard.Id
+        controlProcessId = $control.Id
         onboardExited = $onboard.HasExited
         controlExited = $control.HasExited
+        retiredControlProcessId = $retiredControl.Id
+        retiredControlExited = $retiredControl.HasExited
     }
     $phase3 = [ordered]@{
         phase = 'controlserver-process-restart-same-database'
@@ -667,12 +681,26 @@ foreach ($phase in $phases) {
 $noUnexpectedExitPass = @($peerExitObservations).Count -eq 3 -and
     @($peerExitObservations | Where-Object { $_['onboardExited'] -or $_['controlExited'] }).Count -eq 0
 
-# Sessions 1 and 2 are served by the same host process; session 3 must not be, or phase 3 restarted
-# nothing. The server instance id is minted per process, so it is the falsifiable form of that claim.
-$serverProcessIdentityPass = $serverInstanceIds.Count -eq 3 -and
-    -not [string]::IsNullOrWhiteSpace($serverInstanceIds[0]) -and
-    $serverInstanceIds[0] -eq $serverInstanceIds[1] -and
-    $serverInstanceIds[2] -ne $serverInstanceIds[0]
+# Each phase must have restarted exactly the peer it names and left the other one alone, or the
+# durability results below are about a restart that never happened. OnboardMessageProcessor is a
+# scoped service resolved once per accepted connection, so its serverInstanceId is per connection and
+# cannot carry this claim: the OS process identity is what distinguishes a replaced host from a
+# reconnected client, and the retired handles prove the old process really died first.
+$onboardRestartIsolationPass = @($peerExitObservations).Count -eq 3 -and
+    $peerExitObservations[0]['onboardProcessId'] -ne $peerExitObservations[1]['onboardProcessId'] -and
+    $peerExitObservations[1]['onboardProcessId'] -eq $peerExitObservations[2]['onboardProcessId'] -and
+    $peerExitObservations[1]['retiredOnboardProcessId'] -eq $peerExitObservations[0]['onboardProcessId'] -and
+    $peerExitObservations[1]['retiredOnboardExited']
+$controlRestartIsolationPass = @($peerExitObservations).Count -eq 3 -and
+    $peerExitObservations[0]['controlProcessId'] -eq $peerExitObservations[1]['controlProcessId'] -and
+    $peerExitObservations[1]['controlProcessId'] -ne $peerExitObservations[2]['controlProcessId'] -and
+    $peerExitObservations[2]['retiredControlProcessId'] -eq $peerExitObservations[1]['controlProcessId'] -and
+    $peerExitObservations[2]['retiredControlExited']
+# Recorded as its own invariant rather than as restart evidence: a processor that cached one identity
+# across connections would collapse these three into fewer.
+$connectionScopedIdentityPass = $serverInstanceIds.Count -eq 3 -and
+    @($serverInstanceIds | Where-Object { [string]::IsNullOrWhiteSpace($_) }).Count -eq 0 -and
+    @($serverInstanceIds | Sort-Object -Unique).Count -eq 3
 
 $controlDatabaseReusedPass = $null -ne $controlDatabaseBeforeServerRestart -and
     $null -ne $controlDatabaseAfterRun -and
@@ -788,7 +816,9 @@ $assertions = [ordered]@{
     controlServerRestartAdvancesGenerationByExactlyOne = $controlRestartPass
     sessionGenerationStableWithinEveryPhase = $stableWindowPass
     noPeerExitedUnexpectedly = $noUnexpectedExitPass
-    serverProcessIdentityChangesOnlyOnServerRestart = $serverProcessIdentityPass
+    onboardHostProcessReplacedOnlyInPhaseTwo = $onboardRestartIsolationPass
+    controlServerHostProcessReplacedOnlyInPhaseThree = $controlRestartIsolationPass
+    serverSessionIdentityIsScopedPerConnection = $connectionScopedIdentityPass
     controlDatabaseFileReusedAcrossServerRestart = $controlDatabaseReusedPass
     onboardJournalEpochStableAcrossOnboardRestart = $journalEpochPass
     controlInboxRowsSurviveServerRestart = $inboxDurabilityPass
