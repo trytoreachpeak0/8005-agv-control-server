@@ -40,6 +40,7 @@ $healthOrigin = "https://localhost:$HealthPort"
 $rootCertificate = $null
 $leafCertificate = $null
 $trustedRootThumbprint = $null
+$rootPemPath = $null
 $serviceCreated = $false
 $installCreated = $false
 $dataRootExisted = Test-Path -LiteralPath $dataRoot
@@ -133,7 +134,7 @@ function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
 
 function Invoke-LiveCheck {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy localhost --ssl-revoke-best-effort --max-time 10 `
+        --noproxy localhost --ssl-revoke-best-effort --max-time 10 --cacert $rootPemPath `
         "$healthOrigin/health/live" 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Schannel HTTPS live check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
@@ -144,7 +145,7 @@ function Invoke-LiveCheck {
 
 function Get-ReadyCheck {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --silent --show-error `
-        --noproxy localhost --ssl-revoke-best-effort --max-time 10 `
+        --noproxy localhost --ssl-revoke-best-effort --max-time 10 --cacert $rootPemPath `
         "$healthOrigin/health/ready" 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Schannel HTTPS ready check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
@@ -161,7 +162,7 @@ function Get-ReadyCheck {
 
 function Get-VersionCheck {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy localhost --ssl-revoke-best-effort --max-time 10 `
+        --noproxy localhost --ssl-revoke-best-effort --max-time 10 --cacert $rootPemPath `
         "$healthOrigin/version" 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Schannel HTTPS version check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
@@ -188,9 +189,6 @@ function Remove-CertificateByThumbprint([string]$StoreName, [string]$Thumbprint)
 }
 
 Assert-Administrator
-if (-not $InstallCurrentUserRoot) {
-    throw 'Explicit -InstallCurrentUserRoot authorization is required.'
-}
 if (-not $CopyUserRiotSecretToMachine -and -not $SkipMachineEnvironmentInjection) {
     throw 'Explicit -CopyUserRiotSecretToMachine authorization is required unless -SkipMachineEnvironmentInjection is used.'
 }
@@ -263,8 +261,14 @@ try {
     Export-PfxCertificate -Cert $leafCertificate -FilePath $certificatePath -Password $securePassword | Out-Null
     $rootPublicPath = Join-Path $certificateDirectory 'localhost-development-root.cer'
     Export-Certificate -Cert $rootCertificate -FilePath $rootPublicPath -Type CERT | Out-Null
-    $trustedRoot = Import-Certificate -FilePath $rootPublicPath -CertStoreLocation 'Cert:\CurrentUser\Root'
-    $trustedRootThumbprint = $trustedRoot.Thumbprint
+    $rootPemPath = Join-Path $certificateDirectory 'localhost-development-root.pem'
+    $rootPem = "-----BEGIN CERTIFICATE-----`n{0}`n-----END CERTIFICATE-----`n" -f `
+        [Convert]::ToBase64String($rootCertificate.RawData, 'InsertLineBreaks')
+    [IO.File]::WriteAllText($rootPemPath, $rootPem, [Text.ASCIIEncoding]::new())
+    if ($InstallCurrentUserRoot) {
+        $trustedRoot = Import-Certificate -FilePath $rootPublicPath -CertStoreLocation 'Cert:\CurrentUser\Root'
+        $trustedRootThumbprint = $trustedRoot.Thumbprint
+    }
     Remove-CertificateByThumbprint 'My' $leafCertificate.Thumbprint
     Remove-CertificateByThumbprint 'My' $rootCertificate.Thumbprint
 
@@ -398,8 +402,11 @@ try {
         certificate = [ordered]@{
             dnsNames = @('localhost')
             leafThumbprint = $leafCertificate.Thumbprint
+            rootThumbprint = $rootCertificate.Thumbprint
             trustedRootThumbprint = $trustedRootThumbprint
-            trustStore = 'CurrentUser/Root'
+            trustStore = if ($InstallCurrentUserRoot) { 'CurrentUser/Root' } else { 'none (pinned CA file)' }
+            caCertificateFile = $rootPemPath
+            chainVerification = 'curl --cacert against the certificate this install generated'
             privateKeyFile = $certificatePath
         }
         externalSecrets = [ordered]@{
@@ -410,7 +417,7 @@ try {
             serviceSpecificEnvironmentPresent = $serviceEnvironmentVerified
             valuesDisclosed = $false
         }
-        checks = @('package-hashes', 'sqlite-migrations-at-start', 'https-live-after-start', 'https-ready-after-start', 'stop-start', 'restart', 'https-version', 'log-file-written')
+        checks = @('package-hashes', 'sqlite-migrations-at-start', 'https-chain-pinned-to-install-root', 'https-live-after-start', 'https-ready-after-start', 'stop-start', 'restart', 'https-version', 'log-file-written')
         journeyRuntimeEnabled = $false
         riotMutationPerformed = $false
         orderCreated = $false

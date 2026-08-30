@@ -108,16 +108,22 @@ Get-Content .\SHA256SUMS.txt | ForEach-Object {
     -PackagePath .\controlserver `
     -ResultPath <结果 JSON 路径> `
     -DiagnosticPath <诊断日志路径> `
-    -InstallCurrentUserRoot -CopyUserRiotSecretToMachine
+    -CopyUserRiotSecretToMachine
 ```
 
-两个开关是显式授权，缺一即拒绝执行：`-InstallCurrentUserRoot` 授权把脚本自签的临时根证书导入
-`CurrentUser\Root`；`-CopyUserRiotSecretToMachine` 授权把用户作用域的 RIoT 凭据复制到机器作用域。
+`-CopyUserRiotSecretToMachine` 是显式授权，缺失即拒绝执行：它授权把用户作用域的 RIoT 凭据复制到
+机器作用域。
 
-脚本按顺序完成：备份既有数据根 → 复制包 → 生成自签根与 `localhost` 叶证书并导出 PFX →
+脚本按顺序完成：备份既有数据根 → 复制包 → 生成自签根与 `localhost` 叶证书并导出 PFX 与 PEM →
 注入秘密 → 写 `appsettings.Production.json` → 收紧安装目录与数据目录 ACL → 创建
 `LocalSystem`／`Automatic` 服务 → **首启 → 停止 → 再启动 → 强制重启**，每次启动后做一次 HTTPS
 存活检查 → 校验数据库与日志文件确已生成 → 写结果 JSON。
+
+**健康检查不依赖系统信任存储**：脚本把本次安装生成的根证书导出为
+`<DataRoot>\certs\localhost-development-root.pem`，并以 `curl --cacert` 钉住它验证链路。因此安装
+过程不修改任何证书存储，也不会弹出信任确认对话框，可在非交互环境中完整跑完。若确实需要让本机
+浏览器或其他工具直接信任该根证书，另加 `-InstallCurrentUserRoot`——它会把根证书导入
+`CurrentUser\Root`，**该操作会弹出 Windows 安全确认对话框，只能在交互式会话中使用**。
 
 任一步失败，脚本自动回滚：删服务、删安装目录、还原机器作用域环境变量、移除导入的根证书、
 还原或删除数据根，并把回滚结果一并抛出。
@@ -133,7 +139,7 @@ Get-Content .\SHA256SUMS.txt | ForEach-Object {
     -ServiceName '<另一个服务名>' `
     -InstallRoot '<另一个安装目录>' -DataRoot '<另一个数据目录>' -BackupRoot '<另一个备份目录>' `
     -OnboardPort <未占用端口> -HealthPort <未占用端口> `
-    -InstallCurrentUserRoot -SkipMachineEnvironmentInjection
+    -SkipMachineEnvironmentInjection
 ```
 
 `-SkipMachineEnvironmentInjection` 让隔离实例只写服务专属的注册表环境，不触碰机器作用域变量，
@@ -160,8 +166,17 @@ HTTPS 端点（默认 `https://localhost:58007`，隔离实例用 `-HealthPort` 
 **首装后 `/health/ready` 返回 `503 RECOVERY_HANDSHAKE_REQUIRED` 是预期结果**，它证明数据库已迁移
 且可读；只有车载端接入并完成五步恢复握手后才会转为 `ready`。
 
-自签根证书只导入 `CurrentUser\Root`，因此用 `curl.exe` 校验时须在同一用户下运行；脚本内部使用
-`--noproxy localhost --ssl-revoke-best-effort`。
+手工校验时钉住本次安装生成的根证书，不要用 `--insecure`：
+
+```powershell
+curl.exe --noproxy localhost --ssl-revoke-best-effort `
+    --cacert '<DataRoot>\certs\localhost-development-root.pem' `
+    'https://localhost:58007/health/live'
+```
+
+Windows 自带的 curl 使用 Schannel，`--cacert` 必须给 **PEM**（脚本导出的 `.pem`），DER 的 `.cer`
+不被接受；`--ssl-revoke-best-effort` 用于跳过自签根证书无法完成的吊销查询。换成任何其他根证书，
+这条命令都会以 `curl: (60)` 失败——这正是它构成校验而非摆设的原因。
 
 ## 6. 数据库初始化与迁移
 
@@ -249,8 +264,8 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
 - **MesIngest**：目标环境必须有可达的 MesIngest 实例；非 loopback 绑定必须配置共享密钥；
 - **八仓 IO**：本轮以独立模拟器作为受控测试输入，**不构成**真实 IO 模块、接线、锁或光幕的资格；
   现场 IO 映射、反馈超时与 Modbus 地址需现场冻结；
-- **TLS 身份**：安装脚本生成的是仅限本机 `CurrentUser\Root` 的自签开发根证书。现场部署必须换成
-  受控签发的证书，并把 `serverCertificateSha256` 同步进车载端配置；
+- **TLS 身份**：安装脚本生成的是一次性的自签开发根与叶证书，仅用于本机回环验证。现场部署必须
+  换成受控签发的证书，并把 `serverCertificateSha256` 同步进车载端配置；
 - **车载端仓库对 agent 只读**，其产品代码与发布资产由车载端负责人维护。本发布候选只以精确
   commit、构建命令与产物 SHA-256 的形式登记车载端，不向该仓库写入任何内容；
 - **协议仓库为审批门禁**，任何协议侧变更都需要两名负责人对同一具体变更明确批准。
