@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $dotnet = if ($env:WIRE_TO_GATE_DOTNET_EXE) { $env:WIRE_TO_GATE_DOTNET_EXE } else { 'dotnet' }
 $project = Join-Path $root 'src\ControlServer.Host\ControlServer.Host.csproj'
-$resolvedOutput = [IO.Path]::GetFullPath($OutputPath)
+$resolvedOutput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
 
 if (Test-Path -LiteralPath $resolvedOutput) {
     throw "OutputPath already exists; use a new empty destination: $resolvedOutput"

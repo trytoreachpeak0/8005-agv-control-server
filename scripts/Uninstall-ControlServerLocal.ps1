@@ -15,12 +15,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Resolve-FullPath([string]$Path) {
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
 $productionServiceName = '8005 AGV ControlServer'
 $productionInstallRoot = 'C:\Program Files\8005 AGV\ControlServer'
 $productionDataRoot = 'C:\ProgramData\8005\ControlServer'
-$installPath = [IO.Path]::GetFullPath($InstallRoot)
-$dataPath = [IO.Path]::GetFullPath($DataRoot)
-$resolvedResult = [IO.Path]::GetFullPath($ResultPath)
+$installPath = Resolve-FullPath $InstallRoot
+$dataPath = Resolve-FullPath $DataRoot
+$resolvedResult = Resolve-FullPath $ResultPath
 $runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 
 function Assert-Administrator {
@@ -58,8 +63,8 @@ if (-not $ConfirmUninstall) {
     throw 'Explicit -ConfirmUninstall authorization is required.'
 }
 $targetsProduction = $ServiceName -eq $productionServiceName -or
-    $installPath -eq [IO.Path]::GetFullPath($productionInstallRoot) -or
-    $dataPath -eq [IO.Path]::GetFullPath($productionDataRoot)
+    $installPath -eq (Resolve-FullPath $productionInstallRoot) -or
+    $dataPath -eq (Resolve-FullPath $productionDataRoot)
 if ($targetsProduction -and -not $AllowProductionService) {
     throw "Refusing to uninstall the production deployment without -AllowProductionService: $ServiceName"
 }

@@ -19,16 +19,21 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Resolve-FullPath([string]$Path) {
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
 $serviceName = $ServiceName
-$installPath = [IO.Path]::GetFullPath($InstallRoot)
-$dataRoot = [IO.Path]::GetFullPath($DataRoot)
+$installPath = Resolve-FullPath $InstallRoot
+$dataRoot = Resolve-FullPath $DataRoot
 $certificateDirectory = Join-Path $dataRoot 'certs'
 $certificatePath = Join-Path $certificateDirectory 'localhost.pfx'
 $logDirectory = Join-Path $dataRoot 'logs'
-$backupRoot = [IO.Path]::GetFullPath($BackupRoot)
-$resolvedPackage = [IO.Path]::GetFullPath($PackagePath)
-$resolvedResult = [IO.Path]::GetFullPath($ResultPath)
-$resolvedDiagnostic = if ([string]::IsNullOrWhiteSpace($DiagnosticPath)) { $null } else { [IO.Path]::GetFullPath($DiagnosticPath) }
+$backupRoot = Resolve-FullPath $BackupRoot
+$resolvedPackage = Resolve-FullPath $PackagePath
+$resolvedResult = Resolve-FullPath $ResultPath
+$resolvedDiagnostic = if ([string]::IsNullOrWhiteSpace($DiagnosticPath)) { $null } else { Resolve-FullPath $DiagnosticPath }
 $runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 $backupPath = Join-Path $backupRoot $runId
 $healthOrigin = "https://localhost:$HealthPort"
