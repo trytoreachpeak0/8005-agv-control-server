@@ -1313,6 +1313,247 @@ public static class StagedG3TlsHarness
         });
     }
 
+    /// <summary>
+    /// Drives the OperationResult plane as a synthetic peer against a restored demand-bearing store.
+    /// </summary>
+    /// <remarks>
+    /// This is the one vector a staged run cannot reach. An OperationResult is only accepted for a
+    /// persisted StationOperations row, and ApplyOperationResultAsync deduplicates on ResultId or on
+    /// (SlotOperationAttemptId, ForcedRecoveryGeneration), so an attempt that already carries a result
+    /// can only ever produce a conflict. The accepted-then-replayed half therefore needs a store whose
+    /// SlotOperationCommand was published but whose result never arrived -- a state only a real
+    /// authorised field run produces, and one this probe restores rather than fabricates.
+    ///
+    /// Cross-session replay is deliberately not one of the cases: OperationResult has no replay
+    /// identity hash that normalises sessionGeneration the way RecoveryStateReport does, so the same
+    /// messageId resent under a new generation hashes differently and is a conflict by design. Each
+    /// refusal case therefore opens its own connection, because a refusal closes the one it arrives on.
+    /// </remarks>
+    public static async Task<string> RunDemandBearingResultProbeAsync(
+        int port,
+        string credential,
+        string agvId,
+        string demandId,
+        string preparedAttemptId,
+        string preparedOperationType,
+        int[] preparedSlots,
+        string committedAttemptId,
+        string committedOperationType,
+        int[] committedSlots,
+        string transcriptPath,
+        CancellationToken cancellationToken)
+    {
+        File.WriteAllText(transcriptPath, string.Empty, new UTF8Encoding(false));
+        var cases = new List<Dictionary<string, object?>>();
+        int helloSequence = 0;
+
+        string firstAck;
+        string replayedAck;
+        long acceptedGeneration;
+        string? serverBuildCommit;
+        string? serverInstanceId;
+        string acceptedMessageId = StableGuid("demand-bearing:accepted-result");
+        string acceptedLine;
+
+        await using (Connection connection = await Connection.OpenPlaintextAsync(port, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            // The hello is written out rather than delegated to HandshakeAsync because the identity the
+            // running server reports is part of this run's evidence, not just its session number.
+            await connection.WriteAsync(
+                Hello(agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+                      Protocol.Release, Protocol.Manifest, credential),
+                cancellationToken).ConfigureAwait(false);
+            string accepted = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
+            if (Property(accepted, "messageType") != "SessionAccepted")
+            {
+                throw new InvalidOperationException("The demand-bearing probe was not granted a session.");
+            }
+            acceptedGeneration = NumberProperty(accepted, "sessionGeneration");
+            serverBuildCommit = NestedProperty(accepted, "payload", "serverBuildCommit");
+            serverInstanceId = NestedProperty(accepted, "payload", "serverInstanceId");
+            acceptedLine = OperationResultLine(
+                agvId, acceptedMessageId, acceptedGeneration, demandId, preparedAttemptId,
+                preparedOperationType, preparedSlots, "COMPLETED");
+            firstAck = await ExchangeAsync(connection, acceptedLine, "DurableAck", cancellationToken)
+                .ConfigureAwait(false);
+            cases.Add(Case(transcriptPath, "preparedAttemptAcceptsItsFirstResult", firstAck,
+                NestedProperty(firstAck, "payload", "acceptedMessageId") == acceptedMessageId,
+                new Dictionary<string, object?>
+                {
+                    ["slotOperationAttemptId"] = preparedAttemptId,
+                    ["messageId"] = acceptedMessageId,
+                    ["requestSha256"] = Sha256(acceptedLine)
+                }));
+
+            // The same bytes a second time: the inbox has to answer from its stored first response
+            // instead of running the business path again, so the two acknowledgements are identical.
+            replayedAck = await ExchangeAsync(connection, acceptedLine, "DurableAck", cancellationToken)
+                .ConfigureAwait(false);
+            cases.Add(Case(transcriptPath, "identicalResultReplayReturnsTheStoredAcknowledgement",
+                replayedAck, firstAck == replayedAck,
+                new Dictionary<string, object?>
+                {
+                    ["firstAckSha256"] = Sha256(firstAck),
+                    ["replayedAckSha256"] = Sha256(replayedAck)
+                }));
+        }
+
+        bool contentConflictClosed = await ExpectRefusalAsync(
+            port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+            generation => OperationResultLine(
+                agvId, acceptedMessageId, generation, demandId, preparedAttemptId,
+                preparedOperationType, preparedSlots, "COMPLETED_WITH_EXCEPTIONS"),
+            cancellationToken).ConfigureAwait(false);
+        cases.Add(Case(transcriptPath, "sameMessageIdWithDifferentContentIsRefused", null,
+            contentConflictClosed,
+            new Dictionary<string, object?> { ["messageId"] = acceptedMessageId }));
+
+        bool sameGenerationRenumberClosed = await ExpectRefusalAsync(
+            port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+            generation => OperationResultLine(
+                agvId, StableGuid("demand-bearing:renumbered-result"), generation, demandId,
+                preparedAttemptId, preparedOperationType, preparedSlots, "COMPLETED"),
+            cancellationToken).ConfigureAwait(false);
+        cases.Add(Case(transcriptPath, "sameAttemptAndGenerationUnderANewMessageIdIsRefused", null,
+            sameGenerationRenumberClosed,
+            new Dictionary<string, object?> { ["slotOperationAttemptId"] = preparedAttemptId }));
+
+        bool committedAttemptClosed = await ExpectRefusalAsync(
+            port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+            generation => OperationResultLine(
+                agvId, StableGuid("demand-bearing:committed-attempt-result"), generation, demandId,
+                committedAttemptId, committedOperationType, committedSlots, "COMPLETED"),
+            cancellationToken).ConfigureAwait(false);
+        cases.Add(Case(transcriptPath, "alreadyCommittedAttemptRefusesASecondResult", null,
+            committedAttemptClosed,
+            new Dictionary<string, object?> { ["slotOperationAttemptId"] = committedAttemptId }));
+
+        bool staleGenerationClosed = await ExpectRefusalAsync(
+            port, credential, agvId, StableGuid("demand-bearing:hello:" + helloSequence++),
+            generation => OperationResultLine(
+                agvId, StableGuid("demand-bearing:stale-generation-result"), generation - 1, demandId,
+                preparedAttemptId, preparedOperationType, preparedSlots, "COMPLETED"),
+            cancellationToken).ConfigureAwait(false);
+        cases.Add(Case(transcriptPath, "resultFromASupersededSessionGenerationIsRefused", null,
+            staleGenerationClosed,
+            new Dictionary<string, object?> { ["acceptedGeneration"] = acceptedGeneration }));
+
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["agvId"] = agvId,
+            ["demandId"] = demandId,
+            ["serverBuildCommit"] = serverBuildCommit,
+            ["serverInstanceId"] = serverInstanceId,
+            ["acceptedGeneration"] = acceptedGeneration,
+            ["acceptedMessageId"] = acceptedMessageId,
+            ["acceptedRequestSha256"] = Sha256(acceptedLine),
+            ["acceptedAckSha256"] = Sha256(firstAck),
+            ["replayedAckSha256"] = Sha256(replayedAck),
+            ["cases"] = cases
+        });
+    }
+
+    /// <summary>
+    /// Opens a fresh session, sends one line the server has to refuse, and reports whether it closed.
+    /// </summary>
+    private static async Task<bool> ExpectRefusalAsync(
+        int port,
+        string credential,
+        string agvId,
+        string helloMessageId,
+        Func<long, string> buildLine,
+        CancellationToken cancellationToken)
+    {
+        await using Connection connection = await Connection.OpenPlaintextAsync(port, cancellationToken)
+            .ConfigureAwait(false);
+        long generation = await HandshakeAsync(connection, agvId, helloMessageId, credential, cancellationToken)
+            .ConfigureAwait(false);
+        await connection.WriteAsync(buildLine(generation), cancellationToken).ConfigureAwait(false);
+        while (true)
+        {
+            string? line = await connection.ReadAsync(TimeSpan.FromSeconds(10), cancellationToken)
+                .ConfigureAwait(false);
+            if (line is null) return true;
+            // The server pushes snapshots of its own alongside a session; only a DurableAck for this
+            // message would mean the refusal did not happen.
+            if (Property(line, "messageType") == "DurableAck") return false;
+        }
+    }
+
+    /// <summary>
+    /// Builds an OperationResult whose resultContentSha256 is computed the way the server recomputes it.
+    /// </summary>
+    /// <remarks>
+    /// ComputeOperationResultContentHash decodes each field back to a CLR value before hashing, so the
+    /// hash has to be built from CLR values here too -- hashing the wire text would disagree the moment
+    /// the encoder escaped anything, which is exactly the defect that once refused every real result.
+    /// </remarks>
+    private static string OperationResultLine(
+        string agvId,
+        string messageId,
+        long generation,
+        string demandId,
+        string slotOperationAttemptId,
+        string operationType,
+        int[] slots,
+        string overallOutcome)
+    {
+        string finalPhysicalState = operationType == "LOAD" ? "OCCUPIED" : "EMPTY";
+        DateTimeOffset observedAt = new(2026, 8, 29, 12, 0, 0, TimeSpan.Zero);
+        const string journalCheckpoint = "demand-bearing-result-probe";
+        var slotResults = slots.Select(slot => new Dictionary<string, object?>
+        {
+            ["slotNo"] = slot,
+            ["outcome"] = "COMPLETED",
+            ["finalPhysicalState"] = finalPhysicalState,
+            ["lockState"] = "LOCKED",
+            ["unlockOutputState"] = "RESET",
+            ["reasonCodes"] = Array.Empty<string>()
+        }).ToArray();
+
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        byte[] businessContent = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            demandId,
+            slotOperationAttemptId,
+            operationType,
+            overallOutcome,
+            slotResults = slots.Select(slot => new
+            {
+                slotNo = slot,
+                outcome = "COMPLETED",
+                finalPhysicalState,
+                lockState = "LOCKED",
+                unlockOutputState = "RESET",
+                reasonCodes = Array.Empty<string>()
+            }).ToArray(),
+            observedAt,
+            journalCheckpoint
+        }, options);
+        string resultContentSha256 = Convert.ToHexString(SHA256.HashData(businessContent)).ToLowerInvariant();
+
+        return Envelope(
+            Protocol.Release,
+            Protocol.Manifest,
+            "OperationResult",
+            messageId,
+            agvId,
+            generation,
+            new Dictionary<string, object?>
+            {
+                ["demandId"] = demandId,
+                ["slotOperationAttemptId"] = slotOperationAttemptId,
+                ["operationType"] = operationType,
+                ["overallOutcome"] = overallOutcome,
+                ["slotResults"] = slotResults,
+                ["observedAt"] = observedAt,
+                ["journalCheckpoint"] = journalCheckpoint,
+                ["resultContentSha256"] = resultContentSha256
+            });
+    }
+
     private static Dictionary<string, object?> Case(
         string transcriptPath,
         string name,
@@ -2074,11 +2315,11 @@ public static class StagedG3TlsHarness
     private sealed class Connection : IAsyncDisposable
     {
         private readonly TcpClient _client;
-        private readonly SslStream _stream;
+        private readonly Stream _stream;
         private readonly StreamReader _reader;
         private readonly StreamWriter _writer;
 
-        private Connection(TcpClient client, SslStream stream)
+        private Connection(TcpClient client, Stream stream)
         {
             _client = client;
             _stream = stream;
@@ -2106,6 +2347,24 @@ public static class StagedG3TlsHarness
                 CertificateRevocationCheckMode = X509RevocationMode.NoCheck
             }, cancellationToken).ConfigureAwait(false);
             return new Connection(client, stream);
+        }
+
+        /// <summary>
+        /// Opens the same NDJSON framing over a plaintext loopback socket.
+        /// </summary>
+        /// <remarks>
+        /// The staged probes pin a TLS fingerprint because they exercise the deployed transport. A
+        /// runner that replays stored business messages against a restored store is testing the
+        /// message plane, not the transport, so it uses allowInsecureLoopback and needs no temporary
+        /// trust root -- which is what lets it run unattended instead of waiting for someone to
+        /// acknowledge a certificate warning.
+        /// </remarks>
+        public static async Task<Connection> OpenPlaintextAsync(
+            int port, CancellationToken cancellationToken)
+        {
+            TcpClient client = new();
+            await client.ConnectAsync(IPAddress.Loopback, port, cancellationToken).ConfigureAwait(false);
+            return new Connection(client, client.GetStream());
         }
 
         public async Task WriteAsync(string line, CancellationToken cancellationToken) =>
