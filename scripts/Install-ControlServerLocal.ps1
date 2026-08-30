@@ -5,22 +5,33 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ResultPath,
     [string]$DiagnosticPath,
+    [string]$ServiceName = '8005 AGV ControlServer',
+    [string]$InstallRoot = 'C:\Program Files\8005 AGV\ControlServer',
+    [string]$DataRoot = 'C:\ProgramData\8005\ControlServer',
+    [string]$BackupRoot = 'C:\ProgramData\8005\ControlServer-backups',
+    [ValidateRange(1, 65535)]
+    [int]$OnboardPort = 58005,
+    [ValidateRange(1, 65535)]
+    [int]$HealthPort = 58007,
     [switch]$InstallCurrentUserRoot,
-    [switch]$CopyUserRiotSecretToMachine
+    [switch]$CopyUserRiotSecretToMachine,
+    [switch]$SkipMachineEnvironmentInjection
 )
 
 $ErrorActionPreference = 'Stop'
-$serviceName = '8005 AGV ControlServer'
-$installPath = 'C:\Program Files\8005 AGV\ControlServer'
-$dataRoot = 'C:\ProgramData\8005\ControlServer'
+$serviceName = $ServiceName
+$installPath = [IO.Path]::GetFullPath($InstallRoot)
+$dataRoot = [IO.Path]::GetFullPath($DataRoot)
 $certificateDirectory = Join-Path $dataRoot 'certs'
 $certificatePath = Join-Path $certificateDirectory 'localhost.pfx'
-$backupRoot = 'C:\ProgramData\8005\ControlServer-backups'
+$logDirectory = Join-Path $dataRoot 'logs'
+$backupRoot = [IO.Path]::GetFullPath($BackupRoot)
 $resolvedPackage = [IO.Path]::GetFullPath($PackagePath)
 $resolvedResult = [IO.Path]::GetFullPath($ResultPath)
 $resolvedDiagnostic = if ([string]::IsNullOrWhiteSpace($DiagnosticPath)) { $null } else { [IO.Path]::GetFullPath($DiagnosticPath) }
 $runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 $backupPath = Join-Path $backupRoot $runId
+$healthOrigin = "https://localhost:$HealthPort"
 $rootCertificate = $null
 $leafCertificate = $null
 $trustedRootThumbprint = $null
@@ -30,6 +41,7 @@ $dataRootExisted = Test-Path -LiteralPath $dataRoot
 $dataBackupCreated = $false
 $oldRiotMachine = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'Machine')
 $oldCertificatePassword = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', 'Machine')
+$machineEnvironmentInjected = $false
 
 function Assert-Administrator {
     $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
@@ -117,7 +129,7 @@ function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
 function Invoke-LiveCheck {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
         --noproxy localhost --ssl-revoke-best-effort --max-time 10 `
-        'https://localhost:58007/health/live' 2>&1)
+        "$healthOrigin/health/live" 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Schannel HTTPS live check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
     }
@@ -125,10 +137,27 @@ function Invoke-LiveCheck {
     if ($response.status -ne 'live') { throw 'HTTPS live check returned an unexpected response.' }
 }
 
+function Get-ReadyCheck {
+    $body = @(& "$env:SystemRoot\System32\curl.exe" --silent --show-error `
+        --noproxy localhost --ssl-revoke-best-effort --max-time 10 `
+        "$healthOrigin/health/ready" 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Schannel HTTPS ready check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
+    }
+    $response = $body | ConvertFrom-Json
+    if ($response.status -eq 'not-ready' -and $response.reason -eq 'DATABASE_UNAVAILABLE') {
+        throw 'Readiness reports the database is unavailable after migration.'
+    }
+    if ($response.status -ne 'ready' -and $response.status -ne 'not-ready') {
+        throw 'HTTPS ready check returned an unexpected response.'
+    }
+    return $response
+}
+
 function Get-VersionCheck {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
         --noproxy localhost --ssl-revoke-best-effort --max-time 10 `
-        'https://localhost:58007/version' 2>&1)
+        "$healthOrigin/version" 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Schannel HTTPS version check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
     }
@@ -157,8 +186,8 @@ Assert-Administrator
 if (-not $InstallCurrentUserRoot) {
     throw 'Explicit -InstallCurrentUserRoot authorization is required.'
 }
-if (-not $CopyUserRiotSecretToMachine) {
-    throw 'Explicit -CopyUserRiotSecretToMachine authorization is required.'
+if (-not $CopyUserRiotSecretToMachine -and -not $SkipMachineEnvironmentInjection) {
+    throw 'Explicit -CopyUserRiotSecretToMachine authorization is required unless -SkipMachineEnvironmentInjection is used.'
 }
 if (-not (Test-Path -LiteralPath $resolvedPackage -PathType Container)) {
     throw "Package path does not exist: $resolvedPackage"
@@ -175,7 +204,8 @@ $riotUser = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_
 if ([string]::IsNullOrWhiteSpace($riotUser)) {
     throw 'User-scope CONTROL_SERVER_RIOT_CALL_API_KEY is missing.'
 }
-if (-not [string]::IsNullOrWhiteSpace($oldRiotMachine) -and $oldRiotMachine -cne $riotUser) {
+if (-not $SkipMachineEnvironmentInjection -and
+    -not [string]::IsNullOrWhiteSpace($oldRiotMachine) -and $oldRiotMachine -cne $riotUser) {
     throw 'Machine-scope RIoT credential already exists with different content; refusing overwrite.'
 }
 $onboardCredential = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')
@@ -233,16 +263,21 @@ try {
     Remove-CertificateByThumbprint 'My' $leafCertificate.Thumbprint
     Remove-CertificateByThumbprint 'My' $rootCertificate.Thumbprint
 
-    [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $riotUser, 'Machine')
-    [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $certificatePassword, 'Machine')
-    Write-Diagnostic 'machine-secret-injection-complete'
+    if (-not $SkipMachineEnvironmentInjection) {
+        [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $riotUser, 'Machine')
+        [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $certificatePassword, 'Machine')
+        $machineEnvironmentInjected = $true
+    }
+    Write-Diagnostic ("machine-secret-injection-complete injected={0}" -f $machineEnvironmentInjected)
 
+    $databasePath = Join-Path (Join-Path $dataRoot 'data') 'controlserver.db'
     $configuration = [ordered]@{
-        Health = [ordered]@{ url = 'https://localhost:58007' }
+        Health = [ordered]@{ url = $healthOrigin }
+        ConnectionStrings = [ordered]@{ ControlServer = "Data Source=$databasePath" }
         OnboardTransport = [ordered]@{
             enabled = $true
             listenAddress = '127.0.0.1'
-            port = 58005
+            port = $OnboardPort
             serverCertificatePath = $certificatePath
             serverCertificatePasswordEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
             credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
@@ -254,6 +289,20 @@ try {
             credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
         }
         JourneyRuntime = [ordered]@{ enabled = $false }
+        Serilog = [ordered]@{
+            WriteTo = @(
+                [ordered]@{
+                    Name = 'File'
+                    Args = [ordered]@{
+                        path = (Join-Path $logDirectory 'controlserver-.ndjson')
+                        formatter = 'Serilog.Formatting.Compact.CompactJsonFormatter, Serilog.Formatting.Compact'
+                        rollingInterval = 'Day'
+                        retainedFileCountLimit = 14
+                        shared = $true
+                    }
+                }
+            )
+        }
     }
     $configurationPath = Join-Path $installPath 'appsettings.Production.json'
     [IO.File]::WriteAllText(
@@ -293,6 +342,7 @@ try {
     Start-Service -Name $serviceName
     Wait-ServiceState 'Running'
     Invoke-LiveCheck
+    $firstReadiness = Get-ReadyCheck
     Stop-Service -Name $serviceName
     Wait-ServiceState 'Stopped'
     Start-Service -Name $serviceName
@@ -303,11 +353,20 @@ try {
     Invoke-LiveCheck
     Write-Diagnostic 'service-lifecycle-checks-complete'
 
+    $databaseCreated = Test-Path -LiteralPath $databasePath -PathType Leaf
+    if (-not $databaseCreated) { throw "The service did not create the SQLite database at $databasePath." }
+    $logFiles = @()
+    if (Test-Path -LiteralPath $logDirectory -PathType Container) {
+        $logFiles = @(Get-ChildItem -LiteralPath $logDirectory -File | Sort-Object Name |
+            ForEach-Object { $_.Name })
+    }
+    if ($logFiles.Count -eq 0) { throw "The service did not write a log file under $logDirectory." }
+
     $version = Get-VersionCheck
     $resultDirectory = Split-Path -Parent $resolvedResult
     New-Item -ItemType Directory -Path $resultDirectory -Force | Out-Null
     $result = [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         result = 'PASS'
         runId = $runId
         completedAt = [DateTimeOffset]::UtcNow.ToString('O')
@@ -318,8 +377,19 @@ try {
         serviceAccount = 'LocalSystem'
         serviceStatus = (Get-Service -Name $serviceName).Status.ToString()
         serviceStartType = (Get-CimInstance Win32_Service -Filter "Name='$serviceName'").StartMode
-        httpsEndpoint = 'https://localhost:58007'
-        onboardTransportEndpoint = 'tls://127.0.0.1:58005'
+        installRoot = $installPath
+        dataRoot = $dataRoot
+        databasePath = $databasePath
+        databaseCreatedByMigration = $databaseCreated
+        logDirectory = $logDirectory
+        logFiles = @($logFiles)
+        backupRoot = $backupRoot
+        httpsEndpoint = $healthOrigin
+        onboardTransportEndpoint = "tls://127.0.0.1:$OnboardPort"
+        firstStartReadiness = [ordered]@{
+            status = $firstReadiness.status
+            reason = $firstReadiness.reason
+        }
         certificate = [ordered]@{
             dnsNames = @('localhost')
             leafThumbprint = $leafCertificate.Thumbprint
@@ -328,13 +398,14 @@ try {
             privateKeyFile = $certificatePath
         }
         externalSecrets = [ordered]@{
+            machineEnvironmentInjected = $machineEnvironmentInjected
             riotMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'Machine'))
             onboardMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine'))
             certificatePasswordMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', 'Machine'))
             serviceSpecificEnvironmentPresent = $serviceEnvironmentVerified
             valuesDisclosed = $false
         }
-        checks = @('package-hashes', 'sqlite-migrations-at-start', 'https-live-after-start', 'stop-start', 'restart', 'https-version')
+        checks = @('package-hashes', 'sqlite-migrations-at-start', 'https-live-after-start', 'https-ready-after-start', 'stop-start', 'restart', 'https-version', 'log-file-written')
         journeyRuntimeEnabled = $false
         riotMutationPerformed = $false
         orderCreated = $false
@@ -365,8 +436,10 @@ catch {
     }
     catch { $rollbackErrors.Add("install-path: $($_.Exception.Message)") }
     try {
-        [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $oldRiotMachine, 'Machine')
-        [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $oldCertificatePassword, 'Machine')
+        if ($machineEnvironmentInjected) {
+            [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $oldRiotMachine, 'Machine')
+            [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $oldCertificatePassword, 'Machine')
+        }
     }
     catch { $rollbackErrors.Add("machine-environment: $($_.Exception.Message)") }
     try {
