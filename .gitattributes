@@ -5,3 +5,8 @@
 *.json text eol=lf
 *.md text eol=lf
 *.ps1 text eol=crlf
+
+# Archived release artifacts are evidence: their recorded SHA-256 is the whole point of keeping them,
+# and any line-ending normalisation would make a checkout hash to something other than what the
+# evidence claims. Store and check them out byte-for-byte.
+evidence/rc/*/release-artifacts/** -text
