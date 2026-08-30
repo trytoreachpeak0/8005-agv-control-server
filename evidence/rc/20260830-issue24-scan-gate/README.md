@@ -57,3 +57,8 @@ packages. It would not have been blocked.
 Deviations 2, 3 and 5 are addressed in the ticket's answer. Deviation 3 (the missing release
 artifacts) was archived into `../20260830-isolated-install-2eeb6f0/release-artifacts/` after
 verifying both root hashes still match that run's own record.
+
+Those artifacts carry a `-text` rule in `.gitattributes`. Under the repository's `text=auto eol=lf`
+default the first commit stored `release-manifest.json` at 162,774 bytes instead of 171,544, so a
+checkout would have hashed to something other than the value the evidence claims. Both files are now
+verified to hash to `97468cae…` and `221ea67c…` when read back out of the object store.
