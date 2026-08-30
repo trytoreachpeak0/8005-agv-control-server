@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET14_FIELD_CLOSED_LOOP_ON_RELEASE_CANDIDATE",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260830-81cb9cf",
+  "serverCommit": "81cb9cf60a7990a7a7fb1b235042df5d0a9afd99",
+  "onboardCommit": "304e6ad9952a41d5c0d50c0c4e79bab5c8804bd6",
+  "protocolTag": "protocol-v0.1.1",
+  "dispatchGeneration": 6,
+  "operatorId": "S0020310",
+  "createGateOpen": true,
+  "startedAt": "2026-08-30T19:13:17.7904357+08:00",
+  "finishedAt": "2026-08-30T11:20:34.3565031+00:00",
+  "journeyStage": "Blocked",
+  "blockReasonCode": "LOAD_RESULT_REQUIRES_RECOVERY",
+  "completed": false,
+  "portsReleased": true,
+  "hostStderrEmpty": true,
+  "trustRemaining": 0,
+  "counts": {
+    "AcceptedDemands": 1,
+    "JourneyRuntimes": 1,
+    "OrderIntents": 1,
+    "RiotDispatchAuditEvents": 5,
+    "StationOperations": 1,
+    "OperationResults": 1,
+    "ProtocolInbox": 111,
+    "ProtocolOutbox": 5
+  },
+  "journey": {
+    "DemandId": "ee57c677-9663-4806-8028-f474dec4434d",
+    "Stage": "Blocked",
+    "PickupStationId": "N6-8_N7-8",
+    "PickupStationRiotId": "56",
+    "GateStationId": "关卡",
+    "GateStationRiotId": "210",
+    "ExpectedBasketCount": "2",
+    "DispatchGeneration": "6",
+    "VehicleBusinessRevision": "1",
+    "WorklistRevision": "1",
+    "PlanRevision": "1",
+    "BlockReasonCode": "LOAD_RESULT_REQUIRES_RECOVERY",
+    "CreatedAt": "2026-08-30 11:13:21.061273+00:00",
+    "UpdatedAt": "2026-08-30 11:17:54.5747956+00:00"
+  },
+  "sessions": {
+    "AgvId": "老厂前线新多仓位1",
+    "SessionGeneration": "1",
+    "Readiness": "Ready",
+    "ReasonCode": "READY"
+  },
+  "orderIntents": {
+    "UpperId": "W2G-ee57c677-9663-4806-8028-f474dec4434d-PICKUP-6",
+    "Purpose": "TO_PICKUP",
+    "TargetStationId": "N6-8_N7-8",
+    "DestinationStationId": "56",
+    "Status": "CONFIRMED",
+    "OrderId": "order-2094020647947730944"
+  },
+  "dispatchAudit": [
+    {
+      "Sequence": "1",
+      "UpperId": "W2G-ee57c677-9663-4806-8028-f474dec4434d-PICKUP-6",
+      "Phase": "PRE_CREATE_RECONCILIATION",
+      "Outcome": "UNKNOWN",
+      "ReceiptClassification": "AbsentAtObservation",
+      "OccurredAt": "2026-08-30 11:13:21.67799+00:00"
+    },
+    {
+      "Sequence": "2",
+      "UpperId": "W2G-ee57c677-9663-4806-8028-f474dec4434d-PICKUP-6",
+      "Phase": "CREATE_DISPATCH",
+      "Outcome": "ARMED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-08-30 11:13:21.7825883+00:00"
+    },
+    {
+      "Sequence": "3",
+      "UpperId": "W2G-ee57c677-9663-4806-8028-f474dec4434d-PICKUP-6",
+      "Phase": "CREATE_REQUEST",
+      "Outcome": "STARTED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-08-30 11:13:21.810014+00:00"
+    },
+    {
+      "Sequence": "4",
+      "UpperId": "W2G-ee57c677-9663-4806-8028-f474dec4434d-PICKUP-6",
+      "Phase": "CREATE_RESPONSE",
+      "Outcome": "ACCEPTED",
+      "ReceiptClassification": "SdkAccepted",
+      "OccurredAt": "2026-08-30 11:13:21.9556126+00:00"
+    },
+    {
+      "Sequence": "5",
+      "UpperId": "W2G-ee57c677-9663-4806-8028-f474dec4434d-PICKUP-6",
+      "Phase": "POST_CREATE_RECONCILIATION",
+      "Outcome": "CONFIRMED",
+      "ReceiptClassification": "Found",
+      "OccurredAt": "2026-08-30 11:13:22.0867498+00:00"
+    }
+  ],
+  "stationOperations": {
+    "OperationType": "Load",
+    "Status": "RecoveryRequired",
+    "SublotId": "Q26086065-3"
+  }
+}
