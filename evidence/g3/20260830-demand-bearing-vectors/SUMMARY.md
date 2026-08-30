@@ -2,11 +2,14 @@
 
 ## 结论
 
-`DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT` 运行 `20260830T000453998Z`
-通过，十六条断言全部 PASS。本结果不是任一完整切片的正式 G3 PASS；`W2G-IS-04` 与 `W2G-IS-05`
+`DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT` 运行 `20260830T001200979Z`
+通过，二十条断言全部 PASS。本结果不是任一完整切片的正式 G3 PASS；`W2G-IS-04` 与 `W2G-IS-05`
 仍保持 `INCONCLUSIVE`。
 
-这两类向量是 staged 运行取不到的最后两个。**两者都不需要移动车辆。**
+本目录先前归档过同一向量集的一次十六条断言运行（`20260830T000453998Z`，runner `ee48ca5`）。
+补上重启段后由本次二十条断言的运行取代，旧内容留在 Git 历史里。
+
+这三类向量是 staged 运行取不到的最后几个。**都不需要移动车辆。**
 
 - **RIoT UNKNOWN 对账**不是偶发故障，而是每次新代次建单的必经路径：任何从未创建过的 `upperId`，
   RIoT 都以 HTTP 200／业务码 0／无 result 应答，落到 `RiotOrderObservationKind.Unknown`。要断言
@@ -16,6 +19,8 @@
   `ApplyOperationResultAsync` 以 `ResultId` 或 `(SlotOperationAttemptId, ForcedRecoveryGeneration)`
   去重，已带结果的 attempt 只会产生冲突；而真实车载端会立刻把结果送回，所以**新跑一趟现场旅程
   反而取不到这一步**。本运行恢复了一份真实授权运行留下的该状态，而不是伪造 `StationOperations` 行。
+- **跨重启复用 Demand 与车辆租约**是票据 20 具名记录的不可达项：那两行只有在 demand 被受理后
+  才存在，staged 形态里没有。带 demand 的存储正是能断言它的形态。
 
 本次没有创建 RIoT 订单，没有发送移动命令，没有使用现场凭据，也没有伪造停稳/驻车信号：
 `JourneyRuntime` 关闭，`RiotCreateDispatch` 关闭，MesIngest 与 RIoT 均指向死端口
@@ -28,11 +33,11 @@
 - slots-simulator：`fb5f7c593742bf98bc3957b8729a38aad5321f28`
 - 协议：`protocol-v0.1.1@1531489e42e328f28bfe0c51ed3f8c56e5ce0279`
 - manifest SHA-256：`a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f`
-- runner：`ee48ca56d8516b4434eaad5a5811066dccc31b63`，起跑时工作区干净
-- 运行配置 SHA-256：`0fa0be9f90060aab65a54d0f2eafde9e87526a07423f03b541193e7d7d7811cf`
+- runner：`458d763839c1a05b87d4cb721639aaa6ce4a1dc1`，起跑时工作区干净
+- 运行配置 SHA-256：`5063d742e5f126fbfca0ad7aa2c2c31237dd2e1341d399bd7a675a7c30fe1aa4`
 
 四个 peer commit 与合成对端 harness 都不在本 runner 内重述：commit 解析
-`scripts/run-staged-g3.ps1` 的 `param()` 块默认值读回（来源 SHA-256 `50a7a4d6a0b4…`），
+`scripts/run-staged-g3.ps1` 的 `param()` 块默认值读回（来源 SHA-256 `3450b64b5c11…`），
 读取函数本身按 AST 从 `scripts/run-staged-g3-restart.ps1` 抽出（SHA-256 `f798464d9ec3…`），
 harness 则按 here-string 从同一个 staged runner 抽出后编译。三者都记录在 `configuration.json`。
 
@@ -76,7 +81,7 @@ Unload attempt `e2056294…`：
 | 断言 | 结果 |
 | --- | --- |
 | 首次结果被接受 | PASS，`DurableAck` 的 `acceptedMessageId` 等于发送的 `60e2187e…` |
-| 逐字节相同的重放返回同一条已存 ack | PASS，两次 ack SHA-256 均为 `2874fb3ff627…` |
+| 逐字节相同的重放返回同一条已存 ack | PASS，两次 ack SHA-256 均为 `c6c713a0179d…` |
 | 同 messageId 改内容被拒 | PASS，连接关闭 |
 | 同 attempt 同代次换 messageId 被拒 | PASS，连接关闭 |
 | 已 `Committed` 的 attempt 再收结果被拒 | PASS，连接关闭 |
@@ -93,6 +98,29 @@ Unload attempt `e2056294…`：
 卸货结果同时关闭了 demand，四项事实原子提交：`UnloadBatches` 0→1、`StopClosures` 0→1、
 `TransportDemandCompletions` 0→1，车辆租约释放。这一段是 staged 运行永远到不了的。
 
+## 跨重启复用 Demand 与车辆租约
+
+结果向量取完后，服务端进程被杀死并在**同一个存储文件**上重新起来：
+
+| 项 | 值 |
+| --- | --- |
+| 第一代 host PID | 21928，重启前已确认退出 |
+| 第二代 host PID | 26872 |
+| 重启前 session generation | 79 |
+| 重启后握手 generation | 80（推进恰好一代，不是从 1 重来）|
+| 重启后自报构建 | `3d8b00c…`，协议 `1531489e…` |
+
+重启事实由 **OS 进程身份**承担。`SessionAccepted.serverInstanceId` 不能承担这个claim——
+`OnboardMessageProcessor` 注册为 `Scoped`，该 id 是每连接一个而非每进程一个（票据 20 已证）。
+
+`AcceptedDemands` 与 `VehicleDispatchLeases` 在重启前后按各自的完整身份列逐列保留：
+demand `94993971…` / `Q26081298-1|WIRE_TO_GATE` / revision 1 / `Succeeded`，
+租约 `94993971…` / `BROKERX-0c20ff06…` / `AcquiredAt` 与 `ReleasedAt` 均不变；两表计数不变，
+数据库文件创建时间不变——重开的是同一个文件，不是新建的。租约此时已被卸货结果释放，
+断言的是**该行原样存活**，不是它仍处于未释放状态。
+
+重启后的握手只发 hello、不发任何业务消息：重启向量如果同时驱动业务面，一边的失败会被报成另一边的。
+
 ## 无移动与无外部副作用
 
 只有外部调用才能增长的表在运行前后计数完全相同：`OrderIntents` 2→2、
@@ -105,11 +133,13 @@ Unload attempt `e2056294…`：
 ## 断言的可证伪性
 
 正式运行前，runner 的断言段被原样抽出（按首行／停行从脚本中取真代码块，不是复刻品）并喂入
-本次运行的真实产物，再施加 **27 条单点变异**，全部被其对应断言检出。变异覆盖：漏掉 UNKNOWN、
+本次运行的真实产物，再施加 **36 条单点变异**，全部被其对应断言检出。变异覆盖：漏掉 UNKNOWN、
 把 UNKNOWN 记成别的 eligibility basis、UNKNOWN 其实带了 result 或订单号、某条腿建单两次、
 跳过建单后对账、确认的订单不是创建的那张、order intent 未 CONFIRMED、六条探针用例逐一翻红、
 重放被处理成两条结果行或两条 inbox 行、结果被记为 historical-only、操作没离开 `Prepared`、
-完工行未写或写重、运行中冒出新的 order intent／审计事件／站点操作行、端口未释放、凭据泄漏。
+完工行未写或写重、运行中冒出新的 order intent／审计事件／站点操作行、重启其实没换进程、
+旧进程没退出、demand 行变化或消失、存储被重建而非重开、租约被重启释放或消失、
+重启后从代次 1 重来、重启后自报别的构建、端口未释放、凭据泄漏。
 
 期间抓到两类缺陷，都不是产品 FAIL：
 
@@ -123,11 +153,12 @@ Unload attempt `e2056294…`：
 ## 证据
 
 - [`run-result.json`](run-result.json)：机器可读运行结果，SHA-256
-  `d02a15d1547b76bbc5905dde4f52bbc40785e22b84cf516e25a7c9fd6f3807e0`
+  `c8fc1a382fd15960716535d583483eb9aaa2db43709f7077b0fbafd82130aafb`
 - [`configuration.json`](configuration.json)：存储来源、绑定来源、端口、无副作用声明
 - [`probe-result.json`](probe-result.json) / [`probe-transcript.ndjson`](probe-transcript.ndjson)：
   合成对端六条用例的请求／应答哈希与逐条记录
-- `logs/`：克隆、检出、发布日志与服务端 stdout/stderr
+- [`handshake-after-restart.json`](handshake-after-restart.json)：重启后握手所得的会话代次与服务端身份
+- `logs/`：克隆、检出、发布日志与两代服务端各自的 stdout/stderr
 - `run-result.json` 的 `evidenceFiles` 收录本目录其余文件的 `path/sha256/length`
 
 ## 仍未通过
