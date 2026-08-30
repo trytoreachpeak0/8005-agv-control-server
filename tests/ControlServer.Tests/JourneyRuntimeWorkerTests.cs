@@ -248,6 +248,200 @@ public sealed class JourneyRuntimeWorkerTests
         _ => null
     };
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(int iterationLosingAcks)
+    {
+        // Every runtime iteration replays each unacknowledged outbox row before it does anything
+        // else, oldest first. The pickup and the gate publish the same three snapshot types under
+        // two revisions, so a pickup row still pending once the gate row exists would be a lower
+        // revision queued behind a higher one -- and the peer journals an adopted revision under its
+        // message type alone and refuses anything below it as SNAPSHOT_REVISION_REGRESSION. This
+        // drives the journey against a peer that answers the way OnboardHmi_MVP@304e6ad does and
+        // loses every acknowledgement that peer had in flight during one chosen iteration, the way a
+        // dropped connection would. It stays green because the replay is also the repair: the peer
+        // journals and acknowledges a duplicate at the revision it already holds, so the next
+        // iteration settles the row the lost acknowledgement left behind, and it does so long before
+        // the gate allocates the higher revision. Iteration 0 loses nothing and is the control.
+        AdoptingPeer peer = await DriveToGateWithAdoptingPeerAsync(iteration => iteration != iterationLosingAcks);
+
+        // A green run only means something if the peer actually reached the dangerous state: it has
+        // to be holding the gate revision of all three snapshot types.
+        foreach (IGrouping<string, long> stream in peer.Adopted.GroupBy(item => item.MessageType, item => item.Revision))
+        {
+            Assert.Equal(2, stream.Distinct().Count());
+        }
+
+        Assert.Equal(3, peer.Adopted.Select(item => item.MessageType).Distinct().Count());
+        Assert.Empty(peer.Regressions);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task OnlyAPeerThatNeverAcknowledgesIsShownASupersededSnapshot()
+    {
+        // The falsifiability of the theory above: the detector does fire, and what it takes is a
+        // peer whose acknowledgements never arrive at all -- for the whole span from the pickup
+        // publish to the gate publish, not for one dropped connection. That peer cannot exist in a
+        // run that reaches the gate: SublotSubmitted and PreDepartureSafetyCheckResult travel the
+        // same peer-to-server direction as the acknowledgements, and the journey cannot leave the
+        // pickup without them. This fixture supplies both by writing the inbox directly, which is
+        // what lets the journey advance here and is the artifact behind the interleaved
+        // `1, 2, 1, 2` redelivery seen while closing the revision allocation defect.
+        AdoptingPeer peer = await DriveToGateWithAdoptingPeerAsync(_ => false);
+
+        Assert.Equal(
+            ["CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot", "VehicleBusinessStateSnapshot"],
+            peer.Regressions.Select(item => item.MessageType).Distinct().Order(StringComparer.Ordinal));
+        Assert.All(peer.Regressions, item =>
+        {
+            Assert.Equal(1, item.Delivered);
+            Assert.Equal(2, item.Held);
+        });
+    }
+
+    [Theory]
+    [InlineData(3, 7, true)]
+    [InlineData(4, 7, false)]
+    [InlineData(3, 6, false)]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task TheRedeliveredRevisionNeedsEveryAcknowledgementFromThePickupToTheGateLost(
+        int firstLostIteration,
+        int lastLostIteration,
+        bool expectRegressions)
+    {
+        // The exact boundary. The pickup allocates its revisions in iteration 2 and the gate
+        // allocates the higher ones in iteration 6, and each iteration replays what is still pending
+        // before it publishes anything, so the peer re-acknowledges the pickup rows once per
+        // iteration. They only survive to be redelivered under the gate revision if every one of
+        // those acknowledgements is lost, iterations 3 through 7 -- a single successful delivery
+        // anywhere in that span settles them and the run stays clean. Five consecutive iterations of
+        // a peer-to-server direction that is down while the server-to-peer direction still carries
+        // snapshots is not a dropped connection; and that same span is where the journey consumes
+        // SublotSubmitted and PreDepartureSafetyCheckResult, which travel in the direction that
+        // would have to be down.
+        AdoptingPeer peer = await DriveToGateWithAdoptingPeerAsync(
+            iteration => iteration < firstLostIteration || iteration > lastLostIteration);
+
+        Assert.Equal(expectRegressions, peer.Regressions.Count > 0);
+    }
+
+    /// <summary>
+    /// Runs one journey to the gate against a peer modelled on the real one, asking
+    /// <paramref name="deliversAcks"/> before each iteration whether the acknowledgements the peer
+    /// buffered during the previous iteration reach the server or are lost with the connection.
+    /// </summary>
+    private static async Task<AdoptingPeer> DriveToGateWithAdoptingPeerAsync(Func<int, bool> deliversAcks)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        AdoptingPeer peer = new(fixture.Context, fixture.Clock);
+        fixture.Peer.OnMessageSent = line =>
+        {
+            peer.Receive(line);
+            return Task.CompletedTask;
+        };
+
+        int iteration = 0;
+        async Task IterateAsync()
+        {
+            iteration++;
+            if (deliversAcks(iteration))
+            {
+                await peer.DeliverBufferedAcksAsync();
+            }
+            else
+            {
+                peer.LoseBufferedAcks();
+            }
+
+            await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        }
+
+        await IterateAsync();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await IterateAsync();
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "SublotSubmitted",
+            new
+            {
+                demandId = runtime.DemandId,
+                operationSessionId = runtime.OperationSessionId,
+                stationId = runtime.PickupStationId,
+                worklistRevision = runtime.WorklistRevision,
+                sublot = "SUBLOT-001",
+                entryMethod = "SCANNER",
+                @operator = new
+                {
+                    operatorId = "OP-001",
+                    verificationMethod = "BADGE",
+                    verifiedAt = Now
+                }
+            });
+        await IterateAsync();
+
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await IterateAsync();
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = runtime.PreDepartureSafetyCheckId,
+                outcome = "SAFE",
+                observedAt = Now,
+                safetyStateVersion = 7,
+                validUntil = Now.AddMinutes(1),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            runtime.PreDepartureSafetyCheckMessageId);
+        await IterateAsync();
+
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", fixture.Options.GateStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = fixture.Options.GateStationRiotId };
+        // The gate publishes the second revision of all three snapshot types.
+        await IterateAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.RuntimeAsync()).Stage);
+
+        // Two more iterations with the journey standing at the gate: whatever is still pending is
+        // replayed, and the peer is holding the gate revision by now.
+        await IterateAsync();
+        await IterateAsync();
+        return peer;
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
     public async Task CommandsAnsweredByABusinessResultAreNotLeftPendingForReplay()
@@ -1794,6 +1988,81 @@ public sealed class JourneyRuntimeWorkerTests
                 await OnMessageSent(System.Text.Encoding.UTF8.GetString(ndjsonLine.Span)).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// Answers snapshots the way <c>OnboardHmi_MVP@304e6ad</c> does.
+    /// </summary>
+    /// <remarks>
+    /// That peer keys an adopted snapshot on its message type alone, journals it in SQLite and
+    /// never deletes the row, so the revision it holds survives a reconnect. A revision below the
+    /// one it holds is refused as SNAPSHOT_REVISION_REGRESSION and never acknowledged; a duplicate
+    /// at the revision it already holds is journalled and acknowledged again, because the journal
+    /// write and the acknowledgement are sequential statements with no early exit between them.
+    /// Acknowledgements are buffered rather than applied on receipt so that a test can lose exactly
+    /// the ones a peer had in flight when its connection dropped.
+    /// </remarks>
+    private sealed class AdoptingPeer(ControlServerDbContext context, TimeProvider clock)
+    {
+        private readonly Dictionary<string, long> _journal = new(StringComparer.Ordinal);
+        private readonly List<(string MessageId, string MessageType, string ContentSha256, long Revision)> _buffered = [];
+
+        public List<(string MessageType, long Delivered, long Held)> Regressions { get; } = [];
+
+        public List<(string MessageType, long Revision)> Adopted { get; } = [];
+
+        public void Receive(string ndjsonLine)
+        {
+            string wire = ndjsonLine.TrimEnd('\n');
+            using JsonDocument document = JsonDocument.Parse(wire);
+            JsonElement root = document.RootElement;
+            string messageType = root.GetProperty("messageType").GetString()!;
+            string? revisionProperty = SnapshotRevisionProperty(messageType);
+            if (revisionProperty is null)
+            {
+                return;
+            }
+
+            long revision = root.GetProperty("payload").GetProperty(revisionProperty).GetInt64();
+            if (_journal.TryGetValue(messageType, out long held) && revision < held)
+            {
+                Regressions.Add((messageType, revision, held));
+                return;
+            }
+
+            if (!_journal.TryGetValue(messageType, out held) || revision != held)
+            {
+                Adopted.Add((messageType, revision));
+            }
+
+            _journal[messageType] = revision;
+            _buffered.Add((
+                root.GetProperty("messageId").GetString()!,
+                messageType,
+                Convert.ToHexString(
+                        System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(wire)))
+                    .ToLowerInvariant(),
+                revision));
+        }
+
+        public async Task DeliverBufferedAcksAsync()
+        {
+            WireToGateStore store = new(context);
+            foreach ((string messageId, string messageType, string contentSha256, long revision) in _buffered)
+            {
+                await store.AcknowledgeOutboundEnvelopeAsync(
+                    messageId,
+                    messageType,
+                    contentSha256,
+                    revision,
+                    clock.GetUtcNow(),
+                    TestContext.Current.CancellationToken);
+            }
+
+            _buffered.Clear();
+        }
+
+        public void LoseBufferedAcks() => _buffered.Clear();
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

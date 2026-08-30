@@ -1,0 +1,32 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.30)
+[xUnit.net 00:00:00.46]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:01.11]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:01.42]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.TheRedeliveredRevisionNeedsEveryAcknowledgementFromThePickupToTheGateLost(firstLostIteration: 3, lastLostIteration: 6, expectRegressions: False) [4 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.TheRedeliveredRevisionNeedsEveryAcknowledgementFromThePickupToTheGateLost(firstLostIteration: 3, lastLostIteration: 7, expectRegressions: True) [2 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.TheRedeliveredRevisionNeedsEveryAcknowledgementFromThePickupToTheGateLost(firstLostIteration: 4, lastLostIteration: 7, expectRegressions: False) [2 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 2) [1 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 3) [1 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 5) [1 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 4) [1 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 6) [1 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 0) [1 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 8) [1 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 1) [1 s]
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(iterationLosingAcks: 7) [1 s]
+[xUnit.net 00:00:29.07]   Finished:    ControlServer.Tests (ID = '45906dd445d52a1fbdbe0fd78a70b93396c142da532a92087e9beb8d517212d5')
+  Passed ControlServer.Tests.JourneyRuntimeWorkerTests.OnlyAPeerThatNeverAcknowledgesIsShownASupersededSnapshot [1 s]
+
+Test Run Successful.
+Total tests: 13
+     Passed: 13
+ Total time: 29.7556 Seconds
