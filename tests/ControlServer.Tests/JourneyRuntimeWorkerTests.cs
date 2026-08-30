@@ -181,6 +181,74 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task ASecondJourneyOnTheSameVehicleNeverRepublishesAnAdoptedRevision()
+    {
+        // The peer journals the adopted revision of each snapshot type in SQLite keyed on the type
+        // alone -- no demand, no session -- and never deletes the row: on reconnect it clears its
+        // in-memory copy and immediately restores it from that journal. A revision below the one it
+        // holds is refused as SNAPSHOT_REVISION_REGRESSION, an equal one whose payload differs as
+        // SNAPSHOT_REVISION_CONTENT_CONFLICT, and both refusals raise a protocol problem and tear
+        // the session down. The runtime row is created per demand, so a second journey on the same
+        // vehicle restarted every revision at 1 while the peer already held 2.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.RunToCompletionAsync();
+
+        // The vehicle lease is released by an atomic completion, so the same vehicle taking a second
+        // demand is the designed path, not a recovery case.
+        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000002", "SUBLOT-002", Now.AddMinutes(-5)));
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow second = await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002");
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", second.PickupUpperId, second.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = second.PickupStationRiotId };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(
+            JourneyRuntimeStage.AwaitingSublot,
+            (await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002")).Stage);
+
+        // One entry per snapshot the server allocated a revision to, in the order it first sent
+        // them. The fixture peer never acknowledges, so every pending outbox row is re-sent on each
+        // iteration; a real peer acknowledges what it has adopted and only the first send counts.
+        (string Type, long Revision)[] published = fixture.Peer.Lines
+            .Select(line => JsonDocument.Parse(System.Text.Encoding.UTF8.GetString(line)).RootElement)
+            .Select(root => (Type: root.GetProperty("messageType").GetString()!, Root: root))
+            .Where(item => SnapshotRevisionProperty(item.Type) is not null)
+            .DistinctBy(item => item.Root.GetProperty("messageId").GetString()!)
+            .Select(item => (
+                item.Type,
+                item.Root.GetProperty("payload").GetProperty(SnapshotRevisionProperty(item.Type)!).GetInt64()))
+            .ToArray();
+
+        Assert.Equal(
+            ["CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot", "VehicleBusinessStateSnapshot"],
+            published.Select(item => item.Type).Distinct().Order(StringComparer.Ordinal));
+        foreach (IGrouping<string, long> stream in published.GroupBy(item => item.Type, item => item.Revision))
+        {
+            long[] revisions = stream.ToArray();
+            // Three stops have been published: pickup and gate on the first journey, pickup on the
+            // second. That is three distinct revisions, and the sequence may never step back.
+            Assert.Equal(revisions.Order(), revisions);
+            Assert.Equal(3, revisions.Distinct().Count());
+        }
+    }
+
+    private static string? SnapshotRevisionProperty(string messageType) => messageType switch
+    {
+        "VehicleBusinessStateSnapshot" => "vehicleBusinessStateRevision",
+        "CurrentStopWorklistSnapshot" => "worklistRevision",
+        "UpcomingStopPlanSnapshot" => "planRevision",
+        _ => null
+    };
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
     public async Task CommandsAnsweredByABusinessResultAreNotLeftPendingForReplay()
     {
@@ -207,6 +275,31 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.DoesNotContain("SlotOperationCommand", stillPending);
         // The safety check has not been answered yet, so it is still legitimately pending.
         Assert.Contains("PreDepartureSafetyCheck", stillPending);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task CommandsAnsweredAfterTheGateDepartureAreSettledToo()
+    {
+        // The same commit settles four answered commands, but only the sublot request and the load
+        // command were ever asserted -- and the test above asserts the safety check is *still*
+        // pending, because at that point it has not been answered. The remaining two are settled
+        // after the journey leaves AwaitingDepartureSafety, past the point every earlier test
+        // stopped looking, so deleting either call kept the whole suite green while the outbox went
+        // on replaying an already-obeyed command into every later session.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.RunToCompletionAsync();
+
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        string[] stillPending = await fixture.PendingOutboxMessageIdsAsync();
+
+        // The safety check was answered by a PreDepartureSafetyCheckResult, the unload command by an
+        // OperationResult. Neither answer is a DurableAck, so nothing else can settle these rows.
+        Assert.DoesNotContain(runtime.PreDepartureSafetyCheckMessageId, stillPending);
+        Assert.DoesNotContain(runtime.UnloadCommandMessageId, stillPending);
     }
 
     [Fact]
@@ -1137,6 +1230,16 @@ public sealed class JourneyRuntimeWorkerTests
             return await RuntimeAsync();
         }
 
+        /// <summary>Carries the journey through the unload result to atomic completion.</summary>
+        public async Task<JourneyRuntimeRow> RunToCompletionAsync()
+        {
+            await RunToGateUnloadAsync();
+            StationOperationRow unload = await OperationAsync(SlotOperationType.Unload);
+            await ApplySafeResultAsync(unload, SlotOperationType.Unload, SlotBusinessState.Empty);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            return await RuntimeAsync();
+        }
+
         /// <summary>
         /// Stores an inbound envelope whose <c>sessionGeneration</c> is null, which is what the
         /// inbox holds before a generation is assigned. Liveness scans every message type, so it
@@ -1250,6 +1353,10 @@ public sealed class JourneyRuntimeWorkerTests
             .AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
 
+        public Task<JourneyRuntimeRow> RuntimeAsync(string demandId) => Context.JourneyRuntimes
+            .AsNoTracking()
+            .SingleAsync(row => row.DemandId == demandId, TestContext.Current.CancellationToken);
+
         public Task<AcceptedDemandRow> DemandRowAsync() => Context.AcceptedDemands
             .AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
@@ -1265,6 +1372,12 @@ public sealed class JourneyRuntimeWorkerTests
         public Task<StationOperationRow> OperationAsync(SlotOperationType type) => Context.StationOperations
             .AsNoTracking()
             .SingleAsync(row => row.OperationType == type, TestContext.Current.CancellationToken);
+
+        public async Task<string[]> PendingOutboxMessageIdsAsync() => await Context.ProtocolOutbox
+            .AsNoTracking()
+            .Where(row => row.AcknowledgedAt == null && row.FencedAt == null)
+            .Select(row => row.MessageId)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
 
         public async Task<string[]> OutboxTypesAsync() => await Context.ProtocolOutbox
             .AsNoTracking()
@@ -1597,9 +1710,15 @@ public sealed class JourneyRuntimeWorkerTests
                 _mapStations));
         }
 
-        public void SetSuccessfulArrival(string purpose, int stationId)
+        public void SetSuccessfulArrival(string purpose, int stationId) =>
+            SetSuccessfulArrival(purpose, UpperId(purpose), stationId);
+
+        /// <summary>
+        /// Takes the upperId from the runtime row, which is the only way to reach a journey whose
+        /// demand is not the one <see cref="UpperId"/> hardcodes.
+        /// </summary>
+        public void SetSuccessfulArrival(string purpose, string upperId, int stationId)
         {
-            string upperId = UpperId(purpose);
             _orders[upperId] = new RiotOrderObservation(
                 upperId,
                 RiotOrderObservationKind.Terminal,

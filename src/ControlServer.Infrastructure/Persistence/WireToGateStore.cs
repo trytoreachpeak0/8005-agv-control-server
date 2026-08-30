@@ -12,6 +12,13 @@ namespace ControlServer.Infrastructure.Persistence;
 
 public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourneyAcceptanceStore, IMovementIntentStore
 {
+    /// <summary>
+    /// A journey publishes its stored revision at the pickup stop and that value plus one at the
+    /// gate stop (JourneyRuntimeEngine publishes both stops), so the next journey on the same
+    /// vehicle has to start two above the stored one.
+    /// </summary>
+    private const long RevisionsPerJourney = 2;
+
     public async Task<long> GetNextSessionGenerationAsync(string agvId, CancellationToken cancellationToken)
     {
         long current = await dbContext.SessionRecoveries
@@ -285,7 +292,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         dbContext.OrderIntents.Add(ToRow(orderIntent));
         if (journey is not null)
         {
-            dbContext.JourneyRuntimes.Add(ToRuntimeRow(snapshot.DemandId, journey));
+            JourneyRuntimeRow runtimeRow = ToRuntimeRow(snapshot.DemandId, journey);
+            await SeedSnapshotRevisionsAsync(runtimeRow, cancellationToken).ConfigureAwait(false);
+            dbContext.JourneyRuntimes.Add(runtimeRow);
             JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
                 .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                 .ConfigureAwait(false);
@@ -1780,6 +1789,43 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.GateMovementLegId == journey.GateMovementLegId &&
         row.GateUpperId == journey.GateUpperId &&
         row.DispatchGeneration == journey.DispatchGeneration;
+
+    /// <summary>
+    /// Carries every snapshot revision on from the highest this vehicle has already published.
+    /// </summary>
+    /// <remarks>
+    /// Onboard journals the adopted revision of each snapshot type in SQLite keyed on the message
+    /// type alone -- no demand, no session -- and never deletes the row; on reconnect it restores
+    /// that journal over its cleared in-memory copy. So the revision has to be monotonic per vehicle
+    /// across the vehicle's whole life, which is what ADR-cross-0048 means by persisted by the
+    /// server. A runtime row is created per demand and started every counter at 1, so the second
+    /// journey on a vehicle re-published a revision Onboard had already adopted and had it refused
+    /// as SNAPSHOT_REVISION_REGRESSION -- which raises a protocol problem and tears the session down.
+    /// </remarks>
+    private async Task SeedSnapshotRevisionsAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        var highest = await dbContext.JourneyRuntimes
+            .Where(row => row.AgvId == runtime.AgvId)
+            .GroupBy(row => row.AgvId)
+            .Select(group => new
+            {
+                VehicleBusiness = group.Max(row => row.VehicleBusinessRevision),
+                Worklist = group.Max(row => row.WorklistRevision),
+                Plan = group.Max(row => row.PlanRevision)
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (highest is null)
+        {
+            return;
+        }
+
+        runtime.VehicleBusinessRevision = highest.VehicleBusiness + RevisionsPerJourney;
+        runtime.WorklistRevision = highest.Worklist + RevisionsPerJourney;
+        runtime.PlanRevision = highest.Plan + RevisionsPerJourney;
+    }
 
     private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)
     {
