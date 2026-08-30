@@ -139,3 +139,21 @@ committed release script by AST**, so it exercises the shipped code rather than 
 | `onboard-agv-20260830.log` | the onboard application's own log from its verification launch |
 | `uninstall-retain-data-result.json` | uninstall keeping the data root |
 | `uninstall-remove-data-result.json` | uninstall removing the data root |
+| `release-artifacts/release-manifest.json` | the joint release manifest this run produced |
+| `release-artifacts/SHA256SUMS.txt` | the 868-file hash list assertion 6 was checked against |
+| `release-artifacts/inventory/dependencies-controlserver.json` | 103 packages with resolved licenses |
+| `release-artifacts/inventory/dependencies-onboard.json` | 4 packages with resolved licenses |
+| `release-artifacts/inventory/secret-scan.json` | the scan behind assertion 26 |
+
+## Archived afterwards (map ticket 24)
+
+`release-artifacts/` was **not** archived when this run happened; only the two root hashes in the
+table above were, which left findings #3 and assertion 26 with nothing in the repository to re-check.
+The five files were copied out of the release output directory on 2026-08-30 under map ticket 24,
+after verifying that `release-manifest.json` and `SHA256SUMS.txt` still hash to the two values
+recorded above — so they are this run's own artifacts, not a rebuild.
+
+Assertion 26 was, at the time of this run, a **recorded count and not a gate**: the release script
+wrote the finding counts into JSON and packaged regardless. Ticket 24 added
+`Assert-ReleaseScanGate`, so a later release with a finding, a key-material file or an unlisted
+unresolved license fails instead of shipping. That gate is not retroactive to this package.

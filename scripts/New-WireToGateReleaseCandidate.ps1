@@ -65,6 +65,14 @@ function Get-FileInventory([string]$Path) {
     return $inventory
 }
 
+# NUGET_PACKAGES relocates the global packages folder. Hard-coding $env:USERPROFILE\.nuget\packages
+# made every license read UNRESOLVED on such a machine, and -- before the gate below existed -- the
+# script still packaged happily with an empty license inventory.
+function Get-NuGetGlobalPackagesRoot() {
+    if (-not [string]::IsNullOrWhiteSpace($env:NUGET_PACKAGES)) { return $env:NUGET_PACKAGES }
+    return (Join-Path $env:USERPROFILE '.nuget\packages')
+}
+
 function Get-PackageLicense([string]$Id, [string]$Version) {
     $record = [ordered]@{
         id = $Id
@@ -75,8 +83,7 @@ function Get-PackageLicense([string]$Id, [string]$Version) {
         authors = ''
         nuspecFound = $false
     }
-    $packageRoot = Join-Path $env:USERPROFILE ('.nuget\packages\{0}\{1}' -f $Id.ToLowerInvariant(), $Version.ToLowerInvariant())
-    $nuspecPath = Join-Path $packageRoot ('{0}.nuspec' -f $Id.ToLowerInvariant())
+    $nuspecPath = Join-Path (Get-NuGetGlobalPackagesRoot) ('{0}\{1}\{0}.nuspec' -f $Id.ToLowerInvariant(), $Version.ToLowerInvariant())
     if (-not (Test-Path -LiteralPath $nuspecPath -PathType Leaf)) { return $record }
     $record.nuspecFound = $true
     [xml]$nuspec = Get-Content -Raw -LiteralPath $nuspecPath
@@ -169,6 +176,58 @@ function Invoke-SecretScan([string]$Path, [string]$Label) {
         findings = @($findings)
         findingCount = @($findings).Count
         matchedValuesDisclosed = $false
+    }
+}
+
+# Packages that are known to ship without license metadata. They are first-party RIoT SDK packages
+# built inside this programme, so their terms are not in question -- but they are listed by name so
+# that a *new* unresolved package fails the release instead of silently joining the count.
+$unresolvedLicenseAllowlist = @('riot.sdk.core', 'riot.sdk.facade', 'riot.sdk.generated')
+
+# Before this gate existed, the secret scan and the license inventory were written to JSON and then
+# ignored: a source tree carrying "apiKey": "..." still produced a PASS package, exactly like a build
+# warning would have if buildWarnings were merely recorded. Findings gate the release the same way.
+function Assert-ReleaseScanGate {
+    param(
+        [Parameter(Mandatory)]$SecretScan,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$DependencyInventories,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]]$UnresolvedLicenseAllowlist
+    )
+
+    $failures = @()
+    foreach ($scope in @($SecretScan.scopes)) {
+        foreach ($finding in @($scope.findings)) {
+            # Location and rule only. The scan promises matchedValuesDisclosed = false, and a failure
+            # message that quoted the match would print the secret into every console and CI log.
+            $failures += 'secret-scan {0}: {1}:{2} matched rule {3}' -f $scope.scope, $finding.path, $finding.line, $finding.rule
+        }
+        foreach ($keyFile in @($scope.keyMaterialFiles)) {
+            $failures += 'secret-scan {0}: key material file {1}' -f $scope.scope, $keyFile
+        }
+    }
+
+    $unexpectedUnresolved = @()
+    foreach ($inventory in $DependencyInventories) {
+        foreach ($package in @($inventory.packages)) {
+            if ($package.license -ne 'UNRESOLVED') { continue }
+            if ($UnresolvedLicenseAllowlist -contains $package.id.ToLowerInvariant()) { continue }
+            $unexpectedUnresolved += '{0}/{1}' -f $package.id, $package.version
+            $failures += 'license {0}: {1} {2} resolves to no license' -f $inventory.component, $package.id, $package.version
+        }
+    }
+
+    if ($failures.Count -gt 0) {
+        throw ("The release candidate failed its scan gate ({0} finding(s)):`n  {1}" -f
+            $failures.Count, ($failures -join "`n  "))
+    }
+
+    return [ordered]@{
+        secretScanFindingsBlockRelease = $true
+        keyMaterialFilesBlockRelease = $true
+        unresolvedLicensesBlockRelease = $true
+        unresolvedLicenseAllowlist = @($UnresolvedLicenseAllowlist)
+        unexpectedUnresolvedLicenses = @($unexpectedUnresolved)
+        nugetGlobalPackagesRoot = (Get-NuGetGlobalPackagesRoot)
     }
 }
 
@@ -303,6 +362,15 @@ $secretScan.totalKeyMaterialFileCount = @($secretScan.scopes | ForEach-Object { 
     ($secretScan | ConvertTo-Json -Depth 8),
     [Text.UTF8Encoding]::new($false))
 
+# --- Scan gate --------------------------------------------------------------
+# Deliberately after the inventory files are on disk and before the manifest: a failed release still
+# leaves the scan and dependency evidence behind to diagnose, but never produces a manifest, a
+# SHA256SUMS.txt or a package that claims to have passed.
+$scanGate = Assert-ReleaseScanGate `
+    -SecretScan $secretScan `
+    -DependencyInventories @($controlServerDependencies, $onboardDependencies) `
+    -UnresolvedLicenseAllowlist $unresolvedLicenseAllowlist
+
 # --- Joint release manifest -------------------------------------------------
 $controlServerFiles = @(Get-FileInventory $controlServerPackage)
 $onboardFiles = @(Get-FileInventory $onboardPackage)
@@ -371,6 +439,7 @@ $releaseManifest = [ordered]@{
         secretScan = 'inventory/secret-scan.json'
         secretScanFindingCount = $secretScan.totalFindingCount
         secretScanKeyMaterialFileCount = $secretScan.totalKeyMaterialFileCount
+        scanGate = $scanGate
     }
     operatorEntryPoints = [ordered]@{
         document = 'RELEASE-CANDIDATE.md'
@@ -397,3 +466,4 @@ Write-Output "Protocol: $($protocol.tag) $($protocol.repositoryCommit)"
 Write-Output "Release manifest SHA-256: $((Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant())"
 Write-Output "SHA256SUMS SHA-256: $((Get-FileHash -LiteralPath $sumsPath -Algorithm SHA256).Hash.ToLowerInvariant())"
 Write-Output "Secret scan findings: $($secretScan.totalFindingCount); key material files: $($secretScan.totalKeyMaterialFileCount)"
+Write-Output "Scan gate: PASS (allowlisted unresolved licenses: $($unresolvedLicenseAllowlist -join ', '))"

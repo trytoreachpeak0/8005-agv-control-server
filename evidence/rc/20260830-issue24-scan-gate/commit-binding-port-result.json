@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ticket": "wire-to-gate-ai-implementation-kit/24",
+  "subject": "run-staged-g3-restart.ps1 commit-binding override port",
+  "createdAt": "2026-08-30T06:12:09.6794974+00:00",
+  "repositoryCommitAtRun": "0e4d47114718f643b881153e61a1e20dce1af7fd",
+  "subjectScript": {
+    "path": "scripts/run-staged-g3-restart.ps1",
+    "sha256": "5992d718871eccd8115bee575799a548df55a589e951f33d1b57004596d1b96d"
+  },
+  "bindingSource": {
+    "path": "scripts/run-staged-g3.ps1",
+    "sha256": "3450b64b5c1123f05733a9ae0366486e2c738780f0292ac98e7c6a66b004d702",
+    "controlServer": "3d8b00c7558ae700358f1f995a5ac75d12a3250c",
+    "onboard": "304e6ad9952a41d5c0d50c0c4e79bab5c8804bd6",
+    "simulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279"
+  },
+  "baseline": {
+    "requested": "0e4d471",
+    "commit": "0e4d47114718f643b881153e61a1e20dce1af7fd",
+    "parameters": [
+      "StageRoot",
+      "EvidenceRoot",
+      "ControlServerRepository",
+      "OnboardRepository",
+      "SimulatorRepository",
+      "CommitBindingSource"
+    ]
+  },
+  "runnerExecuted": false,
+  "assertionCount": 5,
+  "failedAssertionCount": 0,
+  "assertions": [
+    {
+      "number": 1,
+      "assertion": "Baseline 0e4d471 exposed the override as a parameter",
+      "result": "PASS",
+      "observed": "parameters=StageRoot, EvidenceRoot, ControlServerRepository, OnboardRepository, SimulatorRepository, CommitBindingSource"
+    },
+    {
+      "number": 2,
+      "assertion": "The current runner exposes no CommitBindingSource parameter",
+      "result": "PASS",
+      "observed": "parameters=StageRoot, EvidenceRoot, ControlServerRepository, OnboardRepository, SimulatorRepository"
+    },
+    {
+      "number": 3,
+      "assertion": "PowerShell would reject -CommitBindingSource at binding time",
+      "result": "PASS",
+      "observed": "the parameter is absent from the runner syntax"
+    },
+    {
+      "number": 4,
+      "assertion": "The runner still reads four lowercase full SHA-1 defaults out of run-staged-g3.ps1",
+      "result": "PASS",
+      "observed": "controlServer=3d8b00c7558ae700358f1f995a5ac75d12a3250c, onboard=304e6ad9952a41d5c0d50c0c4e79bab5c8804bd6, simulator=fb5f7c593742bf98bc3957b8729a38aad5321f28, protocol=1531489e42e328f28bfe0c51ed3f8c56e5ce0279"
+    },
+    {
+      "number": 5,
+      "assertion": "A stale copy is accepted by the reader without error, so only a fixed path is safe",
+      "result": "PASS",
+      "observed": "the reader returned 0000000000000000000000000000000000000001 from the stale copy"
+    }
+  ],
+  "result": "PASS"
+}

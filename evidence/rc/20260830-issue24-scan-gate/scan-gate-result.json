@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "ticket": "wire-to-gate-ai-implementation-kit/24",
+  "subject": "New-WireToGateReleaseCandidate.ps1 scan gate and NuGet package root",
+  "createdAt": "2026-08-30T06:14:07.9151459+00:00",
+  "repositoryCommitAtRun": "0e4d47114718f643b881153e61a1e20dce1af7fd",
+  "subjectScript": {
+    "path": "scripts/New-WireToGateReleaseCandidate.ps1",
+    "sha256": "db4df887f7d26887e34662ff0d68b93de7936711cde73dafe644c22cf524a5bc",
+    "surfaceLiftedByAst": [
+      "secretRules",
+      "secretFileExtensions",
+      "secretScanExtensions",
+      "unresolvedLicenseAllowlist",
+      "Invoke-SecretScan",
+      "Get-NuGetGlobalPackagesRoot",
+      "Assert-ReleaseScanGate",
+      "Get-PackageLicense"
+    ]
+  },
+  "baseline": {
+    "requested": "0e4d471",
+    "commit": "0e4d47114718f643b881153e61a1e20dce1af7fd"
+  },
+  "releaseBuildPerformed": false,
+  "assertionCount": 12,
+  "failedAssertionCount": 0,
+  "assertions": [
+    {
+      "number": 1,
+      "assertion": "Clean tree produces no secret-scan finding",
+      "result": "PASS",
+      "observed": "findingCount=0"
+    },
+    {
+      "number": 2,
+      "assertion": "Gate passes a clean scan with only allowlisted unresolved licenses",
+      "result": "PASS",
+      "observed": "threw=False"
+    },
+    {
+      "number": 3,
+      "assertion": "Planted \"apiKey\" literal is detected by the shipped rules",
+      "result": "PASS",
+      "observed": "findingCount=1, rule=inline-api-key"
+    },
+    {
+      "number": 4,
+      "assertion": "Gate fails the release on a secret-scan finding",
+      "result": "PASS",
+      "observed": "threw=True"
+    },
+    {
+      "number": 5,
+      "assertion": "Gate failure message discloses no matched value",
+      "result": "PASS",
+      "observed": "message carries path:line:rule only"
+    },
+    {
+      "number": 6,
+      "assertion": "Gate fails the release on a key-material file",
+      "result": "PASS",
+      "observed": "threw=True"
+    },
+    {
+      "number": 7,
+      "assertion": "Gate fails on an unresolved license that is not allowlisted",
+      "result": "PASS",
+      "observed": "threw=True"
+    },
+    {
+      "number": 8,
+      "assertion": "Baseline 0e4d471 had no scan gate at all",
+      "result": "PASS",
+      "observed": "Assert-ReleaseScanGate present=False, throws on the counts=False"
+    },
+    {
+      "number": 9,
+      "assertion": "Get-PackageLicense resolves through NUGET_PACKAGES",
+      "result": "PASS",
+      "observed": "nuspecFound=True, license=MIT"
+    },
+    {
+      "number": 10,
+      "assertion": "Baseline 0e4d471 returned UNRESOLVED for the same package",
+      "result": "PASS",
+      "observed": "nuspecFound=False, license=UNRESOLVED"
+    },
+    {
+      "number": 11,
+      "assertion": "A release that would have shipped with a planted secret and an unlisted license now fails on both",
+      "result": "PASS",
+      "observed": "threw=True"
+    },
+    {
+      "number": 12,
+      "assertion": "The archived 2eeb6f0 release inventory passes the new gate",
+      "result": "PASS",
+      "observed": "threw=False; message=(none)"
+    }
+  ],
+  "result": "PASS"
+}

@@ -253,6 +253,19 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
   token；同时按扩展名单独列出任何密钥材料文件（`.pfx`／`.p12`／`.pem`／`.key`／`.jks`／
   `.keystore`）。报告只记录规则名、路径与行号，**不记录命中的内容**。
 
+这两份清单是**闸门，不只是记录**。`New-WireToGateReleaseCandidate.ps1` 在写完
+`inventory\` 之后、生成 `release-manifest.json` 之前调用 `Assert-ReleaseScanGate`，命中以下任一条
+即中止，不产出 manifest、不产出 `SHA256SUMS.txt`、不产出可宣称通过的包：
+
+- 任何扫描 finding；
+- 任何密钥材料文件；
+- 任何不在允许清单内的包解析不出许可证。允许清单当前只有 `RIoT.Sdk.Core`、`RIoT.Sdk.Facade`、
+  `RIoT.Sdk.Generated` 三个本项目自建包，逐个具名——**新**出现的无许可证依赖会让发布失败，而不是
+  悄悄并进计数。清单与实际的 NuGet 全局包根写入 manifest 的 `inventory.scanGate`。
+
+失败时 `inventory\` 已经落盘，可据以定位；失败信息只给「路径:行号:规则名」，不回显命中内容。
+许可证从 `NUGET_PACKAGES`（未设时为 `%USERPROFILE%\.nuget\packages`）读回。
+
 ## 11. 仍然阻断目标硬件与现场使用的外部条件
 
 发布候选通过安装与生命周期验证，**不等于**它可以上车或进厂。以下条件与本包的构建、安装无关，

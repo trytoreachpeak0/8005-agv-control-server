@@ -6,11 +6,7 @@ param(
     [string]$EvidenceRoot,
     [string]$ControlServerRepository = (Split-Path -Parent $PSScriptRoot),
     [string]$OnboardRepository = 'https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git',
-    [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git',
-    # The staged G3 runner owns the peer identity this repository validates against. This runner does
-    # not restate those commits: it reads them back out of that script's param block, so the two can
-    # never drift apart the way the previous standalone restart runner did.
-    [string]$CommitBindingSource = (Join-Path $PSScriptRoot 'run-staged-g3.ps1')
+    [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,6 +62,12 @@ function Get-SharedCommitBinding {
     return $binding
 }
 
+# The staged G3 runner owns the peer identity this repository validates against. This runner does not
+# restate those commits: it reads them back out of that script's param block, so the two can never
+# drift apart the way the previous standalone restart runner did. The path is deliberately NOT a
+# parameter -- an override port is a drift port: pointing it at a copy carrying stale commits would
+# make a whole run claim the wrong binding without failing.
+$CommitBindingSource = Join-Path $PSScriptRoot 'run-staged-g3.ps1'
 $commitBinding = Get-SharedCommitBinding -Path $CommitBindingSource
 $ControlServerCommit = $commitBinding['ControlServerCommit']
 $OnboardCommit = $commitBinding['OnboardCommit']
