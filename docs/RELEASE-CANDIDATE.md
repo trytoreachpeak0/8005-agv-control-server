@@ -216,9 +216,11 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
   commit，其余 `REPLACE_*` 占位符是现场值，必须逐项替换后才能上线，至少包括 ControlServer 的
   IP、`serverCertificateSha256`、稳定的 `onboardInstanceId`、IO 模块 IP 与期望的 `vehicleKey`；
 - 随包的开发默认 `appsettings.json` 里 `wireToGate.enabled=false`、`useTls=false`，且
-  `onboardBuildCommit` 是仓库中的一个较早 commit，**不等于**本包的构建 commit。真实身份以
-  `release-manifest.json` 的 `components.onboardHmi.commit` 为准，该差异在 manifest 的
-  `declaredBuildCommitMatchesBuild` 字段中显式记录；
+  `onboardBuildCommit` 是仓库中的一个较早 commit，**不等于**本包的构建 commit。这个字段是握手时
+  上报给服务端的**配置值**，不是二进制自身的身份：程序启动时写进日志的
+  `version=<InformationalVersion>+<SourceRevisionId>` 才是，实测与本包构建 commit 一致。上线前
+  必须把该配置字段改成真实 commit，`release-manifest.json` 的
+  `components.onboardHmi.configuration.declaredBuildCommitMatchesBuild` 显式记录了这一差异；
 - 车载端凭据同样从 `CONTROL_SERVER_ONBOARD_CREDENTIAL` 注入，操作员标识从
   `CONTROL_SERVER_OPERATOR_ID` 注入。
 
@@ -270,7 +272,45 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
   commit、构建命令与产物 SHA-256 的形式登记车载端，不向该仓库写入任何内容；
 - **协议仓库为审批门禁**，任何协议侧变更都需要两名负责人对同一具体变更明确批准。
 
-## 12. 证据在哪里
+## 12. 运行核心测试场景
+
+**发布包里只有可运行的二进制，不含测试宿主。** 要跑核心场景，需要另外克隆源码仓库；下面的入口
+不依赖本机已有的任何工作副本。
+
+单元与集成测试（ControlServer 仓，需要 SDK `8.0.424`）：
+
+```powershell
+dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
+```
+
+逐切片 G2（绑定精确协议 manifest，`W2G-IS-00` 到 `W2G-IS-07`；`-Output` 必须是新目录）：
+
+```powershell
+.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice W2G-IS-00 `
+    -ProtocolManifest <protocol 仓>\manifest\release.json -Output <新证据目录>
+```
+
+脚本先校验 manifest 的 SHA-256 与 `releaseVersion`／`protocolVersion`／schema／vectors 复合身份，
+不匹配立即失败，因此不可能用错版本的协议凑出绿。
+
+staged G3 向量（合成对端，无移动；runner 自行克隆四个仓库并绑定各自的精确 commit）：
+
+```powershell
+.\scripts\run-staged-g3.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录> `
+    -InstallTemporaryCurrentUserRoot
+.\scripts\run-staged-g3-restart.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录>
+.\scripts\run-demand-bearing-g3-vectors.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录> `
+    -FieldRunRoot <一次现场运行的 run 目录>
+```
+
+`run-staged-g3.ps1` 需要 Node.js 与 pnpm（协议 G1），并且要求显式的
+`-InstallTemporaryCurrentUserRoot` 授权：它会向 `CurrentUser\Root` 装一张唯一的测试根证书、记录
+指纹，并在 `finally` 中移除。另两个 runner 不需要该授权。
+
+**这些场景的通过与否不改变当前的门禁状态**：W2G-IS-00～07 与 RC 目前仍为 `INCONCLUSIVE`，八类
+G3 向量各有证据不等于八个切片通过。
+
+## 13. 证据在哪里
 
 - 构建产物身份：发布候选根目录的 `release-manifest.json` 与 `SHA256SUMS.txt`；
 - 安装与生命周期验证：`evidence\rc\<日期>-<描述>\`，含安装结果 JSON、诊断日志与卸载结果 JSON；
