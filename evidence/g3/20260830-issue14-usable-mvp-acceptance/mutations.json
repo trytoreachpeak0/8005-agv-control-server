@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET14_ACCEPTANCE_RED_SIDE",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260830-81cb9cf",
+  "finishedAt": "2026-08-30T10:31:11.7585353+00:00",
+  "mutations": [
+    {
+      "id": "M1-TLS-PIN",
+      "mutation": "wireToGate.serverCertificateSha256 last hex digit flipped",
+      "expected": "no session is established at all",
+      "sessionLine": "<none>",
+      "readiness": "<no session line>",
+      "verdict": "RED-CONFIRMED"
+    },
+    {
+      "id": "M2-VEHICLE-KEY",
+      "mutation": "vehicleSafety.expectedVehicleKey changed to another well-formed key",
+      "expected": "session established, readiness stays RecoveryRequired",
+      "sessionLine": "2026-08-30T18:30:23.8174839+08:00\tInformation\tWireToGateSessionService\t上层会话已建立：generation=1，readiness=RecoveryRequired。",
+      "readiness": "RecoveryRequired",
+      "verdict": "RED-CONFIRMED"
+    }
+  ]
+}

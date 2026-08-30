@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET14_RIOT_PATH_RED_SIDE",
+  "capturedAt": "2026-08-30T10:04:42Z",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260830-81cb9cf",
+  "serverCommit": "81cb9cf60a7990a7a7fb1b235042df5d0a9afd99",
+  "why": "The same pinned HTTPS read of /api/onboard/v1/vehicle-safety that the acceptance run asserts green, captured while the workstation had no working path to the real RIoT. It is the red side for SAFETY-STOPPED.",
+  "safetyProjectionResponse": {
+    "vehicleKey": "BROKERX-0c20ff0600d644869a6a80c186065d85",
+    "motionState": "UNKNOWN",
+    "observedAt": "2026-08-30T10:04:42.2845026+00:00",
+    "source": "RIOT_BEHAVIOR_LAB_R41",
+    "reasonCodes": ["RIOT_READ_TIMEOUT"]
+  },
+  "cause": "Clash was running in global mode, so every connection to 172.19.206.222 was taken by the Clash TUN interface (the stack selected source 198.18.0.1). Independently, vEthernet (Default Switch) owns 172.19.192.1/20, which contains the site RIoT address, and its neighbour entry for that address was Incomplete.",
+  "observations": [
+    "HTTP GET http://172.19.206.222:8888/ : connect 0.9 ms, then an empty reply after 30.17 s (curl 52).",
+    "The same shape with a Bearer callApiKey against /api/task/v1/task/getVehicleInfo/{vehicleKey} : identical empty reply after 30.18 s.",
+    "Control: the identical curl invocation against MesIngest on 127.0.0.1:5088 returned 404 in 3.9 ms, so the probe itself was sound.",
+    "ICMP to 172.19.206.222 answered 8/8 at 0.6 ms average, and TCP connect succeeded, while no HTTP byte ever arrived."
+  ],
+  "detectorsInvalidated": [
+    "ICMP reachability: answered locally, so it cannot distinguish the real RIoT from the hijacked path.",
+    "TCP connect reachability: ports 8899, 9, 12345 and 65001 on 172.19.206.222 all connected, and so did 172.19.206.99:8888 on an address nothing occupies. Ticket 13 recorded NET-RIOT as PASS with a TCP-connect probe whose control was port 8899 returning False; that control does not hold under this network state, so a TCP-connect probe is not evidence of RIoT reachability on this workstation.",
+    "Only an HTTP round trip that returns a body distinguishes the two states."
+  ],
+  "resolution": "The user switched Clash from global mode back to rule mode. The same pinned read then returned motionState STOPPED with no reason codes, and the authenticated RIoT business read returned real vehicle telemetry in 13 ms."
+}
