@@ -226,6 +226,38 @@ function Invoke-SqliteScalarLong {
 
 # Read only while no process owns the file: the store runs in WAL mode, and a read-only handle must
 # not be the one that has to recover an unclean write-ahead log.
+function Get-FileFingerprint {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $item = Get-Item -LiteralPath $Path
+    return [ordered]@{
+        creationTimeUtc = $item.CreationTimeUtc.ToString('O')
+        length = $item.Length
+    }
+}
+
+# Subset comparison on durable identity columns: every row observed before a restart must still be
+# present, column for column, after it. A recreated store fails this; a store that merely grew passes.
+function Test-RowsPreserved {
+    param(
+        [object[]]$Before,
+        [object[]]$After,
+        [Parameter(Mandatory)][string[]]$IdentityColumns
+    )
+
+    if ($null -eq $Before -or $null -eq $After) { return $false }
+    if (@($Before).Count -eq 0) { return $false }
+    $afterKeys = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($row in @($After)) {
+        [void]$afterKeys.Add((($IdentityColumns | ForEach-Object { [string]$row[$_] }) -join "`u{001f}"))
+    }
+    foreach ($row in @($Before)) {
+        $key = ($IdentityColumns | ForEach-Object { [string]$row[$_] }) -join "`u{001f}"
+        if (-not $afterKeys.Contains($key)) { return $false }
+    }
+    return $true
+}
+
 function Read-ControlDatabase {
     $countedTables = @(
         'OrderIntents', 'RiotDispatchAuditEvents', 'AcceptedDemands', 'VehicleDispatchLeases',
@@ -238,7 +270,14 @@ function Read-ControlDatabase {
     }
 
     return [ordered]@{
+        file = Get-FileFingerprint -Path $controlDatabasePath
         counts = $counts
+        acceptedDemandRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'SELECT DemandId, TransportDemandKey, DemandRevision, Status FROM AcceptedDemands ORDER BY DemandId' `
+            -Columns @('demandId', 'transportDemandKey', 'demandRevision', 'status')
+        vehicleLeaseRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'SELECT DemandId, VehicleKey, AcquiredAt, ReleasedAt FROM VehicleDispatchLeases ORDER BY DemandId' `
+            -Columns @('demandId', 'vehicleKey', 'acquiredAt', 'releasedAt')
         auditRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath -Sql @'
 SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
        HttpStatusCode, BusinessCode, ResultPresent, ReturnedOrderId
@@ -267,9 +306,17 @@ SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
 $control = $null
 $runError = $null
 $probeResult = $null
+$handshakeResult = $null
 $version = $null
+$versionAfterRestart = $null
 $baseline = $null
+$afterProbe = $null
 $final = $null
+$restart = [ordered]@{
+    firstHostProcessId = $null
+    firstHostExitedBeforeRestart = $null
+    secondHostProcessId = $null
+}
 $credential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
 $probeTranscript = Join-Path $EvidenceRoot 'probe-transcript.ndjson'
 
@@ -341,12 +388,20 @@ try {
         'RIoT__baseUrl' = 'http://127.0.0.1:1'
         'ControlServerBuild__commit' = $ControlServerCommit
     }
-    $control = Start-Process -FilePath 'dotnet' `
-        -ArgumentList @(Join-Path $controlPublish 'ControlServer.Host.dll') `
-        -WorkingDirectory $controlPublish `
-        -RedirectStandardOutput (Join-Path $logsRoot 'control.out.log') `
-        -RedirectStandardError (Join-Path $logsRoot 'control.err.log') `
-        -Environment $controlEnvironment -WindowStyle Hidden -PassThru
+    # The host is launched twice, so the launch shape is a function: an ordinal that differs only in
+    # the log file name is what keeps the two phases comparable.
+    function Start-ControlServer {
+        param([Parameter(Mandatory)][int]$Ordinal)
+        return Start-Process -FilePath 'dotnet' `
+            -ArgumentList @(Join-Path $controlPublish 'ControlServer.Host.dll') `
+            -WorkingDirectory $controlPublish `
+            -RedirectStandardOutput (Join-Path $logsRoot "control-$Ordinal.out.log") `
+            -RedirectStandardError (Join-Path $logsRoot "control-$Ordinal.err.log") `
+            -Environment $controlEnvironment -WindowStyle Hidden -PassThru
+    }
+
+    $control = Start-ControlServer -Ordinal 1
+    $restart.firstHostProcessId = $control.Id
     $version = Wait-HttpJson -Uri "http://127.0.0.1:$healthPort/version"
 
     Add-Type -TypeDefinition (Get-HarnessSource -Path $SharedRunnerSource) -Language CSharp
@@ -366,6 +421,26 @@ try {
     [IO.File]::WriteAllText(
         (Join-Path $EvidenceRoot 'probe-result.json'), $probeJson, [Text.UTF8Encoding]::new($false))
     $probeResult = $probeJson | ConvertFrom-Json
+
+    # Ticket 20 could assert that a restarted server keeps its store, but not that it keeps a demand
+    # and a vehicle lease, because those rows only exist once a demand has been accepted. This is the
+    # form in which that can be asserted: kill the host, bring it back onto the same file, and require
+    # the demand and lease rows to come back column for column.
+    Stop-ProcessSafely -Process $control
+    $restart.firstHostExitedBeforeRestart = $control.HasExited
+    Start-Sleep -Seconds 2
+    $afterProbe = Read-ControlDatabase
+
+    $control = Start-ControlServer -Ordinal 2
+    $restart.secondHostProcessId = $control.Id
+    $versionAfterRestart = Wait-HttpJson -Uri "http://127.0.0.1:$healthPort/version"
+    $handshakeJson = [StagedG3TlsHarness]::RunSessionHandshakeProbeAsync(
+        $controlPort, $credential, $agvId, 'after-restart',
+        [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+    [IO.File]::WriteAllText(
+        (Join-Path $EvidenceRoot 'handshake-after-restart.json'), $handshakeJson,
+        [Text.UTF8Encoding]::new($false))
+    $handshakeResult = $handshakeJson | ConvertFrom-Json
 }
 catch {
     $runError = $_
@@ -511,6 +586,34 @@ $noExternalSideEffectsPass = $null -ne $baseline -and $null -ne $final -and
         [long]$baseline.counts[$_] -ne [long]$final.counts[$_] }).Count -eq 0 -and
     [long]$final.counts['StationOperations'] -eq [long]$baseline.counts['StationOperations']
 
+# --- the demand-bearing half of the process restart vector ------------------------------------------
+# A restart the OS did not actually perform proves nothing, so the replaced process identity carries
+# the claim -- SessionAccepted.serverInstanceId cannot, being scoped per connection.
+$hostReplacedPass = $null -ne $restart.firstHostProcessId -and $null -ne $restart.secondHostProcessId -and
+    $restart.firstHostProcessId -ne $restart.secondHostProcessId -and
+    $restart.firstHostExitedBeforeRestart -eq $true
+
+$demandSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
+    $null -ne $afterProbe.file -and $null -ne $final.file -and
+    $afterProbe.file.creationTimeUtc -eq $final.file.creationTimeUtc -and
+    [long]$afterProbe.counts['AcceptedDemands'] -eq [long]$final.counts['AcceptedDemands'] -and
+    (Test-RowsPreserved -Before $afterProbe.acceptedDemandRows -After $final.acceptedDemandRows `
+        -IdentityColumns @('demandId', 'transportDemandKey', 'demandRevision', 'status'))
+
+$vehicleLeaseSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
+    [long]$afterProbe.counts['VehicleDispatchLeases'] -eq [long]$final.counts['VehicleDispatchLeases'] -and
+    (Test-RowsPreserved -Before $afterProbe.vehicleLeaseRows -After $final.vehicleLeaseRows `
+        -IdentityColumns @('demandId', 'vehicleKey', 'acquiredAt', 'releasedAt'))
+
+# The restarted host has to be serving that same store, not a fresh one: a new session on the old
+# file continues the generation sequence instead of restarting it at 1.
+$restartedHostServesTheSameStorePass = $null -ne $handshakeResult -and $null -ne $afterProbe -and
+    $null -ne $versionAfterRestart -and
+    $versionAfterRestart.protocolCommit -eq $ProtocolCommit -and
+    [string]$handshakeResult.serverBuildCommit -eq $ControlServerCommit -and
+    [long]$handshakeResult.sessionGeneration -eq
+        [long]$afterProbe.sessionRecoveryRows[0]['sessionGeneration'] + 1
+
 $protocolBindingPass = $null -ne $version -and
     $version.protocolCommit -eq $ProtocolCommit -and
     $version.protocolTag -eq 'protocol-v0.1.1' -and
@@ -583,6 +686,10 @@ $assertions = [ordered]@{
     resultFromASupersededSessionGenerationIsRefused = $staleGenerationPass
     replayedResultWasNotProcessedTwice = $resultCommittedOncePass
     unloadResultClosedTheDemandAtomically = $demandClosureRowsPass
+    controlServerHostProcessWasActuallyReplaced = $hostReplacedPass
+    acceptedDemandSurvivesTheHostRestart = $demandSurvivesRestartPass
+    vehicleDispatchLeaseSurvivesTheHostRestart = $vehicleLeaseSurvivesRestartPass
+    restartedHostServesTheSameStore = $restartedHostServesTheSameStorePass
     noMovementOrExternalSideEffects = $noExternalSideEffectsPass
     listenersReleased = $portsReleased
     secretScan = $secretLeakFiles.Count -eq 0
@@ -643,9 +750,13 @@ $result = [ordered]@{
     assertions = $assertionReport
     failedAssertions = $failedAssertions
     probe = $probeResult
+    handshakeAfterRestart = $handshakeResult
+    restart = $restart
     controlDatabaseBaseline = $baseline
+    controlDatabaseAfterProbe = $afterProbe
     controlDatabaseFinal = $final
     controlServerVersion = $version
+    controlServerVersionAfterRestart = $versionAfterRestart
     error = if ($null -ne $runError) {
         [ordered]@{ type = $runError.Exception.GetType().FullName; message = $runError.Exception.Message }
     } else { $null }

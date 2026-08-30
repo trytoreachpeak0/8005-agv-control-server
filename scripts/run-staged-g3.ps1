@@ -1456,6 +1456,42 @@ public static class StagedG3TlsHarness
     }
 
     /// <summary>
+    /// Opens one plaintext session and reports the identity the server answered with.
+    /// </summary>
+    /// <remarks>
+    /// Used to show that a server restarted onto the same store is serving again, and which process
+    /// and session generation it is serving as. It sends nothing else: a restart vector must not also
+    /// be a business vector, or a failure in one is reported as the other.
+    /// </remarks>
+    public static async Task<string> RunSessionHandshakeProbeAsync(
+        int port,
+        string credential,
+        string agvId,
+        string helloSalt,
+        CancellationToken cancellationToken)
+    {
+        await using Connection connection = await Connection.OpenPlaintextAsync(port, cancellationToken)
+            .ConfigureAwait(false);
+        await connection.WriteAsync(
+            Hello(agvId, StableGuid("demand-bearing:handshake:" + helloSalt),
+                  Protocol.Release, Protocol.Manifest, credential),
+            cancellationToken).ConfigureAwait(false);
+        string accepted = await connection.ReadRequiredAsync(TimeSpan.FromSeconds(10), cancellationToken)
+            .ConfigureAwait(false);
+        if (Property(accepted, "messageType") != "SessionAccepted")
+        {
+            throw new InvalidOperationException("The handshake probe was not granted a session.");
+        }
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["sessionGeneration"] = NumberProperty(accepted, "sessionGeneration"),
+            ["serverInstanceId"] = NestedProperty(accepted, "payload", "serverInstanceId"),
+            ["serverBuildCommit"] = NestedProperty(accepted, "payload", "serverBuildCommit"),
+            ["acceptedSha256"] = Sha256(accepted)
+        });
+    }
+
+    /// <summary>
     /// Opens a fresh session, sends one line the server has to refuse, and reports whether it closed.
     /// </summary>
     private static async Task<bool> ExpectRefusalAsync(
