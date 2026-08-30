@@ -215,6 +215,15 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
 - 包内 `onboard-hmi\appsettings.Production.template.json` 已由构建脚本填入本包真实的车载端
   commit，其余 `REPLACE_*` 占位符是现场值，必须逐项替换后才能上线，至少包括 ControlServer 的
   IP、`serverCertificateSha256`、稳定的 `onboardInstanceId`、IO 模块 IP 与期望的 `vehicleKey`；
+- `vehicleSafety.enabled` 必须保持 `true`，`vehicleSafety.endpoint` 必须指向已安装 ControlServer 的
+  HTTPS 端点（含非默认端口）。车载端进程还必须信任该端点的证书链：同机使用安装脚本时以交互方式
+  加 `-InstallCurrentUserRoot`；异机部署则把安装结果中的 `certificate.caCertificateFile` 公钥证书
+  交给车载端管理员，明确导入运行 OnboardHmi 的 Windows 用户的 `CurrentUser\Root`。不要用跳过
+  TLS 校验代替信任配置；
+- 启动车载端前，以同一车载凭据只读调用 `vehicleSafety.endpoint`。只有 HTTP 200、`vehicleKey` 与
+  `vehicleSafety.expectedVehicleKey` 精确一致、`motionState=STOPPED` 且 `observedAt` 未超出
+  `maximumEvidenceAgeMs`，干净会话才应进入 `Ready`；`UNKNOWN`／`MOVING` 或过期证据保持
+  `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY` 是安全闸门的预期行为；
 - 随包的开发默认 `appsettings.json` 里 `wireToGate.enabled=false`、`useTls=false`，且
   `onboardBuildCommit` 是仓库中的一个较早 commit，**不等于**本包的构建 commit。这个字段是握手时
   上报给服务端的**配置值**，不是二进制自身的身份：程序启动时写进日志的
@@ -223,6 +232,10 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
   `components.onboardHmi.configuration.declaredBuildCommitMatchesBuild` 显式记录了这一差异；
 - 车载端凭据同样从 `CONTROL_SERVER_ONBOARD_CREDENTIAL` 注入，操作员标识从
   `CONTROL_SERVER_OPERATOR_ID` 注入。
+
+车载端日志出现 `readiness=RecoveryRequired` 时，先查 `GET /api/runtime/sessions` 的 `reasonCode`。
+`DEPARTURE_SAFETY_NOT_READY` 已证明表示恢复报告已收到、但可信车辆停稳事实未满足；它不是
+`RecoveryStateReport` 漏发。只有 `HANDSHAKE_INCOMPLETE` 才继续检查五步握手消息。
 
 ## 9. 回滚与卸载
 

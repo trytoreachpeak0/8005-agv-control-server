@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "source": "ticket 13 captured real handshake with credential redacted",
+  "productCommit": "d243abf",
+  "vehicleMoved": false,
+  "riotMutationPerformed": false,
+  "uniqueDifference": "green changes only payload.safety.vehicleStopped/departureSafe to true and reasonCodes to []",
+  "runs": [
+    {
+      "name": "red",
+      "onlySafetyStoppedChanged": false,
+      "durableAck": "DurableAck",
+      "readiness": "RECOVERY_REQUIRED",
+      "reasonCodes": [
+        "DEPARTURE_SAFETY_NOT_READY"
+      ],
+      "databasePath": "C:\\Users\\szy\\w2g-stage\\run\\ticket26-harness-20260830\\red\\controlserver.db"
+    },
+    {
+      "name": "green",
+      "onlySafetyStoppedChanged": true,
+      "durableAck": "DurableAck",
+      "readiness": "READY",
+      "reasonCodes": [],
+      "databasePath": "C:\\Users\\szy\\w2g-stage\\run\\ticket26-harness-20260830\\green\\controlserver.db"
+    }
+  ],
+  "assertions": [
+    {
+      "id": "RECOVERY-REPORT-PRESENT",
+      "expected": "DurableAck in both runs",
+      "actual": "DurableAck,DurableAck",
+      "verdict": "PASS"
+    },
+    {
+      "id": "UNSAFE-RED",
+      "expected": "RECOVERY_REQUIRED / DEPARTURE_SAFETY_NOT_READY",
+      "actual": "RECOVERY_REQUIRED / DEPARTURE_SAFETY_NOT_READY",
+      "verdict": "PASS"
+    },
+    {
+      "id": "STOPPED-GREEN",
+      "expected": "READY when only vehicleStopped/departureSafe change",
+      "actual": "READY",
+      "verdict": "PASS"
+    }
+  ]
+}
