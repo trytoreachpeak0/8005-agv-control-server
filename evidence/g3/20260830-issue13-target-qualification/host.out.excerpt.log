@@ -1,0 +1,403 @@
+=== head 200 ===
+[16:04:29 INF] Executed DbCommand (8ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+PRAGMA journal_mode = 'wal';
+[16:04:29 INF] Executed DbCommand (4ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "__EFMigrationsHistory" (
+    "MigrationId" TEXT NOT NULL CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY,
+    "ProductVersion" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (2ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[16:04:29 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[16:04:29 INF] Applying migration '20260825101420_InitialWireToGate'.
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "AcceptedDemands" (
+    "DemandId" TEXT NOT NULL CONSTRAINT "PK_AcceptedDemands" PRIMARY KEY,
+    "TransportDemandKey" TEXT NOT NULL,
+    "DemandRevision" INTEGER NOT NULL,
+    "HistoryEpoch" TEXT NOT NULL,
+    "CatalogRevision" INTEGER NOT NULL,
+    "AcceptedAt" TEXT NOT NULL,
+    "Status" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "ConnectionRecoveries" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_ConnectionRecoveries" PRIMARY KEY,
+    "SessionGeneration" INTEGER NOT NULL,
+    "ActiveUnlockSetJson" TEXT NOT NULL,
+    "Status" TEXT NOT NULL,
+    "ResumeAuthorized" INTEGER NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "OperationResults" (
+    "ResultId" TEXT NOT NULL CONSTRAINT "PK_OperationResults" PRIMARY KEY,
+    "SlotOperationAttemptId" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "HistoricalOnly" INTEGER NOT NULL,
+    "ReceivedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "OrderIntents" (
+    "MovementLegId" TEXT NOT NULL CONSTRAINT "PK_OrderIntents" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "UpperId" TEXT NOT NULL,
+    "Purpose" TEXT NOT NULL,
+    "TargetStationId" TEXT NOT NULL,
+    "VehicleKey" TEXT NOT NULL,
+    "MapId" INTEGER NOT NULL,
+    "DestinationStationId" INTEGER NOT NULL,
+    "AgvLifecycleGeneration" INTEGER NOT NULL,
+    "DispatchGeneration" INTEGER NOT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "Status" TEXT NOT NULL,
+    "OrderId" TEXT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "ProtocolInbox" (
+    "MessageId" TEXT NOT NULL CONSTRAINT "PK_ProtocolInbox" PRIMARY KEY,
+    "ContentHash" TEXT NOT NULL,
+    "FirstResponseJson" TEXT NOT NULL,
+    "ReceivedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "ProtocolOutbox" (
+    "MessageId" TEXT NOT NULL CONSTRAINT "PK_ProtocolOutbox" PRIMARY KEY,
+    "MessageType" TEXT NOT NULL,
+    "PayloadJson" TEXT NOT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "AcknowledgedAt" TEXT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "RecoveryDecisions" (
+    "RecoveryActionId" TEXT NOT NULL CONSTRAINT "PK_RecoveryDecisions" PRIMARY KEY,
+    "RecoverySessionId" TEXT NOT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "Decision" TEXT NOT NULL,
+    "DecidedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "SessionRecoveries" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_SessionRecoveries" PRIMARY KEY,
+    "SessionGeneration" INTEGER NOT NULL,
+    "ProtocolCommit" TEXT NOT NULL,
+    "ManifestSha256" TEXT NOT NULL,
+    "ProfileId" TEXT NOT NULL,
+    "ProtocolVersion" INTEGER NOT NULL,
+    "CapabilityRevision" INTEGER NULL,
+    "CapabilityHash" TEXT NULL,
+    "SafetyRevision" INTEGER NULL,
+    "SafetyHash" TEXT NULL,
+    "DepartureSafe" INTEGER NULL,
+    "RecoveryReportId" TEXT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "PendingAttemptIdsJson" TEXT NOT NULL,
+    "PendingResultIdsJson" TEXT NOT NULL,
+    "Readiness" TEXT NOT NULL,
+    "ReasonCode" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "StationOperations" (
+    "SlotOperationAttemptId" TEXT NOT NULL CONSTRAINT "PK_StationOperations" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "SublotId" TEXT NOT NULL,
+    "TargetSlotsJson" TEXT NOT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "Status" TEXT NOT NULL,
+    "EvidenceJson" TEXT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "CommittedAt" TEXT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "StopClosures" (
+    "DemandId" TEXT NOT NULL CONSTRAINT "PK_StopClosures" PRIMARY KEY,
+    "CommittedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TransportDemandCompletions" (
+    "TransportDemandKey" TEXT NOT NULL CONSTRAINT "PK_TransportDemandCompletions" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "DemandRevision" INTEGER NOT NULL,
+    "Evidence" TEXT NOT NULL,
+    "CompletedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "UnloadBatches" (
+    "UnloadBatchId" TEXT NOT NULL CONSTRAINT "PK_UnloadBatches" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "EvidenceJson" TEXT NOT NULL,
+    "CompletedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "VehicleRecoveryGenerations" (
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_VehicleRecoveryGenerations" PRIMARY KEY,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_AcceptedDemands_TransportDemandKey" ON "AcceptedDemands" ("TransportDemandKey");
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_OrderIntents_UpperId" ON "OrderIntents" ("UpperId");
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_TransportDemandCompletions_DemandId" ON "TransportDemandCompletions" ("DemandId");
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260825101420_InitialWireToGate', '8.0.30');
+[16:04:29 INF] Applying migration '20260826071119_DurableOnboardBusinessInbox'.
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "ProtocolInbox" ADD "MessageType" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "ProtocolInbox" ADD "RequestJson" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_OperationResults_SlotOperationAttemptId_ForcedRecoveryGeneration" ON "OperationResults" ("SlotOperationAttemptId", "ForcedRecoveryGeneration");
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260826071119_DurableOnboardBusinessInbox', '8.0.30');
+[16:04:29 INF] Applying migration '20260826075354_DurableOperationBusinessOutcome'.
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "StationOperations" ADD "OperationType" TEXT NOT NULL DEFAULT 'Load';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OperationResults" ADD "EvidenceJson" TEXT NOT NULL DEFAULT '[]';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OperationResults" ADD "ObservedAt" TEXT NOT NULL DEFAULT '0001-01-01 00:00:00+00:00';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OperationResults" ADD "OverallOutcome" TEXT NOT NULL DEFAULT 'UNKNOWN';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OperationResults" ADD "ResultContentSha256" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+UPDATE OperationResults SET ObservedAt = ReceivedAt;
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260826075354_DurableOperationBusinessOutcome', '8.0.30');
+[16:04:29 INF] Applying migration '20260826080712_ExactAcceptedDemandSnapshot'.
+[16:04:29 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "CreatedAt" TEXT NOT NULL DEFAULT '0001-01-01 00:00:00+00:00';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "Generation" INTEGER NOT NULL DEFAULT 0;
+[16:04:29 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "LiveMesFieldsJson" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "SeriesId" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "Sublot" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "ValueObservedAt" TEXT NOT NULL DEFAULT '0001-01-01 00:00:00+00:00';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "ValuePollTraceId" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "ValueProjectionCommitId" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "AcceptedDemands" ADD "WorkType" TEXT NOT NULL DEFAULT '';
+[16:04:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260826080712_ExactAcceptedDemandSnapshot', '8.0.30');
+
+=== tail 200 ===
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:46 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "LastSeenAt" = @p0
+WHERE "DemandId" = @p1
+RETURNING 1;
+[16:05:47 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "SessionRecoveries" AS "s"
+    WHERE "s"."Readiness" = 'Ready')
+[16:05:47 ERR] HTTP GET /health/ready responded 503 in 3.4476 ms
+[16:05:47 WRN] Onboard connection ended with a protocol or transport error.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 72
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 100
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 100
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 100
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41

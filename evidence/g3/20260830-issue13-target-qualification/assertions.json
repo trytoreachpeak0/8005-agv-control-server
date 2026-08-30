@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET13_READONLY_TARGET_QUALIFICATION",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260830-d243abf",
+  "serverCommit": "d243abf",
+  "createGateOpen": false,
+  "vehicleMoved": false,
+  "finishedAt": "2026-08-30T08:05:50.5638321+00:00",
+  "counts": {
+    "pass": 11,
+    "fail": 5,
+    "inconclusive": 3
+  },
+  "assertions": [
+    {
+      "id": "CFG-SERVER-RIOT",
+      "subject": "controlserver/appsettings.json RIoT.baseUrl",
+      "expected": "http://172.19.206.222:8888 (the real site RIoT)",
+      "actual": "http://172.19.206.222:8888",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-SERVER-AGV",
+      "subject": "controlserver/appsettings.json JourneyRuntime.agvId",
+      "expected": "老厂前线新多仓位1",
+      "actual": "老厂前线新多仓位1",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "CFG-ONBOARD-ENABLED",
+      "subject": "onboard-hmi/appsettings.json wireToGate.enabled",
+      "expected": "true, so the shipped onboard binary connects without hand editing",
+      "actual": false,
+      "verdict": "FAIL",
+      "control": "CFG-SERVER-RIOT reads the same shipped tree and is PASS, so a FAIL here is the file, not the reader.",
+      "note": "Deployment gap: the onboard half of the RC ships with the WIRE_TO_GATE channel switched off."
+    },
+    {
+      "id": "CFG-ONBOARD-AGV",
+      "subject": "onboard-hmi/appsettings.json agvId",
+      "expected": "老厂前线新多仓位1",
+      "actual": "AGV-8005-01",
+      "verdict": "FAIL",
+      "control": "",
+      "note": "Deployment gap: shipped onboard identity is a sample value, not the site vehicle."
+    },
+    {
+      "id": "CFG-ONBOARD-COMMIT",
+      "subject": "onboard-hmi/appsettings.json wireToGate.onboardBuildCommit",
+      "expected": "304e6ad9952a41d5c0d50c0c4e79bab5c8804bd6 (the commit this RC was built from)",
+      "actual": "a6f05fbced15316a2cc20cd327f80c5c5ee1821e",
+      "verdict": "FAIL",
+      "control": "",
+      "note": "Owned by the read-only onboard repository; carried forward from ticket 11 and ticket 25."
+    },
+    {
+      "id": "NET-RIOT",
+      "subject": "TCP reach 172.19.206.222:8888 (real RIoT)",
+      "expected": "reachable",
+      "actual": true,
+      "verdict": "PASS",
+      "control": "same probe against 172.19.206.222:8899 returned True (must be False)",
+      "note": ""
+    },
+    {
+      "id": "NET-MESINGEST",
+      "subject": "TCP reach 127.0.0.1:5088 (existing MesIngest)",
+      "expected": "reachable",
+      "actual": true,
+      "verdict": "PASS",
+      "control": "same probe against 127.0.0.1:5099 returned False (must be False)",
+      "note": ""
+    },
+    {
+      "id": "IO-SIMULATOR",
+      "subject": "eight-slot IO simulator Modbus 1502 + control plane 58006",
+      "expected": "both listening",
+      "actual": true,
+      "verdict": "PASS",
+      "control": "",
+      "note": "SIMULATED IO. This is not evidence about real IO modules, wiring, locks or light curtains."
+    },
+    {
+      "id": "DEPLOY-START",
+      "subject": "ControlServer.Host.exe started straight from the RC tree",
+      "expected": "listening on 58105",
+      "actual": true,
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "SESSION-ESTABLISHED",
+      "subject": "shipped OnboardHmi binary establishes a session with the shipped ControlServer",
+      "expected": "onboard log contains '上层会话已建立'",
+      "actual": "2026-08-30T16:04:35.8537137+08:00\tInformation\tWireToGateSessionService\t上层会话已建立：generation=1，readiness=RecoveryRequired。",
+      "verdict": "PASS",
+      "control": "same detector, same directory, before the onboard started returned '<none>' (must be none)",
+      "note": "Runs only after wireToGate.enabled and agvId are corrected in a copy; see CFG-ONBOARD-ENABLED."
+    },
+    {
+      "id": "DEPLOY-HEALTH",
+      "subject": "GET /health/ready once the onboard session exists",
+      "expected": "200",
+      "actual": 503,
+      "verdict": "FAIL",
+      "control": "the same endpoint before the onboard connected returned 503, so a 200 here is the session, not a permissive gate",
+      "note": "The readiness gate requires an onboard session reporting Readiness=Ready."
+    },
+    {
+      "id": "SESSION-READINESS",
+      "subject": "onboard readiness reported on a clean install with a fresh journal",
+      "expected": "Ready, if a clean deployment is immediately operable",
+      "actual": "RecoveryRequired",
+      "verdict": "FAIL",
+      "control": "parsed out of the SESSION-ESTABLISHED line, which its own control shows is absent before the onboard starts",
+      "note": "Drives DEPLOY-HEALTH: the readiness gate admits only Ready."
+    },
+    {
+      "id": "ADAPTER-MESINGEST",
+      "subject": "ControlServer MesIngest adapter against the existing MesIngest",
+      "expected": "JourneyBacklog holds demands read from MesIngest",
+      "actual": "JourneyBacklog=282",
+      "verdict": "PASS",
+      "control": "AcceptedDemands=0 and JourneyRuntimes=0 on the same database, so a non-zero backlog is a real read and not every table being populated",
+      "note": ""
+    },
+    {
+      "id": "SESSION-STORED",
+      "subject": "the onboard session reached the ControlServer store",
+      "expected": "SessionRecoveries and ProtocolInbox both non-empty",
+      "actual": "SessionRecoveries=1 ProtocolInbox=19",
+      "verdict": "PASS",
+      "control": "ProtocolOutbox and StationOperations stayed empty in the same run, so this is not a blanket write",
+      "note": ""
+    },
+    {
+      "id": "ADAPTER-RIOT-READONLY",
+      "subject": "ControlServer RIoT adapter exercised against the real RIoT",
+      "expected": "a durable row derived from a RIoT read",
+      "actual": "no RIoT-derived row; only NET-RIOT reachability stands",
+      "verdict": "INCONCLUSIVE",
+      "control": "",
+      "note": "The read path (ReadVehicleAsync / ReadMapStationsAsync / ReadVehicleSafetyAsync) persists nothing, and is only reached once a demand is accepted, which SESSION-READINESS blocks."
+    },
+    {
+      "id": "SAFETY-NO-CREATE",
+      "subject": "no RIoT order created during qualification",
+      "expected": "RiotDispatchAuditEvents empty",
+      "actual": "RiotDispatchAuditEvents=0",
+      "verdict": "PASS",
+      "control": "the same table is what a real create writes; ticket 11 and the G3 runs show it non-empty when the gate is open",
+      "note": ""
+    },
+    {
+      "id": "HW-ONBOARD-TARGET",
+      "subject": "screen, touch and barcode scanner on the target vehicle terminal",
+      "expected": "exercised on the target hardware",
+      "actual": "not present on this workstation",
+      "verdict": "INCONCLUSIVE",
+      "control": "",
+      "note": "External input missing: this run is on a development workstation, not the vehicle terminal."
+    },
+    {
+      "id": "HW-REAL-IO",
+      "subject": "real eight-slot IO module, wiring, locks and light curtains",
+      "expected": "exercised on real IO",
+      "actual": "simulator only (ioModule.host 127.0.0.1:1502)",
+      "verdict": "INCONCLUSIVE",
+      "control": "",
+      "note": "Deferred to the later hardware gate by the ticket; does not block simulated-IO software delivery."
+    },
+    {
+      "id": "TEARDOWN-PORTS",
+      "subject": "all four run ports released after teardown",
+      "expected": "0 still listening",
+      "actual": 0,
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    }
+  ]
+}
