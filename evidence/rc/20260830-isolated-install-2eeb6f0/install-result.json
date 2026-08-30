@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 2,
+  "result": "PASS",
+  "runId": "20260830T013157Z",
+  "completedAt": "2026-08-30T01:32:12.1289581+00:00",
+  "sourceCommit": "2eeb6f009354d34800c5c024b58e75364c8ee5da",
+  "packageManifestSha256": "ff557fc75f43f8f1084f9c16ccce42dc7fcdbfd220c0a412e7d595cc3c5ff23f",
+  "configurationSha256": "1172b9cc4bf55bd43423706794dc63f6925eb8c505f099b8dee2b28d1e5b1758",
+  "serviceName": "8005 AGV ControlServer RC Verify",
+  "serviceAccount": "LocalSystem",
+  "serviceStatus": "Running",
+  "serviceStartType": "Auto",
+  "installRoot": "C:\\Program Files\\8005 AGV\\ControlServer-RC-Verify",
+  "dataRoot": "C:\\ProgramData\\8005\\ControlServer-RC-Verify",
+  "databasePath": "C:\\ProgramData\\8005\\ControlServer-RC-Verify\\data\\controlserver.db",
+  "databaseCreatedByMigration": true,
+  "logDirectory": "C:\\ProgramData\\8005\\ControlServer-RC-Verify\\logs",
+  "logFiles": [
+    "controlserver-20260830.ndjson"
+  ],
+  "backupRoot": "C:\\ProgramData\\8005\\ControlServer-RC-Verify-backups",
+  "httpsEndpoint": "https://localhost:58407",
+  "onboardTransportEndpoint": "tls://127.0.0.1:58405",
+  "firstStartReadiness": {
+    "status": "not-ready",
+    "reason": "RECOVERY_HANDSHAKE_REQUIRED"
+  },
+  "certificate": {
+    "dnsNames": [
+      "localhost"
+    ],
+    "leafThumbprint": "305D6D5C5705D20C1C63D85ADA859649DDE0900F",
+    "rootThumbprint": "2DE1D4C13B4B6F6C6D5CF3346A7ABD7F52316919",
+    "trustedRootThumbprint": null,
+    "trustStore": "none (pinned CA file)",
+    "caCertificateFile": "C:\\ProgramData\\8005\\ControlServer-RC-Verify\\certs\\localhost-development-root.pem",
+    "chainVerification": "curl --cacert against the certificate this install generated",
+    "privateKeyFile": "C:\\ProgramData\\8005\\ControlServer-RC-Verify\\certs\\localhost.pfx"
+  },
+  "externalSecrets": {
+    "machineEnvironmentInjected": false,
+    "riotMachineScopePresent": true,
+    "onboardMachineScopePresent": true,
+    "certificatePasswordMachineScopePresent": true,
+    "serviceSpecificEnvironmentPresent": true,
+    "valuesDisclosed": false
+  },
+  "checks": [
+    "package-hashes",
+    "sqlite-migrations-at-start",
+    "https-chain-pinned-to-install-root",
+    "https-live-after-start",
+    "https-ready-after-start",
+    "stop-start",
+    "restart",
+    "https-version",
+    "log-file-written"
+  ],
+  "journeyRuntimeEnabled": false,
+  "riotMutationPerformed": false,
+  "orderCreated": false,
+  "vehicleMoved": false,
+  "protocolTag": "protocol-v0.1.1",
+  "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "backupPath": "C:\\ProgramData\\8005\\ControlServer-RC-Verify-backups\\20260830T013157Z"
+}
