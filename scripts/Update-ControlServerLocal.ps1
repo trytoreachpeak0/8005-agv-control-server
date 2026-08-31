@@ -210,6 +210,9 @@ try {
     }
     Copy-Item -LiteralPath $productionConfiguration -Destination $stagingPath -Force
     $configurationMigration = Convert-RetainedConfigurationToPlaintext (Join-Path $stagingPath 'appsettings.Production.json')
+    if ([string]::IsNullOrWhiteSpace($configurationMigration.healthUrl)) {
+        throw 'The retained production configuration has no Health:url to check the upgrade against.'
+    }
     $healthBinding = [Uri]$configurationMigration.healthUrl
     $checkHost = if ($healthBinding.Host -in @('0.0.0.0', '*', '+', '::', '[::]')) {
         '127.0.0.1'

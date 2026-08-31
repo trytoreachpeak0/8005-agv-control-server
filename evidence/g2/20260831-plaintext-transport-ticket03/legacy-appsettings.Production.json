@@ -1,0 +1,39 @@
+{
+  "Health": {
+    "url": "https://localhost:58307"
+  },
+  "ConnectionStrings": {
+    "ControlServer": "Data Source=C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\b516d757-7319-480e-a98c-a9988e829c02\\scratchpad\\ticket03\\case1-data\\data\\controlserver.db"
+  },
+  "OnboardTransport": {
+    "enabled": true,
+    "listenAddress": "127.0.0.1",
+    "port": 58305,
+    "serverCertificatePath": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\b516d757-7319-480e-a98c-a9988e829c02\\scratchpad\\ticket03\\case1-data\\certs\\localhost.pfx",
+    "serverCertificatePasswordEnvironmentVariable": "CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD",
+    "credentialEnvironmentVariable": "CONTROL_SERVER_ONBOARD_CREDENTIAL",
+    "allowInsecureLoopback": false
+  },
+  "OnboardSafetyProjection": {
+    "enabled": true,
+    "requireHttps": true,
+    "credentialEnvironmentVariable": "CONTROL_SERVER_ONBOARD_CREDENTIAL"
+  },
+  "JourneyRuntime": {
+    "enabled": false
+  },
+  "Serilog": {
+    "WriteTo": [
+      {
+        "Name": "File",
+        "Args": {
+          "path": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\b516d757-7319-480e-a98c-a9988e829c02\\scratchpad\\ticket03\\case1-data\\logs\\controlserver-.ndjson",
+          "formatter": "Serilog.Formatting.Compact.CompactJsonFormatter, Serilog.Formatting.Compact",
+          "rollingInterval": "Day",
+          "retainedFileCountLimit": 14,
+          "shared": true
+        }
+      }
+    ]
+  }
+}

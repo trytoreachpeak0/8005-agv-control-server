@@ -1,0 +1,16 @@
+[22:28:31 INF] Executed DbCommand (33ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[22:28:32 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[22:28:32 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[22:28:32 INF] No migrations were applied. The database is already up to date.
+[22:28:32 INF] Onboard NDJSON listener started on 127.0.0.1:58305; transport=plaintext
+[22:28:32 WRN] Journey runtime is disabled; MesIngest polling and movement dispatch are fail-closed.
+[22:28:32 INF] Now listening on: http://localhost:58307
+[22:28:32 INF] Application started. Press Ctrl+C to shut down.
+[22:28:32 INF] Hosting environment: Production
+[22:28:32 INF] Content root path: C:\Users\szy\AppData\Local\Temp\claude\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\b516d757-7319-480e-a98c-a9988e829c02\scratchpad\ticket03\case3
+[22:28:32 INF] HTTP GET /health/live responded 200 in 7.0580 ms

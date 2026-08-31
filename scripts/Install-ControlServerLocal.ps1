@@ -218,6 +218,11 @@ try {
     }
     Write-Diagnostic 'package-copy-complete'
 
+    # The data root used to come into being as a side effect of creating the certificate directory
+    # under it. With the certificates gone it has to be created outright, or the ACL below has
+    # nothing to tighten on a machine that has never run this service.
+    New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
+
     if (-not $SkipMachineEnvironmentInjection) {
         [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $riotUser, 'Machine')
         $machineEnvironmentInjected = $true

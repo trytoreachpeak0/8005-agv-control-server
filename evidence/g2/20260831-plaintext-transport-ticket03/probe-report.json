@@ -1,0 +1,38 @@
+{
+  "case1_installEmittedConfigurationStarts": {
+    "liveStatus": "live",
+    "listeners": [
+      "127.0.0.1:58305",
+      "127.0.0.1:58307"
+    ],
+    "transportLogLine": [
+      "[22:28:13 INF] Onboard NDJSON listener started on 127.0.0.1:58305; transport=plaintext"
+    ],
+    "certificateWordsInStartupLog": [
+      "    \"HttpStatusCode\" INTEGER NULL,"
+    ]
+  },
+  "case2_unmigratedLegacyConfigurationIsRefused": {
+    "liveStatus": null,
+    "processExited": true,
+    "exitCode": -532462766,
+    "refusalLines": [
+      "Unhandled exception. Microsoft.Extensions.Options.OptionsValidationException: OnboardTransport:serverCertificatePath was removed in this version; the Onboard transport is plaintext. Delete the key from every appsettings file.; OnboardTransport:serverCertificatePasswordEnvironmentVariable was removed in this version; the Onboard transport is plaintext. Delete the key from every appsettings file.; OnboardTransport:allowInsecureLoopback was removed in this version; the Onboard transport is plaintext. Delete the key from every appsettings file.; OnboardSafetyProjection:requireHttps was removed in this version; the Onboard transport is plaintext. Delete the key from every appsettings file."
+    ]
+  },
+  "case3_migratedLegacyConfigurationStarts": {
+    "removedKeys": [
+      "OnboardTransport:serverCertificatePath",
+      "OnboardTransport:serverCertificatePasswordEnvironmentVariable",
+      "OnboardTransport:allowInsecureLoopback",
+      "OnboardSafetyProjection:requireHttps"
+    ],
+    "healthUrlRewritten": true,
+    "healthUrl": "http://localhost:58307",
+    "liveStatus": "live",
+    "transportLogLine": [
+      "[22:28:32 INF] Onboard NDJSON listener started on 127.0.0.1:58305; transport=plaintext"
+    ],
+    "residualCertificateKeys": []
+  }
+}
