@@ -1,4 +1,3 @@
-using System.Net.Security;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -11,11 +10,9 @@ string agvId = arguments.GetValueOrDefault("agv") ?? "AGV-FAKE-001";
 string credentialVariable = arguments.GetValueOrDefault("credential-env") ?? "CONTROL_SERVER_ONBOARD_CREDENTIAL";
 string credential = Environment.GetEnvironmentVariable(credentialVariable)
     ?? throw new InvalidOperationException($"Credential environment variable '{credentialVariable}' is not set.");
-bool useTls = arguments.ContainsKey("tls");
-
 using TcpClient client = new();
 await client.ConnectAsync(host, port);
-await using Stream stream = await CreateStreamAsync(client, host, useTls);
+await using NetworkStream stream = client.GetStream();
 using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
 await using StreamWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true)
 {
@@ -106,18 +103,6 @@ Console.WriteLine(JsonSerializer.Serialize(new
     manifestSha256 = ProtocolCandidateIdentity.ManifestSha256
 }));
 
-static async Task<Stream> CreateStreamAsync(TcpClient client, string host, bool useTls)
-{
-    NetworkStream network = client.GetStream();
-    if (!useTls)
-    {
-        return network;
-    }
-    SslStream ssl = new(network, leaveInnerStreamOpen: false);
-    await ssl.AuthenticateAsClientAsync(host);
-    return ssl;
-}
-
 static async Task SendAsync(StreamWriter writer, object message) =>
     await writer.WriteLineAsync(JsonSerializer.Serialize(message));
 
@@ -188,11 +173,6 @@ static Dictionary<string, string?> ParseArguments(string[] values)
             throw new ArgumentException($"Unexpected argument '{current}'.");
         }
         string key = current[2..];
-        if (key == "tls")
-        {
-            result[key] = null;
-            continue;
-        }
         if (++index >= values.Length)
         {
             throw new ArgumentException($"Argument '--{key}' requires a value.");

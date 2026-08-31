@@ -1,8 +1,5 @@
 using System.Net;
-using System.Net.Security;
 using System.Net.Sockets;
-using System.Security.Authentication;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Microsoft.Extensions.Options;
 
@@ -26,11 +23,10 @@ public sealed partial class OnboardTcpServer(
         }
 
         IPAddress address = IPAddress.Parse(_options.ListenAddress);
-        ValidateConfiguration(address);
+        ValidateConfiguration();
         TcpListener listener = new(address, _options.Port);
         listener.Start();
-        LogTransportStarted(
-            logger, address, _options.Port, !string.IsNullOrWhiteSpace(_options.ServerCertificatePath));
+        LogTransportStarted(logger, address, _options.Port);
         try
         {
             while (!stoppingToken.IsCancellationRequested)
@@ -58,7 +54,7 @@ public sealed partial class OnboardTcpServer(
 
     private async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
     {
-        await using Stream stream = await CreateTransportStreamAsync(client, cancellationToken).ConfigureAwait(false);
+        await using NetworkStream stream = client.GetStream();
         using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         await using OnboardPeerConnection connection = new(stream);
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
@@ -102,32 +98,7 @@ public sealed partial class OnboardTcpServer(
         }
     }
 
-    private async Task<Stream> CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken)
-    {
-        NetworkStream networkStream = client.GetStream();
-        if (string.IsNullOrWhiteSpace(_options.ServerCertificatePath))
-        {
-            return networkStream;
-        }
-
-        string? password = string.IsNullOrWhiteSpace(_options.ServerCertificatePasswordEnvironmentVariable)
-            ? null
-            : Environment.GetEnvironmentVariable(_options.ServerCertificatePasswordEnvironmentVariable);
-        using X509Certificate2 certificate = OnboardTlsCertificateLoader.Load(
-            _options.ServerCertificatePath,
-            password);
-        SslStream sslStream = new(networkStream, leaveInnerStreamOpen: false);
-        await sslStream.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
-        {
-            ServerCertificate = certificate,
-            ClientCertificateRequired = false,
-            EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-            CertificateRevocationCheckMode = X509RevocationMode.Online
-        }, cancellationToken).ConfigureAwait(false);
-        return sslStream;
-    }
-
-    private void ValidateConfiguration(IPAddress address)
+    private void ValidateConfiguration()
     {
         if (_options.Port is < 1 or > 65535)
         {
@@ -137,12 +108,6 @@ public sealed partial class OnboardTcpServer(
         {
             throw new InvalidOperationException("OnboardTransport:MaxLineBytes must be at least 4096.");
         }
-        bool tlsEnabled = !string.IsNullOrWhiteSpace(_options.ServerCertificatePath);
-        if (!tlsEnabled && (!IPAddress.IsLoopback(address) || !_options.AllowInsecureLoopback))
-        {
-            throw new InvalidOperationException(
-                "A non-loopback Onboard listener requires a configured TLS server certificate.");
-        }
     }
 
     [LoggerMessage(EventId = 1001, Level = LogLevel.Warning,
@@ -150,17 +115,10 @@ public sealed partial class OnboardTcpServer(
     private static partial void LogTransportDisabled(ILogger logger);
 
     [LoggerMessage(EventId = 1002, Level = LogLevel.Information,
-        Message = "Onboard NDJSON listener started on {Address}:{Port}; TLS={TlsEnabled}")]
-    private static partial void LogTransportStarted(
-        ILogger logger, IPAddress address, int port, bool tlsEnabled);
+        Message = "Onboard NDJSON listener started on {Address}:{Port}; transport=plaintext")]
+    private static partial void LogTransportStarted(ILogger logger, IPAddress address, int port);
 
     [LoggerMessage(EventId = 1003, Level = LogLevel.Warning,
         Message = "Onboard connection ended with a protocol or transport error.")]
     private static partial void LogConnectionEnded(ILogger logger, Exception error);
-}
-
-internal static class OnboardTlsCertificateLoader
-{
-    public static X509Certificate2 Load(string path, string? password) =>
-        new(path, password, X509KeyStorageFlags.MachineKeySet);
 }

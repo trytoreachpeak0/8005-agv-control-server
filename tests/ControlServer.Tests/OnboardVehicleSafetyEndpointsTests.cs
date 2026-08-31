@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Transport;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Configuration;
@@ -10,21 +11,23 @@ namespace ControlServer.Tests;
 public sealed class OnboardVehicleSafetyEndpointsTests
 {
     [Fact]
-    public async Task PlainHttpIsRejectedBeforeCredentialOrRiotFactsAreRead()
+    public async Task MissingExternalCredentialKeepsTheProjectionUnavailable()
     {
+        string variable = "CONTROL_SERVER_TEST_MISSING_" + Guid.NewGuid().ToString("N");
         DefaultHttpContext context = new();
         context.Request.Scheme = "http";
+        context.Request.Headers.Authorization = "Bearer any-credential";
         RecordingSafetyFacts facts = new();
 
         var result = await OnboardVehicleSafetyEndpoints.HandleAsync(
             context,
             facts,
             Options.Create(JourneyOptions()),
-            Options.Create(ProjectionOptions("UNUSED_CREDENTIAL")),
+            Options.Create(ProjectionOptions(variable)),
             TestContext.Current.CancellationToken);
 
-        StatusCodeHttpResult status = Assert.IsType<StatusCodeHttpResult>(result.Result);
-        Assert.Equal(StatusCodes.Status426UpgradeRequired, status.StatusCode);
+        ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, problem.StatusCode);
         Assert.Equal(0, facts.ReadCount);
     }
 
@@ -34,7 +37,7 @@ public sealed class OnboardVehicleSafetyEndpointsTests
         string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
         using EnvironmentVariableScope credential = new(variable, "expected-credential");
         DefaultHttpContext context = new();
-        context.Request.Scheme = "https";
+        context.Request.Scheme = "http";
         context.Request.Headers.Authorization = "Bearer wrong-credential";
         RecordingSafetyFacts facts = new();
 
@@ -51,12 +54,12 @@ public sealed class OnboardVehicleSafetyEndpointsTests
     }
 
     [Fact]
-    public async Task AuthenticatedHttpsRequestReturnsFailClosedRiotProjectionWithoutExposingCredentials()
+    public async Task AuthenticatedPlainHttpRequestReturnsTheFailClosedRiotProjection()
     {
         string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
         using EnvironmentVariableScope credential = new(variable, "onboard-only-credential");
         DefaultHttpContext context = new();
-        context.Request.Scheme = "https";
+        context.Request.Scheme = "http";
         context.Request.Headers.Authorization = "Bearer onboard-only-credential";
         RecordingSafetyFacts facts = new()
         {
@@ -87,22 +90,64 @@ public sealed class OnboardVehicleSafetyEndpointsTests
     }
 
     [Fact]
-    public void EnabledProjectionRequiresHttpsCredentialAndCertificateConfiguration()
+    public void EnabledProjectionRequiresOnlyAPopulatedCredentialVariable()
     {
         string variable = "CONTROL_SERVER_TEST_MISSING_" + Guid.NewGuid().ToString("N");
-        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(
-            new Dictionary<string, string?> { ["Health:url"] = "http://127.0.0.1:58007" }).Build();
-        OnboardSafetyProjectionOptions options = ProjectionOptions(variable);
-        options.RequireHttps = false;
 
-        ValidateOptionsResult result = new OnboardSafetyProjectionOptionsValidator(configuration)
-            .Validate(null, options);
+        ValidateOptionsResult result = new OnboardSafetyProjectionOptionsValidator()
+            .Validate(null, ProjectionOptions(variable));
 
         Assert.True(result.Failed);
-        Assert.Contains(result.Failures, failure => failure.Contains("RequireHttps", StringComparison.Ordinal));
-        Assert.Contains(result.Failures, failure => failure.Contains("Health:url", StringComparison.Ordinal));
-        Assert.Contains(result.Failures, failure => failure.Contains("credential", StringComparison.Ordinal));
-        Assert.Contains(result.Failures, failure => failure.Contains("serverCertificatePath", StringComparison.Ordinal));
+        string failure = Assert.Single(result.Failures);
+        Assert.Contains("credential", failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnabledProjectionNoLongerDependsOnCertificateOrHttpsConfiguration()
+    {
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        using EnvironmentVariableScope credential = new(variable, "onboard-only-credential");
+
+        ValidateOptionsResult result = new OnboardSafetyProjectionOptionsValidator()
+            .Validate(null, ProjectionOptions(variable));
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Theory]
+    [InlineData("OnboardTransport:serverCertificatePath", "C:\\certs\\server.pfx")]
+    [InlineData("OnboardTransport:serverCertificatePasswordEnvironmentVariable", "CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD")]
+    [InlineData("OnboardTransport:allowInsecureLoopback", "true")]
+    [InlineData("OnboardSafetyProjection:requireHttps", "true")]
+    public void RemovedCertificateKeysAreRejectedInsteadOfSilentlyIgnored(string key, string value)
+    {
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { [key] = value }).Build();
+
+        ValidateOptionsResult result = new OnboardTransportOptionsValidator(configuration)
+            .Validate(null, new OnboardTransportOptions());
+
+        Assert.True(result.Failed);
+        string failure = Assert.Single(result.Failures);
+        Assert.Contains(key, failure, StringComparison.Ordinal);
+        Assert.Contains("plaintext", failure, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlaintextConfigurationPassesTheRemovedKeyCheck()
+    {
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["OnboardTransport:listenAddress"] = "0.0.0.0",
+                ["OnboardTransport:port"] = "58005",
+                ["OnboardSafetyProjection:enabled"] = "true"
+            }).Build();
+
+        ValidateOptionsResult result = new OnboardTransportOptionsValidator(configuration)
+            .Validate(null, new OnboardTransportOptions());
+
+        Assert.True(result.Succeeded);
     }
 
     private static JourneyRuntimeOptions JourneyOptions() => new()
@@ -113,7 +158,6 @@ public sealed class OnboardVehicleSafetyEndpointsTests
     private static OnboardSafetyProjectionOptions ProjectionOptions(string credentialVariable) => new()
     {
         Enabled = true,
-        RequireHttps = true,
         CredentialEnvironmentVariable = credentialVariable
     };
 

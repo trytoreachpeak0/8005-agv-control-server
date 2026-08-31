@@ -25,7 +25,7 @@ WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含正�
 dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
 ```
 
-本地端口默认为：MesIngest V2.2 `127.0.0.1:5088`、Onboard NDJSON `127.0.0.1:58005`，健康/版本 HTTP `127.0.0.1:58007`。MesIngest 仅 loopback 绑定时不要求 SharedSecret；远程绑定仍必须使用外部 Bearer secret。非 loopback Onboard 监听必须配置 TLS PFX；车载凭据由 `CONTROL_SERVER_ONBOARD_CREDENTIAL` 注入。SQLite 使用 EF Core 安装期迁移，不在运行时写 MesIngest。
+本地端口默认为：MesIngest V2.2 `127.0.0.1:5088`、Onboard NDJSON `127.0.0.1:58005`，健康/版本 HTTP `127.0.0.1:58007`。MesIngest 仅 loopback 绑定时不要求 SharedSecret；远程绑定仍必须使用外部 Bearer secret。Onboard NDJSON 与车辆安全投影均为明文传输，不再需要任何证书；非 loopback 监听由部署方在厂内网自行隔离。车载凭据由 `CONTROL_SERVER_ONBOARD_CREDENTIAL` 注入，明文过网是本版本已知限制。SQLite 使用 EF Core 安装期迁移，不在运行时写 MesIngest。
 
 启动 Host 后，可用 Fake Onboard 验证五步空恢复握手：
 

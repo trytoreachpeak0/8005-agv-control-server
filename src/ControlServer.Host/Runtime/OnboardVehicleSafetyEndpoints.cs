@@ -17,14 +17,12 @@ public static class OnboardVehicleSafetyEndpoints
             .WithDescription("Returns STOPPED only for the complete RIoT Behavior Lab Round-41 predicate.")
             .Produces<OnboardVehicleSafetyResponse>()
             .Produces(StatusCodes.Status401Unauthorized)
-            .Produces(StatusCodes.Status426UpgradeRequired)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
     }
 
     public static async Task<Results<
         Ok<OnboardVehicleSafetyResponse>,
         UnauthorizedHttpResult,
-        StatusCodeHttpResult,
         ProblemHttpResult>> HandleAsync(
         HttpContext context,
         IRiotVehicleSafetyFacts safetyFacts,
@@ -35,8 +33,6 @@ public static class OnboardVehicleSafetyEndpoints
         OnboardSafetyProjectionOptions options = projectionOptions.Value;
         context.Response.Headers.CacheControl = "no-store";
         context.Response.Headers.Pragma = "no-cache";
-        if (options.RequireHttps && !context.Request.IsHttps)
-            return TypedResults.StatusCode(StatusCodes.Status426UpgradeRequired);
 
         string? expected = Environment.GetEnvironmentVariable(options.CredentialEnvironmentVariable);
         if (string.IsNullOrWhiteSpace(expected))
