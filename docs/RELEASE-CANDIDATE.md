@@ -114,19 +114,27 @@ Get-Content .\SHA256SUMS.txt | ForEach-Object {
 `-CopyUserRiotSecretToMachine` 是显式授权，缺失即拒绝执行：它授权把用户作用域的 RIoT 凭据复制到
 机器作用域。
 
-脚本按顺序完成：备份既有数据根 → 复制包 → 生成自签根与 `localhost` 叶证书并导出 PFX 与 PEM →
-注入秘密 → 写 `appsettings.Production.json` → 收紧安装目录与数据目录 ACL → 创建
-`LocalSystem`／`Automatic` 服务 → **首启 → 停止 → 再启动 → 强制重启**，每次启动后做一次 HTTPS
-存活检查 → 校验数据库与日志文件确已生成 → 写结果 JSON。
+脚本按顺序完成：备份既有数据根 → 复制包 → 创建数据根 → 注入秘密 → 写
+`appsettings.Production.json` → 收紧安装目录与数据目录 ACL → 创建 `LocalSystem`／`Automatic`
+服务 → **首启 → 停止 → 再启动 → 强制重启**，每次启动后做一次 HTTP 存活检查 → 校验数据库与日志
+文件确已生成 → 写结果 JSON。
 
-**健康检查不依赖系统信任存储**：脚本把本次安装生成的根证书导出为
-`<DataRoot>\certs\localhost-development-root.pem`，并以 `curl --cacert` 钉住它验证链路。因此安装
-过程不修改任何证书存储，也不会弹出信任确认对话框，可在非交互环境中完整跑完。若确实需要让本机
-浏览器或其他工具直接信任该根证书，另加 `-InstallCurrentUserRoot`——它会把根证书导入
-`CurrentUser\Root`，**该操作会弹出 Windows 安全确认对话框，只能在交互式会话中使用**。
+**本版本不生成、不分发、不导入、不续期任何证书。** 两条链路——Onboard NDJSON（TCP 58005）与车辆
+安全投影（Kestrel 上的 HTTP，默认 58007）——都是明文。安装过程不读写任何证书存储，不弹出信任确认
+对话框，可在非交互环境中完整跑完；健康检查直接读 `http://<HealthBindAddress>:<HealthPort>/health/live`
+的 body，既不需要 `--cacert`，也不需要 `--insecure`。
 
-任一步失败，脚本自动回滚：删服务、删安装目录、还原机器作用域环境变量、移除导入的根证书、
-还原或删除数据根，并把回滚结果一并抛出。
+监听地址是参数，**默认仍为 `127.0.0.1`**：
+
+| 参数 | 作用 | 默认 |
+| --- | --- | --- |
+| `-ListenAddress` | Onboard NDJSON 监听地址（写进 `OnboardTransport:listenAddress`） | `127.0.0.1` |
+| `-HealthBindAddress` | Kestrel 的**唯一**绑定地址，`/health/*`、`/version` 与车辆安全投影都在其上 | `127.0.0.1` |
+
+异机部署必须显式传入，见 4.4。
+
+任一步失败，脚本自动回滚：删服务、删安装目录、还原机器作用域环境变量、还原或删除数据根，并把
+回滚结果一并抛出。
 
 ### 4.3 隔离安装（不影响已有部署）
 
@@ -145,6 +153,87 @@ Get-Content .\SHA256SUMS.txt | ForEach-Object {
 `-SkipMachineEnvironmentInjection` 让隔离实例只写服务专属的注册表环境，不触碰机器作用域变量，
 因此不会影响已在运行的生产服务；给了它就不再要求 `-CopyUserRiotSecretToMachine`。
 
+### 4.4 异机（非 loopback）明文部署
+
+车载端在另一台机器上时，两个监听地址都必须改到车载端够得着的地址上——默认的 `127.0.0.1` 只服务同机：
+
+```powershell
+.\scripts\Install-ControlServerLocal.ps1 `
+    -PackagePath .\controlserver `
+    -ResultPath <结果 JSON 路径> `
+    -DiagnosticPath <诊断日志路径> `
+    -ListenAddress 192.168.200.1 -HealthBindAddress 192.168.200.1 `
+    -CopyUserRiotSecretToMachine
+```
+
+- 两个地址既可以是具体网卡 IP，也可以是通配 `0.0.0.0`。给通配时脚本自己的生命周期检查改拨
+  `127.0.0.1`——没有任何客户端连得上通配地址本身；
+- 实际形态以**安装结果 JSON 回读的字段**为准，不以命令行为准：`onboardTransportEndpoint`
+  （`tcp://<地址>:<端口>`）、`httpEndpoint`、`httpCheckOrigin` 与 `transport: "plaintext"`；
+- 防火墙：目标机需放行 **TCP `-OnboardPort`（默认 58005）** 与 **TCP `-HealthPort`（默认 58007）**。
+  这两个端口现在承载明文业务与明文投影，放行范围就是暴露范围；
+- **判对端可达只能用返回 body 的往返。** 装有全局代理（例如 Clash 全局模式）的机器上，ping 与 TCP
+  connect 对任意主机、任意端口乃至不存在的主机都会「成功」。明文形态下没有 TLS 握手失败兜底，连错
+  主机可能表现为静默挂起而不是报错。一律用带 `--noproxy` 的 `curl.exe` 读 body 判定：
+
+```powershell
+curl.exe --noproxy 192.168.200.1 --max-time 10 'http://192.168.200.1:58007/health/live'
+```
+
+- 车载端侧的对应项见第 8 节：`wireToGate.host` 指向 `-ListenAddress`，
+  `vehicleSafety.endpoint` 指向 `http://<HealthBindAddress>:<HealthPort>/api/onboard/v1/vehicle-safety`。
+
+### 4.5 从证书版本升级已有安装
+
+`scripts\Update-ControlServerLocal.ps1` 就地升级**生产**安装（服务名、安装目录、数据根与备份根都是
+硬编码的生产值，不可参数化）：
+
+```powershell
+.\scripts\Update-ControlServerLocal.ps1 `
+    -PackagePath <新包目录> -ResultPath <新结果 JSON> `
+    -DiagnosticPath <诊断日志路径> -VerifySafetyProjectionReadOnly
+```
+
+升级器停服 → 备份安装目录与完整数据根 → 把保留的 `appsettings.Production.json` 迁移成明文键集 →
+清除证书遗留物 → 换二进制 → 起服并回读 `/health/live`、`/version` 与（给了开关时）只读投影；任一步
+失败即回滚二进制、SQLite 与被清除的机器级变量。
+
+脚本自动完成的三件事，逐项记录在结果 JSON 的 `certificateRemoval` 段：
+
+1. 从保留的生产配置中删除 `OnboardTransport:serverCertificatePath`、
+   `OnboardTransport:serverCertificatePasswordEnvironmentVariable`、
+   `OnboardTransport:allowInsecureLoopback`、`OnboardSafetyProjection:requireHttps`。新二进制在启动期
+   **显式拒绝**这四个键中的任意一个，因此不迁移的升级会启动失败并整体回滚，而不是带着死配置跑起来；
+2. 把 `Health:url` 的 `https://` 改写成 `http://`；
+3. 删除 `<DataRoot>\certs\` 与机器作用域环境变量 `CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD`。
+
+**脚本不做、必须人工做的一件事**：当初经 `-InstallCurrentUserRoot` 导入 `CurrentUser\Root` 的那张
+自签根证书。它落在**执行安装的那个用户账户**作用域下，升级以服务账户视角运行时够不着，所以脚本不碰
+它，并在结果 JSON 里如实记为 `currentUserRootCertificateRemoved: false` /
+`currentUserRootCertificateRemovalIsManual: true`。`certificateDirectoryRemoved: true`
+**不代表**这张根证书已经不在了。
+
+指纹来源，按顺序取第一个可得的：
+
+- 当初那次安装的结果 JSON（`schemaVersion: 1`）里的 `certificate.trustedRootThumbprint`；
+- 旧结果 JSON 已丢失时，按主题名查——该根证书的主题固定以这串前缀开头：
+
+```powershell
+Get-ChildItem Cert:\CurrentUser\Root |
+    Where-Object { $_.Subject -like '*8005 AGV ControlServer Local Development Root*' } |
+    Select-Object Subject, Thumbprint, NotAfter
+```
+
+在**当初执行安装的那个用户账户**下删除，并回读确认：
+
+```powershell
+Remove-Item -LiteralPath 'Cert:\CurrentUser\Root\<thumbprint>'
+Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.Thumbprint -eq '<thumbprint>' }
+```
+
+第二条命令**无输出**才算删掉。只删上面两种来源确认过的那一张，不要按主题名批量删除——同一存储里的
+其他根证书与本产品无关。
+
 ## 5. 启动、停止、重启与健康检查
 
 ```powershell
@@ -154,7 +243,8 @@ Restart-Service -Name '8005 AGV ControlServer' -Force
 Get-Service     -Name '8005 AGV ControlServer'
 ```
 
-HTTPS 端点（默认 `https://localhost:58007`，隔离实例用 `-HealthPort` 指定的端口）：
+HTTP 端点（默认 `http://127.0.0.1:58007`；地址由 `-HealthBindAddress`、端口由 `-HealthPort` 决定，
+以安装结果 JSON 的 `httpEndpoint` 为准）：
 
 | 端点 | 含义 |
 | --- | --- |
@@ -166,17 +256,15 @@ HTTPS 端点（默认 `https://localhost:58007`，隔离实例用 `-HealthPort` 
 **首装后 `/health/ready` 返回 `503 RECOVERY_HANDSHAKE_REQUIRED` 是预期结果**，它证明数据库已迁移
 且可读；只有车载端接入并完成五步恢复握手后才会转为 `ready`。
 
-手工校验时钉住本次安装生成的根证书，不要用 `--insecure`：
+手工校验：
 
 ```powershell
-curl.exe --noproxy localhost --ssl-revoke-best-effort `
-    --cacert '<DataRoot>\certs\localhost-development-root.pem' `
-    'https://localhost:58007/health/live'
+curl.exe --noproxy 127.0.0.1 --max-time 10 'http://127.0.0.1:58007/health/live'
 ```
 
-Windows 自带的 curl 使用 Schannel，`--cacert` 必须给 **PEM**（脚本导出的 `.pem`），DER 的 `.cer`
-不被接受；`--ssl-revoke-best-effort` 用于跳过自签根证书无法完成的吊销查询。换成任何其他根证书，
-这条命令都会以 `curl: (60)` 失败——这正是它构成校验而非摆设的原因。
+`--noproxy` 不是可选的排版：装有全局代理的机器上，省掉它会让请求被代理接管，从而对**任意**主机与
+端口都返回「成功」，校验失去意义。`--max-time` 同理——明文形态下连错主机可能静默挂起而不是报错。
+判定标准是**读回的 body**（`{"status":"live"}`），不是退出码为 0，更不是 ping 通。
 
 ## 6. 数据库初始化与迁移
 
@@ -185,7 +273,8 @@ Windows 自带的 curl 使用 Schannel，`--cacert` 必须给 **PEM**（脚本�
 - Host 在**每次启动**时执行 EF Core `Database.MigrateAsync()`，首启即建库建表，升级时自动补迁移。
   没有单独的迁移命令，也不需要外部数据库服务；
 - 目录不存在时由 Host 自行创建；
-- 数据根同时容纳 `certs\`（PFX 与导出的根证书公钥）与 `logs\`。
+- 数据根下只有 `data\` 与 `logs\`。本版本没有 `certs\`；升级已有安装时该目录由
+  `Update-ControlServerLocal.ps1` 删除（见 4.5）。
 
 ## 7. 日志
 
@@ -213,18 +302,25 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
 - 程序**只读取自身目录下的 `appsettings.json`**，没有 `appsettings.<环境>.json` 分层覆盖。
   部署时必须用生产配置**整体替换** `appsettings.json`；
 - 包内 `onboard-hmi\appsettings.Production.template.json` 已由构建脚本填入本包真实的车载端
-  commit，其余 `REPLACE_*` 占位符是现场值，必须逐项替换后才能上线，至少包括 ControlServer 的
-  IP、`serverCertificateSha256`、稳定的 `onboardInstanceId`、IO 模块 IP 与期望的 `vehicleKey`；
-- `vehicleSafety.enabled` 必须保持 `true`，`vehicleSafety.endpoint` 必须指向已安装 ControlServer 的
-  HTTPS 端点（含非默认端口）。车载端进程还必须信任该端点的证书链：同机使用安装脚本时以交互方式
-  加 `-InstallCurrentUserRoot`；异机部署则把安装结果中的 `certificate.caCertificateFile` 公钥证书
-  交给车载端管理员，明确导入运行 OnboardHmi 的 Windows 用户的 `CurrentUser\Root`。不要用跳过
-  TLS 校验代替信任配置；
+  commit，其余 `REPLACE_*` 占位符是现场值，必须逐项替换后才能上线：`REPLACE_CONTROL_SERVER_IP`
+  （`wireToGate.host`）、`REPLACE_CONTROL_SERVER_HOST`（`vehicleSafety.endpoint` 里的 `主机:端口`）、
+  `REPLACE_WITH_STABLE_UUID`、`REPLACE_WITH_40_CHARACTER_GIT_COMMIT`、`REPLACE_RULE_SERVER_IP`、
+  `REPLACE_IO_MODULE_IP` 与 `REPLACE_WITH_EXPECTED_VEHICLE_KEY`。**本版本的模板里没有
+  `serverCertificateSha256`，也没有 `useTls`**——这两个键已从车载端产品代码中移除；
+- `vehicleSafety.enabled` 必须保持 `true`，`vehicleSafety.endpoint` 必须是**明文 HTTP** 的完整 URI，
+  指向服务端 `-HealthBindAddress`／`-HealthPort` 的绑定，例如
+  `http://192.168.200.1:58007/api/onboard/v1/vehicle-safety`。车载端只接受 `http` scheme（
+  `VehicleSafetySettings.Validate` 硬校验），填 `https://` 会直接启动失败；不需要导入、分发或信任
+  任何证书；
+- **车载端拒绝残留的 TLS 期配置键**：`wireToGate` 下出现 `useTls` 或 `serverCertificateSha256` 时
+  启动即抛 `WIRE_TO_GATE配置键<键名>已移除，当前版本固定使用明文TCP/HTTP传输。`。从旧版本的配置
+  文件改写而来时，删键，不要把值改成 `false` 或空串——判据是键名存在与否，不是值；
 - 启动车载端前，以同一车载凭据只读调用 `vehicleSafety.endpoint`。只有 HTTP 200、`vehicleKey` 与
   `vehicleSafety.expectedVehicleKey` 精确一致、`motionState=STOPPED` 且 `observedAt` 未超出
   `maximumEvidenceAgeMs`，干净会话才应进入 `Ready`；`UNKNOWN`／`MOVING` 或过期证据保持
   `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY` 是安全闸门的预期行为；
-- 随包的开发默认 `appsettings.json` 里 `wireToGate.enabled=false`、`useTls=false`，且
+- 随包的开发默认 `appsettings.json` 里 `wireToGate.enabled=false`、`vehicleSafety.enabled=false`
+  （`endpoint` 是不可解析的 `http://control.example.invalid/...`），且
   `onboardBuildCommit` 是仓库中的一个较早 commit，**不等于**本包的构建 commit。这个字段是握手时
   上报给服务端的**配置值**，不是二进制自身的身份：程序启动时写进日志的
   `version=<InformationalVersion>+<SourceRevisionId>` 才是，实测与本包构建 commit 一致。上线前
@@ -237,22 +333,60 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
 `DEPARTURE_SAFETY_NOT_READY` 已证明表示恢复报告已收到、但可信车辆停稳事实未满足；它不是
 `RecoveryStateReport` 漏发。只有 `HANDSHAKE_INCOMPLETE` 才继续检查五步握手消息。
 
+### 8.1 新旧两端错配：错误文本对照表
+
+**两端必须同版本升级。** 明文端与 TLS 期端之间没有协商、没有降级、没有自动探测：错配的结果是连接
+建立不起来，而两端给出的文本**都不含 TLS 字样**，现场极易误判成「网络不通」。下表的文本是实测逐字
+记录（跨机取证，非推断）：
+
+**方向 A — TLS 期车载端（配置里有 `useTls=true`）连本版本的明文服务端**
+
+| 侧 | 逐字文本 |
+| --- | --- |
+| 车载端 | `上层会话不可用：Received an unexpected EOF or 0 bytes from the transport stream.。将在2秒后重连。` |
+| 服务端 | `Onboard connection ended with a protocol or transport error.` |
+
+服务端的 `SessionHello` 计数**不增加**——没有任何消息进入协议层。车载端**无限重连、不退出**，是静默
+故障形态：界面看起来在「重连中」，实际上永远连不上。
+
+**方向 B — 本版本的明文车载端连 TLS 期服务端**
+
+| 侧 | 逐字文本 |
+| --- | --- |
+| 车载端 链路 A（NDJSON） | `上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。` |
+| 车载端 链路 B（投影） | `An error occurred while sending the request.` |
+| 服务端 | `System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.` |
+
+**方向 B 的车载端措辞是全表最危险的一条**：「ControlServer 在会话恢复期间关闭了连接」听起来像业务层
+的恢复问题，与传输形态毫无关系。两个方向里，唯一点出真因的都是**服务端**日志
+（`<DataRoot>\logs\controlserver-<yyyyMMdd>.ndjson`）。因此：车载端反复重连而服务端 `SessionHello`
+不增加时，先读服务端日志，再怀疑网络。
+
+排除顺序建议：
+
+1. 服务端日志有 `AuthenticationException` → 服务端还是 TLS 期版本，升级服务端；
+2. 服务端日志有 `Onboard connection ended with a protocol or transport error.` 且
+   `SessionHello` 计数不增加 → 车载端还是 TLS 期版本，或其配置仍带 `useTls`；
+3. 服务端日志里这条连接**根本没有出现** → 才是真正的网络或地址问题，按 4.4 用带 `--noproxy` 的
+   `curl.exe` 读 body 逐段验证。
+
 ## 9. 回滚与卸载
 
 ```powershell
 .\scripts\Uninstall-ControlServerLocal.ps1 `
     -ServiceName '<服务名>' -InstallRoot '<安装目录>' -DataRoot '<数据目录>' `
-    -ResultPath <结果 JSON> -TrustedRootThumbprint <安装结果里的指纹> `
+    -ResultPath <结果 JSON> `
     -ConfirmUninstall [-RemoveDataRoot]
 ```
 
 - `-ConfirmUninstall` 是必需的显式授权；
 - 目标若命中生产服务名或生产目录，还需要 `-AllowProductionService`，否则脚本拒绝执行——这是防止
   误删正在运行的生产部署的护栏；
-- 不给 `-RemoveDataRoot` 时保留数据根（数据库、证书、日志），仅移除服务与安装目录，可用同一包
-  重装；
-- 结果 JSON 记录服务是否真的消失、目录是否真的删除、根证书移除了几张、生产服务是否仍在运行，
-  以及卸载后仍在 LISTEN 的端口清单。
+- 本版本的卸载脚本**没有** `-TrustedRootThumbprint`，也不触碰任何证书存储：没有证书可移除。从证书
+  版本升级上来的机器若还留着 `CurrentUser\Root` 里的旧自签根，按 4.5 的人工步骤删；
+- 不给 `-RemoveDataRoot` 时保留数据根（数据库与日志），仅移除服务与安装目录，可用同一包重装；
+- 结果 JSON 记录服务是否真的消失、目录是否真的删除、生产服务是否仍在运行，以及卸载后仍在 LISTEN
+  的端口清单。
 
 安装期回滚的备份位于 `<BackupRoot>\<runId>`，安装结果 JSON 的 `backupPath` 字段给出精确路径。
 
@@ -292,11 +426,33 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
 - **MesIngest**：目标环境必须有可达的 MesIngest 实例；非 loopback 绑定必须配置共享密钥；
 - **八仓 IO**：本轮以独立模拟器作为受控测试输入，**不构成**真实 IO 模块、接线、锁或光幕的资格；
   现场 IO 映射、反馈超时与 Modbus 地址需现场冻结；
-- **TLS 身份**：安装脚本生成的是一次性的自签开发根与叶证书，仅用于本机回环验证。现场部署必须
-  换成受控签发的证书，并把 `serverCertificateSha256` 同步进车载端配置；
+- **受控的厂内网是本版本的部署前提**：两条链路都是明文，安全性完全依赖网络本身受控。下面第 11.1
+  节的三条限制在不可信网络下都会成为真实风险；
 - **车载端仓库对 agent 只读**，其产品代码与发布资产由车载端负责人维护。本发布候选只以精确
   commit、构建命令与产物 SHA-256 的形式登记车载端，不向该仓库写入任何内容；
 - **协议仓库为审批门禁**，任何协议侧变更都需要两名负责人对同一具体变更明确批准。
+
+### 11.1 明文传输的已知限制
+
+本版本把 OnboardHmi ↔ ControlServer 的两条链路从 TLS/HTTPS 改为明文 TCP/HTTP，并移除了整套证书
+机制。下面三条是这一选择的**已知代价**，由项目负责人于 2026-08-31 在知情前提下接受，前提是部署在
+受控的工厂内网。它们不是待修缺陷，也不应在部署时被当作「以后再说」：
+
+- **车载凭据以明文经网络传输。** `credentialProof` 是协议必填字段，车载端把静态共享密钥原样放进
+  `SessionHello` 的 payload。链路明文之后，**在网络上抓一次包即可永久冒充该车载端**——密钥是静态的，
+  不轮换、不挑战应答，重放没有时间窗限制。凡是能接触到这段网络的人或设备，都等价于持有该凭据。
+- **安全闸门的输入变得可篡改。** `motionState`、`observedAt` 等车辆安全投影字段经明文 HTTP 传输，
+  中间人可以改写。已验证过的「移动中拦、停稳放行」这一安全行为，其成立**前提是网络可信**；在不可
+  信网络下，攻击者可以把 `MOVING` 改成 `STOPPED` 来诱使闸门放行。这是 safety 层面的后果，不只是
+  security 层面的。
+- **健康、版本端点随投影一并暴露。** Kestrel 只有一个绑定，`/health/live`、`/health/ready`、
+  `/version`、`/api/runtime/sessions` 与 `/api/onboard/v1/vehicle-safety` 都挂在其上。异机部署要求
+  投影对车载端可达，因此 `-HealthBindAddress` 必须绑非 loopback，这些端点也就一并暴露到厂内网。
+  本版本**有意不加**端点级过滤或来源 IP 白名单：前者是往一个以「删机制」为目标的版本里新加机制，
+  后者挡不住能抓包的人，属安慰剂。
+
+这三条的适用前提是**受控的工厂内网**。若部署环境不满足这一前提，正确的做法是先解决网络隔离，而不是
+在本版本上叠加补偿措施。
 
 ## 12. 运行核心测试场景
 
@@ -322,16 +478,16 @@ dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
 staged G3 向量（合成对端，无移动；runner 自行克隆四个仓库并绑定各自的精确 commit）：
 
 ```powershell
-.\scripts\run-staged-g3.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录> `
-    -InstallTemporaryCurrentUserRoot
+.\scripts\run-staged-g3.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录>
 .\scripts\run-staged-g3-restart.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录>
 .\scripts\run-demand-bearing-g3-vectors.ps1 -StageRoot <不存在的短路径> -EvidenceRoot <新目录> `
     -FieldRunRoot <一次现场运行的 run 目录>
 ```
 
-`run-staged-g3.ps1` 需要 Node.js 与 pnpm（协议 G1），并且要求显式的
-`-InstallTemporaryCurrentUserRoot` 授权：它会向 `CurrentUser\Root` 装一张唯一的测试根证书、记录
-指纹，并在 `finally` 中移除。另两个 runner 不需要该授权。
+`run-staged-g3.ps1` 需要 Node.js 与 pnpm（协议 G1）。三个 runner 都走明文，**都不再需要
+`-InstallTemporaryCurrentUserRoot`**（该参数已随证书机制一并移除），也都不向任何证书存储写入，因此
+都可无人值守运行。三者共用 `run-staged-g3.ps1` param 块里的四个 commit 绑定，另两个 runner 从中回读
+而不是各自重述。脚本内部仍有 `StagedG3TlsHarness` 这类 TLS 期的**命名**残留，是历史名称，不代表行为。
 
 **这些场景的通过与否不改变当前的门禁状态**：W2G-IS-00～07 与 RC 目前仍为 `INCONCLUSIVE`，八类
 G3 向量各有证据不等于八个切片通过。

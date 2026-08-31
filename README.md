@@ -79,26 +79,26 @@ Sublot 提交时先按当前站点×任务类型策略预检；LOAD 的仓位操
 .\scripts\Publish-ControlServer.ps1 -OutputPath <new-package-directory>
 ```
 
-首次本机安装必须从提升权限的 PowerShell 运行，并显式确认开发根信任和 User→Machine RIoT
-秘密复制。安装器拒绝覆盖已有同名服务或安装目录，生成只含 `localhost` SAN 的专用开发证书，
-将公有根证书装入当前用户受信任根，收紧安装／数据／PFX ACL，以 `LocalSystem` 自动服务安装，
-并完成 HTTPS live、停止／启动、重启和版本回读。它保持 `JourneyRuntime.enabled=false`，不会调用
-RIoT mutation、创建订单或移动车辆：
+首次本机安装必须从提升权限的 PowerShell 运行，并显式确认 User→Machine RIoT 秘密复制。安装器拒绝
+覆盖已有同名服务或安装目录，收紧安装与数据目录 ACL，以 `LocalSystem` 自动服务安装，并完成 HTTP
+live、停止／启动、重启和版本回读。**两条链路都是明文，安装过程不生成、不导入任何证书**；监听地址由
+`-ListenAddress`／`-HealthBindAddress` 决定，默认仍是 `127.0.0.1`。它保持
+`JourneyRuntime.enabled=false`，不会调用 RIoT mutation、创建订单或移动车辆：
 
 ```powershell
 .\scripts\Install-ControlServerLocal.ps1 `
   -PackagePath <package-directory> `
   -ResultPath <new-result-json> `
-  -InstallCurrentUserRoot `
   -CopyUserRiotSecretToMachine
 ```
 
-私钥、PFX 密码、RIoT CallApiKey 和 Onboard credential 只存在于受 ACL 保护的外部位置或 Windows
-环境变量，不进入 Git、包清单或安装结果。迁移到最终机器时必须重新确认 ControlServer DNS／IP，
-签发匹配的新证书，并按精确 thumbprint 移除本机开发根；仅含 `localhost` 的证书不得复用到车载部署。
+RIoT CallApiKey 和 Onboard credential 只存在于受 ACL 保护的外部位置或 Windows 环境变量，不进入
+Git、包清单或安装结果。异机部署与凭据明文过网的已知限制见
+[`docs/RELEASE-CANDIDATE.md`](docs/RELEASE-CANDIDATE.md) 第 4.4 与 11.1 节。
 
 升级既有本机服务时使用新目录包和新结果路径。升级器在停服后以管理员 ACL 备份安装目录与完整数据根，
-保留现有 `appsettings.Production.json`、证书和秘密，失败时恢复原二进制与 SQLite：
+保留现有 `appsettings.Production.json` 与秘密并把它迁移成明文键集，清除 `certs\` 与机器级证书口令
+变量，失败时恢复原二进制与 SQLite。`CurrentUser\Root` 里的旧自签根需按手册 4.5 人工删除：
 
 ```powershell
 .\scripts\Update-ControlServerLocal.ps1 `
