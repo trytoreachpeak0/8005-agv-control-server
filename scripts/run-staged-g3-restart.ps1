@@ -518,10 +518,6 @@ try {
         'Health__url' = "http://127.0.0.1:$healthPort"
         'OnboardTransport__listenAddress' = '127.0.0.1'
         'OnboardTransport__port' = [string]$controlPort
-        # OnboardTransportOptions has no TLS switch: the listener is plaintext exactly while
-        # ServerCertificatePath is unset, so this run leaves it null and allows insecure loopback.
-        'OnboardTransport__serverCertificatePath' = ''
-        'OnboardTransport__allowInsecureLoopback' = 'true'
         'OnboardTransport__credentialEnvironmentVariable' = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
         'JourneyRuntime__enabled' = 'false'
         'MesIngest__baseUrl' = 'http://127.0.0.1:1'

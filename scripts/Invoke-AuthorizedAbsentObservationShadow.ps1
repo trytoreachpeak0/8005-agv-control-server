@@ -46,7 +46,6 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $productionDatabase = 'C:\ProgramData\8005\ControlServer\data\controlserver.db'
-$certificatePath = 'C:\ProgramData\8005\ControlServer\certs\localhost.pfx'
 $proxyPort = 58888
 $sessionPort = 59005
 $healthPort = 59007
@@ -388,15 +387,14 @@ function Read-SafetyProjection {
     if ([string]::IsNullOrWhiteSpace($credential)) {
         throw 'Machine-scope Onboard credential is unavailable.'
     }
-    $handler = [System.Net.Http.HttpClientHandler]::new()
-    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client = [System.Net.Http.HttpClient]::new()
     $client.Timeout = [TimeSpan]::FromSeconds(4)
     $client.DefaultRequestHeaders.Authorization =
         [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $credential)
     $response = $null
     try {
         $response = $client.GetAsync(
-            'https://localhost:58007/api/onboard/v1/vehicle-safety').GetAwaiter().GetResult()
+            'http://localhost:58007/api/onboard/v1/vehicle-safety').GetAwaiter().GetResult()
         if ([int]$response.StatusCode -ne 200) {
             throw "Installed safety endpoint returned HTTP $([int]$response.StatusCode)."
         }
@@ -545,24 +543,6 @@ function Start-ExactPeers {
         throw 'Machine-scope Onboard credential is unavailable.'
     }
 
-    $certificateClient = [System.Net.Sockets.TcpClient]::new()
-    $tlsStream = $null
-    $certificate = $null
-    try {
-        $certificateClient.Connect($ServerHost, $ServerPort)
-        $tlsStream = [System.Net.Security.SslStream]::new($certificateClient.GetStream(), $false)
-        $tlsStream.AuthenticateAsClient('localhost')
-        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
-            $tlsStream.RemoteCertificate)
-        $certificateSha = [Convert]::ToHexString(
-            [System.Security.Cryptography.SHA256]::HashData($certificate.RawData))
-    }
-    finally {
-        if ($null -ne $certificate) { $certificate.Dispose() }
-        if ($null -ne $tlsStream) { $tlsStream.Dispose() }
-        $certificateClient.Dispose()
-    }
-
     $configPath = Join-Path $onboardRoot 'appsettings.json'
     $config = [IO.File]::ReadAllText($configPath) | ConvertFrom-Json
     $serviceConfig = [IO.File]::ReadAllText((Join-Path $hostRoot 'appsettings.json')) | ConvertFrom-Json
@@ -573,16 +553,17 @@ function Start-ExactPeers {
     $config.wireToGate.port = $ServerPort
     $config.wireToGate.onboardBuildCommit = $expectedOnboardCommit
     $config.wireToGate.supportsBatchUnlock = $true
-    $config.wireToGate.useTls = $true
-    if ($config.wireToGate.PSObject.Properties.Name -contains 'serverCertificateSha256') {
-        $config.wireToGate.serverCertificateSha256 = $certificateSha
+    # A TLS-era onboard build still carries these two keys and a plaintext one will not, so touch
+    # them only where they exist.
+    if ($config.wireToGate.PSObject.Properties.Name -contains 'useTls') {
+        $config.wireToGate.useTls = $false
     }
-    else {
-        $config.wireToGate | Add-Member -NotePropertyName 'serverCertificateSha256' -NotePropertyValue $certificateSha
+    if ($config.wireToGate.PSObject.Properties.Name -contains 'serverCertificateSha256') {
+        $config.wireToGate.PSObject.Properties.Remove('serverCertificateSha256')
     }
     $config.wireToGate.journalPath = Join-Path $peerRoot 'onboard-journal.db'
     $config.vehicleSafety.enabled = $true
-    $config.vehicleSafety.endpoint = 'https://localhost:58007/api/onboard/v1/vehicle-safety'
+    $config.vehicleSafety.endpoint = 'http://localhost:58007/api/onboard/v1/vehicle-safety'
     $config.vehicleSafety.expectedVehicleKey = [string]$serviceConfig.JourneyRuntime.vehicleKey
     $config.logging.directory = Join-Path $logRoot 'onboard'
     [IO.File]::WriteAllText(
@@ -686,7 +667,7 @@ try {
     if (-not (Test-Path -LiteralPath $productionDatabase -PathType Leaf)) {
         throw 'The production ControlServer database is unavailable for overlap checks.'
     }
-    foreach ($path in @($PackagePath, $OnboardSource, $SimulatorSource, $certificatePath, $proxyScript, $stateScript)) {
+    foreach ($path in @($PackagePath, $OnboardSource, $SimulatorSource, $proxyScript, $stateScript)) {
         if (-not (Test-Path -LiteralPath $path)) { throw "Required path is missing: $path" }
     }
     if ((Get-DirectoryContentSha256 $OnboardSource) -ne $ExpectedOnboardArtifactSha256) {
@@ -757,7 +738,6 @@ try {
         "$productionDatabase-shm")
     $riotApiKey = Get-RequiredMachineSecret 'CONTROL_SERVER_RIOT_CALL_API_KEY'
     $onboardCredential = Get-RequiredMachineSecret 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
-    $certificatePassword = Get-RequiredMachineSecret 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
 
     Copy-Item -LiteralPath $PackagePath -Destination $hostRoot -Recurse
     if ((Get-DirectoryContentSha256 $hostRoot) -ne $packageTreeSha256) {
@@ -767,10 +747,6 @@ try {
     $settings = [IO.File]::ReadAllText($settingsPath) | ConvertFrom-Json
     $settings.Health.url = "http://127.0.0.1:$healthPort"
     $settings.OnboardTransport.port = $sessionPort
-    $settings.OnboardTransport.serverCertificatePath = $certificatePath
-    $settings.OnboardTransport.serverCertificatePasswordEnvironmentVariable =
-        'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
-    $settings.OnboardTransport.allowInsecureLoopback = $false
     $settings.ConnectionStrings.ControlServer = "Data Source=$databasePath"
     $settings.RIoT.baseUrl = "http://127.0.0.1:$proxyPort"
     $settings.RIoT.callApiKeyEnvironmentVariable = 'CONTROL_SERVER_SHADOW_DUMMY_RIOT_CALL_API_KEY'
@@ -798,7 +774,6 @@ try {
     if ($PreflightOnly) {
         $riotApiKey = $null
         $onboardCredential = $null
-        $certificatePassword = $null
         $preflightComplete = $true
         throw [OperationCanceledException]::new('PREFLIGHT_ONLY_COMPLETE')
     }
@@ -835,17 +810,12 @@ try {
         ASPNETCORE_ENVIRONMENT = 'AuthorizedExperiment'
         CONTROL_SERVER_SHADOW_DUMMY_RIOT_CALL_API_KEY = $dummyRiotKey
         CONTROL_SERVER_ONBOARD_CREDENTIAL = $onboardCredential
-        CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD = $certificatePassword
         ConnectionStrings__ControlServer = "Data Source=$databasePath"
         RIoT__baseUrl = "http://127.0.0.1:$proxyPort"
         RIoT__callApiKeyEnvironmentVariable = 'CONTROL_SERVER_SHADOW_DUMMY_RIOT_CALL_API_KEY'
         Health__url = "http://127.0.0.1:$healthPort"
         OnboardTransport__port = [string]$sessionPort
-        OnboardTransport__serverCertificatePath = $certificatePath
-        OnboardTransport__serverCertificatePasswordEnvironmentVariable =
-            'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
         OnboardTransport__credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
-        OnboardTransport__allowInsecureLoopback = 'false'
         OnboardSafetyProjection__enabled = 'false'
         JourneyRuntime__enabled = 'true'
         JourneyRuntime__minimumBatteryPercent = '10'
@@ -870,7 +840,6 @@ try {
     $hostEverStarted = $true
     $hostEnvironment = $null
     $onboardCredential = $null
-    $certificatePassword = $null
     $dummyRiotKey = $null
     Wait-ExactListeningPort $sessionPort $hostProcess 'ControlServer.Host' 30
     Wait-ExactListeningPort $healthPort $hostProcess 'ControlServer.Host' 30

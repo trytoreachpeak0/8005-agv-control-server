@@ -19,9 +19,18 @@ $resolvedDiagnostic = if ([string]::IsNullOrWhiteSpace($DiagnosticPath)) { $null
 $runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 $backupPath = Join-Path $backupRoot "$runId-upgrade"
 $stagingPath = "C:\Program Files\8005 AGV\ControlServer.staging.$runId"
+$certificateDirectory = Join-Path $dataRoot 'certs'
+$certificatePasswordVariable = 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
+$oldCertificatePassword = [Environment]::GetEnvironmentVariable($certificatePasswordVariable, 'Machine')
 $replacementInstalled = $false
 $serviceStopped = $false
 $backupComplete = $false
+$certificatePasswordRemoved = $false
+$certificateDirectoryRemoved = $false
+# Replaced from the retained configuration once it has been migrated; the health endpoint is wherever
+# that file binds Kestrel, which is no longer necessarily loopback.
+$checkHost = '127.0.0.1'
+$checkOrigin = 'http://127.0.0.1:58007'
 
 function Write-Diagnostic([string]$Message) {
     if ([string]::IsNullOrWhiteSpace($resolvedDiagnostic)) { return }
@@ -90,8 +99,8 @@ function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
 
 function Invoke-JsonGet([string]$Uri) {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy localhost --ssl-revoke-best-effort --max-time 10 $Uri 2>&1)
-    if ($LASTEXITCODE -ne 0) { throw "Schannel GET failed with exit code $LASTEXITCODE`: $($body -join ' ')" }
+        --noproxy $checkHost --max-time 10 $Uri 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "HTTP GET failed with exit code $LASTEXITCODE`: $($body -join ' ')" }
     return $body | ConvertFrom-Json
 }
 
@@ -99,12 +108,10 @@ function Invoke-SafetyProjection {
     $credential = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine')
     if ([string]::IsNullOrWhiteSpace($credential)) { throw 'Machine Onboard credential is missing.' }
     Add-Type -AssemblyName System.Net.Http
-    $handler = [System.Net.Http.HttpClientHandler]::new()
-    $handler.CheckCertificateRevocationList = $false
-    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client = [System.Net.Http.HttpClient]::new()
     $client.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $credential)
     try {
-        $response = $client.GetAsync('https://localhost:58007/api/onboard/v1/vehicle-safety').GetAwaiter().GetResult()
+        $response = $client.GetAsync("$checkOrigin/api/onboard/v1/vehicle-safety").GetAwaiter().GetResult()
         $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         if (-not $response.IsSuccessStatusCode) {
             throw "Safety projection returned HTTP $([int]$response.StatusCode)."
@@ -117,7 +124,46 @@ function Invoke-SafetyProjection {
     }
     finally {
         $client.Dispose()
-        $handler.Dispose()
+    }
+}
+
+<#
+.SYNOPSIS
+Rewrites the retained production configuration into the plaintext key set.
+.DESCRIPTION
+The upgrade carries the installed appsettings.Production.json forward untouched, so an installation
+made by a TLS-era installer would hand the new binary keys it now rejects on purpose -- the upgrade
+would fail at start and roll straight back. Stripping the removed keys here is what makes the
+upgrade path survive the transport change; the values are gone from the product, not merely ignored.
+#>
+function Convert-RetainedConfigurationToPlaintext([string]$Path) {
+    $configuration = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
+    $removedKeys = [Collections.Generic.List[string]]::new()
+    foreach ($removal in @(
+        @{ Section = 'OnboardTransport'; Key = 'serverCertificatePath' },
+        @{ Section = 'OnboardTransport'; Key = 'serverCertificatePasswordEnvironmentVariable' },
+        @{ Section = 'OnboardTransport'; Key = 'allowInsecureLoopback' },
+        @{ Section = 'OnboardSafetyProjection'; Key = 'requireHttps' })) {
+        $section = $configuration.$($removal.Section)
+        if ($null -ne $section -and $section.PSObject.Properties.Name -contains $removal.Key) {
+            $section.PSObject.Properties.Remove($removal.Key)
+            $removedKeys.Add("$($removal.Section):$($removal.Key)")
+        }
+    }
+    $healthUrlRewritten = $false
+    if ($null -ne $configuration.Health -and $configuration.Health.url -is [string] -and
+        $configuration.Health.url.StartsWith('https://', [StringComparison]::OrdinalIgnoreCase)) {
+        $configuration.Health.url = 'http://' + $configuration.Health.url.Substring('https://'.Length)
+        $healthUrlRewritten = $true
+    }
+    [IO.File]::WriteAllText(
+        $Path,
+        ($configuration | ConvertTo-Json -Depth 10),
+        [Text.UTF8Encoding]::new($false))
+    return [ordered]@{
+        removedKeys = @($removedKeys)
+        healthUrlRewritten = $healthUrlRewritten
+        healthUrl = $configuration.Health.url
     }
 }
 
@@ -163,8 +209,37 @@ try {
         Copy-Item -LiteralPath $item.FullName -Destination $stagingPath -Recurse -Force
     }
     Copy-Item -LiteralPath $productionConfiguration -Destination $stagingPath -Force
+    $configurationMigration = Convert-RetainedConfigurationToPlaintext (Join-Path $stagingPath 'appsettings.Production.json')
+    $healthBinding = [Uri]$configurationMigration.healthUrl
+    $checkHost = if ($healthBinding.Host -in @('0.0.0.0', '*', '+', '::', '[::]')) {
+        '127.0.0.1'
+    } else {
+        $healthBinding.Host
+    }
+    $checkOrigin = "http://${checkHost}:$($healthBinding.Port)"
     Set-RestrictedDirectoryAcl $stagingPath
-    Write-Diagnostic 'staging-complete'
+    Write-Diagnostic ("staging-complete removedKeys={0} healthUrlRewritten={1}" -f
+        $configurationMigration.removedKeys.Count, $configurationMigration.healthUrlRewritten)
+
+    # The certificate directory is inside the data root, so the backup above already holds it and the
+    # rollback path restores it with everything else.
+    if (Test-Path -LiteralPath $certificateDirectory) {
+        Remove-Item -LiteralPath $certificateDirectory -Recurse -Force
+        $certificateDirectoryRemoved = -not (Test-Path -LiteralPath $certificateDirectory)
+        if (-not $certificateDirectoryRemoved) {
+            throw "The certificate directory was not removed: $certificateDirectory"
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($oldCertificatePassword)) {
+        [Environment]::SetEnvironmentVariable($certificatePasswordVariable, $null, 'Machine')
+        $certificatePasswordRemoved = [string]::IsNullOrWhiteSpace(
+            [Environment]::GetEnvironmentVariable($certificatePasswordVariable, 'Machine'))
+        if (-not $certificatePasswordRemoved) {
+            throw "The machine-scope $certificatePasswordVariable was not removed."
+        }
+    }
+    Write-Diagnostic ("certificate-cleanup-complete directory={0} password={1}" -f
+        $certificateDirectoryRemoved, $certificatePasswordRemoved)
 
     Remove-Item -LiteralPath $installPath -Recurse -Force
     Move-Item -LiteralPath $stagingPath -Destination $installPath
@@ -173,13 +248,13 @@ try {
 
     Start-Service -Name $serviceName
     Wait-ServiceState 'Running'
-    $live = Invoke-JsonGet 'https://localhost:58007/health/live'
+    $live = Invoke-JsonGet "$checkOrigin/health/live"
     if ($live.status -ne 'live') { throw 'Live endpoint returned an unexpected response.' }
-    $version = Invoke-JsonGet 'https://localhost:58007/version'
+    $version = Invoke-JsonGet "$checkOrigin/version"
     $safety = if ($VerifySafetyProjectionReadOnly) { Invoke-SafetyProjection } else { $null }
     Restart-Service -Name $serviceName -Force
     Wait-ServiceState 'Running'
-    $liveAfterRestart = Invoke-JsonGet 'https://localhost:58007/health/live'
+    $liveAfterRestart = Invoke-JsonGet "$checkOrigin/health/live"
     if ($liveAfterRestart.status -ne 'live') { throw 'Post-restart live endpoint returned an unexpected response.' }
     if ($VerifySafetyProjectionReadOnly) { $safety = Invoke-SafetyProjection }
     Write-Diagnostic 'lifecycle-and-readonly-checks-complete'
@@ -194,6 +269,23 @@ try {
         packageManifestSha256 = (Get-FileHash -LiteralPath (Join-Path $resolvedPackage 'deployment-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
         configurationSha256 = (Get-FileHash -LiteralPath (Join-Path $installPath 'appsettings.Production.json') -Algorithm SHA256).Hash.ToLowerInvariant()
         serviceStatus = (Get-Service -Name $serviceName).Status.ToString()
+        healthEndpoint = $checkOrigin
+        transport = 'plaintext'
+        certificateRemoval = [ordered]@{
+            removedConfigurationKeys = @($configurationMigration.removedKeys)
+            healthUrlRewrittenToHttp = $configurationMigration.healthUrlRewritten
+            certificateDirectory = $certificateDirectory
+            certificateDirectoryRemoved = $certificateDirectoryRemoved
+            certificateDirectoryPresent = (Test-Path -LiteralPath $certificateDirectory)
+            machineCertificatePasswordRemoved = $certificatePasswordRemoved
+            machineCertificatePasswordPresent = -not [string]::IsNullOrWhiteSpace(
+                [Environment]::GetEnvironmentVariable($certificatePasswordVariable, 'Machine'))
+            # CurrentUser\Root is out of reach of the service account that runs this upgrade, so a
+            # root imported by an earlier -InstallCurrentUserRoot stays put. RELEASE-CANDIDATE.md
+            # carries the manual removal; reporting it here as cleaned would be a false green.
+            currentUserRootCertificateRemoved = $false
+            currentUserRootCertificateRemovalIsManual = $true
+        }
         protocolTag = $version.protocolTag
         protocolCommit = $version.protocolCommit
         safetyProjection = if ($safety) { [ordered]@{
@@ -236,6 +328,9 @@ catch {
         }
         if (Test-Path -LiteralPath $stagingPath) {
             Remove-Item -LiteralPath $stagingPath -Recurse -Force
+        }
+        if ($certificatePasswordRemoved) {
+            [Environment]::SetEnvironmentVariable($certificatePasswordVariable, $oldCertificatePassword, 'Machine')
         }
         if ($serviceStopped) {
             Start-Service -Name $serviceName

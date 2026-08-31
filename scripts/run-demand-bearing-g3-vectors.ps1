@@ -375,9 +375,6 @@ try {
         'OnboardTransport__listenAddress' = '127.0.0.1'
         'OnboardTransport__port' = [string]$controlPort
         'OnboardTransport__credentialEnvironmentVariable' = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
-        'OnboardTransport__useTls' = 'false'
-        'OnboardTransport__allowInsecureLoopback' = 'true'
-        'OnboardTransport__serverCertificatePath' = ''
         # The runtime stays off and both external adapters point at a dead port: this run must not be
         # able to accept a demand, place an order or move anything, whatever the restored store holds.
         'JourneyRuntime__enabled' = 'false'

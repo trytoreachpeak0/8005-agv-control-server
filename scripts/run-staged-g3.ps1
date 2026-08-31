@@ -11,16 +11,11 @@ param(
     [string]$ControlServerCommit = '3d8b00c7558ae700358f1f995a5ac75d12a3250c',
     [string]$OnboardCommit = '304e6ad9952a41d5c0d50c0c4e79bab5c8804bd6',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279',
-    [switch]$InstallTemporaryCurrentUserRoot
+    [string]$ProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279'
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-
-if (-not $InstallTemporaryCurrentUserRoot) {
-    throw 'Real Onboard TLS validation requires explicit -InstallTemporaryCurrentUserRoot authorization. The runner installs one unique test root into CurrentUser/Root, records its fingerprint, and removes it in finally.'
-}
 
 $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
 $nodeExecutable = if ($null -ne $nodeCommand) {
@@ -61,7 +56,7 @@ $proxyPort = 58215
 $businessProxyPort = 58216
 $modbusPort = 1502
 $simulatorHttpPort = 58006
-$agvId = 'AGV-8005-STAGED-G3-TLS-01'
+$agvId = 'AGV-8005-STAGED-G3-01'
 # Must stay in step with the constant inside StagedG3TlsHarness.RunRecoveryProbeAsync.
 $recoveryAgvId = 'AGV-8005-STAGED-G3-RECOVERY'
 $runStartedAt = [DateTimeOffset]::UtcNow
@@ -213,195 +208,6 @@ function Read-Ndjson {
         ForEach-Object { $_ | ConvertFrom-Json })
 }
 
-function New-TlsMaterial {
-    param([string]$Directory)
-
-    $notBefore = [DateTimeOffset]::UtcNow.AddMinutes(-5)
-    $notAfter = [DateTimeOffset]::UtcNow.AddHours(8)
-    $rootKey = [Security.Cryptography.RSA]::Create(2048)
-    $rootRequest = [Security.Cryptography.X509Certificates.CertificateRequest]::new(
-        "CN=8005 staged G3 loopback root $([Guid]::NewGuid().ToString('N'))",
-        $rootKey,
-        [Security.Cryptography.HashAlgorithmName]::SHA256,
-        [Security.Cryptography.RSASignaturePadding]::Pkcs1)
-    $null = $rootRequest.CertificateExtensions.Add(
-        [Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($true, $false, 0, $true))
-    $null = $rootRequest.CertificateExtensions.Add(
-        [Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
-            [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyCertSign -bor
-            [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::CrlSign,
-            $true))
-    $null = $rootRequest.CertificateExtensions.Add(
-        [Security.Cryptography.X509Certificates.X509SubjectKeyIdentifierExtension]::new(
-            $rootRequest.PublicKey,
-            $false))
-    $rootCertificate = $rootRequest.CreateSelfSigned($notBefore, $notAfter)
-
-    $serverKey = [Security.Cryptography.RSA]::Create(2048)
-    $serverRequest = [Security.Cryptography.X509Certificates.CertificateRequest]::new(
-        'CN=localhost',
-        $serverKey,
-        [Security.Cryptography.HashAlgorithmName]::SHA256,
-        [Security.Cryptography.RSASignaturePadding]::Pkcs1)
-    $null = $serverRequest.CertificateExtensions.Add(
-        [Security.Cryptography.X509Certificates.X509BasicConstraintsExtension]::new($false, $false, 0, $true))
-    $null = $serverRequest.CertificateExtensions.Add(
-        [Security.Cryptography.X509Certificates.X509KeyUsageExtension]::new(
-            [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::DigitalSignature -bor
-            [Security.Cryptography.X509Certificates.X509KeyUsageFlags]::KeyEncipherment,
-            $true))
-    $oids = [Security.Cryptography.OidCollection]::new()
-    $null = $oids.Add([Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.1'))
-    $null = $serverRequest.CertificateExtensions.Add(
-        [Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]::new($oids, $true))
-    $san = [Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder]::new()
-    $san.AddDnsName('localhost')
-    $san.AddIpAddress([Net.IPAddress]::Loopback)
-    $null = $serverRequest.CertificateExtensions.Add($san.Build())
-    $serialNumber = [Security.Cryptography.RandomNumberGenerator]::GetBytes(16)
-    $issuedServerCertificate = $serverRequest.Create(
-        $rootCertificate,
-        $notBefore,
-        $notAfter,
-        $serialNumber)
-    $serverCertificate = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::CopyWithPrivateKey(
-        $issuedServerCertificate,
-        $serverKey)
-    $issuedServerCertificate.Dispose()
-
-    $password = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(24)).ToLowerInvariant()
-    $collection = [Security.Cryptography.X509Certificates.X509Certificate2Collection]::new()
-    $null = $collection.Add($serverCertificate)
-    $pfxPath = Join-Path $Directory 'loopback-server.pfx'
-    [IO.File]::WriteAllBytes(
-        $pfxPath,
-        $collection.Export([Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12, $password))
-    $fingerprint = [Convert]::ToHexString(
-        [Security.Cryptography.SHA256]::HashData($serverCertificate.RawData)).ToLowerInvariant()
-    $rootFingerprint = [Convert]::ToHexString(
-        [Security.Cryptography.SHA256]::HashData($rootCertificate.RawData)).ToLowerInvariant()
-    $rootThumbprint = $rootCertificate.Thumbprint
-
-    $rootStore = [Security.Cryptography.X509Certificates.X509Store]::new(
-        [Security.Cryptography.X509Certificates.StoreName]::Root,
-        [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-    try {
-        $rootStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-        # A run that is killed rather than allowed to fail never reaches Remove-TlsMaterial, so its
-        # root stays behind; six such roots had accumulated by 2026-08-29. Sweep expired ones from
-        # earlier runs before adding this one. Expiry is the safe predicate: these roots live eight
-        # hours, so an expired one cannot belong to a run still in progress.
-        foreach ($stale in @($rootStore.Certificates)) {
-            if ($stale.Subject.StartsWith('CN=8005 staged G3 loopback root ', [StringComparison]::Ordinal) -and
-                $stale.NotAfter -lt [DateTime]::Now) {
-                $rootStore.Remove($stale)
-            }
-        }
-        $rootStore.Add($rootCertificate)
-    }
-    finally {
-        $rootStore.Close()
-        $rootStore.Dispose()
-    }
-
-    $chain = [Security.Cryptography.X509Certificates.X509Chain]::new()
-    try {
-        $chain.ChainPolicy.TrustMode = [Security.Cryptography.X509Certificates.X509ChainTrustMode]::CustomRootTrust
-        $null = $chain.ChainPolicy.CustomTrustStore.Add($rootCertificate)
-        $chain.ChainPolicy.RevocationMode = [Security.Cryptography.X509Certificates.X509RevocationMode]::NoCheck
-        if (-not $chain.Build($serverCertificate)) {
-            $statuses = @($chain.ChainStatus | ForEach-Object Status) -join ', '
-            throw "The temporary loopback server certificate did not build to the generated test root: $statuses"
-        }
-    }
-    catch {
-        $cleanupStore = [Security.Cryptography.X509Certificates.X509Store]::new(
-            [Security.Cryptography.X509Certificates.StoreName]::Root,
-            [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-        try {
-            $cleanupStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-            foreach ($certificate in @($cleanupStore.Certificates.Find(
-                [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-                $rootThumbprint,
-                $false))) {
-                $cleanupStore.Remove($certificate)
-            }
-        }
-        finally {
-            $cleanupStore.Close()
-            $cleanupStore.Dispose()
-        }
-        throw
-    }
-    finally {
-        $chain.Dispose()
-    }
-
-    return [pscustomobject]@{
-        PfxPath = $pfxPath
-        Password = $password
-        Fingerprint = $fingerprint
-        RootFingerprint = $rootFingerprint
-        RootThumbprint = $rootThumbprint
-        TrustScope = 'CurrentUser/Root'
-        TrustInstalled = $true
-        TrustCleanupVerified = $false
-        ServerCertificate = $serverCertificate
-        ServerKey = $serverKey
-        RootCertificate = $rootCertificate
-        RootKey = $rootKey
-    }
-}
-
-function Remove-TlsMaterial {
-    param($Material)
-    if ($null -eq $Material) { return }
-    try {
-        if ($Material.TrustInstalled) {
-            $rootStore = [Security.Cryptography.X509Certificates.X509Store]::new(
-                [Security.Cryptography.X509Certificates.StoreName]::Root,
-                [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-            try {
-                $rootStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-                foreach ($certificate in @($rootStore.Certificates.Find(
-                    [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-                    $Material.RootThumbprint,
-                    $false))) {
-                    $rootStore.Remove($certificate)
-                }
-            }
-            finally {
-                $rootStore.Close()
-                $rootStore.Dispose()
-            }
-        }
-        if (Test-Path -LiteralPath $Material.PfxPath) {
-            [IO.File]::Delete($Material.PfxPath)
-        }
-        $verificationStore = [Security.Cryptography.X509Certificates.X509Store]::new(
-            [Security.Cryptography.X509Certificates.StoreName]::Root,
-            [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-        try {
-            $verificationStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
-            $remaining = $verificationStore.Certificates.Find(
-                [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-                $Material.RootThumbprint,
-                $false)
-            $Material.TrustCleanupVerified = $remaining.Count -eq 0
-        }
-        finally {
-            $verificationStore.Close()
-            $verificationStore.Dispose()
-        }
-    }
-    finally {
-        $Material.ServerCertificate.Dispose()
-        $Material.ServerKey.Dispose()
-        $Material.RootCertificate.Dispose()
-        $Material.RootKey.Dispose()
-    }
-}
-
 $harnessSource = @'
 #nullable enable
 using System;
@@ -409,11 +215,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Security;
 using System.Net.Sockets;
-using System.Security.Authentication;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -489,7 +292,6 @@ public static class StagedG3TlsHarness
 
     public static async Task<string> RunProbeAsync(
         int port,
-        string expectedFingerprint,
         string credential,
         string transcriptPath,
         CancellationToken cancellationToken)
@@ -504,7 +306,7 @@ public static class StagedG3TlsHarness
         })
         {
             await using Connection connection = await Connection.OpenAsync(
-                port, expectedFingerprint, cancellationToken).ConfigureAwait(false);
+                port, cancellationToken).ConfigureAwait(false);
             string hello = Hello(
                 name,
                 StableGuid("hello:" + name),
@@ -539,7 +341,7 @@ public static class StagedG3TlsHarness
         bool firstConflictClosed;
         long firstGeneration;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             await connection.WriteAsync(
                 Hello(agvId, StableGuid("hello:duplicate"), Protocol.Release, Protocol.Manifest, credential),
@@ -577,7 +379,7 @@ public static class StagedG3TlsHarness
         bool secondConflictClosed;
         long secondGeneration;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             await connection.WriteAsync(
                 Hello(agvId, StableGuid("hello:conflict-repeat"), Protocol.Release, Protocol.Manifest, credential),
@@ -640,7 +442,6 @@ public static class StagedG3TlsHarness
     /// </remarks>
     public static async Task<string> RunBusinessProbeAsync(
         int port,
-        string expectedFingerprint,
         string credential,
         string transcriptPath,
         CancellationToken cancellationToken)
@@ -667,7 +468,7 @@ public static class StagedG3TlsHarness
             string secondAck;
             bool sameConnectionClosed;
             await using (Connection connection = await Connection.OpenAsync(
-                port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+                port, cancellationToken).ConfigureAwait(false))
             {
                 long generation = await HandshakeAsync(
                     connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
@@ -687,7 +488,7 @@ public static class StagedG3TlsHarness
 
             bool repeatConnectionClosed;
             await using (Connection connection = await Connection.OpenAsync(
-                port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+                port, cancellationToken).ConfigureAwait(false))
             {
                 long generation = await HandshakeAsync(
                     connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
@@ -737,7 +538,7 @@ public static class StagedG3TlsHarness
         string? suppressedAck;
         string replayedAck;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
@@ -764,7 +565,7 @@ public static class StagedG3TlsHarness
         string delayedAck;
         long observedDelayMilliseconds;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
@@ -787,7 +588,7 @@ public static class StagedG3TlsHarness
         string firstReorderAck;
         string secondReorderAck;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:business:" + ++helloSequence), credential, cancellationToken)
@@ -881,7 +682,6 @@ public static class StagedG3TlsHarness
     /// </remarks>
     public static async Task<string> RunRecoveryProbeAsync(
         int port,
-        string expectedFingerprint,
         string credential,
         string authenticationProof,
         string transcriptPath,
@@ -907,7 +707,7 @@ public static class StagedG3TlsHarness
         string replayedOpenResponse;
 
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
@@ -995,7 +795,7 @@ public static class StagedG3TlsHarness
 
         bool requestConflictClosed;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
@@ -1015,7 +815,7 @@ public static class StagedG3TlsHarness
         string? acceptedFirstActionId;
         bool commandConnectionClosed;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
@@ -1139,7 +939,7 @@ public static class StagedG3TlsHarness
         string currentResultAck;
         string replayedResultAck;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
@@ -1224,7 +1024,7 @@ public static class StagedG3TlsHarness
 
         bool resultConflictClosed;
         await using (Connection connection = await Connection.OpenAsync(
-            port, expectedFingerprint, cancellationToken).ConfigureAwait(false))
+            port, cancellationToken).ConfigureAwait(false))
         {
             long generation = await HandshakeAsync(
                 connection, agvId, StableGuid("hello:recovery:" + ++helloSequence), credential, cancellationToken)
@@ -1355,7 +1155,7 @@ public static class StagedG3TlsHarness
         string acceptedMessageId = StableGuid("demand-bearing:accepted-result");
         string acceptedLine;
 
-        await using (Connection connection = await Connection.OpenPlaintextAsync(port, cancellationToken)
+        await using (Connection connection = await Connection.OpenAsync(port, cancellationToken)
             .ConfigureAwait(false))
         {
             // The hello is written out rather than delegated to HandshakeAsync because the identity the
@@ -1470,7 +1270,7 @@ public static class StagedG3TlsHarness
         string helloSalt,
         CancellationToken cancellationToken)
     {
-        await using Connection connection = await Connection.OpenPlaintextAsync(port, cancellationToken)
+        await using Connection connection = await Connection.OpenAsync(port, cancellationToken)
             .ConfigureAwait(false);
         await connection.WriteAsync(
             Hello(agvId, StableGuid("demand-bearing:handshake:" + helloSalt),
@@ -1502,7 +1302,7 @@ public static class StagedG3TlsHarness
         Func<long, string> buildLine,
         CancellationToken cancellationToken)
     {
-        await using Connection connection = await Connection.OpenPlaintextAsync(port, cancellationToken)
+        await using Connection connection = await Connection.OpenAsync(port, cancellationToken)
             .ConfigureAwait(false);
         long generation = await HandshakeAsync(connection, agvId, helloMessageId, credential, cancellationToken)
             .ConfigureAwait(false);
@@ -1892,17 +1692,10 @@ public static class StagedG3TlsHarness
     public static async Task RunProxyAsync(
         int listenPort,
         int upstreamPort,
-        string pfxPath,
-        string pfxPassword,
-        string expectedFingerprint,
         string transcriptPath,
         CancellationToken cancellationToken)
     {
         File.WriteAllText(transcriptPath, string.Empty, new UTF8Encoding(false));
-        using X509Certificate2 certificate = X509CertificateLoader.LoadPkcs12FromFile(
-            pfxPath,
-            pfxPassword,
-            X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.Exportable);
         TcpListener listener = new(IPAddress.Loopback, listenPort);
         listener.Start();
         using CancellationTokenRegistration registration = cancellationToken.Register(listener.Stop);
@@ -1911,7 +1704,7 @@ public static class StagedG3TlsHarness
             ["event"] = "proxy-listening",
             ["listenPort"] = listenPort,
             ["upstreamPort"] = upstreamPort,
-            ["tls"] = true
+            ["transport"] = "plaintext"
         });
         try
         {
@@ -1926,13 +1719,7 @@ public static class StagedG3TlsHarness
                 catch (SocketException) when (cancellationToken.IsCancellationRequested) { break; }
                 int connectionId = Interlocked.Increment(ref _connectionSequence);
                 await HandleProxyConnectionAsync(
-                    downstream,
-                    upstreamPort,
-                    certificate,
-                    expectedFingerprint,
-                    transcriptPath,
-                    connectionId,
-                    cancellationToken).ConfigureAwait(false);
+                    downstream, upstreamPort, transcriptPath, connectionId, cancellationToken).ConfigureAwait(false);
             }
         }
         finally { listener.Stop(); }
@@ -1941,118 +1728,6 @@ public static class StagedG3TlsHarness
     private static async Task HandleProxyConnectionAsync(
         TcpClient downstream,
         int upstreamPort,
-        X509Certificate2 certificate,
-        string expectedFingerprint,
-        string transcriptPath,
-        int connectionId,
-        CancellationToken cancellationToken)
-    {
-        using (downstream)
-        using (TcpClient upstream = new())
-        using (CancellationTokenSource connectionStopping =
-            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
-        {
-            try
-            {
-                using SslStream downstreamTls = new(downstream.GetStream(), false);
-                await downstreamTls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
-                {
-                    ServerCertificate = certificate,
-                    ClientCertificateRequired = false,
-                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-                    CertificateRevocationCheckMode = X509RevocationMode.NoCheck
-                }, cancellationToken).ConfigureAwait(false);
-                await upstream.ConnectAsync(IPAddress.Loopback, upstreamPort, cancellationToken).ConfigureAwait(false);
-                using SslStream upstreamTls = new(
-                    upstream.GetStream(),
-                    false,
-                    (_, remote, _, _) => Fingerprint(remote) == expectedFingerprint);
-                await upstreamTls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
-                {
-                    TargetHost = "localhost",
-                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-                    CertificateRevocationCheckMode = X509RevocationMode.NoCheck
-                }, cancellationToken).ConfigureAwait(false);
-                Log(transcriptPath, new Dictionary<string, object?>
-                {
-                    ["event"] = "connection-opened",
-                    ["connectionId"] = connectionId,
-                    ["tls"] = true
-                });
-                Task clientToServer = PumpAsync(
-                    downstreamTls, upstreamTls, "client-to-server", transcriptPath,
-                    connectionId, connectionStopping.Token);
-                Task serverToClient = PumpAsync(
-                    upstreamTls, downstreamTls, "server-to-client", transcriptPath,
-                    connectionId, connectionStopping.Token);
-                await Task.WhenAny(clientToServer, serverToClient).ConfigureAwait(false);
-                connectionStopping.Cancel();
-                downstream.Close();
-                upstream.Close();
-                try { await Task.WhenAll(clientToServer, serverToClient).ConfigureAwait(false); }
-                catch (Exception error) when (error is IOException or OperationCanceledException or ObjectDisposedException) { }
-            }
-            catch (Exception error) when (
-                error is IOException or OperationCanceledException or SocketException or AuthenticationException)
-            {
-                Log(transcriptPath, new Dictionary<string, object?>
-                {
-                    ["event"] = "connection-error",
-                    ["connectionId"] = connectionId,
-                    ["errorType"] = error.GetType().Name,
-                    ["messageSha256"] = Sha256(error.Message)
-                });
-            }
-            finally
-            {
-                Log(transcriptPath, new Dictionary<string, object?>
-                {
-                    ["event"] = "connection-closed",
-                    ["connectionId"] = connectionId
-                });
-            }
-        }
-    }
-
-    public static async Task RunPlainProxyAsync(
-        int listenPort,
-        int upstreamPort,
-        string transcriptPath,
-        CancellationToken cancellationToken)
-    {
-        File.WriteAllText(transcriptPath, string.Empty, new UTF8Encoding(false));
-        TcpListener listener = new(IPAddress.Loopback, listenPort);
-        listener.Start();
-        using CancellationTokenRegistration registration = cancellationToken.Register(listener.Stop);
-        Log(transcriptPath, new Dictionary<string, object?>
-        {
-            ["event"] = "proxy-listening",
-            ["listenPort"] = listenPort,
-            ["upstreamPort"] = upstreamPort,
-            ["tls"] = false
-        });
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                TcpClient downstream;
-                try
-                {
-                    downstream = await listener.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) { break; }
-                catch (SocketException) when (cancellationToken.IsCancellationRequested) { break; }
-                int connectionId = Interlocked.Increment(ref _connectionSequence);
-                await HandlePlainProxyConnectionAsync(
-                    downstream, upstreamPort, transcriptPath, connectionId, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        finally { listener.Stop(); }
-    }
-
-    private static async Task HandlePlainProxyConnectionAsync(
-        TcpClient downstream,
-        int upstreamPort,
         string transcriptPath,
         int connectionId,
         CancellationToken cancellationToken)
@@ -2069,7 +1744,7 @@ public static class StagedG3TlsHarness
                 {
                     ["event"] = "connection-opened",
                     ["connectionId"] = connectionId,
-                    ["tls"] = false
+                    ["transport"] = "plaintext"
                 });
                 NetworkStream downstreamStream = downstream.GetStream();
                 NetworkStream upstreamStream = upstream.GetStream();
@@ -2324,10 +1999,6 @@ public static class StagedG3TlsHarness
         return current.GetString();
     }
 
-    private static string Fingerprint(X509Certificate? certificate) => certificate is null
-        ? string.Empty
-        : Convert.ToHexString(SHA256.HashData(certificate.GetRawCertData())).ToLowerInvariant();
-
     private static string Sha256(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
@@ -2367,35 +2038,16 @@ public static class StagedG3TlsHarness
             };
         }
 
-        public static async Task<Connection> OpenAsync(
-            int port, string fingerprint, CancellationToken cancellationToken)
-        {
-            TcpClient client = new();
-            await client.ConnectAsync(IPAddress.Loopback, port, cancellationToken).ConfigureAwait(false);
-            SslStream stream = new(
-                client.GetStream(),
-                false,
-                (_, remote, _, _) => Fingerprint(remote) == fingerprint);
-            await stream.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
-            {
-                TargetHost = "localhost",
-                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-                CertificateRevocationCheckMode = X509RevocationMode.NoCheck
-            }, cancellationToken).ConfigureAwait(false);
-            return new Connection(client, stream);
-        }
-
         /// <summary>
-        /// Opens the same NDJSON framing over a plaintext loopback socket.
+        /// Opens the NDJSON framing over a plaintext socket.
         /// </summary>
         /// <remarks>
-        /// The staged probes pin a TLS fingerprint because they exercise the deployed transport. A
-        /// runner that replays stored business messages against a restored store is testing the
-        /// message plane, not the transport, so it uses allowInsecureLoopback and needs no temporary
-        /// trust root -- which is what lets it run unattended instead of waiting for someone to
-        /// acknowledge a certificate warning.
+        /// This used to be two methods. The staged probes pinned the server's TLS leaf fingerprint
+        /// because they exercise the deployed transport, while the store-replay runner opened a plain
+        /// socket because it tests the message plane instead. The deployed transport is plaintext
+        /// now, so there is one way in and nothing left to pin.
         /// </remarks>
-        public static async Task<Connection> OpenPlaintextAsync(
+        public static async Task<Connection> OpenAsync(
             int port, CancellationToken cancellationToken)
         {
             TcpClient client = new();
@@ -2417,7 +2069,7 @@ public static class StagedG3TlsHarness
 
         public async Task<string> ReadRequiredAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             await ReadAsync(timeout, cancellationToken).ConfigureAwait(false) ??
-            throw new EndOfStreamException("Expected a TLS NDJSON response.");
+            throw new EndOfStreamException("Expected an NDJSON response.");
 
         public async Task<bool> ExpectClosedAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
             await ReadAsync(timeout, cancellationToken).ConfigureAwait(false) is null;
@@ -2439,7 +2091,6 @@ $credential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerato
 # The recovery administrator proof is a server-side secret compared in fixed time. It is generated
 # per run, never written to evidence, and the inbox stores the request with the field redacted.
 $recoveryProof = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
-$tlsMaterial = $null
 $control = $null
 $onboard = $null
 $simulator = $null
@@ -2500,21 +2151,25 @@ try {
         -Arguments @('publish', '.\src\SQCD_8005AGV_Simulator\SQCD_8005AGV_Simulator.csproj', '-c', 'Release', '-o', $simulatorPublish) `
         -LogPath (Join-Path $logsRoot 'publish-slots-simulator.log') | Out-Null
 
-    $tlsMaterial = New-TlsMaterial -Directory $runtimeRoot
     $onboardConfig = Join-Path $onboardPublish 'appsettings.json'
     $settings = Get-Content -LiteralPath $onboardConfig -Raw | ConvertFrom-Json
     $settings.environment = 'Development'
     $settings.agvId = $agvId
-    $settings.onboardInstanceId = 'OBU-8005-STAGED-G3-TLS-01'
+    $settings.onboardInstanceId = 'OBU-8005-STAGED-G3-01'
     $settings.wireToGate.enabled = $true
     $settings.wireToGate.host = '127.0.0.1'
     $settings.wireToGate.port = $proxyPort
     $settings.wireToGate.onboardInstanceId = '9bd45b8f-b7cb-45d1-bdab-4f6a22347e2e'
     $settings.wireToGate.onboardBuildCommit = $OnboardCommit
     $settings.wireToGate.credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
-    $settings.wireToGate.useTls = $true
-    $settings.wireToGate | Add-Member -NotePropertyName serverCertificateSha256 `
-        -NotePropertyValue $tlsMaterial.Fingerprint -Force
+    # A TLS-era onboard build still carries these two keys and a plaintext one will not, so touch
+    # them only where they exist: this runner has to span both sides of the onboard cutover.
+    if ($settings.wireToGate.PSObject.Properties.Name -contains 'useTls') {
+        $settings.wireToGate.useTls = $false
+    }
+    if ($settings.wireToGate.PSObject.Properties.Name -contains 'serverCertificateSha256') {
+        $settings.wireToGate.PSObject.Properties.Remove('serverCertificateSha256')
+    }
     $settings.wireToGate.connectTimeoutMs = 3000
     $settings.wireToGate.messageTimeoutMs = 3000
     $settings.wireToGate.journalPath = Join-Path $runtimeRoot 'onboard-journal.db'
@@ -2525,16 +2180,11 @@ try {
     $controlEnvironment = @{
         'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential
         'CONTROL_SERVER_RECOVERY_AUTHENTICATION_PROOF' = $recoveryProof
-        'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD' = $tlsMaterial.Password
         'ConnectionStrings__ControlServer' = 'Data Source=' + (Join-Path $runtimeRoot 'controlserver.db')
         'Health__url' = "http://127.0.0.1:$healthPort"
         'OnboardTransport__listenAddress' = '127.0.0.1'
         'OnboardTransport__port' = [string]$controlPort
-        'OnboardTransport__serverCertificatePath' = $tlsMaterial.PfxPath
-        'OnboardTransport__serverCertificatePasswordEnvironmentVariable' = 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
         'OnboardTransport__credentialEnvironmentVariable' = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
-        'OnboardTransport__useTls' = 'true'
-        'OnboardTransport__allowInsecureLoopback' = 'false'
         'JourneyRuntime__enabled' = 'false'
         'MesIngest__baseUrl' = 'http://127.0.0.1:1'
         'RIoT__baseUrl' = 'http://127.0.0.1:1'
@@ -2543,8 +2193,8 @@ try {
     $control = Start-Process -FilePath 'dotnet' `
         -ArgumentList @(Join-Path $controlPublish 'ControlServer.Host.dll') `
         -WorkingDirectory $controlPublish `
-        -RedirectStandardOutput (Join-Path $logsRoot 'control-tls.out.log') `
-        -RedirectStandardError (Join-Path $logsRoot 'control-tls.err.log') `
+        -RedirectStandardOutput (Join-Path $logsRoot 'control.out.log') `
+        -RedirectStandardError (Join-Path $logsRoot 'control.err.log') `
         -Environment $controlEnvironment -WindowStyle Hidden -PassThru
     $version = Wait-HttpJson -Uri "http://127.0.0.1:$healthPort/version"
     if ($version.protocolTag -ne $protocolTag -or
@@ -2555,7 +2205,6 @@ try {
 
     $probeJson = [StagedG3TlsHarness]::RunProbeAsync(
         $controlPort,
-        $tlsMaterial.Fingerprint,
         $credential,
         $probeTranscript,
         [Threading.CancellationToken]::None).GetAwaiter().GetResult()
@@ -2582,9 +2231,6 @@ try {
     $proxyTask = [StagedG3TlsHarness]::RunProxyAsync(
         $proxyPort,
         $controlPort,
-        $tlsMaterial.PfxPath,
-        $tlsMaterial.Password,
-        $tlsMaterial.Fingerprint,
         $proxyTranscript,
         $proxyStopping.Token)
     $proxyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
@@ -2682,8 +2328,8 @@ try {
 
     # OnboardTcpServer.ExecuteAsync awaits each accepted connection to completion before accepting
     # the next, so the server holds exactly one onboard peer at a time; a synthetic peer opened while
-    # the real one is connected never gets past the TLS handshake. Release the peer and its proxy
-    # first, then give the business plane the server to itself.
+    # the real one is connected sits in the accept backlog and is never read. Release the peer and its
+    # proxy first, then give the business plane the server to itself.
     Stop-ProcessSafely -Process $onboard
     $onboard = $null
     $proxyStopping.Cancel()
@@ -2699,9 +2345,6 @@ try {
     $businessProxyTask = [StagedG3TlsHarness]::RunProxyAsync(
         $businessProxyPort,
         $controlPort,
-        $tlsMaterial.PfxPath,
-        $tlsMaterial.Password,
-        $tlsMaterial.Fingerprint,
         $businessProxyTranscript,
         $businessProxyStopping.Token)
     $businessProxyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
@@ -2714,7 +2357,6 @@ try {
 
     $businessProbeJson = [StagedG3TlsHarness]::RunBusinessProbeAsync(
         $businessProxyPort,
-        $tlsMaterial.Fingerprint,
         $credential,
         $businessProbeTranscript,
         [Threading.CancellationToken]::None).GetAwaiter().GetResult()
@@ -2762,7 +2404,6 @@ try {
     # ordered record.
     $recoveryProbeJson = [StagedG3TlsHarness]::RunRecoveryProbeAsync(
         $businessProxyPort,
-        $tlsMaterial.Fingerprint,
         $credential,
         $recoveryProof,
         $recoveryProbeTranscript,
@@ -2817,14 +2458,13 @@ finally {
         }
         $businessProxyStopping.Dispose()
     }
-    Remove-TlsMaterial -Material $tlsMaterial
 }
 
-$controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control-tls.out.log')) {
-    Get-Content -LiteralPath (Join-Path $logsRoot 'control-tls.out.log') -Raw
+$controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {
+    Get-Content -LiteralPath (Join-Path $logsRoot 'control.out.log') -Raw
 } else { '' }
-$controlErrorLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control-tls.err.log')) {
-    Get-Content -LiteralPath (Join-Path $logsRoot 'control-tls.err.log') -Raw
+$controlErrorLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.err.log')) {
+    Get-Content -LiteralPath (Join-Path $logsRoot 'control.err.log') -Raw
 } else { '' }
 $onboardLogFiles = @(Get-ChildItem -LiteralPath (Join-Path $runtimeRoot 'onboard-logs') -File -ErrorAction SilentlyContinue)
 foreach ($file in $onboardLogFiles) {
@@ -3089,28 +2729,24 @@ $recoveryPass = $recoveryProbePass -and $recoveryAuthorisationPass -and $recover
 $status = if ($null -ne $runError) {
     'INCONCLUSIVE_RUNNER_ERROR'
 } elseif ($probePass -and $replayPass -and $noMovementPass -and $businessPass -and $recoveryPass) {
-    'STAGED_G3_TLS_RECOVERY_REPLAY_PASS'
+    'STAGED_G3_RECOVERY_REPLAY_PASS'
 } else {
     'STAGED_SLICE_FAIL'
 }
 
 $configuration = [ordered]@{
     loopbackOnly = $true
-    tls = [ordered]@{
-        probeEnabled = $true
-        certificateSha256 = if ($null -ne $tlsMaterial) { $tlsMaterial.Fingerprint } else { $null }
-        rootCertificateSha256 = if ($null -ne $tlsMaterial) { $tlsMaterial.RootFingerprint } else { $null }
-        trustScope = if ($null -ne $tlsMaterial) { $tlsMaterial.TrustScope } else { $null }
-        temporaryTrustInstalled = if ($null -ne $tlsMaterial) { $tlsMaterial.TrustInstalled } else { $false }
-        temporaryTrustCleanupVerified = if ($null -ne $tlsMaterial) { $tlsMaterial.TrustCleanupVerified } else { $false }
-        leafPinRequired = $true
-        realOnboardAckDropTransport = 'TLS_LOOPBACK'
-        realOnboardAckDropTlsCombination = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    transport = [ordered]@{
+        onboardTransport = 'plaintext'
+        certificatesGenerated = $false
+        temporaryTrustRootInstalled = $false
+        realOnboardAckDropTransport = 'PLAINTEXT_LOOPBACK'
+        realOnboardAckDropCombination = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     }
     ports = [ordered]@{
-        controlTls = $controlPort
+        controlOnboard = $controlPort
         controlHealth = $healthPort
-        faultProxyPlaintext = $proxyPort
+        faultProxy = $proxyPort
         businessFaultProxy = $businessProxyPort
         simulatorModbus = $modbusPort
         simulatorHttp = $simulatorHttpPort
@@ -3161,8 +2797,7 @@ foreach ($file in @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File)) {
     try {
         $text = Get-Content -LiteralPath $file.FullName -Raw
         if ($text.Contains($credential, [StringComparison]::Ordinal) -or
-            $text.Contains($recoveryProof, [StringComparison]::Ordinal) -or
-            ($null -ne $tlsMaterial -and $text.Contains($tlsMaterial.Password, [StringComparison]::Ordinal))) {
+            $text.Contains($recoveryProof, [StringComparison]::Ordinal)) {
             $secretLeakFiles.Add([IO.Path]::GetRelativePath($EvidenceRoot, $file.FullName).Replace('\', '/'))
         }
     }
@@ -3184,7 +2819,7 @@ $artifactFiles = @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File |
 
 $result = [ordered]@{
     schemaVersion = '1.0.0'
-    runKind = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_TLS'
+    runKind = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT'
     runId = $runId
     startedAtUtc = $runStartedAt
     completedAtUtc = [DateTimeOffset]::UtcNow
@@ -3223,7 +2858,7 @@ $result = [ordered]@{
         sameConnectionSameMessageIdSameContent = if ($probePass -and $probeResult.duplicate.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         sameMessageIdDifferentContentStableConflict = if ($probePass -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         recoveryStateReportFirstAckDropReplay = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        recoveryStateReportFirstAckDropReplayOverTls = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        recoveryStateReportFirstAckDropReplayOverPlaintext = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         businessMessageSameMessageIdSameContentReplay = if ($businessDuplicatePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         businessMessageSameMessageIdDifferentContentStableConflict = if ($businessConflictPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
         businessMessageAckDropInSessionReplay = if ($businessAckDropPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
@@ -3258,7 +2893,7 @@ $resultPath = Join-Path $EvidenceRoot 'run-result.json'
 [IO.File]::WriteAllText($resultPath, $resultJson, [Text.UTF8Encoding]::new($false))
 $resultJson
 
-if ($status -notin @('STAGED_SLICE_PASS', 'STAGED_G3_TLS_RECOVERY_REPLAY_PASS') -or
+if ($status -notin @('STAGED_SLICE_PASS', 'STAGED_G3_RECOVERY_REPLAY_PASS') -or
     $secretLeakFiles.Count -ne 0) {
     throw "Staged G3 did not pass: $status. Evidence: $EvidenceRoot"
 }

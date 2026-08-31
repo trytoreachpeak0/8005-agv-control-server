@@ -13,7 +13,8 @@ param(
     [int]$OnboardPort = 58005,
     [ValidateRange(1, 65535)]
     [int]$HealthPort = 58007,
-    [switch]$InstallCurrentUserRoot,
+    [string]$ListenAddress = '127.0.0.1',
+    [string]$HealthBindAddress = '127.0.0.1',
     [switch]$CopyUserRiotSecretToMachine,
     [switch]$SkipMachineEnvironmentInjection
 )
@@ -27,8 +28,6 @@ function Resolve-FullPath([string]$Path) {
 $serviceName = $ServiceName
 $installPath = Resolve-FullPath $InstallRoot
 $dataRoot = Resolve-FullPath $DataRoot
-$certificateDirectory = Join-Path $dataRoot 'certs'
-$certificatePath = Join-Path $certificateDirectory 'localhost.pfx'
 $logDirectory = Join-Path $dataRoot 'logs'
 $backupRoot = Resolve-FullPath $BackupRoot
 $resolvedPackage = Resolve-FullPath $PackagePath
@@ -36,17 +35,20 @@ $resolvedResult = Resolve-FullPath $ResultPath
 $resolvedDiagnostic = if ([string]::IsNullOrWhiteSpace($DiagnosticPath)) { $null } else { Resolve-FullPath $DiagnosticPath }
 $runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 $backupPath = Join-Path $backupRoot $runId
-$healthOrigin = "https://localhost:$HealthPort"
-$rootCertificate = $null
-$leafCertificate = $null
-$trustedRootThumbprint = $null
-$rootPemPath = $null
+$healthOrigin = "http://${HealthBindAddress}:$HealthPort"
+# Kestrel accepts a wildcard bind address, but nothing can connect to one. The lifecycle checks below
+# therefore dial loopback whenever the service was told to listen on every interface.
+$healthCheckHost = if ($HealthBindAddress -in @('0.0.0.0', '*', '+', '::', '[::]')) {
+    '127.0.0.1'
+} else {
+    $HealthBindAddress
+}
+$healthCheckOrigin = "http://${healthCheckHost}:$HealthPort"
 $serviceCreated = $false
 $installCreated = $false
 $dataRootExisted = Test-Path -LiteralPath $dataRoot
 $dataBackupCreated = $false
 $oldRiotMachine = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'Machine')
-$oldCertificatePassword = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', 'Machine')
 $machineEnvironmentInjected = $false
 
 function Assert-Administrator {
@@ -134,58 +136,37 @@ function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
 
 function Invoke-LiveCheck {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy localhost --ssl-revoke-best-effort --max-time 10 --cacert $rootPemPath `
-        "$healthOrigin/health/live" 2>&1)
+        --noproxy $healthCheckHost --max-time 10 "$healthCheckOrigin/health/live" 2>&1)
     if ($LASTEXITCODE -ne 0) {
-        throw "Schannel HTTPS live check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
+        throw "HTTP live check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
     }
     $response = $body | ConvertFrom-Json
-    if ($response.status -ne 'live') { throw 'HTTPS live check returned an unexpected response.' }
+    if ($response.status -ne 'live') { throw 'HTTP live check returned an unexpected response.' }
 }
 
 function Get-ReadyCheck {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --silent --show-error `
-        --noproxy localhost --ssl-revoke-best-effort --max-time 10 --cacert $rootPemPath `
-        "$healthOrigin/health/ready" 2>&1)
+        --noproxy $healthCheckHost --max-time 10 "$healthCheckOrigin/health/ready" 2>&1)
     if ($LASTEXITCODE -ne 0) {
-        throw "Schannel HTTPS ready check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
+        throw "HTTP ready check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
     }
     $response = $body | ConvertFrom-Json
     if ($response.status -eq 'not-ready' -and $response.reason -eq 'DATABASE_UNAVAILABLE') {
         throw 'Readiness reports the database is unavailable after migration.'
     }
     if ($response.status -ne 'ready' -and $response.status -ne 'not-ready') {
-        throw 'HTTPS ready check returned an unexpected response.'
+        throw 'HTTP ready check returned an unexpected response.'
     }
     return $response
 }
 
 function Get-VersionCheck {
     $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy localhost --ssl-revoke-best-effort --max-time 10 --cacert $rootPemPath `
-        "$healthOrigin/version" 2>&1)
+        --noproxy $healthCheckHost --max-time 10 "$healthCheckOrigin/version" 2>&1)
     if ($LASTEXITCODE -ne 0) {
-        throw "Schannel HTTPS version check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
+        throw "HTTP version check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
     }
     return $body | ConvertFrom-Json
-}
-
-function Remove-CertificateByThumbprint([string]$StoreName, [string]$Thumbprint) {
-    if ([string]::IsNullOrWhiteSpace($Thumbprint)) { return }
-    $store = [Security.Cryptography.X509Certificates.X509Store]::new(
-        $StoreName,
-        [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-    $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-    try {
-        $matches = $store.Certificates.Find(
-            [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-            $Thumbprint,
-            $false)
-        foreach ($match in $matches) { $store.Remove($match) }
-    }
-    finally {
-        $store.Close()
-    }
 }
 
 Assert-Administrator
@@ -237,44 +218,8 @@ try {
     }
     Write-Diagnostic 'package-copy-complete'
 
-    New-Item -ItemType Directory -Path $certificateDirectory -Force | Out-Null
-    Set-RestrictedDirectoryAcl $certificateDirectory
-
-    $passwordBytes = [byte[]]::new(32)
-    [Security.Cryptography.RandomNumberGenerator]::Fill($passwordBytes)
-    $certificatePassword = [Convert]::ToBase64String($passwordBytes)
-    $securePassword = ConvertTo-SecureString -String $certificatePassword -AsPlainText -Force
-
-    $rootCertificate = New-SelfSignedCertificate -Type Custom `
-        -Subject "CN=8005 AGV ControlServer Local Development Root $runId" `
-        -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -KeyExportPolicy Exportable `
-        -KeyUsage CertSign, CRLSign, DigitalSignature `
-        -TextExtension @('2.5.29.19={critical}{text}ca=true&pathlength=0') `
-        -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter ((Get-Date).AddYears(1))
-    $leafCertificate = New-SelfSignedCertificate -Type Custom -Subject 'CN=localhost' -DnsName 'localhost' `
-        -Signer $rootCertificate -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 `
-        -KeyExportPolicy Exportable -KeyUsage DigitalSignature, KeyEncipherment `
-        -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.1') `
-        -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter ((Get-Date).AddMonths(6))
-    Write-Diagnostic 'certificate-generation-complete'
-
-    Export-PfxCertificate -Cert $leafCertificate -FilePath $certificatePath -Password $securePassword | Out-Null
-    $rootPublicPath = Join-Path $certificateDirectory 'localhost-development-root.cer'
-    Export-Certificate -Cert $rootCertificate -FilePath $rootPublicPath -Type CERT | Out-Null
-    $rootPemPath = Join-Path $certificateDirectory 'localhost-development-root.pem'
-    $rootPem = "-----BEGIN CERTIFICATE-----`n{0}`n-----END CERTIFICATE-----`n" -f `
-        [Convert]::ToBase64String($rootCertificate.RawData, 'InsertLineBreaks')
-    [IO.File]::WriteAllText($rootPemPath, $rootPem, [Text.ASCIIEncoding]::new())
-    if ($InstallCurrentUserRoot) {
-        $trustedRoot = Import-Certificate -FilePath $rootPublicPath -CertStoreLocation 'Cert:\CurrentUser\Root'
-        $trustedRootThumbprint = $trustedRoot.Thumbprint
-    }
-    Remove-CertificateByThumbprint 'My' $leafCertificate.Thumbprint
-    Remove-CertificateByThumbprint 'My' $rootCertificate.Thumbprint
-
     if (-not $SkipMachineEnvironmentInjection) {
         [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $riotUser, 'Machine')
-        [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $certificatePassword, 'Machine')
         $machineEnvironmentInjected = $true
     }
     Write-Diagnostic ("machine-secret-injection-complete injected={0}" -f $machineEnvironmentInjected)
@@ -285,16 +230,12 @@ try {
         ConnectionStrings = [ordered]@{ ControlServer = "Data Source=$databasePath" }
         OnboardTransport = [ordered]@{
             enabled = $true
-            listenAddress = '127.0.0.1'
+            listenAddress = $ListenAddress
             port = $OnboardPort
-            serverCertificatePath = $certificatePath
-            serverCertificatePasswordEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
             credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
-            allowInsecureLoopback = $false
         }
         OnboardSafetyProjection = [ordered]@{
             enabled = $true
-            requireHttps = $true
             credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
         }
         JourneyRuntime = [ordered]@{ enabled = $false }
@@ -333,8 +274,7 @@ try {
     [string[]]$serviceEnvironment = @(
         'DOTNET_ENVIRONMENT=Production',
         "CONTROL_SERVER_RIOT_CALL_API_KEY=$riotUser",
-        "CONTROL_SERVER_ONBOARD_CREDENTIAL=$onboardCredential",
-        "CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD=$certificatePassword"
+        "CONTROL_SERVER_ONBOARD_CREDENTIAL=$onboardCredential"
     )
     $serviceRegistryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($serviceRegistrySubKey, $true)
     if ($null -eq $serviceRegistryKey) { throw 'The new service registry key cannot be opened.' }
@@ -393,31 +333,22 @@ try {
         logDirectory = $logDirectory
         logFiles = @($logFiles)
         backupRoot = $backupRoot
-        httpsEndpoint = $healthOrigin
-        onboardTransportEndpoint = "tls://127.0.0.1:$OnboardPort"
+        httpEndpoint = $healthOrigin
+        httpCheckOrigin = $healthCheckOrigin
+        onboardTransportEndpoint = "tcp://${ListenAddress}:$OnboardPort"
+        transport = 'plaintext'
         firstStartReadiness = [ordered]@{
             status = $firstReadiness.status
             reason = $firstReadiness.reason
-        }
-        certificate = [ordered]@{
-            dnsNames = @('localhost')
-            leafThumbprint = $leafCertificate.Thumbprint
-            rootThumbprint = $rootCertificate.Thumbprint
-            trustedRootThumbprint = $trustedRootThumbprint
-            trustStore = if ($InstallCurrentUserRoot) { 'CurrentUser/Root' } else { 'none (pinned CA file)' }
-            caCertificateFile = $rootPemPath
-            chainVerification = 'curl --cacert against the certificate this install generated'
-            privateKeyFile = $certificatePath
         }
         externalSecrets = [ordered]@{
             machineEnvironmentInjected = $machineEnvironmentInjected
             riotMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'Machine'))
             onboardMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CREDENTIAL', 'Machine'))
-            certificatePasswordMachineScopePresent = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', 'Machine'))
             serviceSpecificEnvironmentPresent = $serviceEnvironmentVerified
             valuesDisclosed = $false
         }
-        checks = @('package-hashes', 'sqlite-migrations-at-start', 'https-chain-pinned-to-install-root', 'https-live-after-start', 'https-ready-after-start', 'stop-start', 'restart', 'https-version', 'log-file-written')
+        checks = @('package-hashes', 'sqlite-migrations-at-start', 'http-live-after-start', 'http-ready-after-start', 'stop-start', 'restart', 'http-version', 'log-file-written')
         journeyRuntimeEnabled = $false
         riotMutationPerformed = $false
         orderCreated = $false
@@ -450,16 +381,9 @@ catch {
     try {
         if ($machineEnvironmentInjected) {
             [Environment]::SetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', $oldRiotMachine, 'Machine')
-            [Environment]::SetEnvironmentVariable('CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD', $oldCertificatePassword, 'Machine')
         }
     }
     catch { $rollbackErrors.Add("machine-environment: $($_.Exception.Message)") }
-    try {
-        Remove-CertificateByThumbprint 'Root' $trustedRootThumbprint
-        if ($leafCertificate) { Remove-CertificateByThumbprint 'My' $leafCertificate.Thumbprint }
-        if ($rootCertificate) { Remove-CertificateByThumbprint 'My' $rootCertificate.Thumbprint }
-    }
-    catch { $rollbackErrors.Add("certificates: $($_.Exception.Message)") }
     try {
         if (Test-Path -LiteralPath $dataRoot) {
             Get-ChildItem -LiteralPath $dataRoot -Force | Remove-Item -Recurse -Force

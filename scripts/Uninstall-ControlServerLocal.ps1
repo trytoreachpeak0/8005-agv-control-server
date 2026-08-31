@@ -8,7 +8,6 @@ param(
     [string]$DataRoot,
     [Parameter(Mandatory = $true)]
     [string]$ResultPath,
-    [string]$TrustedRootThumbprint,
     [switch]$RemoveDataRoot,
     [switch]$ConfirmUninstall,
     [switch]$AllowProductionService
@@ -33,29 +32,6 @@ function Assert-Administrator {
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         throw 'Uninstall-ControlServerLocal.ps1 must run from an elevated PowerShell process.'
     }
-}
-
-function Remove-CertificateByThumbprint([string]$StoreName, [string]$Thumbprint) {
-    if ([string]::IsNullOrWhiteSpace($Thumbprint)) { return 0 }
-    $removed = 0
-    $store = [Security.Cryptography.X509Certificates.X509Store]::new(
-        $StoreName,
-        [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-    $store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-    try {
-        $found = $store.Certificates.Find(
-            [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-            $Thumbprint,
-            $false)
-        foreach ($certificate in $found) {
-            $store.Remove($certificate)
-            $removed++
-        }
-    }
-    finally {
-        $store.Close()
-    }
-    return $removed
 }
 
 Assert-Administrator
@@ -110,8 +86,6 @@ if (Test-Path -LiteralPath $dataPath) {
     }
 }
 
-$rootCertificatesRemoved = Remove-CertificateByThumbprint 'Root' $TrustedRootThumbprint
-
 $listeningPorts = @()
 $netstat = @(& "$env:SystemRoot\System32\netstat.exe" -ano)
 foreach ($line in $netstat) {
@@ -137,8 +111,6 @@ $result = [ordered]@{
     dataRootRemoved = $dataRootRemoved
     dataRootRetained = $dataRootRetained
     dataRootPresent = (Test-Path -LiteralPath $dataPath)
-    trustedRootThumbprint = $TrustedRootThumbprint
-    trustedRootCertificatesRemoved = $rootCertificatesRemoved
     productionServicePresent = [bool](Get-Service -Name $productionServiceName -ErrorAction SilentlyContinue)
     productionServiceStatus = (Get-Service -Name $productionServiceName -ErrorAction SilentlyContinue).Status.ToString()
     listeningPortsAfterUninstall = @($listeningPorts | Sort-Object -Unique)
