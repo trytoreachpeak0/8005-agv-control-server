@@ -1,0 +1,179 @@
+{
+  "schemaVersion": "1.0.0",
+  "subject": "ticket-13 corroboration of the literal no-TLS evidence fields",
+  "capturedAtUtc": "2026-08-31T18:06:19.6018154+00:00",
+  "certificateStoreSnapshotBefore": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\0f1b3b9d-2410-4b9e-9af2-7df289324fb4\\scratchpad\\ticket13\\cert-before.json",
+  "logHits": [],
+  "rows": [
+    {
+      "claim": "no certificate installed or removed in CurrentUser\\Root",
+      "method": "thumbprint-set digest before vs after",
+      "expected": "44 / eabac27de65eeed4",
+      "observed": "44 / eabac27de65eeed4",
+      "pass": true
+    },
+    {
+      "claim": "no certificate installed or removed in CurrentUser\\My",
+      "method": "thumbprint-set digest before vs after",
+      "expected": "1 / 5b4c58e4c353689f",
+      "observed": "1 / 5b4c58e4c353689f",
+      "pass": true
+    },
+    {
+      "claim": "no certificate installed or removed in LocalMachine\\Root",
+      "method": "thumbprint-set digest before vs after",
+      "expected": "42 / ab61277a3823de09",
+      "observed": "42 / ab61277a3823de09",
+      "pass": true
+    },
+    {
+      "claim": "no certificate installed or removed in LocalMachine\\My",
+      "method": "thumbprint-set digest before vs after",
+      "expected": "1 / e87de8aa751519a9",
+      "observed": "1 / e87de8aa751519a9",
+      "pass": true
+    },
+    {
+      "claim": "no key material under stage-restart",
+      "method": "recursive scan for *.pfx,*.p12,*.cer,*.crt,*.key,*.pem,*.der",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no certs\\ directory under stage-restart",
+      "method": "recursive directory scan",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no key material under stage-main",
+      "method": "recursive scan for *.pfx,*.p12,*.cer,*.crt,*.key,*.pem,*.der",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no certs\\ directory under stage-main",
+      "method": "recursive directory scan",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no key material under stage-vectors",
+      "method": "recursive scan for *.pfx,*.p12,*.cer,*.crt,*.key,*.pem,*.der",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no certs\\ directory under stage-vectors",
+      "method": "recursive directory scan",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no key material under evidence-restart",
+      "method": "recursive scan for *.pfx,*.p12,*.cer,*.crt,*.key,*.pem,*.der",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no certs\\ directory under evidence-restart",
+      "method": "recursive directory scan",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no key material under evidence-main",
+      "method": "recursive scan for *.pfx,*.p12,*.cer,*.crt,*.key,*.pem,*.der",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no certs\\ directory under evidence-main",
+      "method": "recursive directory scan",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no key material under evidence-vectors",
+      "method": "recursive scan for *.pfx,*.p12,*.cer,*.crt,*.key,*.pem,*.der",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "no certs\\ directory under evidence-vectors",
+      "method": "recursive directory scan",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "published onboard config under stage-restart has no TLS keys",
+      "method": "read back publish\\onboard-hmi\\appsettings.json",
+      "expected": "<none>",
+      "observed": "<none>",
+      "pass": true
+    },
+    {
+      "claim": "published onboard config under stage-main has no TLS keys",
+      "method": "read back publish\\onboard-hmi\\appsettings.json",
+      "expected": "<none>",
+      "observed": "<none>",
+      "pass": true
+    },
+    {
+      "claim": "stage-vectors publishes no onboard peer (synthetic harness only)",
+      "method": "list publish\\ subdirectories",
+      "expected": "control-server",
+      "observed": "control-server",
+      "pass": true
+    },
+    {
+      "claim": "no TLS/certificate diagnostic in any runner log",
+      "method": "grep Schannel|SslStream|AuthenticationException|X509|https://127.0.0.1|certificate over all logs",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "production service still running on its original PID",
+      "method": "Win32_Service ProcessId",
+      "expected": "8632 / Running",
+      "observed": "8632 / Running",
+      "pass": true
+    },
+    {
+      "claim": "production service process was never restarted",
+      "method": "process start time predates the runs",
+      "expected": "< 2026-09-01 (this session)",
+      "observed": "2026-09-01T00:20:31.5150059+08:00",
+      "pass": true
+    },
+    {
+      "claim": "read-only onboard repository has zero tracked changes",
+      "method": "git status --porcelain",
+      "expected": 0,
+      "observed": 0,
+      "pass": true
+    },
+    {
+      "claim": "read-only onboard repository HEAD unmoved",
+      "method": "git rev-parse HEAD",
+      "expected": "bbfbc52…",
+      "observed": "bbfbc52f3c7de6d8481767f7616bfcf8b8c9ebb9",
+      "pass": true
+    }
+  ],
+  "failedRows": [],
+  "status": "CORROBORATION_PASS"
+}
