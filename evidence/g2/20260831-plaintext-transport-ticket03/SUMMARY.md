@@ -5,15 +5,47 @@
 
 ## 完成度声明（先读这一节）
 
-**票 03 的完成判据尚未满足。** 判据要求在隔离实例上跑通「安装→启动→停止→再启动→强制重启→卸载」
-全流程，而 `Install-ControlServerLocal.ps1` 与 `Uninstall-ControlServerLocal.ps1` 都以
-`Assert-Administrator` 开头，本轮会话不是管理员，无法执行。本目录里的
-`Invoke-IsolatedLifecycle.ps1` 是为此准备好的隔离验收脚本（服务名 `8005 AGV ControlServer Ticket03
-Probe`、独立安装／数据／备份根、端口 58405／58407），**尚未运行**，因此不存在
-`lifecycle-report.json`。
+**票 03 的完成判据已满足。** 2026-08-31 在提权 PowerShell 7 里跑完了
+`Invoke-IsolatedLifecycle.ps1`（`-Root <scratch>`），隔离服务 `8005 AGV ControlServer Ticket03 Probe`
+安装→启动→停止→再启动→强制重启→版本回读→卸载全流程通过，报告见 `lifecycle-report.json`。被测包
+在 `c7874f0` 上重发，`sourceCommit: c7874f0c6616243fb283556ef0e80b3cd94bd871`，与被测代码同一提交。
 
-下面记录的是**已经取到的**行为证据：安装链现在实际写出的配置能明文启动，以及升级路径的配置迁移
-是载重的而非装饰。
+首轮准备生命周期验收时该脚本把上一轮 session 的 scratchpad 路径写死在 `$root`，本轮已改成
+`-Root` / `-PackagePath` 参数并加了「包不存在直接报错」的前置检查，`$scripts` 改为从 `$PSScriptRoot`
+推导仓库根。
+
+下面第一节是生命周期验收回读；其后是此前已取到的行为证据：安装链现在实际写出的配置能明文启动，
+以及升级路径的配置迁移是载重的而非装饰。
+
+## 生命周期验收回读（`lifecycle-report.json`）
+
+| 判据 | 回读结果 |
+| --- | --- |
+| 安装结果 | `installResult.result = PASS`，`serviceStatus = Running`，`serviceAccount = LocalSystem` |
+| 生命周期各段 | `checks` 含 `http-live-after-start`、`http-ready-after-start`、`stop-start`、`restart`、`http-version`、`log-file-written`；`diagnosticSteps` 末项 `result-written` |
+| 明文形态 | `transport = plaintext`，`httpEndpoint = http://127.0.0.1:58407`，`onboardTransportEndpoint = tcp://127.0.0.1:58405`；结果 JSON 里已无 `certificate` 块 |
+| 卸载结果 | `uninstallResult.result = PASS`，`serviceRemoved`／`installRootRemoved`／`dataRootRemoved` 全 `true`，`installRootPresent`／`dataRootPresent` 全 `false` |
+| 无证书导入／移除 | `currentUserRootUnchangedAcrossInstall = true`，`currentUserRootUnchangedAcrossUninstall = true`（安装前 44 张指纹，安装后与卸载后逐张比对无差） |
+| 无证书生成 | `certsDirectoryPresentAfterInstall = false`，`keyMaterialFilesUnderInstall = []`（对整个 lifecycle 树递归找 `.pfx/.pem/.cer/.p12/.key`） |
+| 未动机器级证书口令 | `machineCertificatePasswordUntouched = true`（该变量是 TLS 期遗留，仍在机器作用域；本票判据是安装链**不碰**它，清除它是 `Update-ControlServerLocal.ps1` 升级路径的职责） |
+| 服务环境变量 | 只有 `DOTNET_ENVIRONMENT`／`CONTROL_SERVER_RIOT_CALL_API_KEY`／`CONTROL_SERVER_ONBOARD_CREDENTIAL`，无证书口令项 |
+| 非交互跑完 | `-SkipMachineEnvironmentInjection` + `-ConfirmUninstall`，全程零提示、零信任确认对话框；三次健康检查均为 `curl` 直连 `http://`，无 `--cacert`／`--ssl-revoke-best-effort` |
+| 生产服务不受影响 | `productionBefore` 与 `productionAfterUninstall` 完全相同（`Running`，`127.0.0.1:58005`／`127.0.0.1:58007`／`::1:58007`）；`uninstallResult.listeningPortsAfterUninstall` 含 58005／58007、不含 58405／58407 |
+
+**「不弹出任何信任确认对话框」是回读 `currentUserRootUnchangedAcrossInstall` /
+`...AcrossUninstall` 两个布尔取证的，不是「没看见弹窗」。**
+
+两个必须如实记下的口径问题：
+
+1. `productionAfterInstall.listeners` 里出现了 `127.0.0.1:58405`／`:58407`。这是**测量口径伪影**，
+   不是生产服务漂移：`Get-ProductionSnapshot` 按进程名 `ControlServer.Host` 取监听端口，隔离探针
+   进程与生产进程同名，因而被一并计入。生产服务未受影响这一条以 `productionAfterUninstall` 与
+   `productionBefore` 完全一致为准。
+2. `firstStartReadiness` 是 `not-ready / RECOVERY_HANDSHAKE_REQUIRED`。这是全新实例未与车载端握手
+   时的预期状态，`Get-ReadyCheck` 只对 `DATABASE_UNAVAILABLE` 抛错（`Install-ControlServerLocal.ps1:154`）。
+   `/health/live` 三次均返回 `live`。
+
+未覆盖的仍是升级路径的真实执行，见下面「无法在隔离实例上排练的部分」。
 
 ## 探针形态
 
@@ -80,7 +112,8 @@ OnboardSafetyProjection:requireHttps was removed in this version; ...
 3. **本轮自己引入又修掉一个回归**：数据根此前是被 `New-Item -Path $certificateDirectory -Force`
    顺带创建的。删掉证书目录后，全新安装会在 `Set-RestrictedDirectoryAcl $dataRoot` 处失败。已补上
    显式的 `New-Item -ItemType Directory -Path $dataRoot -Force`。该缺陷是在准备隔离验收脚本时静态
-   核查出来的，**不是**由某次运行证伪的——生命周期验收仍然欠着。
+   核查出来的，**不是**由某次运行证伪的；此后的生命周期验收在一个全新数据根上跑通（`dataRoot`
+   由本次安装创建，卸载时 `dataRootRemoved: true`），补上了这条修复的运行侧确认。
 
 ## 无法在隔离实例上排练的部分
 

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "result": "PASS",
+  "runId": "20260831T144810Z",
+  "completedAt": "2026-08-31T14:48:23.6665788+00:00",
+  "sourceCommit": "c7874f0c6616243fb283556ef0e80b3cd94bd871",
+  "packageManifestSha256": "b0296283303316e708c93d2c782f6b1fc78a60a37b31b8aafeab159ba4849486",
+  "configurationSha256": "15fc0660ef3cdce01bf8c0e1541bde47d491127c92df204ed9d7b1e2af23da45",
+  "serviceName": "8005 AGV ControlServer Ticket03 Probe",
+  "serviceAccount": "LocalSystem",
+  "serviceStatus": "Running",
+  "serviceStartType": "Auto",
+  "installRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\install",
+  "dataRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\data",
+  "databasePath": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\data\\data\\controlserver.db",
+  "databaseCreatedByMigration": true,
+  "logDirectory": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\data\\logs",
+  "logFiles": [
+    "controlserver-20260831.ndjson"
+  ],
+  "backupRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\backups",
+  "httpEndpoint": "http://127.0.0.1:58407",
+  "httpCheckOrigin": "http://127.0.0.1:58407",
+  "onboardTransportEndpoint": "tcp://127.0.0.1:58405",
+  "transport": "plaintext",
+  "firstStartReadiness": {
+    "status": "not-ready",
+    "reason": "RECOVERY_HANDSHAKE_REQUIRED"
+  },
+  "externalSecrets": {
+    "machineEnvironmentInjected": false,
+    "riotMachineScopePresent": true,
+    "onboardMachineScopePresent": true,
+    "serviceSpecificEnvironmentPresent": true,
+    "valuesDisclosed": false
+  },
+  "checks": [
+    "package-hashes",
+    "sqlite-migrations-at-start",
+    "http-live-after-start",
+    "http-ready-after-start",
+    "stop-start",
+    "restart",
+    "http-version",
+    "log-file-written"
+  ],
+  "journeyRuntimeEnabled": false,
+  "riotMutationPerformed": false,
+  "orderCreated": false,
+  "vehicleMoved": false,
+  "protocolTag": "protocol-v0.1.1",
+  "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "backupPath": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\backups\\20260831T144810Z"
+}

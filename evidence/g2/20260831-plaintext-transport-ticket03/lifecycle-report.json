@@ -1,0 +1,156 @@
+{
+  "installResult": {
+    "schemaVersion": 2,
+    "result": "PASS",
+    "runId": "20260831T144810Z",
+    "completedAt": "2026-08-31T22:48:23.6665788+08:00",
+    "sourceCommit": "c7874f0c6616243fb283556ef0e80b3cd94bd871",
+    "packageManifestSha256": "b0296283303316e708c93d2c782f6b1fc78a60a37b31b8aafeab159ba4849486",
+    "configurationSha256": "15fc0660ef3cdce01bf8c0e1541bde47d491127c92df204ed9d7b1e2af23da45",
+    "serviceName": "8005 AGV ControlServer Ticket03 Probe",
+    "serviceAccount": "LocalSystem",
+    "serviceStatus": "Running",
+    "serviceStartType": "Auto",
+    "installRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\install",
+    "dataRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\data",
+    "databasePath": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\data\\data\\controlserver.db",
+    "databaseCreatedByMigration": true,
+    "logDirectory": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\data\\logs",
+    "logFiles": [
+      "controlserver-20260831.ndjson"
+    ],
+    "backupRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\backups",
+    "httpEndpoint": "http://127.0.0.1:58407",
+    "httpCheckOrigin": "http://127.0.0.1:58407",
+    "onboardTransportEndpoint": "tcp://127.0.0.1:58405",
+    "transport": "plaintext",
+    "firstStartReadiness": {
+      "status": "not-ready",
+      "reason": "RECOVERY_HANDSHAKE_REQUIRED"
+    },
+    "externalSecrets": {
+      "machineEnvironmentInjected": false,
+      "riotMachineScopePresent": true,
+      "onboardMachineScopePresent": true,
+      "serviceSpecificEnvironmentPresent": true,
+      "valuesDisclosed": false
+    },
+    "checks": [
+      "package-hashes",
+      "sqlite-migrations-at-start",
+      "http-live-after-start",
+      "http-ready-after-start",
+      "stop-start",
+      "restart",
+      "http-version",
+      "log-file-written"
+    ],
+    "journeyRuntimeEnabled": false,
+    "riotMutationPerformed": false,
+    "orderCreated": false,
+    "vehicleMoved": false,
+    "protocolTag": "protocol-v0.1.1",
+    "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+    "backupPath": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\backups\\20260831T144810Z"
+  },
+  "uninstallResult": {
+    "schemaVersion": 1,
+    "result": "PASS",
+    "runId": "20260831T144825Z",
+    "completedAt": "2026-08-31T22:48:26.0940471+08:00",
+    "serviceName": "8005 AGV ControlServer Ticket03 Probe",
+    "serviceExisted": true,
+    "serviceRemoved": true,
+    "installRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\install",
+    "installRootRemoved": true,
+    "installRootPresent": false,
+    "dataRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\a4261c2b-4bc5-4e0b-b3a9-363e48bafe2a\\scratchpad\\ticket03\\lifecycle\\data",
+    "dataRootRemoved": true,
+    "dataRootRetained": false,
+    "dataRootPresent": false,
+    "productionServicePresent": true,
+    "productionServiceStatus": "Running",
+    "listeningPortsAfterUninstall": [
+      135,
+      139,
+      445,
+      1433,
+      1434,
+      2179,
+      3389,
+      5040,
+      5088,
+      5985,
+      7680,
+      7890,
+      20770,
+      37103,
+      42050,
+      47001,
+      49664,
+      49665,
+      49666,
+      49667,
+      49668,
+      49669,
+      49670,
+      50426,
+      53000,
+      53230,
+      53231,
+      54269,
+      54270,
+      58005,
+      58007,
+      58674,
+      59869
+    ]
+  },
+  "diagnosticSteps": [
+    "preflight-complete",
+    "backup-complete",
+    "package-copy-complete",
+    "machine-secret-injection-complete injected=False",
+    "configuration-complete",
+    "service-installation-complete",
+    "service-lifecycle-checks-complete",
+    "result-written"
+  ],
+  "currentUserRootUnchangedAcrossInstall": true,
+  "currentUserRootUnchangedAcrossUninstall": true,
+  "currentUserRootCountBefore": 44,
+  "certsDirectoryPresentAfterInstall": false,
+  "keyMaterialFilesUnderInstall": [],
+  "serviceEnvironmentVariableNames": [
+    "DOTNET_ENVIRONMENT",
+    "CONTROL_SERVER_RIOT_CALL_API_KEY",
+    "CONTROL_SERVER_ONBOARD_CREDENTIAL"
+  ],
+  "machineCertificatePasswordUntouched": true,
+  "productionBefore": {
+    "status": "Running",
+    "listeners": [
+      "::1:58007",
+      "127.0.0.1:58005",
+      "127.0.0.1:58007"
+    ]
+  },
+  "productionAfterInstall": {
+    "status": "Running",
+    "listeners": [
+      "::1:58007",
+      "127.0.0.1:58005",
+      "127.0.0.1:58007",
+      "127.0.0.1:58405",
+      "127.0.0.1:58407"
+    ]
+  },
+  "productionAfterUninstall": {
+    "status": "Running",
+    "listeners": [
+      "::1:58007",
+      "127.0.0.1:58005",
+      "127.0.0.1:58007"
+    ]
+  }
+}

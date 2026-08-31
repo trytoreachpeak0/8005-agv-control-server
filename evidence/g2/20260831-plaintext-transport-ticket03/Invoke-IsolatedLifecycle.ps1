@@ -2,13 +2,28 @@
 # Ticket 03 acceptance: install -> start -> stop -> start -> forced restart -> uninstall on an
 # ISOLATED instance. Different service name, install root, data root, backup root and ports, so the
 # installed production service (58005/58007) is never touched. Must run elevated.
+#
+# -Root is a scratch directory holding the published package plus this run's lifecycle and evidence
+# output. Publish the package with scripts\Publish-ControlServer.ps1 -OutputPath <Root>\package first,
+# so the install result records the commit under test.
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Root,
+    [string]$PackagePath
+)
+
 $ErrorActionPreference = 'Stop'
 
-$root = 'C:\Users\szy\AppData\Local\Temp\claude\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\b516d757-7319-480e-a98c-a9988e829c02\scratchpad\ticket03'
-$package = Join-Path $root 'package'
+$root = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Root)
+$package = if ([string]::IsNullOrWhiteSpace($PackagePath)) { Join-Path $root 'package' } else { $PackagePath }
 $lifecycle = Join-Path $root 'lifecycle'
 $evidence = Join-Path $root 'evidence'
-$scripts = 'C:\Users\szy\Desktop\8005-agv-control-server\scripts'
+$scripts = Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))) 'scripts'
+
+if (-not (Test-Path -LiteralPath (Join-Path $package 'ControlServer.Host.exe') -PathType Leaf)) {
+    throw "No published package at $package. Run scripts\Publish-ControlServer.ps1 -OutputPath '$package' first."
+}
 
 if (Test-Path -LiteralPath $lifecycle) { Remove-Item -LiteralPath $lifecycle -Recurse -Force }
 New-Item -ItemType Directory -Path $lifecycle, $evidence -Force | Out-Null
