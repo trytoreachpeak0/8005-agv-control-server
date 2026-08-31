@@ -1,0 +1,471 @@
+PRAGMA journal_mode = 'wal';
+    "ProductVersion" TEXT NOT NULL
+);
+    "DemandId" TEXT NOT NULL CONSTRAINT "PK_AcceptedDemands" PRIMARY KEY,
+    "TransportDemandKey" TEXT NOT NULL,
+    "DemandRevision" INTEGER NOT NULL,
+    "HistoryEpoch" TEXT NOT NULL,
+    "CatalogRevision" INTEGER NOT NULL,
+    "AcceptedAt" TEXT NOT NULL,
+    "Status" TEXT NOT NULL
+);
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_ConnectionRecoveries" PRIMARY KEY,
+    "SessionGeneration" INTEGER NOT NULL,
+    "ActiveUnlockSetJson" TEXT NOT NULL,
+    "Status" TEXT NOT NULL,
+    "ResumeAuthorized" INTEGER NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+    "ResultId" TEXT NOT NULL CONSTRAINT "PK_OperationResults" PRIMARY KEY,
+    "SlotOperationAttemptId" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "HistoricalOnly" INTEGER NOT NULL,
+    "ReceivedAt" TEXT NOT NULL
+);
+    "MovementLegId" TEXT NOT NULL CONSTRAINT "PK_OrderIntents" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "UpperId" TEXT NOT NULL,
+    "Purpose" TEXT NOT NULL,
+    "TargetStationId" TEXT NOT NULL,
+    "VehicleKey" TEXT NOT NULL,
+    "MapId" INTEGER NOT NULL,
+    "DestinationStationId" INTEGER NOT NULL,
+    "AgvLifecycleGeneration" INTEGER NOT NULL,
+    "DispatchGeneration" INTEGER NOT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "Status" TEXT NOT NULL,
+    "OrderId" TEXT NULL
+);
+    "MessageId" TEXT NOT NULL CONSTRAINT "PK_ProtocolInbox" PRIMARY KEY,
+    "ContentHash" TEXT NOT NULL,
+    "FirstResponseJson" TEXT NOT NULL,
+    "ReceivedAt" TEXT NOT NULL
+);
+    "MessageId" TEXT NOT NULL CONSTRAINT "PK_ProtocolOutbox" PRIMARY KEY,
+    "MessageType" TEXT NOT NULL,
+    "PayloadJson" TEXT NOT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "AcknowledgedAt" TEXT NULL
+);
+    "RecoveryActionId" TEXT NOT NULL CONSTRAINT "PK_RecoveryDecisions" PRIMARY KEY,
+    "RecoverySessionId" TEXT NOT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "Decision" TEXT NOT NULL,
+    "DecidedAt" TEXT NOT NULL
+);
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_SessionRecoveries" PRIMARY KEY,
+    "SessionGeneration" INTEGER NOT NULL,
+    "ProtocolCommit" TEXT NOT NULL,
+    "ManifestSha256" TEXT NOT NULL,
+    "ProfileId" TEXT NOT NULL,
+    "ProtocolVersion" INTEGER NOT NULL,
+    "CapabilityRevision" INTEGER NULL,
+    "CapabilityHash" TEXT NULL,
+    "SafetyRevision" INTEGER NULL,
+    "SafetyHash" TEXT NULL,
+    "DepartureSafe" INTEGER NULL,
+    "RecoveryReportId" TEXT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "PendingAttemptIdsJson" TEXT NOT NULL,
+    "PendingResultIdsJson" TEXT NOT NULL,
+    "Readiness" TEXT NOT NULL,
+    "ReasonCode" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+    "SlotOperationAttemptId" TEXT NOT NULL CONSTRAINT "PK_StationOperations" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "SublotId" TEXT NOT NULL,
+    "TargetSlotsJson" TEXT NOT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "Status" TEXT NOT NULL,
+    "EvidenceJson" TEXT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "CommittedAt" TEXT NULL
+);
+    "DemandId" TEXT NOT NULL CONSTRAINT "PK_StopClosures" PRIMARY KEY,
+    "CommittedAt" TEXT NOT NULL
+);
+    "TransportDemandKey" TEXT NOT NULL CONSTRAINT "PK_TransportDemandCompletions" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "DemandRevision" INTEGER NOT NULL,
+    "Evidence" TEXT NOT NULL,
+    "CompletedAt" TEXT NOT NULL
+);
+    "UnloadBatchId" TEXT NOT NULL CONSTRAINT "PK_UnloadBatches" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "EvidenceJson" TEXT NOT NULL,
+    "CompletedAt" TEXT NOT NULL
+);
+    "AgvId" TEXT NOT NULL CONSTRAINT "PK_VehicleRecoveryGenerations" PRIMARY KEY,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+    "DemandId" TEXT NOT NULL CONSTRAINT "PK_VehicleDispatchLeases" PRIMARY KEY,
+    "VehicleKey" TEXT NOT NULL,
+    "AcquiredAt" TEXT NOT NULL,
+    "ReleasedAt" TEXT NULL
+);
+       pickup.VehicleKey,
+       accepted.AcceptedAt,
+       CASE
+           WHEN accepted.Status = 'Succeeded'
+               THEN COALESCE(completion.CompletedAt, accepted.AcceptedAt)
+           ELSE NULL
+       END
+INNER JOIN OrderIntents AS pickup
+    ON pickup.DemandId = accepted.DemandId
+   AND pickup.Purpose = 'TO_PICKUP'
+LEFT JOIN TransportDemandCompletions AS completion
+    ON completion.DemandId = accepted.DemandId;
+    "DemandId" TEXT NOT NULL CONSTRAINT "PK_JourneyBacklog" PRIMARY KEY,
+    "TransportDemandKey" TEXT NOT NULL,
+    "FirstSeenAt" TEXT NOT NULL,
+    "DemandCreatedAt" TEXT NOT NULL,
+    "DecisionFingerprint" TEXT NOT NULL,
+    "ReasonCode" TEXT NOT NULL,
+    "LastSeenAt" TEXT NOT NULL,
+    "AcceptedAt" TEXT NULL
+);
+    "DemandId" TEXT NOT NULL CONSTRAINT "PK_JourneyRuntimes" PRIMARY KEY,
+    "Stage" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "VehicleKey" TEXT NOT NULL,
+    "AgvLifecycleGeneration" INTEGER NOT NULL,
+    "MapId" INTEGER NOT NULL,
+    "MapIdentity" TEXT NOT NULL,
+    "DispatchZone" TEXT NOT NULL,
+    "RouteEvidenceId" TEXT NOT NULL,
+    "PickupStationId" TEXT NOT NULL,
+    "PickupStationRiotId" INTEGER NOT NULL,
+    "GateStationId" TEXT NOT NULL,
+    "GateStationRiotId" INTEGER NOT NULL,
+    "ExpectedBasketCount" INTEGER NOT NULL,
+    "TargetSlotsJson" TEXT NOT NULL,
+    "OperationSessionId" TEXT NOT NULL,
+    "PickupMovementLegId" TEXT NOT NULL,
+    "PickupUpperId" TEXT NOT NULL,
+    "GateMovementLegId" TEXT NOT NULL,
+    "GateUpperId" TEXT NOT NULL,
+    "DispatchGeneration" INTEGER NOT NULL,
+    "VehicleBusinessRevision" INTEGER NOT NULL,
+    "WorklistRevision" INTEGER NOT NULL,
+    "PlanRevision" INTEGER NOT NULL,
+    "VehicleBusinessMessageId" TEXT NOT NULL,
+    "WorklistMessageId" TEXT NOT NULL,
+    "PlanMessageId" TEXT NOT NULL,
+    "SublotRequestMessageId" TEXT NOT NULL,
+    "LoadCommandMessageId" TEXT NOT NULL,
+    "LoadSlotOperationAttemptId" TEXT NOT NULL,
+    "PreDepartureSafetyCheckMessageId" TEXT NOT NULL,
+    "PreDepartureSafetyCheckId" TEXT NOT NULL,
+    "GateVehicleBusinessMessageId" TEXT NOT NULL,
+    "GateWorklistMessageId" TEXT NOT NULL,
+    "GatePlanMessageId" TEXT NOT NULL,
+    "UnloadCommandMessageId" TEXT NOT NULL,
+    "UnloadSlotOperationAttemptId" TEXT NOT NULL,
+    "ConsumedSublotMessageId" TEXT NULL,
+    "ConsumedSafetyResultMessageId" TEXT NULL,
+    "BlockReasonCode" TEXT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+    "SlotOperationAttemptId" TEXT NOT NULL CONSTRAINT "PK_AdmissionDecisionSnapshots" PRIMARY KEY,
+    "StationId" TEXT NOT NULL,
+    "TaskType" TEXT NOT NULL,
+    "AdmissionPolicyVersion" INTEGER NOT NULL,
+    "AdmittedAt" TEXT NOT NULL,
+    "Allowed" INTEGER NOT NULL
+);
+    "Version" INTEGER NOT NULL CONSTRAINT "PK_AdmissionPolicyAudit" PRIMARY KEY,
+    "DeploymentId" TEXT NOT NULL,
+    "PreviousContentHash" TEXT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "RelationsJson" TEXT NOT NULL,
+    "ImportedAt" TEXT NOT NULL
+);
+    "Id" INTEGER NOT NULL CONSTRAINT "PK_AdmissionPolicyState" PRIMARY KEY,
+    "Version" INTEGER NOT NULL,
+    "DeploymentId" TEXT NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "ImportedAt" TEXT NOT NULL
+);
+    "StationId" TEXT NOT NULL,
+    "TaskType" TEXT NOT NULL,
+    "PolicyVersion" INTEGER NOT NULL,
+    CONSTRAINT "PK_StationTaskTypeAdmissions" PRIMARY KEY ("StationId", "TaskType")
+);
+    "ExceptionRecoverySessionId" TEXT NOT NULL CONSTRAINT "PK_ExceptionRecoverySessions" PRIMARY KEY,
+    "RequestId" TEXT NOT NULL,
+    "RequestContentHash" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "EventId" TEXT NOT NULL,
+    "DemandId" TEXT NULL,
+    "SlotsJson" TEXT NOT NULL,
+    "AdministratorId" TEXT NOT NULL,
+    "AdministratorRole" TEXT NOT NULL,
+    "Reason" TEXT NOT NULL,
+    "State" TEXT NOT NULL,
+    "Revision" INTEGER NOT NULL,
+    "SelectedAction" TEXT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "OpenedAt" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+    "RecordId" TEXT NOT NULL CONSTRAINT "PK_HardwareRecoveryRecords" PRIMARY KEY,
+    "ExceptionRecoverySessionId" TEXT NOT NULL,
+    "RecoveryActionId" TEXT NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "OperatorId" TEXT NOT NULL,
+    "AdministratorRole" TEXT NOT NULL,
+    "SlotsJson" TEXT NOT NULL,
+    "ChecksJson" TEXT NOT NULL,
+    "ActionsJson" TEXT NOT NULL,
+    "ObservationsJson" TEXT NOT NULL,
+    "ObservedAt" TEXT NOT NULL,
+    "RecordedAt" TEXT NOT NULL
+);
+    "MessageId" TEXT NOT NULL CONSTRAINT "PK_RecoveryResultEvidence" PRIMARY KEY,
+    "WorkflowId" TEXT NOT NULL,
+    "MessageType" TEXT NOT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "ContentHash" TEXT NOT NULL,
+    "Outcome" TEXT NOT NULL,
+    "HistoricalOnly" INTEGER NOT NULL,
+    "ObservedAt" TEXT NOT NULL,
+    "ReceivedAt" TEXT NOT NULL
+);
+    "WorkflowId" TEXT NOT NULL CONSTRAINT "PK_RecoveryWorkflows" PRIMARY KEY,
+    "WorkflowType" TEXT NOT NULL,
+    "ExceptionRecoverySessionId" TEXT NULL,
+    "AgvId" TEXT NOT NULL,
+    "DemandId" TEXT NULL,
+    "SlotOperationAttemptId" TEXT NULL,
+    "SlotsJson" TEXT NOT NULL,
+    "ForcedRecoveryGeneration" INTEGER NOT NULL,
+    "State" TEXT NOT NULL,
+    "RequestMessageId" TEXT NOT NULL,
+    "RequestContentHash" TEXT NOT NULL,
+    "CommandMessageId" TEXT NULL,
+    "CommandMessageType" TEXT NULL,
+    "CommandContentHash" TEXT NULL,
+    "HandoffId" TEXT NULL,
+    "ResultMessageId" TEXT NULL,
+    "ResultContentHash" TEXT NULL,
+    "Outcome" TEXT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+    "Package" TEXT NOT NULL CONSTRAINT "PK_MissingPackages" PRIMARY KEY,
+    "FirstSeenAt" TEXT NOT NULL,
+    "LastSeenAt" TEXT NOT NULL,
+    "Status" TEXT NOT NULL
+);
+    "RuleId" TEXT NOT NULL CONSTRAINT "PK_PackageCapacityRules" PRIMARY KEY,
+    "Pattern" TEXT NOT NULL,
+    "MatchType" TEXT NOT NULL,
+    "MaxBoxesPerBasket" INTEGER NOT NULL,
+    "Version" INTEGER NOT NULL,
+    "Source" TEXT NOT NULL,
+    "EffectiveAt" TEXT NOT NULL,
+    "SupersededAt" TEXT NULL
+);
+    "AuditEventId" TEXT NOT NULL CONSTRAINT "PK_RiotDispatchAuditEvents" PRIMARY KEY,
+    "MovementLegId" TEXT NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "UpperId" TEXT NOT NULL,
+    "DispatchGeneration" INTEGER NOT NULL,
+    "Sequence" INTEGER NOT NULL,
+    "AttemptId" TEXT NULL,
+    "AttemptNumber" INTEGER NULL,
+    "Phase" TEXT NOT NULL,
+    "Outcome" TEXT NOT NULL,
+    "OccurredAt" TEXT NOT NULL,
+    "RequestSemanticSha256" TEXT NULL,
+    "ReceiptOperation" TEXT NULL,
+    "ReceiptClassification" TEXT NULL,
+    "ReceiptObservedAt" TEXT NULL,
+    "HttpStatusCode" INTEGER NULL,
+    "BusinessCode" TEXT NULL,
+    "ResultPresent" INTEGER NULL,
+    "ReturnedOrderId" TEXT NULL,
+    "FailureCategory" TEXT NULL
+);
+    "AuthorizationId" TEXT NOT NULL CONSTRAINT "PK_ExperimentalRiotCreateAuthorizations" PRIMARY KEY,
+    "AuthorizationVersion" INTEGER NOT NULL,
+    "UpperId" TEXT NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "MovementLegId" TEXT NOT NULL,
+    "AgvLifecycleGeneration" INTEGER NOT NULL,
+    "DispatchGeneration" INTEGER NOT NULL,
+    "ExpiresAt" TEXT NOT NULL,
+    "PersistedAt" TEXT NOT NULL,
+    "ConsumedAt" TEXT NULL,
+    "ConsumedByAttemptId" TEXT NULL
+);
+[00:43:54 INF] Onboard NDJSON listener started on 192.168.200.1:58105; TLS=True
+[00:43:54 WRN] Journey runtime is disabled; MesIngest polling and movement dispatch are fail-closed.
+[00:43:54 WRN] The ASP.NET Core developer certificate is not trusted. For information about trusting the ASP.NET Core developer certificate, see https://aka.ms/aspnet/https-trust-dev-cert.
+[00:43:54 INF] Now listening on: https://192.168.200.1:58107
+[00:43:54 INF] Application started. Press Ctrl+C to shut down.
+[00:43:54 INF] Hosting environment: Production
+[00:43:54 INF] Content root path: F:\w2g-ticket07\publish\control-server-tls-3d8b00c7
+[00:44:33 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.GetFrameSize(ReadOnlySpan`1 buffer)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:35 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.GetFrameSize(ReadOnlySpan`1 buffer)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:37 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.GetFrameSize(ReadOnlySpan`1 buffer)
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:39 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:41 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:43 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:45 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:47 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:49 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:51 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:53 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:55 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:57 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:44:59 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:45:01 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:45:03 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41
+[00:45:05 WRN] Onboard connection ended with a protocol or transport error.
+System.Security.Authentication.AuthenticationException: Cannot determine the frame size or a corrupted frame was received.
+   at System.Net.Security.SslStream.EnsureFullTlsFrameAsync[TIOAdapter](CancellationToken cancellationToken, Int32 estimatedSize)
+   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
+   at System.Net.Security.SslStream.ReceiveHandshakeFrameAsync[TIOAdapter](CancellationToken cancellationToken)
+   at System.Net.Security.SslStream.ForceAuthenticationAsync[TIOAdapter](Boolean receiveFirst, Byte[] reAuthenticationData, CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.CreateTransportStreamAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 120
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 61
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in F:\w2g-ticket07\src\control-server-tls\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 41

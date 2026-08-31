@@ -1,0 +1,18 @@
+REACHABILITY IS JUDGED BY A RETURNED BODY, NEVER BY PING OR A TCP CONNECT.
+
+== GREEN: body round-trip, guest -> plaintext server ==
+GET /health/live  -> 200 {"status":"live"}
+GET /api/onboard/v1/vehicle-safety -> 200 {"vehicleKey":"BROKERX-0c20ff0600d644869a6a80c186065d85","motionState":"STOPPED","observedAt":"2026-08-31T16:48:37.9944715+00:00","source":"RIOT_BEHAVIOR_LAB_R41","reasonCodes":[]}
+
+== RED control 1: same host, port with no listener ==
+58099 -> 由于目标计算机积极拒绝，无法连接。 (192.168.200.1:58099)
+== RED control 2: address with no host on this segment ==
+192.168.200.77 -> The request was canceled due to the configured HttpClient.Timeout of 8 seconds elapsing.
+== RED control 3: no credential must be refused, not silently served ==
+no Authorization header -> HTTP 401
+
+== why ping is not used as the criterion ==
+ping 192.168.200.1  -> True
+ping 192.168.200.77 -> False
+
+== established sockets, guest side ==

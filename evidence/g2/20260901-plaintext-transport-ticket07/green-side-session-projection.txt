@@ -1,0 +1,69 @@
+tables: AcceptedDemands, AdmissionDecisionSnapshots, AdmissionPolicyAudit, AdmissionPolicyState, ConnectionRecoveries, ExceptionRecoverySessions, ExperimentalRiotCreateAuthorizations, HardwareRecoveryRecords, JourneyBacklog, JourneyRuntimes, MissingPackages, OperationResults, OrderIntents, PackageCapacityRules, ProtocolInbox, ProtocolOutbox, RecoveryDecisions, RecoveryResultEvidence, RecoveryWorkflows, RiotDispatchAuditEvents, SessionRecoveries, StationOperations, StationTaskTypeAdmissions, StopClosures, TransportDemandCompletions, UnloadBatches, VehicleDispatchLeases, VehicleRecoveryGenerations, __EFMigrationsHistory
+
+==== SessionRecoveries: 1 row(s) ====
+{
+  "AgvId": "AGV-8005-T07",
+  "SessionGeneration": 4,
+  "ProtocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "ManifestSha256": "a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f",
+  "ProfileId": "WIRE_TO_GATE_MVP",
+  "ProtocolVersion": 1,
+  "CapabilityRevision": 1,
+  "CapabilityHash": "6a7531a9556143038a017f7b8c732434f6c5d240f60c228fb7b427f552750ea2",
+  "SafetyRevision": 11,
+  "SafetyHash": "00b91b299f000103957da1ba125c473432139c9c4c11f30980eb32183da7bf17",
+  "DepartureSafe": 0,
+  "RecoveryReportId": "409aa84d-a81d-4466-9715-acc72a5e6168",
+  "ForcedRecoveryGeneration": 0,
+  "PendingAttemptIdsJson": "[]",
+  "PendingResultIdsJson": "[]",
+  "Readiness": "RecoveryRequired",
+  "ReasonCode": "DEPARTURE_SAFETY_NOT_READY",
+  "UpdatedAt": "2026-08-31 16:51:03.7338292+00:00",
+  "ActiveUnlockSlotsJson": "[]",
+  "ProvenRecoveryCheckpoint": "NONE",
+  "ReportedForcedRecoveryGeneration": 0,
+  "UnsettledSlotOperationAttemptId": null,
+  "SafetyReasonCodesJson": "[\"LOCK_NOT_CLOSED\",\"SLOT_STATE_UNKNOWN\",\"UNLOCK_OUTPUT_NOT_RESET\",\"VEHICLE_STATE_UNKNOWN\"]",
+  "SafetyUnknownPresent": 1
+}
+
+==== ProtocolInbox: 213 row(s) ====
+{
+  "MessageId": "1e0768de-81d7-4b96-a4ad-9503750f553e",
+  "MessageType": "Heartbeat",
+  "ReceivedAt": "2026-08-31 16:50:54.9506179+00:00"
+}
+{
+  "MessageId": "a5de4636-ffaa-423f-9606-de75a5d4a58b",
+  "MessageType": "Heartbeat",
+  "ReceivedAt": "2026-08-31 16:50:59.9503123+00:00"
+}
+{
+  "MessageId": "a09738ee-d1bb-c45a-94ea-f7901658f629",
+  "MessageType": "SafetyStateChanged",
+  "ReceivedAt": "2026-08-31 16:51:02.706489+00:00"
+}
+{
+  "MessageId": "506a88ec-2445-295f-92fb-f75c55e321b8",
+  "MessageType": "SafetyStateChanged",
+  "ReceivedAt": "2026-08-31 16:51:03.7263191+00:00"
+}
+{
+  "MessageId": "49a16858-fbca-4fac-906a-33a28a2cc9f7",
+  "MessageType": "Heartbeat",
+  "ReceivedAt": "2026-08-31 16:51:04.9536491+00:00"
+}
+{
+  "MessageId": "ebdf44cc-88e1-4bbf-b2f6-ecc2b904da9a",
+  "MessageType": "Heartbeat",
+  "ReceivedAt": "2026-08-31 16:51:09.9557294+00:00"
+}
+
+==== ProtocolInbox message types ====
+CapabilitySnapshot: 4
+Heartbeat: 108
+RecoveryStateReport: 4
+SafetyStateChanged: 89
+SafetyStateSnapshot: 4
+SessionHello: 4
