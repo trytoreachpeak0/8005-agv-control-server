@@ -9,7 +9,7 @@ param(
     [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git',
     [string]$ProtocolRepository = 'https://github.com/trytoreachpeak0/8005-agv-protocol.git',
     [string]$ControlServerCommit = '3d8b00c7558ae700358f1f995a5ac75d12a3250c',
-    [string]$OnboardCommit = '304e6ad9952a41d5c0d50c0c4e79bab5c8804bd6',
+    [string]$OnboardCommit = '238b46eb2c9ae90584e4288a782176f66b7de942',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279'
 )

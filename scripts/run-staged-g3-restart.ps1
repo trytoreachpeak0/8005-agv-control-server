@@ -12,8 +12,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-# This runner speaks plaintext loopback only. It never installs a temporary trust root, so unlike
-# run-staged-g3.ps1 it needs no interactive security-warning acknowledgement and can run unattended.
+# This runner speaks plaintext loopback only. It never installs a temporary trust root, so it needs
+# no interactive security-warning acknowledgement and can run unattended. Since ticket 03 stripped the
+# certificate mechanism, run-staged-g3.ps1 is unattended on the same terms; this is no longer the one
+# runner that is.
 $controlPort = 58105
 $healthPort = 58107
 $modbusPort = 1502
@@ -505,7 +507,14 @@ try {
     $settings.wireToGate.onboardInstanceId = $onboardInstanceId
     $settings.wireToGate.onboardBuildCommit = $OnboardCommit
     $settings.wireToGate.credentialEnvironmentVariable = 'CONTROL_SERVER_ONBOARD_CREDENTIAL'
-    $settings.wireToGate.useTls = $false
+    # A TLS-era onboard build still carries this key and a plaintext one will not, so touch it only
+    # where it exists: assigning to a missing property on the PSCustomObject that ConvertFrom-Json
+    # returns throws SetValueInvocationException rather than adding it. The sibling key
+    # serverCertificateSha256 needs no such guard here: this runner rewrites the onboard project's
+    # own appsettings.json, which carries no fingerprint on either side of the cutover.
+    if ($settings.wireToGate.PSObject.Properties.Name -contains 'useTls') {
+        $settings.wireToGate.useTls = $false
+    }
     $settings.wireToGate.journalPath = $onboardJournalPath
     $settings.logging.directory = Join-Path $runtimeRoot 'onboard-logs'
     $settings.logging.writeToConsole = $true
