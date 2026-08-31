@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET14_FIELD_CLOSED_LOOP_ON_RELEASE_CANDIDATE",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260831-31263b1",
+  "serverCommit": "9daeef4325fccf094767b689fa484d8e1e414042",
+  "onboardCommit": "31263b1ffd372db1f27af5e1143ebad7e7679715",
+  "protocolTag": "protocol-v0.1.1",
+  "dispatchGeneration": 8,
+  "operatorId": "S0020310",
+  "createGateOpen": true,
+  "startedAt": "2026-08-31T16:43:10.5658513+08:00",
+  "finishedAt": "2026-08-31T08:53:57.4473339+00:00",
+  "journeyStage": "Completed",
+  "blockReasonCode": "",
+  "completed": true,
+  "portsReleased": true,
+  "hostStderrEmpty": true,
+  "trustRemaining": 0,
+  "counts": {
+    "AcceptedDemands": 1,
+    "JourneyRuntimes": 1,
+    "OrderIntents": 2,
+    "RiotDispatchAuditEvents": 10,
+    "StationOperations": 2,
+    "OperationResults": 2,
+    "ProtocolInbox": 171,
+    "ProtocolOutbox": 10
+  },
+  "journey": {
+    "DemandId": "18b7d18f-a4ca-480d-953a-7d159919e885",
+    "Stage": "Completed",
+    "PickupStationId": "N2-4_N3-4",
+    "PickupStationRiotId": "20",
+    "GateStationId": "关卡",
+    "GateStationRiotId": "210",
+    "ExpectedBasketCount": "1",
+    "DispatchGeneration": "8",
+    "VehicleBusinessRevision": "1",
+    "WorklistRevision": "1",
+    "PlanRevision": "1",
+    "BlockReasonCode": null,
+    "CreatedAt": "2026-08-31 08:43:15.0926894+00:00",
+    "UpdatedAt": "2026-08-31 08:52:54.7735518+00:00"
+  },
+  "sessions": {
+    "AgvId": "老厂前线新多仓位1",
+    "SessionGeneration": "1",
+    "Readiness": "Ready",
+    "ReasonCode": "READY"
+  },
+  "orderIntents": [
+    {
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-PICKUP-8",
+      "Purpose": "TO_PICKUP",
+      "TargetStationId": "N2-4_N3-4",
+      "DestinationStationId": "20",
+      "Status": "CONFIRMED",
+      "OrderId": "order-2094345282652340224"
+    },
+    {
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-GATE-8",
+      "Purpose": "TO_GATE",
+      "TargetStationId": "关卡",
+      "DestinationStationId": "210",
+      "Status": "CONFIRMED",
+      "OrderId": "order-2094346185258172416"
+    }
+  ],
+  "dispatchAudit": [
+    {
+      "Sequence": "1",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-PICKUP-8",
+      "Phase": "PRE_CREATE_RECONCILIATION",
+      "Outcome": "UNKNOWN",
+      "ReceiptClassification": "AbsentAtObservation",
+      "OccurredAt": "2026-08-31 08:43:15.6722972+00:00"
+    },
+    {
+      "Sequence": "1",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-GATE-8",
+      "Phase": "PRE_CREATE_RECONCILIATION",
+      "Outcome": "UNKNOWN",
+      "ReceiptClassification": "AbsentAtObservation",
+      "OccurredAt": "2026-08-31 08:46:50.9772134+00:00"
+    },
+    {
+      "Sequence": "2",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-PICKUP-8",
+      "Phase": "CREATE_DISPATCH",
+      "Outcome": "ARMED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-08-31 08:43:15.7658658+00:00"
+    },
+    {
+      "Sequence": "2",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-GATE-8",
+      "Phase": "CREATE_DISPATCH",
+      "Outcome": "ARMED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-08-31 08:46:50.9817194+00:00"
+    },
+    {
+      "Sequence": "3",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-PICKUP-8",
+      "Phase": "CREATE_REQUEST",
+      "Outcome": "STARTED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-08-31 08:43:15.7854344+00:00"
+    },
+    {
+      "Sequence": "3",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-GATE-8",
+      "Phase": "CREATE_REQUEST",
+      "Outcome": "STARTED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-08-31 08:46:50.9864194+00:00"
+    },
+    {
+      "Sequence": "4",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-PICKUP-8",
+      "Phase": "CREATE_RESPONSE",
+      "Outcome": "ACCEPTED",
+      "ReceiptClassification": "SdkAccepted",
+      "OccurredAt": "2026-08-31 08:43:15.9486143+00:00"
+    },
+    {
+      "Sequence": "4",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-GATE-8",
+      "Phase": "CREATE_RESPONSE",
+      "Outcome": "ACCEPTED",
+      "ReceiptClassification": "SdkAccepted",
+      "OccurredAt": "2026-08-31 08:46:51.1397782+00:00"
+    },
+    {
+      "Sequence": "5",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-PICKUP-8",
+      "Phase": "POST_CREATE_RECONCILIATION",
+      "Outcome": "CONFIRMED",
+      "ReceiptClassification": "Found",
+      "OccurredAt": "2026-08-31 08:43:16.1312542+00:00"
+    },
+    {
+      "Sequence": "5",
+      "UpperId": "W2G-18b7d18f-a4ca-480d-953a-7d159919e885-GATE-8",
+      "Phase": "POST_CREATE_RECONCILIATION",
+      "Outcome": "CONFIRMED",
+      "ReceiptClassification": "Found",
+      "OccurredAt": "2026-08-31 08:46:51.3073229+00:00"
+    }
+  ],
+  "stationOperations": [
+    {
+      "OperationType": "Load",
+      "Status": "Committed",
+      "SublotId": "Q26085155-5"
+    },
+    {
+      "OperationType": "Unload",
+      "Status": "Committed",
+      "SublotId": "Q26085155-5"
+    }
+  ]
+}

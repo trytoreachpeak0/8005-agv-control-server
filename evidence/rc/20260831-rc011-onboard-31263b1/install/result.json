@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 2,
+  "result": "PASS",
+  "runId": "20260831T082546Z",
+  "completedAt": "2026-08-31T08:26:18.1432404+00:00",
+  "sourceCommit": "9daeef4325fccf094767b689fa484d8e1e414042",
+  "packageManifestSha256": "08457d817bc9852cbe01a3e247ab2850aaaef22962e7c51449316f025ea0bb6a",
+  "configurationSha256": "59ccadbfd6787050edcef764976f01076dd1851287c55c4844bfc0148c4f9202",
+  "serviceName": "8005 AGV ControlServer Rc011",
+  "serviceAccount": "LocalSystem",
+  "serviceStatus": "Running",
+  "serviceStartType": "Auto",
+  "installRoot": "C:\\Program Files\\8005 AGV\\ControlServer-Rc011",
+  "dataRoot": "C:\\ProgramData\\8005\\ControlServer-Rc011",
+  "databasePath": "C:\\ProgramData\\8005\\ControlServer-Rc011\\data\\controlserver.db",
+  "databaseCreatedByMigration": true,
+  "logDirectory": "C:\\ProgramData\\8005\\ControlServer-Rc011\\logs",
+  "logFiles": [
+    "controlserver-20260831.ndjson"
+  ],
+  "backupRoot": "C:\\ProgramData\\8005\\ControlServer-Rc011-backups",
+  "httpsEndpoint": "https://localhost:58607",
+  "onboardTransportEndpoint": "tls://127.0.0.1:58605",
+  "firstStartReadiness": {
+    "status": "not-ready",
+    "reason": "RECOVERY_HANDSHAKE_REQUIRED"
+  },
+  "certificate": {
+    "dnsNames": [
+      "localhost"
+    ],
+    "leafThumbprint": "4D7F218E5200422AB4F5F3CC60C2C955B4497522",
+    "rootThumbprint": "0B725024AFF4AFE1E6638BA9E3BACB9018CAB8F8",
+    "trustedRootThumbprint": "0B725024AFF4AFE1E6638BA9E3BACB9018CAB8F8",
+    "trustStore": "CurrentUser/Root",
+    "caCertificateFile": "C:\\ProgramData\\8005\\ControlServer-Rc011\\certs\\localhost-development-root.pem",
+    "chainVerification": "curl --cacert against the certificate this install generated",
+    "privateKeyFile": "C:\\ProgramData\\8005\\ControlServer-Rc011\\certs\\localhost.pfx"
+  },
+  "externalSecrets": {
+    "machineEnvironmentInjected": false,
+    "riotMachineScopePresent": true,
+    "onboardMachineScopePresent": true,
+    "certificatePasswordMachineScopePresent": true,
+    "serviceSpecificEnvironmentPresent": true,
+    "valuesDisclosed": false
+  },
+  "checks": [
+    "package-hashes",
+    "sqlite-migrations-at-start",
+    "https-chain-pinned-to-install-root",
+    "https-live-after-start",
+    "https-ready-after-start",
+    "stop-start",
+    "restart",
+    "https-version",
+    "log-file-written"
+  ],
+  "journeyRuntimeEnabled": false,
+  "riotMutationPerformed": false,
+  "orderCreated": false,
+  "vehicleMoved": false,
+  "protocolTag": "protocol-v0.1.1",
+  "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "backupPath": "C:\\ProgramData\\8005\\ControlServer-Rc011-backups\\20260831T082546Z"
+}
