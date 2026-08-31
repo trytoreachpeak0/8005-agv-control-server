@@ -1,0 +1,321 @@
+{
+  "schemaVersion": 1,
+  "newRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260901-238b46e",
+  "oldRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260831-31263b1",
+  "scannedExtensions": [
+    ".dll",
+    ".exe"
+  ],
+  "scannedFileCounts": {
+    "new|controlserver": 373,
+    "old|onboard-hmi": 468,
+    "new|onboard-hmi": 468,
+    "old|controlserver": 373
+  },
+  "matching": "raw bytes decoded Latin-1, ordinal IndexOf, case-sensitive",
+  "probes": [
+    {
+      "component": "controlserver",
+      "symbol": "OnboardTlsCertificateLoader",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "controlserver",
+      "symbol": "CreateTransportStreamAsync",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "controlserver",
+      "symbol": "AllowInsecureLoopback",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "controlserver",
+      "symbol": "ServerCertificatePasswordEnvironmentVariable",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "controlserver",
+      "symbol": "RequireHttps",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "PRESENT",
+      "oldNonProductFiles": [
+        "controlserver/Microsoft.AspNetCore.Mvc.Core.dll"
+      ],
+      "newNonProductFiles": [
+        "controlserver/Microsoft.AspNetCore.Mvc.Core.dll"
+      ],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "controlserver",
+      "symbol": "OnboardTransportOptionsValidator",
+      "expectation": "added",
+      "expectedOldState": "ABSENT",
+      "expectedNewState": "PRESENT",
+      "oldState": "ABSENT",
+      "newState": "PRESENT",
+      "oldProductFiles": [],
+      "newProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "oldPackageState": "ABSENT",
+      "newPackageState": "PRESENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "controlserver",
+      "symbol": "OnboardTcpServer",
+      "expectation": "control",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "PRESENT",
+      "oldState": "PRESENT",
+      "newState": "PRESENT",
+      "oldProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "newProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "PRESENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "controlserver",
+      "symbol": "HandleClientAsync",
+      "expectation": "control",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "PRESENT",
+      "oldState": "PRESENT",
+      "newState": "PRESENT",
+      "oldProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "newProductFiles": [
+        "controlserver/ControlServer.Host.dll"
+      ],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "PRESENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "onboard-hmi",
+      "symbol": "ValidateServerCertificate",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "onboard-hmi",
+      "symbol": "CreateTrustedHttpClient",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "onboard-hmi",
+      "symbol": "ServerCertificateSha256",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "onboard-hmi",
+      "symbol": "UseTls",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "onboard-hmi",
+      "symbol": "CreateTransportStreamAsync",
+      "expectation": "removed",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "ABSENT",
+      "oldState": "PRESENT",
+      "newState": "ABSENT",
+      "oldProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll"
+      ],
+      "newProductFiles": [],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "ABSENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "onboard-hmi",
+      "symbol": "RejectRemovedTransportKeys",
+      "expectation": "added",
+      "expectedOldState": "ABSENT",
+      "expectedNewState": "PRESENT",
+      "oldState": "ABSENT",
+      "newState": "PRESENT",
+      "oldProductFiles": [],
+      "newProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll"
+      ],
+      "oldPackageState": "ABSENT",
+      "newPackageState": "PRESENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "onboard-hmi",
+      "symbol": "WireToGateSessionClient",
+      "expectation": "control",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "PRESENT",
+      "oldState": "PRESENT",
+      "newState": "PRESENT",
+      "oldProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll"
+      ],
+      "newProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll"
+      ],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "PRESENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    },
+    {
+      "component": "onboard-hmi",
+      "symbol": "ControlServerVehicleSafetySignalProvider",
+      "expectation": "control",
+      "expectedOldState": "PRESENT",
+      "expectedNewState": "PRESENT",
+      "oldState": "PRESENT",
+      "newState": "PRESENT",
+      "oldProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll",
+        "onboard-hmi/SQCD.Agv.Wpf.dll"
+      ],
+      "newProductFiles": [
+        "onboard-hmi/SQCD.Agv.Infrastructure.dll",
+        "onboard-hmi/SQCD.Agv.Wpf.dll"
+      ],
+      "oldPackageState": "PRESENT",
+      "newPackageState": "PRESENT",
+      "oldNonProductFiles": [],
+      "newNonProductFiles": [],
+      "verdict": "AS_EXPECTED"
+    }
+  ],
+  "unexpectedCount": 0
+}

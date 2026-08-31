@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "newRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260901-238b46e",
+  "oldRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260831-31263b1",
+  "components": [
+    {
+      "component": "controlServer",
+      "relativePath": "controlserver",
+      "same": 372,
+      "changed": [
+        "appsettings.json",
+        "ControlServer.Application.dll",
+        "ControlServer.Application.pdb",
+        "ControlServer.Domain.dll",
+        "ControlServer.Domain.pdb",
+        "ControlServer.Host.dll",
+        "ControlServer.Host.exe",
+        "ControlServer.Host.pdb",
+        "ControlServer.Infrastructure.dll",
+        "ControlServer.Infrastructure.pdb",
+        "deployment-manifest.json"
+      ],
+      "added": [],
+      "removed": []
+    },
+    {
+      "component": "onboardHmi",
+      "relativePath": "onboard-hmi",
+      "same": 464,
+      "changed": [
+        "appsettings.json",
+        "appsettings.Production.template.json",
+        "SQCD.Agv.Application.dll",
+        "SQCD.Agv.Application.pdb",
+        "SQCD.Agv.Contracts.dll",
+        "SQCD.Agv.Contracts.pdb",
+        "SQCD.Agv.Core.dll",
+        "SQCD.Agv.Core.pdb",
+        "SQCD.Agv.Infrastructure.dll",
+        "SQCD.Agv.Infrastructure.pdb",
+        "SQCD.Agv.Wpf.dll",
+        "SQCD.Agv.Wpf.exe",
+        "SQCD.Agv.Wpf.pdb"
+      ],
+      "added": [],
+      "removed": []
+    }
+  ],
+  "apphosts": [
+    {
+      "path": "controlserver/ControlServer.Host.exe",
+      "newProductVersion": "1.0.0+56d4b1cc2f26325ca853acc4e7278bbde8651874",
+      "oldProductVersion": "1.0.0+9daeef4325fccf094767b689fa484d8e1e414042",
+      "lengthsEqual": true,
+      "differingByteCount": 39,
+      "firstDifferingOffset": "0x24D6C",
+      "lastDifferingOffset": "0x24DBA",
+      "differingRegionSpan": 79,
+      "differingRegionCount": 39
+    },
+    {
+      "path": "onboard-hmi/SQCD.Agv.Wpf.exe",
+      "newProductVersion": "0.2.0-safety-mock-travel+238b46eb2c9ae90584e4288a782176f66b7de942",
+      "oldProductVersion": "0.2.0-safety-mock-travel+31263b1ffd372db1f27af5e1143ebad7e7679715",
+      "lengthsEqual": true,
+      "differingByteCount": 40,
+      "firstDifferingOffset": "0x24D56",
+      "lastDifferingOffset": "0x24DA4",
+      "differingRegionSpan": 79,
+      "differingRegionCount": 40
+    }
+  ]
+}
