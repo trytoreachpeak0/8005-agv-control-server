@@ -1,0 +1,25 @@
+== 1. remote assets re-hashed after download ==
+MATCH      ASSET-w2g-rc-20260901b-19ce7db.zip  -- abbff6e0d9afe415080b774395695bff4dad9f6437a9455f3e3c6d84aa1ceca9 / 123991314 B
+MISMATCH   ASSET-w2g-rc-20260901b-19ce7db.zip-RED  -- one-character mutation of the expected digest
+MATCH      ASSET-release-manifest.json  -- 2389853936f9453c2fa93168c6d1316f0e83ba0367246801be98653aa54df3d9 / 171966 B
+MISMATCH   ASSET-release-manifest.json-RED  -- one-character mutation of the expected digest
+MATCH      ASSET-SHA256SUMS.txt  -- 5e3aeb3ab94a29723b9c7e2c79b5bbc2548777a78f181295368363e7e7cdbd02 / 99003 B
+MISMATCH   ASSET-SHA256SUMS.txt-RED  -- one-character mutation of the expected digest
+
+== 2. the downloaded zip is internally consistent ==
+PASS       ZIP-SINGLE-TOPLEVEL  -- 870 entries, top={'w2g-rc-20260901b-19ce7db'}
+PASS       ZIP-HASHES  -- ok=869 mismatch=0 missing=0
+SAME       ZIP-SAME-AS-ASSET-release-manifest.json
+SAME       ZIP-SAME-AS-ASSET-SHA256SUMS.txt
+
+== 3. the tag peels to the commit the candidate manifest records ==
+PASS       TAG-IS-ANNOTATED  -- type=tag
+MATCH      TAG-PEELS-TO-MANIFEST  -- 19ce7db70893afea6c6361988c3bc612d77569d0
+MISMATCH   TAG-PEELS-TO-MANIFEST-RED  -- one-character mutation of the manifest commit
+
+== 4. the live bodies are verbatim the local copies ==
+MATCH      BODY-0.2.0  -- 13221 vs 13221 chars
+MATCH      BODY-0.1.1  -- 10482 vs 10482 chars
+MISMATCH   BODY-0.2.0-RED  -- one character flipped in the local copy
+
+== 16 / 16 verdicts as expected ==
