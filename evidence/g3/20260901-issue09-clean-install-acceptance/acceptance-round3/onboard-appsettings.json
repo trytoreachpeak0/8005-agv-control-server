@@ -1,0 +1,120 @@
+{
+  "environment": "Production",
+  "agvId": "老厂前线新多仓位1",
+  "onboardInstanceId": "OBU-8005-TICKET09",
+  "ruleGateway": {
+    "host": "127.0.0.1",
+    "port": 18080,
+    "connectTimeoutMs": 3000,
+    "requestTimeoutMs": 3000,
+    "heartbeatIntervalMs": 5000,
+    "resultRetryCount": 3,
+    "reconnectDelaysMs": [
+      1000,
+      2000,
+      5000,
+      10000
+    ]
+  },
+  "wireToGate": {
+    "enabled": true,
+    "host": "192.168.200.1",
+    "port": 58505,
+    "onboardInstanceId": "4f6d1c2e-9d3a-4a55-9d0b-14ab2f0e77c1",
+    "onboardBuildCommit": "238b46eb2c9ae90584e4288a782176f66b7de942",
+    "credentialEnvironmentVariable": "CONTROL_SERVER_ONBOARD_CREDENTIAL",
+    "connectTimeoutMs": 3000,
+    "messageTimeoutMs": 3000,
+    "capabilityVersion": 1,
+    "safetyStateVersion": 1,
+    "slotModelVersion": "eight-slot-v1",
+    "activeSlotConfigurationVersion": "eight-slot-modbus-v1",
+    "supportsBatchUnlock": false,
+    "journeySnapshotMaxAgeMs": 5000,
+    "operatorIdEnvironmentVariable": "CONTROL_SERVER_OPERATOR_ID",
+    "journalPath": "C:\\Users\\szy\\w2g-ticket09\\acceptance3\\onboard-journal.db"
+  },
+  "vehicleSafety": {
+    "enabled": true,
+    "endpoint": "http://192.168.200.1:58507/api/onboard/v1/vehicle-safety",
+    "credentialEnvironmentVariable": "CONTROL_SERVER_ONBOARD_CREDENTIAL",
+    "expectedVehicleKey": "BROKERX-0c20ff0600d644869a6a80c186065d85",
+    "maximumEvidenceAgeMs": 5000,
+    "pollIntervalMs": 1000,
+    "requestTimeoutMs": 3000
+  },
+  "ioModule": {
+    "host": "127.0.0.1",
+    "port": 1502,
+    "unitId": 255,
+    "doStartAddress": 100,
+    "diStartAddress": 200,
+    "channelCount": 16,
+    "pollIntervalMs": 100,
+    "requestTimeoutMs": 1000,
+    "reconnectDelayMs": 1000,
+    "slots": [
+      {
+        "slotIndex": 0,
+        "doChannel": 0,
+        "lockFeedbackDiChannel": 0,
+        "lightCurtainDiChannel": 8
+      },
+      {
+        "slotIndex": 1,
+        "doChannel": 1,
+        "lockFeedbackDiChannel": 1,
+        "lightCurtainDiChannel": 9
+      },
+      {
+        "slotIndex": 2,
+        "doChannel": 2,
+        "lockFeedbackDiChannel": 2,
+        "lightCurtainDiChannel": 10
+      },
+      {
+        "slotIndex": 3,
+        "doChannel": 3,
+        "lockFeedbackDiChannel": 3,
+        "lightCurtainDiChannel": 11
+      },
+      {
+        "slotIndex": 4,
+        "doChannel": 4,
+        "lockFeedbackDiChannel": 4,
+        "lightCurtainDiChannel": 12
+      },
+      {
+        "slotIndex": 5,
+        "doChannel": 5,
+        "lockFeedbackDiChannel": 5,
+        "lightCurtainDiChannel": 13
+      },
+      {
+        "slotIndex": 6,
+        "doChannel": 6,
+        "lockFeedbackDiChannel": 6,
+        "lightCurtainDiChannel": 14
+      },
+      {
+        "slotIndex": 7,
+        "doChannel": 7,
+        "lockFeedbackDiChannel": 7,
+        "lightCurtainDiChannel": 15
+      }
+    ]
+  },
+  "workflow": {
+    "unlockFeedbackTimeoutMs": 3000,
+    "unlockOutputResetTimeoutMs": 3000,
+    "operationTimeoutMs": 120000,
+    "feedbackStableMs": 300,
+    "ioSnapshotMaxAgeMs": 1000,
+    "maxSublotLength": 128,
+    "maxReopenAttempts": 2
+  },
+  "logging": {
+    "directory": "logs",
+    "writeToConsole": false
+  }
+}

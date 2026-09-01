@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "result": "PASS",
+  "runId": "20260901T022338Z",
+  "completedAt": "2026-09-01T02:23:50.0078105+00:00",
+  "sourceCommit": "19ce7db70893afea6c6361988c3bc612d77569d0",
+  "packageManifestSha256": "3961f1637dd7583c2702a348020e42d8efdd3811731911a15aa800896e17823b",
+  "configurationSha256": "6a6b773d798e4ba3da71e1344a76541cfa3b96c59a51a0cad6fb537c467bbb3b",
+  "serviceName": "8005 AGV ControlServer Ticket09",
+  "serviceAccount": "LocalSystem",
+  "serviceStatus": "Running",
+  "serviceStartType": "Auto",
+  "installRoot": "C:\\Users\\szy\\w2g-ticket09\\acceptance3\\install",
+  "dataRoot": "C:\\Users\\szy\\w2g-ticket09\\acceptance3\\data",
+  "databasePath": "C:\\Users\\szy\\w2g-ticket09\\acceptance3\\data\\data\\controlserver.db",
+  "databaseCreatedByMigration": true,
+  "logDirectory": "C:\\Users\\szy\\w2g-ticket09\\acceptance3\\data\\logs",
+  "logFiles": [
+    "controlserver-20260901.ndjson"
+  ],
+  "backupRoot": "C:\\Users\\szy\\w2g-ticket09\\acceptance3\\backups",
+  "httpEndpoint": "http://192.168.200.1:58507",
+  "httpCheckOrigin": "http://192.168.200.1:58507",
+  "onboardTransportEndpoint": "tcp://192.168.200.1:58505",
+  "transport": "plaintext",
+  "firstStartReadiness": {
+    "status": "not-ready",
+    "reason": "RECOVERY_HANDSHAKE_REQUIRED"
+  },
+  "externalSecrets": {
+    "machineEnvironmentInjected": false,
+    "riotMachineScopePresent": true,
+    "onboardMachineScopePresent": true,
+    "serviceSpecificEnvironmentPresent": true,
+    "valuesDisclosed": false
+  },
+  "checks": [
+    "package-hashes",
+    "sqlite-migrations-at-start",
+    "http-live-after-start",
+    "http-ready-after-start",
+    "stop-start",
+    "restart",
+    "http-version",
+    "log-file-written"
+  ],
+  "journeyRuntimeEnabled": false,
+  "riotMutationPerformed": false,
+  "orderCreated": false,
+  "vehicleMoved": false,
+  "protocolTag": "protocol-v0.1.1",
+  "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "backupPath": "C:\\Users\\szy\\w2g-ticket09\\acceptance3\\backups\\20260901T022338Z"
+}

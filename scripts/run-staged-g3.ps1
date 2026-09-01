@@ -8,7 +8,7 @@ param(
     [string]$OnboardRepository = 'https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git',
     [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git',
     [string]$ProtocolRepository = 'https://github.com/trytoreachpeak0/8005-agv-protocol.git',
-    [string]$ControlServerCommit = '56d4b1cc2f26325ca853acc4e7278bbde8651874',
+    [string]$ControlServerCommit = '19ce7db70893afea6c6361988c3bc612d77569d0',
     [string]$OnboardCommit = '238b46eb2c9ae90584e4288a782176f66b7de942',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279'

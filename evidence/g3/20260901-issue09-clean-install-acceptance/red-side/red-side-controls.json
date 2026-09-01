@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET09_RED_SIDE_SINGLE_FIELD_MUTATIONS",
+  "detectorModule": "7cc9d43ebec76f1ea758624dc00a2f8acb61ba9e475154ae66e57b871c669d12",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260901b-19ce7db",
+  "finishedAt": "2026-09-01T02:05:46.9454382+00:00",
+  "counts": {
+    "pass": 7,
+    "fail": 0
+  },
+  "controls": [
+    {
+      "id": "RED-STORE-DIGEST",
+      "detector": "Compare-StoreDigests",
+      "mutation": "exactly one of the 44 thumbprints replaced; the count is left identical",
+      "greenExpectation": "0 changes when the same thumbprint set is rebuilt untouched",
+      "greenObserved": "changes=0",
+      "greenHeld": true,
+      "redExpectation": "1 change when one thumbprint differs",
+      "redObserved": "changes=1 CurrentUser\\Root eabac27de65e->0ec75bc97d41 (44->44 certs)",
+      "redFired": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "RED-REMOVED-CONFIG-KEYS",
+      "detector": "Get-RemovedCertificateKeys",
+      "mutation": "exactly one key added: OnboardSafetyProjection:requireHttps",
+      "greenExpectation": "0 removed keys found in a plaintext configuration",
+      "greenObserved": "found=0",
+      "greenHeld": true,
+      "redExpectation": "exactly requireHttps found",
+      "redObserved": "found=1 [requireHttps]",
+      "redFired": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "RED-ONBOARD-TLS-KEYS",
+      "detector": "Get-OnboardTlsKeys",
+      "mutation": "exactly one key added: wireToGate:useTls",
+      "greenExpectation": "0 TLS key names in the plaintext onboard configuration",
+      "greenObserved": "found=0",
+      "greenHeld": true,
+      "redExpectation": "exactly useTls found",
+      "redObserved": "found=1 [useTls]",
+      "redFired": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "RED-KEY-MATERIAL",
+      "detector": "Get-KeyMaterialFiles",
+      "mutation": "exactly one file added: localhost.pfx",
+      "greenExpectation": "0 key-material files in the clean copy",
+      "greenObserved": "found=0",
+      "greenHeld": true,
+      "redExpectation": "exactly the planted .pfx found",
+      "redObserved": "found=1",
+      "redFired": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "RED-TREE-HASHES",
+      "detector": "Compare-TreeHashes",
+      "mutation": "exactly one byte appended to file2.txt in the copy",
+      "greenExpectation": "0 differences between a directory and its untouched copy",
+      "greenObserved": "differences=0",
+      "greenHeld": true,
+      "redExpectation": "exactly changed:file2.txt",
+      "redObserved": "differences=1 [changed:file2.txt]",
+      "redFired": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "RED-RELEASE-HASHES",
+      "detector": "Get-HashMismatches",
+      "mutation": "exactly one byte flipped in a copy of RELEASE-CANDIDATE.md",
+      "greenExpectation": "0 mismatches across all 869 listed files of the real candidate",
+      "greenObserved": "checked=869 mismatches=0",
+      "greenHeld": true,
+      "redExpectation": "RELEASE-CANDIDATE.md reported as a mismatch",
+      "redObserved": "reported=1",
+      "redFired": true,
+      "verdict": "PASS"
+    },
+    {
+      "id": "RED-PRODUCTION-DRIFT",
+      "detector": "Compare-ProductionSnapshot",
+      "mutation": "exactly one field changed: the service PID incremented by one",
+      "greenExpectation": "0 drift between two consecutive readings of the untouched production service",
+      "greenObserved": "drift=0 pid=8632",
+      "greenHeld": true,
+      "redExpectation": "exactly the pid field reported",
+      "redObserved": "drift=1 [pid:8632->8633]",
+      "redFired": true,
+      "verdict": "PASS"
+    }
+  ]
+}

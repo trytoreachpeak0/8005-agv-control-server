@@ -1,0 +1,427 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET09_CLEAN_INSTALL_ACCEPTANCE_NO_MOVEMENT",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260901b-19ce7db",
+  "serviceName": "8005 AGV ControlServer Ticket09",
+  "onboardPort": 58505,
+  "healthPort": 58507,
+  "bindAddress": "192.168.200.1",
+  "createGateOpen": false,
+  "vehicleMoved": false,
+  "storeDigestsBefore": [
+    {
+      "store": "CurrentUser\\Root",
+      "count": 44,
+      "digest": "eabac27de65eeed437e55544e713e8b63a0cf411ae32b817c8d64dd5524d1d1d"
+    },
+    {
+      "store": "LocalMachine\\Root",
+      "count": 42,
+      "digest": "ab61277a3823de09c400de64b2379b30b9c01a35477c41c2005191e6df0e6909"
+    },
+    {
+      "store": "CurrentUser\\My",
+      "count": 1,
+      "digest": "5b4c58e4c353689f325e6fd58a26c717ac475bbfb1fb651f6cdc2ecbb0a769d1"
+    },
+    {
+      "store": "LocalMachine\\My",
+      "count": 1,
+      "digest": "e87de8aa751519a9692b90b773f48482afab166c6a99cb0d99f4c287d43ef5a6"
+    }
+  ],
+  "storeDigestsFinal": [
+    {
+      "store": "CurrentUser\\Root",
+      "count": 44,
+      "digest": "eabac27de65eeed437e55544e713e8b63a0cf411ae32b817c8d64dd5524d1d1d"
+    },
+    {
+      "store": "LocalMachine\\Root",
+      "count": 42,
+      "digest": "ab61277a3823de09c400de64b2379b30b9c01a35477c41c2005191e6df0e6909"
+    },
+    {
+      "store": "CurrentUser\\My",
+      "count": 1,
+      "digest": "5b4c58e4c353689f325e6fd58a26c717ac475bbfb1fb651f6cdc2ecbb0a769d1"
+    },
+    {
+      "store": "LocalMachine\\My",
+      "count": 1,
+      "digest": "e87de8aa751519a9692b90b773f48482afab166c6a99cb0d99f4c287d43ef5a6"
+    }
+  ],
+  "productionBefore": {
+    "status": "Running",
+    "processIds": [
+      8632
+    ],
+    "listeners": [
+      "::1:58007",
+      "127.0.0.1:58005",
+      "127.0.0.1:58007"
+    ]
+  },
+  "productionFinal": {
+    "status": "Running",
+    "processIds": [
+      8632
+    ],
+    "listeners": [
+      "::1:58007",
+      "127.0.0.1:58005",
+      "127.0.0.1:58007"
+    ]
+  },
+  "finishedAt": "2026-09-01T02:10:34.6932857+00:00",
+  "counts": {
+    "pass": 30,
+    "fail": 5,
+    "inconclusive": 3
+  },
+  "assertions": [
+    {
+      "id": "RC-IDENTITY",
+      "subject": "release-manifest.json binds the three component identities",
+      "expected": "server 19ce7db, onboard 238b46e, protocol-v0.1.1",
+      "actual": "server=19ce7db70893afea6c6361988c3bc612d77569d0 onboard=238b46eb2c9ae90584e4288a782176f66b7de942 protocol=protocol-v0.1.1",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Read back from the produced artifact, not restated from the ticket."
+    },
+    {
+      "id": "RC-HASHES",
+      "subject": "section 3 of the manual verifies every SHA256SUMS entry",
+      "expected": "no mismatch across all listed files",
+      "actual": "checked=869 mismatches=0",
+      "verdict": "PASS",
+      "control": "the same comparison over a one-byte-flipped copy of RELEASE-CANDIDATE.md reported a mismatch: True (must be True)",
+      "note": ""
+    },
+    {
+      "id": "RC-UPGRADE-SCRIPT-SHIPPED",
+      "subject": "the documented upgrade path is runnable from the delivered package",
+      "expected": "scripts/Update-ControlServerLocal.ps1 present, hashed once in SHA256SUMS, named as operatorEntryPoints.upgrade",
+      "actual": "present=True sumsEntries=1 entryPoint=scripts/Update-ControlServerLocal.ps1",
+      "verdict": "PASS",
+      "control": "the ticket 08 candidate at C:\\Users\\szy\\Desktop\\w2g-rc-20260901-238b46e carries the same section 4.5 text and the script is present there: False (must be False)",
+      "note": "Defect found while working ticket 09: section 4.5 shipped a command the package could not run."
+    },
+    {
+      "id": "RC-NO-KEY-MATERIAL",
+      "subject": "the delivered candidate carries no certificate or key material",
+      "expected": "0 files with a key-material extension anywhere under the release root",
+      "actual": "found=0 ",
+      "verdict": "PASS",
+      "control": "the same detector over a directory holding one planted .pfx found 1 (must be 1)",
+      "note": ""
+    },
+    {
+      "id": "INSTALL-AS-SERVICE",
+      "subject": "Install-ControlServerLocal.ps1 installs, ACL-hardens and lifecycles the service",
+      "expected": "result PASS and the service reaches Running (isolated instance '8005 AGV ControlServer Ticket09')",
+      "actual": "result=PASS sourceCommit=19ce7db70893afea6c6361988c3bc612d77569d0 status=Running",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Ticket 14 left this INCONCLUSIVE because that session had no administrator token."
+    },
+    {
+      "id": "INSTALL-NON-INTERACTIVE",
+      "subject": "the install completes with no trust prompt and no console input",
+      "expected": "the whole install runs in a -NonInteractive host and returns without waiting for a user",
+      "actual": "host command line: \"C:\\Program Files\\PowerShell\\7\\pwsh.dll\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005---AGV-continue-wayfinder-map\\43ec4e04-905d-4496-b8b4-f087039ed791\\scratchpad\\run-ticket09-acceptance.ps1",
+      "verdict": "PASS",
+      "control": "",
+      "note": "A certificate trust dialog would block here forever; the store digests below are the independent observation that nothing was imported."
+    },
+    {
+      "id": "INSTALL-CERT-STORES-UNCHANGED",
+      "subject": "the install generates, imports and removes no certificate",
+      "expected": "0 of the 4 observed stores changes its sorted-thumbprint digest",
+      "actual": "changed=0 ; CurrentUser\\Root count=44",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Digest over the sorted thumbprint set, not a count: a swap of one certificate for another keeps the count and moves the digest."
+    },
+    {
+      "id": "INSTALL-NO-CERTS-DIRECTORY",
+      "subject": "the data root has no certs directory after installation",
+      "expected": "C:\\Users\\szy\\w2g-ticket09\\acceptance\\data\\certs absent",
+      "actual": false,
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "INSTALL-NO-KEY-MATERIAL",
+      "subject": "installation leaves no key material under the instance roots",
+      "expected": "0 files with a key-material extension under the install root, data root and backup root",
+      "actual": "found=1 C:\\Users\\szy\\w2g-ticket09\\acceptance\\evidence\\key-material-control\\planted.pfx",
+      "verdict": "FAIL",
+      "control": "RC-NO-KEY-MATERIAL used the same detector against a planted .pfx and found it",
+      "note": ""
+    },
+    {
+      "id": "INSTALL-MACHINE-CERT-PASSWORD-UNTOUCHED",
+      "subject": "the install does not write or clear machine-scope CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD",
+      "expected": "present-before equals present-after and the value is unchanged",
+      "actual": "presentBefore=True presentAfter=True valueUnchanged=True",
+      "verdict": "PASS",
+      "control": "",
+      "note": "The value itself is never printed; only presence and an equality result."
+    },
+    {
+      "id": "INSTALL-CONFIG-PLAINTEXT",
+      "subject": "the emitted production configuration is the plaintext key set",
+      "expected": "none of the four removed certificate keys appears and Health:url is http",
+      "actual": "removedKeysPresent= healthUrl=http://192.168.200.1:58507 listenAddress=192.168.200.1",
+      "verdict": "PASS",
+      "control": "the same four key names are matched literally against the file text; the detector finds them in the legacy configuration used by the upgrade rehearsal",
+      "note": ""
+    },
+    {
+      "id": "PERSISTENT-LOGS",
+      "subject": "the NDJSON file log described in manual section 7",
+      "expected": "at least one controlserver-<date>.ndjson under the data root",
+      "actual": "logDirectory=C:\\Users\\szy\\w2g-ticket09\\acceptance\\data\\logs files=controlserver-20260901.ndjson",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Ticket 14 left this INCONCLUSIVE: the file sink is written by the installer, and that run never installed."
+    },
+    {
+      "id": "HEALTH-LIVE-HTTP",
+      "subject": "GET /health/live over plain HTTP on 192.168.200.1:58507",
+      "expected": "200 with status live",
+      "actual": "{\"status\":\"live\"} HTTP_STATUS=200",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Body round-trip, not a TCP connect: the workstation proxy makes a bare connect succeed against hosts that do not exist."
+    },
+    {
+      "id": "HEALTH-GATED-BEFORE",
+      "subject": "GET /health/ready before any onboard session",
+      "expected": "503 RECOVERY_HANDSHAKE_REQUIRED",
+      "actual": "{\"status\":\"not-ready\",\"reason\":\"RECOVERY_HANDSHAKE_REQUIRED\"} HTTP_STATUS=503",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Documented expected result, and the control for HEALTH-READY later in this run."
+    },
+    {
+      "id": "SAFETY-PROJECTION-HTTP-AUTH",
+      "subject": "the plaintext HTTP vehicle-safety projection is credential gated",
+      "expected": "200 with the onboard credential over http",
+      "actual": "HTTP_STATUS=200",
+      "verdict": "PASS",
+      "control": "the same http request without an Authorization header returned HTTP_STATUS=401 (must not be 200)",
+      "note": "Ticket 14 asserted this over HTTPS with a pinned root; this round it is plain http and there is no certificate anywhere in the path."
+    },
+    {
+      "id": "SAFETY-STOPPED",
+      "subject": "the real RIoT reports the configured vehicle stopped, with fresh evidence",
+      "expected": "motionState STOPPED, no reason codes, observedAt within 30s",
+      "actual": "motionState=STOPPED reasonCodes=[] observedAt=09/01/2026 10:06:53 source=RIOT_BEHAVIOR_LAB_R41",
+      "verdict": "PASS",
+      "control": "ticket 14 recorded the same detector returning UNKNOWN / RIOT_READ_TIMEOUT while the path to RIoT was hijacked (riot-path-red.json)",
+      "note": ""
+    },
+    {
+      "id": "PRODUCTION-UNAFFECTED-INSTALL",
+      "subject": "the production service is untouched by the isolated installation",
+      "expected": "no drift in status, PID or listeners against the pre-run snapshot (PID 8632, ::1:58007 127.0.0.1:58005 127.0.0.1:58007)",
+      "actual": "drift=0 ; status=Running",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Listeners are taken by service PID, not by process name: the isolated instance runs the same executable name."
+    },
+    {
+      "id": "JOURNEY-RUNTIME-ENABLED",
+      "subject": "demand intake is exercised by an explicit deviation from the shipped default",
+      "expected": "installer wrote JourneyRuntime.enabled=false; this run flips it to true on the isolated instance while both create gates stay false",
+      "actual": "installerWroteFalse=True riotCreateDispatch=False absentObservationExperiment=False",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Recorded rather than hidden: a production install stays at enabled=false until the site is authorized to dispatch."
+    },
+    {
+      "id": "CFG-ONBOARD-PRODUCTION",
+      "subject": "onboard appsettings.json built from the packaged production template",
+      "expected": "no REPLACE_ placeholder survives, declared build commit equals the packaged onboard commit, no TLS key is reintroduced",
+      "actual": "placeholders=1 declaredBuildCommit=238b46eb2c9ae90584e4288a782176f66b7de942 tlsKeys=",
+      "verdict": "FAIL",
+      "control": "the same three key names matched literally; ticket 14's onboard configuration for the TLS candidate carried useTls and serverCertificateSha256",
+      "note": ""
+    },
+    {
+      "id": "IO-SIMULATOR",
+      "subject": "eight-slot IO simulator Modbus 1502 and control plane 58006",
+      "expected": "both listening",
+      "actual": true,
+      "verdict": "PASS",
+      "control": "",
+      "note": "SIMULATED IO. Not evidence about real IO modules, wiring, locks or light curtains."
+    },
+    {
+      "id": "SESSION-ESTABLISHED",
+      "subject": "the packaged OnboardHmi establishes a plaintext session with the installed service",
+      "expected": "onboard log records 上层会话已建立",
+      "actual": "2026-09-01T10:07:02.0193054+08:00\tInformation\tWireToGateSessionService\t上层会话已建立：generation=1，readiness=Ready。",
+      "verdict": "PASS",
+      "control": "the same detector over the same directory before the onboard started returned '<none>' (must be none)",
+      "note": ""
+    },
+    {
+      "id": "SESSION-READY",
+      "subject": "onboard readiness on a clean install once the documented prerequisites are met",
+      "expected": "Ready",
+      "actual": "Ready",
+      "verdict": "PASS",
+      "control": "ticket 07 recorded the same detector at RecoveryRequired with VEHICLE_STATE_UNKNOWN while the guest had no Modbus IO",
+      "note": ""
+    },
+    {
+      "id": "HEALTH-READY",
+      "subject": "GET /health/ready once the onboard session reports Ready",
+      "expected": "200 ready",
+      "actual": "{\"status\":\"ready\"} HTTP_STATUS=200",
+      "verdict": "PASS",
+      "control": "HEALTH-GATED-BEFORE recorded 503 on the same endpoint minutes earlier in this very run",
+      "note": ""
+    },
+    {
+      "id": "ADAPTER-MESINGEST",
+      "subject": "the MesIngest adapter reads real demands from the existing MesIngest",
+      "expected": "JourneyBacklog non-empty",
+      "actual": "JourneyBacklog=0",
+      "verdict": "FAIL",
+      "control": "StationOperations=0 on the same database, so this is a specific read and not every table being filled",
+      "note": ""
+    },
+    {
+      "id": "ADAPTER-RIOT-READONLY",
+      "subject": "the RIoT read path leaves a durable row derived from a real RIoT read",
+      "expected": "StationTaskTypeAdmissions populated from the RIoT map station catalog",
+      "actual": "StationTaskTypeAdmissions=205",
+      "verdict": "PASS",
+      "control": "RiotDispatchAuditEvents=0 in the same run, so a populated admission table is the read path and not the create path",
+      "note": ""
+    },
+    {
+      "id": "DEMAND-ACCEPTED",
+      "subject": "a WIRE_TO_GATE demand is accepted from the real backlog",
+      "expected": "AcceptedDemands and JourneyRuntimes both non-empty",
+      "actual": "AcceptedDemands=0 JourneyRuntimes=0",
+      "verdict": "FAIL",
+      "control": "ticket 13 held the same tables at 0 with a populated backlog because readiness never reached Ready",
+      "note": ""
+    },
+    {
+      "id": "SAFETY-NO-CREATE",
+      "subject": "no RIoT order was created during acceptance",
+      "expected": "RiotDispatchAuditEvents empty",
+      "actual": "RiotDispatchAuditEvents=0",
+      "verdict": "PASS",
+      "control": "the same table is what a real create writes; the authorized field runs show it non-empty",
+      "note": ""
+    },
+    {
+      "id": "RESTART-SERVICE",
+      "subject": "the installed service restarts on the same data root",
+      "expected": "both ports listening again after Restart-Service",
+      "actual": true,
+      "verdict": "PASS",
+      "control": "",
+      "note": "Restart-Service is the documented section 5 operation, not a process kill."
+    },
+    {
+      "id": "RESTART-SESSION-RECOVERED",
+      "subject": "the onboard reconnects after the service restart and readiness returns",
+      "expected": "session generation advances and readiness is Ready again",
+      "actual": "generation 1 -> 2 readiness=Ready",
+      "verdict": "PASS",
+      "control": "a generation that did not advance would mean the reconnect was never observed; the pre-restart value is recorded above",
+      "note": ""
+    },
+    {
+      "id": "RESTART-HEALTH-READY",
+      "subject": "GET /health/ready after the restart",
+      "expected": "200 ready",
+      "actual": "{\"status\":\"ready\"} HTTP_STATUS=200",
+      "verdict": "PASS",
+      "control": "the same endpoint returned 503 before any session existed in this very run",
+      "note": ""
+    },
+    {
+      "id": "RESTART-STATE-PRESERVED",
+      "subject": "stored state survives the restart on both sides",
+      "expected": "server inbox does not shrink and the onboard journal is not recreated",
+      "actual": "ProtocolInbox 34 -> 49; journal 36864 -> 36864 bytes; AcceptedDemands=0",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "MOVEMENT-CLOSED-LOOP",
+      "subject": "pickup, multi-slot load, movement, gate batch unload and atomic completion",
+      "expected": "one full WIRE_TO_GATE journey on the real vehicle",
+      "actual": "not attempted: the RIoT create gate stayed closed and no per-run safety GO was given",
+      "verdict": "INCONCLUSIVE",
+      "control": "",
+      "note": "Ticket 10. SAFETY-NO-CREATE is the positive evidence that this run did not move the vehicle."
+    },
+    {
+      "id": "HW-ONBOARD-TARGET",
+      "subject": "screen, touch and barcode scanner on the target vehicle terminal",
+      "expected": "exercised on the target hardware",
+      "actual": "not present on this workstation",
+      "verdict": "INCONCLUSIVE",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "HW-REAL-IO",
+      "subject": "real eight-slot IO module, wiring, locks and light curtains",
+      "expected": "exercised on real IO",
+      "actual": "simulator only (ioModule 127.0.0.1:1502)",
+      "verdict": "INCONCLUSIVE",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "UNINSTALL-SERVICE",
+      "subject": "Uninstall-ControlServerLocal.ps1 removes the isolated service and its roots",
+      "expected": "result PASS",
+      "actual": "Access to the path 'C:\\Users\\szy\\w2g-ticket09\\acceptance\\install\\e_sqlite3.dll' is denied.",
+      "verdict": "FAIL",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "LIFECYCLE-CERT-STORES-UNCHANGED",
+      "subject": "install through uninstall changes no certificate store",
+      "expected": "0 of the 4 observed stores changes its digest across the whole run",
+      "actual": "changed=0 ",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "PRODUCTION-UNAFFECTED-FINAL",
+      "subject": "the production service and its machine-scope secret survive the whole run",
+      "expected": "no drift against the pre-run snapshot and the certificate password value unchanged",
+      "actual": "drift=0 ; status=Running certificatePasswordUnchanged=True",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "TEARDOWN-PORTS",
+      "subject": "every port this run opened is released",
+      "expected": "0 still listening",
+      "actual": 0,
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    }
+  ]
+}

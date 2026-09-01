@@ -1,0 +1,35 @@
+{
+  "Health": {
+    "url": "http://192.168.200.1:58507"
+  },
+  "ConnectionStrings": {
+    "ControlServer": "Data Source=C:\\Users\\szy\\w2g-ticket09\\acceptance3\\data\\data\\controlserver.db"
+  },
+  "OnboardTransport": {
+    "enabled": true,
+    "listenAddress": "192.168.200.1",
+    "port": 58505,
+    "credentialEnvironmentVariable": "CONTROL_SERVER_ONBOARD_CREDENTIAL"
+  },
+  "OnboardSafetyProjection": {
+    "enabled": true,
+    "credentialEnvironmentVariable": "CONTROL_SERVER_ONBOARD_CREDENTIAL"
+  },
+  "JourneyRuntime": {
+    "enabled": false
+  },
+  "Serilog": {
+    "WriteTo": [
+      {
+        "Name": "File",
+        "Args": {
+          "path": "C:\\Users\\szy\\w2g-ticket09\\acceptance3\\data\\logs\\controlserver-.ndjson",
+          "formatter": "Serilog.Formatting.Compact.CompactJsonFormatter, Serilog.Formatting.Compact",
+          "rollingInterval": "Day",
+          "retainedFileCountLimit": 14,
+          "shared": true
+        }
+      }
+    ]
+  }
+}

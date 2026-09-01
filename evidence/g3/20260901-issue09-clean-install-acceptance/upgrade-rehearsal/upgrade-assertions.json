@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET09_UPGRADE_PATH_REHEARSAL_ISOLATED",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260901b-19ce7db",
+  "legacyReleaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260831-31263b1",
+  "serviceName": "8005 AGV ControlServer Ticket09 Legacy",
+  "probePasswordVariable": "CONTROL_SERVER_TICKET09_PROBE_CERT_PASSWORD",
+  "productionTargeted": false,
+  "storeDigestsBefore": [
+    {
+      "store": "CurrentUser\\Root",
+      "count": 44,
+      "digest": "eabac27de65eeed437e55544e713e8b63a0cf411ae32b817c8d64dd5524d1d1d"
+    },
+    {
+      "store": "LocalMachine\\Root",
+      "count": 42,
+      "digest": "ab61277a3823de09c400de64b2379b30b9c01a35477c41c2005191e6df0e6909"
+    },
+    {
+      "store": "CurrentUser\\My",
+      "count": 1,
+      "digest": "5b4c58e4c353689f325e6fd58a26c717ac475bbfb1fb651f6cdc2ecbb0a769d1"
+    },
+    {
+      "store": "LocalMachine\\My",
+      "count": 1,
+      "digest": "e87de8aa751519a9692b90b773f48482afab166c6a99cb0d99f4c287d43ef5a6"
+    }
+  ],
+  "storeDigestsFinal": [
+    {
+      "store": "CurrentUser\\Root",
+      "count": 44,
+      "digest": "eabac27de65eeed437e55544e713e8b63a0cf411ae32b817c8d64dd5524d1d1d"
+    },
+    {
+      "store": "LocalMachine\\Root",
+      "count": 42,
+      "digest": "ab61277a3823de09c400de64b2379b30b9c01a35477c41c2005191e6df0e6909"
+    },
+    {
+      "store": "CurrentUser\\My",
+      "count": 1,
+      "digest": "5b4c58e4c353689f325e6fd58a26c717ac475bbfb1fb651f6cdc2ecbb0a769d1"
+    },
+    {
+      "store": "LocalMachine\\My",
+      "count": 1,
+      "digest": "e87de8aa751519a9692b90b773f48482afab166c6a99cb0d99f4c287d43ef5a6"
+    }
+  ],
+  "productionBefore": {
+    "status": "Running",
+    "processIds": [
+      8632
+    ],
+    "listeners": [
+      "::1:58007",
+      "127.0.0.1:58005",
+      "127.0.0.1:58007"
+    ]
+  },
+  "productionFinal": {
+    "status": "Running",
+    "processIds": [
+      8632
+    ],
+    "listeners": [
+      "::1:58007",
+      "127.0.0.1:58005",
+      "127.0.0.1:58007"
+    ]
+  },
+  "finishedAt": "2026-09-01T02:20:45.5408391+00:00",
+  "counts": {
+    "pass": 18,
+    "fail": 0,
+    "inconclusive": 0
+  },
+  "assertions": [
+    {
+      "id": "LEGACY-INSTALL",
+      "subject": "a TLS-era instance is installed as the thing to be upgraded",
+      "expected": "install PASS, certs directory populated, all four soon-to-be-removed keys present in its configuration",
+      "actual": "result=PASS sourceCommit=9daeef4325fccf094767b689fa484d8e1e414042 certFiles=localhost-development-root.cer,localhost-development-root.pem,localhost.pfx keysPresent=serverCertificatePath,serverCertificatePasswordEnvironmentVariable,allowInsecureLoopback,requireHttps",
+      "verdict": "PASS",
+      "control": "the acceptance run applied the same four-key detector to the new installer output and found 0 of them",
+      "note": "This is the shape a real site is upgrading from, not a hand-written approximation of it."
+    },
+    {
+      "id": "PROBE-VARIABLE-SET",
+      "subject": "the machine-scope variable the upgrade is asked to clear exists before the upgrade",
+      "expected": "CONTROL_SERVER_TICKET09_PROBE_CERT_PASSWORD present with the value this run generated",
+      "actual": "present=True matchesGenerated=True",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Value never printed. Without this precondition the clearing segment would trivially \"pass\" by having nothing to do."
+    },
+    {
+      "id": "UPGRADE-FAILS-ON-BAD-PACKAGE",
+      "subject": "a package that passes the manifest check but cannot start is not silently accepted",
+      "expected": "the upgrade throws, and the diagnostic log shows it got past backup-complete before failing",
+      "actual": "threw=True steps=preflight-complete>service-stopped>backup-complete>staging-complete removedKeys=4 healthUrlRewritten=True>certificate-cleanup-complete directory=True password=True>replacement-installed>failure: Service '8005 AGV ControlServer Ticket09 Legacy (8005 AGV ControlServer Ticket09 Legacy)' cannot be started due to the following error: Cannot start service '8005 AGV ControlServer Ticket09 Legacy' on computer '.'.>rollback-complete",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Failing before the backup would prove nothing about rollback; the manifest hashes were regenerated so the tamper survives preflight."
+    },
+    {
+      "id": "UPGRADE-ROLLBACK-RESTORES-INSTALL",
+      "subject": "rollback puts the original installation back byte for byte",
+      "expected": "0 differences between the install tree before the upgrade and after the rollback",
+      "actual": "differences=0 ",
+      "verdict": "PASS",
+      "control": "the same comparer reports the differences introduced by the successful upgrade later in this run (must be non-zero there)",
+      "note": ""
+    },
+    {
+      "id": "UPGRADE-ROLLBACK-RESTORES-SECRET",
+      "subject": "rollback restores the machine-scope certificate password it cleared",
+      "expected": "the probe variable holds the same value it held before the failed upgrade",
+      "actual": "present=True unchanged=True",
+      "verdict": "PASS",
+      "control": "",
+      "note": "This is the segment ticket 03 could not execute at all."
+    },
+    {
+      "id": "UPGRADE-ROLLBACK-RESTORES-SERVICE",
+      "subject": "the instance is running again on its original binaries after rollback",
+      "expected": "service Running and the certificate directory restored from the backup",
+      "actual": "status=Running certsDirectory=True certFiles=3",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "UPGRADE-PASS",
+      "subject": "the documented section 4.5 upgrade completes on a real TLS-era installation",
+      "expected": "result PASS, service Running, sourceCommit equal to the new candidate",
+      "actual": "result=PASS status=Running sourceCommit=19ce7db70893afea6c6361988c3bc612d77569d0 transport=plaintext",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "UPGRADE-CERT-DIRECTORY-REMOVED",
+      "subject": "the upgrade removes the certificate directory from the data root",
+      "expected": "reported removed AND C:\\Users\\szy\\w2g-ticket09\\upgrade\\data\\certs absent on readback",
+      "actual": "reported=True presentOnReadback=False",
+      "verdict": "PASS",
+      "control": "LEGACY-INSTALL recorded 3 files in that directory before the upgrade",
+      "note": "Ticket 13 note applied: the reported field is the script talking about itself, so the readback is the evidence."
+    },
+    {
+      "id": "UPGRADE-MACHINE-PASSWORD-CLEARED",
+      "subject": "the upgrade clears the machine-scope certificate password it was pointed at, and only that one",
+      "expected": "the probe variable is gone and the production variable still holds its original value",
+      "actual": "probePresent=False productionUnchanged=True",
+      "verdict": "PASS",
+      "control": "PROBE-VARIABLE-SET recorded the same variable present with a known value minutes earlier in this run",
+      "note": "Both halves matter: clearing everything named like a certificate password would also satisfy the first half alone."
+    },
+    {
+      "id": "UPGRADE-CONFIG-MIGRATED",
+      "subject": "the retained production configuration is migrated to the plaintext key set",
+      "expected": "all four removed keys gone, Health:url rewritten to http",
+      "actual": "keysStillPresent= reportedRemoved=OnboardTransport:serverCertificatePath,OnboardTransport:serverCertificatePasswordEnvironmentVariable,OnboardTransport:allowInsecureLoopback,OnboardSafetyProjection:requireHttps healthUrl=http://localhost:58607 rewritten=True",
+      "verdict": "PASS",
+      "control": "LEGACY-INSTALL found all four of those key names in this same file before the upgrade",
+      "note": ""
+    },
+    {
+      "id": "UPGRADE-REPLACED-BINARIES",
+      "subject": "the upgrade actually replaced the installation",
+      "expected": "the same comparer that reported 0 differences after rollback reports differences here",
+      "actual": "differences=12",
+      "verdict": "PASS",
+      "control": "",
+      "note": "This is the control for UPGRADE-ROLLBACK-RESTORES-INSTALL: the comparer is shown to be capable of reporting a difference."
+    },
+    {
+      "id": "UPGRADE-LIVE-OVER-HTTP",
+      "subject": "the upgraded instance answers /health/live over plain HTTP",
+      "expected": "200 with status live at the migrated Health:url",
+      "actual": "{\"status\":\"live\"} HTTP_STATUS=200",
+      "verdict": "PASS",
+      "control": "the same endpoint on the same port spoke HTTPS before the upgrade; the legacy install verified it with curl --cacert",
+      "note": ""
+    },
+    {
+      "id": "UPGRADE-NO-KEY-MATERIAL-LEFT",
+      "subject": "no key material survives under the upgraded install and data roots",
+      "expected": "0 key-material files",
+      "actual": "found=0 ",
+      "verdict": "PASS",
+      "control": "the same detector over the backup root still finds the legacy material the rollback path depends on: 6 (must be non-zero)",
+      "note": "The backups are inside the disposable run root and go away with it; a production upgrade leaves them under the backup root on purpose."
+    },
+    {
+      "id": "UPGRADE-CURRENTUSER-ROOT-IS-MANUAL",
+      "subject": "the upgrade does not claim to have removed the CurrentUser\\Root certificate",
+      "expected": "currentUserRootCertificateRemoved false and currentUserRootCertificateRemovalIsManual true",
+      "actual": "removed=False manual=True",
+      "verdict": "PASS",
+      "control": "",
+      "note": "Manual section 4.5 carries the manual removal; reporting it as cleaned here would be a false green."
+    },
+    {
+      "id": "REHEARSAL-UNINSTALL",
+      "subject": "the rehearsal instance is removed",
+      "expected": "service absent, install root and data root removed",
+      "actual": "serviceAbsent=True installRoot=False dataRoot=False",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "REHEARSAL-PROBE-VARIABLE-GONE",
+      "subject": "the probe machine-scope variable does not outlive the rehearsal",
+      "expected": "CONTROL_SERVER_TICKET09_PROBE_CERT_PASSWORD absent",
+      "actual": "present=False",
+      "verdict": "PASS",
+      "control": "",
+      "note": ""
+    },
+    {
+      "id": "REHEARSAL-CERT-STORES-UNCHANGED",
+      "subject": "the whole rehearsal leaves the certificate stores as it found them",
+      "expected": "0 of the 4 observed stores changes its sorted-thumbprint digest",
+      "actual": "changed=0 ",
+      "verdict": "PASS",
+      "control": "",
+      "note": "The legacy installer creates its root and leaf in CurrentUser\\My and deletes both after export; -InstallCurrentUserRoot was deliberately not passed."
+    },
+    {
+      "id": "REHEARSAL-PRODUCTION-UNAFFECTED",
+      "subject": "the production service and its machine-scope secret survive the rehearsal",
+      "expected": "no drift against the pre-run snapshot (PID 8632, ::1:58007 127.0.0.1:58005 127.0.0.1:58007) and the certificate password unchanged",
+      "actual": "drift=0 ; status=Running passwordUnchanged=True",
+      "verdict": "PASS",
+      "control": "",
+      "note": "The entire point of -CertificatePasswordVariable: this assertion would fail if the rehearsal had used the production name."
+    }
+  ]
+}

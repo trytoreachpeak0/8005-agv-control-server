@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 2,
+  "result": "PASS",
+  "runId": "20260901T021922Z",
+  "completedAt": "2026-09-01T02:19:43.9368597+00:00",
+  "sourceCommit": "9daeef4325fccf094767b689fa484d8e1e414042",
+  "packageManifestSha256": "08457d817bc9852cbe01a3e247ab2850aaaef22962e7c51449316f025ea0bb6a",
+  "configurationSha256": "75becb5de11c4d145e2baeed75fa49aec2c8fa8439f904fc6e6f152aeada80c4",
+  "serviceName": "8005 AGV ControlServer Ticket09 Legacy",
+  "serviceAccount": "LocalSystem",
+  "serviceStatus": "Running",
+  "serviceStartType": "Auto",
+  "installRoot": "C:\\Users\\szy\\w2g-ticket09\\upgrade\\install",
+  "dataRoot": "C:\\Users\\szy\\w2g-ticket09\\upgrade\\data",
+  "databasePath": "C:\\Users\\szy\\w2g-ticket09\\upgrade\\data\\data\\controlserver.db",
+  "databaseCreatedByMigration": true,
+  "logDirectory": "C:\\Users\\szy\\w2g-ticket09\\upgrade\\data\\logs",
+  "logFiles": [
+    "controlserver-20260901.ndjson"
+  ],
+  "backupRoot": "C:\\Users\\szy\\w2g-ticket09\\upgrade\\backups",
+  "httpsEndpoint": "https://localhost:58607",
+  "onboardTransportEndpoint": "tls://127.0.0.1:58605",
+  "firstStartReadiness": {
+    "status": "not-ready",
+    "reason": "RECOVERY_HANDSHAKE_REQUIRED"
+  },
+  "certificate": {
+    "dnsNames": [
+      "localhost"
+    ],
+    "leafThumbprint": "4DE964EB8B1CC5A6E74A99754ABF72EEA5F52149",
+    "rootThumbprint": "BE7FF2D5E904763F8C531C9D5B3D897A4BE3433C",
+    "trustedRootThumbprint": null,
+    "trustStore": "none (pinned CA file)",
+    "caCertificateFile": "C:\\Users\\szy\\w2g-ticket09\\upgrade\\data\\certs\\localhost-development-root.pem",
+    "chainVerification": "curl --cacert against the certificate this install generated",
+    "privateKeyFile": "C:\\Users\\szy\\w2g-ticket09\\upgrade\\data\\certs\\localhost.pfx"
+  },
+  "externalSecrets": {
+    "machineEnvironmentInjected": false,
+    "riotMachineScopePresent": true,
+    "onboardMachineScopePresent": true,
+    "certificatePasswordMachineScopePresent": true,
+    "serviceSpecificEnvironmentPresent": true,
+    "valuesDisclosed": false
+  },
+  "checks": [
+    "package-hashes",
+    "sqlite-migrations-at-start",
+    "https-chain-pinned-to-install-root",
+    "https-live-after-start",
+    "https-ready-after-start",
+    "stop-start",
+    "restart",
+    "https-version",
+    "log-file-written"
+  ],
+  "journeyRuntimeEnabled": false,
+  "riotMutationPerformed": false,
+  "orderCreated": false,
+  "vehicleMoved": false,
+  "protocolTag": "protocol-v0.1.1",
+  "protocolCommit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+  "backupPath": "C:\\Users\\szy\\w2g-ticket09\\upgrade\\backups\\20260901T021922Z"
+}
