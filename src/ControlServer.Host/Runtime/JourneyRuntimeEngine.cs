@@ -132,6 +132,21 @@ public sealed class JourneyRuntimeEngine(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
             .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
             .ConfigureAwait(false);
+        // The MesIngest catalog is MES's own list of open transport demands, and a journey of ours
+        // reaching Completed does not take the demand out of it. Discovery is only reached once no
+        // unresolved journey remains, so the demand that just finished was scored as a fresh
+        // candidate again and, being the oldest thing in the backlog, was selected ahead of every
+        // other one. Intake then met its own AcceptedDemands row and the store refused the replay
+        // -- correctly, because the pickup intent this rebuilds carries the current clock as its
+        // CreatedAt and no longer matches the persisted one. That refusal failed the whole
+        // iteration closed, so no *other* eligible demand could be accepted for as long as the
+        // finished demand stayed in the catalog. A demand this server has accepted is bound to its
+        // one journey permanently; it is never a candidate again, whatever stage that journey
+        // reached.
+        HashSet<string> acceptedDemandIds = (await dbContext.AcceptedDemands
+                .Select(row => row.DemandId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .ToHashSet(StringComparer.Ordinal);
         List<EligibleCandidate> eligible = [];
         foreach (AcceptedDemandSnapshot candidate in snapshot.Items)
         {
@@ -140,7 +155,14 @@ public sealed class JourneyRuntimeEngine(
             int expectedBasketCount = 0;
             int? packageCapacity = null;
             int[] targetSlots = [];
-            if (!runtimeOptions.AllowedWorkTypes.Contains(candidate.WorkType, StringComparer.Ordinal) ||
+            if (acceptedDemandIds.Contains(candidate.DemandId))
+            {
+                // Ahead of every other gate: an accepted demand can never be taken again, so the
+                // route, package, box-count and vehicle reads the gates below perform would be
+                // spent on a decision that is already made.
+                reason = "DEMAND_ALREADY_ACCEPTED";
+            }
+            else if (!runtimeOptions.AllowedWorkTypes.Contains(candidate.WorkType, StringComparer.Ordinal) ||
                 !string.Equals(candidate.WorkType, "WIRE_TO_GATE", StringComparison.Ordinal))
             {
                 reason = "OUT_OF_SCOPE_WORK_TYPE";

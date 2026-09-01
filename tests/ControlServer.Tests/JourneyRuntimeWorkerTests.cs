@@ -149,6 +149,83 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task ACompletedDemandStillListedByMesIngestIsNeverOfferedForIntakeAgain()
+    {
+        // MesIngest publishes MES's own list of open transport demands; our journey completing does
+        // not remove the demand from it. Discovery runs again as soon as no unresolved journey
+        // remains, so the finished demand was scored as a fresh candidate, and intake met the
+        // AcceptedDemands row it had written itself. The store refused that replay -- rightly: the
+        // pickup intent discovery rebuilds stamps CreatedAt from the current clock, which no longer
+        // matches the persisted intent. Every poll then failed closed.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AcceptedDemandSnapshot finished = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10));
+        fixture.Catalog.Set(finished);
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.RunToCompletionAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+
+        // The field clock moves between polls and the fixture's does not. Without this the replayed
+        // intent looks identical to the persisted one and the store lets the replay through, which
+        // is what hid the defect from the suite.
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "DEMAND_ALREADY_ACCEPTED",
+            (await fixture.BacklogAsync(finished.DemandId)).ReasonCode);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(1, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await fixture.Context.AcceptedDemands.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await fixture.Context.TransportDemandCompletions.CountAsync(TestContext.Current.CancellationToken));
+        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Equal(2, fixture.Riot.TotalCreateCount);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task ACompletedDemandStillListedByMesIngestDoesNotBlockTheNextEligibleDemand()
+    {
+        // The operational cost of the replay refusal: it aborted the whole runtime iteration, so no
+        // other demand could be accepted while the finished one remained in the catalog. Backlog
+        // ordering is by FirstSeenAt, so the finished demand is always the one selected.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AcceptedDemandSnapshot finished = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10));
+        fixture.Catalog.Set(finished);
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.RunToCompletionAsync();
+        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(2));
+        AcceptedDemandSnapshot next = fixture.Demand(
+            "10000000-0000-4000-8000-000000000002", "SUBLOT-002", Now.AddMinutes(-5));
+        fixture.Catalog.Set(finished, next);
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow accepted = await fixture.RuntimeAsync(next.DemandId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, accepted.Stage);
+        Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(next.DemandId)).ReasonCode);
+        Assert.Equal(
+            "DEMAND_ALREADY_ACCEPTED",
+            (await fixture.BacklogAsync(finished.DemandId)).ReasonCode);
+
+        // One pickup and one gate order for the finished journey, one pickup for the new one: the
+        // finished demand is never dispatched a second time.
+        Assert.Equal(3, fixture.Riot.TotalCreateCount);
+        Assert.Equal(1, await fixture.Context.TransportDemandCompletions.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            JourneyRuntimeStage.Completed,
+            (await fixture.RuntimeAsync(finished.DemandId)).Stage);
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-04")]
     public async Task EachStopPublishesItsWorklistUnderItsOwnRevision()
@@ -1554,6 +1631,10 @@ public sealed class JourneyRuntimeWorkerTests
         public Task<AcceptedDemandRow> DemandRowAsync() => Context.AcceptedDemands
             .AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
+
+        public Task<JourneyBacklogRow> BacklogAsync(string demandId) => Context.JourneyBacklog
+            .AsNoTracking()
+            .SingleAsync(row => row.DemandId == demandId, TestContext.Current.CancellationToken);
 
         public Task<VehicleDispatchLeaseRow> LeaseAsync() => Context.VehicleDispatchLeases
             .AsNoTracking()
