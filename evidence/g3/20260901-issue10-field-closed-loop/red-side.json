@@ -1,0 +1,58 @@
+[
+  {
+    "Detector": "store-digest-drift",
+    "Side": "CONTROL",
+    "Expected": "0",
+    "Observed": "0",
+    "Verdict": "PASS"
+  },
+  {
+    "Detector": "key-material-scan",
+    "Side": "CONTROL",
+    "Expected": "0",
+    "Observed": "0",
+    "Verdict": "PASS"
+  },
+  {
+    "Detector": "tls-diagnostic-scan",
+    "Side": "CONTROL",
+    "Expected": "0",
+    "Observed": "0",
+    "Verdict": "PASS"
+  },
+  {
+    "Detector": "production-pid-guard",
+    "Side": "CONTROL",
+    "Expected": "True",
+    "Observed": "True",
+    "Verdict": "PASS"
+  },
+  {
+    "Detector": "store-digest-drift",
+    "Side": "RED(one digest changed, count identical)",
+    "Expected": "1",
+    "Observed": "1",
+    "Verdict": "PASS"
+  },
+  {
+    "Detector": "key-material-scan",
+    "Side": "RED(one .pfx planted)",
+    "Expected": "1",
+    "Observed": "1",
+    "Verdict": "PASS"
+  },
+  {
+    "Detector": "tls-diagnostic-scan",
+    "Side": "RED(one AuthenticationException line)",
+    "Expected": "1",
+    "Observed": "1",
+    "Verdict": "PASS"
+  },
+  {
+    "Detector": "production-pid-guard",
+    "Side": "RED(baseline PID off by one)",
+    "Expected": "False",
+    "Observed": "False",
+    "Verdict": "PASS"
+  }
+]

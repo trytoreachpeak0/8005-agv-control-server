@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "runKind": "TICKET10_FIELD_CLOSED_LOOP_ON_PLAINTEXT_RELEASE_CANDIDATE",
+  "releaseRoot": "C:\\Users\\szy\\Desktop\\w2g-rc-20260901b-19ce7db",
+  "serverCommit": "19ce7db70893afea6c6361988c3bc612d77569d0",
+  "onboardCommit": "238b46eb2c9ae90584e4288a782176f66b7de942",
+  "protocolTag": "protocol-v0.1.1",
+  "dispatchGeneration": 8,
+  "operatorId": "S0020310",
+  "createGateOpen": true,
+  "startedAt": "2026-09-01T10:59:43.5444245+08:00",
+  "finishedAt": "2026-09-01T03:11:43.9667604+00:00",
+  "journeyStage": "Completed",
+  "blockReasonCode": "",
+  "completed": true,
+  "portsReleased": true,
+  "hostStderrEmpty": true,
+  "hostStdoutLines": 27190,
+  "storeDigestsAtStop": [
+    {
+      "Store": "CurrentUser\\Root",
+      "Count": 44,
+      "Digest": "f81d37638e357c859576e9b9cf847dd22ddd1f8c701f1b58e55c76a7e4f4f7a0"
+    },
+    {
+      "Store": "CurrentUser\\My",
+      "Count": 1,
+      "Digest": "5b4c58e4c353689f325e6fd58a26c717ac475bbfb1fb651f6cdc2ecbb0a769d1"
+    },
+    {
+      "Store": "LocalMachine\\Root",
+      "Count": 42,
+      "Digest": "47b2581f7e7d9c9b487c3f260b4f6221146f5936f223fee5f63b3635aa81d1ea"
+    },
+    {
+      "Store": "LocalMachine\\My",
+      "Count": 1,
+      "Digest": "e87de8aa751519a9692b90b773f48482afab166c6a99cb0d99f4c287d43ef5a6"
+    }
+  ],
+  "storeDrift": [],
+  "keyMaterialFiles": [],
+  "tlsDiagnosticHits": [],
+  "productionServicePid": 8632,
+  "productionServicePidUnchanged": true,
+  "productionServicePorts": [
+    "::1:58007",
+    "127.0.0.1:58005",
+    "127.0.0.1:58007"
+  ],
+  "counts": {
+    "AcceptedDemands": 1,
+    "JourneyRuntimes": 1,
+    "JourneyBacklog": 268,
+    "OrderIntents": 2,
+    "RiotDispatchAuditEvents": 10,
+    "StationOperations": 2,
+    "OperationResults": 2,
+    "ProtocolInbox": 196,
+    "ProtocolOutbox": 10
+  },
+  "backlogByReason": [
+    {
+      "ReasonCode": "OUT_OF_SCOPE_WORK_TYPE",
+      "ReasonRows": "246"
+    },
+    {
+      "ReasonCode": "OUT_OF_SCOPE_AREA",
+      "ReasonRows": "13"
+    },
+    {
+      "ReasonCode": "ELIGIBLE",
+      "ReasonRows": "7"
+    },
+    {
+      "ReasonCode": "AREA_STATION_NOT_FOUND",
+      "ReasonRows": "2"
+    }
+  ],
+  "journey": {
+    "DemandId": "f37a0950-4a3e-437c-a745-9dc5050ff07d",
+    "Stage": "Completed",
+    "PickupStationId": "N2-13_N3-13",
+    "PickupStationRiotId": "29",
+    "GateStationId": "关卡",
+    "GateStationRiotId": "210",
+    "ExpectedBasketCount": "2",
+    "DispatchGeneration": "8",
+    "VehicleBusinessRevision": "1",
+    "WorklistRevision": "1",
+    "PlanRevision": "1",
+    "BlockReasonCode": null,
+    "CreatedAt": "2026-09-01 02:59:48.6139236+00:00",
+    "UpdatedAt": "2026-09-01 03:11:13.6480217+00:00"
+  },
+  "sessions": {
+    "AgvId": "老厂前线新多仓位1",
+    "SessionGeneration": "1",
+    "Readiness": "Ready",
+    "ReasonCode": "READY"
+  },
+  "orderIntents": [
+    {
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-PICKUP-8",
+      "Purpose": "TO_PICKUP",
+      "TargetStationId": "N2-13_N3-13",
+      "DestinationStationId": "29",
+      "Status": "CONFIRMED",
+      "OrderId": "order-2094621232220733440"
+    },
+    {
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-GATE-8",
+      "Purpose": "TO_GATE",
+      "TargetStationId": "关卡",
+      "DestinationStationId": "210",
+      "Status": "CONFIRMED",
+      "OrderId": "order-2094623072786186240"
+    }
+  ],
+  "dispatchAudit": [
+    {
+      "Sequence": "1",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-PICKUP-8",
+      "Phase": "PRE_CREATE_RECONCILIATION",
+      "Outcome": "UNKNOWN",
+      "ReceiptClassification": "AbsentAtObservation",
+      "OccurredAt": "2026-09-01 02:59:49.2748264+00:00"
+    },
+    {
+      "Sequence": "1",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-GATE-8",
+      "Phase": "PRE_CREATE_RECONCILIATION",
+      "Outcome": "UNKNOWN",
+      "ReceiptClassification": "AbsentAtObservation",
+      "OccurredAt": "2026-09-01 03:07:08.2026787+00:00"
+    },
+    {
+      "Sequence": "2",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-PICKUP-8",
+      "Phase": "CREATE_DISPATCH",
+      "Outcome": "ARMED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-09-01 02:59:49.3548878+00:00"
+    },
+    {
+      "Sequence": "2",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-GATE-8",
+      "Phase": "CREATE_DISPATCH",
+      "Outcome": "ARMED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-09-01 03:07:08.2066245+00:00"
+    },
+    {
+      "Sequence": "3",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-PICKUP-8",
+      "Phase": "CREATE_REQUEST",
+      "Outcome": "STARTED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-09-01 02:59:49.377983+00:00"
+    },
+    {
+      "Sequence": "3",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-GATE-8",
+      "Phase": "CREATE_REQUEST",
+      "Outcome": "STARTED",
+      "ReceiptClassification": null,
+      "OccurredAt": "2026-09-01 03:07:08.2110752+00:00"
+    },
+    {
+      "Sequence": "4",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-PICKUP-8",
+      "Phase": "CREATE_RESPONSE",
+      "Outcome": "ACCEPTED",
+      "ReceiptClassification": "SdkAccepted",
+      "OccurredAt": "2026-09-01 02:59:49.6816052+00:00"
+    },
+    {
+      "Sequence": "4",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-GATE-8",
+      "Phase": "CREATE_RESPONSE",
+      "Outcome": "ACCEPTED",
+      "ReceiptClassification": "SdkAccepted",
+      "OccurredAt": "2026-09-01 03:07:08.4440318+00:00"
+    },
+    {
+      "Sequence": "5",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-PICKUP-8",
+      "Phase": "POST_CREATE_RECONCILIATION",
+      "Outcome": "CONFIRMED",
+      "ReceiptClassification": "Found",
+      "OccurredAt": "2026-09-01 02:59:49.9793918+00:00"
+    },
+    {
+      "Sequence": "5",
+      "UpperId": "W2G-f37a0950-4a3e-437c-a745-9dc5050ff07d-GATE-8",
+      "Phase": "POST_CREATE_RECONCILIATION",
+      "Outcome": "CONFIRMED",
+      "ReceiptClassification": "Found",
+      "OccurredAt": "2026-09-01 03:07:08.7022862+00:00"
+    }
+  ],
+  "stationOperations": [
+    {
+      "OperationType": "Load",
+      "Status": "Committed",
+      "SublotId": "Q26084908-12"
+    },
+    {
+      "OperationType": "Unload",
+      "Status": "Committed",
+      "SublotId": "Q26084908-12"
+    }
+  ]
+}

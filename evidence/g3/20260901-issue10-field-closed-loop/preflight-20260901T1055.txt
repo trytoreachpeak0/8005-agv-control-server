@@ -1,0 +1,35 @@
+MES catalogRevision=5966 historyEpoch=104b2bed-3adf-47cf-a978-548a9e63b16f count=252
+WIRE_TO_GATE 需求: 15 条
+RIoT map 25 站点: 206 个（body 往返成功，非 ping／connect）
+可解析出 AREA 的站点覆盖 332 个 AREA
+
+=== 静态闸门逐条判定（动态事实：电量／车辆／会话就绪未含，需现场）===
+
+DemandId                         Area   Eqp      Sublot       Package                     Reason                 Station        Capacity MaxBoxCount Baskets
+--------                         ----   ---      ------       -------                     ------                 -------        -------- ----------- -------
+776840d024884d0e816b9df44cf40eed N23-6  2QHB14   Q26086014-7  TO-263-2L                   AREA_STATION_NOT_FOUND                                     
+2334d2dc2fc44b328f15e1a046ac4b14 N13-4  2QHB64   Q26086406-5  TO-247-2L-A                 ELIGIBLE_STATIC        N13-4_N14-4/84 6        10          2.00
+f37a09504a3e437ca7459dc5050ff07d N2-13  3QHS6015 Q26084908-12 TO-252-2L(4R)               ELIGIBLE_STATIC        N2-13_N3-13/29 5        10          2.00
+cf90fcd8febc4cd0b0dd91419fc547a6 N5-5   2QHE07   Q26086046-1  TO-252-2L(6R)               ELIGIBLE_STATIC        N4-5_N5-5/37   4        6           2.00
+8968083058d24b3d8e3db2f1cb2f3889 D10-11 3QHS599  Q26085997-8  MSOP10(8R)                  OUT_OF_SCOPE_AREA                                          
+c696b7724b06401bb8fd5366ba0ac202 D11-14 3QHS3997 Q26084397-4  SOP8(150mil)(12R)           OUT_OF_SCOPE_AREA                                          
+18c1946df74d489db7deb52f7ebc0812 D12-15 3QHS3999 Q26077652-7  DFNWB1.4*1-8L-C(P0.35T0.37) OUT_OF_SCOPE_AREA                                          
+8adb3c965a8f443fa1a764f7aff91cde D15-13 3QHS520  Q26081584-3  SOP8(150mil)(12R)           OUT_OF_SCOPE_AREA                                          
+e59ac68db87b4269b393dd02d8b9e562 D22-1  3QHS4319 Q26065445-6  TSSOP20/PP(173mil)(10R)     OUT_OF_SCOPE_AREA                                          
+26681c09a74c40918be84bbe0c59c6ca D22-11 3QHS4329 Q26076912-9  MSOP10(118mil)(14R)         OUT_OF_SCOPE_AREA                                          
+405eab3bc43642339c2b06c917127d05 D23-6  3QHS6011 Q26075127-1  SOP8(150mil)(12R)           OUT_OF_SCOPE_AREA                                          
+e80c50305e4e42879c17bcef1faa82ca Q12-11 3QHS3070 Q26085300-10 TSOT-23-6L                  OUT_OF_SCOPE_AREA                                          
+940d5799f39e4406a665121e4281c091 Q13-11 3QHS560  Q26068604-5  SOP8(150mil)(12R)           OUT_OF_SCOPE_AREA                                          
+45f2dade49c84a64abaf1263415f94a3 Q16-13 3QHS76   Q26081587-11 SOP8(150mil)(12R)           OUT_OF_SCOPE_AREA                                          
+822a0bcb42d24ffcaaa1f82694d9cff9 Q22-12 3QHS3005 Q26064110-9  SOP12(150mil)(12R)          OUT_OF_SCOPE_AREA                                          
+
+
+=== 判定分布 ===
+   11  OUT_OF_SCOPE_AREA
+    3  ELIGIBLE_STATIC
+    1  AREA_STATION_NOT_FOUND
+
+=== 静态闸门全通过: 3 条 ===
+  2334d2dc2fc44b328f15e1a046ac4b14 area=N13-4 station=N13-4_N14-4/84 package=TO-247-2L-A 容量=6 箱数=10 预计筐数=2
+  cf90fcd8febc4cd0b0dd91419fc547a6 area=N5-5 station=N4-5_N5-5/37 package=TO-252-2L(6R) 容量=4 箱数=6 预计筐数=2
+  f37a09504a3e437ca7459dc5050ff07d area=N2-13 station=N2-13_N3-13/29 package=TO-252-2L(4R) 容量=5 箱数=10 预计筐数=2

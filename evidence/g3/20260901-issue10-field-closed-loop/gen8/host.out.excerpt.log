@@ -1,0 +1,67 @@
+# ticket 10 gen8 服务端日志摘录
+# 原始 host.out.log 27190 行；去掉 EF 的 Executed DbCommand 后剩 6779 行带时间戳的事件。
+# 以下每秒级轮询按类折叠为计数，未逐行保留（对端与协议形态可从 kept 行与 run-result.json 复核）：
+#   Start processing HTTP request                        1551 行
+#   Sending HTTP request                                 1551 行
+#   Received HTTP response headers                       1550 行
+#   End processing HTTP request                          1550 行
+#   HTTP GET /api/onboard/v1/vehicle-safety responded    556 行
+#   HTTP GET /health                                     0 行
+# 余下 21 行逐字保留在下方。
+
+[10:59:40 INF] Applying migration '20260825101420_InitialWireToGate'.
+[10:59:40 INF] Applying migration '20260826071119_DurableOnboardBusinessInbox'.
+[10:59:40 INF] Applying migration '20260826075354_DurableOperationBusinessOutcome'.
+[10:59:40 INF] Applying migration '20260826080712_ExactAcceptedDemandSnapshot'.
+[10:59:41 INF] Applying migration '20260826081628_ExclusiveVehicleDispatchLease'.
+[10:59:41 INF] Applying migration '20260826091733_ProductionJourneyRuntimeWorker'.
+[10:59:41 INF] Applying migration '20260826093310_VersionedStationTaskAdmission'.
+[10:59:41 INF] Applying migration '20260826104624_DurableRecoveryStateMachineG2'.
+[10:59:41 INF] Applying migration '20260827062706_PackageCapacityAndSafetyProjection'.
+[10:59:41 INF] Applying migration '20260828082910_DurableRiotCreateAttemptAudit'.
+[10:59:41 INF] Applying migration '20260828103631_ExperimentalAbsentObservationCreateAuthorization'.
+[10:59:41 INF] Applying migration '20260829083252_ScopedOperationInducedUnsafety'.
+[10:59:41 INF] Onboard NDJSON listener started on 192.168.200.1:58705; transport=plaintext
+[10:59:41 INF] Now listening on: http://192.168.200.1:58707
+[10:59:41 INF] Application started. Press Ctrl+C to shut down.
+[10:59:41 INF] Hosting environment: Development
+[10:59:41 INF] Content root path: C:\Users\szy\Desktop\w2g-rc-20260901b-19ce7db\controlserver
+[11:11:16 ERR] Journey runtime iteration failed closed; no stage is inferred from memory.
+[11:11:18 ERR] Journey runtime iteration failed closed; no stage is inferred from memory.
+[11:11:20 ERR] Journey runtime iteration failed closed; no stage is inferred from memory.
+[11:11:26 WRN] Onboard connection ended with a protocol or transport error.
+
+--- 异常堆栈（按原始日志行号从全文摘出）---
+[line 23270] ControlServer.Domain.BusinessIdentityConflictException: Accepted demand replay does not match its original order intent.
+[line 23271]    at ControlServer.Infrastructure.Persistence.WireToGateStore.AcceptCoreAsync(AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, JourneyExecutionPlan journey, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 237
+[line 23272]    at ControlServer.Application.DemandIntakeService.AcceptCoreAsync(AcceptedDemandSnapshot discovered, OrderIntent orderIntent, JourneyExecutionPlan journey, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs:line 84
+[line 23273]    at ControlServer.Application.JourneyIntakeCoordinator.AcceptAndDispatchToPickupAsync(AcceptedDemandSnapshot prevalidatedCandidate, OrderIntent pickupIntent, JourneyExecutionPlan journey, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs:line 925
+[line 23274]    at ControlServer.Host.Runtime.JourneyRuntimeEngine.DiscoverAndAcceptAsync(RiotMapStationCatalogSnapshot currentMap, RiotMapStation gate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 309
+[line 23275]    at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 104
+[line 23276]    at ControlServer.Host.Runtime.JourneyRuntimeWorker.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeWorker.cs:line 37
+[line 23277]    at ControlServer.Host.Runtime.JourneyRuntimeWorker.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeWorker.cs:line 37
+[line 24569] ControlServer.Domain.BusinessIdentityConflictException: Accepted demand replay does not match its original order intent.
+[line 24570]    at ControlServer.Infrastructure.Persistence.WireToGateStore.AcceptCoreAsync(AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, JourneyExecutionPlan journey, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 237
+[line 24571]    at ControlServer.Application.DemandIntakeService.AcceptCoreAsync(AcceptedDemandSnapshot discovered, OrderIntent orderIntent, JourneyExecutionPlan journey, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs:line 84
+[line 24572]    at ControlServer.Application.JourneyIntakeCoordinator.AcceptAndDispatchToPickupAsync(AcceptedDemandSnapshot prevalidatedCandidate, OrderIntent pickupIntent, JourneyExecutionPlan journey, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs:line 925
+[line 24573]    at ControlServer.Host.Runtime.JourneyRuntimeEngine.DiscoverAndAcceptAsync(RiotMapStationCatalogSnapshot currentMap, RiotMapStation gate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 309
+[line 24574]    at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 104
+[line 24575]    at ControlServer.Host.Runtime.JourneyRuntimeWorker.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeWorker.cs:line 37
+[line 24576]    at ControlServer.Host.Runtime.JourneyRuntimeWorker.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeWorker.cs:line 37
+[line 25876] ControlServer.Domain.BusinessIdentityConflictException: Accepted demand replay does not match its original order intent.
+[line 25877]    at ControlServer.Infrastructure.Persistence.WireToGateStore.AcceptCoreAsync(AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, JourneyExecutionPlan journey, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 237
+[line 25878]    at ControlServer.Application.DemandIntakeService.AcceptCoreAsync(AcceptedDemandSnapshot discovered, OrderIntent orderIntent, JourneyExecutionPlan journey, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs:line 84
+[line 25879]    at ControlServer.Application.JourneyIntakeCoordinator.AcceptAndDispatchToPickupAsync(AcceptedDemandSnapshot prevalidatedCandidate, OrderIntent pickupIntent, JourneyExecutionPlan journey, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs:line 925
+[line 25880]    at ControlServer.Host.Runtime.JourneyRuntimeEngine.DiscoverAndAcceptAsync(RiotMapStationCatalogSnapshot currentMap, RiotMapStation gate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 309
+[line 25881]    at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 104
+[line 25882]    at ControlServer.Host.Runtime.JourneyRuntimeWorker.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeWorker.cs:line 37
+[line 25883]    at ControlServer.Host.Runtime.JourneyRuntimeWorker.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeWorker.cs:line 37
+[line 27178] System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+[line 27179]  ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+[line 27181]    at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+[line 27182]    at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+[line 27185]    at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 68
+[line 27186]    at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 96
+[line 27187]    at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 96
+[line 27188]    at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 96
+[line 27189]    at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\Desktop\8005-agv-control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 37
