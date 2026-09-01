@@ -62,7 +62,7 @@
 <OutputRoot>/
 ├─ controlserver/                     服务端 self-contained 包（含 deployment-manifest.json）
 ├─ onboard-hmi/                       车载端 self-contained 包（含生产配置模板）
-├─ scripts/                           安装、卸载、重建脚本
+├─ scripts/                           安装、卸载、升级、重建脚本
 ├─ inventory/                         依赖与许可证清单、秘密扫描报告
 ├─ RELEASE-CANDIDATE.md               本文件
 ├─ release-manifest.json              联合发布身份与逐文件 SHA-256
@@ -185,14 +185,21 @@ curl.exe --noproxy 192.168.200.1 --max-time 10 'http://192.168.200.1:58007/healt
 
 ### 4.5 从证书版本升级已有安装
 
-`scripts\Update-ControlServerLocal.ps1` 就地升级**生产**安装（服务名、安装目录、数据根与备份根都是
-硬编码的生产值，不可参数化）：
+`scripts\Update-ControlServerLocal.ps1` 就地升级已有安装。**不带任何目标参数时升级的就是生产安装**
+（服务名 `8005 AGV ControlServer`、`C:\Program Files\8005 AGV\ControlServer`、
+`C:\ProgramData\8005\ControlServer`、`C:\ProgramData\8005\ControlServer-backups`、机器级变量
+`CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD`），日常升级照下面这条命令跑即可：
 
 ```powershell
 .\scripts\Update-ControlServerLocal.ps1 `
     -PackagePath <新包目录> -ResultPath <新结果 JSON> `
     -DiagnosticPath <诊断日志路径> -VerifySafetyProjectionReadOnly
 ```
+
+五个目标参数 `-ServiceName` / `-InstallRoot` / `-DataRoot` / `-BackupRoot` /
+`-CertificatePasswordVariable` 存在的唯一目的是**先在隔离实例上排练一遍这条升级路径**再动生产：
+给全五个就完全不碰生产的服务、目录与机器级变量。默认值即上面括号里的生产值，因此省略它们与旧版本
+硬编码的行为逐字相同。
 
 升级器停服 → 备份安装目录与完整数据根 → 把保留的 `appsettings.Production.json` 迁移成明文键集 →
 清除证书遗留物 → 换二进制 → 起服并回读 `/health/live`、`/version` 与（给了开关时）只读投影；任一步

@@ -5,22 +5,40 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ResultPath,
     [string]$DiagnosticPath,
-    [switch]$VerifySafetyProjectionReadOnly
+    [switch]$VerifySafetyProjectionReadOnly,
+    # The defaults below are the production installation this script was written for. They are
+    # parameters so that the upgrade path can be rehearsed end to end on an isolated instance --
+    # a different service name, install root, data root, backup root and machine-scope certificate
+    # password variable -- without the production service ever being the only possible target.
+    # Nothing about the production invocation changes: omit them all and the values are identical
+    # to the hard-coded ones they replaced.
+    [string]$ServiceName = '8005 AGV ControlServer',
+    [string]$InstallRoot = 'C:\Program Files\8005 AGV\ControlServer',
+    [string]$DataRoot = 'C:\ProgramData\8005\ControlServer',
+    [string]$BackupRoot = 'C:\ProgramData\8005\ControlServer-backups',
+    [string]$CertificatePasswordVariable = 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
 )
 
 $ErrorActionPreference = 'Stop'
-$serviceName = '8005 AGV ControlServer'
-$installPath = 'C:\Program Files\8005 AGV\ControlServer'
-$dataRoot = 'C:\ProgramData\8005\ControlServer'
-$backupRoot = 'C:\ProgramData\8005\ControlServer-backups'
+
+function Resolve-FullPath([string]$Path) {
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
+$serviceName = $ServiceName
+$installPath = Resolve-FullPath $InstallRoot
+$dataRoot = Resolve-FullPath $DataRoot
+$backupRoot = Resolve-FullPath $BackupRoot
 $resolvedPackage = [IO.Path]::GetFullPath($PackagePath)
 $resolvedResult = [IO.Path]::GetFullPath($ResultPath)
 $resolvedDiagnostic = if ([string]::IsNullOrWhiteSpace($DiagnosticPath)) { $null } else { [IO.Path]::GetFullPath($DiagnosticPath) }
 $runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 $backupPath = Join-Path $backupRoot "$runId-upgrade"
-$stagingPath = "C:\Program Files\8005 AGV\ControlServer.staging.$runId"
+# A sibling of the install root, not of the production install root: staging next to whatever is
+# actually being upgraded is what keeps the Move-Item below on one volume.
+$stagingPath = '{0}.staging.{1}' -f $installPath.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar), $runId
 $certificateDirectory = Join-Path $dataRoot 'certs'
-$certificatePasswordVariable = 'CONTROL_SERVER_ONBOARD_CERTIFICATE_PASSWORD'
+$certificatePasswordVariable = $CertificatePasswordVariable
 $oldCertificatePassword = [Environment]::GetEnvironmentVariable($certificatePasswordVariable, 'Machine')
 $replacementInstalled = $false
 $serviceStopped = $false

@@ -324,7 +324,11 @@ if ($null -eq $protocol -or $protocol.approvalStatus -ne 'APPROVED_RELEASE') {
 }
 
 # --- Deliverable documents and operator scripts -----------------------------
-foreach ($name in @('Install-ControlServerLocal.ps1', 'Uninstall-ControlServerLocal.ps1', 'Publish-ControlServer.ps1')) {
+# Update-ControlServerLocal.ps1 belongs here because RELEASE-CANDIDATE.md section 4.5 tells the site
+# to run it with the same .\scripts\ prefix as the install command in 4.2. Shipping the document
+# without the script it invokes left the documented upgrade path unrunnable from the delivered package.
+foreach ($name in @('Install-ControlServerLocal.ps1', 'Uninstall-ControlServerLocal.ps1',
+                    'Update-ControlServerLocal.ps1', 'Publish-ControlServer.ps1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $releaseScriptDirectory $name) -Force
 }
 $releaseDocument = Join-Path $root 'docs\RELEASE-CANDIDATE.md'
@@ -445,6 +449,7 @@ $releaseManifest = [ordered]@{
         document = 'RELEASE-CANDIDATE.md'
         install = 'scripts/Install-ControlServerLocal.ps1'
         uninstall = 'scripts/Uninstall-ControlServerLocal.ps1'
+        upgrade = 'scripts/Update-ControlServerLocal.ps1'
         rebuild = 'scripts/Publish-ControlServer.ps1'
     }
 }
