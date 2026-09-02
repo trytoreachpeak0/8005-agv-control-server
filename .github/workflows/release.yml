@@ -1,0 +1,146 @@
+name: release
+
+# Assembles the WIRE_TO_GATE release candidate -- ControlServer and OnboardHmi
+# together -- and uploads it as an artifact. It deploys nothing: the control host
+# pulls this artifact, verifies its hash and pushes it to the factory server and
+# to the onboard machines. See remote-ops/docs/wire-to-gate-cd.md in the
+# workspace repository.
+#
+# One package for both ends, deliberately. RELEASE-CANDIDATE.md section 8.1 is
+# explicit that the plaintext ends negotiate nothing and never downgrade: a
+# version mismatch surfaces as a refused connection, not as an error message
+# that names the cause. Shipping both halves under one release identity makes
+# "same version on both ends" a property of the artifact rather than a rule
+# somebody has to remember.
+#
+# The onboard repository is read-only for agents. Nothing here writes to it --
+# it is checked out to a scratch mirror, and New-WireToGateReleaseCandidate.ps1
+# clones the requested commit out of that mirror into its own throwaway tree.
+#
+# Manual dispatch only. A deployment stops a Windows service that talks to the
+# production AGV stack, and the onboard half lands on a machine that moves. That
+# is not something a push should start.
+on:
+  workflow_dispatch:
+    inputs:
+      onboard_commit:
+        description: 'OnboardHmi commit to build (full 40-character hash)'
+        required: true
+        type: string
+      onboard_branch:
+        description: 'Branch containing that commit'
+        required: false
+        default: 'OnboardHmi_MVP'
+        type: string
+
+# Shared with test.yml. Every runner this repository uses lives on the same
+# 20-vCPU guest, so two workflows firing at once are one machine oversubscribed.
+# cancel-in-progress must stay false: this job clones, builds twice and hashes
+# every file, and a cancelled run leaves half-written scratch trees behind.
+concurrency:
+  group: win11-01
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: [self-hosted, headless]
+    timeout-minutes: 60
+
+    steps:
+      - name: Validate the onboard commit
+        shell: pwsh
+        run: |
+          $commit = '${{ inputs.onboard_commit }}'
+          if ($commit -notmatch '^[0-9a-f]{40}$') {
+            throw "onboard_commit must be a full 40-character hash, got: $commit"
+          }
+
+      - uses: actions/checkout@v7
+
+      # A scratch mirror of the read-only onboard repository. fetch-depth 0
+      # because the requested commit is an input and need not be the branch tip.
+      # ONBOARD_HMI_TOKEN is a PAT with read access to that repository: the
+      # default GITHUB_TOKEN is scoped to this one and cannot see it.
+      - name: Mirror the onboard repository
+        uses: actions/checkout@v7
+        with:
+          repository: trytoreachpeak0/8005-agv-onboard-hmi
+          ref: ${{ inputs.onboard_branch }}
+          token: ${{ secrets.ONBOARD_HMI_TOKEN }}
+          fetch-depth: 0
+          path: onboard-mirror
+
+      - name: dotnet --info
+        shell: pwsh
+        run: dotnet --info
+
+      # The release script builds both halves, derives the joint release
+      # identity, and ends in a scan gate that throws on a secret-scan finding,
+      # a key-material file or an unresolved package license. There is no
+      # separate verification step because that gate is not skippable.
+      #
+      # It is handed the local mirror rather than the GitHub URL so that no
+      # token ever reaches a git command line or a global git config on a
+      # runner that outlives this job.
+      - name: Assemble the release candidate
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "wire-to-gate-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+          $mirror = Join-Path $env:GITHUB_WORKSPACE 'onboard-mirror'
+          ./scripts/New-WireToGateReleaseCandidate.ps1 `
+            -OutputRoot $out `
+            -OnboardCommit '${{ inputs.onboard_commit }}' `
+            -OnboardBranch '${{ inputs.onboard_branch }}' `
+            -OnboardRepositoryUrl $mirror
+          "PACKAGE_ROOT=$out" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Show release identity
+        shell: pwsh
+        run: |
+          $manifest = Get-Content -Raw (Join-Path $env:PACKAGE_ROOT 'release-manifest.json') | ConvertFrom-Json
+          $manifest.components | ConvertTo-Json -Depth 6
+
+      # One zip plus one hash file. The control host verifies the hash before it
+      # copies anything anywhere, so the hash must travel beside the zip rather
+      # than only inside GitHub's artifact metadata.
+      - name: Archive package
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'release-stage'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+
+          $sha = '${{ github.sha }}'.Substring(0, 7)
+          $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
+          $name = "WireToGate-$stamp-$sha"
+          $zip = Join-Path $stage "$name.zip"
+
+          Compress-Archive -Path (Join-Path $env:PACKAGE_ROOT '*') -DestinationPath $zip -CompressionLevel Optimal
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *$name.zip" | Set-Content -LiteralPath (Join-Path $stage "$name.zip.sha256") -Encoding ascii
+
+          Copy-Item (Join-Path $env:PACKAGE_ROOT 'release-manifest.json') $stage
+          Copy-Item (Join-Path $env:PACKAGE_ROOT 'SHA256SUMS.txt') $stage
+
+          Write-Output "zip=$zip"
+          Write-Output "sha256=$hash"
+          "ARTIFACT_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "STAGE_DIR=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.STAGE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
+
+      # The scratch trees carry a full second copy of the onboard source and two
+      # self-contained publishes. Left behind, every run adds ~1 GB to a guest
+      # that also stores the NuGet cache and four runner work directories.
+      - name: Clean scratch trees
+        if: always()
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path $env:RUNNER_TEMP -Directory -Filter 'wire-to-gate-*' -ErrorAction SilentlyContinue |
+            ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
