@@ -1,98 +1,126 @@
 # 8005-agv-control-server
 
-WIRE_TO_GATE MVP 的服务端生产仓库。本文是 agent 在本仓库工作时的指令。
+The production server repository for the WIRE_TO_GATE MVP. This file is the
+agent's instructions for working here.
 
-## 写权限
+## Write authority
 
-本仓库**可写**。同一工作区里的其他仓库不是：`8005-agv-onboard-hmi` 与
-`slots-simulator` 对 agent **只读**；`8005-agv-protocol` 可写，但每次推送都要开 issue
-@`SocialKKKK` 通知。能连上一台机器、或问题路由到某个仓库，都不等于获得那个仓库的
-写权限。
+This repository is writable. The others in the workspace are not:
+`8005-agv-onboard-hmi` and `slots-simulator` are read-only for agents;
+`8005-agv-protocol` is writable, but every push there must be announced to Kun
+Wang in an issue that `@SocialKKKK`. Reaching a machine, or routing a problem to
+a repository, never grants write access to it.
 
-若本仓库是单独克隆的（不在 `8005-workspace` 工作区里），把上述三个仓库一律当只读处理
-并先询问。
+If this repository is cloned on its own — outside the `8005-workspace` workspace
+— treat all three as read-only and ask.
 
-## 协作工作流
+## Collaboration workflow
 
-项目由两个人推进：Kun Wang（GitHub `SocialKKKK`）负责 `8005-agv-onboard-hmi` 与
-`slots-simulator`；Zhengyu Shao 负责本仓库；`8005-agv-protocol` 共同维护。
-完整说明在 `8005---AGV/docs/collaboration-workflow.md`。
+Two people drive this project. Kun Wang (GitHub `SocialKKKK`) owns
+`8005-agv-onboard-hmi` and `slots-simulator`; Zhengyu Shao owns this repository;
+`8005-agv-protocol` is jointly maintained. The full account, written for humans
+and in Chinese, is `8005---AGV/docs/collaboration-workflow.md`.
 
-Agent 必须遵守的部分：
+What an agent must follow:
 
-- **协作单位是 integration slice**，不要自己发明推进单位。
-  `8005-agv-protocol/integration-slices/index.json` 定义了 `W2G-IS-00` 到 `W2G-IS-07`，
-  每个带 `sequence` 与 `prerequisites`。每个切片的 `gates` 就是分工：`G1` 双方共用、
-  `CONTROL_SERVER_G2` 本仓库、`ONBOARD_HMI_G2` 对方、`G3` 两人一起。
-- **两边的 G2 无依赖，可并行**；两边 G2 都绿了才约 G3。G3 需要两人同时在场，是最贵的
-  资源，不要在对方 G2 未绿时提议。
-- **跨仓库反馈分三条路**：协议契约的歧义或错误 → `8005-agv-protocol` 的 issue，附触发
-  它的 `vectorId`；对方实现不符合契约 → **对方仓库**的 issue，**必须先跑 G3 拿证据**并
-  附上 evidence 目录；本仓库的活 → 本仓库的 issue。
-  **跨仓库指控必须带可复现的门禁证据，不能只是"我这边跑不通"。**格式照
-  `docs/defects/` 已有的写法：开头一行 `Found by:` 加指向 G3 证据 `SUMMARY.md` 的链接。
-- **改 protocol 由 Zhengyu Shao 单独决定，不需要事先批准**，但**每次推送都要在
-  `8005-agv-protocol` 开 issue @`SocialKKKK` 通知**，写清改了什么、影响哪些
-  `W2G-IS-*` 切片、他的 `ONBOARD_HMI_G2` 证据是否作废。**通知要和推送在同一个任务里
-  完成。**发布（打 tag）仍需双人签名走 `attestations/` 那套机制，**AI 和 CI 不能批准**。
-- **协议改动要攒批次。** 补丁发布会作废两边受影响的 G1/G2/G3 证据，每一次小改都在让
-  对方重跑整套门禁。
+- **The unit of collaboration is the integration slice.** Do not invent another
+  one. `8005-agv-protocol/integration-slices/index.json` defines `W2G-IS-00`
+  through `W2G-IS-07`, each with a `sequence` and `prerequisites`. Each slice's
+  `gates` array *is* the division of labour: `G1` shared, `CONTROL_SERVER_G2`
+  this repository, `ONBOARD_HMI_G2` theirs, `G3` together.
+- **The two G2 gates have no dependency and run in parallel.** G3 needs both
+  people present and is the most expensive resource, so do not propose it while
+  the other side's G2 is not green.
+- **Cross-repository feedback takes one of three routes.** A contract ambiguity
+  or error goes to an issue in `8005-agv-protocol` carrying the `vectorId` that
+  triggered it. The other side failing the contract goes to an issue in *their*
+  repository — **run G3 for evidence first** and attach the evidence directory.
+  Work inside this repository stays in this repository's issues.
+  **A cross-repository claim must carry reproducible gate evidence; "it does not
+  work on my side" is not a report.** Follow the shape already used in
+  `docs/defects/`: a `Found by:` line linking the G3 evidence `SUMMARY.md`.
+- **`8005-agv-protocol` needs no advance approval** — Zhengyu Shao decides its
+  content alone — **but every push must be announced in an issue that
+  `@SocialKKKK`**, stating what changed, which `W2G-IS-*` slices it touches, and
+  whether their `ONBOARD_HMI_G2` evidence is now void, in the same task as the
+  push. Tagging a release still needs the two-owner attestation; **AI and CI
+  cannot approve.**
+- **Batch protocol changes.** A patch release voids the affected G1/G2/G3
+  evidence on both sides, so every small change costs the other side a full gate
+  re-run.
 
-## 语言约定
+## Language
 
-写进 GitHub 的东西用中文：README、文档正文、issue 标题与正文、PR 标题与正文、
-commit message 正文。
+Agent instruction files — this one, and anything under `.claude/` — are written
+in **English**.
 
-保持英文：commit 的 conventional 前缀（`feat:` `fix:` `docs:` `chore:`）、标识符、
-路径、命令、环境变量、错误码、门禁与切片名（`G1`、`W2G-IS-00`）、协议消息名与
-schema 字段与 `vectorId`（它们是契约的一部分，改不得）。引用报错和测试输出时先贴
-英文原文，再用中文解释。不回溯改旧的。
+Everything a human reads is written in **Chinese**: README files, documentation
+prose, `docs/defects/` entries, evidence summaries, issue and pull-request
+titles and bodies, and commit message bodies.
 
-## 测试与门禁
+Stay English inside Chinese text: conventional commit prefixes (`feat:`, `fix:`,
+`docs:`, `chore:`), identifiers, paths, commands, environment variables, error
+codes, gate and slice names (`G1`, `W2G-IS-00`), and protocol message names,
+schema fields and `vectorId` values — those are the contract itself. Quote an
+error or a test result in its original English first, then explain it in
+Chinese. Do not rewrite existing text to match; this governs new writing.
 
-**"跑全套测试"在本仓库指的是这一条**，不是任何门禁：
+## Tests and gates
+
+**"Run the full test suite" means this one command here**, never a gate:
 
 ```powershell
 dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
 ```
 
-历史规模约 243–249 passed / 0 skipped。构建前必须使用 `global.json` 指定的 .NET SDK
-`8.0.424`；SDK 不在 `PATH` 时把 `WIRE_TO_GATE_DOTNET_EXE` 指向该版本的 `dotnet.exe`，
-然后 `.\scripts\build.ps1`。
+Historically 243–249 passed / 0 skipped. Build with the .NET SDK pinned in
+`global.json` (`8.0.424`); when it is not on `PATH`, point
+`WIRE_TO_GATE_DOTNET_EXE` at that version's `dotnet.exe` and run
+`.\scripts\build.ps1`.
 
-测试授权按当前任务算。整理、提交、推送一个本来就脏的工作树**不构成**跑测试的授权；
-只有当前任务改了产品代码、测试或构建输入，或用户明确要求验证时才跑。不要从
-`git status` 推断。
+Test authorization is scoped to the current task. A request to inspect, tidy,
+commit, or push an already-dirty worktree does **not** authorize a test run. Run
+tests only when the current task changed product code, tests, or build inputs,
+or when the user asks for validation. Never infer it from `git status`.
 
-门禁比全套测试贵得多，**不要自行进入**，先说清楚跑哪个、成本多少、要验证什么：
+Gates cost far more than the suite. **Do not enter one on your own initiative** —
+say which gate, what it costs, and what it proves, then ask:
 
-| 门禁 | 命令 | 什么时候 |
+| Gate | Command | When |
 | --- | --- | --- |
-| `G1` | 在 protocol 仓 `pnpm g1` | 协议内容清单与审批签名校验 |
-| `CONTROL_SERVER_G2` | `.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice <id> -ProtocolManifest <protocol-repo>\manifest\release.json -Output <新目录>` | 本端逐切片一致性 |
-| `G3` | `.\scripts\run-staged-g3.ps1`、`run-staged-g3-restart.ps1`、`run-demand-bearing-g3-vectors.ps1`，均要 `-StageRoot <不存在的短路径> -EvidenceRoot <新目录>` | 双端联调 |
-| `RC` | `.\scripts\New-WireToGateReleaseCandidate.ps1` | 打候选版本 |
+| `G1` | `pnpm g1` in the protocol repo | Protocol content manifest and attestation check |
+| `CONTROL_SERVER_G2` | `.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice <id> -ProtocolManifest <protocol-repo>\manifest\release.json -Output <new dir>` | This side's per-slice conformance |
+| `G3` | `.\scripts\run-staged-g3.ps1`, `run-staged-g3-restart.ps1`, `run-demand-bearing-g3-vectors.ps1`, each with `-StageRoot <short path that does not exist> -EvidenceRoot <new dir>` | Both-ends integration |
+| `RC` | `.\scripts\New-WireToGateReleaseCandidate.ps1` | Cutting a release candidate |
 
-要点：
+Load-bearing details:
 
-- **G2 入口会先验证精确 protocol manifest 哈希。**协议版本一变，旧证据不能继承——
-  `W2G-IS-01` 在 `protocol-v0.1.1` 中被重新映射到 `CV-DEMAND-ACCEPT-TO-PICKUP`，
-  `v0.1.0` 的 G2 证据就已经作废过一次。
-- **`-Output` / `-EvidenceRoot` 必须是新目录**，不要覆盖既有证据。
-- `run-staged-g3.ps1` 需要 Node.js 与 pnpm（它要跑协议 G1）。三个 G3 runner 都走明文、
-  都可无人值守，共用 `run-staged-g3.ps1` param 块里的四个 commit 绑定。
-- **G3 向量各有证据不等于八个切片通过。**切片的通过要四道门禁齐全。
-- 详细步骤见 `docs/RELEASE-CANDIDATE.md`。
+- **The G2 entry point verifies the exact protocol manifest hash first.** When
+  the protocol version changes, old evidence cannot carry over — `W2G-IS-01` was
+  remapped to `CV-DEMAND-ACCEPT-TO-PICKUP` in `protocol-v0.1.1`, which already
+  voided the `v0.1.0` G2 evidence once.
+- **`-Output` and `-EvidenceRoot` must be new directories.** Never overwrite
+  existing evidence.
+- `run-staged-g3.ps1` needs Node.js and pnpm because it runs the protocol's G1.
+  All three G3 runners are plaintext, run unattended, and share the four commit
+  bindings in `run-staged-g3.ps1`'s param block.
+- **Evidence for individual G3 vectors is not the same as eight slices passing.**
+  A slice passes only with all four gates.
+- Full procedure: `docs/RELEASE-CANDIDATE.md`.
 
-## 证据纪律
+## Evidence discipline
 
-- 证据按门禁分目录：`evidence/g2/`、`evidence/g3/`、`evidence/rc/`，每次一个新目录。
-- **红色证据必须保留**，不能用一次成功的重跑掩盖。保留首次失败、解释原因、可能的话补
-  回归测试。
-- 缺陷记录进 `docs/defects/`，开头写 `Found by:` 加发现它的那次运行的证据链接。
-- 历史红色证据和已发布的身份是不可变的。
+- Evidence goes under `evidence/g2/`, `evidence/g3/`, `evidence/rc/`, one new
+  directory per run.
+- **Keep red evidence.** Never hide a failed run behind a successful re-run.
+  Preserve the first failure, explain the cause, and add a regression test where
+  possible.
+- Defects go in `docs/defects/`, opening with a `Found by:` line that links the
+  run that found them.
+- Historical red evidence and released identities are immutable.
 
-## 脚本基线
+## Scripting baseline
 
-PowerShell 7。不写 Windows PowerShell 5.1 兼容代码，不加版本探测或降级分支，不调
-`powershell.exe` —— 用 `pwsh`。新建 `.ps1` 以 `#Requires -Version 7` 开头。
+PowerShell 7. Do not write Windows PowerShell 5.1 compatible code, do not add
+version probes or fallbacks, and do not invoke `powershell.exe` — call `pwsh`.
+Every new `.ps1` opens with `#Requires -Version 7`.
