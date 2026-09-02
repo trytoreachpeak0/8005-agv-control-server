@@ -151,6 +151,28 @@ Load-bearing details:
   run that found them.
 - Historical red evidence and released identities are immutable.
 
+## Toolchain baseline
+
+This repository is pinned to the workspace-wide .NET toolchain. The authority is
+`8005-agv-program/docs/adr/cross/0056-dotnet-toolchain-baseline.md`.
+
+| Item | Pinned value | Enforced by |
+| --- | --- | --- |
+| SDK | 8.0.424, `rollForward: disable` | `global.json` |
+| Target framework | `net8.0` | `Directory.Build.props` |
+| Test stack | xunit.v3 3.2.2, Microsoft.NET.Test.Sdk 18.8.1, xunit.runner.visualstudio 3.1.5 | `Directory.Packages.props` |
+
+Package versions live in `Directory.Packages.props` and nowhere else. A project
+that declares its own `Version=` fails restore with NU1008, because
+`CentralPackageVersionOverrideEnabled` is false. xunit v2, NUnit, MSTest and
+coverlet.collector are banned — do not add them back, and do not "upgrade" a
+test project by switching frameworks.
+
+Never raise a version in one repository alone. Change the ADR and every
+repository together, then run `check-toolchain.ps1` from the workspace root; it
+reports drift across all seven repositories and exits non-zero when a writable
+one deviates.
+
 ## Scripting baseline
 
 PowerShell 7. Do not write Windows PowerShell 5.1 compatible code, do not add
