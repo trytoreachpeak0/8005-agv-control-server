@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [ControlServer_MVP, main]
+    paths-ignore: ['**.md', 'docs/**', 'evidence/**', '.claude/**']
+  pull_request:
+    branches: [ControlServer_MVP, main]
+    paths-ignore: ['**.md', 'docs/**', 'evidence/**', '.claude/**']
+  workflow_dispatch:
+
+# 同一分支上新的推送取消尚未跑完的旧运行。Windows runner 在私有仓按 2 倍
+# 计费，所以这里既取消旧运行，也让纯文档与证据改动不触发。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 测试
+    # 必须是 Windows：Directory.Build.props 把 RuntimeIdentifier 定为 win-x64。
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # global.json 把 SDK 钉在 8.0.424 且 rollForward 为 disable，
+      # 所以这里按文件安装，不要写死版本号。
+      - name: 安装 .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: 缓存 NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~\.nuget\packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # RestorePackagesWithLockFile 已开启，用 --locked-mode 保证 CI 装的
+      # 就是 lock 文件里的版本；lock 与 csproj 不一致时直接失败而不是悄悄升级。
+      # RIoT SDK 从仓库内 vendor/nuget/ 的本地源取，见 NuGet.Config。
+      - name: 还原
+        run: dotnet restore ControlServer.sln --locked-mode
+
+      - name: 构建
+        run: dotnet build ControlServer.sln -c Release --no-restore
+
+      - name: 测试
+        run: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+
+      - name: 说明 CI 的覆盖边界
+        if: always()
+        shell: pwsh
+        run: |
+          @"
+          > **CI 只跑单元与集成测试，不跑任何门禁。**
+          > ``G1``（协议清单校验）、``CONTROL_SERVER_G2``（逐切片一致性）、
+          > ``G3``（双端联调）和 ``RC``（候选版本）都需要真实协议 manifest、
+          > 对端或人工授权，只能本地跑。绿色的 CI 不代表任何切片通过。
+          >
+          > 切片状态以 [8005-agv-protocol 的切片看板](https://github.com/trytoreachpeak0/8005-agv-protocol/issues/2) 为准。
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
