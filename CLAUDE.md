@@ -14,12 +14,44 @@ a repository, never grants write access to it.
 If this repository is cloned on its own — outside the `8005-workspace` workspace
 — treat all three as read-only and ask.
 
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as GitHub issues. See `docs/agents/issue-tracker.md`.
+External pull requests are treated as a request surface and run through the same
+triage labels — that flag is on.
+
+### Triage labels
+
+The five canonical roles (`needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`, `wontfix`), created in this repository. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+`CONTEXT.md` at the repository root plus `docs/adr/`. See `docs/agents/domain.md`.
+
+### Matt Pocock's skills
+
+Installed as the `mattpocock-skills` plugin (user-level). Invoke them namespaced:
+`/mattpocock-skills:<name>`. They are explicit-only — use one when the user names
+it. `code-review` collides with the bundled `/code-review`; use
+`/mattpocock-skills:code-review` for the Standards+Spec review.
+
+### Deciding what to work on
+
+The workspace ships a `w2g-next` skill. When the next step is unclear, it reads
+the real state — working tree, the slice board issue, `integration-slices/index.json`,
+open issues, gate evidence — and applies a fixed priority ladder to name one
+action. Prefer it over guessing.
+
 ## Collaboration workflow
 
 Two people drive this project. Kun Wang (GitHub `SocialKKKK`) owns
 `8005-agv-onboard-hmi` and `slots-simulator`; Zhengyu Shao owns this repository;
 `8005-agv-protocol` is jointly maintained. The full account, written for humans
-and in Chinese, is `8005---AGV/docs/collaboration-workflow.md`.
+and in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
 
 What an agent must follow:
 
