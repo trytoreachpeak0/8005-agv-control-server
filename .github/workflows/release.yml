@@ -55,7 +55,13 @@ jobs:
             throw "onboard_commit must be a full 40-character hash, got: $commit"
           }
 
+      # Both repositories go into their own subdirectory of the workspace.
+      # This is not cosmetic: New-WireToGateReleaseCandidate.ps1 refuses to build
+      # from a dirty ControlServer worktree, and a mirror checked out at the
+      # workspace root *is* an untracked directory inside that worktree.
       - uses: actions/checkout@v7
+        with:
+          path: control-server
 
       # A scratch mirror of the read-only onboard repository. fetch-depth 0
       # because the requested commit is an input and need not be the branch tip.
@@ -84,6 +90,7 @@ jobs:
       # runner that outlives this job.
       - name: Assemble the release candidate
         shell: pwsh
+        working-directory: control-server
         run: |
           $out = Join-Path $env:RUNNER_TEMP "wire-to-gate-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
           $mirror = Join-Path $env:GITHUB_WORKSPACE 'onboard-mirror'
