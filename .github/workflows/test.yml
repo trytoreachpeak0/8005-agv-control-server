@@ -1,0 +1,42 @@
+name: test
+
+# Runs on the self-hosted runner on win11-01 (factory server Hyper-V guest).
+# This workspace does not use GitHub-hosted runners; see the workspace root
+# CLAUDE.md for why. The 'headless' label matters — win11-01 also hosts an
+# interactive runner for WPF suites, and a job that only asked for
+# [self-hosted, win11-01] could be taken by either.
+on:
+  push:
+    branches: [ControlServer_MVP, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: [self-hosted, headless]
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: dotnet --info
+        shell: pwsh
+        run: dotnet --info
+
+      # Exit code is the contract — the guest is zh-CN and prints 已通过! not
+      # Passed!, so no step here may match on English console text.
+      - name: Test
+        shell: pwsh
+        run: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: tests/ControlServer.Tests/TestResults/test-results.trx
+          if-no-files-found: warn
