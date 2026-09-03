@@ -16,6 +16,7 @@ public sealed class RecoveryStateMachineG2Tests
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly int[] RecoverySlots = [1, 2];
     private static readonly string[] UnknownReasonCodes = ["PHYSICAL_STATE_UNKNOWN"];
+    private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
     private static readonly string[] ExpectedRecoveryCommandReplay =
         ["LoadCorrectionCommand", "FaultCargoRecoveryCommand", "LoadCorrectionCommand"];
     private static readonly string[] ExpectedResumeSends =
@@ -157,6 +158,104 @@ public sealed class RecoveryStateMachineG2Tests
                 conflictingAction, CurrentState(), TestContext.Current.CancellationToken));
             Assert.Equal(4, await restartedContext.ProtocolOutbox.CountAsync(
                 TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task ResumeAdmitsExactlyOneReplacementResultForTheOperationThatAlreadyFailedItsFirstResult()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPLACEMENT";
+        const string proof = "replacement-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+
+            string replacementAck = await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000000011",
+                    "OperationResult",
+                    OperationResultPayload(journalCheckpoint: "RESUME_RESULT_RECORDED")),
+                state,
+                TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+
+            Assert.Equal("DurableAck", MessageType(replacementAck));
+            Assert.Equal(2, await context.OperationResults.CountAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+            Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.SingleAsync(
+                TestContext.Current.CancellationToken)).State);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.SingleAsync(
+                TestContext.Current.CancellationToken)).State);
+            Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await context.JourneyRuntimes.SingleAsync(
+                TestContext.Current.CancellationToken)).Stage);
+
+            // Exactly one. The authorization was consumed with the replacement, so a third result
+            // has nothing behind it and lands back on the ordinary replay conflict.
+            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000000012",
+                    "OperationResult",
+                    OperationResultPayload(journalCheckpoint: "UNAUTHORIZED_THIRD_RESULT")),
+                state,
+                TestContext.Current.CancellationToken));
+            Assert.Equal(2, await context.OperationResults.CountAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task ResumeRejectsAReplacementResultReportedOutsideTheAuthorizedSlotScope()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_SCOPE";
+        const string proof = "scope-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+
+            // The authorization covers slots 1 and 2. A replacement that settles only slot 1 leaves
+            // slot 2 unproven, so it is refused outright rather than degraded to RecoveryRequired:
+            // the operation would otherwise carry a result narrower than what was authorized.
+            await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000000013",
+                    "OperationResult",
+                    OperationResultPayload(slots: [1], journalCheckpoint: "RESUME_RESULT_RECORDED")),
+                state,
+                TestContext.Current.CancellationToken));
+
+            Assert.Single(await context.OperationResults.ToArrayAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations.SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+            Assert.Equal(RecoveryWorkflowState.AwaitingResult, (await context.RecoveryWorkflows.SingleAsync(
+                TestContext.Current.CancellationToken)).State);
         }
         finally
         {
@@ -525,6 +624,42 @@ public sealed class RecoveryStateMachineG2Tests
         DeferOutboundUntilResponseWritten = deferOutbound
     };
 
+    /// <summary>
+    /// Drives the state a resume actually starts from: the operation failed its first
+    /// OperationResult, and an administrator then authorized RESUME_AFTER_REPAIR. Seeding
+    /// StationOperationStatus.RecoveryRequired on its own skips the OperationResults row the
+    /// replacement has to displace, which is the whole difficulty.
+    /// </summary>
+    private static async Task AuthorizeResumeAfterFailedResultAsync(
+        OnboardMessageProcessor processor,
+        ControlServerDbContext context,
+        OnboardConnectionState state,
+        string proof)
+    {
+        string failedAck = await processor.ProcessAsync(
+            Envelope(
+                "e0000000-0000-4000-8000-000000000010",
+                "OperationResult",
+                OperationResultPayload(completed: false, journalCheckpoint: "OPERATOR_TIMEOUT")),
+            state,
+            TestContext.Current.CancellationToken);
+        await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+        Assert.Equal("DurableAck", MessageType(failedAck));
+        Assert.Single(await context.OperationResults.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations.SingleAsync(
+            TestContext.Current.CancellationToken)).Status);
+
+        await processor.ProcessAsync(
+            RecoverySessionRequest(proof), state, TestContext.Current.CancellationToken);
+        await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+        string accepted = await processor.ProcessAsync(
+            RecoveryAction("RESUME_AFTER_REPAIR"), state, TestContext.Current.CancellationToken);
+        await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+        Assert.Equal("RecoveryActionAccepted", MessageType(accepted));
+        Assert.Equal(RecoveryWorkflowState.AwaitingResult, (await context.RecoveryWorkflows.SingleAsync(
+            TestContext.Current.CancellationToken)).State);
+    }
+
     private static async Task SeedBlockedJourneyAsync(ControlServerDbContext context)
     {
         context.AcceptedDemands.Add(new AcceptedDemandRow
@@ -698,26 +833,29 @@ public sealed class RecoveryStateMachineG2Tests
         verifiedAt = Now
     };
 
-    private static object OperationResultPayload()
+    private static object OperationResultPayload(
+        bool completed = true,
+        int[]? slots = null,
+        string journalCheckpoint = "RESULT_RECORDED")
     {
-        object[] slotResults = RecoverySlots.Select(slot => (object)new
+        object[] slotResults = (slots ?? RecoverySlots).Select(slot => (object)new
         {
             slotNo = slot,
-            outcome = "COMPLETED",
-            finalPhysicalState = "OCCUPIED",
+            outcome = completed ? "COMPLETED" : "FAILED",
+            finalPhysicalState = completed ? "OCCUPIED" : "EMPTY",
             lockState = "LOCKED",
             unlockOutputState = "RESET",
-            reasonCodes = Array.Empty<string>()
+            reasonCodes = completed ? Array.Empty<string>() : FailedSlotReasonCodes
         }).ToArray();
         var withoutHash = new
         {
             demandId = DemandId,
             slotOperationAttemptId = AttemptId,
             operationType = "LOAD",
-            overallOutcome = "COMPLETED",
+            overallOutcome = completed ? "COMPLETED" : "FAILED",
             slotResults,
             observedAt = Now.AddSeconds(1),
-            journalCheckpoint = "RESULT_RECORDED"
+            journalCheckpoint
         };
         // The peer hashes these CLR values directly, before anything reaches the wire. Round-tripping
         // them through a JsonElement first only reproduced what the server itself used to do, so the

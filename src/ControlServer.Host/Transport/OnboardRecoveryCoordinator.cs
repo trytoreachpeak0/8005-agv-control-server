@@ -515,7 +515,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (workflow.CommandMessageId is null)
         {
             string commandId = StableGuid(actionId, "load-compensation-command");
-            string hash = CommandHash(actionId, workflow.DemandId!, workflow.SlotOperationAttemptId!, workflow.SlotsJson);
+            string hash = RecoveryCommandHash.Compute(
+                actionId, workflow.DemandId!, workflow.SlotOperationAttemptId!, workflow.SlotsJson);
             await publisher.QueueLoadCompensationCommandAsync(
                 commandId,
                 workflow.AgvId,
@@ -571,7 +572,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (workflow.CommandMessageId is null)
         {
             string commandId = StableGuid(correctionId, "load-correction-command");
-            string hash = CommandHash(correctionId, demandId, attemptId, JsonSerializer.Serialize(slots));
+            string hash = RecoveryCommandHash.Compute(
+                correctionId, demandId, attemptId, JsonSerializer.Serialize(slots));
             await publisher.QueueLoadCorrectionCommandAsync(
                 commandId,
                 workflow.AgvId,
@@ -594,12 +596,12 @@ public sealed class OnboardRecoveryCoordinator(
         string commandId = StableGuid(workflow.WorkflowId, "recovery-command");
         int[] slots = ParseSlots(workflow.SlotsJson);
         long sessionGeneration = root.GetProperty("sessionGeneration").GetInt64();
-        string hash = CommandHash(
+        string hash = RecoveryCommandHash.ForRecoveryAction(
             workflow.WorkflowId,
             workflow.DemandId ?? string.Empty,
             operation?.SlotOperationAttemptId ?? string.Empty,
             workflow.SlotsJson,
-            workflow.ForcedRecoveryGeneration.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            workflow.ForcedRecoveryGeneration);
         switch (workflow.WorkflowType)
         {
             case "RESUME_AFTER_REPAIR":
@@ -1130,10 +1132,6 @@ public sealed class OnboardRecoveryCoordinator(
             : RequiredString(payload, "overallOutcome");
 
     private static string PayloadHash(JsonElement payload) => WireContentHash.Sha256(payload.GetRawText());
-
-    private static string CommandHash(params string[] parts) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('|', parts))))
-            .ToLowerInvariant();
 
     private static string StableGuid(string identity, string purpose)
     {

@@ -92,9 +92,13 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<ConnectionRecoveryRow>().Property(row => row.Status).HasConversion<string>();
         modelBuilder.Entity<VehicleRecoveryGenerationRow>().HasKey(row => row.AgvId);
         modelBuilder.Entity<OperationResultRow>().HasKey(row => row.ResultId);
+        // One live result per attempt per generation. A result superseded by an authorized
+        // RESUME_AFTER_REPAIR replacement stays in the table as the record of what the vehicle
+        // reported when it failed, and steps out of the uniqueness scope rather than being erased.
         modelBuilder.Entity<OperationResultRow>()
             .HasIndex(row => new { row.SlotOperationAttemptId, row.ForcedRecoveryGeneration })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("SupersededByResultId IS NULL");
         modelBuilder.Entity<RecoveryDecisionRow>().HasKey(row => row.RecoveryActionId);
         modelBuilder.Entity<ExceptionRecoverySessionRow>().HasKey(row => row.ExceptionRecoverySessionId);
         modelBuilder.Entity<ExceptionRecoverySessionRow>().HasIndex(row => row.RequestId).IsUnique();
@@ -344,6 +348,7 @@ public sealed class OperationResultRow
     public DateTimeOffset ObservedAt { get; set; }
     public bool HistoricalOnly { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }
+    public string? SupersededByResultId { get; set; }
 }
 
 public sealed class RecoveryDecisionRow

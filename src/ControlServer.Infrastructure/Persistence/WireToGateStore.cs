@@ -1307,7 +1307,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .SingleOrDefaultAsync(
                 row => row.ResultId == resultId ||
                        row.SlotOperationAttemptId == slotOperationAttemptId &&
-                       row.ForcedRecoveryGeneration == forcedRecoveryGeneration,
+                       row.ForcedRecoveryGeneration == forcedRecoveryGeneration &&
+                       row.SupersededByResultId == null,
                 cancellationToken).ConfigureAwait(false);
         if (replay is not null)
         {
@@ -1349,16 +1350,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(result);
+        int[] actualSlots = result.SlotEvidence.Select(item => item.SlotNumber).Distinct().Order().ToArray();
         OperationResultRow? replay = await dbContext.OperationResults
-            .SingleOrDefaultAsync(
-                row => row.ResultId == result.ResultId ||
-                       row.SlotOperationAttemptId == result.SlotOperationAttemptId &&
-                       row.ForcedRecoveryGeneration == forcedRecoveryGeneration,
-                cancellationToken).ConfigureAwait(false);
+            .SingleOrDefaultAsync(row => row.ResultId == result.ResultId, cancellationToken)
+            .ConfigureAwait(false);
         if (replay is not null)
         {
-            bool same = replay.ResultId == result.ResultId &&
-                        replay.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+            bool same = replay.SlotOperationAttemptId == result.SlotOperationAttemptId &&
                         replay.AgvId == agvId &&
                         replay.ForcedRecoveryGeneration == forcedRecoveryGeneration &&
                         replay.ContentHash == result.WireContentSha256 &&
@@ -1369,6 +1367,28 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                     "Operation result identity was replayed with different message or content.");
             }
             return OperationResultDisposition.Replay;
+        }
+
+        // A second result for an attempt that already has a live one at this generation is a replay
+        // conflict, except in the single case the recovery state machine pays for: an administrator
+        // authorized RESUME_AFTER_REPAIR for exactly this attempt and the vehicle carried it out.
+        OperationResultRow[] settled = await dbContext.OperationResults
+            .Where(row => row.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+                          row.ForcedRecoveryGeneration == forcedRecoveryGeneration &&
+                          row.SupersededByResultId == null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (settled.Length > 0)
+        {
+            await RequireResumeAuthorizationAsync(
+                result, actualSlots, forcedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
+            // The failed result stays as the record of what the vehicle reported; it stops being the
+            // operation's live result. Saved on its own because the unique index is enforced per
+            // statement, so the replacement cannot be inserted while the old row still holds the slot.
+            foreach (OperationResultRow superseded in settled)
+            {
+                superseded.SupersededByResultId = result.ResultId;
+            }
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
         long currentGeneration = await dbContext.VehicleRecoveryGenerations
@@ -1409,7 +1429,6 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
 
         int[] expectedSlots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
-        int[] actualSlots = result.SlotEvidence.Select(item => item.SlotNumber).Distinct().Order().ToArray();
         SlotBusinessState expectedState = operation.OperationType == SlotOperationType.Load
             ? SlotBusinessState.Occupied
             : SlotBusinessState.Empty;
@@ -1489,6 +1508,49 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         });
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return OperationResultDisposition.Accepted;
+    }
+
+    /// <summary>
+    /// A RESUME_AFTER_REPAIR authorization admits exactly one replacement OperationResult for the
+    /// operation it named. Observing that result moves the workflow off AwaitingResult, so a
+    /// further result finds no authorization to spend and falls back on the replay conflict.
+    /// </summary>
+    private async Task RequireResumeAuthorizationAsync(
+        StationOperationResult result,
+        int[] actualSlots,
+        long forcedRecoveryGeneration,
+        CancellationToken cancellationToken)
+    {
+        RecoveryWorkflowRow? authorization = await dbContext.RecoveryWorkflows
+            .SingleOrDefaultAsync(
+                row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
+                       row.SlotOperationAttemptId == result.SlotOperationAttemptId &&
+                       row.State == RecoveryWorkflowState.AwaitingResult,
+                cancellationToken).ConfigureAwait(false);
+        if (authorization?.CommandContentHash is null ||
+            authorization.CommandMessageType != "SlotOperationResumeCommand")
+        {
+            throw new ProtocolContentConflictException(
+                "Operation result identity was replayed with different message or content.");
+        }
+        if (authorization.ForcedRecoveryGeneration != forcedRecoveryGeneration)
+        {
+            throw new BusinessIdentityConflictException(
+                "Replacement OperationResult was authorized at a different forced recovery generation.");
+        }
+        // The hash the resume command carried to the vehicle covers the demand, the attempt and the
+        // exact slot set. Recomputing it from what came back is one check for all three: a
+        // replacement that widens, narrows or redirects its scope cannot reproduce it.
+        if (RecoveryCommandHash.ForRecoveryAction(
+                authorization.WorkflowId,
+                result.DemandId,
+                result.SlotOperationAttemptId,
+                JsonSerializer.Serialize(actualSlots),
+                authorization.ForcedRecoveryGeneration) != authorization.CommandContentHash)
+        {
+            throw new BusinessIdentityConflictException(
+                "Replacement OperationResult falls outside its RESUME_AFTER_REPAIR authorization.");
+        }
     }
 
     public async Task<string> RecordRecoveryDecisionAsync(
