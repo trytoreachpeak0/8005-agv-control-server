@@ -27,6 +27,7 @@ public static class FakeRiotHost
         string instanceId = builder.Configuration["FakeRiot:instanceId"] ?? "fake-riot-1";
         builder.Services.AddSingleton(services => new CommandEngine<FakeRiotState>(
             instanceId, services.GetRequiredService<FakeRiotSeed>().BuildInitialState));
+        builder.Services.AddSingleton<MapStationReadCounter>();
 
         IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(
             builder.Configuration, "FakeRiot", DefaultPort);

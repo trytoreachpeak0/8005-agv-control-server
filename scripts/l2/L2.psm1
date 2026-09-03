@@ -86,6 +86,35 @@ function Wait-L2Condition {
     }
 }
 
+<#
+Waits until the journey runtime has come round at least $Count more times, and returns the count it
+reached.
+
+This is what a scenario waits on before asserting that something did *not* happen. JourneyRuntimeEngine
+reads the RIoT Map station catalog first thing on every iteration -- including the iterations where a
+Blocked journey makes it do nothing else -- so the fake RIoT's mapStationReads is the one observable
+that says "the runtime had another chance". Without it, "the vehicle took no further demand" could
+only be written as a sleep, and a sleep is the thing that turns a slow machine into a flaky one.
+
+The count is incremented when the request arrives, so $Count guarantees that many iterations have
+*started* and at least $Count - 1 have finished. Ask for one more than the assertion needs; counting
+completions is not available, because the engine does the rest of its work after this read returns.
+#>
+function Wait-L2Iterations {
+    param(
+        [Parameter(Mandatory)][object]$Riot,
+        [int]$Count = 3,
+        [int]$TimeoutSeconds = 60,
+        [L2Journal]$Journal
+    )
+
+    $target = [long]$Riot.Snapshot().body.mapStationReads + $Count
+    return Wait-L2Condition -Description "the journey runtime came round $Count more times" `
+        -Journal $Journal -Criterion 'runtime-iterations' -TimeoutSeconds $TimeoutSeconds `
+        -Probe { [long]$Riot.Snapshot().body.mapStationReads } `
+        -Until { param($v) $v -ge $target }
+}
+
 # --- control-plane client -----------------------------------------------------------------------
 
 <#
@@ -330,5 +359,6 @@ function Write-L2Evidence {
         [Text.UTF8Encoding]::new($false))
 }
 
-Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, New-L2Double, Start-L2Process,
-    Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions, Write-L2Evidence
+Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Wait-L2Iterations, New-L2Double,
+    Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
+    Write-L2Evidence

@@ -288,6 +288,30 @@ public sealed class FakeRiotTests
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.NotFound, response.StatusCode));
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task MapStationReadsCountEveryIterationWithoutMovingTheStateRevision()
+    {
+        // JourneyRuntimeEngine.ExecuteOnceAsync reads the Map station catalog first thing on every
+        // iteration, including the ones where a Blocked journey makes it do nothing else, so this
+        // counter is how an L2 scenario says "the runtime had N more chances and still did not do
+        // it". Without it a negative assertion could only be written as a sleep.
+        //
+        // The revision must not move with it. Counting reads through the command engine would make
+        // expectedRevision useless for the commands that carry real changes -- every poll would
+        // invalidate the revision a scenario had just read.
+        await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
+        HttpRiotMovementGateway gateway = fixture.Gateway();
+        long revisionBefore = await fixture.RevisionAsync();
+
+        Assert.Equal(0, await fixture.MapStationReadsAsync());
+        await gateway.ReadMapStationsAsync(25, TestContext.Current.CancellationToken);
+        await gateway.ReadMapStationsAsync(25, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, await fixture.MapStationReadsAsync());
+        Assert.Equal(revisionBefore, await fixture.RevisionAsync());
+    }
+
     private static OrderIntent Intent(string upperId, int destination) => new(
         "LEG-" + upperId,
         "D-" + upperId,
@@ -334,6 +358,9 @@ public sealed class FakeRiotTests
         }));
 
         public async Task<long> RevisionAsync() => (await SnapshotAsync()).GetProperty("revision").GetInt64();
+
+        public async Task<long> MapStationReadsAsync() =>
+            (await SnapshotAsync()).GetProperty("body").GetProperty("mapStationReads").GetInt64();
 
         public async Task<string> RunIdAsync() => (await SnapshotAsync()).GetProperty("runId").GetString()!;
 

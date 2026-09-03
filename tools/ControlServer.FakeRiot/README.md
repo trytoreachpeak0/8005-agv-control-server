@@ -80,7 +80,7 @@ ControlServer 的 SDK 实际调用的六个端点，响应形状与 `HttpRiotMov
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | `GET` | `/health` | 存活与当前故障模式 |
-| `GET` | `/snapshot` | 车辆、订单、地图站点、故障模式 |
+| `GET` | `/snapshot` | 车辆、订单、地图站点、故障模式、`mapStationReads` |
 | `GET` | `/openapi.json` | 机器契约 |
 | `POST` | `/reset` | 新一轮，`revision` 回到 1 |
 | `PUT` | `/vehicle` | 位置、`procState`、速度、运动/控制/急停状态、电量、锁、订单占用 |
@@ -91,6 +91,17 @@ ControlServer 的 SDK 实际调用的六个端点，响应形状与 `HttpRiotMov
 每个响应都带 `schemaVersion`、`instanceId`、`runId`、`revision`、`observedAt`；写命令必须带
 `runId` 与 `commandId`，可带 `expectedRevision`。写响应还带 `changed`、`replayed`、
 `appliedRevision`。
+
+### `mapStationReads`：让否定判据不必 sleep
+
+快照里的 `mapStationReads` 是 Map 站点目录被读了多少次的单调计数。
+`JourneyRuntimeEngine.ExecuteOnceAsync` 每一轮开头都读一次它——**包括 journey 已经 Blocked、它
+再没别的事可做的那些轮**——所以这是唯一一个「运行时又有机会了」的可观测量。L2 场景要说「这台车
+不再受理任何新需求」，等的就是它（`Wait-L2Iterations`），而不是 sleep 一段拍脑袋的时间。
+
+**它刻意不走 command engine，因此不推进 `revision`。**每次轮询都动一下 `revision`，会让
+`expectedRevision` 对真正携带变化的命令彻底失去意义。计数在故障注入之前累加：一个在等轮次的场景
+要知道运行时确实又来过，哪怕它这次拿到的是一个注入的失败。
 
 处理顺序与模拟器一致：
 

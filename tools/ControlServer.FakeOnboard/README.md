@@ -11,6 +11,18 @@ dotnet run --project tools/ControlServer.FakeOnboard -- --FakeOnboard:Peer:port=
 控制面默认监听 `127.0.0.1:58009`，非 loopback 默认拒绝启动。协议流量是另一条到 ControlServer 的
 TCP 连接，不走 HTTP。
 
+握手那条 `SafetyStateSnapshot` 携带的安全摘要可以在启动时给定：
+
+```bash
+dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:port=58005   --FakeOnboard:Seed:vehicleStopped=false
+```
+
+六个键对应 `SafetySummary` 的六个字段：`departureSafe`、`vehicleStopped`、`allTargetSlotsLocked`、
+`allUnlockOutputsReset`、`unknownPresent`、`reasonCodes`（数组写成 `reasonCodes:0=...`）。
+**这是唯一能让会话在「车还在动」的状态下建立的入口**——`PUT /control/v1/safety` 只能报告一个
+已经存在的会话的变化，而 2026-09-03 现场那个缺陷的形状恰恰是会话建立那一刻快照就已经记着
+`vehicleStopped=false`。
+
 **它不是真车载端，也永远不会是。**没有 IO、没有 journal、没有操作员。它有的是服务端状态机所依赖
 的那部分协议行为——这正好够让一个场景真正关于服务端。真车载端要等落地顺序第 5 步的 UIA 驱动。
 

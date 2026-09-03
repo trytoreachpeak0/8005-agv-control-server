@@ -64,6 +64,7 @@ public static class ControlPlane
     {
         ArgumentNullException.ThrowIfNull(app);
         CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
+        MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
         RouteGroupBuilder control = app.MapGroup("/control/v1");
 
         control.MapGet("/openapi.json", ControlPlaneConventions.OpenApiDocument);
@@ -81,6 +82,7 @@ public static class ControlPlane
             {
                 faultMode = state.FaultMode.ToString(),
                 delayMs = state.DelayMs,
+                mapStationReads = mapStationReads.Count,
                 vehicles = state.Vehicles.Values.OrderBy(item => item.DeviceKey, StringComparer.Ordinal),
                 orders = state.OrdersByUpperId.Values.OrderBy(item => item.Id),
                 maps = state.StationsByMapId.OrderBy(pair => pair.Key)

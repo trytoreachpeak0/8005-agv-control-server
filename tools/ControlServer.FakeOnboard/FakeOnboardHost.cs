@@ -21,8 +21,13 @@ public static class FakeOnboardHost
         builder.Services.AddSingleton(peerOptions);
         builder.Services.AddSingleton<OnboardPeerHolder>();
         string instanceId = builder.Configuration["FakeOnboard:instanceId"] ?? "fake-onboard-1";
+        // The safety summary the handshake's SafetyStateSnapshot carries. It has to be settable
+        // before the peer connects, not after: a session established while the vehicle is still
+        // moving is the shape the 2026-09-03 field defect had, and PUT /safety can only report a
+        // change to a session that already exists.
+        SafetySummary seedSafety = ReadSeedSafety(builder.Configuration);
         builder.Services.AddSingleton(_ => new CommandEngine<FakeOnboardState>(
-            instanceId, () => new FakeOnboardState()));
+            instanceId, () => new FakeOnboardState { Safety = seedSafety }));
 
         IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(
             builder.Configuration, "FakeOnboard", DefaultControlPort);
@@ -35,6 +40,28 @@ public static class FakeOnboardHost
         WebApplication app = builder.Build();
         app.MapControlPlane();
         return app;
+    }
+
+    /// <summary>
+    /// Reads FakeOnboard:Seed:* into the initial safety summary. Each flag is read by name rather
+    /// than bound, because SafetySummary's properties are init-only and a binder that silently
+    /// applied none of them would leave a scenario proving the opposite of what it says it proves.
+    /// </summary>
+    private static SafetySummary ReadSeedSafety(ConfigurationManager configuration)
+    {
+        SafetySummary defaults = new();
+        return new SafetySummary
+        {
+            DepartureSafe = configuration.GetValue("FakeOnboard:Seed:departureSafe", defaults.DepartureSafe),
+            VehicleStopped = configuration.GetValue("FakeOnboard:Seed:vehicleStopped", defaults.VehicleStopped),
+            AllTargetSlotsLocked =
+                configuration.GetValue("FakeOnboard:Seed:allTargetSlotsLocked", defaults.AllTargetSlotsLocked),
+            AllUnlockOutputsReset =
+                configuration.GetValue("FakeOnboard:Seed:allUnlockOutputsReset", defaults.AllUnlockOutputsReset),
+            UnknownPresent = configuration.GetValue("FakeOnboard:Seed:unknownPresent", defaults.UnknownPresent),
+            ReasonCodes = configuration.GetSection("FakeOnboard:Seed:reasonCodes").Get<string[]>()
+                ?? defaults.ReasonCodes
+        };
     }
 
     /// <summary>

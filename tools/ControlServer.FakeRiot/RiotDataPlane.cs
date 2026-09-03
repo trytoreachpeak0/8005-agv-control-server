@@ -16,6 +16,7 @@ public static class RiotDataPlane
     {
         ArgumentNullException.ThrowIfNull(app);
         CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
+        MapStationReadCounter mapStationReads = app.Services.GetRequiredService<MapStationReadCounter>();
 
         app.MapGet("/api/task/vehicles/getVehicleInfoByDeviceKey", async (
             [FromQuery] string key, CancellationToken cancellationToken) =>
@@ -83,6 +84,9 @@ public static class RiotDataPlane
         app.MapGet("/api/imap/v1/mapInfo/stations/{mapId:int}", async (
             int mapId, CancellationToken cancellationToken) =>
         {
+            // Counted before the fault gate, because a scenario waiting on iterations wants to know
+            // the runtime came round again even when the answer it got was an injected failure.
+            mapStationReads.Increment();
             IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
             if (fault is not null) return fault;
             FakeRiotState state = engine.Snapshot().State;
@@ -246,4 +250,25 @@ public static class RiotDataPlane
                 return null;
         }
     }
+}
+
+/// <summary>
+/// Counts reads of the Map station catalog, which JourneyRuntimeEngine.ExecuteOnceAsync performs
+/// first thing on every iteration -- including the iterations where a Blocked journey makes it do
+/// nothing else. That makes this the one observable a scenario can use to say "the runtime has had
+/// N more chances and still did not do it", which is what turns a negative assertion into a
+/// predicate with a deadline instead of a sleep.
+/// </summary>
+/// <remarks>
+/// Deliberately outside the command engine: a counter that moved the state revision on every poll
+/// would make expectedRevision useless for the commands that carry real changes. The wire log in
+/// ControlServer.FakeOnboard sits outside for the same reason.
+/// </remarks>
+public sealed class MapStationReadCounter
+{
+    private long count;
+
+    public long Count => Interlocked.Read(ref count);
+
+    public void Increment() => Interlocked.Increment(ref count);
 }

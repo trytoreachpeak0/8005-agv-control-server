@@ -6,11 +6,34 @@
 pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\evidence\l2\<新目录>
 ```
 
-一趟约 **14 秒**，全程无人值守。这条链路 2026-09-03 在厂区里跑掉了一个下午。
+一趟 14 到 30 秒，全程无人值守。这条链路 2026-09-03 在厂区里跑掉了一个下午。
 
 方案与落地顺序见
 [`8005-agv-program/docs/wire-to-gate-test-automation.md`](https://github.com/trytoreachpeak0/8005-agv-program/blob/main/docs/wire-to-gate-test-automation.md)，
-这里是它第 3 节「缺口 4」和落地顺序第 3 步的产物。
+这里是它第 3 节「缺口 4」和落地顺序第 3、4 步的产物。
+
+## 现有场景
+
+| 场景 | 讲什么 | 绿证据 |
+| --- | --- | --- |
+| `normal-load` | 全程顺利的基线，不注入任何故障 | `evidence/l2/20260903-normal-load-014` |
+| `session-established-while-moving` | 会话在车辆运动中建立，随后停稳；到站也要按最新的安全状态判 | `evidence/l2/20260903-session-established-while-moving-004` |
+| `load-result-requires-recovery` | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-004` |
+
+编号更小的目录是同一批里更早的跑次：`-001` 到 `-003` 是稳定性复跑，
+`load-result-requires-recovery-001` 是**红的**，留着的原因见文末第 6 条。
+
+后两条是方案第 4 节标 ★ 的三条里能做的两条。第三条（**车载端时钟慢于服务端 100 ms**）在这一层
+做不了：缺陷在车载端的 `VehicleSafetySignal.IsFresh`
+（[`8005-agv-onboard-hmi#1`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/1)），
+合成对端根本没有那段逻辑，用它「复现」出来的只会是自己写的假象。要等落地顺序第 5 步的车载端 UIA
+驱动。
+
+`load-result-requires-recovery` **到 Blocked 为止，不跑到「恢复并继续」**：出口是车载端的五步恢复
+握手，而车载端从不发起
+（[`8005-agv-onboard-hmi#4`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/4)）。
+服务端侧的出口是完整的且有 L1 测试（`RecoveryStateMachineG2Tests`）。给合成车载端编出那五条出站
+消息只会让这条场景在现场仍然停摆的时候变绿。
 
 ## 现在能跑什么
 
@@ -34,6 +57,17 @@ RIoT」；这里的车载端是一个合成协议对端，没有 IO、没有 jou
 
 **不用 sleep 等任何东西。**每一次等待都是「判据 + 超时」，所以慢机器只是慢，不会变成偶发失败；
 卡住的时候报的是「哪一条判据一直没成立」，而不是一个光秃秃的超时。
+
+否定判据（「它**没有**做某件事」）也一样，用 `Wait-L2Iterations`：
+
+```powershell
+$null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
+# 现在再断言「stage 没变」才有意义
+```
+
+它等的是假 RIoT 的 `mapStationReads`。`JourneyRuntimeEngine.ExecuteOnceAsync` 每一轮开头都读一次
+Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那些轮**——所以这是唯一一个「运行时又
+有机会了」的可观测量。少了它，「这台车不再受理任何新需求」就只能写成 sleep。
 
 **不走捷径断言。**状态只从服务端自己的 SQLite 库和各替身的 `/control/v1/snapshot` 读——运维在
 现场看的就是这两处。绕过被测方摆出终态，测的就只是脚本自己。
@@ -60,11 +94,22 @@ RIoT」；这里的车载端是一个合成协议对端，没有 IO、没有 jou
 ## 加一个场景
 
 `scenarios/<名字>.ps1`，接一个 `-Context` 参数。`Context` 上有 `Journal`、`Assertions`、
-`Riot`、`MesIngest`、`Onboard`、`Connection`（只读 SQLite 连接）以及车辆与站点的身份。
+`Riot`、`MesIngest`、`Onboard`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、
+`StopComponent` 以及车辆与站点的身份。
 
 `normal-load` 是基线：全程顺利，不注入任何故障。后面每个异常场景都只是在它上面改一处——把车载端
-某一类应答的策略从 `Auto` 改成 `Silent`，或者给假 RIoT 注入一个故障模式，然后断言服务端**没有**
-做它不该做的事。
+某一类应答的策略从 `Auto` 改成 `Manual` 或 `Silent`，或者给假 RIoT 注入一个故障模式，然后断言
+服务端**没有**做它不该做的事。
+
+**要改环境启动方式的场景，写一个同名的 `scenarios/<名字>.setup.psd1`。**目前认 `OnboardSeed`，
+它会变成 `--FakeOnboard:Seed:*`，落在握手那条 `SafetyStateSnapshot` 携带的安全摘要上。
+`session-established-while-moving` 靠它让会话在「车还在动」的状态下建立——`PUT /control/v1/safety`
+只能报告一个**已经存在**的会话的变化，做不到这件事。写成边车文件而不是命令行开关，是因为忘了传
+开关的那一次，场景会安安静静地证明另一回事。
+
+**要让某个组件下线，用 `& $Context.StopComponent 'fake-onboard'`。**装载出问题时车通常是关掉的，
+这就是那一幕。收尾时的快照抓不到已经停掉的替身，所以停之前先把它的 `/snapshot` 自己存一份到
+`$Context.SnapshotRoot`。
 
 ## 端口
 
@@ -95,3 +140,9 @@ RIoT」；这里的车载端是一个合成协议对端，没有 IO、没有 jou
    拆会话（ADR-cross-0006、ADR-cross-0014）。假车载端现在按 key 缓存答案，重发时原样再送一遍。
 5. **受理和建单确认不是同一瞬间。**stage 在受理时就翻到 `AwaitingPickupArrival`，`CONFIRMED` 要
    等建单与对账走完。判据要等，不能取样一次。
+6. **把对端进程杀掉不会让会话离开 `Ready`。**`SessionRecoveries` 那一行不由连接断开驱动；服务端
+   的存活性走的是另一条路——`ReadOnboardFactsAsync` 给该会话代次最后一条入站消息计龄
+   （`JourneyRuntimeEngine.cs` 的注释原话是 "a dead peer leaves a Ready row"）。
+   `load-result-requires-recovery` 第一次就写成「杀进程然后等 `Readiness` 翻转」，等满 60 秒读到
+   的仍然是 `Ready`，红证据留在 `evidence/l2/20260903-load-result-requires-recovery-001`。要让会话
+   真的离开 `Ready`，让车载端报一个 `departureSafe=false` 的 `SafetyStateChanged`。

@@ -100,7 +100,7 @@
     "/control/v1/snapshot": {
       "get": {
         "summary": "Control plane: everything one round can observe.",
-        "responses": { "200": { "description": "Standard control envelope carrying vehicles, orders, maps and the fault mode." } }
+        "responses": { "200": { "description": "Standard control envelope carrying vehicles, orders, maps, the fault mode, and mapStationReads -- a monotonic count of Map station catalog reads, one per journey runtime iteration, which a scenario waits on instead of sleeping before asserting that something did not happen." } }
       }
     },
     "/control/v1/openapi.json": {

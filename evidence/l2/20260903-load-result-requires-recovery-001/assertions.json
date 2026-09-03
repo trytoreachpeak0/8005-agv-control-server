@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-result-requires-recovery",
+  "runId": "20260903T082638716Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 60s waiting for: the server noticed the peer is gone. Last observed: \"Ready\"",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "8fcbdbcf456d62fec19013efb7a8d7eeecab679e",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260903T082638716Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-LR-01",
+      "description": "装载指令已下发，旅程在等结果",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult",
+      "actual": "AwaitingLoadResult"
+    },
+    {
+      "id": "L2-LR-02",
+      "description": "旅程进入 Blocked",
+      "outcome": "PASS",
+      "expected": "Blocked",
+      "actual": "Blocked"
+    },
+    {
+      "id": "L2-LR-03",
+      "description": "阻塞原因是 LOAD_RESULT_REQUIRES_RECOVERY",
+      "outcome": "PASS",
+      "expected": "LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-LR-04",
+      "description": "装载操作判 RecoveryRequired（不是 Committed，也不是停在 Prepared）",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-LR-05",
+      "description": "需求状态转为 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-LR-06",
+      "description": "装载没成时不建 TO_GATE 单（RIoT 单仍只有一条）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    }
+  ]
+}

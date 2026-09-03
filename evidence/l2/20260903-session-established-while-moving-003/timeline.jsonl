@@ -1,0 +1,29 @@
+{"at":"2026-09-03T08:32:24.2158211+00:00","note":"L2 run 20260903T083224208Z starting for scenario 'session-established-while-moving'."}
+{"at":"2026-09-03T08:32:24.2172551+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-03T08:32:27.5025715+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-03T08:32:27.6826135+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-03T08:32:29.9907987+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-03T08:32:31.6338158+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-03T08:32:31.6368155+00:00","note":"Onboard seed from session-established-while-moving.setup.psd1: vehicleStopped=false"}
+{"at":"2026-09-03T08:32:32.3414084+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-03T08:32:32.6008789+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-03T08:32:32.6345389+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-03T08:32:32.6389887+00:00","note":"Environment is up; entering scenario 'session-established-while-moving'."}
+{"at":"2026-09-03T08:32:32.7091548+00:00","note":"Publishing demand a00aa213d14f4de880bc7aa5fecaa726 (sublot L2-SUBLOT-20260903T083224208Z) while the vehicle is still moving."}
+{"at":"2026-09-03T08:32:32.7587705+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-03T08:32:33.5395474+00:00","criterion":"backlog-reason","value":"ONBOARD_DEPARTURE_UNSAFE"}
+{"at":"2026-09-03T08:32:33.5410928+00:00","note":"Vehicle comes to rest; the peer reports the change."}
+{"at":"2026-09-03T08:32:33.5670908+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-03T08:32:34.5881631+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-03T08:32:34.5942127+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-03T08:32:34.8674892+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-a00aa213-d14f-4de8-80bc-7aa5fecaa726-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-03T08:32:34.8685515+00:00","note":"Vehicle departs for the pickup station; the peer reports it moving again."}
+{"at":"2026-09-03T08:32:34.9466889+00:00","note":"RIoT reports a complete arrival while the peer still says the vehicle is moving."}
+{"at":"2026-09-03T08:32:34.9652195+00:00","criterion":"runtime-iterations","value":"4"}
+{"at":"2026-09-03T08:32:35.2292359+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-03T08:32:36.2912574+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-03T08:32:37.3420221+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-03T08:32:38.4004836+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-03T08:32:38.4018157+00:00","note":"Vehicle comes to rest at the pickup station; the peer reports the change."}
+{"at":"2026-09-03T08:32:39.7024485+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-03T08:32:39.7069833+00:00","note":"Scenario finished."}

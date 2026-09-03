@@ -1,0 +1,26 @@
+{"at":"2026-09-03T08:26:38.7546349+00:00","note":"L2 run 20260903T082638716Z starting for scenario 'load-result-requires-recovery'."}
+{"at":"2026-09-03T08:26:38.7811736+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-03T08:26:42.1616248+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-03T08:26:42.2982514+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-03T08:26:45.5180668+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-03T08:26:47.1878913+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-03T08:26:47.8858474+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-03T08:26:48.1630615+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-03T08:26:48.2087133+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-03T08:26:48.2706049+00:00","note":"Environment is up; entering scenario 'load-result-requires-recovery'."}
+{"at":"2026-09-03T08:26:48.3989880+00:00","note":"Publishing demand 6e36a1990c274bbf9b772052491a3c53 (sublot L2-SUBLOT-20260903T082638716Z)."}
+{"at":"2026-09-03T08:26:48.5245049+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-03T08:26:49.5880123+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-03T08:26:49.5965975+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-03T08:26:49.8558312+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6e36a199-0c27-4bbf-9b77-2052491a3c53-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-03T08:26:49.8600797+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-03T08:26:49.9365003+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-03T08:26:49.9758244+00:00","criterion":"pending-operation","value":"(null)"}
+{"at":"2026-09-03T08:26:51.3239597+00:00","criterion":"pending-operation","value":"operation:0c0ea9fc-e322-c353-85d0-291c05d6bfec"}
+{"at":"2026-09-03T08:26:51.3393570+00:00","note":"Operator timeout ran out on the peer; it reports an incomplete OperationResult (operation:0c0ea9fc-e322-c353-85d0-291c05d6bfec)."}
+{"at":"2026-09-03T08:26:51.3627238+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-03T08:26:52.1377506+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-03T08:26:52.1610828+00:00","note":"Vehicle is powered down for the repair, as it is on site."}
+{"at":"2026-09-03T08:26:52.1942841+00:00","note":"Stopping component 'fake-onboard'."}
+{"at":"2026-09-03T08:26:52.2579841+00:00","criterion":"session-readiness","value":"Ready"}
+{"at":"2026-09-03T08:27:52.3362055+00:00","note":"Run failed: Timed out after 60s waiting for: the server noticed the peer is gone. Last observed: \"Ready\""}

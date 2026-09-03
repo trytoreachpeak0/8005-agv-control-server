@@ -50,6 +50,16 @@ $scenarioPath = Join-Path $PSScriptRoot "scenarios/$Scenario.ps1"
 if (-not (Test-Path -LiteralPath $scenarioPath -PathType Leaf)) {
     throw "No such scenario: $Scenario (looked for $scenarioPath)"
 }
+
+# A scenario that needs the environment to start differently says so in a sibling data file rather
+# than in a switch the caller has to remember: forgetting -SomeSeed would leave the scenario green
+# while proving something else entirely. Optional -- most scenarios only change things at runtime.
+$setupPath = Join-Path $PSScriptRoot "scenarios/$Scenario.setup.psd1"
+$setup = if (Test-Path -LiteralPath $setupPath -PathType Leaf) {
+    Import-PowerShellDataFile -LiteralPath $setupPath
+} else {
+    @{}
+}
 if (Test-Path -LiteralPath $EvidenceRoot) {
     throw "EvidenceRoot must not exist: $EvidenceRoot"
 }
@@ -187,13 +197,24 @@ try {
         -Until { param($v) $v -eq 'live' }
 
     # 4. The synthetic peer last: it connects out to the server, so the server has to be listening.
+    # OnboardSeed lands on the safety summary the handshake's SafetyStateSnapshot carries, which is
+    # the only way to establish a session that already says the vehicle is moving.
+    $onboardArguments = @(
+        "--FakeOnboard:port=$FakeOnboardPort",
+        "--FakeOnboard:instanceId=l2-onboard",
+        "--FakeOnboard:Peer:port=$ControlPort",
+        "--FakeOnboard:Peer:agvId=$agvId")
+    if ($setup.ContainsKey('OnboardSeed')) {
+        foreach ($key in ($setup.OnboardSeed.Keys | Sort-Object)) {
+            $onboardArguments += "--FakeOnboard:Seed:$key=$($setup.OnboardSeed[$key])"
+        }
+        $journal.Note("Onboard seed from $Scenario.setup.psd1: " +
+            (($setup.OnboardSeed.GetEnumerator() | Sort-Object Key |
+                ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
+    }
     $handles += Start-L2Process -Name 'fake-onboard' `
         -FilePath (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe') `
-        -ArgumentList @(
-            "--FakeOnboard:port=$FakeOnboardPort",
-            "--FakeOnboard:instanceId=l2-onboard",
-            "--FakeOnboard:Peer:port=$ControlPort",
-            "--FakeOnboard:Peer:agvId=$agvId") `
+        -ArgumentList $onboardArguments `
         -WorkingDirectory $onboardDirectory `
         -Environment @{ 'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential } `
         -LogRoot $logRoot |
@@ -228,6 +249,16 @@ try {
         PickupStationRiotId = $pickupStationRiotId
         HealthPort          = $HealthPort
         SnapshotRoot        = $snapshotRoot
+        # Powering a component down is part of several scenarios -- the vehicle is normally switched
+        # off while a blocked load is being dealt with -- so a scenario can stop one by name. Teardown
+        # stops whatever is left, and stopping something twice is not an error.
+        StopComponent       = {
+            param([Parameter(Mandatory)][string]$Name)
+            $matched = @($handles | Where-Object { $_.Name -eq $Name })
+            if ($matched.Count -eq 0) { throw "No such component to stop: $Name" }
+            $journal.Note("Stopping component '$Name'.")
+            Stop-L2Process -Handles $matched
+        }
     }
 
     $journal.Note("Environment is up; entering scenario '$Scenario'.")
