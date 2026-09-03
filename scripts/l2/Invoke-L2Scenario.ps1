@@ -90,6 +90,19 @@ $clockSkewMs = if ($setup.ContainsKey('ClockSkewMs')) { [int]$setup.ClockSkewMs 
 if ($null -ne $clockSkewMs -and -not $realOnboard) {
     throw "ClockSkewMs needs Onboard = 'Real': the synthetic peer has no freshness check to skew."
 }
+# RESUME_AFTER_REPAIR is off in the shipped onboard appsettings and the server has no recovery proof
+# configured, so both ends have to be turned on together or the handshake fails halfway with an
+# authentication rejection that looks like a protocol fault. Declared per scenario rather than for
+# every real-onboard run, so real-onboard-normal-load keeps running the configuration it went green
+# against.
+$recoveryResume = ($setup.ContainsKey('RecoveryResume') -and $setup.RecoveryResume)
+if ($recoveryResume -and -not $realOnboard) {
+    throw "RecoveryResume needs Onboard = 'Real': the synthetic peer never starts a recovery session."
+}
+# Not a secret: it authorises nothing outside this loopback rig, and the whole point of the run is
+# that it is written down in the evidence.
+$recoveryProofVariable = 'CONTROL_SERVER_RECOVERY_PROOF'
+$recoveryProof = 'l2-recovery-proof-not-a-production-secret'
 if (-not $OnboardRepository) {
     $OnboardRepository = Join-Path (Split-Path -Parent $Repository) '8005-agv-onboard-hmi'
 }
@@ -256,6 +269,10 @@ try {
         'JourneyRuntime__gateStationRiotId'               = [string]$gateStationRiotId
         'JourneyRuntime__admissionPolicyDeploymentId'     = "L2-$runId"
     }
+    if ($recoveryResume) {
+        $serverEnvironment['Recovery__AuthenticationProofEnvironmentVariable'] = $recoveryProofVariable
+        $serverEnvironment[$recoveryProofVariable] = $recoveryProof
+    }
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
         # the safety summary says. Leaving it off for the synthetic rig keeps those scenarios
@@ -332,6 +349,9 @@ try {
                 # server records for the peer, so it must be the commit actually published.
                 $settings.wireToGate.onboardBuildCommit = $onboardPublish.Commit
                 $settings.wireToGate.journalPath = (Join-Path $stageRoot 'onboard-journal.db')
+                # Ships false. Configuration.Validate() then also insists the proof variable is
+                # populated, which the process environment below does.
+                $settings.wireToGate.recoveryResumeEnabled = $recoveryResume
                 # WireToGate readiness runs through this projection: App.xaml.cs awaits the first
                 # refresh before the handshake snapshot, and vehicleStoppedProvider reads it on
                 # every safety summary afterwards.
@@ -350,13 +370,15 @@ try {
                 # richest account of a failed run, and the stage root is deleted on a pass.
                 $settings.logging.directory = (Join-Path $logRoot 'onboard-app')
             }
+        $onboardEnvironment = @{
+            'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential
+            'CONTROL_SERVER_OPERATOR_ID'        = 'L2-OPERATOR'
+        }
+        if ($recoveryResume) { $onboardEnvironment[$recoveryProofVariable] = $recoveryProof }
         $onboardHandle = Start-L2Process -Name 'onboard-hmi' -Gui `
             -FilePath (Join-Path $onboardStageDirectory 'SQCD.Agv.Wpf.exe') `
             -WorkingDirectory $onboardStageDirectory `
-            -Environment @{
-                'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential
-                'CONTROL_SERVER_OPERATOR_ID'        = 'L2-OPERATOR'
-            } `
+            -Environment $onboardEnvironment `
             -LogRoot $logRoot |
             ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
         $handles += $onboardHandle
@@ -484,7 +506,8 @@ try {
     }
     if ($connection) {
         foreach ($table in @('JourneyRuntimes', 'AcceptedDemands', 'JourneyBacklog', 'OrderIntents',
-                             'StationOperations', 'SessionRecoveries')) {
+                             'StationOperations', 'SessionRecoveries', 'OperationResults',
+                             'ExceptionRecoverySessions', 'RecoveryWorkflows')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

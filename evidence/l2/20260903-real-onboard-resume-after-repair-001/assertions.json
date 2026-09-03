@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-resume-after-repair",
+  "runId": "20260903T115904631Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "8f4e14991847cdf6ba65bf34767d9e537cbc4f21",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260903T115904631Z",
+    "onboardHmiCommit": "60a0efdbf14b8195a1c1fd5afa8e6f39945279aa",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-RR-01",
+      "description": "真车载端报回不完美的装载结果，旅程停摆在 LOAD_RESULT_REQUIRES_RECOVERY",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-RR-02",
+      "description": "装载操作判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-RR-03",
+      "description": "失败结果已落库，且是这个 attempt 唯一一份存活结果",
+      "outcome": "PASS",
+      "expected": "1 份，未 COMPLETED，未被替换",
+      "actual": "1 份，UNKNOWN"
+    },
+    {
+      "id": "L2-RR-04",
+      "description": "仓位物理事实与失败一致：门关着、锁上了，但仍然是空的",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY",
+      "actual": "CLOSED/EMPTY"
+    },
+    {
+      "id": "L2-RR-05",
+      "description": "停摆之后车载端 HMI 上出现可用的「申请恢复」入口",
+      "outcome": "FAIL",
+      "expected": true,
+      "actual": false
+    }
+  ]
+}

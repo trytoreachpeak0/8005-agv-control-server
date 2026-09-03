@@ -21,6 +21,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `load-result-requires-recovery` | 合成 | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-006` |
 | `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-005` |
 | `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
+| `real-onboard-resume-after-repair` | **真的** | 装载失败后从 HMI 申请恢复、提交替换结果、旅程继续 | **还没有绿证据**，见下 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -34,11 +35,20 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 [`8005-agv-onboard-hmi#1`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/1)
 已由 Kun Wang 在 `abb8e73` 修成**有界容差**，所以场景钉的是那个界的两侧加恢复。
 
-`load-result-requires-recovery` **到 Blocked 为止，不跑到「恢复并继续」**：出口是车载端的五步恢复
-握手，而车载端从不发起
-（[`8005-agv-onboard-hmi#4`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/4)）。
-服务端侧的出口是完整的且有 L1 测试（`RecoveryStateMachineG2Tests`）。给合成车载端编出那五条出站
-消息只会让这条场景在现场仍然停摆的时候变绿。
+`load-result-requires-recovery` **到 Blocked 为止，不跑到「恢复并继续」**：出口是五步恢复握手，
+而合成对端不发起它。给它编出那五条出站消息只会让这条场景变绿而证不出任何新东西。
+
+`real-onboard-resume-after-repair` 就是为了补上那半条写的，**它现在是红的，而且红得有价值**。
+前四条判据全过——真车载端确实报回不完美的装载结果，服务端确实判 `RecoveryRequired` 并停摆，
+失败结果确实作为该 attempt 唯一一份存活结果落库。第五条过不去：**停摆之后，车载端 HMI 上那个
+「申请恢复」入口从来不出现**，所以恢复根本发起不了。原因见
+[`8005-agv-onboard-hmi#4`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/4)
+里的回报——`CanRequestResumeAfterRepair` 要求已经存在一份服务端恢复会话快照，而快照只在会话开出
+来之后才有，会话又只由这个方法自己发的 `ExceptionRecoverySessionRequested` 开出来。红证据留在
+`evidence/l2/20260903-real-onboard-resume-after-repair-001`。
+
+服务端那一半是完整的：`RecoveryStateMachineG2Tests` 里 `RESUME_AFTER_REPAIR` 授权后收替换
+`OperationResult` 的两条 L1 测试是绿的。**缺的不是服务端，是车上那个按钮。**
 
 ## 两套装置
 
@@ -214,3 +224,15 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     UI Automation 未必找得到——驱动会在一个跟真实原因毫不相干的地方超时。跑的时候窗口会抢一次
     焦点，之后不会再抢——驱动不注入按键，见「加一个场景」那一节。要让它进 CI，得有一个交互式桌面
     会话，那是落地顺序第 7 步。
+11. **让真车载端报一份失败结果，要等满它自己的 120 秒操作员超时。**
+    `real-onboard-resume-after-repair` 的做法是等到 `WAITING_OPERATOR` 之后关门但不放货。门关了、
+    锁上了、开锁输出复位了，唯独货物事实不对——**车载端并不当即判失败**，它等满
+    `workflow.operationTimeoutMs`(120 s) 才发结果，而且 `overallOutcome` 是 `UNKNOWN` 不是
+    `FAILED`。服务端一样判 `RecoveryRequired`，因为判据是「没有安全完成」而不是「报了失败」。
+    等这一步的判据要给到 240 秒。**不要为了跑得快去 stage 副本里调短那个超时**：它是安全相关的
+    时序，调短之后场景证的就是一份没人真的在跑的配置。
+12. **模态对话框要按 `AutomationId` 找按钮，不要按标题。**`OnWireToGateRecoveryClick` 会弹一个
+    `MessageBox` 要现场确认，它是同进程的另一个顶层窗口，得从 `RootElement` 找而不是从主窗口找——
+    主窗口这时正停在模态循环里，什么都不答。按钮用 `AutomationId` 认：`MessageBox` 的按钮沿用
+    Win32 控件 id（IDYES = 6、IDNO = 7），不随显示语言变，而标题只有中文 Windows 上才是「是(Y)」。
+    驱动里是 `$onboard.Confirm('申请恢复原操作')`。
