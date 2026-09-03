@@ -50,10 +50,10 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 服务端那一半是完整的：`RecoveryStateMachineG2Tests` 里 `RESUME_AFTER_REPAIR` 授权后收替换
 `OperationResult` 的两条 L1 测试是绿的。**缺的不是服务端，是车上那个按钮。**
 
-## CI 只跑合成那三条
+## CI 只跑合成场景
 
-`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。三条合计约 82
-秒，证据当作 artifact 传上去（失败时也传——失败那次的证据才是唯一说明原因的东西）。
+`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。现在是四条，合计
+约两分钟，证据当作 artifact 传上去（失败时也传——失败那次的证据才是唯一说明原因的东西）。
 
 **真装置那三条刻意不进 CI，两个各自独立的原因：**
 
@@ -62,8 +62,11 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
    只在单个仓库内生效，所以这里的作业没办法和 `8005-mes-ingest` 的桌面测试在同一台机器上排队，
    而那台机器同时是黄金渲染机。**跨仓库桌面互斥目前没有解**，见工作区根 `CLAUDE.md`。
 
-合成那三条不需要对方两个只读仓：`Get-L2PeerPublish` 只在场景 setup 写了 `Onboard = 'Real'` 时才
-调用。所以这条流水线不受对方进度影响。
+合成场景不需要对方两个只读仓：`Get-L2PeerPublish` 只在场景 setup 写了 `Onboard = 'Real'` 时才调用。
+所以这条流水线不受对方进度影响。
+
+**新写的合成场景记得加进 `l2.yml` 的清单**——那是一份手写数组，不是扫目录得来的。扫目录会把真装置
+那几条也一起领进来，而它们在服务 runner 上跑不了。
 
 ## 两套装置
 

@@ -4,7 +4,7 @@ name: l2
 # asserted against the server's own database. It sits between the unit suite (one process) and the
 # gates (expensive, human-scheduled), and it is the only automated layer that sees cross-end timing.
 #
-# Only the three SYNTHETIC scenarios run here. The three real-onboard ones are deliberately absent,
+# Only the SYNTHETIC scenarios run here. The three real-onboard ones are deliberately absent,
 # for two independent reasons:
 #
 #   1. They need an interactive desktop session -- two WPF windows appear -- so they cannot run on
@@ -42,15 +42,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # All three run even when an earlier one fails: one red scenario must not hide the state of
-      # the other two, which is the whole reason to have more than one.
+      # Every scenario runs even when an earlier one fails: one red scenario must not hide the
+      # state of the others, which is the whole reason to have more than one.
       #
       # Exit code is the contract -- the guest is zh-CN and the runner prints 已通过! not Passed!,
       # so nothing here may match on English console text. Invoke-L2Scenario.ps1 exits 1 on FAIL.
       - name: Run synthetic L2 scenarios
         shell: pwsh
         run: |
-          $scenarios = @('normal-load', 'session-established-while-moving', 'load-result-requires-recovery')
+          $scenarios = @(
+              'normal-load'
+              'session-established-while-moving'
+              'load-result-requires-recovery'
+              'load-command-never-answered'
+          )
           $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $failed = @()
           foreach ($scenario in $scenarios) {
