@@ -4,6 +4,11 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <!-- FakeRiotTests starts the fake RIoT's real Kestrel, so this project needs the ASP.NET Core
+         shared framework directly; a reference to a Web SDK project does not carry it across. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
@@ -16,5 +21,6 @@
     <ProjectReference Include="..\..\src\ControlServer.Domain\ControlServer.Domain.csproj" />
     <ProjectReference Include="..\..\src\ControlServer.Host\ControlServer.Host.csproj" />
     <ProjectReference Include="..\..\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\tools\ControlServer.FakeRiot\ControlServer.FakeRiot.csproj" />
   </ItemGroup>
 </Project>

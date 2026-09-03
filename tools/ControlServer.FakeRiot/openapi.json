@@ -1,0 +1,346 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ControlServer.FakeRiot",
+    "version": "1.0.0",
+    "description": "A test double for the RIoT RCS. Two surfaces on one listener: the RIoT data plane ControlServer's SDK calls, and a loopback control plane a scenario drives. The control plane never issues movement instructions -- it only says what RIoT observes, so the control server remains the only thing that can dispatch a vehicle."
+  },
+  "servers": [{ "url": "http://127.0.0.1:58008" }],
+  "paths": {
+    "/api/task/vehicles/getVehicleInfoByDeviceKey": {
+      "get": {
+        "summary": "RIoT data plane: vehicle card.",
+        "parameters": [
+          { "name": "key", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope. result is null when the key is unknown, which is what the real RCS does instead of 404.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VehicleCardEnvelope" } } }
+          }
+        }
+      }
+    },
+    "/api/task/v1/task/getVehicleInfo/{deviceKey}": {
+      "get": {
+        "summary": "RIoT data plane: vehicle execution facts. Has no code/result envelope.",
+        "parameters": [
+          { "name": "deviceKey", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bare object, not a business envelope.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VehicleExecutionFacts" } } }
+          },
+          "404": { "description": "Unknown deviceKey." }
+        }
+      }
+    },
+    "/api/imap/v1/mapInfo/stations/{mapId}": {
+      "get": {
+        "summary": "RIoT data plane: station catalog for one map.",
+        "parameters": [
+          { "name": "mapId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": { "200": { "description": "Business envelope carrying an array of {id, name}." } }
+      }
+    },
+    "/api/order/v1/orderRecord/detailByUpperId/{upperId}": {
+      "get": {
+        "summary": "RIoT data plane: one order by the caller's upperId.",
+        "parameters": [
+          { "name": "upperId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Business envelope carrying the order." },
+          "404": { "description": "No order with that upperId." }
+        }
+      }
+    },
+    "/api/order/v1/orderRecord": {
+      "get": {
+        "summary": "RIoT data plane: paged order list, filtered by state.",
+        "parameters": [
+          {
+            "name": "filterByState",
+            "in": "query",
+            "description": "Repeatable. ControlServer asks for the non-final states 1, 3, 7 and 9.",
+            "schema": { "type": "array", "items": { "type": "integer" } }
+          },
+          { "name": "pageNum", "in": "query", "schema": { "type": "integer" } },
+          { "name": "pageSize", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Business envelope carrying {current, size, total, records}. total is the honest match count, not the page length: ControlServer checks its page coverage against it."
+          }
+        }
+      }
+    },
+    "/api/order/v1/add/byDefaultMissions": {
+      "post": {
+        "summary": "RIoT data plane: create a move order.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateOrderRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "code 0 with the new order, or business code 0610008 when the upperId already has a live order. Deduplication is on upperId, the way RIoT does it, not on a caller command id."
+          }
+        }
+      }
+    },
+    "/control/v1/health": {
+      "get": {
+        "summary": "Control plane: liveness and current fault mode.",
+        "responses": { "200": { "description": "Standard control envelope." } }
+      }
+    },
+    "/control/v1/snapshot": {
+      "get": {
+        "summary": "Control plane: everything one round can observe.",
+        "responses": { "200": { "description": "Standard control envelope carrying vehicles, orders, maps and the fault mode." } }
+      }
+    },
+    "/control/v1/openapi.json": {
+      "get": {
+        "summary": "This document.",
+        "responses": { "200": { "description": "The machine contract." } }
+      }
+    },
+    "/control/v1/reset": {
+      "post": {
+        "summary": "Control plane: start a new round at revision 1.",
+        "description": "The one command matched against an instance-level receipt before its runId is checked, so a reset whose response was lost can be retried with the same commandId and returns the same new runId rather than creating a second round.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CommandEnvelope" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
+    },
+    "/control/v1/vehicle": {
+      "put": {
+        "summary": "Control plane: set what RIoT observes about the vehicle.",
+        "description": "Every field is optional; only the ones present are applied. Setting a value that is already set succeeds with changed=false and does not move the revision.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VehicleCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT, REVISION_CONFLICT or VEHICLE_NOT_FOUND." }
+        }
+      }
+    },
+    "/control/v1/orders/{upperId}": {
+      "put": {
+        "summary": "Control plane: advance one order.",
+        "parameters": [
+          { "name": "upperId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrderCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT, REVISION_CONFLICT or ORDER_NOT_FOUND." }
+        }
+      }
+    },
+    "/control/v1/maps/{mapId}/stations": {
+      "put": {
+        "summary": "Control plane: replace one map's station catalog.",
+        "parameters": [
+          { "name": "mapId", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StationsCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
+    },
+    "/control/v1/faults/http": {
+      "put": {
+        "summary": "Control plane: inject a data-plane fault.",
+        "description": "Normal, NoResponse (hold the request until the caller times out), ServerError (503) or Delay (delayMs, 1..60000). The control plane itself is never affected.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FaultCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CommandEnvelope": {
+        "type": "object",
+        "required": ["runId", "commandId"],
+        "properties": {
+          "runId": { "type": "string", "description": "The round this command targets. A mismatch is refused with RUN_ID_MISMATCH." },
+          "commandId": { "type": "string", "description": "Caller-generated identity. The same id with the same body replays the first result; with a different body it conflicts." },
+          "expectedRevision": { "type": "integer", "format": "int64", "description": "Optional optimistic concurrency check, skipped on a replay." }
+        }
+      },
+      "VehicleCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "vehicleKey": { "type": "string" },
+              "enable": { "type": "boolean" },
+              "status": { "type": "integer", "description": "RIoT connectivity code on the card. 1 is online." },
+              "procState": { "type": "string" },
+              "currentMap": { "type": "string" },
+              "currentPosition": { "type": "integer" },
+              "battery": { "type": "integer" },
+              "batteryState": { "type": "string" },
+              "speed": { "type": "number" },
+              "lockStatus": { "type": "integer" },
+              "orderTaskId": { "type": "string", "nullable": true },
+              "clearOrderTaskId": { "type": "boolean", "description": "Set true to clear it; a null orderTaskId means 'leave it alone'." },
+              "movementState": { "type": "string", "enum": ["MT_FINISHED", "MT_RUNNING", "MT_NA"] },
+              "controlState": { "type": "string" },
+              "emergencyState": { "type": "string" },
+              "breakSwitchState": { "type": "string" },
+              "locationState": { "type": "string" },
+              "processingOrder": { "type": "boolean" },
+              "integrationLevel": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "OrderCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "orderState": { "type": "integer", "description": "1 QUEUEING, 3 EXECUTING, 5 COMPLETE; 7 and 9 are the other non-final states." },
+              "executeVehicleKey": { "type": "string", "description": "Set this to simulate RIoT binding a vehicle, which replaces the '--' placeholder." },
+              "endStationNo": { "type": "integer" }
+            }
+          }
+        ]
+      },
+      "StationsCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "stations": {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "description": "Station id to name. Names are load bearing: the pickup station is chosen by parsing the area out of them."
+              }
+            }
+          }
+        ]
+      },
+      "FaultCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "mode": { "type": "string", "enum": ["Normal", "NoResponse", "ServerError", "Delay"] },
+              "delayMs": { "type": "integer", "minimum": 1, "maximum": 60000 }
+            }
+          }
+        ]
+      },
+      "CreateOrderRequest": {
+        "type": "object",
+        "required": ["upperId", "mission"],
+        "properties": {
+          "upperId": { "type": "string" },
+          "orderName": { "type": "string" },
+          "appointVehicleKey": { "type": "string" },
+          "isAppointEnable": { "type": "integer" },
+          "lockStatus": { "type": "integer" },
+          "mission": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string" },
+                "mapId": { "type": "integer" },
+                "destination": { "type": "integer" }
+              }
+            }
+          }
+        }
+      },
+      "VehicleCardEnvelope": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "result": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "deviceKey": { "type": "string" },
+              "enable": { "type": "boolean" },
+              "status": { "type": "integer" },
+              "procState": { "type": "string" },
+              "currentMap": { "type": "string" },
+              "currentPosition": { "type": "integer", "nullable": true },
+              "battery": { "type": "integer" },
+              "batteryState": { "type": "string" },
+              "speed": { "type": "number" },
+              "lockStatus": { "type": "integer" },
+              "orderTaskId": { "type": "string", "nullable": true }
+            }
+          }
+        }
+      },
+      "VehicleExecutionFacts": {
+        "type": "object",
+        "properties": {
+          "vehicle": {
+            "type": "object",
+            "properties": {
+              "movementState": { "type": "string" },
+              "controlState": { "type": "string" },
+              "emergencyState": { "type": "string" },
+              "breakSwitchState": { "type": "string" },
+              "locationState": { "type": "string" },
+              "speed": { "type": "number" }
+            }
+          },
+          "vehicleTaskInfo": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "procState": { "type": "string" },
+              "processingOrder": { "type": "boolean" },
+              "enable": { "type": "boolean" },
+              "integrationLevel": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
