@@ -1,0 +1,82 @@
+name: l2
+
+# The L2 scenario layer: a real ControlServer against loopback doubles, driven end to end and
+# asserted against the server's own database. It sits between the unit suite (one process) and the
+# gates (expensive, human-scheduled), and it is the only automated layer that sees cross-end timing.
+#
+# Only the three SYNTHETIC scenarios run here. The three real-onboard ones are deliberately absent,
+# for two independent reasons:
+#
+#   1. They need an interactive desktop session -- two WPF windows appear -- so they cannot run on
+#      this session-0 service runner at all.
+#   2. Putting them on the interactive `golden-renderer` runner instead would break the desktop
+#      exclusivity contract. GitHub's `concurrency` only applies within one repository, so a job
+#      here cannot serialise against 8005-mes-ingest's desktop suite on the same machine, and that
+#      machine is also the golden WPF renderer. Cross-repository desktop mutex is unsolved; see the
+#      workspace root CLAUDE.md.
+#
+# The synthetic three need nothing from the two read-only peer repositories: Get-L2PeerPublish is
+# only called when a scenario's setup file says Onboard = 'Real'. So this workflow is independent
+# of the other side's progress.
+on:
+  push:
+    branches: [ControlServer_MVP, main]
+  pull_request:
+  workflow_dispatch:
+
+# Never cancel a running job here. Cancelling one on a self-hosted runner also cancels the runner's
+# broker long-poll; the backoff retries exhaust and the session wedges without self-healing.
+# Measured on 2026-09-03: 4 hours 14 minutes of dead CI. This repository has exactly one runner, so
+# a wedged session is its entire CI. Cancelling a QUEUED job is safe and still happens.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scenarios:
+    # `headless` matters: win11-01 also hosts an interactive runner, and a job that only asked for
+    # [self-hosted] could be taken by either. This one must NOT land on the golden-renderer runner.
+    runs-on: [self-hosted, headless]
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # All three run even when an earlier one fails: one red scenario must not hide the state of
+      # the other two, which is the whole reason to have more than one.
+      #
+      # Exit code is the contract -- the guest is zh-CN and the runner prints 已通过! not Passed!,
+      # so nothing here may match on English console text. Invoke-L2Scenario.ps1 exits 1 on FAIL.
+      - name: Run synthetic L2 scenarios
+        shell: pwsh
+        run: |
+          $scenarios = @('normal-load', 'session-established-while-moving', 'load-result-requires-recovery')
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $failed = @()
+          foreach ($scenario in $scenarios) {
+              # -EvidenceRoot must not exist; the run id and attempt keep a re-run from colliding
+              # with the directory its predecessor wrote.
+              $evidence = Join-Path $evidenceRoot $scenario
+              Write-Host "::group::$scenario"
+              & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 -Scenario $scenario -EvidenceRoot $evidence
+              $code = $LASTEXITCODE
+              Write-Host '::endgroup::'
+              if ($code -ne 0) {
+                  $failed += $scenario
+                  Write-Host "::error title=L2 scenario failed::$scenario exited with $code"
+              }
+          }
+          "L2_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          if ($failed.Count -gt 0) {
+              throw "L2 scenarios failed: $($failed -join ', ')"
+          }
+
+      # Always: a failed run's evidence is the only account of why, and the runner's temp directory
+      # is cleared before the next job.
+      - name: Upload L2 evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: l2-evidence
+          path: ${{ env.L2_EVIDENCE_ROOT }}
+          if-no-files-found: warn

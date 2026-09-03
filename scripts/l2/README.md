@@ -50,6 +50,21 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 服务端那一半是完整的：`RecoveryStateMachineG2Tests` 里 `RESUME_AFTER_REPAIR` 授权后收替换
 `OperationResult` 的两条 L1 测试是绿的。**缺的不是服务端，是车上那个按钮。**
 
+## CI 只跑合成那三条
+
+`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。三条合计约 82
+秒，证据当作 artifact 传上去（失败时也传——失败那次的证据才是唯一说明原因的东西）。
+
+**真装置那三条刻意不进 CI，两个各自独立的原因：**
+
+1. 它们要交互式桌面会话（会弹两个 WPF 窗口），session 0 的服务模式 runner 根本跑不了。
+2. 改挂到交互式的 `golden-renderer` runner 也不行——那会破坏桌面独占。GitHub 的 `concurrency`
+   只在单个仓库内生效，所以这里的作业没办法和 `8005-mes-ingest` 的桌面测试在同一台机器上排队，
+   而那台机器同时是黄金渲染机。**跨仓库桌面互斥目前没有解**，见工作区根 `CLAUDE.md`。
+
+合成那三条不需要对方两个只读仓：`Get-L2PeerPublish` 只在场景 setup 写了 `Onboard = 'Real'` 时才
+调用。所以这条流水线不受对方进度影响。
+
 ## 两套装置
 
 场景在自己的 `scenarios/<名字>.setup.psd1` 里写 `Onboard = 'Real'` 就换装置，命令行不变。
