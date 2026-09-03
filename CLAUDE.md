@@ -189,12 +189,25 @@ This repository is pinned to the workspace-wide .NET toolchain. The authority is
 | SDK | 8.0.424, `rollForward: disable` | `global.json` |
 | Target framework | `net8.0` | `Directory.Build.props` |
 | Test stack | xunit.v3 3.2.2, Microsoft.NET.Test.Sdk 18.8.1, xunit.runner.visualstudio 3.1.5 | `Directory.Packages.props` |
+| Banned packages | xunit v2, NUnit, MSTest, coverlet.collector | `Directory.Build.targets` |
 
-Package versions live in `Directory.Packages.props` and nowhere else. A project
-that declares its own `Version=` fails restore with NU1008, because
-`CentralPackageVersionOverrideEnabled` is false. xunit v2, NUnit, MSTest and
-coverlet.collector are banned — do not add them back, and do not "upgrade" a
-test project by switching frameworks.
+Package versions live in `Directory.Packages.props` and nowhere else. xunit v2,
+NUnit, MSTest and coverlet.collector are banned — do not add them back, and do
+not "upgrade" a test project by switching frameworks. `Directory.Build.targets`
+enforces that at build time: a banned package produces `error W2G0056` and fails
+the build. It matches item identity exactly, so `xunit.v3` is not caught by the
+`xunit` entry. Verified on 2026-09-04 by adding one deliberately.
+
+**An inline `Version=` is a different story, and this file used to get it
+wrong.** It does not fail restore with NU1008. Under central package management
+NuGet silently ignores it — the central version wins, no error, no warning, and
+`%(PackageReference.Version)` is empty in every MSBuild target, so no build-time
+guard can see it either. `CentralPackageVersionOverrideEnabled=false` governs the
+`VersionOverride` attribute, not `Version`. The version therefore never actually
+drifts, but whoever wrote the inline one is not told it was ignored. Only
+`check-toolchain.ps1` catches it, by reading the csproj as text. Do not write an
+MSBuild target for it — one was written and deleted after it passed every case it
+existed to fail.
 
 Never raise a version in one repository alone. Change the ADR and every
 repository together, then run `check-toolchain.ps1` from the workspace root; it

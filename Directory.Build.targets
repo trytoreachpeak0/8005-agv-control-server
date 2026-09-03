@@ -1,0 +1,47 @@
+<Project>
+
+  <!-- Fourth enforcement layer of the toolchain baseline, 8005-agv-program
+       docs/adr/cross/0056-dotnet-toolchain-baseline.md. A banned package fails
+       the build here rather than being noticed later by check-toolchain.ps1 at
+       the workspace root.
+
+       Item identities match exactly, so xunit.v3 is not caught by "xunit".
+
+       Only banned packages are guarded, and that limit is worth knowing. An
+       inline Version= under central package management CANNOT be caught at build
+       time: NuGet strips the metadata during project evaluation, so by the time
+       any target runs, %(PackageReference.Version) is empty even for a project
+       that spells a version out. Verified on SDK 8.0.424 — a project asking for
+       an older version still resolved the one in Directory.Packages.props, with
+       no NU1008, no warning, and nothing for a target to read.
+       CentralPackageVersionOverrideEnabled=false does not cover it either; that
+       governs the VersionOverride attribute, not Version. The version therefore
+       never actually drifts — the central value always wins — but whoever wrote
+       the inline one is not told it was ignored. Catching that is
+       check-toolchain.ps1's job: it reads the csproj as text, which is the only
+       place the inline version still exists. Do not add an MSBuild target for
+       it; one was written and removed after it silently passed every case it was
+       meant to fail. -->
+  <ItemGroup>
+    <BannedPackage Include="xunit" />
+    <BannedPackage Include="xunit.core" />
+    <BannedPackage Include="xunit.assert" />
+    <BannedPackage Include="xunit.extensibility.core" />
+    <BannedPackage Include="NUnit" />
+    <BannedPackage Include="NUnit3TestAdapter" />
+    <BannedPackage Include="MSTest.TestFramework" />
+    <BannedPackage Include="MSTest.TestAdapter" />
+    <BannedPackage Include="coverlet.collector" />
+  </ItemGroup>
+
+  <Target Name="GuardBannedPackages" BeforeTargets="CollectPackageReferences;Build">
+    <ItemGroup>
+      <_AllowedPackage Include="@(PackageReference)" Exclude="@(BannedPackage)" />
+      <_BannedInUse Include="@(PackageReference)" Exclude="@(_AllowedPackage)" />
+    </ItemGroup>
+    <Error Condition="'@(_BannedInUse)' != ''"
+           Code="W2G0056"
+           Text="$(MSBuildProjectName) references banned package(s): @(_BannedInUse). The workspace test stack is xunit.v3 3.2.2 + Microsoft.NET.Test.Sdk 18.8.1 + xunit.runner.visualstudio 3.1.5. See 8005-agv-program docs/adr/cross/0056-dotnet-toolchain-baseline.md." />
+  </Target>
+
+</Project>
