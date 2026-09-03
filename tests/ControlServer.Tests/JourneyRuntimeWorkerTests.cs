@@ -811,6 +811,130 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AdmissionSafetyFactsComeFromTheLatestChangeNotTheSessionSnapshot()
+    {
+        // Onboard sends SafetyStateSnapshot once per session and reports every later change with
+        // SafetyStateChanged. A session established while the vehicle is still moving therefore
+        // carries a snapshot that says so for as long as the session lives, and reading admission
+        // facts from that snapshot alone left vehicleStopped false forever: the vehicle could stop
+        // at the station and still never be admitted, while the session row -- which
+        // SafetyStateChanged does update -- correctly showed Ready.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.EstablishSessionWhileVehicleIsMovingAsync();
+        await fixture.AddSafetyStateChangedAsync(8, departureSafe: true, vehicleStopped: true);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "ACCEPTED",
+            (await fixture.BacklogAsync("10000000-0000-4000-8000-000000000001")).ReasonCode);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ArrivalIsNotTrustedWhileTheLatestSafetyStateSaysTheVehicleIsMoving()
+    {
+        // The same staleness in the other direction, and the dangerous one: the session-start
+        // snapshot says the vehicle is stopped, so every later arrival check went on believing it
+        // after Onboard had reported the vehicle moving. Arrival must be judged against the newest
+        // safety state, and departureSafe is not a proxy for it -- a moving vehicle can still
+        // report that nothing blocks a departure, which is why the session row alone is not enough.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await fixture.AddSafetyStateChangedAsync(8, departureSafe: true, vehicleStopped: false);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+
+        await fixture.AddSafetyStateChangedAsync(9, departureSafe: true, vehicleStopped: true);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ABlockedJourneyKeepsTheReasonItWasBlockedForWhenTheSessionDrops()
+    {
+        // A station operation that times out blocks the journey and, per ADR-cross-0006 and
+        // ADR-cross-0015, holds it there until a human drives the recovery handshake. The vehicle
+        // is normally powered down for that repair, so the session leaves Ready -- and overwriting
+        // BlockReasonCode with ONBOARD_SESSION_NOT_READY on the way through destroyed the only
+        // record of why the journey is blocked and which recovery it is waiting for. Session
+        // readiness is reported on its own row; the block reason is not recoverable once lost.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow blocked = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, blocked.Stage);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", blocked.BlockReasonCode);
+
+        await fixture.DropOnboardSessionAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow afterDrop = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, afterDrop.Stage);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", afterDrop.BlockReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ABlockedJourneyKeepsTheVehicleOutOfEveryOtherDemand()
+    {
+        // The single active slot is what makes the one-vehicle runtime safe. A blocked journey is
+        // unresolved, not finished: the physical state of the slots is unproven, the dispatch
+        // lease is still held, and admitting another demand would send the vehicle away on it. So
+        // this is intended behaviour, recorded here so that no later change to Blocked quietly
+        // turns it into a free vehicle. The way out is the recovery handshake, not discovery.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.Blocked, (await fixture.RuntimeAsync()).Stage);
+
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)),
+            fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", Now.AddMinutes(-5)));
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Single(await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Single(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task InboundEnvelopesWithoutASessionGenerationDoNotBreakLiveness()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1436,7 +1560,8 @@ public sealed class JourneyRuntimeWorkerTests
             await AddCapabilityAndSafetyAsync(generation);
         }
 
-        public async Task<JourneyRuntimeRow> AdvanceToDepartureSafetyAsync()
+        /// <summary>Carries the journey to the point where the load command is outstanding.</summary>
+        public async Task<JourneyRuntimeRow> AdvanceToLoadResultAsync()
         {
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             JourneyRuntimeRow pickupRuntime = await RuntimeAsync();
@@ -1463,6 +1588,12 @@ public sealed class JourneyRuntimeWorkerTests
                     }
                 });
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            return await RuntimeAsync();
+        }
+
+        public async Task<JourneyRuntimeRow> AdvanceToDepartureSafetyAsync()
+        {
+            await AdvanceToLoadResultAsync();
             StationOperationRow load = await OperationAsync(SlotOperationType.Load);
             await ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -1608,6 +1739,56 @@ public sealed class JourneyRuntimeWorkerTests
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// Rewrites the session's SafetyStateSnapshot into what Onboard sends when the session is
+        /// established while the vehicle is still moving. Slot states are untouched: movement
+        /// changes neither their physical state nor their locks.
+        /// </summary>
+        public async Task EstablishSessionWhileVehicleIsMovingAsync()
+        {
+            ProtocolInboxRow row = await Context.ProtocolInbox.SingleAsync(
+                item => item.MessageType == "SafetyStateSnapshot",
+                TestContext.Current.CancellationToken);
+            JsonObject root = JsonNode.Parse(row.RequestJson)!.AsObject();
+            root["payload"]!["safety"]!["departureSafe"] = false;
+            root["payload"]!["safety"]!["vehicleStopped"] = false;
+            row.RequestJson = root.ToJsonString(SerializerOptions);
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// Records a SafetyStateChanged the way OnboardMessageProcessor does: the envelope lands
+        /// in the inbox and the session row takes the new revision and departure flag. Onboard
+        /// sends the full snapshot once per session and reports every later change this way.
+        /// </summary>
+        public async Task AddSafetyStateChangedAsync(
+            long safetyStateVersion,
+            bool departureSafe,
+            bool vehicleStopped,
+            int[]? affectedSlots = null)
+        {
+            await AddRawInboxAsync("SafetyStateChanged", new
+            {
+                safetyStateVersion,
+                observedAt = Clock.GetUtcNow(),
+                safety = new
+                {
+                    departureSafe,
+                    vehicleStopped,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                },
+                affectedSlots = affectedSlots ?? []
+            }, 1);
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.SafetyRevision = safetyStateVersion;
+            session.DepartureSafe = departureSafe;
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
         public async Task SetOnboardUnknownAsync()
         {
             ProtocolInboxRow row = await Context.ProtocolInbox.SingleAsync(
@@ -1715,6 +1896,45 @@ public sealed class JourneyRuntimeWorkerTests
                 Options.AgvId,
                 0,
                 TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// The result Onboard reports when a station operation runs out its own operator timeout:
+        /// the slots were never filled and the batch did not complete. Physical side effects are
+        /// unproven from here on, which is what sends the operation to RecoveryRequired.
+        /// </summary>
+        public async Task ApplyTimedOutResultAsync(StationOperationRow operation, SlotOperationType type)
+        {
+            int[] slots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
+            await new WireToGateStore(Context).ApplyOperationResultAsync(
+                new StationOperationResult(
+                    Guid.NewGuid().ToString("D"),
+                    operation.SlotOperationAttemptId,
+                    operation.DemandId,
+                    type,
+                    "FAILED",
+                    slots.Select(slot => new SlotPhysicalEvidence(slot, SlotBusinessState.Empty, true, true)).ToArray(),
+                    false,
+                    Clock.GetUtcNow(),
+                    new string('8', 64),
+                    new string('9', 64)),
+                Options.AgvId,
+                0,
+                TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// Drops the peer the way powering the vehicle down for a repair does: the session row
+        /// leaves Ready and stays behind with the reason it left for.
+        /// </summary>
+        public async Task DropOnboardSessionAsync()
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.Readiness = SessionReadiness.RecoveryRequired;
+            session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+            session.UpdatedAt = Clock.GetUtcNow();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         private JourneyRuntimeEngine CreateEngine()

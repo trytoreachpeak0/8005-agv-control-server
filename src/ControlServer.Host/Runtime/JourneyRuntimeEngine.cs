@@ -371,9 +371,18 @@ public sealed class JourneyRuntimeEngine(
             .ConfigureAwait(false);
         if (session is null)
         {
-            runtime.BlockReasonCode = "ONBOARD_SESSION_NOT_READY";
-            runtime.UpdatedAt = now;
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            // A Blocked journey is already waiting on the recovery its block reason names, and the
+            // vehicle is normally powered down for exactly that repair -- so losing the session is
+            // the ordinary case there, not news. Overwriting the reason threw away the only record
+            // of which recovery is outstanding, and nothing rebuilds it: the field left a journey
+            // reading "Blocked / ONBOARD_SESSION_NOT_READY", which names neither. Session
+            // readiness carries its own row and its own reason code.
+            if (runtime.Stage != JourneyRuntimeStage.Blocked)
+            {
+                runtime.BlockReasonCode = "ONBOARD_SESSION_NOT_READY";
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
             return;
         }
         await publisher.ReplayPendingForSessionAsync(
@@ -896,20 +905,37 @@ public sealed class JourneyRuntimeEngine(
         {
             return null;
         }
+        if (session.SafetyRevision is not long safetyRevision)
+        {
+            return null;
+        }
         ProtocolInboxRow? capability = await LatestInboxForSessionAsync(
             "CapabilitySnapshot", runtimeOptions.AgvId, session.SessionGeneration, cancellationToken)
             .ConfigureAwait(false);
         ProtocolInboxRow? safetyRow = await LatestInboxForSessionAsync(
             "SafetyStateSnapshot", runtimeOptions.AgvId, session.SessionGeneration, cancellationToken)
             .ConfigureAwait(false);
-        if (capability is null || safetyRow is null)
+        // The snapshot is sent once per session; every later change arrives as SafetyStateChanged
+        // (ADR-cross-0033), which carries the same safety summary and no slotStates. Reading the
+        // summary from the snapshot alone froze it at whatever was true when the session was
+        // established: a session opened while the vehicle was moving reported vehicleStopped false
+        // for its whole life, so the vehicle could stop at the pickup station and neither be
+        // admitted nor have its arrival trusted -- while SessionRecoveries, which SafetyStateChanged
+        // does update, correctly showed Ready. The reverse is worse: a session opened at rest went
+        // on reporting the vehicle stopped after Onboard said it had moved.
+        ProtocolInboxRow? safetySummaryRow = await LatestSafetySummaryForSessionAsync(
+            runtimeOptions.AgvId, session.SessionGeneration, safetyRevision, cancellationToken)
+            .ConfigureAwait(false);
+        if (capability is null || safetyRow is null || safetySummaryRow is null)
         {
             return null;
         }
         using JsonDocument capabilityDocument = JsonDocument.Parse(capability.RequestJson);
         using JsonDocument safetyDocument = JsonDocument.Parse(safetyRow.RequestJson);
+        using JsonDocument safetySummaryDocument = JsonDocument.Parse(safetySummaryRow.RequestJson);
         JsonElement capabilityPayload = capabilityDocument.RootElement.GetProperty("payload");
         JsonElement safetyPayload = safetyDocument.RootElement.GetProperty("payload");
+        JsonElement safetySummaryPayload = safetySummaryDocument.RootElement.GetProperty("payload");
         // The two snapshots are session-scoped facts, not polled evidence: the protocol states no
         // cadence for them and Onboard sends each once per session, so ageing them out would cap
         // every session's admission window at MaximumEvidenceAge. What must still be bounded is
@@ -917,10 +943,11 @@ public sealed class JourneyRuntimeEngine(
         // CurrentReadySessionAsync has no liveness component of its own. So the age limit applies
         // to the last thing we heard from this session generation (Heartbeat arrives periodically,
         // and any inbound message counts, which also covers the window before the first one).
-        // Content stays current through the session: both snapshots are read for this exact
-        // SessionGeneration, a new generation supersedes them, and an unsafe SafetyStateChanged
-        // fail-closes the session out of Ready. MaximumEvidenceAge still separately governs the
-        // RIoT vehicle observation in ValidateDynamicFacts, which genuinely is polled.
+        // Content stays current through the session: everything read here is scoped to this exact
+        // SessionGeneration, a new generation supersedes it, and the safety summary is taken from
+        // the message carrying the session's current safetyStateVersion rather than from the
+        // session-start snapshot. MaximumEvidenceAge still separately governs the RIoT vehicle
+        // observation in ValidateDynamicFacts, which genuinely is polled.
         //
         // supportsBatchUnlock is deliberately not consulted: protocol-v0.1.1 declares it with no
         // semantics and its own canonical example sets it false, while the real question -- can
@@ -928,7 +955,7 @@ public sealed class JourneyRuntimeEngine(
         // is actually sent. See docs/defects/20260829-intake-gates-on-unspecified-onboard-facts.md.
         DateTimeOffset now = timeProvider.GetUtcNow();
         DateTimeOffset capabilityAt = capabilityPayload.GetProperty("observedAt").GetDateTimeOffset();
-        DateTimeOffset safetyAt = safetyPayload.GetProperty("observedAt").GetDateTimeOffset();
+        DateTimeOffset safetyAt = safetySummaryPayload.GetProperty("observedAt").GetDateTimeOffset();
         if (capabilityAt > now || safetyAt > now)
         {
             return null;
@@ -947,7 +974,12 @@ public sealed class JourneyRuntimeEngine(
             .Select(item => item.GetProperty("slotNo").GetInt32())
             .Order()
             .ToArray();
-        JsonElement safety = safetyPayload.GetProperty("safety");
+        // slotStates live only on the snapshot; SafetyStateChanged names the slots it affects but
+        // not their new state. Availability therefore stays on the session baseline, which is what
+        // the slot reservation ledger is built against -- a load and its unload each "affect" the
+        // slots they touch, and treating that as lost availability would strand every slot the
+        // first journey used for the rest of the session.
+        JsonElement safety = safetySummaryPayload.GetProperty("safety");
         return new OnboardFacts(
             session.SessionGeneration,
             available,
@@ -988,6 +1020,34 @@ public sealed class JourneyRuntimeEngine(
             JsonElement root = document.RootElement;
             return RequiredString(root, "agvId") == agvId &&
                    root.GetProperty("sessionGeneration").GetInt64() == generation;
+        });
+    }
+
+    /// <summary>
+    /// The abstract safety summary Onboard currently stands behind, taken from whichever message
+    /// carries the session's own <c>safetyStateVersion</c>. SafetyStateSnapshot and
+    /// SafetyStateChanged both carry that summary and both advance the revision on the session row
+    /// in the same transaction that stores the envelope, so matching on the revision picks the
+    /// newest one without trusting either peer clock or receive order. No match means the session
+    /// row and the inbox disagree, which proves nothing and fails closed.
+    /// </summary>
+    private async Task<ProtocolInboxRow?> LatestSafetySummaryForSessionAsync(
+        string agvId,
+        long generation,
+        long safetyRevision,
+        CancellationToken cancellationToken)
+    {
+        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        rows = rows.OrderByDescending(row => row.ReceivedAt).ToArray();
+        return rows.FirstOrDefault(row =>
+        {
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+            JsonElement root = document.RootElement;
+            return RequiredString(root, "agvId") == agvId &&
+                   root.GetProperty("sessionGeneration").GetInt64() == generation &&
+                   root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64() == safetyRevision;
         });
     }
 
