@@ -69,7 +69,11 @@ function Wait-L2Condition {
         [int]$TimeoutSeconds = 60,
         [int]$PollMilliseconds = 250,
         [L2Journal]$Journal,
-        [string]$Criterion
+        [string]$Criterion,
+        # The Start-L2Process handle of the component this condition depends on, when there is one.
+        # A component that has already exited will never satisfy the condition, so waiting out the
+        # timeout only delays the failure and reports "(nothing)" in place of its cause.
+        [object]$Component
     )
 
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -78,12 +82,51 @@ function Wait-L2Condition {
         try { $last = & $Probe } catch { $last = $null }
         if ($Journal -and $Criterion) { $Journal.Observe($Criterion, $last, $null) }
         if ($null -ne $last -and (& $Until $last)) { return $last }
+        # After Until, not before: a component that exits having already satisfied the condition
+        # did its job, and the import step is exactly that shape.
+        if ($Component) { Assert-L2ComponentAlive -Component $Component -Description $Description }
         if ([DateTimeOffset]::UtcNow -ge $deadline) {
             $seen = if ($null -eq $last) { '(nothing)' } else { ($last | ConvertTo-Json -Compress -Depth 6) }
             throw "Timed out after ${TimeoutSeconds}s waiting for: $Description. Last observed: $seen"
         }
         Start-Sleep -Milliseconds $PollMilliseconds
     }
+}
+
+<#
+Throws when a component has already exited, quoting its stderr.
+
+This exists because of how expensive the alternative was. On 2026-09-03 the first CI run of the
+synthetic scenarios failed three times with
+
+    Timed out after 120s waiting for: ControlServer is listening. Last observed: (nothing)
+
+which is 120 wasted seconds per scenario and says nothing about the cause. The server had died on
+startup two seconds in, and its stderr named the reason exactly -- a missing external secret. That
+diagnosis needed the evidence artifact downloaded and opened; it should have been the first line of
+the failure.
+#>
+function Assert-L2ComponentAlive {
+    param(
+        [Parameter(Mandatory)][object]$Component,
+        [Parameter(Mandatory)][string]$Description
+    )
+
+    if (-not $Component.Process.HasExited) { return }
+
+    # An unhandled startup exception lands in stderr, and it is the whole diagnosis: a validation
+    # failure, a port already bound, a missing secret. Some components write nothing there and die
+    # with a bare exit code, so the message has to stand on its own without the tail.
+    $detail = ''
+    if ($Component.ErrLog -and (Test-Path -LiteralPath $Component.ErrLog)) {
+        $tail = @(Get-Content -LiteralPath $Component.ErrLog -Tail 20 -ErrorAction SilentlyContinue)
+        if ($tail.Count -gt 0) {
+            $detail = "`n--- $($Component.Name) stderr, last $($tail.Count) line(s) ---`n" +
+                ($tail -join "`n")
+        }
+    }
+    throw ("Component '$($Component.Name)' exited with code $($Component.Process.ExitCode) while " +
+        "waiting for: $Description.$detail")
 }
 
 <#
@@ -689,6 +732,7 @@ function Write-L2Evidence {
         [Text.UTF8Encoding]::new($false))
 }
 
-Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Wait-L2Iterations, New-L2Double,
+Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Assert-L2ComponentAlive,
+    Wait-L2Iterations, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
     Write-L2Evidence, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver

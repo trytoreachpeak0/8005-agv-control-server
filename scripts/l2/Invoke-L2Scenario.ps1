@@ -185,7 +185,7 @@ try {
 
     # 1. The doubles first. Both are pure loopback services with no dependency on the server, and
     #    starting them first means the server never meets a dead port during its first poll.
-    $handles += Start-L2Process -Name 'fake-riot' `
+    $riotHandle = Start-L2Process -Name 'fake-riot' `
         -FilePath (Join-Path $riotDirectory 'ControlServer.FakeRiot.exe') `
         -ArgumentList @(
             "--FakeRiot:port=$FakeRiotPort",
@@ -196,21 +196,25 @@ try {
             "--FakeRiot:Seed:startStationId=$gateStationRiotId") `
         -WorkingDirectory $riotDirectory -LogRoot $logRoot |
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 1 -PassThru }
+    $handles += $riotHandle
 
-    $handles += Start-L2Process -Name 'fake-mes-ingest' `
+    $mesHandle = Start-L2Process -Name 'fake-mes-ingest' `
         -FilePath (Join-Path $mesDirectory 'ControlServer.FakeMesIngest.exe') `
         -ArgumentList @(
             "--FakeMesIngest:port=$FakeMesIngestPort",
             "--FakeMesIngest:instanceId=l2-mes") `
         -WorkingDirectory $mesDirectory -LogRoot $logRoot |
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 2 -PassThru }
+    $handles += $mesHandle
 
     $riot = New-L2Double -Name 'fake-riot' -BaseUrl "http://127.0.0.1:$FakeRiotPort"
     $mes = New-L2Double -Name 'fake-mes-ingest' -BaseUrl "http://127.0.0.1:$FakeMesIngestPort"
 
     $null = Wait-L2Condition -Description 'fake RIoT is live' -Journal $journal -Criterion 'fake-riot-live' `
+        -Component $riotHandle `
         -Probe { $riot.Health().body.status } -Until { param($v) $v -eq 'live' }
     $null = Wait-L2Condition -Description 'fake MesIngest is live' -Journal $journal -Criterion 'fake-mes-live' `
+        -Component $mesHandle `
         -Probe { $mes.Health().body.status } -Until { param($v) $v -eq 'live' }
 
     # 1b. The slots simulator, when the scenario asked for the real onboard. It has to be listening
@@ -228,15 +232,16 @@ try {
                 $settings.automation.listenAddress = '127.0.0.1'
                 $settings.automation.port = $SimulatorHttpPort
             }
-        $handles += Start-L2Process -Name 'slots-simulator' -Gui `
+        $simulatorHandle = Start-L2Process -Name 'slots-simulator' -Gui `
             -FilePath (Join-Path $simulatorDirectory 'SQCD_8005AGV_Simulator.exe') `
             -WorkingDirectory $simulatorDirectory -LogRoot $logRoot |
             ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 3 -PassThru }
+        $handles += $simulatorHandle
 
         $simulator = New-L2Double -Name 'slots-simulator' -BaseUrl "http://127.0.0.1:$SimulatorHttpPort" `
             -Prefix 'api/v1' -RequireExpectedRevision
         $null = Wait-L2Condition -Description 'the slots simulator is serving Modbus' -Journal $journal `
-            -Criterion 'simulator-ready' -TimeoutSeconds 120 `
+            -Criterion 'simulator-ready' -TimeoutSeconds 120 -Component $simulatorHandle `
             -Probe { $h = $simulator.Health(); "$($h.status)/$($h.modbus.isRunning)" } `
             -Until { param($v) $v -eq 'READY/True' }
     }
@@ -305,16 +310,17 @@ try {
     $journal.Note('Package capacity rules imported.')
 
     # 3. ControlServer, against the doubles.
-    $handles += Start-L2Process -Name 'control-server' `
+    $serverHandle = Start-L2Process -Name 'control-server' `
         -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
         -WorkingDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot |
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 4 -PassThru }
+    $handles += $serverHandle
 
     # /health/live, not /health/ready: readiness means a peer has completed the recovery handshake,
     # and the peer cannot connect until the server is listening. Waiting on readiness here would
     # deadlock the startup order against itself.
     $null = Wait-L2Condition -Description 'ControlServer is listening' -Journal $journal -Criterion 'control-server-live' `
-        -TimeoutSeconds 120 `
+        -TimeoutSeconds 120 -Component $serverHandle `
         -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
         -Until { param($v) $v -eq 'live' }
 
@@ -322,7 +328,7 @@ try {
     #     before the onboard (which must find it listening on its first poll).
     $skewProxy = $null
     if ($null -ne $clockSkewMs) {
-        $handles += Start-L2Process -Name 'clock-skew-proxy' `
+        $skewProxyHandle = Start-L2Process -Name 'clock-skew-proxy' `
             -FilePath (Join-Path $skewProxyDirectory 'ControlServer.ClockSkewProxy.exe') `
             -ArgumentList @(
                 "--ClockSkewProxy:port=$ClockSkewProxyPort",
@@ -331,10 +337,11 @@ try {
                 "--ClockSkewProxy:Seed:skewMs=$clockSkewMs") `
             -WorkingDirectory $skewProxyDirectory -LogRoot $logRoot |
             ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5 -PassThru }
+        $handles += $skewProxyHandle
 
         $skewProxy = New-L2Double -Name 'clock-skew-proxy' -BaseUrl "http://127.0.0.1:$ClockSkewProxyPort"
         $null = Wait-L2Condition -Description 'the clock skew proxy is live' -Journal $journal `
-            -Criterion 'skew-proxy-live' -TimeoutSeconds 60 `
+            -Criterion 'skew-proxy-live' -TimeoutSeconds 60 -Component $skewProxyHandle `
             -Probe { $skewProxy.Health().body.status } -Until { param($v) $v -eq 'live' }
         $journal.Note("Clock skew proxy forwarding vehicle-safety with observedAt +${clockSkewMs}ms.")
     }
@@ -400,7 +407,7 @@ try {
         # The simulator counts Modbus clients, so "the onboard is talking to IO" is observed from
         # the simulator rather than taken on trust from the onboard's own log.
         $null = Wait-L2Condition -Description 'the onboard connected to the simulator over Modbus' `
-            -Journal $journal -Criterion 'onboard-modbus' -TimeoutSeconds 60 `
+            -Journal $journal -Criterion 'onboard-modbus' -TimeoutSeconds 60 -Component $onboardHandle `
             -Probe { [int]$simulator.Health().modbus.clientCount } -Until { param($v) $v -ge 1 }
     } else {
         # OnboardSeed lands on the safety summary the handshake's SafetyStateSnapshot carries,
@@ -418,23 +425,24 @@ try {
                 (($setup.OnboardSeed.GetEnumerator() | Sort-Object Key |
                     ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
         }
-        $handles += Start-L2Process -Name 'fake-onboard' `
+        $onboardHandle = Start-L2Process -Name 'fake-onboard' `
             -FilePath (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe') `
             -ArgumentList $onboardArguments `
             -WorkingDirectory $onboardDirectory `
             -Environment @{ 'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential } `
             -LogRoot $logRoot |
             ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
+        $handles += $onboardHandle
 
         $onboard = New-L2Double -Name 'fake-onboard' -BaseUrl "http://127.0.0.1:$FakeOnboardPort"
         $null = Wait-L2Condition -Description 'the synthetic peer reached READY' -Journal $journal -Criterion 'onboard-readiness' `
-            -TimeoutSeconds 60 `
+            -TimeoutSeconds 60 -Component $onboardHandle `
             -Probe { $onboard.Snapshot().body.readiness } -Until { param($v) $v -eq 'READY' }
     }
 
     # Now readiness is meaningful: the peer finished the handshake and the server granted it.
     $null = Wait-L2Condition -Description 'ControlServer reports the vehicle ready' -Journal $journal `
-        -Criterion 'control-server-ready' -TimeoutSeconds 60 `
+        -Criterion 'control-server-ready' -TimeoutSeconds 60 -Component $serverHandle `
         -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/ready" -TimeoutSec 5).status } `
         -Until { param($v) $v -eq 'ready' }
 
