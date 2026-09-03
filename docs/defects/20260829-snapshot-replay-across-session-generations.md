@@ -5,7 +5,7 @@ Owner repository: `8005-agv-control-server`
 Found by: [`到站推进首次可达后的联合运行`](../../evidence/g3/20260829-placeholder-fix-confirms-leg/SUMMARY.md) 之后的到站验证运行
 Product at discovery: `ControlServer_MVP@bf22a48d5d0e386e7af21d162800f7cf09b0032d`
 Fixed in: `ControlServer_MVP@b426ef6359b38bbd73b70452359003767ed30b04`
-Verified by: [`到站之后首次走通：三处服务端修复的现场验证`](../../evidence/g3/20260829-arrival-to-sublot-field-verify/SUMMARY.md)
+Verified by: [`到站之后首次走通：三处服务端修复的现场验证`](../../evidence/g3/20260829-arrival-to-sublot-field-verify/SUMMARY.md)（现场端到端效果）、[`staged G3 重绑当前双端 3d8b00c + 304e6ad`](../../evidence/g3/20260829-staged-g3-rebind-3d8b00c-304e6ad/SUMMARY.md)（跨代次重放路径本身）
 Peers: `OnboardHmi_MVP@84b7f3f`、`slots-simulator@fb5f7c5`、`protocol-v0.1.1@1531489`
 
 ## 现象
@@ -32,6 +32,8 @@ Peers: `OnboardHmi_MVP@84b7f3f`、`slots-simulator@fb5f7c5`、`protocol-v0.1.1@1
 1. 快照的 `messageId` 由旅程状态**决定性派生**，因此跨重连保持不变
    （本次全程为 `2de51bf7-f1be-7a5b-81a9-4de6898edad9`）；
 2. `ProtocolOutbox` 冻结首次发送的完整 wire 字节，以实现同 `messageId` 的**逐字节重放**；
+   （**这一条今天已不成立**：修复之后 wire 只在同一代次内冻结，代次推进时
+   `RefreshOutboundEnvelopeAsync` 会重盖并改写 `PayloadJson`）
 3. 协议信封**内嵌 `sessionGeneration`**。
 
 冻结的信封写着 `"sessionGeneration": 21`，而重放发生时活动会话已是第 22 代。对端在新代次收到
@@ -94,10 +96,18 @@ non-advancing session generation`。
 | 快照被确认 | 0 / 3 | **3 / 3** |
 | `Stage` | `AwaitingPickupArrival` | **`AwaitingSublot`** |
 
-验证时对端为 `OnboardHmi_MVP@304e6ad`（王昆的 `Fix snapshot revision replay across sessions`），
-证据记录两端修复互通、跨代次后 payload 身份保持不变。2026-09-03 的现场联调又一次走过同一段并
-推进到装载环节。L2 的 `normal-load` 场景每次跑都会走一遍到站快照的发布与确认（单一会话代次，
-**不覆盖**跨代次重放，那一段由上述回归测试承担）。
+验证时对端为 `OnboardHmi_MVP@304e6ad`（王昆的 `Fix snapshot revision replay across sessions`，
+改的正是快照 revision 去重键），证据记录两端修复互通、跨代次后 payload 身份保持不变。
+
+**跨代次重放这条路径本身另有针对性证据**：`20260829-staged-g3-rebind-3d8b00c-304e6ad` 用当时
+双端的最新 commit（`ControlServer@3d8b00c`，含本修复）跑重放探针，七条断言全 PASS，其中
+`sameMessageIdDifferentContentStableConflict` 与 `recoveryStateReportFirstAckDropReplay` 打的
+就是这一块——第 1 代的首个 `DurableAck` 被丢弃并断开，第 2 代在新连接上以同一 `messageId` 与
+同一 payload SHA-256 重放并成功收到 Ack，inbox 中该 `messageId` 仅 1 行。
+
+2026-09-03 的现场联调又一次走过同一段并推进到装载环节。L2 的 `normal-load` 场景每次跑都会走一遍
+到站快照的发布与确认，但那是**单一会话代次**，不覆盖跨代次重放——那一段由上面的 staged G3 与两条
+回归测试承担。
 
 **这条缺陷不再阻塞任何切片。**验证那份证据里 W2G-IS-00～07 的 G3 与 RC 仍记作 `INCONCLUSIVE`，
 原因是 `SublotEntryRequested` 在等现场操作员扫码这一人工步骤，与本缺陷无关。
