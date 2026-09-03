@@ -905,7 +905,10 @@
         "type": "Project"
       },
       "controlserver.fakeriot": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "ControlServer.TestDoubles": "[1.0.0, )"
+        }
       },
       "controlserver.host": {
         "type": "Project",
@@ -926,6 +929,9 @@
           "Microsoft.Extensions.Http.Resilience": "[8.10.0, )",
           "RIoT.Sdk.Facade": "[0.1.0-controlserver.2, )"
         }
+      },
+      "controlserver.testdoubles": {
+        "type": "Project"
       },
       "Microsoft.Extensions.Hosting.WindowsServices": {
         "type": "CentralTransitive",

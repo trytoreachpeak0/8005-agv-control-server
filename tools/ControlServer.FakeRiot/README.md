@@ -73,7 +73,9 @@ ControlServer 的 SDK 实际调用的六个端点，响应形状与 `HttpRiotMov
 `http://127.0.0.1:58008/control/v1`，机器契约见 `openapi.json`（运行时 `/control/v1/openapi.json`）。
 
 形状照抄 `slots-simulator` 的
-`docs/EXTERNAL_AUTOMATION_CONTROL_API.md`，这样一套编排器可以同时驱动两边，不用记两套约定：
+`docs/EXTERNAL_AUTOMATION_CONTROL_API.md`，这样一套编排器可以同时驱动两边，不用记两套约定。
+这套规则的实现在 `tools/ControlServer.TestDoubles`，三个替身共用一份——四份幂等规则的拷贝就是
+四个走样的机会：
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
@@ -125,7 +127,7 @@ curl -s -X PUT localhost:58008/control/v1/vehicle -H 'content-type: application/
 
 黑盒测试在 `tests/ControlServer.Tests/FakeRiotTests.cs`：起真实 Kestrel，用**生产的**
 `HttpRiotMovementGateway` 去读，控制面走 HTTP 驱动。用捷径断言只能证明捷径，证明不了替身。
-跑法与全仓一致：
+端到端的用法见 `scripts/l2/`——那里这个替身和真 ControlServer 一起跑完整条链路。跑法与全仓一致：
 
 ```powershell
 dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release

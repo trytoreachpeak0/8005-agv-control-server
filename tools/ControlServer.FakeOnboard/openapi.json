@@ -1,0 +1,144 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ControlServer.FakeOnboard",
+    "version": "1.0.0",
+    "description": "A synthetic Onboard peer. It connects out to ControlServer over the NDJSON protocol, completes the five-step recovery handshake (ADR-cross-0029), heartbeats every two seconds, and answers business requests according to a policy a scenario can change while the session is live. This HTTP surface is the control plane only; the protocol traffic is a TCP connection to ControlServer."
+  },
+  "servers": [{ "url": "http://127.0.0.1:58009" }],
+  "paths": {
+    "/control/v1/health": {
+      "get": {
+        "summary": "Liveness. status is \"live\" only once the server has granted READY.",
+        "responses": { "200": { "description": "Standard control envelope." } }
+      }
+    },
+    "/control/v1/snapshot": {
+      "get": {
+        "summary": "Session generation, readiness, safety state, policy, open requests and the wire log.",
+        "description": "readiness is DISCONNECTED before the handshake and after the peer loses the socket, READY once the server grants it, and FAULTED when the read pump died -- readinessReasonCode then carries the exception. pending lists requests the peer is holding open, keyed the way /answer names them. wire is the last 200 messages in either direction, a diagnostic rather than asserted state, so it does not move the revision.",
+        "responses": { "200": { "description": "Standard control envelope." } }
+      }
+    },
+    "/control/v1/openapi.json": {
+      "get": {
+        "summary": "This document.",
+        "responses": { "200": { "description": "The machine contract." } }
+      }
+    },
+    "/control/v1/policy": {
+      "put": {
+        "summary": "Sets how the peer answers each kind of request.",
+        "description": "Auto answers as a working vehicle would, as soon as the request arrives. Manual holds it open for /answer. Silent never answers -- which is what a station operation running out its own operator timeout looks like from the server's side.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PolicyCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
+    },
+    "/control/v1/safety": {
+      "put": {
+        "summary": "Reports a new abstract safety state, sending SafetyStateChanged.",
+        "description": "This is how a scenario makes the vehicle move and stop as Onboard sees it, which is the half the RIoT double cannot express. safetyStateVersion defaults to the next one; pin it to exercise a revision the server refuses. Fields not given keep their current value.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SafetyCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT, REVISION_CONFLICT, or NOT_ALLOWED_IN_STATE when no session is connected." }
+        }
+      }
+    },
+    "/control/v1/answer/{key}": {
+      "put": {
+        "summary": "Answers one request the peer is holding open under Manual policy.",
+        "description": "The answer is remembered verbatim: ControlServer replays an unsettled command on every poll, and ADR-cross-0006 requires the peer to return its existing result rather than a new one. A second OperationResult under the same slotOperationAttemptId with a fresh resultId is a content conflict the server tears the session down over.",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "\"sublot\", \"safety-check\", or \"operation:{slotOperationAttemptId}\". Read the exact keys from /control/v1/snapshot."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnswerCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "The answer was sent." },
+          "409": { "description": "NOT_FOUND when no request is open under that key, NOT_ALLOWED_IN_STATE when no session is connected." }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CommandEnvelope": {
+        "type": "object",
+        "required": ["runId", "commandId"],
+        "properties": {
+          "runId": { "type": "string" },
+          "commandId": { "type": "string" },
+          "expectedRevision": { "type": "integer", "format": "int64" }
+        }
+      },
+      "AnswerMode": { "type": "string", "enum": ["Auto", "Manual", "Silent"] },
+      "PolicyCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "sublot": { "$ref": "#/components/schemas/AnswerMode" },
+              "loadResult": { "$ref": "#/components/schemas/AnswerMode" },
+              "unloadResult": { "$ref": "#/components/schemas/AnswerMode" },
+              "safetyCheck": { "$ref": "#/components/schemas/AnswerMode" }
+            }
+          }
+        ]
+      },
+      "SafetyCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "safetyStateVersion": { "type": "integer", "format": "int64" },
+              "departureSafe": { "type": "boolean" },
+              "vehicleStopped": { "type": "boolean" },
+              "allTargetSlotsLocked": { "type": "boolean" },
+              "allUnlockOutputsReset": { "type": "boolean" },
+              "unknownPresent": { "type": "boolean" },
+              "reasonCodes": { "type": "array", "items": { "type": "string" } },
+              "affectedSlots": { "type": "array", "items": { "type": "integer" } }
+            }
+          }
+        ]
+      },
+      "AnswerCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "completed": {
+                "type": "boolean",
+                "default": true,
+                "description": "true for a completed operation or a SAFE pre-departure answer; false for a failed one. Ignored for a sublot submission."
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

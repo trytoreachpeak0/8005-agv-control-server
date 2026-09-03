@@ -26,7 +26,7 @@ public sealed class FakeRiotSeed
         ["11"] = "C15-13"
     };
 
-    public FakeRiotState BuildInitialState(string runId)
+    public FakeRiotState BuildInitialState()
     {
         FakeVehicle vehicle = new()
         {
@@ -44,10 +44,6 @@ public sealed class FakeRiotSeed
             .ToArray();
         return new FakeRiotState
         {
-            RunId = runId,
-            // A fresh round starts at 1, the same floor slots-simulator uses, so an orchestrator
-            // can assert on an absolute revision after a reset rather than a relative one.
-            Revision = 1,
             Vehicles = new Dictionary<string, FakeVehicle>(StringComparer.Ordinal)
             {
                 [VehicleKey] = vehicle

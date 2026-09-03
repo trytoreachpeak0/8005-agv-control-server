@@ -67,14 +67,9 @@ public enum FakeRiotFaultMode
     Delay
 }
 
-/// <summary>
-/// Everything one test round can observe or drive. Immutable: the engine swaps the whole record
-/// under its lock, so a snapshot handed to a request thread can never be torn.
-/// </summary>
+/// <summary>Everything one test round can observe or drive.</summary>
 public sealed record FakeRiotState
 {
-    public required string RunId { get; init; }
-    public required long Revision { get; init; }
     public required IReadOnlyDictionary<string, FakeVehicle> Vehicles { get; init; }
     public required IReadOnlyDictionary<string, FakeOrder> OrdersByUpperId { get; init; }
     public required IReadOnlyDictionary<int, IReadOnlyList<FakeStation>> StationsByMapId { get; init; }

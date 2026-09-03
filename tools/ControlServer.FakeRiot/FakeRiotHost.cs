@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Net;
+using ControlServer.TestDoubles;
 
 namespace ControlServer.FakeRiot;
 
@@ -13,8 +13,7 @@ public static class FakeRiotHost
 
     /// <summary>
     /// Returns null and writes the reason to stderr when the configured listen address is not
-    /// loopback and the override was not set. A test double that answers movement questions must
-    /// not be reachable from the plant network, where something could take its answers for RIoT's.
+    /// loopback and the override was not set.
     /// </summary>
     public static WebApplication? TryCreate(string[] args)
     {
@@ -26,24 +25,16 @@ public static class FakeRiotHost
         builder.Configuration.GetSection("FakeRiot:Seed").Bind(seed);
         builder.Services.AddSingleton(seed);
         string instanceId = builder.Configuration["FakeRiot:instanceId"] ?? "fake-riot-1";
-        builder.Services.AddSingleton(services => new FakeRiotEngine(
-            services.GetRequiredService<FakeRiotSeed>(), instanceId));
+        builder.Services.AddSingleton(services => new CommandEngine<FakeRiotState>(
+            instanceId, services.GetRequiredService<FakeRiotSeed>().BuildInitialState));
 
-        string listenAddress = builder.Configuration["FakeRiot:listenAddress"] ?? "127.0.0.1";
-        int port = int.TryParse(
-            builder.Configuration["FakeRiot:port"], CultureInfo.InvariantCulture, out int configuredPort)
-            ? configuredPort
-            : DefaultPort;
-        IPAddress address = IPAddress.Parse(listenAddress);
-        if (!IPAddress.IsLoopback(address) &&
-            !builder.Configuration.GetValue<bool>("FakeRiot:allowNonLoopbackListen"))
+        IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(
+            builder.Configuration, "FakeRiot", DefaultPort);
+        if (listener is null)
         {
-            Console.Error.WriteLine(
-                "FakeRiot refuses to listen on " + listenAddress +
-                ": set FakeRiot:allowNonLoopbackListen to override, and understand why first.");
             return null;
         }
-        builder.WebHost.ConfigureKestrel(options => options.Listen(address, port));
+        builder.WebHost.ConfigureKestrel(options => options.Listen(listener));
 
         WebApplication app = builder.Build();
         app.MapRiotDataPlane();

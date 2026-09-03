@@ -1,0 +1,180 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ControlServer.FakeMesIngest",
+    "version": "1.0.0",
+    "description": "A test double for the parts of MesIngest V2 the WIRE_TO_GATE runtime reads. Two surfaces on one listener: the MesIngest data plane ControlServer polls, and a loopback control plane a scenario drives. It stands in for three endpoints, not for MesIngest."
+  },
+  "servers": [{ "url": "http://127.0.0.1:58088" }],
+  "paths": {
+    "/api/v2/contract": {
+      "get": {
+        "summary": "MesIngest data plane: contract discovery.",
+        "description": "ControlServer compares contractVersion, schemaVersion and the whole capability set exactly, and refuses to read the catalog unless all three match. PUT /control/v1/contract with breakContract=true makes this answer a version it rejects.",
+        "responses": { "200": { "description": "Contract identity and capabilities." } }
+      }
+    },
+    "/api/v2/externally-readable-demand-catalog": {
+      "get": {
+        "summary": "MesIngest data plane: the open demand catalog.",
+        "description": "The response carries a weak ETag derived from the body (W/\"catalog-h{historyEpoch:N}-r{catalogRevision}\"). ControlServer recomputes it and refuses a catalog whose identity does not match, so the header is part of the contract. Demand ids are unique and ordinally sorted for the same reason.",
+        "responses": {
+          "200": {
+            "description": "Catalog body with contractVersion, historyEpoch, catalogRevision, count and items.",
+            "headers": {
+              "ETag": { "schema": { "type": "string" }, "description": "Weak, derived from the body." }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/sublot-box-count": {
+      "get": {
+        "summary": "MesIngest data plane: SUBLOT_BOX_COUNT.",
+        "description": "observedAt is stamped at request time: unlike the session-scoped Onboard snapshots, ControlServer ages this one out against MaximumEvidenceAge.",
+        "parameters": [
+          { "name": "sublot", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "queryId, sublot, maxBoxCount and observedAt." },
+          "404": { "description": "No demand carries that sublot." }
+        }
+      }
+    },
+    "/control/v1/health": {
+      "get": {
+        "summary": "Control plane: liveness and the current demand count.",
+        "responses": { "200": { "description": "Standard control envelope." } }
+      }
+    },
+    "/control/v1/snapshot": {
+      "get": {
+        "summary": "Control plane: catalog identity and every demand in it.",
+        "responses": { "200": { "description": "Standard control envelope." } }
+      }
+    },
+    "/control/v1/openapi.json": {
+      "get": {
+        "summary": "This document.",
+        "responses": { "200": { "description": "The machine contract." } }
+      }
+    },
+    "/control/v1/reset": {
+      "post": {
+        "summary": "Control plane: start a new round at revision 1 with an empty catalog.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CommandEnvelope" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
+    },
+    "/control/v1/demands/{demandId}": {
+      "put": {
+        "summary": "Control plane: add or replace one demand.",
+        "description": "Fields not given keep their current value, or take a sensible default on first insert. sublot, area, eqp and package have no default and must be supplied once. Any change bumps catalogRevision.",
+        "parameters": [
+          {
+            "name": "demandId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "MesIngest reports these unhyphenated; ControlServer normalises them on the way in, so send the unhyphenated form to keep covering that."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DemandCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT (a required field was never supplied, or maxBoxCount <= 0)." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      },
+      "delete": {
+        "summary": "Control plane: remove one demand from the catalog.",
+        "parameters": [
+          { "name": "demandId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CommandEnvelope" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted, replayed, or changed=false when it was not there." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
+    },
+    "/control/v1/contract": {
+      "put": {
+        "summary": "Control plane: make contract discovery answer a version ControlServer rejects.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ContractCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT." }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CommandEnvelope": {
+        "type": "object",
+        "required": ["runId", "commandId"],
+        "properties": {
+          "runId": { "type": "string" },
+          "commandId": { "type": "string" },
+          "expectedRevision": { "type": "integer", "format": "int64" }
+        }
+      },
+      "DemandCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "seriesId": { "type": "string" },
+              "workType": { "type": "string", "default": "WIRE_TO_GATE" },
+              "sublot": { "type": "string" },
+              "generation": { "type": "integer" },
+              "demandRevision": { "type": "integer", "format": "int64" },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "valueObservedAt": { "type": "string", "format": "date-time" },
+              "valuePollTraceId": { "type": "string" },
+              "valueProjectionCommitId": { "type": "string" },
+              "area": {
+                "type": "string",
+                "description": "Must be an area code parsed out of a station name, not a prefix of one: MapStationResolver splits \"N1-3_N1-7\" into N1-3 and N1-7, and \"N1\" matches neither."
+              },
+              "eqp": { "type": "string" },
+              "step": { "type": "string" },
+              "mesSourceDate": { "type": "string", "format": "date-time" },
+              "package": { "type": "string" },
+              "maxBoxCount": { "type": "integer", "minimum": 1 }
+            }
+          }
+        ]
+      },
+      "ContractCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "required": ["breakContract"],
+            "properties": { "breakContract": { "type": "boolean" } }
+          }
+        ]
+      }
+    }
+  }
+}

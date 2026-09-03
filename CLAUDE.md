@@ -115,6 +115,20 @@ commit, or push an already-dirty worktree does **not** authorize a test run. Run
 tests only when the current task changed product code, tests, or build inputs,
 or when the user asks for validation. Never infer it from `git status`.
 
+Between the suite and the gates sits the **L2 scenario runner**, which is cheap (about 14
+seconds), unattended and safe to run on your own initiative:
+
+```powershell
+pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\evidence\l2\<new dir>
+```
+
+It starts a real ControlServer against loopback doubles — `tools/ControlServer.FakeRiot`,
+`tools/ControlServer.FakeMesIngest` and the synthetic peer in `tools/ControlServer.FakeOnboard` —
+drives one scenario, asserts against the server's own database and writes evidence. Use it when a
+change touches the journey runtime's cross-end timing, which the unit suite covers only from
+inside one process. `-EvidenceRoot` must be a new directory. See `scripts/l2/README.md`; a PASS
+there proves nothing about real hardware.
+
 Gates cost far more than the suite. **Do not enter one on your own initiative** —
 say which gate, what it costs, and what it proves, then ask:
 

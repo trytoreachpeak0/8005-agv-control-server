@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ControlServer.TestDoubles;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ControlServer.FakeRiot;
@@ -14,14 +15,14 @@ public static class RiotDataPlane
     public static void MapRiotDataPlane(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
-        FakeRiotEngine engine = app.Services.GetRequiredService<FakeRiotEngine>();
+        CommandEngine<FakeRiotState> engine = app.Services.GetRequiredService<CommandEngine<FakeRiotState>>();
 
         app.MapGet("/api/task/vehicles/getVehicleInfoByDeviceKey", async (
             [FromQuery] string key, CancellationToken cancellationToken) =>
         {
             IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
             if (fault is not null) return fault;
-            FakeRiotState state = engine.Snapshot();
+            FakeRiotState state = engine.Snapshot().State;
             if (!state.Vehicles.TryGetValue(key, out FakeVehicle? vehicle))
             {
                 // RIoT answers a business success with an empty result rather than 404 here. The
@@ -50,7 +51,7 @@ public static class RiotDataPlane
         {
             IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
             if (fault is not null) return fault;
-            FakeRiotState state = engine.Snapshot();
+            FakeRiotState state = engine.Snapshot().State;
             if (!state.Vehicles.TryGetValue(deviceKey, out FakeVehicle? vehicle))
             {
                 return Results.NotFound();
@@ -84,7 +85,7 @@ public static class RiotDataPlane
         {
             IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
             if (fault is not null) return fault;
-            FakeRiotState state = engine.Snapshot();
+            FakeRiotState state = engine.Snapshot().State;
             if (!state.StationsByMapId.TryGetValue(mapId, out IReadOnlyList<FakeStation>? stations))
             {
                 return Ok(Array.Empty<object>());
@@ -97,7 +98,7 @@ public static class RiotDataPlane
         {
             IResult? fault = await ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
             if (fault is not null) return fault;
-            FakeRiotState state = engine.Snapshot();
+            FakeRiotState state = engine.Snapshot().State;
             return state.OrdersByUpperId.TryGetValue(upperId, out FakeOrder? order)
                 ? Ok(OrderBody(order))
                 : Results.NotFound();
@@ -115,7 +116,7 @@ public static class RiotDataPlane
             int size = int.TryParse(request.Query["pageSize"], out int parsedSize) && parsedSize > 0
                 ? parsedSize
                 : 100;
-            FakeRiotState state = engine.Snapshot();
+            FakeRiotState state = engine.Snapshot().State;
             object[] records = state.OrdersByUpperId.Values
                 .Where(order => states.Length == 0 || states.Contains(order.OrderState))
                 .OrderBy(order => order.Id)
@@ -155,7 +156,7 @@ public static class RiotDataPlane
                     item.GetProperty("mapId").GetInt32(),
                     item.GetProperty("destination").GetInt32())).ToArray()
                 : [];
-            FakeOrder? created = engine.CreateOrder(upperId, appointVehicleKey, missions);
+            FakeOrder? created = CreateOrder(engine, upperId, appointVehicleKey, missions);
             return created is null
                 // BC-ORDER-004. The control server treats this exact code as "already exists" and
                 // reconciles instead of retrying, so it must be the code and not a 409.
@@ -169,6 +170,40 @@ public static class RiotDataPlane
                 });
         });
     }
+
+    /// <summary>
+    /// RIoT deduplicates a create on upperId rather than on a caller command id, so this does not
+    /// go through the control plane's receipt table. Returns null when the upperId is already taken.
+    /// </summary>
+    private static FakeOrder? CreateOrder(
+        CommandEngine<FakeRiotState> engine,
+        string upperId,
+        string? appointVehicleKey,
+        IReadOnlyList<FakeMission> missions) =>
+        engine.Mutate<FakeOrder?>(state =>
+        {
+            if (state.OrdersByUpperId.ContainsKey(upperId))
+            {
+                return (null, null);
+            }
+            long sequence = state.NextOrderSequence;
+            FakeOrder order = new()
+            {
+                Id = 488000 + sequence,
+                OrderId = "ORDER-" + sequence.ToString("D6", System.Globalization.CultureInfo.InvariantCulture),
+                UpperId = upperId,
+                OrderState = 1,
+                AppointVehicleKey = appointVehicleKey,
+                ExecuteVehicleKey = "--",
+                EndStationNo = missions.Count > 0 ? missions[missions.Count - 1].Destination : null,
+                Missions = missions
+            };
+            Dictionary<string, FakeOrder> orders = new(state.OrdersByUpperId, StringComparer.Ordinal)
+            {
+                [upperId] = order
+            };
+            return (state with { OrdersByUpperId = orders, NextOrderSequence = sequence + 1 }, order);
+        });
 
     private static object OrderBody(FakeOrder order) => new
     {
@@ -191,9 +226,11 @@ public static class RiotDataPlane
     /// up, which is how a read timeout is produced without a real network; the control server must
     /// answer RIOT_READ_TIMEOUT and fail closed rather than treat silence as safe.
     /// </summary>
-    private static async Task<IResult?> ApplyFaultAsync(FakeRiotEngine engine, CancellationToken cancellationToken)
+    private static async Task<IResult?> ApplyFaultAsync(
+        CommandEngine<FakeRiotState> engine,
+        CancellationToken cancellationToken)
     {
-        FakeRiotState state = engine.Snapshot();
+        FakeRiotState state = engine.Snapshot().State;
         switch (state.FaultMode)
         {
             case FakeRiotFaultMode.NoResponse:

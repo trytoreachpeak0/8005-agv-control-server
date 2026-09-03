@@ -5,6 +5,9 @@
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\ControlServer.TestDoubles\ControlServer.TestDoubles.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Deliberately no appsettings.json. FakeRiotSeed already carries the 2026-09-03 field values
          as its defaults, and a second copy in a file would be a second truth to keep in step. It
          would also land in the output of every project that references this one, where it would

@@ -20,6 +20,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{371674E6
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.FakeRiot", "tools\ControlServer.FakeRiot\ControlServer.FakeRiot.csproj", "{7FF54CDD-1416-423D-8BE3-B1B492D6F83D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.TestDoubles", "tools\ControlServer.TestDoubles\ControlServer.TestDoubles.csproj", "{DE63728E-C1AE-4CA8-82CC-46B4A94C9585}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ControlServer.FakeMesIngest", "tools\ControlServer.FakeMesIngest\ControlServer.FakeMesIngest.csproj", "{E0E2135F-4D4D-4ED6-908A-2DB067A79828}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -58,8 +62,18 @@ Global
 		{7FF54CDD-1416-423D-8BE3-B1B492D6F83D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7FF54CDD-1416-423D-8BE3-B1B492D6F83D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7FF54CDD-1416-423D-8BE3-B1B492D6F83D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DE63728E-C1AE-4CA8-82CC-46B4A94C9585}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DE63728E-C1AE-4CA8-82CC-46B4A94C9585}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DE63728E-C1AE-4CA8-82CC-46B4A94C9585}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DE63728E-C1AE-4CA8-82CC-46B4A94C9585}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E0E2135F-4D4D-4ED6-908A-2DB067A79828}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E0E2135F-4D4D-4ED6-908A-2DB067A79828}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E0E2135F-4D4D-4ED6-908A-2DB067A79828}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E0E2135F-4D4D-4ED6-908A-2DB067A79828}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{7FF54CDD-1416-423D-8BE3-B1B492D6F83D} = {371674E6-FD6E-4943-B63C-70C208F3994D}
+		{DE63728E-C1AE-4CA8-82CC-46B4A94C9585} = {371674E6-FD6E-4943-B63C-70C208F3994D}
+		{E0E2135F-4D4D-4ED6-908A-2DB067A79828} = {371674E6-FD6E-4943-B63C-70C208F3994D}
 	EndGlobalSection
 EndGlobal

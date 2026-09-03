@@ -1,0 +1,23 @@
+{"at":"2026-09-03T07:56:32.4399326+00:00","note":"L2 run 20260903T075632402Z starting for scenario 'normal-load'."}
+{"at":"2026-09-03T07:56:32.4700035+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-03T07:56:35.3373574+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-03T07:56:35.4685025+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-03T07:56:37.2616003+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-03T07:56:38.8653395+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-03T07:56:39.5118114+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-03T07:56:39.5371935+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-03T07:56:39.5724188+00:00","note":"Environment is up; entering scenario 'normal-load'."}
+{"at":"2026-09-03T07:56:39.5970660+00:00","note":"Publishing demand 08063e46f216404a9e3d3a401f0bbfc9 (sublot L2-SUBLOT-20260903T075632402Z) to the fake MesIngest catalog."}
+{"at":"2026-09-03T07:56:39.6722209+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-03T07:56:41.0107872+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-03T07:56:41.0180518+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-03T07:56:41.0414728+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-03T07:56:41.0994527+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-03T07:56:41.8999303+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-03T07:56:42.4298481+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-03T07:56:43.4822575+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-03T07:56:43.4864735+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-09-03T07:56:43.5066448+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-03T07:56:44.8064615+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-03T07:56:45.3386291+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-03T07:56:45.3468495+00:00","note":"Scenario finished."}
