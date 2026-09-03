@@ -11,9 +11,15 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Never cancel a running job here. Cancelling one on a self-hosted runner also
+# cancels the runner's broker long-poll; the backoff retries exhaust and the
+# session wedges without self-healing. Measured on 2026-09-03: 4 hours 14 minutes
+# of dead CI, recovered only when GitHub pushed a RunnerRefreshConfigMessage.
+# Each repository has exactly one runner, so a wedged session is that
+# repository's entire CI. A duplicate two-minute run is the cheaper outcome.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   test:
