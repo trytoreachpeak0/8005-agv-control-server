@@ -125,40 +125,76 @@ rather than cached, so a scenario that resets a double mid-run does not have to 
 class L2Double {
     [string]$Name
     [string]$BaseUrl
+    # The three fakes serve their control plane under control/v1; the real slots simulator serves
+    # the same dialect under api/v1. That is the only difference, so it is a field rather than a
+    # second client.
+    [string]$Prefix = 'control/v1'
+    # The fakes treat expectedRevision as optional; the simulator's contract makes it mandatory on
+    # every mutating command. Sending it means a command can lose a race with the physical model
+    # (a lock-feedback delay landing between the snapshot and the write), which is what the retry
+    # below is for.
+    [bool]$RequireExpectedRevision = $false
 
     L2Double([string]$name, [string]$baseUrl) {
         $this.Name = $name
         $this.BaseUrl = $baseUrl.TrimEnd('/')
     }
 
+    L2Double([string]$name, [string]$baseUrl, [string]$prefix, [bool]$requireExpectedRevision) {
+        $this.Name = $name
+        $this.BaseUrl = $baseUrl.TrimEnd('/')
+        $this.Prefix = $prefix.Trim('/')
+        $this.RequireExpectedRevision = $requireExpectedRevision
+    }
+
     [object] Snapshot() {
-        return Invoke-RestMethod -Uri "$($this.BaseUrl)/control/v1/snapshot" -TimeoutSec 10
+        return Invoke-RestMethod -Uri "$($this.BaseUrl)/$($this.Prefix)/snapshot" -TimeoutSec 10
     }
 
     [object] Health() {
-        return Invoke-RestMethod -Uri "$($this.BaseUrl)/control/v1/health" -TimeoutSec 10
+        return Invoke-RestMethod -Uri "$($this.BaseUrl)/$($this.Prefix)/health" -TimeoutSec 10
     }
 
     [object] Command([string]$method, [string]$path, [hashtable]$body) {
         $payload = @{} + $body
-        $payload['runId'] = $this.Snapshot().runId
         if (-not $payload.ContainsKey('commandId')) {
             $payload['commandId'] = [guid]::NewGuid().ToString('N')
         }
-        return Invoke-RestMethod `
-            -Uri "$($this.BaseUrl)/control/v1/$($path.TrimStart('/'))" `
-            -Method $method `
-            -ContentType 'application/json' `
-            -Body ($payload | ConvertTo-Json -Depth 8) `
-            -TimeoutSec 30
+        $uri = "$($this.BaseUrl)/$($this.Prefix)/$($path.TrimStart('/'))"
+        # Every 409 is retried with a fresh runId and revision, deliberately without reading the
+        # reasonCode. A REVISION_CONFLICT or RUN_ID_MISMATCH means the command was rejected without
+        # being executed, so a retry is the contract's own recovery; a COMMAND_ID_CONFLICT is
+        # refused identically each time and just costs a few round trips before the same error
+        # surfaces. What makes all three safe is keeping the commandId: the content fingerprint
+        # excludes runId/commandId/expectedRevision, so a retry is the same command, not a new one.
+        $attempts = if ($this.RequireExpectedRevision) { 5 } else { 1 }
+        for ($attempt = 1; ; $attempt++) {
+            $snapshot = $this.Snapshot()
+            $payload['runId'] = $snapshot.runId
+            if ($this.RequireExpectedRevision) { $payload['expectedRevision'] = $snapshot.revision }
+            try {
+                return Invoke-RestMethod -Uri $uri -Method $method -ContentType 'application/json' `
+                    -Body ($payload | ConvertTo-Json -Depth 8) -TimeoutSec 30
+            } catch [Microsoft.PowerShell.Commands.HttpResponseException] {
+                if ($attempt -ge $attempts -or $_.Exception.Response.StatusCode -ne 409) { throw }
+            }
+        }
+        # Unreachable: the loop either returns or throws.
+        throw "Unreachable"
     }
 }
 
 function New-L2Double {
     param(
         [Parameter(Mandatory)][string]$Name,
-        [Parameter(Mandatory)][string]$BaseUrl
+        [Parameter(Mandatory)][string]$BaseUrl,
+        [string]$Prefix,
+        [switch]$RequireExpectedRevision
     )
+    if ($Prefix -or $RequireExpectedRevision) {
+        $effectivePrefix = if ($Prefix) { $Prefix } else { 'control/v1' }
+        return [L2Double]::new($Name, $BaseUrl, $effectivePrefix, [bool]$RequireExpectedRevision)
+    }
     return [L2Double]::new($Name, $BaseUrl)
 }
 
@@ -175,7 +211,12 @@ function Start-L2Process {
         [string[]]$ArgumentList = @(),
         [string]$WorkingDirectory,
         [hashtable]$Environment = @{},
-        [Parameter(Mandatory)][string]$LogRoot
+        [Parameter(Mandatory)][string]$LogRoot,
+        # The two WPF peers must be started visible. WindowStyle Hidden puts SW_HIDE in the
+        # STARTUPINFO that WPF's first Show() honours, and a hidden window is not reliably
+        # reachable through UI Automation -- the driver would find nothing and time out for a
+        # reason that looks nothing like the cause.
+        [switch]$Gui
     )
 
     $outLog = Join-Path $LogRoot "$Name.out.log"
@@ -184,7 +225,7 @@ function Start-L2Process {
         FilePath               = $FilePath
         RedirectStandardOutput = $outLog
         RedirectStandardError  = $errLog
-        WindowStyle            = 'Hidden'
+        WindowStyle            = if ($Gui) { 'Normal' } else { 'Hidden' }
         PassThru               = $true
     }
     if ($ArgumentList.Count -gt 0) { $startArguments['ArgumentList'] = $ArgumentList }
@@ -216,6 +257,224 @@ function Stop-L2Process {
             Write-Warning "Could not stop $($handle.Name): $_"
         }
     }
+}
+
+# --- the two peer repositories --------------------------------------------------------------------
+
+<#
+Publishes the onboard HMI or the slots simulator from a throwaway clone, and caches the result by
+commit so a re-run costs a directory copy rather than a build.
+
+The clone is the point, not an optimization. Both repositories are read-only for agents -- their
+content, including anything a build would generate -- so a `dotnet publish` may not run in their
+worktree at all. Cloning to $CacheRoot leaves the source untouched and, because the clone is
+checked out at an exact commit, records precisely which peer the evidence is about.
+
+A dirty source worktree is refused rather than warned about: the clone would silently test the
+committed state while the operator was looking at their edits.
+#>
+function Get-L2PeerPublish {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$SourceRepository,
+        # Relative to the repository root, so the caller names the project rather than a path into
+        # a clone that does not exist yet.
+        [Parameter(Mandatory)][string]$ProjectPath,
+        [Parameter(Mandatory)][string]$CacheRoot,
+        [Parameter(Mandatory)][string]$LogRoot,
+        [L2Journal]$Journal
+    )
+
+    if (-not (Test-Path -LiteralPath $SourceRepository -PathType Container)) {
+        throw "Peer repository not found: $SourceRepository"
+    }
+    $dirty = & git -C $SourceRepository status --porcelain
+    if ($dirty) {
+        throw ("Peer repository $Name has uncommitted changes, so a clone would test something " +
+            "other than what you are looking at: $SourceRepository")
+    }
+    $commit = (& git -C $SourceRepository rev-parse HEAD).Trim()
+
+    $target = Join-Path $CacheRoot "$Name-$commit"
+    $publish = Join-Path $target 'publish'
+    $stamp = Join-Path $target 'publish.ok'
+    if (Test-Path -LiteralPath $stamp) {
+        if ($Journal) { $Journal.Note("Reusing cached $Name publish for $commit.") }
+        return [pscustomobject]@{ Name = $Name; Commit = $commit; Path = $publish; FromCache = $true }
+    }
+
+    if ($Journal) { $Journal.Note("Building $Name at $commit from a throwaway clone.") }
+    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+    $null = New-Item -ItemType Directory -Path $target -Force
+    $clone = Join-Path $target 'clone'
+    $log = Join-Path $LogRoot "build-$Name.log"
+
+    & git clone --quiet --no-hardlinks $SourceRepository $clone *>&1 | Tee-Object -FilePath $log | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not clone $Name; see $log" }
+    & git -C $clone checkout --quiet --detach $commit *>&1 | Tee-Object -FilePath $log -Append | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not check out $commit in the $Name clone; see $log" }
+
+    & dotnet publish (Join-Path $clone $ProjectPath) -c Release -o $publish --nologo *>&1 |
+        Tee-Object -FilePath $log -Append | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Publishing $Name failed; see $log" }
+
+    Set-Content -LiteralPath $stamp -Value $commit -Encoding utf8NoBOM
+    return [pscustomobject]@{ Name = $Name; Commit = $commit; Path = $publish; FromCache = $false }
+}
+
+<#
+Copies a cached publish into this run's stage directory and rewrites one JSON settings file in the
+copy. Nothing is ever written back into the cache, so a scenario that changes a port or a journal
+path cannot leak into the next run.
+
+Both peers read their configuration from a single file next to the executable and neither supports
+environment or command-line overrides, so patching the staged copy is the only way to point them at
+the L2 ports without editing a read-only repository.
+#>
+function New-L2PeerStage {
+    param(
+        [Parameter(Mandatory)][object]$Publish,
+        [Parameter(Mandatory)][string]$StageRoot,
+        [Parameter(Mandatory)][string]$SettingsFileName,
+        [Parameter(Mandatory)][scriptblock]$Configure
+    )
+
+    $directory = Join-Path $StageRoot $Publish.Name
+    Copy-Item -LiteralPath $Publish.Path -Destination $directory -Recurse -Force
+    $settingsPath = Join-Path $directory $SettingsFileName
+    # The onboard's appsettings.json carries // comments that its own loader rejects but tolerates
+    # in the shipped file; ConvertFrom-Json would choke, so they go first.
+    $raw = (Get-Content -Raw -LiteralPath $settingsPath) -replace '(?m)^\s*//.*$', ''
+    $settings = $raw | ConvertFrom-Json
+    & $Configure $settings
+    $settings | ConvertTo-Json -Depth 16 |
+        Set-Content -LiteralPath $settingsPath -Encoding utf8NoBOM
+    return $directory
+}
+
+# --- the onboard HMI, driven through UI Automation --------------------------------------------------
+
+<#
+Drives the real onboard WPF through UI Automation: this is the whole of landing step 5.
+
+Two deliberate choices.
+
+  Value and Invoke patterns, never key injection. ValuePattern.SetValue on ScanTextBox and
+  InvokePattern on the 「手动提交」 button both work on an unfocused window, so the run does not
+  fight the operator's keyboard and does not break when something else takes focus. Driving the
+  Enter KeyBinding instead would reach ScannerSubmitCommand rather than ManualSubmitCommand; both
+  land on the same WireToGateBusinessService.SubmitSublotAsync, differing only in the recorded
+  input method.
+
+  Driving only, never asserting. The one thing read back from the UI is whether input is accepted
+  yet, which is a precondition for typing rather than a business fact. Everything a scenario
+  concludes still comes from the server's database and the simulator's snapshot.
+
+CanSubmit is worth being precise about: under WIRE_TO_GATE it comes from
+WireToGateBusinessService.CanSubmitSublot (App.xaml.cs), not from the rule gateway, so waiting for
+a rule-gateway connection would wait forever. The 「手动提交」 button additionally requires
+non-empty text, which is why setting and invoking are separate steps with a wait between them.
+#>
+function New-L2OnboardDriver {
+    param(
+        [Parameter(Mandatory)][int]$ProcessId,
+        [string]$ScanTextBoxAutomationId = 'ScanTextBox',
+        [string]$SubmitButtonName = '手动提交'
+    )
+
+    Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+
+    $driver = [pscustomobject]@{
+        ProcessId               = $ProcessId
+        ScanTextBoxAutomationId = $ScanTextBoxAutomationId
+        SubmitButtonName        = $SubmitButtonName
+        Window                  = $null
+    }
+
+    # Every member is a ScriptMethod rather than a class: a PowerShell class resolves its type
+    # literals when the module is parsed, which is before Add-Type has run.
+    # Attaching to *a* top-level window of the process is not enough. When startup fails, App.xaml.cs
+    # shows a modal MessageBox before MainWindow.Show(), so the only window belonging to the process
+    # is that dialog -- and adopting it would leave every later wait timing out on a criterion that
+    # says nothing about the configuration error that actually happened. So the main window is
+    # identified by the control the driver needs, and the titles seen are reported when it never
+    # appears.
+    $driver | Add-Member -MemberType ScriptMethod -Name Attach -Value {
+        param([int]$TimeoutSeconds = 60)
+        $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+        $seen = [System.Collections.Generic.HashSet[string]]::new()
+        while ($true) {
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $this.ProcessId)
+            $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+                [System.Windows.Automation.TreeScope]::Children, $condition)
+            foreach ($window in $windows) {
+                $null = $seen.Add($window.Current.Name)
+                $this.Window = $window
+                if ($this.Element('AutomationId', $this.ScanTextBoxAutomationId)) {
+                    return $window.Current.Name
+                }
+                $this.Window = $null
+            }
+            if ([DateTimeOffset]::UtcNow -ge $deadline) {
+                $titles = if ($seen.Count -eq 0) { '(no window at all)' } else { ($seen -join ' / ') }
+                throw ("No window of pid $($this.ProcessId) carried " +
+                    "'$($this.ScanTextBoxAutomationId)' within ${TimeoutSeconds}s. Windows seen: $titles.")
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        throw 'Unreachable'
+    }
+
+    $driver | Add-Member -MemberType ScriptMethod -Name Element -Value {
+        param([string]$By, [string]$Value)
+        if (-not $this.Window) { throw 'Attach() has not run yet.' }
+        $automationProperty = if ($By -eq 'AutomationId') {
+            [System.Windows.Automation.AutomationElement]::AutomationIdProperty
+        } else {
+            [System.Windows.Automation.AutomationElement]::NameProperty
+        }
+        return $this.Window.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants,
+            [System.Windows.Automation.PropertyCondition]::new($automationProperty, $Value))
+    }
+
+    # The text box is enabled exactly when CanSubmit is true, so this is the wait that replaces
+    # "an operator noticed the prompt".
+    $driver | Add-Member -MemberType ScriptMethod -Name CanSubmit -Value {
+        $box = $this.Element('AutomationId', $this.ScanTextBoxAutomationId)
+        if (-not $box) { return $false }
+        return [bool]$box.Current.IsEnabled
+    }
+
+    $driver | Add-Member -MemberType ScriptMethod -Name SubmitReady -Value {
+        $button = $this.Element('Name', $this.SubmitButtonName)
+        if (-not $button) { return $false }
+        return [bool]$button.Current.IsEnabled
+    }
+
+    $driver | Add-Member -MemberType ScriptMethod -Name SetSublot -Value {
+        param([Parameter(Mandatory)][string]$Sublot)
+        $box = $this.Element('AutomationId', $this.ScanTextBoxAutomationId)
+        if (-not $box) { throw "No element with AutomationId '$($this.ScanTextBoxAutomationId)'." }
+        # SetValue throws ElementNotEnabledException on a disabled box, which is the correct
+        # failure: it means the scenario typed before the server asked for a sublot.
+        $box.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($Sublot)
+    }
+
+    $driver | Add-Member -MemberType ScriptMethod -Name ScanText -Value {
+        $box = $this.Element('AutomationId', $this.ScanTextBoxAutomationId)
+        if (-not $box) { return $null }
+        return $box.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+    }
+
+    $driver | Add-Member -MemberType ScriptMethod -Name Submit -Value {
+        $button = $this.Element('Name', $this.SubmitButtonName)
+        if (-not $button) { throw "No button named '$($this.SubmitButtonName)'." }
+        $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    }
+
+    return $driver
 }
 
 # --- ControlServer database ---------------------------------------------------------------------
@@ -297,7 +556,11 @@ function Write-L2Evidence {
         [Parameter(Mandatory)][L2Assertions]$Assertions,
         [Parameter(Mandatory)][string]$Outcome,
         [string]$FailureReason,
-        [hashtable]$Identity = @{}
+        [hashtable]$Identity = @{},
+        # What was actually real in this run. The caveat at the end of SUMMARY.md is the only place
+        # a reader learns whether "车载端" meant a synthetic protocol peer or the shipped WPF, and
+        # getting that wrong is the difference between evidence and a claim.
+        [ValidateSet('SyntheticOnboard', 'RealOnboard')][string]$Rig = 'SyntheticOnboard'
     )
 
     $assertionsPath = Join-Path $EvidenceRoot 'assertions.json'
@@ -350,8 +613,16 @@ function Write-L2Evidence {
     $lines.Add('- `logs/` —— 每个组件的 stdout 与 stderr')
     $lines.Add('- `snapshots/` —— 收尾时各控制面与服务端数据库的快照')
     $lines.Add('')
-    $lines.Add('L2 PASS 只证明服务端在假 RIoT、假 MesIngest 与合成车载端下的跨端时序，')
-    $lines.Add('**不代表真实 RCS、真车、真实 IO 模块或接线合格**。')
+    if ($Rig -eq 'RealOnboard') {
+        $lines.Add('本次跑的是真 ControlServer + **真车载端 WPF** + **真 slots-simulator** + 假 RIoT + 假 MesIngest。')
+        $lines.Add('条码由 UI Automation 写进 `ScanTextBox` 并点「手动提交」，装卸货是真 Modbus IO 闭环。')
+        $lines.Add('')
+        $lines.Add('L2 PASS 仍**不代表真实 RCS、真车、真实 IO 模块或接线合格**——模拟器只证明软件 IO 闭环。')
+        $lines.Add('见 `docs/RELEASE-CANDIDATE.md` 第 11 节。')
+    } else {
+        $lines.Add('L2 PASS 只证明服务端在假 RIoT、假 MesIngest 与合成车载端下的跨端时序，')
+        $lines.Add('**不代表真实 RCS、真车、真实 IO 模块或接线合格**。')
+    }
 
     [IO.File]::WriteAllText(
         (Join-Path $EvidenceRoot 'SUMMARY.md'),
@@ -361,4 +632,4 @@ function Write-L2Evidence {
 
 Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Wait-L2Iterations, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
-    Write-L2Evidence
+    Write-L2Evidence, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver

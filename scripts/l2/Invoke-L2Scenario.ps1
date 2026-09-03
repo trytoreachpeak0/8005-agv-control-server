@@ -9,9 +9,10 @@
     synthetic Onboard peer), drives the scenario, asserts against the server's own database, writes
     evidence, and tears the environment down.
 
-    This is L2 with a synthetic peer rather than the real onboard WPF: the UI Automation driver
-    does not exist yet (landing step 5). What it does prove is the server's cross-end timing under
-    a peer that follows the protocol, which is what makes a scenario about the server.
+    A scenario whose sibling setup file says `Onboard = 'Real'` gets a different rig: the shipped
+    onboard WPF driven through UI Automation, plus the real slots simulator supplying Modbus IO.
+    The two go together -- without the simulator the onboard reports every slot UNKNOWN, so
+    departureSafe never becomes true and the server never grants readiness.
 
     A PASS here says nothing about real hardware. See RELEASE-CANDIDATE.md section 11.
 
@@ -38,7 +39,18 @@ param(
     [int]$HealthPort = 58407,
     [int]$FakeRiotPort = 58408,
     [int]$FakeMesIngestPort = 58409,
-    [int]$FakeOnboardPort = 58410
+    [int]$FakeOnboardPort = 58410,
+    # Real-onboard rig only. The simulator's own defaults are 58006/1502; moving both keeps an L2
+    # run from talking to a simulator someone left open for hand testing.
+    [int]$SimulatorHttpPort = 58411,
+    [int]$SimulatorModbusPort = 58412,
+
+    # The two peer repositories are read-only for agents, so they are never built in place: each is
+    # cloned to the cache below and published from the clone. Siblings of this repository by
+    # default, which is how the workspace lays them out.
+    [string]$OnboardRepository,
+    [string]$SimulatorRepository,
+    [string]$PeerCacheRoot = (Join-Path $env:LOCALAPPDATA '8005-l2-peers')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -60,6 +72,21 @@ $setup = if (Test-Path -LiteralPath $setupPath -PathType Leaf) {
 } else {
     @{}
 }
+# Which rig this scenario needs is declared in that same data file, for the same reason the seed is:
+# a run against the wrong peer is green about the wrong thing.
+$realOnboard = ($setup.ContainsKey('Onboard') -and $setup.Onboard -eq 'Real')
+if ($setup.ContainsKey('Onboard') -and $setup.Onboard -notin @('Real', 'Synthetic')) {
+    throw "Unknown Onboard rig in $Scenario.setup.psd1: $($setup.Onboard) (expected Real or Synthetic)"
+}
+if ($realOnboard -and $setup.ContainsKey('OnboardSeed')) {
+    throw "OnboardSeed only applies to the synthetic peer; the real onboard reads its own IO."
+}
+if (-not $OnboardRepository) {
+    $OnboardRepository = Join-Path (Split-Path -Parent $Repository) '8005-agv-onboard-hmi'
+}
+if (-not $SimulatorRepository) {
+    $SimulatorRepository = Join-Path (Split-Path -Parent $Repository) 'slots-simulator'
+}
 if (Test-Path -LiteralPath $EvidenceRoot) {
     throw "EvidenceRoot must not exist: $EvidenceRoot"
 }
@@ -67,6 +94,10 @@ if (Test-Path -LiteralPath $EvidenceRoot) {
 $runStartedAt = [DateTimeOffset]::UtcNow
 $runId = $runStartedAt.ToString('yyyyMMddTHHmmssfffZ')
 $null = New-Item -ItemType Directory -Path $EvidenceRoot -Force
+# Absolute from here on. The onboard resolves its log directory against its own working directory,
+# which is the stage root, so a relative -EvidenceRoot would scatter its log somewhere neither the
+# evidence nor the operator ever looks.
+$EvidenceRoot = (Resolve-Path -LiteralPath $EvidenceRoot).Path
 $logRoot = Join-Path $EvidenceRoot 'logs'
 $snapshotRoot = Join-Path $EvidenceRoot 'snapshots'
 $null = New-Item -ItemType Directory -Path $logRoot -Force
@@ -82,6 +113,10 @@ $handles = @()
 $connection = $null
 $outcome = 'FAIL'
 $failureReason = $null
+# Declared out here because the evidence block in `finally` reports them, and a run can fail before
+# the peers are built.
+$onboardPublish = $null
+$simulatorPublish = $null
 
 try {
     $journal.Note("L2 run $runId starting for scenario '$Scenario'.")
@@ -93,6 +128,21 @@ try {
     & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
         Tee-Object -FilePath $buildLog | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Build failed; see $buildLog" }
+
+    # The two peers come from repositories this workspace may not write to, so they are published
+    # out of throwaway clones and cached by commit. First run of a given commit pays for a build;
+    # every run after that pays for a directory copy.
+    if ($realOnboard) {
+        $onboardPublish = Get-L2PeerPublish -Name 'onboard-hmi' -Journal $journal `
+            -SourceRepository $OnboardRepository `
+            -ProjectPath 'src/SQCD.Agv.Wpf/SQCD.Agv.Wpf.csproj' `
+            -CacheRoot $PeerCacheRoot -LogRoot $logRoot
+        $simulatorPublish = Get-L2PeerPublish -Name 'slots-simulator' -Journal $journal `
+            -SourceRepository $SimulatorRepository `
+            -ProjectPath 'src/SQCD_8005AGV_Simulator/SQCD_8005AGV_Simulator.csproj' `
+            -CacheRoot $PeerCacheRoot -LogRoot $logRoot
+        $journal.Note("Peers: onboard-hmi@$($onboardPublish.Commit), slots-simulator@$($simulatorPublish.Commit).")
+    }
 
     $configuration = 'Release'
     $framework = 'net8.0/win-x64'
@@ -140,6 +190,34 @@ try {
     $null = Wait-L2Condition -Description 'fake MesIngest is live' -Journal $journal -Criterion 'fake-mes-live' `
         -Probe { $mes.Health().body.status } -Until { param($v) $v -eq 'live' }
 
+    # 1b. The slots simulator, when the scenario asked for the real onboard. It has to be listening
+    #     on Modbus before the onboard starts, or the onboard's first snapshot is all UNKNOWN and
+    #     the session takes an extra reconnect to recover from a state that never had to happen.
+    $simulator = $null
+    if ($realOnboard) {
+        $simulatorDirectory = New-L2PeerStage -Publish $simulatorPublish -StageRoot $stageRoot `
+            -SettingsFileName 'simulator.settings.json' -Configure {
+                param($settings)
+                $settings.instanceId = 'l2-simulator'
+                $settings.agvId = $agvId
+                $settings.modbus.listenAddress = '127.0.0.1'
+                $settings.modbus.port = $SimulatorModbusPort
+                $settings.automation.listenAddress = '127.0.0.1'
+                $settings.automation.port = $SimulatorHttpPort
+            }
+        $handles += Start-L2Process -Name 'slots-simulator' -Gui `
+            -FilePath (Join-Path $simulatorDirectory 'SQCD_8005AGV_Simulator.exe') `
+            -WorkingDirectory $simulatorDirectory -LogRoot $logRoot |
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 3 -PassThru }
+
+        $simulator = New-L2Double -Name 'slots-simulator' -BaseUrl "http://127.0.0.1:$SimulatorHttpPort" `
+            -Prefix 'api/v1' -RequireExpectedRevision
+        $null = Wait-L2Condition -Description 'the slots simulator is serving Modbus' -Journal $journal `
+            -Criterion 'simulator-ready' -TimeoutSeconds 120 `
+            -Probe { $h = $simulator.Health(); "$($h.status)/$($h.modbus.isRunning)" } `
+            -Until { param($v) $v -eq 'READY/True' }
+    }
+
     # 2. Package capacity is a server-side rule table, not something MesIngest supplies. Without it
     #    every candidate is refused PACKAGE_CAPACITY_NOT_UNIQUE, so it is seeded through the
     #    server's own import command rather than by writing rows behind its back.
@@ -168,6 +246,12 @@ try {
         'JourneyRuntime__gateStationRiotId'               = [string]$gateStationRiotId
         'JourneyRuntime__admissionPolicyDeploymentId'     = "L2-$runId"
     }
+    if ($realOnboard) {
+        # Only the real onboard polls this projection; the synthetic peer decides for itself what
+        # the safety summary says. Leaving it off for the synthetic rig keeps those scenarios
+        # running exactly the server they were made green against.
+        $serverEnvironment['OnboardSafetyProjection__enabled'] = 'true'
+    }
 
     $importEnvironment = @{}
     foreach ($key in $serverEnvironment.Keys) { $importEnvironment[$key] = $serverEnvironment[$key] }
@@ -186,7 +270,7 @@ try {
     $handles += Start-L2Process -Name 'control-server' `
         -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
         -WorkingDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot |
-        ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 3 -PassThru }
+        ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 4 -PassThru }
 
     # /health/live, not /health/ready: readiness means a peer has completed the recovery handshake,
     # and the peer cannot connect until the server is listening. Waiting on readiness here would
@@ -196,34 +280,88 @@ try {
         -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
         -Until { param($v) $v -eq 'live' }
 
-    # 4. The synthetic peer last: it connects out to the server, so the server has to be listening.
-    # OnboardSeed lands on the safety summary the handshake's SafetyStateSnapshot carries, which is
-    # the only way to establish a session that already says the vehicle is moving.
-    $onboardArguments = @(
-        "--FakeOnboard:port=$FakeOnboardPort",
-        "--FakeOnboard:instanceId=l2-onboard",
-        "--FakeOnboard:Peer:port=$ControlPort",
-        "--FakeOnboard:Peer:agvId=$agvId")
-    if ($setup.ContainsKey('OnboardSeed')) {
-        foreach ($key in ($setup.OnboardSeed.Keys | Sort-Object)) {
-            $onboardArguments += "--FakeOnboard:Seed:$key=$($setup.OnboardSeed[$key])"
-        }
-        $journal.Note("Onboard seed from $Scenario.setup.psd1: " +
-            (($setup.OnboardSeed.GetEnumerator() | Sort-Object Key |
-                ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
-    }
-    $handles += Start-L2Process -Name 'fake-onboard' `
-        -FilePath (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe') `
-        -ArgumentList $onboardArguments `
-        -WorkingDirectory $onboardDirectory `
-        -Environment @{ 'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential } `
-        -LogRoot $logRoot |
-        ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 4 -PassThru }
+    # 4. The onboard last, either way: it connects out to the server, so the server has to be
+    #    listening first.
+    $onboard = $null
+    if ($realOnboard) {
+        # Everything here is a runtime setting the shipped appsettings.json already carries. The
+        # onboard reads that one file next to its executable and supports no environment or
+        # command-line override, so the staged copy is the only place these can be set -- and the
+        # staged copy is why the read-only repository stays untouched.
+        $onboardStageDirectory = New-L2PeerStage -Publish $onboardPublish -StageRoot $stageRoot `
+            -SettingsFileName 'appsettings.json' -Configure {
+                param($settings)
+                $settings.agvId = $agvId
+                $settings.onboardInstanceId = 'OBU-L2-001'
+                $settings.wireToGate.enabled = $true
+                $settings.wireToGate.host = '127.0.0.1'
+                $settings.wireToGate.port = $ControlPort
+                $settings.wireToGate.onboardInstanceId = '9f2c7f10-3a4d-4a2e-9a26-6f0d5a1c8b77'
+                # Validate() insists this is a real 40-hex commit, and it is the identity the
+                # server records for the peer, so it must be the commit actually published.
+                $settings.wireToGate.onboardBuildCommit = $onboardPublish.Commit
+                $settings.wireToGate.journalPath = (Join-Path $stageRoot 'onboard-journal.db')
+                # WireToGate readiness runs through this projection: App.xaml.cs awaits the first
+                # refresh before the handshake snapshot, and vehicleStoppedProvider reads it on
+                # every safety summary afterwards.
+                $settings.vehicleSafety.enabled = $true
+                $settings.vehicleSafety.endpoint =
+                    "http://127.0.0.1:$HealthPort/api/onboard/v1/vehicle-safety"
+                $settings.vehicleSafety.expectedVehicleKey = $vehicleKey
+                $settings.ioModule.host = '127.0.0.1'
+                $settings.ioModule.port = $SimulatorModbusPort
+                # Into the evidence rather than the stage root: the onboard's own log is the
+                # richest account of a failed run, and the stage root is deleted on a pass.
+                $settings.logging.directory = (Join-Path $logRoot 'onboard-app')
+            }
+        $onboardHandle = Start-L2Process -Name 'onboard-hmi' -Gui `
+            -FilePath (Join-Path $onboardStageDirectory 'SQCD.Agv.Wpf.exe') `
+            -WorkingDirectory $onboardStageDirectory `
+            -Environment @{
+                'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential
+                'CONTROL_SERVER_OPERATOR_ID'        = 'L2-OPERATOR'
+            } `
+            -LogRoot $logRoot |
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5 -PassThru }
+        $handles += $onboardHandle
 
-    $onboard = New-L2Double -Name 'fake-onboard' -BaseUrl "http://127.0.0.1:$FakeOnboardPort"
-    $null = Wait-L2Condition -Description 'the synthetic peer reached READY' -Journal $journal -Criterion 'onboard-readiness' `
-        -TimeoutSeconds 60 `
-        -Probe { $onboard.Snapshot().body.readiness } -Until { param($v) $v -eq 'READY' }
+        $onboard = New-L2OnboardDriver -ProcessId $onboardHandle.Process.Id
+        $journal.Note("Onboard window: $($onboard.Attach(120))")
+
+        # The simulator counts Modbus clients, so "the onboard is talking to IO" is observed from
+        # the simulator rather than taken on trust from the onboard's own log.
+        $null = Wait-L2Condition -Description 'the onboard connected to the simulator over Modbus' `
+            -Journal $journal -Criterion 'onboard-modbus' -TimeoutSeconds 60 `
+            -Probe { [int]$simulator.Health().modbus.clientCount } -Until { param($v) $v -ge 1 }
+    } else {
+        # OnboardSeed lands on the safety summary the handshake's SafetyStateSnapshot carries,
+        # which is the only way to establish a session that already says the vehicle is moving.
+        $onboardArguments = @(
+            "--FakeOnboard:port=$FakeOnboardPort",
+            "--FakeOnboard:instanceId=l2-onboard",
+            "--FakeOnboard:Peer:port=$ControlPort",
+            "--FakeOnboard:Peer:agvId=$agvId")
+        if ($setup.ContainsKey('OnboardSeed')) {
+            foreach ($key in ($setup.OnboardSeed.Keys | Sort-Object)) {
+                $onboardArguments += "--FakeOnboard:Seed:$key=$($setup.OnboardSeed[$key])"
+            }
+            $journal.Note("Onboard seed from $Scenario.setup.psd1: " +
+                (($setup.OnboardSeed.GetEnumerator() | Sort-Object Key |
+                    ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
+        }
+        $handles += Start-L2Process -Name 'fake-onboard' `
+            -FilePath (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe') `
+            -ArgumentList $onboardArguments `
+            -WorkingDirectory $onboardDirectory `
+            -Environment @{ 'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential } `
+            -LogRoot $logRoot |
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5 -PassThru }
+
+        $onboard = New-L2Double -Name 'fake-onboard' -BaseUrl "http://127.0.0.1:$FakeOnboardPort"
+        $null = Wait-L2Condition -Description 'the synthetic peer reached READY' -Journal $journal -Criterion 'onboard-readiness' `
+            -TimeoutSeconds 60 `
+            -Probe { $onboard.Snapshot().body.readiness } -Until { param($v) $v -eq 'READY' }
+    }
 
     # Now readiness is meaningful: the peer finished the handshake and the server granted it.
     $null = Wait-L2Condition -Description 'ControlServer reports the vehicle ready' -Journal $journal `
@@ -238,7 +376,11 @@ try {
         Assertions          = $assertions
         Riot                = $riot
         MesIngest           = $mes
+        # Two different things under one name, and the setup file says which: an L2Double over the
+        # synthetic peer's control plane, or the UI Automation driver over the shipped WPF. A
+        # scenario is written for one rig, so there is nothing to branch on at this level.
         Onboard             = $onboard
+        Simulator           = $simulator
         Connection          = $connection
         RunId               = $runId
         AgvId               = $agvId
@@ -249,6 +391,10 @@ try {
         PickupStationRiotId = $pickupStationRiotId
         HealthPort          = $HealthPort
         SnapshotRoot        = $snapshotRoot
+        # Order is the start position, and Stop-L2Process tears down in reverse: fake RIoT 1, fake
+        # MesIngest 2, simulator 3, ControlServer 4, onboard 5 (synthetic or real -- they are
+        # mutually exclusive, so they share the position). Two components on the same number would
+        # make that order undefined.
         # Powering a component down is part of several scenarios -- the vehicle is normally switched
         # off while a blocked load is being dealt with -- so a scenario can stop one by name. Teardown
         # stops whatever is left, and stopping something twice is not an error.
@@ -272,12 +418,19 @@ try {
 } finally {
     # Snapshots before teardown, so a failed run keeps the state that explains it. Each is written
     # independently: a double that already died must not stop the others being captured.
-    foreach ($double in @(
-        @{ Name = 'fake-riot'; Port = $FakeRiotPort },
-        @{ Name = 'fake-mes-ingest'; Port = $FakeMesIngestPort },
-        @{ Name = 'fake-onboard'; Port = $FakeOnboardPort })) {
+    $snapshotSources = @(
+        @{ Name = 'fake-riot'; Url = "http://127.0.0.1:$FakeRiotPort/control/v1/snapshot" },
+        @{ Name = 'fake-mes-ingest'; Url = "http://127.0.0.1:$FakeMesIngestPort/control/v1/snapshot" })
+    $snapshotSources += if ($realOnboard) {
+        # The simulator's snapshot is the physical record: door, cargo, DO and DI per slot. On a
+        # failed load it says whether the goods were ever there.
+        @{ Name = 'slots-simulator'; Url = "http://127.0.0.1:$SimulatorHttpPort/api/v1/snapshot" }
+    } else {
+        @{ Name = 'fake-onboard'; Url = "http://127.0.0.1:$FakeOnboardPort/control/v1/snapshot" }
+    }
+    foreach ($double in $snapshotSources) {
         try {
-            $body = Invoke-RestMethod -Uri "http://127.0.0.1:$($double.Port)/control/v1/snapshot" -TimeoutSec 5
+            $body = Invoke-RestMethod -Uri $double.Url -TimeoutSec 5
             [IO.File]::WriteAllText(
                 (Join-Path $snapshotRoot "$($double.Name).json"),
                 ($body | ConvertTo-Json -Depth 12),
@@ -304,14 +457,18 @@ try {
 
     Stop-L2Process -Handles $handles
 
+    $identity = @{
+        controlServerCommit = (& git -C $Repository rev-parse HEAD 2>$null)
+        agvId               = $agvId
+        vehicleKey          = $vehicleKey
+        stageRoot           = $stageRoot
+        rig                 = if ($realOnboard) { 'RealOnboard' } else { 'SyntheticOnboard' }
+    }
+    if ($onboardPublish) { $identity['onboardHmiCommit'] = $onboardPublish.Commit }
+    if ($simulatorPublish) { $identity['slotsSimulatorCommit'] = $simulatorPublish.Commit }
     Write-L2Evidence -EvidenceRoot $EvidenceRoot -Scenario $Scenario -RunId $runId `
         -Assertions $assertions -Outcome $outcome -FailureReason $failureReason `
-        -Identity @{
-            controlServerCommit = (& git -C $Repository rev-parse HEAD 2>$null)
-            agvId               = $agvId
-            vehicleKey          = $vehicleKey
-            stageRoot           = $stageRoot
-        }
+        -Rig $identity.rig -Identity $identity
 
     # The stage root is left behind on failure: its controlserver.db is usually the only place the
     # cause is written down.

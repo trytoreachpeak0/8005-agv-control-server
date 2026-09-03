@@ -10,24 +10,26 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 
 方案与落地顺序见
 [`8005-agv-program/docs/wire-to-gate-test-automation.md`](https://github.com/trytoreachpeak0/8005-agv-program/blob/main/docs/wire-to-gate-test-automation.md)，
-这里是它第 3 节「缺口 4」和落地顺序第 3、4 步的产物。
+这里是它第 3 节「缺口 2」「缺口 4」和落地顺序第 3、4、5 步的产物。
 
 ## 现有场景
 
-| 场景 | 讲什么 | 绿证据 |
-| --- | --- | --- |
-| `normal-load` | 全程顺利的基线，不注入任何故障 | `evidence/l2/20260903-normal-load-014` |
-| `session-established-while-moving` | 会话在车辆运动中建立，随后停稳；到站也要按最新的安全状态判 | `evidence/l2/20260903-session-established-while-moving-004` |
-| `load-result-requires-recovery` | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-004` |
+| 场景 | 车载端 | 讲什么 | 绿证据 |
+| --- | --- | --- | --- |
+| `normal-load` | 合成 | 全程顺利的基线，不注入任何故障 | `evidence/l2/20260903-normal-load-015` |
+| `session-established-while-moving` | 合成 | 会话在车辆运动中建立，随后停稳；到站也要按最新的安全状态判 | `evidence/l2/20260903-session-established-while-moving-005` |
+| `load-result-requires-recovery` | 合成 | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-005` |
+| `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-003` |
 
-编号更小的目录是同一批里更早的跑次：`-001` 到 `-003` 是稳定性复跑，
+编号更小的目录是同一批里更早的跑次：稳定性复跑，
 `load-result-requires-recovery-001` 是**红的**，留着的原因见文末第 6 条。
 
-后两条是方案第 4 节标 ★ 的三条里能做的两条。第三条（**车载端时钟慢于服务端 100 ms**）在这一层
-做不了：缺陷在车载端的 `VehicleSafetySignal.IsFresh`
+中间两条是方案第 4 节标 ★ 的三条里能做的两条。第三条（**车载端时钟慢于服务端 100 ms**）用合成
+对端做不了：缺陷在车载端的 `VehicleSafetySignal.IsFresh`
 （[`8005-agv-onboard-hmi#1`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/1)），
-合成对端根本没有那段逻辑，用它「复现」出来的只会是自己写的假象。要等落地顺序第 5 步的车载端 UIA
-驱动。
+合成对端根本没有那段逻辑，用它「复现」出来的只会是自己写的假象。真车载端接进来之后这一条**具备了
+条件**，但还差一件事：两端跑在同一台机器上共用一个时钟，要制造偏差就得让车载端读到的
+`observedAt` 落在它自己的「未来」——目前还没有做，见文末第 8 条。
 
 `load-result-requires-recovery` **到 Blocked 为止，不跑到「恢复并继续」**：出口是车载端的五步恢复
 握手，而车载端从不发起
@@ -35,23 +37,38 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 服务端侧的出口是完整的且有 L1 测试（`RecoveryStateMachineG2Tests`）。给合成车载端编出那五条出站
 消息只会让这条场景在现场仍然停摆的时候变绿。
 
-## 现在能跑什么
+## 两套装置
 
-| | 真的 | 替身 |
+场景在自己的 `scenarios/<名字>.setup.psd1` 里写 `Onboard = 'Real'` 就换装置，命令行不变。
+
+| | 合成车载端（默认） | `Onboard = 'Real'` |
 | --- | --- | --- |
-| ControlServer | ✅ 真进程、真 SQLite、真协议监听 | |
-| RIoT | | `tools/ControlServer.FakeRiot` |
-| MesIngest | | `tools/ControlServer.FakeMesIngest` |
-| 车载端 | | `tools/ControlServer.FakeOnboard`（合成协议对端） |
-| 仓位模拟器 / 真实 IO | | 尚未接入 |
+| ControlServer | ✅ 真进程、真 SQLite、真协议监听 | ✅ 同左 |
+| RIoT | `tools/ControlServer.FakeRiot` | 同左 |
+| MesIngest | `tools/ControlServer.FakeMesIngest` | 同左 |
+| 车载端 | `tools/ControlServer.FakeOnboard`（合成协议对端） | ✅ `8005-agv-onboard-hmi` 的 `SQCD.Agv.Wpf`，UIA 驱动 |
+| 仓位 IO | 无——放取货由合成对端应答 | ✅ `slots-simulator`，真 Modbus TCP |
 
-**这还不是方案里定义的 L2。**方案的 L2 是「真 ControlServer + 真车载端 WPF + 真模拟器 + 假
-RIoT」；这里的车载端是一个合成协议对端，没有 IO、没有 journal、没有操作员。它能证明的是**服务端
-在一个守协议的对端面前的跨端时序**——也就是让场景真正关于服务端。换成真车载端要等落地顺序第
-5 步（UIA 驱动）和第 7 步（交互式桌面会话）。
+**这两个是绑在一起的，不能只要车载端不要模拟器**：没有 Modbus，车载端握手时八个仓位全报
+`UNKNOWN`（`CreateSlotStates` 里 `snapshot.IsConnected` 一票否决），`departureSafe` 恒为 false，
+服务端永远不给会话就绪。
+
+合成装置能证明的是**服务端在一个守协议的对端面前的跨端时序**，它没有 IO、没有 journal、没有
+操作员，也没有会因为时钟偏差而拒绝自己观测值的本地新鲜度判定。真装置把这四样都换成真的，代价
+是两个 WPF 窗口会弹到桌面上（见文末第 9 条）。
 
 **L2 PASS 不代表现场合格。**没有真实 RCS、没有真车、没有交通管制、没有真实 IO 模块与接线。
 见 `docs/RELEASE-CANDIDATE.md` 第 11 节。
+
+## 真装置：两个只读仓怎么构建
+
+`8005-agv-onboard-hmi` 与 `slots-simulator` 的**内容对 agent 只读**，包括构建会生成的东西，所以
+两者都不在原地构建：`Get-L2PeerPublish` 把仓库克隆一份到 `%LOCALAPPDATA%\8005-l2-peers\`，在克隆
+里 `dotnet publish`，按 commit 缓存。原仓工作树全程零改动，而且证据里记的 commit 就是实际发布的
+那个。**源仓工作树不干净会直接报错**——克隆出来的是已提交的状态，和你眼前看到的不是一回事。
+
+每次跑再把缓存的 publish 复制到本轮 stage 目录，并**只在副本里**改配置。两个程序都只从 exe 旁边
+那一个 JSON 文件读配置，都不支持环境变量或命令行覆盖，所以改副本是唯一不碰只读仓的办法。
 
 ## 两条贯穿始终的规则
 
@@ -69,8 +86,12 @@ $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
 Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那些轮**——所以这是唯一一个「运行时又
 有机会了」的可观测量。少了它，「这台车不再受理任何新需求」就只能写成 sleep。
 
-**不走捷径断言。**状态只从服务端自己的 SQLite 库和各替身的 `/control/v1/snapshot` 读——运维在
-现场看的就是这两处。绕过被测方摆出终态，测的就只是脚本自己。
+**不走捷径断言。**状态只从服务端自己的 SQLite 库、各替身的 `/control/v1/snapshot` 和模拟器的
+`/api/v1/snapshot` 读——运维在现场看的就是这几处。绕过被测方摆出终态，测的就只是脚本自己。
+
+真装置下这条更要守：**UI 只用来驱动，读到的唯一一件事是「现在允不允许录入」**，那是能不能打字的
+前提，不是业务事实。「条码提交成功了吗」要从服务端 `ProtocolInbox` 里那条 `SublotSubmitted` 看，
+不是从界面上的提示文案看。
 
 ## 产出
 
@@ -94,18 +115,33 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 ## 加一个场景
 
 `scenarios/<名字>.ps1`，接一个 `-Context` 参数。`Context` 上有 `Journal`、`Assertions`、
-`Riot`、`MesIngest`、`Onboard`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、
+`Riot`、`MesIngest`、`Onboard`、`Simulator`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、
 `StopComponent` 以及车辆与站点的身份。
 
-`normal-load` 是基线：全程顺利，不注入任何故障。后面每个异常场景都只是在它上面改一处——把车载端
-某一类应答的策略从 `Auto` 改成 `Manual` 或 `Silent`，或者给假 RIoT 注入一个故障模式，然后断言
-服务端**没有**做它不该做的事。
+`Onboard` 在两套装置下**是两个不同的东西**：合成装置下是假车载端控制面的 `L2Double`，真装置下
+是 UIA 驱动（`CanSubmit()` / `SetSublot()` / `SubmitReady()` / `Submit()`）。`Simulator` 只在真装置
+下有。一个场景只为一套装置而写，所以这里不需要分支。
 
-**要改环境启动方式的场景，写一个同名的 `scenarios/<名字>.setup.psd1`。**目前认 `OnboardSeed`，
-它会变成 `--FakeOnboard:Seed:*`，落在握手那条 `SafetyStateSnapshot` 携带的安全摘要上。
-`session-established-while-moving` 靠它让会话在「车还在动」的状态下建立——`PUT /control/v1/safety`
-只能报告一个**已经存在**的会话的变化，做不到这件事。写成边车文件而不是命令行开关，是因为忘了传
-开关的那一次，场景会安安静静地证明另一回事。
+`normal-load` 是合成装置的基线，`real-onboard-normal-load` 是真装置的基线：全程顺利，不注入任何
+故障。后面每个异常场景都只是在它上面改一处——把车载端某一类应答的策略从 `Auto` 改成 `Manual` 或
+`Silent`，或者给假 RIoT 或模拟器注入一个故障模式，然后断言服务端**没有**做它不该做的事。
+
+**要改环境启动方式的场景，写一个同名的 `scenarios/<名字>.setup.psd1`。**目前认两个键：
+
+- `Onboard = 'Real'` —— 换成真车载端 + 真模拟器那套装置（默认 `'Synthetic'`）；
+- `OnboardSeed` —— 只对合成装置有效，会变成 `--FakeOnboard:Seed:*`，落在握手那条
+  `SafetyStateSnapshot` 携带的安全摘要上。`session-established-while-moving` 靠它让会话在
+  「车还在动」的状态下建立——`PUT /control/v1/safety` 只能报告一个**已经存在**的会话的变化，
+  做不到这件事。两个键一起给会直接报错。
+
+写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
+更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
+
+**真装置下驱动条码只用 `SetSublot()` + `Submit()`，不注入按键。**`ValuePattern.SetValue` 和
+「手动提交」按钮的 `InvokePattern` 都不需要窗口有焦点，所以跑的时候不跟操作员抢键盘，别的窗口
+抢了焦点也不会失败。走 Enter 那条 `KeyBinding` 会命中 `ScannerSubmitCommand` 而不是
+`ManualSubmitCommand`，两者最终都进 `WireToGateBusinessService.SubmitSublotAsync`，只差记录下来的
+`entryMethod` 是 `SCANNER` 还是 `KEYBOARD`。
 
 **要让某个组件下线，用 `& $Context.StopComponent 'fake-onboard'`。**装载出问题时车通常是关掉的，
 这就是那一幕。收尾时的快照抓不到已经停掉的替身，所以停之前先把它的 `/snapshot` 自己存一份到
@@ -120,9 +156,12 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 | 假 RIoT | 58408 |
 | 假 MesIngest | 58409 |
 | 假车载端控制面 | 58410 |
+| 模拟器 HTTP 控制面（真装置） | 58411 |
+| 模拟器 Modbus TCP（真装置） | 58412 |
 
 刻意避开现场运行（58105/58107）、staged G3（58205/58207）与 demand-bearing G3（58305/58307）：
-撞上了要的是绑不上端口直接失败，而不是悄悄连到另一台服务器上去。
+撞上了要的是绑不上端口直接失败，而不是悄悄连到另一台服务器上去。模拟器同理不用它自己的默认
+58006/1502——那两个是手工联调时开着的那一份，L2 不该连上去。
 
 ## 第一次跑出来的坑
 
@@ -146,3 +185,23 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
    `load-result-requires-recovery` 第一次就写成「杀进程然后等 `Readiness` 翻转」，等满 60 秒读到
    的仍然是 `Ready`，红证据留在 `evidence/l2/20260903-load-result-requires-recovery-001`。要让会话
    真的离开 `Ready`，让车载端报一个 `departureSafe=false` 的 `SafetyStateChanged`。
+7. **真装置下别一看到门开就放货。**第一版就是那么写的：`autoPopDoorOnUnlock` 让门几乎立刻弹开，
+   脚本随即放货关门，开锁到关门只隔了 **124 ms**。而车载端要求锁反馈稳定 `feedbackStableMs`（300
+   ms）才认，于是它从来没观测到一个稳定的「已开锁」状态，报回一份不完美的 `OperationResult`，
+   服务端如实判 `LOAD_RESULT_REQUIRES_RECOVERY` 并停摆。**这不是缺陷，是脚本比人快**——真操作员
+   放一篮货要几秒钟。可等的判据是车载端自己发的 `OperationProgress`，相位 `WAITING_OPERATOR`：
+   它在锁反馈稳定、开锁输出复位之后才发，而且落在服务端的 `ProtocolInbox` 里，是服务端自己收到的
+   事实。（那几次红是写场景过程中的迭代，没有留成证据目录。）
+8. **`8005-agv-onboard-hmi#1`（时钟偏差）真装置下仍未实现。**两端跑在同一台机器上共用同一个时钟，
+   而 `observedAt` 是 ControlServer 用自己的 `timeProvider` 盖的章
+   （`HttpRiotMovementGateway.ReadVehicleSafetyAsync`），所以偏差不会自己出现。要复现得让车载端读到
+   一个落在它自己「未来」的 `observedAt`——车载端的 `vehicleSafety.endpoint` 是配置项，指向一个把
+   `observedAt` 往后推 N 毫秒的转发代理即可，被测的 `IsFresh` 仍然是车载端自己那段真代码。
+   **不要改机器时钟**，也不要把 `maximumEvidenceAgeMs` 设成 0 冒充——那是另一个原因造成的同一个
+   症状，绿了红了都说明不了 `#1`。
+9. **两个 WPF 窗口会弹到桌面上，这是这一层固有的。**`Start-L2Process -Gui` 刻意不用
+   `WindowStyle Hidden`：那个值会进 STARTUPINFO，被 WPF 第一次 `Show()` 采纳，而隐藏的窗口
+   UI Automation 未必找得到——驱动会在一个跟真实原因毫不相干的地方超时。跑的时候窗口会抢一次
+   焦点，之后不会再抢——驱动不注入按键，见「加一个场景」那一节。要让它进 CI，得有一个交互式桌面
+   会话，那是
+   落地顺序第 7 步。
