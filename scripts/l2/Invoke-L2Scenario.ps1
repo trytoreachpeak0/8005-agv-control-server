@@ -258,6 +258,17 @@ try {
         'OnboardTransport__port'                          = [string]$ControlPort
         'MesIngest__baseUrl'                              = "http://127.0.0.1:$FakeMesIngestPort"
         'RIoT__baseUrl'                                   = "http://127.0.0.1:$FakeRiotPort"
+        # JourneyRuntimeOptions requires this secret unconditionally -- unlike the MesIngest one it
+        # has no loopback exemption -- so without these two lines the server refuses to start with
+        # "RIoT:callApiKeyEnvironmentVariable must name a populated external environment variable."
+        # It used to start anyway on a developer machine, by inheriting the real
+        # CONTROL_SERVER_RIOT_CALL_API_KEY from the ambient environment. That was two problems: the
+        # rig was not hermetic (CI, running as NetworkService, has no such variable), and every L2
+        # run handed the production RIoT key to a server that only ever talks to a double. Point the
+        # setting at a dedicated dummy instead, the way Invoke-AuthorizedAbsentObservationShadow.ps1
+        # already does. ControlServer.FakeRiot does not check the value.
+        'RIoT__callApiKeyEnvironmentVariable'             = 'CONTROL_SERVER_L2_DUMMY_RIOT_CALL_API_KEY'
+        'CONTROL_SERVER_L2_DUMMY_RIOT_CALL_API_KEY'       = 'l2-fake-riot-not-a-production-secret'
         'RiotCreateDispatch__enabled'                     = 'true'
         'JourneyRuntime__enabled'                         = 'true'
         'JourneyRuntime__pollInterval'                    = '00:00:01'
