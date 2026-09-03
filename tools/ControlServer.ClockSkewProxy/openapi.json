@@ -1,0 +1,70 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ControlServer.ClockSkewProxy",
+    "version": "1.0.0",
+    "description": "A one-route reverse proxy in front of ControlServer's vehicle-safety projection that moves observedAt by a configurable offset, so an L2 scenario can exercise the onboard's clock-skew tolerance (8005-agv-onboard-hmi#1) on a machine where both ends share one clock. Loopback only."
+  },
+  "paths": {
+    "/api/onboard/v1/vehicle-safety": {
+      "get": {
+        "summary": "Forward the upstream projection with observedAt shifted by skewMs",
+        "description": "The Authorization header is forwarded verbatim. A non-success upstream response, and a body that is not JSON, are passed through untouched so the onboard's own fail-closed paths still see them. Unknown fields survive the rewrite.",
+        "responses": {
+          "200": { "description": "Upstream body with observedAt shifted" },
+          "401": { "description": "Upstream refusal, forwarded unchanged" },
+          "503": { "description": "Upstream refusal, forwarded unchanged" }
+        }
+      }
+    },
+    "/control/v1/health": {
+      "get": { "summary": "Liveness, current skewMs and forward target", "responses": { "200": { "description": "Envelope" } } }
+    },
+    "/control/v1/snapshot": {
+      "get": { "summary": "Current skewMs plus the forward log (count, last upstream status, last observedAt in and out)", "responses": { "200": { "description": "Envelope" } } }
+    },
+    "/control/v1/skew": {
+      "put": {
+        "summary": "Set the offset applied to observedAt",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SkewCommand" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Applied or replayed" },
+          "400": { "description": "INVALID_ARGUMENT" },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT" }
+        }
+      }
+    },
+    "/control/v1/reset": {
+      "post": { "summary": "Start a new round at revision 1", "responses": { "200": { "description": "Applied or replayed" } } }
+    },
+    "/control/v1/openapi.json": {
+      "get": { "summary": "This document", "responses": { "200": { "description": "OpenAPI" } } }
+    }
+  },
+  "components": {
+    "schemas": {
+      "SkewCommand": {
+        "type": "object",
+        "required": ["runId", "commandId", "skewMs"],
+        "properties": {
+          "runId": { "type": "string" },
+          "commandId": { "type": "string" },
+          "expectedRevision": { "type": "integer", "format": "int64", "description": "Optional optimistic concurrency check, skipped on a replay." },
+          "skewMs": {
+            "type": "integer",
+            "minimum": -60000,
+            "maximum": 60000,
+            "description": "Milliseconds added to observedAt. Positive puts the evidence in the onboard's future, which is what a slow onboard clock looks like from the wire; negative is a fast one."
+          }
+        }
+      }
+    }
+  }
+}

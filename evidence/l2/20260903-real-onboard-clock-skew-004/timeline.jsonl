@@ -1,0 +1,24 @@
+{"at":"2026-09-03T10:22:54.3478460+00:00","note":"L2 run 20260903T102254284Z starting for scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-03T10:22:54.3681084+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-03T10:22:58.0268111+00:00","note":"Reusing cached onboard-hmi publish for 60a0efdbf14b8195a1c1fd5afa8e6f39945279aa."}
+{"at":"2026-09-03T10:22:58.1982007+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-03T10:22:58.2023079+00:00","note":"Peers: onboard-hmi@60a0efdbf14b8195a1c1fd5afa8e6f39945279aa, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-03T10:22:59.4156285+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-03T10:22:59.6466324+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-03T10:23:02.1388429+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-03T10:23:04.6958669+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-03T10:23:06.8645864+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-03T10:23:07.5867280+00:00","criterion":"skew-proxy-live","value":"live"}
+{"at":"2026-09-03T10:23:07.5924860+00:00","note":"Clock skew proxy forwarding vehicle-safety with observedAt +100ms."}
+{"at":"2026-09-03T10:23:10.4700534+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-03T10:23:10.4865449+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-03T10:23:10.5822227+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-03T10:23:10.8547866+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-03T10:23:10.9180095+00:00","note":"Environment is up; entering scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-03T10:23:11.0554975+00:00","note":"Pushing observedAt skew to 3000ms, beyond the onboard's tolerance."}
+{"at":"2026-09-03T10:23:11.1116080+00:00","note":"Publishing demand f63006ebb6cf4939940ef6d74e90f30d while the evidence is beyond tolerance."}
+{"at":"2026-09-03T10:23:11.1613021+00:00","criterion":"session-readiness","value":"Ready/READY"}
+{"at":"2026-09-03T10:23:11.6912701+00:00","criterion":"session-readiness","value":"RecoveryRequired/DEPARTURE_SAFETY_NOT_READY"}
+{"at":"2026-09-03T10:23:11.6978195+00:00","criterion":"backlog-reason","value":"ELIGIBLE"}
+{"at":"2026-09-03T10:23:11.9712142+00:00","criterion":"backlog-reason","value":"ACCEPTED"}
+{"at":"2026-09-03T10:25:11.7350490+00:00","note":"Run failed: Timed out after 120s waiting for: the demand was refused because the onboard facts are not readable. Last observed: \"ACCEPTED\""}

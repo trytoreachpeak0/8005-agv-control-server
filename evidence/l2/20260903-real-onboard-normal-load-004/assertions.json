@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-normal-load",
+  "runId": "20260903T100649516Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "60a0efdbf14b8195a1c1fd5afa8e6f39945279aa",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260903T100649516Z",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "641ca9dcb46a1174ed6873329b8a8a9b7f1e3cd6"
+  },
+  "assertions": [
+    {
+      "id": "L2-RO-01",
+      "description": "真车载端在场时需求被受理并建出 TO_PICKUP 单",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-RO-02",
+      "description": "UIA 录入的 sublot 经真车载端以 KEYBOARD 方式提交到服务端",
+      "outcome": "PASS",
+      "expected": "L2-SUBLOT-20260903T100649516Z / KEYBOARD / L2-OPERATOR",
+      "actual": "L2-SUBLOT-20260903T100649516Z / KEYBOARD / L2-OPERATOR"
+    },
+    {
+      "id": "L2-RO-03",
+      "description": "车载端上报在等操作员时，它说要开的那个仓门确实是开的",
+      "outcome": "PASS",
+      "expected": "slot 1 OPEN",
+      "actual": "slot 1 OPEN"
+    },
+    {
+      "id": "L2-RO-04",
+      "description": "装载走的是真 Modbus 闭环：车载端开锁、放货、关门、锁反馈回到 1、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-RO-05",
+      "description": "装载操作提交（Committed），且记的是 UIA 录进去的那个 sublot",
+      "outcome": "PASS",
+      "expected": "Committed / L2-SUBLOT-20260903T100649516Z",
+      "actual": "Committed / L2-SUBLOT-20260903T100649516Z"
+    },
+    {
+      "id": "L2-RO-06",
+      "description": "出发前安全检查通过后才建 TO_GATE 单",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-RO-07",
+      "description": "关卡卸的是装货时用的那个仓位",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-RO-08",
+      "description": "卸载后仓位回到空、门关、锁上",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-RO-09",
+      "description": "journey 走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-RO-10",
+      "description": "卸载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-RO-11",
+      "description": "需求终态为 Succeeded",
+      "outcome": "PASS",
+      "expected": "Succeeded",
+      "actual": "Succeeded"
+    },
+    {
+      "id": "L2-RO-12",
+      "description": "全程只建了两条 RIoT 单（取货一条、关卡一条）",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    }
+  ]
+}

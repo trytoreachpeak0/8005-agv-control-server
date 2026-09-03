@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-clock-skew",
+  "runId": "20260903T101421069Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 120s waiting for: the demand was refused because the onboard cannot vouch for departure safety. Last observed: \"ONBOARD_FACTS_NOT_READY\"",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260903T101421069Z",
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "clockSkewMs": 100,
+    "controlServerCommit": "641ca9dcb46a1174ed6873329b8a8a9b7f1e3cd6",
+    "onboardHmiCommit": "60a0efdbf14b8195a1c1fd5afa8e6f39945279aa"
+  },
+  "assertions": [
+    {
+      "id": "L2-CS-01",
+      "description": "车载端的安全投影确实经过了偏差代理，且 observedAt 被推后",
+      "outcome": "PASS",
+      "expected": "forwardedRequests >= 1，位移 = 100 ms",
+      "actual": "forwardedRequests = 2，位移 = 100 ms"
+    },
+    {
+      "id": "L2-CS-02",
+      "description": "车载端时钟慢 100 ms（容差内）时会话正常建立",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready"
+    }
+  ]
+}

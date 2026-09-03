@@ -6,7 +6,7 @@
 pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\evidence\l2\<新目录>
 ```
 
-一趟 14 到 30 秒，全程无人值守。这条链路 2026-09-03 在厂区里跑掉了一个下午。
+一趟 15 到 35 秒，全程无人值守。这条链路 2026-09-03 在厂区里跑掉了一个下午。
 
 方案与落地顺序见
 [`8005-agv-program/docs/wire-to-gate-test-automation.md`](https://github.com/trytoreachpeak0/8005-agv-program/blob/main/docs/wire-to-gate-test-automation.md)，
@@ -16,20 +16,23 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 
 | 场景 | 车载端 | 讲什么 | 绿证据 |
 | --- | --- | --- | --- |
-| `normal-load` | 合成 | 全程顺利的基线，不注入任何故障 | `evidence/l2/20260903-normal-load-015` |
-| `session-established-while-moving` | 合成 | 会话在车辆运动中建立，随后停稳；到站也要按最新的安全状态判 | `evidence/l2/20260903-session-established-while-moving-005` |
-| `load-result-requires-recovery` | 合成 | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-005` |
-| `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-003` |
+| `normal-load` | 合成 | 全程顺利的基线，不注入任何故障 | `evidence/l2/20260903-normal-load-016` |
+| `session-established-while-moving` | 合成 | 会话在车辆运动中建立，随后停稳；到站也要按最新的安全状态判 | `evidence/l2/20260903-session-established-while-moving-006` |
+| `load-result-requires-recovery` | 合成 | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-006` |
+| `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-005` |
+| `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
 
-编号更小的目录是同一批里更早的跑次：稳定性复跑，
-`load-result-requires-recovery-001` 是**红的**，留着的原因见文末第 6 条。
+编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
+`load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
+`-004`（第 9 条）。
 
-中间两条是方案第 4 节标 ★ 的三条里能做的两条。第三条（**车载端时钟慢于服务端 100 ms**）用合成
-对端做不了：缺陷在车载端的 `VehicleSafetySignal.IsFresh`
-（[`8005-agv-onboard-hmi#1`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/1)），
-合成对端根本没有那段逻辑，用它「复现」出来的只会是自己写的假象。真车载端接进来之后这一条**具备了
-条件**，但还差一件事：两端跑在同一台机器上共用一个时钟，要制造偏差就得让车载端读到的
-`observedAt` 落在它自己的「未来」——目前还没有做，见文末第 8 条。
+方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
+`VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
+偏差不会自己出现——补上 `tools/ControlServer.ClockSkewProxy` 才凑齐。
+
+而且它不再是「复现缺陷」：
+[`8005-agv-onboard-hmi#1`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/1)
+已由 Kun Wang 在 `abb8e73` 修成**有界容差**，所以场景钉的是那个界的两侧加恢复。
 
 `load-result-requires-recovery` **到 Blocked 为止，不跑到「恢复并继续」**：出口是车载端的五步恢复
 握手，而车载端从不发起
@@ -55,7 +58,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 
 合成装置能证明的是**服务端在一个守协议的对端面前的跨端时序**，它没有 IO、没有 journal、没有
 操作员，也没有会因为时钟偏差而拒绝自己观测值的本地新鲜度判定。真装置把这四样都换成真的，代价
-是两个 WPF 窗口会弹到桌面上（见文末第 9 条）。
+是两个 WPF 窗口会弹到桌面上（见文末第 10 条）。
 
 **L2 PASS 不代表现场合格。**没有真实 RCS、没有真车、没有交通管制、没有真实 IO 模块与接线。
 见 `docs/RELEASE-CANDIDATE.md` 第 11 节。
@@ -132,7 +135,10 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 - `OnboardSeed` —— 只对合成装置有效，会变成 `--FakeOnboard:Seed:*`，落在握手那条
   `SafetyStateSnapshot` 携带的安全摘要上。`session-established-while-moving` 靠它让会话在
   「车还在动」的状态下建立——`PUT /control/v1/safety` 只能报告一个**已经存在**的会话的变化，
-  做不到这件事。两个键一起给会直接报错。
+  做不到这件事。与 `Onboard = 'Real'` 一起给会直接报错。
+- `ClockSkewMs` —— 只对真装置有效。车辆安全投影改经 `tools/ControlServer.ClockSkewProxy` 转发，
+  `observedAt` 往后推这么多毫秒，等价于车载端时钟慢了这么多。合成对端没有新鲜度判定，给它设这个
+  键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。
 
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
@@ -158,6 +164,7 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 | 假车载端控制面 | 58410 |
 | 模拟器 HTTP 控制面（真装置） | 58411 |
 | 模拟器 Modbus TCP（真装置） | 58412 |
+| 时钟偏差代理（`ClockSkewMs` 场景） | 58413 |
 
 刻意避开现场运行（58105/58107）、staged G3（58205/58207）与 demand-bearing G3（58305/58307）：
 撞上了要的是绑不上端口直接失败，而不是悄悄连到另一台服务器上去。模拟器同理不用它自己的默认
@@ -192,16 +199,18 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
    放一篮货要几秒钟。可等的判据是车载端自己发的 `OperationProgress`，相位 `WAITING_OPERATOR`：
    它在锁反馈稳定、开锁输出复位之后才发，而且落在服务端的 `ProtocolInbox` 里，是服务端自己收到的
    事实。（那几次红是写场景过程中的迭代，没有留成证据目录。）
-8. **`8005-agv-onboard-hmi#1`（时钟偏差）真装置下仍未实现。**两端跑在同一台机器上共用同一个时钟，
-   而 `observedAt` 是 ControlServer 用自己的 `timeProvider` 盖的章
-   （`HttpRiotMovementGateway.ReadVehicleSafetyAsync`），所以偏差不会自己出现。要复现得让车载端读到
-   一个落在它自己「未来」的 `observedAt`——车载端的 `vehicleSafety.endpoint` 是配置项，指向一个把
-   `observedAt` 往后推 N 毫秒的转发代理即可，被测的 `IsFresh` 仍然是车载端自己那段真代码。
-   **不要改机器时钟**，也不要把 `maximumEvidenceAgeMs` 设成 0 冒充——那是另一个原因造成的同一个
-   症状，绿了红了都说明不了 `#1`。
-9. **两个 WPF 窗口会弹到桌面上，这是这一层固有的。**`Start-L2Process -Gui` 刻意不用
-   `WindowStyle Hidden`：那个值会进 STARTUPINFO，被 WPF 第一次 `Show()` 采纳，而隐藏的窗口
-   UI Automation 未必找得到——驱动会在一个跟真实原因毫不相干的地方超时。跑的时候窗口会抢一次
-   焦点，之后不会再抢——驱动不注入按键，见「加一个场景」那一节。要让它进 CI，得有一个交互式桌面
-   会话，那是
-   落地顺序第 7 步。
+8. **时钟偏差场景里，「需求被拒」的原因码不是 `ONBOARD_DEPARTURE_UNSAFE`。**第一版按它写，白等了
+   120 秒。实际先翻的是会话本身——`SessionRecoveries` 变成
+   `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY`，偏差生效后 0.6 秒内——需求随之判
+   `ONBOARD_FACTS_NOT_READY`。`ONBOARD_DEPARTURE_UNSAFE` 是「会话还在 Ready、但车载端说不能走」
+   那种情形的原因码。红证据留在 `evidence/l2/20260903-real-onboard-clock-skew-001`。
+9. **改了外部条件之后，要等因果事实真的落库再投需求。**同一条场景第二个坑：设完偏差 56 ms 就发布
+   需求，而车载端要下一次 1 秒轮询才发现证据过期——运行时在那个窗口里用「仍然 Ready」的会话把需求
+   受理掉了（`ELIGIBLE` → `ACCEPTED`），此后 backlog 不再重评，判据只能等到超时。三次稳定性复跑里
+   中了一次。红证据留在 `evidence/l2/20260903-real-onboard-clock-skew-004`。**顺序改成「先等会话
+   降级落库，再发布需求」**，竞态就没有了。
+10. **两个 WPF 窗口会弹到桌面上，这是这一层固有的。**`Start-L2Process -Gui` 刻意不用
+    `WindowStyle Hidden`：那个值会进 STARTUPINFO，被 WPF 第一次 `Show()` 采纳，而隐藏的窗口
+    UI Automation 未必找得到——驱动会在一个跟真实原因毫不相干的地方超时。跑的时候窗口会抢一次
+    焦点，之后不会再抢——驱动不注入按键，见「加一个场景」那一节。要让它进 CI，得有一个交互式桌面
+    会话，那是落地顺序第 7 步。

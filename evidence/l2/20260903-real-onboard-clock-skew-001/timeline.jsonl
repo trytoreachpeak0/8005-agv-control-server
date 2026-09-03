@@ -1,0 +1,22 @@
+{"at":"2026-09-03T10:14:21.1330423+00:00","note":"L2 run 20260903T101421069Z starting for scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-03T10:14:21.1659996+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-03T10:14:24.6126369+00:00","note":"Reusing cached onboard-hmi publish for 60a0efdbf14b8195a1c1fd5afa8e6f39945279aa."}
+{"at":"2026-09-03T10:14:24.7814229+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-03T10:14:24.7863623+00:00","note":"Peers: onboard-hmi@60a0efdbf14b8195a1c1fd5afa8e6f39945279aa, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-03T10:14:25.7707395+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-03T10:14:25.9257360+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-03T10:14:28.3193747+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-03T10:14:30.9330267+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-03T10:14:32.6131642+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-03T10:14:33.9374567+00:00","criterion":"skew-proxy-live","value":"live"}
+{"at":"2026-09-03T10:14:33.9417510+00:00","note":"Clock skew proxy forwarding vehicle-safety with observedAt +100ms."}
+{"at":"2026-09-03T10:14:36.6608606+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-03T10:14:36.6742968+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-03T10:14:36.7784987+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-03T10:14:37.0482682+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-03T10:14:37.1249951+00:00","note":"Environment is up; entering scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-03T10:14:37.3313816+00:00","note":"Pushing observedAt skew to 3000ms, beyond the onboard's tolerance."}
+{"at":"2026-09-03T10:14:37.3955397+00:00","note":"Publishing demand 05a5c086a0d0409290f1d6c8bf40a884 while the evidence is beyond tolerance."}
+{"at":"2026-09-03T10:14:37.4545218+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-03T10:14:38.5030837+00:00","criterion":"backlog-reason","value":"ONBOARD_FACTS_NOT_READY"}
+{"at":"2026-09-03T10:16:37.6292668+00:00","note":"Run failed: Timed out after 120s waiting for: the demand was refused because the onboard cannot vouch for departure safety. Last observed: \"ONBOARD_FACTS_NOT_READY\""}

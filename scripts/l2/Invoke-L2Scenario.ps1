@@ -44,6 +44,8 @@ param(
     # run from talking to a simulator someone left open for hand testing.
     [int]$SimulatorHttpPort = 58411,
     [int]$SimulatorModbusPort = 58412,
+    # Only started when a scenario asks for clock skew; see scenarios/*.setup.psd1.
+    [int]$ClockSkewProxyPort = 58413,
 
     # The two peer repositories are read-only for agents, so they are never built in place: each is
     # cloned to the cache below and published from the clone. Siblings of this repository by
@@ -80,6 +82,13 @@ if ($setup.ContainsKey('Onboard') -and $setup.Onboard -notin @('Real', 'Syntheti
 }
 if ($realOnboard -and $setup.ContainsKey('OnboardSeed')) {
     throw "OnboardSeed only applies to the synthetic peer; the real onboard reads its own IO."
+}
+# Clock skew is injected on the wire, in front of the server's vehicle-safety projection, so it
+# only means anything to a peer that actually evaluates freshness -- which the synthetic one does
+# not.
+$clockSkewMs = if ($setup.ContainsKey('ClockSkewMs')) { [int]$setup.ClockSkewMs } else { $null }
+if ($null -ne $clockSkewMs -and -not $realOnboard) {
+    throw "ClockSkewMs needs Onboard = 'Real': the synthetic peer has no freshness check to skew."
 }
 if (-not $OnboardRepository) {
     $OnboardRepository = Join-Path (Split-Path -Parent $Repository) '8005-agv-onboard-hmi'
@@ -150,6 +159,7 @@ try {
     $riotDirectory = Join-Path $Repository "tools/ControlServer.FakeRiot/bin/$configuration/$framework"
     $mesDirectory = Join-Path $Repository "tools/ControlServer.FakeMesIngest/bin/$configuration/$framework"
     $onboardDirectory = Join-Path $Repository "tools/ControlServer.FakeOnboard/bin/$configuration/$framework"
+    $skewProxyDirectory = Join-Path $Repository "tools/ControlServer.ClockSkewProxy/bin/$configuration/$framework"
 
     $credential = [guid]::NewGuid().ToString('N')
     $agvId = 'AGV-L2-001'
@@ -280,7 +290,28 @@ try {
         -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
         -Until { param($v) $v -eq 'live' }
 
-    # 4. The onboard last, either way: it connects out to the server, so the server has to be
+    # 4b. The skew proxy, when a scenario asked for one. After the server (it forwards to it) and
+    #     before the onboard (which must find it listening on its first poll).
+    $skewProxy = $null
+    if ($null -ne $clockSkewMs) {
+        $handles += Start-L2Process -Name 'clock-skew-proxy' `
+            -FilePath (Join-Path $skewProxyDirectory 'ControlServer.ClockSkewProxy.exe') `
+            -ArgumentList @(
+                "--ClockSkewProxy:port=$ClockSkewProxyPort",
+                "--ClockSkewProxy:instanceId=l2-skew-proxy",
+                "--ClockSkewProxy:target=http://127.0.0.1:$HealthPort",
+                "--ClockSkewProxy:Seed:skewMs=$clockSkewMs") `
+            -WorkingDirectory $skewProxyDirectory -LogRoot $logRoot |
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5 -PassThru }
+
+        $skewProxy = New-L2Double -Name 'clock-skew-proxy' -BaseUrl "http://127.0.0.1:$ClockSkewProxyPort"
+        $null = Wait-L2Condition -Description 'the clock skew proxy is live' -Journal $journal `
+            -Criterion 'skew-proxy-live' -TimeoutSeconds 60 `
+            -Probe { $skewProxy.Health().body.status } -Until { param($v) $v -eq 'live' }
+        $journal.Note("Clock skew proxy forwarding vehicle-safety with observedAt +${clockSkewMs}ms.")
+    }
+
+    # 5. The onboard last, either way: it connects out to the server, so the server has to be
     #    listening first.
     $onboard = $null
     if ($realOnboard) {
@@ -305,8 +336,13 @@ try {
                 # refresh before the handshake snapshot, and vehicleStoppedProvider reads it on
                 # every safety summary afterwards.
                 $settings.vehicleSafety.enabled = $true
-                $settings.vehicleSafety.endpoint =
+                # Straight to the server unless the scenario asked for skew, in which case the
+                # proxy sits in between and this is the only line that says so.
+                $settings.vehicleSafety.endpoint = if ($null -ne $clockSkewMs) {
+                    "http://127.0.0.1:$ClockSkewProxyPort/api/onboard/v1/vehicle-safety"
+                } else {
                     "http://127.0.0.1:$HealthPort/api/onboard/v1/vehicle-safety"
+                }
                 $settings.vehicleSafety.expectedVehicleKey = $vehicleKey
                 $settings.ioModule.host = '127.0.0.1'
                 $settings.ioModule.port = $SimulatorModbusPort
@@ -322,7 +358,7 @@ try {
                 'CONTROL_SERVER_OPERATOR_ID'        = 'L2-OPERATOR'
             } `
             -LogRoot $logRoot |
-            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5 -PassThru }
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
         $handles += $onboardHandle
 
         $onboard = New-L2OnboardDriver -ProcessId $onboardHandle.Process.Id
@@ -355,7 +391,7 @@ try {
             -WorkingDirectory $onboardDirectory `
             -Environment @{ 'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential } `
             -LogRoot $logRoot |
-            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5 -PassThru }
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
 
         $onboard = New-L2Double -Name 'fake-onboard' -BaseUrl "http://127.0.0.1:$FakeOnboardPort"
         $null = Wait-L2Condition -Description 'the synthetic peer reached READY' -Journal $journal -Criterion 'onboard-readiness' `
@@ -381,6 +417,7 @@ try {
         # scenario is written for one rig, so there is nothing to branch on at this level.
         Onboard             = $onboard
         Simulator           = $simulator
+        SkewProxy           = $skewProxy
         Connection          = $connection
         RunId               = $runId
         AgvId               = $agvId
@@ -392,9 +429,9 @@ try {
         HealthPort          = $HealthPort
         SnapshotRoot        = $snapshotRoot
         # Order is the start position, and Stop-L2Process tears down in reverse: fake RIoT 1, fake
-        # MesIngest 2, simulator 3, ControlServer 4, onboard 5 (synthetic or real -- they are
-        # mutually exclusive, so they share the position). Two components on the same number would
-        # make that order undefined.
+        # MesIngest 2, simulator 3, ControlServer 4, clock skew proxy 5, onboard 6 (synthetic or
+        # real -- they are mutually exclusive, so they share the position). Two components on the
+        # same number would make that order undefined.
         # Powering a component down is part of several scenarios -- the vehicle is normally switched
         # off while a blocked load is being dealt with -- so a scenario can stop one by name. Teardown
         # stops whatever is left, and stopping something twice is not an error.
@@ -427,6 +464,12 @@ try {
         @{ Name = 'slots-simulator'; Url = "http://127.0.0.1:$SimulatorHttpPort/api/v1/snapshot" }
     } else {
         @{ Name = 'fake-onboard'; Url = "http://127.0.0.1:$FakeOnboardPort/control/v1/snapshot" }
+    }
+    if ($null -ne $clockSkewMs) {
+        $snapshotSources += @{
+            Name = 'clock-skew-proxy'
+            Url  = "http://127.0.0.1:$ClockSkewProxyPort/control/v1/snapshot"
+        }
     }
     foreach ($double in $snapshotSources) {
         try {
@@ -464,6 +507,7 @@ try {
         stageRoot           = $stageRoot
         rig                 = if ($realOnboard) { 'RealOnboard' } else { 'SyntheticOnboard' }
     }
+    if ($null -ne $clockSkewMs) { $identity['clockSkewMs'] = $clockSkewMs }
     if ($onboardPublish) { $identity['onboardHmiCommit'] = $onboardPublish.Commit }
     if ($simulatorPublish) { $identity['slotsSimulatorCommit'] = $simulatorPublish.Commit }
     Write-L2Evidence -EvidenceRoot $EvidenceRoot -Scenario $Scenario -RunId $runId `

@@ -1,0 +1,33 @@
+{"at":"2026-09-03T10:28:38.1456110+00:00","note":"L2 run 20260903T102838081Z starting for scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-03T10:28:38.1697275+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-03T10:28:41.8211264+00:00","note":"Reusing cached onboard-hmi publish for 60a0efdbf14b8195a1c1fd5afa8e6f39945279aa."}
+{"at":"2026-09-03T10:28:41.9740357+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-03T10:28:41.9790251+00:00","note":"Peers: onboard-hmi@60a0efdbf14b8195a1c1fd5afa8e6f39945279aa, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-03T10:28:42.9504350+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-03T10:28:43.1265846+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-03T10:28:45.4788042+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-03T10:28:48.2708117+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-03T10:28:49.9196480+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-03T10:28:50.6379019+00:00","criterion":"skew-proxy-live","value":"live"}
+{"at":"2026-09-03T10:28:50.6415196+00:00","note":"Clock skew proxy forwarding vehicle-safety with observedAt +100ms."}
+{"at":"2026-09-03T10:28:53.4421617+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-03T10:28:53.4589911+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-03T10:28:53.5608301+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-03T10:28:53.8412903+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-03T10:28:53.9179723+00:00","note":"Environment is up; entering scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-03T10:28:54.1092217+00:00","note":"Pushing observedAt skew to 3000ms, beyond the onboard's tolerance."}
+{"at":"2026-09-03T10:28:54.1720526+00:00","criterion":"session-readiness","value":"Ready/READY"}
+{"at":"2026-09-03T10:28:54.6919186+00:00","criterion":"session-readiness","value":"RecoveryRequired/DEPARTURE_SAFETY_NOT_READY"}
+{"at":"2026-09-03T10:28:54.6942980+00:00","note":"Publishing demand 69732dc49e3347ab933ace7ee306eaed now that the session has degraded."}
+{"at":"2026-09-03T10:28:54.7739040+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-03T10:28:55.8259434+00:00","criterion":"backlog-reason","value":"ONBOARD_FACTS_NOT_READY"}
+{"at":"2026-09-03T10:28:55.8758093+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-03T10:28:56.9429515+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-03T10:28:57.7404841+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-03T10:28:58.8027783+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-03T10:28:59.8655366+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-03T10:28:59.8692414+00:00","note":"Bringing the skew back to 100ms; the onboard must recover on its own."}
+{"at":"2026-09-03T10:29:00.9370728+00:00","criterion":"backlog-reason","value":"ELIGIBLE"}
+{"at":"2026-09-03T10:29:01.2029513+00:00","criterion":"backlog-reason","value":"ACCEPTED"}
+{"at":"2026-09-03T10:29:01.2080468+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-03T10:29:01.2215105+00:00","note":"Scenario finished."}
