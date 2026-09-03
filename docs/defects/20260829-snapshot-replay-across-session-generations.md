@@ -1,9 +1,11 @@
 # 缺陷：跨会话代次重放快照造成自我维持的重连死循环
 
-Status: open
+Status: fixed
 Owner repository: `8005-agv-control-server`
 Found by: [`到站推进首次可达后的联合运行`](../../evidence/g3/20260829-placeholder-fix-confirms-leg/SUMMARY.md) 之后的到站验证运行
 Product at discovery: `ControlServer_MVP@bf22a48d5d0e386e7af21d162800f7cf09b0032d`
+Fixed in: `ControlServer_MVP@b426ef6359b38bbd73b70452359003767ed30b04`
+Verified by: [`到站之后首次走通：三处服务端修复的现场验证`](../../evidence/g3/20260829-arrival-to-sublot-field-verify/SUMMARY.md)
 Peers: `OnboardHmi_MVP@84b7f3f`、`slots-simulator@fb5f7c5`、`protocol-v0.1.1@1531489`
 
 ## 现象
@@ -23,7 +25,7 @@ Peers: `OnboardHmi_MVP@84b7f3f`、`slots-simulator@fb5f7c5`、`protocol-v0.1.1@1
 `AwaitingPickupArrival`。异常统计：`ProtocolContentConflictException` 51 次、
 `IOException` 43 次。
 
-## 根因
+## 根因（**当时的推断，后被证伪**，真因见下面的「修复」）
 
 三个设计选择在重连场景下互相矛盾：
 
@@ -42,22 +44,63 @@ non-advancing session generation`。
 `IOException`，旅程迭代 fail-closed；对端随即重连，代次再进一位，重放仍是旧信封——循环因此
 自我维持，不会自愈。
 
-## 可选修法（尚未定夺）
+## 修复
 
-1. **把 `messageId` 纳入会话代次**：新代次派生新的 `messageId`，旧信封自然作废。逐字节重放
-   语义保留在代次内部。代价是需确认 Onboard 侧对同一业务快照换 `messageId` 的处理。
-2. **重放时重新盖章**：保留 `messageId` 但按当前代次重建信封。这会打破"同 `messageId` 逐字节
-   重放"这一既有不变量，且该不变量本身有其防重目的。
-3. **禁止跨代次重放快照**：`ReplayPendingForSessionAsync` 已接收 `sessionGeneration` 参数，
-   说明原意可能就是只在同代次内重放；需查清为何仍发出了旧代次信封。
+`ControlServer_MVP@b426ef6`。
 
-选项三最接近既有设计意图，应先查明实际重放路径再定。三者都需要确认对端在新代次下期望
-看到什么，必要时以 `ProtocolProblem` 的 reasonCode 作为判据。
+**上面那节「根因」的推断是错的**，当时列出的三条可选修法都建立在它之上，因此一条也没有采用。
+回归测试当场证伪了那个假设：出问题的不是「冻结的信封盖着旧代次被原样重放」，而是两条互相独立
+的缺陷。原推断与三条候选修法原样留在上面，因为定位过程本身有参考价值——错在哪里，比结论更值得
+下次读到的人看见。
+
+### 真因一：出站 wire 对端复现不出来
+
+服务端把快照 payload 作为 CLR 对象一次性序列化，`DateTimeOffset` 转换器原样写出时区的 `+`；
+对端把行解析为 payload 仍是 `JsonElement` 的信封后重新序列化，该字符经 encoder 转义。JSON 语义
+相同、字节不同，而 `AcknowledgeOutboundEnvelopeAsync` 要求逐字节复现，于是到站后第一条
+`SnapshotAppliedAck` 就被拒并拆掉连接——现象里车载端那 20 条
+`SNAPSHOT_REVISION_CONTENT_CONFLICT` 来自这里。
+
+改法：序列化信封前先把 payload 物化为 `JsonElement`，与协议契约类型自身的构造方式一致。
+
+### 真因二：重放改写了冻结的 `sentAt`
+
+`ReplayPendingForSessionAsync` 用新时钟改写 `sentAt` 与 `CreatedAt`，而快照 payload 的
+`observedAt` 是**从 `sentAt` 推导**的（`8caf746` 引入）。重绑后的 payload 因此保留旧
+`observedAt`，下一轮发布算出新值，`RefreshOutboundEnvelopeAsync` 判定语义冲突并按「非推进的
+会话代次」拒绝，每个运行时迭代各抛一次——现象里那 51 次 `ProtocolContentConflictException`
+来自这里，**不是**真因一的字节漂移造成的。
+
+改法：重绑属传输关注点，现在只推进 `sessionGeneration`，`sentAt` 保持冻结。
+
+### 回归测试
+
+`SnapshotWireIsReproducibleByThePeerThatAcknowledgesIt`、
+`ReplayIntoANewGenerationLeavesTheWireThePublisherWouldWriteAgain`。两条都建模**对端实际做的
+事**；在此之前的测试是拿服务端自己存下的字节去算哈希，那只能证明它和自己一致。
 
 ## 影响
 
-取货到站之后的所有阶段（`AwaitingSublot` 起）目前无法进入，因此装货、安全检查、`TO_GATE`
-移动与关卡卸货均不可达。W2G-IS-00～07 的正式 G3 与 RC 保持 `INCONCLUSIVE`。
+修复前：取货到站之后的所有阶段（`AwaitingSublot` 起）无法进入，装货、安全检查、`TO_GATE` 移动
+与关卡卸货均不可达。
+
+修复后同一条链路在现场走通。同一台车、同一条 Demand、同样观察时长：
+
+| 指标 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 会话建立次数（`SessionHello`） | 22 | **1** |
+| `ProtocolContentConflictException` | 51 | **0** |
+| 车载端 `SNAPSHOT_REVISION_CONTENT_CONFLICT` | 20 | **0** |
+| 快照被确认 | 0 / 3 | **3 / 3** |
+| `Stage` | `AwaitingPickupArrival` | **`AwaitingSublot`** |
+
+验证时对端为 `OnboardHmi_MVP@304e6ad`（王昆的 `Fix snapshot revision replay across sessions`），
+证据记录两端修复互通、跨代次后 payload 身份保持不变。2026-09-03 的现场联调又一次走过同一段并
+推进到装载环节。L2 的 `normal-load` 场景每次跑都会走一遍到站快照的发布与确认（单一会话代次，
+**不覆盖**跨代次重放，那一段由上述回归测试承担）。
+
+**这条缺陷不再阻塞任何切片。**验证那份证据里 W2G-IS-00～07 的 G3 与 RC 仍记作 `INCONCLUSIVE`，
+原因是 `SublotEntryRequested` 在等现场操作员扫码这一人工步骤，与本缺陷无关。
 
 ## 相邻已修事项
 
