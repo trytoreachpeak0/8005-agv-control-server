@@ -1,0 +1,40 @@
+{"at":"2026-09-03T16:24:13.3667399+00:00","note":"L2 run 20260903T162413310Z starting for scenario 'real-onboard-resume-after-repair'."}
+{"at":"2026-09-03T16:24:13.3962361+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-03T16:24:34.5403912+00:00","note":"Building onboard-hmi at f0465d9ad9f84607e3db972f1c6cb0ead910ab3d from a throwaway clone."}
+{"at":"2026-09-03T16:24:46.2921994+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-03T16:24:46.3013615+00:00","note":"Peers: onboard-hmi@f0465d9ad9f84607e3db972f1c6cb0ead910ab3d, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-03T16:24:48.0976953+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-03T16:24:48.3360303+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-03T16:24:51.3640325+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-03T16:24:55.5530803+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-03T16:24:57.7806037+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-03T16:25:02.8779947+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-03T16:25:02.9154151+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-03T16:25:03.0341264+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-03T16:25:03.3120433+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-03T16:25:03.3935468+00:00","note":"Environment is up; entering scenario 'real-onboard-resume-after-repair'."}
+{"at":"2026-09-03T16:25:03.4816898+00:00","note":"Publishing demand 3a58bc78da2b4322ad298ac0d852e641 (sublot L2-SUBLOT-20260903T162413310Z) to the fake MesIngest catalog."}
+{"at":"2026-09-03T16:25:03.6196536+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-03T16:25:04.6905011+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-03T16:25:04.7272027+00:00","criterion":"to-pickup-intent","value":"CREATE_ATTEMPTED"}
+{"at":"2026-09-03T16:25:04.9998366+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-03T16:25:05.0024030+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-03T16:25:05.0919159+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-03T16:25:05.1855827+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-03T16:25:06.3733501+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-03T16:25:06.3761580+00:00","note":"Typing sublot L2-SUBLOT-20260903T162413310Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-03T16:25:06.5951000+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-03T16:25:06.6501451+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-03T16:25:06.6787829+00:00","criterion":"sublot-submitted","value":"0"}
+{"at":"2026-09-03T16:25:06.9460162+00:00","criterion":"sublot-submitted","value":"1"}
+{"at":"2026-09-03T16:25:06.9626206+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-03T16:25:07.2227851+00:00","criterion":"load-attempt","value":"bd8b3bd2-79b2-8759-a46f-d595a632fd4f"}
+{"at":"2026-09-03T16:25:07.2664014+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=bd8b3bd2-79b2-8759-a46f-d595a632fd4f; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/04/2026 00:25:07}"}
+{"at":"2026-09-03T16:25:07.3052105+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-03T16:25:08.1073382+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-03T16:25:08.1114963+00:00","note":"Operator closes slot 1 without putting the basket in; the load will fail."}
+{"at":"2026-09-03T16:25:08.1616510+00:00","note":"Waiting out the onboard operation timeout (about 120s) before the result arrives."}
+{"at":"2026-09-03T16:25:08.1658061+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-03T16:27:08.0699420+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-03T16:27:08.2776439+00:00","criterion":"onboard-recovery-entry","value":"False"}
+{"at":"2026-09-03T16:29:08.1901426+00:00","note":"The onboard never offered a usable recovery entry; the scenario stops here rather than recording verdicts for steps it never reached."}
