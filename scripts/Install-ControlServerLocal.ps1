@@ -1,3 +1,4 @@
+#Requires -Version 7
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -134,23 +135,32 @@ function Wait-ServiceState([string]$ExpectedStatus, [int]$Seconds = 30) {
     throw "Service did not reach $ExpectedStatus within $Seconds seconds."
 }
 
-function Invoke-LiveCheck {
-    $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy $healthCheckHost --max-time 10 "$healthCheckOrigin/health/live" 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "HTTP live check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
+# curl.exe is not present on every Windows this script installs on. It ships with
+# Windows 10 1803 and Server 2019; the factory server is Server 2016 and has none,
+# where the previous implementation failed with "The term
+# 'C:\Windows\System32\curl.exe' is not recognized". PowerShell 7's own client
+# covers the same ground: -NoProxy for --noproxy, -TimeoutSec for --max-time, and
+# a non-2xx status throwing by default the way --fail does. -SkipHttpErrorCheck
+# restores the one call that deliberately did not pass --fail, because it has to
+# read the body of a not-ready response.
+function Invoke-HealthJson([string]$Uri, [switch]$AllowErrorStatus) {
+    try {
+        $response = Invoke-WebRequest -Uri $Uri -NoProxy -TimeoutSec 10 -UseBasicParsing `
+            -SkipHttpErrorCheck:$AllowErrorStatus
     }
-    $response = $body | ConvertFrom-Json
+    catch {
+        throw "HTTP request to $Uri failed: $($_.Exception.Message)"
+    }
+    return $response.Content | ConvertFrom-Json
+}
+
+function Invoke-LiveCheck {
+    $response = Invoke-HealthJson "$healthCheckOrigin/health/live"
     if ($response.status -ne 'live') { throw 'HTTP live check returned an unexpected response.' }
 }
 
 function Get-ReadyCheck {
-    $body = @(& "$env:SystemRoot\System32\curl.exe" --silent --show-error `
-        --noproxy $healthCheckHost --max-time 10 "$healthCheckOrigin/health/ready" 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "HTTP ready check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
-    }
-    $response = $body | ConvertFrom-Json
+    $response = Invoke-HealthJson "$healthCheckOrigin/health/ready" -AllowErrorStatus
     if ($response.status -eq 'not-ready' -and $response.reason -eq 'DATABASE_UNAVAILABLE') {
         throw 'Readiness reports the database is unavailable after migration.'
     }
@@ -161,12 +171,7 @@ function Get-ReadyCheck {
 }
 
 function Get-VersionCheck {
-    $body = @(& "$env:SystemRoot\System32\curl.exe" --fail --silent --show-error `
-        --noproxy $healthCheckHost --max-time 10 "$healthCheckOrigin/version" 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "HTTP version check failed with exit code $LASTEXITCODE`: $($body -join ' ')"
-    }
-    return $body | ConvertFrom-Json
+    return Invoke-HealthJson "$healthCheckOrigin/version"
 }
 
 Assert-Administrator
