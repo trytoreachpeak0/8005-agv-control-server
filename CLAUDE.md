@@ -129,6 +129,20 @@ change touches the journey runtime's cross-end timing, which the unit suite cove
 inside one process. `-EvidenceRoot` must be a new directory. See `scripts/l2/README.md`; a PASS
 there proves nothing about real hardware.
 
+A scenario whose sibling `scenarios/<name>.setup.psd1` says `Onboard = 'Real'` runs a second rig
+instead: the shipped onboard WPF from `8005-agv-onboard-hmi` driven through UI Automation, plus
+the real `slots-simulator` over Modbus. `real-onboard-normal-load` is its baseline, about 23
+seconds. Three things to know before running one:
+
+- **Two WPF windows appear on the desktop.** The rig needs an interactive session, so it cannot
+  run over SSH or in a service-mode runner, and it steals focus once at startup.
+- **Both peer repositories are read-only, and stay that way.** Each is cloned to
+  `%LOCALAPPDATA%\8005-l2-peers\` and published from the clone; configuration is patched only in
+  the per-run stage copy. A dirty peer worktree aborts the run rather than testing the committed
+  state behind your back.
+- **A PASS still proves nothing about real hardware.** The simulator proves the software IO loop,
+  not modules, wiring, locks or light curtains.
+
 Gates cost far more than the suite. **Do not enter one on your own initiative** —
 say which gate, what it costs, and what it proves, then ask:
 
