@@ -15,10 +15,17 @@ else { return; }，旅程停在 AwaitingLoadResult 而**不会进 Blocked**。�
 后半段证的是 4ad840b 修的第二件事：车载端关机之后，「在等哪一种恢复」这个唯一的诊断还在。现场留下
 的记录读作 Blocked / ONBOARD_SESSION_NOT_READY，两个词都没说清在等什么。
 
-**这条场景到 Blocked 为止，不跑到「恢复并继续」。**出口是车载端的五步恢复握手，而车载端从不发起，
-见 8005-agv-onboard-hmi#4。服务端侧的出口是完整的且有 L1 测试（RecoveryStateMachineG2Tests）；
-给合成车载端编出那五条出站消息只会让这条场景在现场仍然停摆的时候变绿。停在「正确地停摆」是这一层
-现在能诚实证明的全部。
+**这条场景到 Blocked 为止，不跑到「恢复并继续」。**出口是五步恢复握手，而**合成对端不发起它**。
+
+两端的能力现在都在了：车载端在 8005-agv-onboard-hmi 的 60a0efd 实现了 RESUME_AFTER_REPAIR 的
+车载端路径；服务端在 1372a89 补上了最后一段——同一操作在拿到合法授权后收得下那一份替换
+OperationResult，并校验恢复 action、原始命令哈希、需求和仓位范围（L1 在
+RecoveryStateMachineG2Tests）。所以卡住这条场景的**不再是能力缺失，是这一层用的对端**：
+tools/ControlServer.FakeOnboard 按策略应答，不会自己发起会话申请和恢复动作。
+
+给它编出那五条出站消息只会让这条场景变绿而证不出任何新东西——服务端那一侧 L1 已经证过了。要把
+「恢复并继续装载」跑成真的，得写一条 Onboard = 'Real' 的场景，让出厂的那个 WPF 自己走完握手。
+在那之前，停在「正确地停摆」是这一层能诚实证明的全部。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -265,5 +272,6 @@ $assertions.Add(
     'L2-LR-13', 'Blocked 期间没有为任何需求派过车（RIoT 单仍只有一条）',
     ($riotOrders.Count -eq 1), 1, $riotOrders.Count)
 
-# 出口在车载端的五步恢复握手，车载端不发，所以这条场景到此为止。见 8005-agv-onboard-hmi#4。
-$journal.Note('Scenario finished at Blocked; the recovery exit needs 8005-agv-onboard-hmi#4.')
+# 出口是五步恢复握手，合成对端不发起，所以这条场景到此为止。两端能力都已具备，欠的是一条
+# Onboard = 'Real' 的场景，见文件头的说明。
+$journal.Note('Scenario finished at Blocked; the recovery exit needs a real-onboard scenario.')
