@@ -1,0 +1,221 @@
+[12:27:36 INF] Executed DbCommand (15ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[12:27:36 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[12:27:36 INF] No migrations were applied. The database is already up to date.
+[12:27:36 INF] Onboard NDJSON listener started on 127.0.0.1:58105; transport=plaintext
+[12:27:36 WRN] Journey runtime is disabled; MesIngest polling and movement dispatch are fail-closed.
+[12:27:36 INF] Now listening on: http://127.0.0.1:58107
+[12:27:36 INF] Application started. Press Ctrl+C to shut down.
+[12:27:36 INF] Hosting environment: Production
+[12:27:36 INF] Content root path: C:\g3b-20260904\publish\control-server
+[12:27:36 INF] Executed DbCommand (2ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SessionGeneration"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__identity_AgvId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (2ms) [Parameters=[@p9='?' (Size = 29), @p0='?', @p1='?' (DbType = Int64), @p2='?' (DbType = Boolean), @p3='?' (Size = 20), @p4='?', @p5='?', @p6='?' (DbType = Int64), @p7='?' (DbType = Int64), @p8='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "CapabilityHash" = @p0, "CapabilityRevision" = @p1, "DepartureSafe" = @p2, "ReasonCode" = @p3, "RecoveryReportId" = @p4, "SafetyHash" = @p5, "SafetyRevision" = @p6, "SessionGeneration" = @p7, "UpdatedAt" = @p8
+WHERE "AgvId" = @p9
+RETURNING 1;
+[12:27:36 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:36 INF] HTTP GET /api/runtime/sessions responded 200 in 73.3985 ms
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1109), @p3='?' (Size = 12), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1094)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 29), @p0='?' (Size = 64), @p1='?' (DbType = Int64), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "CapabilityHash" = @p0, "CapabilityRevision" = @p1, "UpdatedAt" = @p2
+WHERE "AgvId" = @p3
+RETURNING 1;
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 641), @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1988)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@p4='?' (Size = 29), @p0='?' (DbType = Boolean), @p1='?' (Size = 64), @p2='?' (DbType = Int64), @p3='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "DepartureSafe" = @p0, "SafetyHash" = @p1, "SafetyRevision" = @p2, "UpdatedAt" = @p3
+WHERE "AgvId" = @p4
+RETURNING 1;
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 643), @p3='?' (Size = 19), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 2013)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT "v"."ForcedRecoveryGeneration"
+FROM "VehicleRecoveryGenerations" AS "v"
+WHERE "v"."AgvId" = @__agvId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 29), @p0='?' (Size = 31), @p1='?' (Size = 36), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "ReasonCode" = @p0, "RecoveryReportId" = @p1, "UpdatedAt" = @p2
+WHERE "AgvId" = @p3
+RETURNING 1;
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "StationOperations" AS "s"
+    INNER JOIN "JourneyRuntimes" AS "j" ON "s"."DemandId" = "j"."DemandId"
+    WHERE "j"."AgvId" = @__agvId_0 AND "s"."Status" = 'RecoveryRequired')
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@p2='?' (Size = 29), @p0='?' (Size = 26), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "ReasonCode" = @p0, "UpdatedAt" = @p1
+WHERE "AgvId" = @p2
+RETURNING 1;
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1304), @p3='?' (Size = 19), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 750)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 29)], CommandType='Text', CommandTimeout='30']
+SELECT "r"."CommandMessageId"
+FROM "RecoveryWorkflows" AS "r"
+WHERE "r"."AgvId" = @__agvId_0 AND "r"."CommandMessageId" IS NOT NULL AND "r"."State" <> 'Reconciled' AND "r"."State" <> 'HistoricalOnly'
+[12:27:36 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageType" = 'ExceptionRecoverySessionSnapshot' AND "p"."AcknowledgedAt" IS NULL AND "p"."FencedAt" IS NULL
+[12:27:37 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:37 INF] HTTP GET /api/runtime/sessions responded 200 in 5.9070 ms
+[12:27:38 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:38 INF] HTTP GET /api/runtime/sessions responded 200 in 4.3443 ms
+[12:27:39 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:39 INF] HTTP GET /api/runtime/sessions responded 200 in 4.8161 ms
+[12:27:40 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:40 INF] HTTP GET /api/runtime/sessions responded 200 in 5.1881 ms
+[12:27:41 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:41 INF] HTTP GET /api/runtime/sessions responded 200 in 2.4482 ms
+[12:27:41 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:27:41 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 554), @p3='?' (Size = 9), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 445)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:27:42 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:42 INF] HTTP GET /api/runtime/sessions responded 200 in 4.7654 ms
+[12:27:43 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:43 INF] HTTP GET /api/runtime/sessions responded 200 in 2.3836 ms
+[12:27:44 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:44 INF] HTTP GET /api/runtime/sessions responded 200 in 4.9448 ms
+[12:27:45 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:45 INF] HTTP GET /api/runtime/sessions responded 200 in 4.2353 ms
+[12:27:46 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:46 INF] HTTP GET /api/runtime/sessions responded 200 in 2.7140 ms
+[12:27:46 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:27:46 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 554), @p3='?' (Size = 9), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 446)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:27:47 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:47 INF] HTTP GET /api/runtime/sessions responded 200 in 4.5423 ms
+[12:27:48 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:48 INF] HTTP GET /api/runtime/sessions responded 200 in 2.1575 ms
+[12:27:49 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."SessionGeneration", "s"."Readiness", "s"."ReasonCode", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+ORDER BY "s"."AgvId"
+[12:27:49 INF] HTTP GET /api/runtime/sessions responded 200 in 2.3028 ms
+[12:27:49 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "SessionRecoveries" AS "s"
+    WHERE "s"."Readiness" = 'Ready')
+[12:27:49 ERR] HTTP GET /health/ready responded 503 in 15.7378 ms
+[12:27:49 WRN] Onboard connection ended with a protocol or transport error.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b-20260904\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 68
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b-20260904\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 96
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b-20260904\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 96
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\g3b-20260904\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 96
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in C:\g3b-20260904\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 37
