@@ -371,6 +371,21 @@ public sealed class JourneyRuntimeEngine(
             .ConfigureAwait(false);
         if (session is null)
         {
+            // A result that is already durable names the recovery this journey waits on, and it
+            // names it from StationOperations alone -- reading it involves no session. Deciding
+            // that here, ahead of the readiness gate, is what keeps the gate from closing on
+            // exactly the journeys that most need their block named: since 147f02c a refused
+            // result moves the session itself to RecoveryRequired, so the vehicle that just failed
+            // a load is the one whose session is no longer Ready. L2 run
+            // 20260904-recovery-entry-after-announce-001 finished on that deadlock, sitting at
+            // AwaitingLoadResult / ONBOARD_SESSION_NOT_READY over a load result the database
+            // already held.
+            if (await TryBlockOnRecordedRecoveryAsync(runtime, now, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                return;
+            }
+
             // A Blocked journey is already waiting on the recovery its block reason names, and the
             // vehicle is normally powered down for exactly that repair -- so losing the session is
             // the ordinary case there, not news. Overwriting the reason threw away the only record
@@ -1279,6 +1294,44 @@ public sealed class JourneyRuntimeEngine(
         runtime.Stage = stage;
         runtime.BlockReasonCode = null;
         runtime.UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// The two block transitions that need nothing from the peer: a station operation the server
+    /// has already judged <see cref="StationOperationStatus.RecoveryRequired"/> blocks the journey
+    /// under the reason code naming which recovery is outstanding. Every other transition in
+    /// <c>AdvanceAsync</c> publishes to the vehicle or reads its revisions, so those stay behind
+    /// the readiness gate.
+    /// </summary>
+    private async Task<bool> TryBlockOnRecordedRecoveryAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        (string? attemptId, string reason) = runtime.Stage switch
+        {
+            JourneyRuntimeStage.AwaitingLoadResult =>
+                (runtime.LoadSlotOperationAttemptId, "LOAD_RESULT_REQUIRES_RECOVERY"),
+            JourneyRuntimeStage.AwaitingUnloadResult =>
+                (runtime.UnloadSlotOperationAttemptId, "UNLOAD_RESULT_REQUIRES_RECOVERY"),
+            _ => (null, string.Empty)
+        };
+        if (attemptId is null)
+        {
+            return false;
+        }
+
+        StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
+            row => row.SlotOperationAttemptId == attemptId,
+            cancellationToken).ConfigureAwait(false);
+        if (operation?.Status != StationOperationStatus.RecoveryRequired)
+        {
+            return false;
+        }
+
+        Block(runtime, reason, now);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)

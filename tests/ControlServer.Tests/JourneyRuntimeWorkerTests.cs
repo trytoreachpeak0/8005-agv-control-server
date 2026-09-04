@@ -904,6 +904,45 @@ public sealed class JourneyRuntimeWorkerTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AResultThatTurnsTheSessionRecoveryRequiredStillBlocksTheJourneyForItsOwnReason()
+    {
+        // 147f02c made a refused result move the session to RecoveryRequired, so the vehicle would
+        // finally be told it needs recovery. AdvanceAsync reads the same row and returns early on
+        // any session that is not Ready -- so that change also stops the runtime one step short of
+        // the Blocked transition it was supposed to enable, with the result already durable in the
+        // database. The recovery the journey is waiting for never gets named.
+        //
+        // Seeded from what L2 run 20260904-recovery-entry-after-announce-001 actually finished
+        // with: OperationResults holding the refused load, StationOperations at RecoveryRequired,
+        // SessionRecoveries at RecoveryRequired / OPERATION_RECOVERY_REQUIRED, and JourneyRuntimes
+        // still reading AwaitingLoadResult / ONBOARD_SESSION_NOT_READY.
+        //
+        // A session in recovery is not an absent session. The vehicle is connected, the server
+        // authorises recovery actions against this exact state, and the operator's entry on the
+        // onboard HMI opens on it (8005-agv-onboard-hmi:
+        // RecoveryRequiredAnnouncedOnAResultAckOpensTheRecoveryEntry). Refusing to name the block
+        // is what leaves a stopped vehicle with nothing to recover from.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load);
+        await fixture.MarkSessionRecoveryRequiredByOperationAsync();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow blocked = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, blocked.Stage);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", blocked.BlockReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
     public async Task ABlockedJourneyKeepsTheVehicleOutOfEveryOtherDemand()
     {
         // The single active slot is what makes the one-vehicle runtime safe. A blocked journey is
@@ -1933,6 +1972,21 @@ public sealed class JourneyRuntimeWorkerTests
                 TestContext.Current.CancellationToken);
             session.Readiness = SessionReadiness.RecoveryRequired;
             session.ReasonCode = "DEPARTURE_SAFETY_NOT_READY";
+            session.UpdatedAt = Clock.GetUtcNow();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// What DecideReadinessAsync now does to the session on the way through applying a refused
+        /// result: the vehicle is told it needs recovery, on the same row the runtime reads to
+        /// decide whether it may advance at all. Unlike a dropped session, the peer is still there.
+        /// </summary>
+        public async Task MarkSessionRecoveryRequiredByOperationAsync()
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.Readiness = SessionReadiness.RecoveryRequired;
+            session.ReasonCode = "OPERATION_RECOVERY_REQUIRED";
             session.UpdatedAt = Clock.GetUtcNow();
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
