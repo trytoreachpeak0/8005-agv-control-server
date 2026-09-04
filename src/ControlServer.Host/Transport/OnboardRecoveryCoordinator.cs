@@ -924,7 +924,7 @@ public sealed class OnboardRecoveryCoordinator(
         int[] slots = RequiredSlots(payload, "slots");
         string? demandId = OptionalUuid(payload, "demandId");
         string operatorId = RequiredString(payload.GetProperty("operator"), "operatorId");
-        return session.State == "CLOSED" ? ServerReasonCodes.RecoverySessionClosed :
+        return session.State == "CLOSED" ? ServerReasonCodes.RecoverySessionNotOpen :
             RequiredUuid(payload, "eventId") != session.EventId ? ServerReasonCodes.RecoveryEventMismatch :
             demandId != session.DemandId ? ServerReasonCodes.RecoveryDemandMismatch :
             !slots.SequenceEqual(ParseSlots(session.SlotsJson)) ? ServerReasonCodes.RecoveryScopeMismatch :
@@ -940,7 +940,7 @@ public sealed class OnboardRecoveryCoordinator(
         StationOperationRow? operation)
     {
         if (connection.ReportedForcedRecoveryGeneration != connection.ForcedRecoveryGeneration)
-            return ServerReasonCodes.ForcedRecoveryGenerationMismatch;
+            return ServerReasonCodes.ForcedRecoveryGenerationStale;
         if (session.DemandId is not null && operation is null)
             return ServerReasonCodes.RecoveryOperationNotFound;
         return action switch

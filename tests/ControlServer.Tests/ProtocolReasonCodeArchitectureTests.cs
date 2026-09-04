@@ -29,35 +29,41 @@ namespace ControlServer.Tests;
 /// enumeration -- the server is built against a pinned protocol release and does not read its
 /// schemas at runtime -- and this test asks it rather than keeping a second list that would not
 /// follow a release. What is listed here is the *deviation* set: the codes known to be outside
-/// the enumeration today, pinned exactly so a twelfth cannot appear quietly.
+/// the enumeration today, pinned exactly so a tenth cannot appear quietly.
 /// </para>
 /// </remarks>
 public sealed class ProtocolReasonCodeArchitectureTests
 {
     /// <summary>
-    /// The eleven codes this server emits that the protocol's ErrorCode enumeration does not
+    /// The nine codes this server emits that the protocol's ErrorCode enumeration does not
     /// contain, as of protocol-v0.1.1.
     /// </summary>
     /// <remarks>
-    /// These are not typos. The three renamed on 2026-09-04 were --
+    /// <para>
+    /// There were eleven. Two of them had exact counterparts in the enumeration already, so they
+    /// were renamed on 2026-09-04 and cost no distinction at all: <c>RECOVERY_SESSION_CLOSED</c>
+    /// became <c>RECOVERY_SESSION_NOT_OPEN</c> and <c>FORCED_RECOVERY_GENERATION_MISMATCH</c>
+    /// became <c>FORCED_RECOVERY_GENERATION_STALE</c>.
+    /// </para>
+    /// <para>
+    /// The nine left are not typos, unlike the three renamed the same day --
     /// <c>PROTOCOL_RELEASE_MISMATCH</c> was <c>PROTOCOL_RELEASE_IDENTITY_MISMATCH</c> missing a
     /// word -- but each of these expresses a distinction the protocol has no vocabulary for. The
     /// enumeration offers one <c>RECOVERY_SCOPE_MISMATCH</c> where the server separates a
     /// mismatched event, demand and operator, and one <c>ACTION_NOT_ALLOWED_IN_STATE</c> where it
     /// separates "already chose an action", "no operation found" and "no proven checkpoint".
-    /// Collapsing them onto the enumeration would lose what the onboard shows the operator, so
-    /// the question is whether v2 should carry them -- it is already taking the error surface
-    /// from 43 codes to 45 -- and not whether to rename them here.
+    /// Collapsing them onto the enumeration would lose what the onboard shows the operator, so v2
+    /// carries them instead -- the error surface goes from 43 codes to 54 -- and this set empties
+    /// when the vendored enumeration is re-synced to that release.
+    /// </para>
     /// </remarks>
     private static readonly HashSet<string> PinnedDeviations = new(StringComparer.Ordinal)
     {
         "RECOVERY_DEMAND_NOT_BLOCKED",
-        "RECOVERY_SESSION_CLOSED",
         "RECOVERY_EVENT_MISMATCH",
         "RECOVERY_DEMAND_MISMATCH",
         "RECOVERY_OPERATOR_MISMATCH",
         "RECOVERY_ACTION_ALREADY_SELECTED",
-        "FORCED_RECOVERY_GENERATION_MISMATCH",
         "RECOVERY_OPERATION_NOT_FOUND",
         "PROVEN_RECOVERY_CHECKPOINT_REQUIRED",
         "RECOVERY_ACTION_REQUIRED",
