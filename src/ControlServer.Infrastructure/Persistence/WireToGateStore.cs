@@ -180,6 +180,89 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         return new SessionReadinessDecision(row.Readiness, row.ReasonCode);
     }
 
+    /// <summary>
+    /// Decides one ManualChargingReturnToServiceRequested, durably and at most once per
+    /// <c>requestId</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The server holds no manual-charging hold of its own -- <c>VehicleBusinessProjection.ManualChargingHold</c>
+    /// is published as false from both sites that build it -- so the hold being lifted is the
+    /// vehicle's, and this request is the vehicle asking the server to put it back into eligibility
+    /// evaluation. The server's part is therefore to say whether it is in a position to evaluate the
+    /// vehicle at all, and the only fact it holds that can answer no is the session's own readiness:
+    /// a session in RecoveryRequired has facts to reconcile before the vehicle may take work again.
+    /// </para>
+    /// <para>
+    /// The role check is here rather than left to the schema because neither end validates against
+    /// the schema at runtime, so a role outside the enum reaches this method as an ordinary string.
+    /// </para>
+    /// </remarks>
+    public async Task<ManualChargingReturnToServiceDecision> DecideManualChargingReturnToServiceAsync(
+        ManualChargingReturnToServiceRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ManualChargingReturnToServiceRow? replay = await dbContext.ManualChargingReturnToServiceRequests
+            .SingleOrDefaultAsync(row => row.RequestId == request.RequestId, cancellationToken)
+            .ConfigureAwait(false);
+        if (replay is not null)
+        {
+            if (replay.RequestContentHash != request.RequestContentHash || replay.AgvId != request.AgvId)
+            {
+                throw new ProtocolContentConflictException(
+                    "ManualChargingReturnToService requestId was replayed with different content.");
+            }
+
+            return ToDecision(replay);
+        }
+
+        long revision = await dbContext.JourneyRuntimes
+            .Where(row => row.AgvId == request.AgvId)
+            .Select(row => (long?)row.VehicleBusinessRevision)
+            .MaxAsync(cancellationToken).ConfigureAwait(false) ?? 0;
+        SessionRecoveryRow session = await GetCurrentSessionAsync(
+            request.AgvId, request.SessionGeneration, cancellationToken).ConfigureAwait(false);
+
+        (string outcome, string? reasonCode, string? fieldPath, string? displayMessage) =
+            request.AdministratorRole is not ("MAINTENANCE_ADMINISTRATOR" or "SYSTEM_ADMINISTRATOR")
+                ? (ManualChargingReturnToServiceDecision.Rejected, "PROTOCOL_SCHEMA_INVALID",
+                    "payload.administratorRole",
+                    "administratorRole is not one of the roles the profile allows.")
+                : session.Readiness == SessionReadiness.RecoveryRequired
+                    ? (ManualChargingReturnToServiceDecision.Rejected, "SESSION_RECOVERY_REQUIRED",
+                        "payload.requestId",
+                        "The session has facts to reconcile before the vehicle can take work again.")
+                    : (ManualChargingReturnToServiceDecision.ReturnedToEligibilityEvaluation,
+                        (string?)null, (string?)null, (string?)null);
+
+        ManualChargingReturnToServiceRow row = new()
+        {
+            RequestId = request.RequestId,
+            AgvId = request.AgvId,
+            SessionGeneration = request.SessionGeneration,
+            RequestMessageId = request.RequestMessageId,
+            RequestContentHash = request.RequestContentHash,
+            AdministratorId = request.AdministratorId,
+            AdministratorRole = request.AdministratorRole,
+            Reason = request.Reason,
+            ObservedBatteryPercent = request.ObservedBatteryPercent,
+            Outcome = outcome,
+            ProblemReasonCode = reasonCode,
+            ProblemFieldPath = fieldPath,
+            ProblemDisplayMessage = displayMessage,
+            VehicleBusinessStateRevision = revision,
+            DecidedAt = DateTimeOffset.UtcNow
+        };
+        dbContext.ManualChargingReturnToServiceRequests.Add(row);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return ToDecision(row);
+    }
+
+    private static ManualChargingReturnToServiceDecision ToDecision(ManualChargingReturnToServiceRow row) =>
+        new(row.Outcome, row.ProblemReasonCode, row.ProblemFieldPath, row.ProblemDisplayMessage,
+            row.VehicleBusinessStateRevision);
+
     public async Task<SessionReadinessDecision> GetReadinessAsync(string agvId, CancellationToken cancellationToken)
     {
         SessionRecoveryRow row = await dbContext.SessionRecoveries.SingleAsync(item => item.AgvId == agvId, cancellationToken)

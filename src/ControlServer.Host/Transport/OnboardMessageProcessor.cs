@@ -339,6 +339,43 @@ public sealed partial class OnboardMessageProcessor(
             case "LoadCorrectionResult":
                 return await recoveryCoordinator.ProcessResultAsync(root, contentHash, cancellationToken)
                     .ConfigureAwait(false);
+            case "ManualChargingReturnToServiceRequested":
+                {
+                    // Not a recovery request despite the administrator context it carries: the
+                    // manifest gives it recoveryRole NONE, no exception recovery session is
+                    // involved, and it is answered inline rather than through
+                    // OnboardRecoveryCoordinator.
+                    string requestId = RequiredUuid(payload, "requestId");
+                    ManualChargingReturnToServiceDecision decision =
+                        await store.DecideManualChargingReturnToServiceAsync(
+                            new ManualChargingReturnToServiceRequest(
+                                requestId,
+                                agvId,
+                                generation,
+                                messageId,
+                                WireContentHash.Sha256(payload.GetRawText()),
+                                RequiredString(payload.GetProperty("administrator"), "operatorId"),
+                                RequiredString(payload, "administratorRole"),
+                                RequiredString(payload, "reason"),
+                                NullableDouble(payload, "observedBatteryPercent")),
+                            cancellationToken).ConfigureAwait(false);
+                    return SerializeEnvelope(
+                        "ManualChargingReturnToServiceResult", messageId, agvId, generation,
+                        new
+                        {
+                            requestId,
+                            outcome = decision.Outcome,
+                            problem = decision.ProblemReasonCode is null
+                                ? null
+                                : new
+                                {
+                                    reasonCode = decision.ProblemReasonCode,
+                                    fieldPath = decision.ProblemFieldPath,
+                                    displayMessage = decision.ProblemDisplayMessage
+                                },
+                            vehicleBusinessStateRevision = decision.VehicleBusinessStateRevision
+                        });
+                }
             case "SafetyStateChanged":
                 {
                     long revision = payload.GetProperty("safetyStateVersion").GetInt64();
@@ -641,6 +678,24 @@ public sealed partial class OnboardMessageProcessor(
         string reasonCode,
         string fieldPath,
         string displayMessage);
+
+    private static string RequiredUuid(JsonElement element, string propertyName)
+    {
+        string value = RequiredString(element, propertyName);
+        return Guid.TryParseExact(value, "D", out _)
+            ? value
+            : throw new InvalidDataException($"Protocol field '{propertyName}' must be a UUID.");
+    }
+
+    /// <summary>
+    /// Reads a field the protocol declares as `number | null`, so an explicit null is a value
+    /// rather than a violation.
+    /// </summary>
+    private static double? NullableDouble(JsonElement element, string propertyName)
+    {
+        JsonElement value = element.GetProperty(propertyName);
+        return value.ValueKind == JsonValueKind.Null ? null : value.GetDouble();
+    }
 
     /// <summary>
     /// Reads a field the protocol declares as `string | null`, so an explicit null is a value

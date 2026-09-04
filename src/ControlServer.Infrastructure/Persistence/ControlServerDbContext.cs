@@ -25,6 +25,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<RecoveryDecisionRow> RecoveryDecisions => Set<RecoveryDecisionRow>();
     public DbSet<ExceptionRecoverySessionRow> ExceptionRecoverySessions => Set<ExceptionRecoverySessionRow>();
     public DbSet<RecoveryWorkflowRow> RecoveryWorkflows => Set<RecoveryWorkflowRow>();
+    public DbSet<ManualChargingReturnToServiceRow> ManualChargingReturnToServiceRequests =>
+        Set<ManualChargingReturnToServiceRow>();
     public DbSet<HardwareRecoveryRecordRow> HardwareRecoveryRecords => Set<HardwareRecoveryRecordRow>();
     public DbSet<RecoveryResultEvidenceRow> RecoveryResultEvidence => Set<RecoveryResultEvidenceRow>();
     public DbSet<JourneyBacklogRow> JourneyBacklog => Set<JourneyBacklogRow>();
@@ -105,6 +107,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<RecoveryWorkflowRow>().HasKey(row => row.WorkflowId);
         modelBuilder.Entity<RecoveryWorkflowRow>().Property(row => row.State).HasConversion<string>();
         modelBuilder.Entity<RecoveryWorkflowRow>().HasIndex(row => row.CommandMessageId).IsUnique();
+        modelBuilder.Entity<ManualChargingReturnToServiceRow>().HasKey(row => row.RequestId);
+        modelBuilder.Entity<ManualChargingReturnToServiceRow>().HasIndex(row => row.RequestMessageId).IsUnique();
         modelBuilder.Entity<HardwareRecoveryRecordRow>().HasKey(row => row.RecordId);
         modelBuilder.Entity<RecoveryResultEvidenceRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<JourneyBacklogRow>().HasKey(row => row.DemandId);
@@ -379,6 +383,34 @@ public sealed class ExceptionRecoverySessionRow
     public long ForcedRecoveryGeneration { get; set; }
     public DateTimeOffset OpenedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// One ManualChargingReturnToServiceRequested and the conclusion the server reached about it.
+/// </summary>
+/// <remarks>
+/// The row exists for business idempotency: the protocol's <c>businessDedupKeys</c> for both
+/// messages of the pair is <c>requestId</c>, so the same request arriving under a new
+/// <c>messageId</c> must return the conclusion already reached rather than decide again. The
+/// transport-level replay (same <c>messageId</c>) is handled a layer above by the protocol inbox.
+/// </remarks>
+public sealed class ManualChargingReturnToServiceRow
+{
+    public required string RequestId { get; set; }
+    public required string AgvId { get; set; }
+    public long SessionGeneration { get; set; }
+    public required string RequestMessageId { get; set; }
+    public required string RequestContentHash { get; set; }
+    public required string AdministratorId { get; set; }
+    public required string AdministratorRole { get; set; }
+    public required string Reason { get; set; }
+    public double? ObservedBatteryPercent { get; set; }
+    public required string Outcome { get; set; }
+    public string? ProblemReasonCode { get; set; }
+    public string? ProblemFieldPath { get; set; }
+    public string? ProblemDisplayMessage { get; set; }
+    public long VehicleBusinessStateRevision { get; set; }
+    public DateTimeOffset DecidedAt { get; set; }
 }
 
 public sealed class RecoveryWorkflowRow

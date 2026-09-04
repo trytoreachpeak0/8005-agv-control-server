@@ -810,6 +810,235 @@ public sealed class OnboardMessageProcessorTests
         }
     }
 
+    /// <summary>
+    /// The vehicle sends ManualChargingReturnToServiceRequested and nothing answered it: the type
+    /// fell through to the switch's default and threw, which kills the transport. The pair is
+    /// frozen in protocol-v0.1.1 and the onboard client already sends the request.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task ManualChargingReturnToServiceIsAnsweredAndDecidedOncePerRequestId()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_MANUAL_CHARGING_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+            await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
+            long generation = state.SessionGeneration!.Value;
+
+            const string requestId = "00000000-0000-4000-8000-0000000000c1";
+            const string firstMessageId = "00000000-0000-4000-8000-0000000000c2";
+            string first = await processor.ProcessAsync(
+                Envelope(
+                    "ManualChargingReturnToServiceRequested", firstMessageId, generation,
+                    ManualChargingReturnPayload(requestId, "MAINTENANCE_ADMINISTRATOR")),
+                state,
+                TestContext.Current.CancellationToken);
+
+            using (JsonDocument result = JsonDocument.Parse(first))
+            {
+                Assert.Equal(
+                    "ManualChargingReturnToServiceResult",
+                    result.RootElement.GetProperty("messageType").GetString());
+                Assert.Equal(firstMessageId, result.RootElement.GetProperty("correlationId").GetString());
+                JsonElement payload = result.RootElement.GetProperty("payload");
+                Assert.Equal(requestId, payload.GetProperty("requestId").GetString());
+                Assert.Equal("RETURNED_TO_ELIGIBILITY_EVALUATION", payload.GetProperty("outcome").GetString());
+                Assert.Equal(JsonValueKind.Null, payload.GetProperty("problem").ValueKind);
+                Assert.Equal(0, payload.GetProperty("vehicleBusinessStateRevision").GetInt64());
+            }
+
+            // The protocol's businessDedupKeys for both messages of the pair is requestId, so the
+            // same request under a new messageId -- which the transport inbox cannot recognise --
+            // has to return the conclusion already reached rather than decide a second time.
+            string replay = await processor.ProcessAsync(
+                Envelope(
+                    "ManualChargingReturnToServiceRequested",
+                    "00000000-0000-4000-8000-0000000000c3", generation,
+                    ManualChargingReturnPayload(requestId, "MAINTENANCE_ADMINISTRATOR")),
+                state,
+                TestContext.Current.CancellationToken);
+
+            using (JsonDocument result = JsonDocument.Parse(replay))
+            {
+                Assert.Equal(
+                    "00000000-0000-4000-8000-0000000000c3",
+                    result.RootElement.GetProperty("correlationId").GetString());
+                JsonElement payload = result.RootElement.GetProperty("payload");
+                Assert.Equal("RETURNED_TO_ELIGIBILITY_EVALUATION", payload.GetProperty("outcome").GetString());
+                Assert.Equal(JsonValueKind.Null, payload.GetProperty("problem").ValueKind);
+            }
+
+            ManualChargingReturnToServiceRow stored = await context.ManualChargingReturnToServiceRequests
+                .SingleAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(firstMessageId, stored.RequestMessageId);
+            Assert.Equal("RETURNED_TO_ELIGIBILITY_EVALUATION", stored.Outcome);
+            Assert.Null(stored.ProblemReasonCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A session with facts still to reconcile cannot put the vehicle back into eligibility
+    /// evaluation, and the reason code saying so has to be one the protocol's closed ErrorCode
+    /// enumeration contains.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ManualChargingReturnToServiceIsRejectedWhileTheSessionStillNeedsRecovery()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_MANUAL_CHARGING_RECOVERY_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+
+            // Straight after the handshake the session is RecoveryRequired: no capability
+            // snapshot, no safety snapshot, no recovery report.
+            await processor.ProcessAsync(
+                Envelope(
+                    "SessionHello", "00000000-0000-4000-8000-0000000000d0", null,
+                    new
+                    {
+                        protocolReleaseIdentity = ReleaseIdentity(),
+                        credentialProof = credential
+                    }),
+                state,
+                TestContext.Current.CancellationToken);
+            long generation = state.SessionGeneration!.Value;
+
+            string rejected = await processor.ProcessAsync(
+                Envelope(
+                    "ManualChargingReturnToServiceRequested",
+                    "00000000-0000-4000-8000-0000000000d1", generation,
+                    ManualChargingReturnPayload(
+                        "00000000-0000-4000-8000-0000000000d2", "SYSTEM_ADMINISTRATOR")),
+                state,
+                TestContext.Current.CancellationToken);
+
+            using JsonDocument result = JsonDocument.Parse(rejected);
+            JsonElement payload = result.RootElement.GetProperty("payload");
+            Assert.Equal("REJECTED", payload.GetProperty("outcome").GetString());
+            string reasonCode = payload.GetProperty("problem").GetProperty("reasonCode").GetString()!;
+            Assert.Equal("SESSION_RECOVERY_REQUIRED", reasonCode);
+            Assert.True(ProtocolErrorCodes.Contains(reasonCode));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Neither end validates against the schema at runtime, so an administratorRole outside the
+    /// profile's enumeration arrives here as an ordinary string and has to be refused rather than
+    /// trusted.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ManualChargingReturnToServiceRefusesARoleTheProfileDoesNotDefine()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_MANUAL_CHARGING_ROLE_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+            OnboardConnectionState state = new();
+            await ReachReadyAsync(processor, state, credential, TestContext.Current.CancellationToken);
+
+            string rejected = await processor.ProcessAsync(
+                Envelope(
+                    "ManualChargingReturnToServiceRequested",
+                    "00000000-0000-4000-8000-0000000000e1", state.SessionGeneration!.Value,
+                    ManualChargingReturnPayload(
+                        "00000000-0000-4000-8000-0000000000e2", "SHIFT_LEAD")),
+                state,
+                TestContext.Current.CancellationToken);
+
+            using JsonDocument result = JsonDocument.Parse(rejected);
+            JsonElement payload = result.RootElement.GetProperty("payload");
+            Assert.Equal("REJECTED", payload.GetProperty("outcome").GetString());
+            JsonElement problem = payload.GetProperty("problem");
+            string reasonCode = problem.GetProperty("reasonCode").GetString()!;
+            Assert.Equal("PROTOCOL_SCHEMA_INVALID", reasonCode);
+            Assert.True(ProtocolErrorCodes.Contains(reasonCode));
+            Assert.Equal("payload.administratorRole", problem.GetProperty("fieldPath").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    private static object ManualChargingReturnPayload(string requestId, string administratorRole) => new
+    {
+        requestId,
+        administrator = new
+        {
+            operatorId = "OP-4471",
+            verificationMethod = "BADGE",
+            verifiedAt = "2026-08-25T08:59:00Z"
+        },
+        administratorRole,
+        reason = "手动充电结束，请求恢复业务资格评估",
+        observedBatteryPercent = 84.5
+    };
+
     private static async Task ReachReadyAsync(
         OnboardMessageProcessor processor,
         OnboardConnectionState state,

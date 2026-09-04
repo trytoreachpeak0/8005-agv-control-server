@@ -209,6 +209,42 @@ public enum OperationResultDisposition
     Replay
 }
 
+/// <summary>
+/// A ManualChargingReturnToServiceRequested payload, decoded. The protocol declares
+/// <c>observedBatteryPercent</c> as <c>number | null</c>, so an absent reading is a value the
+/// administrator supplied rather than a violation.
+/// </summary>
+public sealed record ManualChargingReturnToServiceRequest(
+    string RequestId,
+    string AgvId,
+    long SessionGeneration,
+    string RequestMessageId,
+    string RequestContentHash,
+    string AdministratorId,
+    string AdministratorRole,
+    string Reason,
+    double? ObservedBatteryPercent);
+
+/// <summary>
+/// What the server decided about one such request, durable so the same <c>requestId</c> arriving
+/// again returns the same conclusion instead of deciding twice.
+/// </summary>
+/// <remarks>
+/// <c>ProblemReasonCode</c> is null exactly when <c>Outcome</c> is
+/// <c>RETURNED_TO_ELIGIBILITY_EVALUATION</c>; the schema types the field as
+/// <c>Problem | null</c> and the rejected outcome is the only one carrying one.
+/// </remarks>
+public sealed record ManualChargingReturnToServiceDecision(
+    string Outcome,
+    string? ProblemReasonCode,
+    string? ProblemFieldPath,
+    string? ProblemDisplayMessage,
+    long VehicleBusinessStateRevision)
+{
+    public const string ReturnedToEligibilityEvaluation = "RETURNED_TO_ELIGIBILITY_EVALUATION";
+    public const string Rejected = "REJECTED";
+}
+
 public sealed class ProtocolIdentityMismatchException(string message) : InvalidOperationException(message);
 public sealed class StaleSessionGenerationException(string message) : InvalidOperationException(message);
 public sealed class ProtocolContentConflictException(string message) : InvalidOperationException(message);
