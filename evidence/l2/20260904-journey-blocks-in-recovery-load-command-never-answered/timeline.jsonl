@@ -1,0 +1,26 @@
+{"at":"2026-09-04T03:45:59.5565267+00:00","note":"L2 run 20260904T034559506Z starting for scenario 'load-command-never-answered'."}
+{"at":"2026-09-04T03:45:59.5945746+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-04T03:46:03.0253298+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-04T03:46:03.1666128+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-04T03:46:05.0414487+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-04T03:46:06.6619051+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-04T03:46:07.3265982+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-04T03:46:07.6072836+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-04T03:46:07.6315049+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-04T03:46:07.6949072+00:00","note":"Environment is up; entering scenario 'load-command-never-answered'."}
+{"at":"2026-09-04T03:46:07.7899303+00:00","note":"Publishing demand a933ccdc740d493f89cbb59aaf95b49e (sublot L2-SUBLOT-20260904T034559506Z)."}
+{"at":"2026-09-04T03:46:07.9097582+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-04T03:46:08.7050234+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-04T03:46:08.7128811+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-04T03:46:08.9764150+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-a933ccdc-740d-493f-89cb-b59aaf95b49e-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-04T03:46:08.9802051+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-04T03:46:09.0451778+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-04T03:46:09.0689252+00:00","criterion":"pending-operation","value":"(null)"}
+{"at":"2026-09-04T03:46:10.4092883+00:00","criterion":"pending-operation","value":"operation:d5d52c25-6555-9255-b65e-8526c5203fa9"}
+{"at":"2026-09-04T03:46:10.4138590+00:00","note":"Load command operation:d5d52c25-6555-9255-b65e-8526c5203fa9 reached the peer, which will never answer it."}
+{"at":"2026-09-04T03:46:10.4842773+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-04T03:46:11.2857538+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-04T03:46:12.0821572+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-04T03:46:13.1417228+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-04T03:46:14.2045258+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-04T03:46:14.2644831+00:00","note":"Scenario finished: the journey waits at AwaitingLoadResult, with no block reason and no exit."}

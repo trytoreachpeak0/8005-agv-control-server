@@ -190,15 +190,22 @@ $null = $onboard.Command('Put', 'safety', @{
     reasonCodes           = @('UNLOCK_OUTPUT_NOT_RESET')
 })
 
-$sessionReason = Wait-L2Condition -Description 'the session left Ready on the unsafe departure state' `
-    -Journal $journal -Criterion 'session-readiness' -TimeoutSeconds 60 `
+# 等的是**服务端已经消化了那条不安全事实**，不是「会话离开了 Ready」。原来等的是后者，而自
+# 2026-09-04（`147f02c`）起，被拒的装载结果自己就会把会话推离 Ready，探针于是在安全事实还没到达
+# 时就立刻返回，读到的是上一条原因码 `OPERATION_RECOVERY_REQUIRED`。等 `DepartureSafe` 翻成 0 才
+# 是这一步真正在等的事；判据本身仍然是从原因码读出来的，没有变成「等 X 再断言 X」。
+$null = Wait-L2Condition -Description 'the server consumed the unsafe departure fact' `
+    -Journal $journal -Criterion 'session-departure-safe' -TimeoutSeconds 60 `
     -Probe {
         $rows = Invoke-L2Query -Connection $connection `
-            -Sql "SELECT Readiness, ReasonCode FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'"
+            -Sql "SELECT DepartureSafe FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'"
         if ($rows.Count -eq 0) { return $null }
-        if ([string]$rows[0].Readiness -eq 'Ready') { return $null }
-        return [string]$rows[0].ReasonCode
-    } -Until { param($v) $null -ne $v }
+        return [string]$rows[0].DepartureSafe
+    } -Until { param($v) $v -eq '0' -or $v -eq 'False' }
+$sessionRows = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT Readiness, ReasonCode FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'"
+$sessionReason = [string]$sessionRows[0].ReasonCode
+$journal.Observe('session-readiness', "$([string]$sessionRows[0].Readiness) / $sessionReason", $null)
 # 开锁未复位本来会被「这是服务端自己的命令造成的」豁免，但那条豁免要求存在一个 Prepared 的站点操作。
 # 操作已经转为 RecoveryRequired，豁免因此不再成立——这是对的：需要恢复的命令不再是在途命令。
 $assertions.Add(
