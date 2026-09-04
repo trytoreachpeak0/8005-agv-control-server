@@ -318,7 +318,7 @@ public static class StagedG3TlsHarness
                 .ConfigureAwait(false);
             string? responseType = Property(response, "messageType");
             string? reasonCode = NestedProperty(response, "payload", "problem", "reasonCode");
-            bool passed = responseType == "SessionRejected" && reasonCode == "PROTOCOL_RELEASE_MISMATCH";
+            bool passed = responseType == "SessionRejected" && reasonCode == "PROTOCOL_RELEASE_IDENTITY_MISMATCH";
             var item = new Dictionary<string, object?>
             {
                 ["case"] = name,
@@ -722,7 +722,7 @@ public static class StagedG3TlsHarness
                 "ExceptionRecoverySessionRejected", cancellationToken).ConfigureAwait(false);
             authorisationCases.Add(Case(
                 transcriptPath, "recovery-session-authentication-required", rejected,
-                NestedProperty(rejected, "payload", "problem", "reasonCode") == "RECOVERY_AUTHENTICATION_REQUIRED",
+                NestedProperty(rejected, "payload", "problem", "reasonCode") == "RECOVERY_AUTHENTICATION_FAILED",
                 new Dictionary<string, object?>
                 {
                     ["observedReasonCode"] = NestedProperty(rejected, "payload", "problem", "reasonCode")
@@ -786,7 +786,7 @@ public static class StagedG3TlsHarness
                 "ExceptionRecoverySessionRejected", cancellationToken).ConfigureAwait(false);
             authorisationCases.Add(Case(
                 transcriptPath, "recovery-session-single-open-per-vehicle", alreadyOpen,
-                NestedProperty(alreadyOpen, "payload", "problem", "reasonCode") == "RECOVERY_SESSION_ALREADY_OPEN",
+                NestedProperty(alreadyOpen, "payload", "problem", "reasonCode") == "ACTION_NOT_ALLOWED_IN_STATE",
                 new Dictionary<string, object?>
                 {
                     ["observedReasonCode"] = NestedProperty(alreadyOpen, "payload", "problem", "reasonCode")

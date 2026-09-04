@@ -429,7 +429,6 @@ $releaseManifest = [ordered]@{
             manifestSha256 = $protocol.manifestSha256
             schemaBundleSha256 = $protocol.schemaBundleSha256
             vectorsSha256 = $protocol.vectorsSha256
-            profileId = $protocol.profileId
             protocolVersion = $protocol.protocolVersion
             approvalStatus = $protocol.approvalStatus
             identitySource = 'controlserver/appsettings.json:ProtocolCandidate'

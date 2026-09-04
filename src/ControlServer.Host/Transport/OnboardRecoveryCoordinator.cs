@@ -254,7 +254,7 @@ public sealed class OnboardRecoveryCoordinator(
             return Response(root, "ExceptionRecoverySessionRejected", new
             {
                 requestId,
-                problem = Problem("RECOVERY_AUTHENTICATION_REQUIRED", "payload.authenticationProof",
+                problem = Problem("RECOVERY_AUTHENTICATION_FAILED", "payload.authenticationProof",
                     "The recovery administrator proof was not accepted.")
             });
         }
@@ -275,7 +275,7 @@ public sealed class OnboardRecoveryCoordinator(
             return Response(root, "ExceptionRecoverySessionRejected", new
             {
                 requestId,
-                problem = Problem("RECOVERY_SESSION_ALREADY_OPEN", "payload.requestId",
+                problem = Problem("ACTION_NOT_ALLOWED_IN_STATE", "payload.requestId",
                     "An exception recovery session is already open for this vehicle.")
             });
         }
