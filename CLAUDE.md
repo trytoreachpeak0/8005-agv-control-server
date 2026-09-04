@@ -160,7 +160,7 @@ say which gate, what it costs, and what it proves, then ask:
 | --- | --- | --- |
 | `G1` | `pnpm g1` in the protocol repo | Protocol content manifest and attestation check |
 | `CONTROL_SERVER_G2` | `.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice <id> -ProtocolManifest <protocol-repo>\manifest\release.json -Output <new dir>` | This side's per-slice conformance |
-| `G3` | `.\scripts\run-staged-g3.ps1`, `run-staged-g3-restart.ps1`, `run-demand-bearing-g3-vectors.ps1`, each with `-StageRoot <short path that does not exist> -EvidenceRoot <new dir>` | Both-ends integration |
+| `G3` | `.\scripts\run-staged-g3.ps1`, `run-staged-g3-restart.ps1`, `run-demand-bearing-g3-vectors.ps1`, each with `-StageRoot <short path that does not exist> -EvidenceRoot <new dir>`; the third one also needs `-FieldRunRoot <an authorised field run's root>` | Both-ends integration |
 | `RC` | `.\scripts\New-WireToGateReleaseCandidate.ps1` | Cutting a release candidate |
 
 Load-bearing details:
@@ -174,6 +174,15 @@ Load-bearing details:
 - `run-staged-g3.ps1` needs Node.js and pnpm because it runs the protocol's G1.
   All three G3 runners are plaintext, run unattended, and share the four commit
   bindings in `run-staged-g3.ps1`'s param block.
+- **`run-demand-bearing-g3-vectors.ps1` takes a third mandatory parameter**,
+  `-FieldRunRoot`: the root of an authorised field run, whose `controlserver.db`
+  it restores read-only as the demand-bearing store. `C:\Users\szy\w2g-stage\run\fullloop-20260829T131549Z`
+  is the one used so far. Without it the runner exits before doing anything.
+- **Check the commit bindings before a G3 run, and move them.** They are literal
+  defaults, so a run inherits whatever the last run froze and silently gates old
+  code — on 2026-09-04 they still pointed at a ControlServer and an onboard from
+  several days earlier. `$OnboardCommit` must be the tip of `origin/OnboardHmi_MVP`,
+  which `New-ExactClone -RemoteRef` enforces; the other three are unchecked.
 - **Evidence for individual G3 vectors is not the same as eight slices passing.**
   A slice passes only with all four gates.
 - Full procedure: `docs/RELEASE-CANDIDATE.md`.
