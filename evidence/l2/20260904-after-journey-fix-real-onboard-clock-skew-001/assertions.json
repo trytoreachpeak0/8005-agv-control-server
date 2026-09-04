@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-clock-skew",
+  "runId": "20260904T041947704Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "clockSkewMs": 100,
+    "rig": "RealOnboard",
+    "onboardHmiCommit": "550dbe9d4cdf2017da02d6d6a6f9537d14aa9615",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260904T041947704Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "4746ed27bfe0606238910bf31b493be2770395f7"
+  },
+  "assertions": [
+    {
+      "id": "L2-CS-01",
+      "description": "车载端的安全投影确实经过了偏差代理，且 observedAt 被推后",
+      "outcome": "PASS",
+      "expected": "forwardedRequests >= 1，位移 = 100 ms",
+      "actual": "forwardedRequests = 2，位移 = 100 ms"
+    },
+    {
+      "id": "L2-CS-02",
+      "description": "车载端时钟慢 100 ms（容差内）时会话正常建立",
+      "outcome": "PASS",
+      "expected": "Ready/…",
+      "actual": "Ready/READY"
+    },
+    {
+      "id": "L2-CS-03",
+      "description": "偏差 3000 ms 超出容差时车载端仍然 fail-closed，会话降级",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired/DEPARTURE_SAFETY_NOT_READY",
+      "actual": "RecoveryRequired/DEPARTURE_SAFETY_NOT_READY"
+    },
+    {
+      "id": "L2-CS-04",
+      "description": "需求随之被拒，判 ONBOARD_FACTS_NOT_READY",
+      "outcome": "PASS",
+      "expected": "ONBOARD_FACTS_NOT_READY",
+      "actual": "ONBOARD_FACTS_NOT_READY"
+    },
+    {
+      "id": "L2-CS-05",
+      "description": "运行时又转了几轮，仍然没有为这条需求建 journey",
+      "outcome": "PASS",
+      "expected": "(没有 journey)",
+      "actual": "(没有 journey)"
+    },
+    {
+      "id": "L2-CS-06",
+      "description": "偏差回到容差内后，同一条需求被受理——车载端自行恢复，没有重启",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    },
+    {
+      "id": "L2-CS-07",
+      "description": "恢复之后旅程真的建起来并派车",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-CS-08",
+      "description": "会话从 RecoveryRequired 自己回到 Ready，全程没有重启车载端",
+      "outcome": "PASS",
+      "expected": "Ready/…",
+      "actual": "Ready/READY"
+    }
+  ]
+}

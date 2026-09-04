@@ -1,0 +1,53 @@
+{"at":"2026-09-04T04:19:06.7780720+00:00","note":"L2 run 20260904T041906740Z starting for scenario 'real-onboard-normal-load'."}
+{"at":"2026-09-04T04:19:06.7932346+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-04T04:19:24.6760826+00:00","note":"Reusing cached onboard-hmi publish for 550dbe9d4cdf2017da02d6d6a6f9537d14aa9615."}
+{"at":"2026-09-04T04:19:24.8813102+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-04T04:19:24.8854949+00:00","note":"Peers: onboard-hmi@550dbe9d4cdf2017da02d6d6a6f9537d14aa9615, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-04T04:19:25.9239574+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-04T04:19:26.1145931+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-04T04:19:28.5098147+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-04T04:19:31.0094832+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-04T04:19:32.6917792+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-04T04:19:35.0137263+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-04T04:19:35.0279181+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-04T04:19:35.1007050+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-04T04:19:35.3743895+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-04T04:19:35.4199205+00:00","note":"Environment is up; entering scenario 'real-onboard-normal-load'."}
+{"at":"2026-09-04T04:19:35.4849744+00:00","note":"Publishing demand a35cadd273754af795406e28b2150980 (sublot L2-SUBLOT-20260904T041906740Z) to the fake MesIngest catalog."}
+{"at":"2026-09-04T04:19:35.5796912+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-04T04:19:37.1661621+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-04T04:19:37.1832884+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-04T04:19:37.2011873+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-04T04:19:37.2555855+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-04T04:19:37.3009990+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-04T04:19:38.7130434+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-04T04:19:38.7146887+00:00","note":"Typing sublot L2-SUBLOT-20260904T041906740Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-04T04:19:38.8719780+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-04T04:19:38.9321999+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-04T04:19:38.9448281+00:00","criterion":"sublot-submitted","value":"(null)"}
+{"at":"2026-09-04T04:19:39.2131896+00:00","criterion":"sublot-submitted","value":"{\"protocolVersion\":1,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.1.1\",\"protocolReleaseManifestSha256\":\"a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f\",\"messageType\":\"SublotSubmitted\",\"messageId\":\"2592882a-0122-ad5b-b5d3-d850809ee770\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-04T04:19:38.969632+00:00\",\"payload\":{\"demandId\":\"a35cadd2-7375-4af7-9540-6e28b2150980\",\"operationSessionId\":\"399687fd-3e8d-4b50-89ea-9147ce89bdee\",\"stationId\":\"N1-3_N1-7\",\"worklistRevision\":1,\"sublot\":\"L2-SUBLOT-20260904T041906740Z\",\"entryMethod\":\"KEYBOARD\",\"operator\":{\"operatorId\":\"L2-OPERATOR\",\"verificationMethod\":\"SESSION\",\"verifiedAt\":\"2026-09-04T04:19:38.9660647\\u002B00:00\"}}}"}
+{"at":"2026-09-04T04:19:39.2509713+00:00","criterion":"Load-attempt","value":"(null)"}
+{"at":"2026-09-04T04:19:39.7646741+00:00","criterion":"Load-attempt","value":"3d4678d8-af0e-8b5e-b5bb-d9cae005a348"}
+{"at":"2026-09-04T04:19:39.7981396+00:00","criterion":"Load-unlocking","value":"@{slotOperationAttemptId=3d4678d8-af0e-8b5e-b5bb-d9cae005a348; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/04/2026 12:19:39}"}
+{"at":"2026-09-04T04:19:39.8080232+00:00","criterion":"Load-waiting-operator","value":"0"}
+{"at":"2026-09-04T04:19:40.5952615+00:00","criterion":"Load-waiting-operator","value":"1"}
+{"at":"2026-09-04T04:19:40.6252900+00:00","note":"Onboard is waiting on slot 1 (door OPEN); setting cargo to OCCUPIED."}
+{"at":"2026-09-04T04:19:40.6909420+00:00","criterion":"load-slot-physical","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-04T04:19:40.9715097+00:00","criterion":"load-slot-physical","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-04T04:19:40.9754112+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-04T04:19:42.5638310+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-04T04:19:42.8305238+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-04T04:19:42.8375272+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-09-04T04:19:42.8546110+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-04T04:19:42.8699767+00:00","criterion":"Unload-attempt","value":"(null)"}
+{"at":"2026-09-04T04:19:43.6550480+00:00","criterion":"Unload-attempt","value":"c8cd3910-69fb-ff51-b74a-a9b5fbf4e309"}
+{"at":"2026-09-04T04:19:43.6873625+00:00","criterion":"Unload-unlocking","value":"(null)"}
+{"at":"2026-09-04T04:19:43.9519769+00:00","criterion":"Unload-unlocking","value":"@{slotOperationAttemptId=c8cd3910-69fb-ff51-b74a-a9b5fbf4e309; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/04/2026 12:19:43}"}
+{"at":"2026-09-04T04:19:43.9543154+00:00","criterion":"Unload-waiting-operator","value":"0"}
+{"at":"2026-09-04T04:19:44.7588124+00:00","criterion":"Unload-waiting-operator","value":"1"}
+{"at":"2026-09-04T04:19:44.7627259+00:00","note":"Onboard is waiting on slot 1 (door OPEN); setting cargo to EMPTY."}
+{"at":"2026-09-04T04:19:44.7982372+00:00","criterion":"unload-slot-physical","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-04T04:19:45.0728450+00:00","criterion":"unload-slot-physical","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-04T04:19:45.0770883+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-04T04:19:46.6604084+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-04T04:19:46.6686301+00:00","note":"Scenario finished."}
