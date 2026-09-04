@@ -150,11 +150,31 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         bool departureUsable = row.DepartureSafe == true ||
                                await IsUnsafetyExplainedByOwnCommandAsync(row, cancellationToken)
                                    .ConfigureAwait(false);
+        // The server's own verdict counts too. It decides whether an OperationResult completed
+        // safely and marks the operation RecoveryRequired when it did not -- and that verdict used
+        // to reach nothing: readiness was computed purely from what the vehicle reported, so a
+        // vehicle whose load needed recovery still reported READY. The onboard shows its recovery
+        // entry only while the session says RECOVERY_REQUIRED, so the operator on a blocked vehicle
+        // could not open a recovery session at all, for any vector.
+        //
+        // This can only move a session from Ready to RecoveryRequired, never the other way.
+        bool operationNeedsRecovery = await dbContext.StationOperations
+            .Join(dbContext.JourneyRuntimes,
+                operation => operation.DemandId,
+                runtime => runtime.DemandId,
+                (operation, runtime) => new { operation, runtime })
+            .AnyAsync(
+                pair => pair.runtime.AgvId == agvId &&
+                        pair.operation.Status == StationOperationStatus.RecoveryRequired,
+                cancellationToken).ConfigureAwait(false);
         bool ready = row.CapabilityRevision is not null && row.SafetyRevision is not null &&
                      row.RecoveryReportId is not null && departureUsable && noPendingFacts &&
+                     !operationNeedsRecovery &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
-        row.ReasonCode = ready ? "READY" : GetRecoveryReason(row, noPendingFacts, departureUsable);
+        row.ReasonCode = ready
+            ? "READY"
+            : GetRecoveryReason(row, noPendingFacts, departureUsable, operationNeedsRecovery);
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new SessionReadinessDecision(row.Readiness, row.ReasonCode);
@@ -2069,7 +2089,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .ConfigureAwait(false);
     }
 
-    private static string GetRecoveryReason(SessionRecoveryRow row, bool noPendingFacts, bool departureUsable)
+    private static string GetRecoveryReason(
+        SessionRecoveryRow row,
+        bool noPendingFacts,
+        bool departureUsable,
+        bool operationNeedsRecovery)
     {
         if (row.CapabilityRevision is null) return "CAPABILITY_SNAPSHOT_REQUIRED";
         if (row.SafetyRevision is null) return "SAFETY_SNAPSHOT_REQUIRED";
@@ -2078,6 +2102,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             return "FORCED_RECOVERY_GENERATION_MISMATCH";
         if (!noPendingFacts) return "PENDING_FACT_RECONCILIATION_REQUIRED";
         if (!departureUsable) return "DEPARTURE_SAFETY_NOT_READY";
+        // Last of the specific reasons rather than first: the ones above are about facts the server
+        // is still missing, and saying "an operation needs recovery" while the handshake is not even
+        // complete would point the operator at the wrong thing.
+        if (operationNeedsRecovery) return "OPERATION_RECOVERY_REQUIRED";
         return "RECOVERY_REQUIRED";
     }
 

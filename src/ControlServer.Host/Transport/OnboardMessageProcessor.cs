@@ -244,7 +244,11 @@ public sealed partial class OnboardMessageProcessor(
                         {
                             readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
                             decidedAt = timeProvider.GetUtcNow(),
-                            reasonCodes = decision.Readiness == SessionReadiness.Ready ? Array.Empty<string>() : [decision.ReasonCode],
+                            // The wire vocabulary is the protocol's closed ErrorCode enum; the
+                            // server's own reason code is richer and stays on the session row.
+                            reasonCodes = decision.Readiness == SessionReadiness.Ready
+                                ? Array.Empty<string>()
+                                : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
                             acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
                             acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
                             vehicleBusinessStateRevision = 1
@@ -440,7 +444,7 @@ public sealed partial class OnboardMessageProcessor(
                 decidedAt = timeProvider.GetUtcNow(),
                 reasonCodes = decision.Readiness == SessionReadiness.Ready
                     ? Array.Empty<string>()
-                    : [decision.ReasonCode],
+                    : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
                 acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
                 acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
                 vehicleBusinessStateRevision = 1

@@ -264,6 +264,57 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    public async Task ASessionIsNotReadyWhileTheServerHoldsAnOperationNeedingRecovery()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        // The production shape: the vehicle reported nothing outstanding and got its result acked,
+        // so every input readiness used to look at says "fine". The one thing that is not fine is
+        // the server's own verdict on that result.
+        await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+        WireToGateStore store = new(context);
+
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(
+            AgvId, 3, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SessionReadiness.RecoveryRequired, decision.Readiness);
+        Assert.Equal("OPERATION_RECOVERY_REQUIRED", decision.ReasonCode);
+        // The onboard shows its recovery entry only while the session says RECOVERY_REQUIRED, so
+        // this is what lets the operator open a recovery session at all. Before this, a vehicle with
+        // a load needing recovery reported READY and the entry never appeared -- for any vector,
+        // including the COMPENSATE_LOAD_ALL_EMPTY the server would have authorized.
+        Assert.Equal(
+            "SESSION_RECOVERY_REQUIRED",
+            ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    public async Task ASessionIsReadyOnceItsOperationIsCommitted()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+        // The negative half: the new condition must not be a one-way door that leaves every vehicle
+        // that ever needed recovery stuck out of Ready.
+        StationOperationRow operation = await context.StationOperations.SingleAsync(
+            TestContext.Current.CancellationToken);
+        operation.Status = StationOperationStatus.Committed;
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(
+            AgvId, 3, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SessionReadiness.Ready, decision.Readiness);
+        Assert.Equal("READY", decision.ReasonCode);
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
     public async Task AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized()
@@ -789,7 +840,9 @@ public sealed class RecoveryStateMachineG2Tests
             ProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
             CapabilityRevision = 5,
             SafetyRevision = 7,
-            DepartureSafe = false,
+            // 生产形状里这是 true：L2 证据 db-SessionRecoveries.json 记的就是 DepartureSafe=1。
+            // 装载失败本身不让发车变得不安全——门关上了、锁上了、开锁输出复位了，只是货没进去。
+            DepartureSafe = productionShapedSession,
             RecoveryReportId = "b0000000-0000-4000-8000-000000000001",
             ForcedRecoveryGeneration = 0,
             ReportedForcedRecoveryGeneration = 0,

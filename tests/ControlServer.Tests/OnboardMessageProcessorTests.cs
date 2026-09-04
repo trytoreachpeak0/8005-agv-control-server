@@ -695,10 +695,17 @@ public sealed class OnboardMessageProcessorTests
             Assert.Equal(
                 "RECOVERY_REQUIRED",
                 readiness.RootElement.GetProperty("payload").GetProperty("readiness").GetString());
+            // On the wire this must be a protocol ErrorCode. It used to be the server's own
+            // "DEPARTURE_SAFETY_NOT_READY", which is not one of the 43 the schema allows.
             Assert.Equal(
-                "DEPARTURE_SAFETY_NOT_READY",
+                "DEPARTURE_UNSAFE",
                 Assert.Single(readiness.RootElement.GetProperty("payload").GetProperty("reasonCodes")
                     .EnumerateArray()).GetString());
+            // The richer internal reason survives where the diagnosis is actually read.
+            Assert.Equal(
+                "DEPARTURE_SAFETY_NOT_READY",
+                (await context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken))
+                    .ReasonCode);
 
             SessionRecoveryRow stored = await context.SessionRecoveries.SingleAsync(
                 TestContext.Current.CancellationToken);
