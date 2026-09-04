@@ -5,11 +5,19 @@ agent's instructions for working here.
 
 ## Write authority
 
-This repository is writable. The others in the workspace are not:
-`8005-agv-onboard-hmi` and `slots-simulator` are read-only for agents;
-`8005-agv-protocol` is writable, but every push there must be announced to Kun
-Wang in an issue that `@SocialKKKK`. Reaching a machine, or routing a problem to
-a repository, never grants write access to it.
+This repository is writable. The others in the workspace are not, each in its
+own way:
+
+- `8005-agv-onboard-hmi` and `slots-simulator` — **writable on `w2g/*` branches
+  only** (changed 2026-09-04; they were read-only for agents before). The
+  development work on both is now ours, but their working branches
+  (`OnboardHmi_MVP` and `main`) are not: changes reach Kun Wang as a pull request
+  he decides on, and **we never merge it ourselves**.
+- `8005-agv-protocol` — writable, but every push there must be announced to Kun
+  Wang in an issue that `@SocialKKKK`.
+
+Reaching a machine, or routing a problem to a repository, never grants write
+access to it.
 
 If this repository is cloned on its own — outside the `8005-workspace` workspace
 — treat all three as read-only and ask.
@@ -136,10 +144,12 @@ seconds. Three things to know before running one:
 
 - **Two WPF windows appear on the desktop.** The rig needs an interactive session, so it cannot
   run over SSH or in a service-mode runner, and it steals focus once at startup.
-- **Both peer repositories are read-only, and stay that way.** Each is cloned to
+- **Neither peer repository is built in place.** Each is cloned to
   `%LOCALAPPDATA%\8005-l2-peers\` and published from the clone; configuration is patched only in
   the per-run stage copy. A dirty peer worktree aborts the run rather than testing the committed
-  state behind your back.
+  state behind your back — **and since 2026-09-04 that check has teeth**, because the development
+  work on both peers is ours now and their worktrees do get edited. Commit to your `w2g/*` branch
+  before running L2.
 - **A PASS still proves nothing about real hardware.** The simulator proves the software IO loop,
   not modules, wiring, locks or light curtains.
 
