@@ -1,15 +1,28 @@
 #Requires -Version 7
 
 <#
-真车载端的恢复并继续装载：装载先失败一次，维护人员现场处置后从 HMI 申请恢复，同一操作提交一份
-替换 OperationResult，旅程接着往下走。
+真车载端的装载失败后，车上发起不了任何恢复。
 
-这是 `load-result-requires-recovery` 一直缺的那半条。那条到 Blocked 为止，因为合成对端不会自己
-发起恢复；这条用出厂的那个 WPF，让它自己走完 `CV-EXCEPTION-RESUME` 的六条消息：
+**这条场景 2026-09-04 改过一次向量，原来是错的。**它原名 resume-after-repair，制造「装载跑完、仓位
+全空」然后去等 `RESUME_AFTER_REPAIR` 的入口。那两件事对不上：
 
-    ExceptionRecoverySessionRequested → ExceptionRecoverySessionOpened
-    → RecoveryActionSubmitted → RecoveryActionAccepted
-    → SlotOperationResumeCommand → OperationResult
+- `RESUME_AFTER_REPAIR` 恢复的是**停在物理断点、车辆还握着那个断点**的操作，所以服务端要一个已证实的
+  checkpoint（`PREPARED` / `ACTIVE_UNLOCK_SET` / `SAFE_FINISH_REACHED`）。车辆一旦记录了结果，断点就
+  没了：车载端把 attempt 与 `OperationContext` 一并清空
+  （`WireToGateSlotOperationExecutor.cs:130`），并拒绝 checkpoint 为 `ResultRecorded` 的恢复命令
+  （同文件 `:641`）。**两端独立地做了同一判断**，协议向量只规定消息顺序、没排除这条路。
+- 本场景制造的状态——装载跑完、门关着锁上了、仓位仍是空的——对应的是
+  `COMPENSATE_LOAD_ALL_EMPTY`。它的服务端前置只要求「操作是 Load 且 `RecoveryRequired`」，**实测在
+  这个状态下正常授权**（L1：`RecoveryStateMachineG2Tests.AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized`）。
+
+要证 `CV-EXCEPTION-RESUME`，需要的是「跑到一半没出结果」——第 4 节恢复表里的「装载中途车载端重启」。
+那条要给装置加重启组件的能力，还没有。
+
+**所以这条场景现在证的是那个真实的缺口：授权是齐的，入口是缺的。**服务端知道要恢复、也授权得了适配
+的动作，而车上的操作员打不开那扇门——车载端的恢复入口按「会话进入 `RecoveryRequired`」显示，服务端
+在这个状态下却把会话判为 `Ready`（`DecideReadinessAsync` 不看
+`StationOperationStatus.RecoveryRequired`）。见
+`docs/defects/20260904-recovery-required-never-reaches-session-state.md`。
 
 **装载是怎么失败的，这里是刻意选的。**等到车载端自己报 `WAITING_OPERATOR` 之后再关门，但**不放
 货**——门关了、锁上了、开锁输出复位了，唯独货物事实与期望不符。这是现场真会发生的一种：操作员把
@@ -23,9 +36,6 @@
 
 不去 stage 副本里调短那个超时：它是安全相关的时序，调短之后这条场景证的就是一份没人真的在跑的
 配置了。两分钟买一个真实的失败，值。
-
-恢复之后**门会再开一次**：车载端只把已经处于期望终态的仓位记为完成，这个仓位还是空的，所以它
-沿用原始命令继续执行。那一次才把货放进去。
 
 断言仍然只从服务端 SQLite 与模拟器 `/snapshot` 读。UI 只用来驱动——从控件读到的只有「现在允不允许
 录入」和「恢复入口在不在」，那是能不能操作的前提，不是业务事实。
@@ -265,110 +275,17 @@ while ($true) {
     Start-Sleep -Milliseconds 500
 }
 $assertions.Add(
-    'L2-RR-05', '停摆之后车载端 HMI 上出现可用的「申请恢复」入口',
+    'L2-RR-05', '停摆之后车载端 HMI 上出现可用的恢复入口（任何一种恢复动作都行）',
     $recoveryAvailable, $true, $recoveryAvailable)
 
-if (-not $recoveryAvailable) {
-    # 到此为止，剩下的判据一条都不记：没做过的事不该有结论。
-    $journal.Note(
-        'The onboard never offered a usable recovery entry; the scenario stops here rather than ' +
-        'recording verdicts for steps it never reached.')
-    return
-}
-
-$journal.Note('Maintenance administrator requests recovery from the onboard HMI.')
-$onboard.RequestRecovery()
-$null = $onboard.Confirm('申请恢复原操作')
-$journal.Note('Confirmed the on-site safety dialog.')
-
-$null = Wait-L2Condition -Description 'the server opened the exception recovery session' `
-    -Journal $journal -Criterion 'recovery-session-requested' -TimeoutSeconds 60 `
-    -Probe { Get-InboxCount 'ExceptionRecoverySessionRequested' } -Until { param($v) $v -ge 1 }
-$null = Wait-L2Condition -Description 'the onboard selected RESUME_AFTER_REPAIR' `
-    -Journal $journal -Criterion 'recovery-action-submitted' -TimeoutSeconds 60 `
-    -Probe { Get-InboxCount 'RecoveryActionSubmitted' } -Until { param($v) $v -ge 1 }
-$resumeCommands = Wait-L2Condition -Description 'the server issued SlotOperationResumeCommand' `
-    -Journal $journal -Criterion 'resume-command' -TimeoutSeconds 60 `
-    -Probe { Get-OutboxCount 'SlotOperationResumeCommand' } -Until { param($v) $v -ge 1 }
-
-$actionRows = Invoke-L2Query -Connection $connection `
-    -Sql "SELECT WorkflowType, State FROM RecoveryWorkflows WHERE SlotOperationAttemptId = '$attemptId'"
-$assertions.Add(
-    'L2-RR-06', '走的是 RESUME_AFTER_REPAIR，服务端只下发了一条恢复授权',
-    ($actionRows.Count -eq 1 -and [string]$actionRows[0].WorkflowType -eq 'RESUME_AFTER_REPAIR' -and
-        $resumeCommands -eq 1),
-    'RESUME_AFTER_REPAIR / 1 条授权',
-    "$(if ($actionRows.Count -ge 1) { [string]$actionRows[0].WorkflowType } else { '(none)' }) / $resumeCommands 条授权")
-
-# --- 5. 恢复执行：仓位还是空的，所以门会再开一次，这次把货放进去 ------------------------------------
-
-$resumeSlot = Wait-WaitingOperator $attemptId 'resume'
-$assertions.Add(
-    'L2-RR-07', '恢复沿用原始命令的仓位，不重新选仓',
-    ($resumeSlot -eq $loadSlot), $loadSlot, $resumeSlot)
-
-$journal.Note("Operator puts the basket into slot $resumeSlot and closes the door.")
-$null = $simulator.Command('Put', "slots/$resumeSlot/cargo", @{ state = 'OCCUPIED' })
-$null = $simulator.Command('Post', "slots/$resumeSlot/close-door", @{})
-
-$loadPhysical = Wait-L2Condition -Description 'the recovered slot is closed, locked and occupied' `
-    -Journal $journal -Criterion 'resume-slot-physical' -TimeoutSeconds 60 `
-    -Probe {
-        $slot = Get-Slot $resumeSlot
-        "$($slot.doorState)/$($slot.cargoState)/$($slot.lockFeedbackRaw)/$($slot.unlockOutputRaw)"
-    } `
-    -Until { param($v) $v -eq 'CLOSED/OCCUPIED/1/0' }
-$assertions.Add(
-    'L2-RR-08', '恢复走的仍是真 Modbus 闭环：车载端再次开锁、放货、关门、锁反馈回到 1、开锁输出复位',
-    ($loadPhysical -eq 'CLOSED/OCCUPIED/1/0'), 'CLOSED/OCCUPIED/1/0', $loadPhysical)
-
-# --- 6. 服务端收下那一份替换结果 -------------------------------------------------------------------
-
-$loadStatus = Wait-L2Condition -Description 'the load operation committed on the replacement result' `
-    -Journal $journal -Criterion 'load-status' -TimeoutSeconds 120 `
-    -Probe { Get-LoadStatus } -Until { param($v) $v -eq 'Committed' }
-$assertions.Add(
-    'L2-RR-09', '同一操作凭替换结果提交（Committed）',
-    ($loadStatus -eq 'Committed'), 'Committed', $loadStatus)
-
-# 这条是服务端那一半在库里的形状：两份结果都还在，第一份指向第二份。失败的那份是车载端当时确实
-# 报了什么的记录，不该被覆盖掉。
-$results = Get-Results $attemptId
-$superseded = if ($results.Count -eq 2) { [string]$results[0].SupersededByResultId } else { '' }
-$replacementId = if ($results.Count -eq 2) { [string]$results[1].ResultId } else { '' }
-$assertions.Add(
-    'L2-RR-10', '失败结果留作记录并指向替换结果，替换结果自己仍然存活',
-    ($results.Count -eq 2 -and $superseded -eq $replacementId -and
-        [string]::IsNullOrEmpty([string]$results[1].SupersededByResultId) -and
-        [string]$results[1].OverallOutcome -eq 'COMPLETED'),
-    '2 份，第一份 superseded 指向第二份，第二份 COMPLETED',
-    "$($results.Count) 份，superseded=$superseded，replacement=$replacementId")
-
-$workflowRows = Invoke-L2Query -Connection $connection `
-    -Sql "SELECT State FROM RecoveryWorkflows WHERE SlotOperationAttemptId = '$attemptId'"
-$sessionRows = Invoke-L2Query -Connection $connection -Sql "SELECT State FROM ExceptionRecoverySessions"
-$assertions.Add(
-    'L2-RR-11', '恢复工作流对账完成，恢复会话关闭',
-    ($workflowRows.Count -eq 1 -and [string]$workflowRows[0].State -eq 'Reconciled' -and
-        $sessionRows.Count -eq 1 -and [string]$sessionRows[0].State -eq 'CLOSED'),
-    'Reconciled / CLOSED',
-    "$(if ($workflowRows.Count -ge 1) { [string]$workflowRows[0].State } else { '(none)' }) / $(if ($sessionRows.Count -ge 1) { [string]$sessionRows[0].State } else { '(none)' })")
-
-# --- 7. 旅程接着往下走 -----------------------------------------------------------------------------
-
-$stage = Wait-L2Condition -Description 'the journey resumed and reached the gate leg' `
-    -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 180 `
-    -Probe { Get-Stage } -Until { param($v) $v -eq 'AwaitingGateArrival' }
-$assertions.Add(
-    'L2-RR-12', '恢复之后旅程不再停摆，继续到关卡段',
-    ($stage -eq 'AwaitingGateArrival'), 'AwaitingGateArrival', $stage)
-
-$gateIntent = Get-UpperId -purpose 'TO_GATE'
-$assertions.Add(
-    'L2-RR-13', '恢复后才建 TO_GATE 单，且全程只此一条',
-    ($null -ne $gateIntent -and $gateIntent.Status -eq 'CONFIRMED' -and
-        @($riot.Snapshot().body.orders).Count -eq 2),
-    'CONFIRMED / 2 条 RIoT 单',
-    "$(if ($gateIntent) { $gateIntent.Status } else { '(no intent)' }) / $(@($riot.Snapshot().body.orders).Count) 条 RIoT 单")
-
-$journal.Note('Scenario finished: the load recovered and the journey continued.')
+# 这条判据现在是红的，而且**红得是对的**：这就是那个缺口。服务端在同一状态下授权得了
+# `COMPENSATE_LOAD_ALL_EMPTY`（有 L1 为证），但车上没人能来请求——入口按会话 `RecoveryRequired`
+# 开门，而会话是 `Ready`。
+#
+# 场景到此为止。后面原本有八条判据描述 resume 的完整流程（下发授权、沿用原仓位、真 Modbus 再闭环、
+# 替换结果、工作流对账、旅程继续），它们在 2026-09-04 一并删了：那是**另一条向量**的流程，本场景
+# 制造的状态根本走不到，留着只会让人以为它们迟早会变绿。等入口通了、车载端的
+# `COMPENSATE_LOAD_ALL_EMPTY` 也实现了，再按 compensate 的语义重新写它的下半段。
+$journal.Note(
+    'Scenario finished at the missing recovery entry: the server would authorize ' +
+    'COMPENSATE_LOAD_ALL_EMPTY here, but the vehicle cannot open a recovery session.')

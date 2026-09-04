@@ -48,7 +48,7 @@ Peers: `OnboardHmi_MVP@f0465d9ad9f84607e3db972f1c6cb0ead910ab3d`、`slots-simula
 **两端各自独立地把这条路排除了，而协议向量 `CV-EXCEPTION-RESUME` 只规定消息顺序、没有排除它**
 （`vectors/CV-EXCEPTION-RESUME/expected.json`）。所以这不是谁违反了契约，是契约没说、两边默认一致。
 
-顺带：**L2 场景 `real-onboard-resume-after-repair` 选错了向量。**它制造「装载跑完、仓位全空」，那是
+顺带：**L2 场景选错了向量，已改名为 `real-onboard-recovery-entry-missing`。**它制造「装载跑完、仓位全空」，那是
 `COMPENSATE_LOAD_ALL_EMPTY` 的状态；`RESUME_AFTER_REPAIR` 要的是「跑到一半没出结果」，那对应的是
 第 4 节恢复表里的「装载中途车载端重启」。
 
