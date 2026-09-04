@@ -266,6 +266,72 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_PRODUCTION_SHAPE";
+        const string proof = "production-shape-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+
+            string opened = await processor.ProcessAsync(
+                RecoverySessionRequest(proof), state, TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+            Assert.Equal("ExceptionRecoverySessionOpened", MessageType(opened));
+
+            // RESUME_AFTER_REPAIR is refused here, and that is the design rather than a defect: it
+            // resumes an operation that stalled at a physical breakpoint the vehicle still holds.
+            // Once the vehicle has recorded a result there is no such breakpoint — the onboard
+            // clears the attempt and its operation context, and refuses a resume command whose
+            // checkpoint is not PREPARED / ACTIVE_UNLOCK_SET / SAFE_FINISH_REACHED. Both ends agree.
+            string resumeRefused = await processor.ProcessAsync(
+                RecoveryAction("RESUME_AFTER_REPAIR"), state, TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+            Assert.Equal("RecoveryActionRejected", MessageType(resumeRefused));
+            using (JsonDocument refusal = JsonDocument.Parse(resumeRefused))
+            {
+                Assert.Equal(
+                    "PROVEN_RECOVERY_CHECKPOINT_REQUIRED",
+                    refusal.RootElement.GetProperty("payload").GetProperty("problem")
+                        .GetProperty("reasonCode").GetString());
+            }
+
+            // The vector that fits this state is COMPENSATE_LOAD_ALL_EMPTY — the load ran and left
+            // every slot empty — and the server authorizes it from exactly the facts production
+            // leaves behind: no unsettled attempt, no proven checkpoint, session Ready. Its
+            // preconditions ask only that the operation be a Load in RecoveryRequired.
+            string compensation = await processor.ProcessAsync(
+                RecoveryAction(
+                    "COMPENSATE_LOAD_ALL_EMPTY",
+                    messageId: "e0000000-0000-4000-8000-000000000020",
+                    actionId: "50000000-0000-4000-8000-000000000020"),
+                state,
+                TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+            Assert.Equal("RecoveryActionAccepted", MessageType(compensation));
+            using (JsonDocument accepted = JsonDocument.Parse(compensation))
+            {
+                Assert.Equal(
+                    "COMPENSATE_LOAD_ALL_EMPTY",
+                    accepted.RootElement.GetProperty("payload").GetProperty("acceptedAction").GetString());
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
     public async Task ForcedRecoveryAdvancesOnceFencesOldOutboxAndKeepsLateGenerationAsEvidenceOnly()
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED";
@@ -660,7 +726,17 @@ public sealed class RecoveryStateMachineG2Tests
             TestContext.Current.CancellationToken)).State);
     }
 
-    private static async Task SeedBlockedJourneyAsync(ControlServerDbContext context)
+    /// <summary>
+    /// <paramref name="productionShapedSession"/> seeds the session recovery row the way production
+    /// actually leaves it after a refused OperationResult, instead of the way these tests used to
+    /// assume it. The difference is the whole point: the onboard reports no unsettled attempt and no
+    /// proven checkpoint, because from its side the attempt produced a result and was acked, so the
+    /// server computes the session as Ready even while it holds an operation in RecoveryRequired.
+    /// Observed in `evidence/l2/20260904-real-onboard-resume-after-repair-f0465d9-001`.
+    /// </summary>
+    private static async Task SeedBlockedJourneyAsync(
+        ControlServerDbContext context,
+        bool productionShapedSession = false)
     {
         context.AcceptedDemands.Add(new AcceptedDemandRow
         {
@@ -717,13 +793,17 @@ public sealed class RecoveryStateMachineG2Tests
             RecoveryReportId = "b0000000-0000-4000-8000-000000000001",
             ForcedRecoveryGeneration = 0,
             ReportedForcedRecoveryGeneration = 0,
-            UnsettledSlotOperationAttemptId = AttemptId,
-            ProvenRecoveryCheckpoint = "PREPARED",
-            ActiveUnlockSlotsJson = "[1,2]",
-            PendingAttemptIdsJson = JsonSerializer.Serialize(new[] { AttemptId }),
+            UnsettledSlotOperationAttemptId = productionShapedSession ? null : AttemptId,
+            ProvenRecoveryCheckpoint = productionShapedSession ? "NONE" : "PREPARED",
+            ActiveUnlockSlotsJson = productionShapedSession ? "[]" : "[1,2]",
+            PendingAttemptIdsJson = productionShapedSession
+                ? "[]"
+                : JsonSerializer.Serialize(new[] { AttemptId }),
             PendingResultIdsJson = "[]",
-            Readiness = SessionReadiness.RecoveryRequired,
-            ReasonCode = "PENDING_FACT_RECONCILIATION_REQUIRED",
+            Readiness = productionShapedSession
+                ? SessionReadiness.Ready
+                : SessionReadiness.RecoveryRequired,
+            ReasonCode = productionShapedSession ? "READY" : "PENDING_FACT_RECONCILIATION_REQUIRED",
             UpdatedAt = Now
         });
         context.VehicleRecoveryGenerations.Add(new VehicleRecoveryGenerationRow
@@ -811,12 +891,16 @@ public sealed class RecoveryStateMachineG2Tests
             authenticationProof = proof
         });
 
-    private static string RecoveryAction(string action, string reason = "Use current persisted facts.") => Envelope(
-        "e0000000-0000-4000-8000-000000000002",
+    private static string RecoveryAction(
+        string action,
+        string reason = "Use current persisted facts.",
+        string messageId = "e0000000-0000-4000-8000-000000000002",
+        string? actionId = null) => Envelope(
+        messageId,
         "RecoveryActionSubmitted",
         new
         {
-            recoveryActionId = ActionId,
+            recoveryActionId = actionId ?? ActionId,
             exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
             action,
             eventId = EventId,
