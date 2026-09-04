@@ -622,7 +622,13 @@ public sealed class OnboardMessageProcessorTests
             state,
             TestContext.Current.CancellationToken);
 
-        using JsonDocument acknowledgement = JsonDocument.Parse(response);
+        // First line, not the whole response: a result the server refuses now carries a
+        // SessionReadiness line after the ack. This fixture's stored session is not ready
+        // (BeginSessionRecoveryAsync leaves no recovery report), so it gets one even though
+        // the unload itself succeeded. What this test is about is that the demand closed
+        // before the ack, which the first line is.
+        using JsonDocument acknowledgement = JsonDocument.Parse(
+            response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
         Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());
         Assert.Equal(WireContentHash(line), acknowledgement.RootElement.GetProperty("payload")
             .GetProperty("acceptedContentSha256").GetString());

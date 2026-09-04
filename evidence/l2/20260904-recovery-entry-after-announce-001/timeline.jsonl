@@ -1,0 +1,38 @@
+{"at":"2026-09-04T03:18:05.9261853+00:00","note":"L2 run 20260904T031805883Z starting for scenario 'real-onboard-recovery-entry-missing'."}
+{"at":"2026-09-04T03:18:05.9493755+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-04T03:18:09.0986638+00:00","note":"Reusing cached onboard-hmi publish for f0465d9ad9f84607e3db972f1c6cb0ead910ab3d."}
+{"at":"2026-09-04T03:18:09.2029507+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-04T03:18:09.2066561+00:00","note":"Peers: onboard-hmi@f0465d9ad9f84607e3db972f1c6cb0ead910ab3d, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-04T03:18:10.0978123+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-04T03:18:10.2577531+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-04T03:18:12.5918278+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-04T03:18:14.9923825+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-04T03:18:16.6259226+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-04T03:18:18.8767156+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-04T03:18:18.8927776+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-04T03:18:18.9827292+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-04T03:18:19.2628440+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-04T03:18:19.3325669+00:00","note":"Environment is up; entering scenario 'real-onboard-recovery-entry-missing'."}
+{"at":"2026-09-04T03:18:19.3788037+00:00","note":"Publishing demand ff49fc87b5ad44108e5206c0e81fe007 (sublot L2-SUBLOT-20260904T031805883Z) to the fake MesIngest catalog."}
+{"at":"2026-09-04T03:18:19.5058123+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-04T03:18:21.1043028+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-04T03:18:21.1129070+00:00","criterion":"to-pickup-intent","value":"CREATE_ATTEMPTED"}
+{"at":"2026-09-04T03:18:21.3760240+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-04T03:18:21.3779020+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-04T03:18:21.4484819+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-04T03:18:21.5130887+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-04T03:18:22.4272792+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-04T03:18:22.4293519+00:00","note":"Typing sublot L2-SUBLOT-20260904T031805883Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-04T03:18:22.5585885+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-04T03:18:22.6440882+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-04T03:18:22.6576299+00:00","criterion":"sublot-submitted","value":"0"}
+{"at":"2026-09-04T03:18:22.9195995+00:00","criterion":"sublot-submitted","value":"1"}
+{"at":"2026-09-04T03:18:22.9223831+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-04T03:18:23.4529600+00:00","criterion":"load-attempt","value":"a3cbf8df-444c-7155-8e00-36312ef8b5e8"}
+{"at":"2026-09-04T03:18:23.4720603+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=a3cbf8df-444c-7155-8e00-36312ef8b5e8; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/04/2026 11:18:23}"}
+{"at":"2026-09-04T03:18:23.4798856+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-04T03:18:24.5496031+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-04T03:18:24.5543074+00:00","note":"Operator closes slot 1 without putting the basket in; the load will fail."}
+{"at":"2026-09-04T03:18:24.6012312+00:00","note":"Waiting out the onboard operation timeout (about 120s) before the result arrives."}
+{"at":"2026-09-04T03:18:24.6047032+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-04T03:22:24.6599575+00:00","note":"Run failed: Timed out after 240s waiting for: the journey blocked on the incomplete load result. Last observed: \"AwaitingLoadResult\""}

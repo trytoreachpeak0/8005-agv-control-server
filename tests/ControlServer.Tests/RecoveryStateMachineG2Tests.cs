@@ -266,6 +266,67 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-05")]
+    public async Task ARefusedResultTellsTheVehicleItsSessionNeedsRecovery()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+        // The seeded operation is already RecoveryRequired, which is the state a refused result
+        // leaves; what this test is about is whether the vehicle is ever told.
+        StationOperationRow operation = await context.StationOperations.SingleAsync(
+            TestContext.Current.CancellationToken);
+        operation.Status = StationOperationStatus.Prepared;
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, "CONTROL_SERVER_TEST_UNUSED_PROOF");
+        OnboardConnectionState state = CurrentState(deferOutbound: true);
+        state.Readiness = SessionReadiness.Ready;
+
+        string response = await processor.ProcessAsync(
+            Envelope(
+                "e0000000-0000-4000-8000-000000000030",
+                "OperationResult",
+                OperationResultPayload(completed: false, journalCheckpoint: "OPERATOR_TIMEOUT")),
+            state,
+            TestContext.Current.CancellationToken);
+        await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+
+        // Two lines: the durable ack the vehicle is waiting for, then the readiness it did not used
+        // to be told about. Readiness was recomputed only on RecoveryStateReport and
+        // SafetyStateChanged, and the vehicle sends neither after a load fails — so the session
+        // stayed READY and the onboard, which gates its recovery entry on RECOVERY_REQUIRED, never
+        // offered the operator any way to start a recovery.
+        string[] lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        Assert.Equal("DurableAck", MessageType(lines[0]));
+        Assert.Equal("SessionReadiness", MessageType(lines[1]));
+        using (JsonDocument readiness = JsonDocument.Parse(lines[1]))
+        {
+            JsonElement payload = readiness.RootElement.GetProperty("payload");
+            Assert.Equal("RECOVERY_REQUIRED", payload.GetProperty("readiness").GetString());
+            Assert.Equal(
+                "SESSION_RECOVERY_REQUIRED",
+                Assert.Single(payload.GetProperty("reasonCodes").EnumerateArray()).GetString());
+        }
+        Assert.Equal(SessionReadiness.RecoveryRequired, state.Readiness);
+
+        // Redelivering the same result is idempotent: the inbox returns the stored first response,
+        // both lines of it, rather than recomputing anything. That is what keeps the announcement
+        // from multiplying while the vehicle retries.
+        string replay = await processor.ProcessAsync(
+            Envelope(
+                "e0000000-0000-4000-8000-000000000030",
+                "OperationResult",
+                OperationResultPayload(completed: false, journalCheckpoint: "OPERATOR_TIMEOUT")),
+            state,
+            TestContext.Current.CancellationToken);
+        Assert.Equal(response, replay);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
     public async Task ASessionIsNotReadyWhileTheServerHoldsAnOperationNeedingRecovery()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");

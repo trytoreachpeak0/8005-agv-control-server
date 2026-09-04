@@ -238,22 +238,7 @@ public sealed partial class OnboardMessageProcessor(
                             acceptedContentSha256 = contentHash,
                             durablyAcceptedAt = timeProvider.GetUtcNow()
                         });
-                    string readiness = SerializeEnvelope(
-                        "SessionReadiness", correlationId: null, agvId, generation,
-                        new
-                        {
-                            readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
-                            decidedAt = timeProvider.GetUtcNow(),
-                            // The wire vocabulary is the protocol's closed ErrorCode enum; the
-                            // server's own reason code is richer and stays on the session row.
-                            reasonCodes = decision.Readiness == SessionReadiness.Ready
-                                ? Array.Empty<string>()
-                                : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
-                            acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
-                            acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
-                            vehicleBusinessStateRevision = 1
-                        });
-                    return $"{ack}\n{readiness}";
+                    return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
                 }
             case "OperationProgress":
             case "PreDepartureSafetyCheckResult":
@@ -312,7 +297,32 @@ public sealed partial class OnboardMessageProcessor(
                         cancellationToken).ConfigureAwait(false);
                     await recoveryCoordinator.ObserveOperationResultAsync(
                         attemptId, disposition, cancellationToken).ConfigureAwait(false);
-                    return DurableAck(messageType, messageId, agvId, generation, contentHash);
+                    // Applying a result is the moment the server's own verdict changes: a result it
+                    // refuses puts the operation into RecoveryRequired, and readiness has to follow.
+                    // It did not until 2026-09-04 -- readiness was recomputed only on
+                    // RecoveryStateReport and SafetyStateChanged, neither of which the vehicle sends
+                    // afterwards, so the session stayed READY over a load that needed recovery and
+                    // the onboard never showed its recovery entry.
+                    SessionReadinessDecision resultDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    string resultAck = DurableAck(messageType, messageId, agvId, generation, contentHash);
+                    // Only the transition INTO RecoveryRequired, and only when it is new. The gap
+                    // being closed is that the vehicle was never told it needs recovery; the way
+                    // back to READY already has owners (the handshake, RecoveryStateReport,
+                    // SafetyStateChanged), and announcing it here too would change the wire shape of
+                    // the ordinary path — a completed unload would start answering with two lines.
+                    //
+                    // OPEN: after a recovery completes, nothing on this path tells the vehicle the
+                    // session is READY again. Today the onboard learns it from its own next
+                    // RecoveryStateReport. If that turns out not to happen, widen this rather than
+                    // adding a second announcement somewhere else.
+                    if (resultDecision.Readiness != SessionReadiness.RecoveryRequired ||
+                        state.Readiness == SessionReadiness.RecoveryRequired)
+                    {
+                        return resultAck;
+                    }
+                    state.Readiness = resultDecision.Readiness;
+                    return $"{resultAck}\n{SessionReadinessLine(resultDecision, agvId, generation, state)}";
                 }
             case "ExceptionRecoverySessionRequested":
             case "RecoveryActionSubmitted":
@@ -409,6 +419,30 @@ public sealed partial class OnboardMessageProcessor(
         }
     }
 
+    /// <summary>
+    /// One SessionReadiness line, built the same way wherever readiness changes. The envelope used to
+    /// be written out at each site; two of those copies were putting a reason code on the wire that
+    /// the protocol's closed ErrorCode enum does not contain.
+    /// </summary>
+    private string SessionReadinessLine(
+        SessionReadinessDecision decision,
+        string agvId,
+        long generation,
+        OnboardConnectionState state) =>
+        SerializeEnvelope(
+            "SessionReadiness", correlationId: null, agvId, generation,
+            new
+            {
+                readiness = decision.Readiness == SessionReadiness.Ready ? "READY" : "RECOVERY_REQUIRED",
+                decidedAt = timeProvider.GetUtcNow(),
+                reasonCodes = decision.Readiness == SessionReadiness.Ready
+                    ? Array.Empty<string>()
+                    : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
+                acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
+                acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
+                vehicleBusinessStateRevision = 1
+            });
+
     private string DurableAck(
         string acceptedMessageType,
         string acceptedMessageId,
@@ -447,6 +481,10 @@ public sealed partial class OnboardMessageProcessor(
                     : [ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode)],
                 acceptedCapabilityVersion = state.CapabilityRevision ?? 0,
                 acceptedSafetyStateVersion = state.SafetyRevision ?? 0,
+                // NOTE: this third copy differs from SessionReadinessLine only in indentation; it is
+                // left alone because it is on the handshake path and takes its revisions from a
+                // different source. Three copies is how the illegal reasonCodes survived in two of
+                // them for as long as they did.
                 vehicleBusinessStateRevision = 1
             });
 
