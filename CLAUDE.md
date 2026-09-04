@@ -57,7 +57,9 @@ action. Prefer it over guessing.
 ## Collaboration workflow
 
 Two people drive this project. Kun Wang (GitHub `SocialKKKK`) owns
-`8005-agv-onboard-hmi` and `slots-simulator`; Zhengyu Shao owns this repository;
+`8005-agv-onboard-hmi` and `slots-simulator`, but **the development work on both
+has been ours since 2026-09-04** — we work them on `w2g/*` branches and deliver
+by pull request for him to accept. Zhengyu Shao owns this repository;
 `8005-agv-protocol` is jointly maintained. The full account, written for humans
 and in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
 
@@ -67,23 +69,35 @@ What an agent must follow:
   one. `8005-agv-protocol/integration-slices/index.json` defines `W2G-IS-00`
   through `W2G-IS-07`, each with a `sequence` and `prerequisites`. Each slice's
   `gates` array *is* the division of labour: `G1` shared, `CONTROL_SERVER_G2`
-  this repository, `ONBOARD_HMI_G2` theirs, `G3` together.
-- **The two G2 gates have no dependency and run in parallel.** G3 needs both
-  people present and is the most expensive resource, so do not propose it while
-  the other side's G2 is not green.
+  this repository, `ONBOARD_HMI_G2` **ours too since 2026-09-04** (it was Kun
+  Wang's; taking over the onboard code did not move it automatically, and the
+  user then moved it deliberately), `G3` together.
+- **The two G2 gates have no dependency and run in parallel.** That is still
+  true, but since both are ours it now means two of our own workstreams, not two
+  people. A red `ONBOARD_HMI_G2` is no longer someone else's blocker — it is work
+  to pick up on a `w2g/*` branch.
+- **Moving that gate did not move the release signature.** The approval
+  attestation still needs two distinct product owners and `G1` really does check
+  `size===2`. Kun Wang still owns both peer repositories and co-maintains the
+  protocol, so he is still the second signature.
 - **Cross-repository feedback takes one of three routes.** A contract ambiguity
   or error goes to an issue in `8005-agv-protocol` carrying the `vectorId` that
-  triggered it. The other side failing the contract goes to an issue in *their*
-  repository — **run G3 for evidence first** and attach the evidence directory.
-  Work inside this repository stays in this repository's issues.
+  triggered it. A peer repository failing the contract goes to an issue in *that*
+  repository — **run G3 for evidence first** and attach the evidence directory —
+  but since 2026-09-04 such an issue is a ticket **we** pick up on a `w2g/*`
+  branch, not a request left with someone else. Work inside this repository stays
+  in this repository's issues.
   **A cross-repository claim must carry reproducible gate evidence; "it does not
   work on my side" is not a report.** Follow the shape already used in
   `docs/defects/`: a `Found by:` line linking the G3 evidence `SUMMARY.md`.
 - **`8005-agv-protocol` needs no advance approval** — Zhengyu Shao decides its
   content alone — **but every push must be announced in an issue that
   `@SocialKKKK`**, stating what changed, which `W2G-IS-*` slices it touches, and
-  whether their `ONBOARD_HMI_G2` evidence is now void, in the same task as the
-  push. Tagging a release still needs the two-owner attestation; **AI and CI
+  which gate evidence is now void, in the same task as the push. (That third item
+  read "their `ONBOARD_HMI_G2` evidence" before 2026-09-04; the gate is ours now,
+  so the voided evidence is ours — **the duty to tell him is unchanged**, since
+  the protocol is still the contract his repositories are built against and our
+  pull requests land in his branches.) Tagging a release still needs the two-owner attestation; **AI and CI
   cannot approve.**
 - **Batch protocol changes.** A patch release voids the affected G1/G2/G3
   evidence on both sides, so every small change costs the other side a full gate
