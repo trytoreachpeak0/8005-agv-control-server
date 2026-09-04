@@ -254,7 +254,7 @@ public sealed class OnboardRecoveryCoordinator(
             return Response(root, "ExceptionRecoverySessionRejected", new
             {
                 requestId,
-                problem = Problem("RECOVERY_AUTHENTICATION_FAILED", "payload.authenticationProof",
+                problem = Problem(ServerReasonCodes.RecoveryAuthenticationFailed, "payload.authenticationProof",
                     "The recovery administrator proof was not accepted.")
             });
         }
@@ -275,7 +275,7 @@ public sealed class OnboardRecoveryCoordinator(
             return Response(root, "ExceptionRecoverySessionRejected", new
             {
                 requestId,
-                problem = Problem("ACTION_NOT_ALLOWED_IN_STATE", "payload.requestId",
+                problem = Problem(ServerReasonCodes.ActionNotAllowedInState, "payload.requestId",
                     "An exception recovery session is already open for this vehicle.")
             });
         }
@@ -416,7 +416,8 @@ public sealed class OnboardRecoveryCoordinator(
             !slots.SequenceEqual(ParseSlots(session?.SlotsJson ?? "[]")))
         {
             outcome = "REJECTED";
-            problem = Problem("RECOVERY_SCOPE_MISMATCH", "payload", "Hardware recovery record scope is not current.");
+            problem = Problem(ServerReasonCodes.RecoveryScopeMismatch, "payload",
+            "Hardware recovery record scope is not current.");
         }
         else
         {
@@ -488,7 +489,8 @@ public sealed class OnboardRecoveryCoordinator(
             slotOperationAttemptId = attemptId,
             slots,
             problem = authorized ? null : Problem(
-                "ACTION_NOT_ALLOWED_IN_STATE", "payload.demandId", "Load cancellation is not safe in the current state.")
+                ServerReasonCodes.ActionNotAllowedInState, "payload.demandId",
+                "Load cancellation is not safe in the current state.")
         });
     }
 
@@ -509,7 +511,8 @@ public sealed class OnboardRecoveryCoordinator(
             return Response(root, "LoadCompensationRejected", new
             {
                 recoveryActionId = actionId,
-                problem = Problem("ACTION_NOT_ALLOWED_IN_STATE", "payload", "Load compensation is not authorized.")
+                problem = Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
+                    "Load compensation is not authorized.")
             });
         }
         if (workflow.CommandMessageId is null)
@@ -563,7 +566,8 @@ public sealed class OnboardRecoveryCoordinator(
             return Response(root, "LoadCorrectionRejected", new
             {
                 correctionId,
-                problem = Problem("ACTION_NOT_ALLOWED_IN_STATE", "payload", "Load correction is not authorized.")
+                problem = Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
+                    "Load correction is not authorized.")
             });
         }
         RecoveryWorkflowRow workflow = await UpsertSimpleWorkflowAsync(
@@ -692,7 +696,9 @@ public sealed class OnboardRecoveryCoordinator(
         VehicleBusinessBlockingFact[] blockingFacts = session.State == "CLOSED"
             ? []
             : [new VehicleBusinessBlockingFact(
-                session.State == "OPEN" ? "RECOVERY_ACTION_REQUIRED" : "RECOVERY_RESULT_REQUIRED",
+                session.State == "OPEN"
+                    ? ServerReasonCodes.RecoveryActionRequired
+                    : ServerReasonCodes.RecoveryResultRequired,
                 "EXCEPTION_RECOVERY_SESSION",
                 session.ExceptionRecoverySessionId)];
         string messageId = StableGuid(
@@ -906,10 +912,10 @@ public sealed class OnboardRecoveryCoordinator(
         JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
             row => row.DemandId == demandId && row.AgvId == agvId && row.Stage == JourneyRuntimeStage.Blocked,
             cancellationToken).ConfigureAwait(false);
-        if (runtime is null) return "RECOVERY_DEMAND_NOT_BLOCKED";
+        if (runtime is null) return ServerReasonCodes.RecoveryDemandNotBlocked;
         StationOperationRow? operation = await FindLatestOperationAsync(demandId, cancellationToken).ConfigureAwait(false);
         return operation is null || !slots.SequenceEqual(ParseSlots(operation.TargetSlotsJson))
-            ? "RECOVERY_SCOPE_MISMATCH"
+            ? ServerReasonCodes.RecoveryScopeMismatch
             : null;
     }
 
@@ -918,13 +924,13 @@ public sealed class OnboardRecoveryCoordinator(
         int[] slots = RequiredSlots(payload, "slots");
         string? demandId = OptionalUuid(payload, "demandId");
         string operatorId = RequiredString(payload.GetProperty("operator"), "operatorId");
-        return session.State == "CLOSED" ? "RECOVERY_SESSION_CLOSED" :
-            RequiredUuid(payload, "eventId") != session.EventId ? "RECOVERY_EVENT_MISMATCH" :
-            demandId != session.DemandId ? "RECOVERY_DEMAND_MISMATCH" :
-            !slots.SequenceEqual(ParseSlots(session.SlotsJson)) ? "RECOVERY_SCOPE_MISMATCH" :
-            operatorId != session.AdministratorId ? "RECOVERY_OPERATOR_MISMATCH" :
+        return session.State == "CLOSED" ? ServerReasonCodes.RecoverySessionClosed :
+            RequiredUuid(payload, "eventId") != session.EventId ? ServerReasonCodes.RecoveryEventMismatch :
+            demandId != session.DemandId ? ServerReasonCodes.RecoveryDemandMismatch :
+            !slots.SequenceEqual(ParseSlots(session.SlotsJson)) ? ServerReasonCodes.RecoveryScopeMismatch :
+            operatorId != session.AdministratorId ? ServerReasonCodes.RecoveryOperatorMismatch :
             session.SelectedAction is not null && session.SelectedAction != RequiredString(payload, "action")
-                ? "RECOVERY_ACTION_ALREADY_SELECTED" : null;
+                ? ServerReasonCodes.RecoveryActionAlreadySelected : null;
     }
 
     private static string? ValidateActionPreconditions(
@@ -934,23 +940,25 @@ public sealed class OnboardRecoveryCoordinator(
         StationOperationRow? operation)
     {
         if (connection.ReportedForcedRecoveryGeneration != connection.ForcedRecoveryGeneration)
-            return "FORCED_RECOVERY_GENERATION_MISMATCH";
-        if (session.DemandId is not null && operation is null) return "RECOVERY_OPERATION_NOT_FOUND";
+            return ServerReasonCodes.ForcedRecoveryGenerationMismatch;
+        if (session.DemandId is not null && operation is null)
+            return ServerReasonCodes.RecoveryOperationNotFound;
         return action switch
         {
             "RESUME_AFTER_REPAIR" when operation?.Status != StationOperationStatus.RecoveryRequired =>
-                "ACTION_NOT_ALLOWED_IN_STATE",
+                ServerReasonCodes.ActionNotAllowedInState,
             "RESUME_AFTER_REPAIR" when connection.UnsettledSlotOperationAttemptId != operation.SlotOperationAttemptId ||
                                        connection.ProvenRecoveryCheckpoint is not
                                            ("PREPARED" or "ACTIVE_UNLOCK_SET" or "SAFE_FINISH_REACHED") =>
-                "PROVEN_RECOVERY_CHECKPOINT_REQUIRED",
+                ServerReasonCodes.ProvenRecoveryCheckpointRequired,
             "COMPENSATE_LOAD_ALL_EMPTY" when operation?.OperationType != SlotOperationType.Load ||
                                               operation.Status != StationOperationStatus.RecoveryRequired =>
-                "ACTION_NOT_ALLOWED_IN_STATE",
-            "FAULT_CARGO_HANDOFF" when session.DemandId is null => "ACTION_NOT_ALLOWED_IN_STATE",
+                ServerReasonCodes.ActionNotAllowedInState,
+            "FAULT_CARGO_HANDOFF" when session.DemandId is null =>
+                ServerReasonCodes.ActionNotAllowedInState,
             "FORCED_MECHANICAL_RECOVERY" => null,
             "RESUME_AFTER_REPAIR" or "COMPENSATE_LOAD_ALL_EMPTY" or "FAULT_CARGO_HANDOFF" => null,
-            _ => "ACTION_NOT_ALLOWED_IN_STATE"
+            _ => ServerReasonCodes.ActionNotAllowedInState
         };
     }
 

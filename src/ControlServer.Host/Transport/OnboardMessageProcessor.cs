@@ -82,7 +82,7 @@ public sealed partial class OnboardMessageProcessor(
                     {
                         problem = new
                         {
-                            reasonCode = "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
+                            reasonCode = ServerReasonCodes.ProtocolReleaseIdentityMismatch,
                             fieldPath = "payload.protocolReleaseIdentity",
                             displayMessage = error.Message
                         },

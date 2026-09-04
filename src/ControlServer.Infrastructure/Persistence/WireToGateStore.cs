@@ -226,11 +226,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
 
         (string outcome, string? reasonCode, string? fieldPath, string? displayMessage) =
             request.AdministratorRole is not ("MAINTENANCE_ADMINISTRATOR" or "SYSTEM_ADMINISTRATOR")
-                ? (ManualChargingReturnToServiceDecision.Rejected, "PROTOCOL_SCHEMA_INVALID",
+                ? (ManualChargingReturnToServiceDecision.Rejected,
+                    ServerReasonCodes.ProtocolSchemaInvalid,
                     "payload.administratorRole",
                     "administratorRole is not one of the roles the profile allows.")
                 : session.Readiness == SessionReadiness.RecoveryRequired
-                    ? (ManualChargingReturnToServiceDecision.Rejected, "SESSION_RECOVERY_REQUIRED",
+                    ? (ManualChargingReturnToServiceDecision.Rejected,
+                        ServerReasonCodes.SessionRecoveryRequired,
                         "payload.requestId",
                         "The session has facts to reconcile before the vehicle can take work again.")
                     : (ManualChargingReturnToServiceDecision.ReturnedToEligibilityEvaluation,
