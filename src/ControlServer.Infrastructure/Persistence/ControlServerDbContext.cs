@@ -38,6 +38,24 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<PackageCapacityRuleRow> PackageCapacityRules => Set<PackageCapacityRuleRow>();
     public DbSet<MissingPackageRow> MissingPackages => Set<MissingPackageRow>();
 
+    // 批次 2 轨 B 的持久化地基（票 06）。四条能力轨的表在一次 migration 里落齐，
+    // 票 09／10／11／12／13 因此零 migration、零 Ports.cs 改动。
+    public DbSet<VehicleTaskTypeAdmissionRow> VehicleTaskTypeAdmissions => Set<VehicleTaskTypeAdmissionRow>();
+    public DbSet<DispatchZoneVehicleRow> DispatchZoneVehicles => Set<DispatchZoneVehicleRow>();
+    public DbSet<VehicleDispatchBudgetRow> VehicleDispatchBudgets => Set<VehicleDispatchBudgetRow>();
+    public DbSet<RouteGraphSnapshotRow> RouteGraphSnapshots => Set<RouteGraphSnapshotRow>();
+    public DbSet<RouteGraphEdgeRow> RouteGraphEdges => Set<RouteGraphEdgeRow>();
+    public DbSet<RouteGraphStationRow> RouteGraphStations => Set<RouteGraphStationRow>();
+    public DbSet<RouteGraphRemovedEdgeRow> RouteGraphRemovedEdges => Set<RouteGraphRemovedEdgeRow>();
+    public DbSet<RouteGraphRemovedStationRow> RouteGraphRemovedStations => Set<RouteGraphRemovedStationRow>();
+    public DbSet<RouteGraphEdgeGroupRow> RouteGraphEdgeGroups => Set<RouteGraphEdgeGroupRow>();
+    public DbSet<VehicleFaultStateRow> VehicleFaultStates => Set<VehicleFaultStateRow>();
+    public DbSet<FaultedVehicleCargoRow> FaultedVehicleCargo => Set<FaultedVehicleCargoRow>();
+    public DbSet<RiotOrderCommandAuditRow> RiotOrderCommandAudit => Set<RiotOrderCommandAuditRow>();
+    public DbSet<MapStationCatalogStateRow> MapStationCatalogStates => Set<MapStationCatalogStateRow>();
+    public DbSet<FrozenDemandStationRow> FrozenDemandStations => Set<FrozenDemandStationRow>();
+    public DbSet<CreateGateAuditRow> CreateGateAudit => Set<CreateGateAuditRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
@@ -128,6 +146,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
             .HasFilter("SupersededAt IS NULL");
         modelBuilder.Entity<PackageCapacityRuleRow>().HasData(PackageCapacitySeed.Rows);
         modelBuilder.Entity<MissingPackageRow>().HasKey(row => row.Package);
+
+        Batch2CapabilityModel.Configure(modelBuilder);
     }
 }
 
@@ -186,6 +206,12 @@ public sealed class OrderIntentRow
     public string? LastReconciliationOutcome { get; set; }
     public DateTimeOffset? LastReconciliationOutcomeAt { get; set; }
     public string? LastReconciliationReceiptJson { get; set; }
+
+    // Vehicle-occupancy uniqueness moved down from the lease table (specification 5.1).
+    // Nothing writes these yet — see Batch2CapabilityModel for why the index is filtered on
+    // ClaimedAt being set, and why that keeps current behaviour unchanged.
+    public DateTimeOffset? VehicleOccupancyClaimedAt { get; set; }
+    public DateTimeOffset? VehicleOccupancyReleasedAt { get; set; }
 }
 
 public sealed class RiotDispatchAuditEventRow
