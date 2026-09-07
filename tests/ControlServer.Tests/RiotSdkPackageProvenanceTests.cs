@@ -6,8 +6,8 @@ namespace ControlServer.Tests;
 
 public sealed class RiotSdkPackageProvenanceTests
 {
-    private const string PackageVersion = "0.1.0-controlserver.2";
-    private const string RepositoryCommit = "e708f874fa3b76f9ed1cf39c2f97e4a026c13c10";
+    private const string PackageVersion = "0.2.0-fp.2";
+    private const string RepositoryCommit = "e9b7411055ceeea8cf902688a8e3b424a4ddb70a";
     private static readonly string[] PackageIds =
     [
         "RIoT.Sdk.Core",
@@ -59,7 +59,7 @@ public sealed class RiotSdkPackageProvenanceTests
             Assert.Equal(packageId, ElementValue(metadata, "id"));
             Assert.Equal(PackageVersion, ElementValue(metadata, "version"));
             Assert.Equal("git", repository.Attribute("type")?.Value);
-            Assert.Equal("https://github.com/trytoreachpeak0/8005---AGV", repository.Attribute("url")?.Value);
+            Assert.Equal("https://github.com/trytoreachpeak0/riot-sdk", repository.Attribute("url")?.Value);
             Assert.Equal(RepositoryCommit, repository.Attribute("commit")?.Value);
         }
     }
