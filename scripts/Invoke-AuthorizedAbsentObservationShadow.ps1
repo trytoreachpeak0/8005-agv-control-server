@@ -45,6 +45,10 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# This run puts WPF windows on the machine's single interactive desktop, which 8005-mes-ingest's
+# golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
+Import-Module (Join-Path $PSScriptRoot 'DesktopLock.psm1') -Force
+
 $productionDatabase = 'C:\ProgramData\8005\ControlServer\data\controlserver.db'
 $proxyPort = 58888
 $sessionPort = 59005
@@ -74,6 +78,9 @@ $proxyProcess = $null
 $onboardProcess = $null
 $simulatorProcess = $null
 $stateProcess = $null
+# Released in `finally` after every peer is stopped. Declared here so that release is unconditional
+# even when the run dies during preflight, before the lock was ever taken.
+$desktopLock = $null
 $result = 'FAIL'
 $failure = $null
 $sessionGeneration = $null
@@ -570,6 +577,15 @@ function Start-ExactPeers {
         $configPath,
         ($config | ConvertTo-Json -Depth 30),
         [Text.UTF8Encoding]::new($false))
+
+    # The simulator and the onboard client are both WPF -- the onboard one deliberately visible --
+    # so from here to teardown this run owns the machine's single interactive desktop.
+    # 8005-mes-ingest's golden renderer and desktop suite take the same machine-wide mutex, and
+    # GitHub's per-repository `concurrency` cannot see across the two. See scripts/DesktopLock.psm1.
+    #
+    # Taken here rather than at the top of the run: everything above is hashing, ACL work and
+    # preflight assertions, none of which touch the desktop, so a queued run waits holding nothing.
+    $desktopLock = Enter-DesktopLock -Reason "authorized absent-observation shadow run $stamp"
 
     $simulatorArguments = @{
         FilePath = Join-Path $simulatorRoot 'SQCD_8005AGV_Simulator.exe'
@@ -1135,6 +1151,10 @@ finally {
         ($final | ConvertTo-Json -Depth 20),
         [Text.UTF8Encoding]::new($false))
     [pscustomobject]$final | ConvertTo-Json -Depth 20
+
+    # Last, after every peer has been stopped and every post-check has run. Releasing earlier would
+    # hand the desktop to another repository while this run's WPF windows were still closing.
+    Exit-DesktopLock -Handle $desktopLock
 }
 
 if ($result -notin @('PASS', 'PREFLIGHT_PASS')) { exit 1 }

@@ -144,6 +144,19 @@ seconds. Three things to know before running one:
 
 - **Two WPF windows appear on the desktop.** The rig needs an interactive session, so it cannot
   run over SSH or in a service-mode runner, and it steals focus once at startup.
+- **It takes a machine-wide desktop lock, and may queue for up to 30 minutes.** `win11-01` has one
+  interactive desktop and hosts runners for four repositories, so `8005-mes-ingest`'s golden
+  renderer and desktop test suite compete for it. The lock is the named mutex
+  `Global\W2G-InteractiveDesktop`; `scripts/DesktopLock.psm1` is this repository's copy and
+  `8005-mes-ingest/Invoke-WithDesktopLock.ps1` is the canonical definition. **The name is the
+  contract, the code is not** — the two repositories are independent clones with no shared package,
+  and `Test-DesktopLockQueueing.ps1` on each side asserts the literal so it cannot drift into two
+  locks that never meet. A queued run prints `DESKTOP_LOCK_WAITING` and then
+  `DESKTOP_LOCK_ACQUIRED`; silence is a hang, not a queue. The other three holders here are
+  `run-staged-g3.ps1`, `run-staged-g3-restart.ps1` and
+  `Invoke-AuthorizedAbsentObservationShadow.ps1` — **anything new that starts a WPF peer must take
+  it too**, acquired inside the script rather than in a wrapper, because these scripts are run by
+  hand at least as often as from CI and a wrapper leaves the bare invocation unprotected.
 - **Neither peer repository is built in place.** Each is cloned to
   `%LOCALAPPDATA%\8005-l2-peers\` and published from the clone; configuration is patched only in
   the per-run stage copy. A dirty peer worktree aborts the run rather than testing the committed

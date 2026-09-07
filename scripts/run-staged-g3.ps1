@@ -17,6 +17,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+# This run puts two WPF windows on the machine's single interactive desktop, which 8005-mes-ingest's
+# golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
+Import-Module (Join-Path $PSScriptRoot 'DesktopLock.psm1') -Force
+
 $nodeCommand = Get-Command node -ErrorAction SilentlyContinue
 $nodeExecutable = if ($null -ne $nodeCommand) {
     $nodeCommand.Source
@@ -2113,6 +2117,9 @@ $probeTranscript = Join-Path $EvidenceRoot 'probe-events.ndjson'
 $businessProxyTranscript = Join-Path $EvidenceRoot 'business-fault-proxy-events.ndjson'
 $businessProbeTranscript = Join-Path $EvidenceRoot 'business-probe-events.ndjson'
 $recoveryProbeTranscript = Join-Path $EvidenceRoot 'recovery-probe-events.ndjson'
+# Released in `finally` after the peers are stopped. Declared here so that release is unconditional
+# even when the run dies during the clone or build phase, before the lock was ever taken.
+$desktopLock = $null
 
 try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
@@ -2213,6 +2220,15 @@ try {
         $probeJson,
         [Text.UTF8Encoding]::new($false))
     $probeResult = $probeJson | ConvertFrom-Json
+
+    # The simulator and the onboard client are both WPF: from here to teardown this run owns
+    # win11-01's single interactive desktop, and 8005-mes-ingest's desktop suites take the same
+    # machine-wide mutex. `-WindowStyle Hidden` hides a console that these processes do not have; it
+    # does not keep them off the desktop. See scripts/DesktopLock.psm1.
+    #
+    # Late on purpose: everything above -- clone, protocol G1, publish, the headless ControlServer
+    # and the TLS probe -- touches no desktop, so a queued run waits without holding it.
+    $desktopLock = Enter-DesktopLock -Reason "staged G3 run $runId"
 
     $simulator = Start-Process -FilePath 'dotnet' `
         -ArgumentList @(Join-Path $simulatorPublish 'SQCD_8005AGV_Simulator.dll') `
@@ -2458,6 +2474,9 @@ finally {
         }
         $businessProxyStopping.Dispose()
     }
+    # Last, after the peers are stopped. Releasing earlier would hand the desktop to another
+    # repository while this run's WPF windows were still closing.
+    Exit-DesktopLock -Handle $desktopLock
 }
 
 $controlLog = if (Test-Path -LiteralPath (Join-Path $logsRoot 'control.out.log')) {

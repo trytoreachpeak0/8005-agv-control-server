@@ -12,6 +12,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+# This run puts WPF windows on the machine's single interactive desktop, which 8005-mes-ingest's
+# golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
+Import-Module (Join-Path $PSScriptRoot 'DesktopLock.psm1') -Force
+
 # This runner speaks plaintext loopback only. It never installs a temporary trust root, so it needs
 # no interactive security-warning acknowledgement and can run unattended. Since ticket 03 stripped the
 # certificate mechanism, run-staged-g3.ps1 is unattended on the same terms; this is no longer the one
@@ -475,6 +479,9 @@ $controlDatabaseAfterRun = $null
 $healthReadyStatus = $null
 $peerExitObservations = @()
 $credential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+# Released in `finally` after the peers are stopped. Declared here so that release is unconditional
+# even when the run dies during the clone or build phase, before the lock was ever taken.
+$desktopLock = $null
 
 try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
@@ -533,6 +540,12 @@ try {
         'RIoT__baseUrl' = 'http://127.0.0.1:1'
         'ControlServerBuild__commit' = $ControlServerCommit
     }
+
+    # The simulator and the onboard client are both WPF, and this runner starts the onboard three
+    # times across its phases, so it owns the machine's single interactive desktop from here to
+    # teardown. 8005-mes-ingest's desktop suites take the same machine-wide mutex; see
+    # scripts/DesktopLock.psm1. Taken late on purpose: the clone and publish above hold nothing.
+    $desktopLock = Enter-DesktopLock -Reason "staged G3 restart run $runId"
 
     $simulator = Start-Process -FilePath 'dotnet' `
         -ArgumentList @(Join-Path $simulatorPublish 'SQCD_8005AGV_Simulator.dll') `
@@ -624,6 +637,9 @@ finally {
     foreach ($process in @($onboard, $control, $simulator)) {
         Stop-ProcessSafely -Process $process
     }
+    # Last, after the peers are stopped. Releasing earlier would hand the desktop to another
+    # repository while this run's WPF windows were still closing.
+    Exit-DesktopLock -Handle $desktopLock
 }
 
 Start-Sleep -Seconds 2

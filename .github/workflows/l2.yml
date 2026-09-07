@@ -8,12 +8,18 @@ name: l2
 # for two independent reasons:
 #
 #   1. They need an interactive desktop session -- two WPF windows appear -- so they cannot run on
-#      this session-0 service runner at all.
+#      this session-0 service runner at all. Unchanged, and sufficient on its own.
 #   2. Putting them on the interactive `golden-renderer` runner instead would break the desktop
 #      exclusivity contract. GitHub's `concurrency` only applies within one repository, so a job
 #      here cannot serialise against 8005-mes-ingest's desktop suite on the same machine, and that
-#      machine is also the golden WPF renderer. Cross-repository desktop mutex is unsolved; see the
-#      workspace root CLAUDE.md.
+#      machine is also the golden WPF renderer.
+#
+#      **This second reason expired on 2026-09-08.** Invoke-L2Scenario.ps1 now takes the
+#      machine-wide mutex `Global\W2G-InteractiveDesktop` for real-onboard scenarios, and
+#      8005-mes-ingest's two desktop workflows take the same name and queue for it rather than
+#      failing fast; see scripts/DesktopLock.psm1. Exclusivity is no longer the blocker. Whether
+#      these scenarios move onto the `golden-renderer` runner is now a scheduling and capacity
+#      decision, not a missing mechanism.
 #
 # The synthetic three need nothing from the two read-only peer repositories: Get-L2PeerPublish is
 # only called when a scenario's setup file says Onboard = 'Real'. So this workflow is independent

@@ -59,6 +59,9 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 Import-Module (Join-Path $PSScriptRoot 'L2.psm1') -Force
+# Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
+# dependency is visible at the top rather than buried in a branch 150 lines down.
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
 
 $scenarioPath = Join-Path $PSScriptRoot "scenarios/$Scenario.ps1"
 if (-not (Test-Path -LiteralPath $scenarioPath -PathType Leaf)) {
@@ -139,6 +142,9 @@ $failureReason = $null
 # the peers are built.
 $onboardPublish = $null
 $simulatorPublish = $null
+# Held only by the real-onboard rig, and released in `finally` after teardown. Declared here so that
+# release is unconditional even when the run dies before acquiring it.
+$desktopLock = $null
 
 try {
     $journal.Note("L2 run $runId starting for scenario '$Scenario'.")
@@ -164,6 +170,17 @@ try {
             -ProjectPath 'src/SQCD_8005AGV_Simulator/SQCD_8005AGV_Simulator.csproj' `
             -CacheRoot $PeerCacheRoot -LogRoot $logRoot
         $journal.Note("Peers: onboard-hmi@$($onboardPublish.Commit), slots-simulator@$($simulatorPublish.Commit).")
+
+        # From here on this run puts two WPF windows on win11-01's single interactive desktop, so it
+        # must own that desktop machine-wide -- 8005-mes-ingest's golden renderer and desktop test
+        # suite take the same mutex, and GitHub's per-repository `concurrency` cannot see across the
+        # two. See scripts/DesktopLock.psm1.
+        #
+        # Acquired here rather than at the top of the run on purpose: building the server and
+        # publishing the peers touches neither the desktop nor a port, so a run that queues for the
+        # lock queues holding nothing. Everything after this line does hold something.
+        $desktopLock = Enter-DesktopLock -Reason "L2 scenario '$Scenario' (real onboard rig)"
+        $journal.Note('Interactive desktop lock acquired.')
     }
 
     $configuration = 'Release'
@@ -648,6 +665,10 @@ try {
     } else {
         Write-Warning "Stage root kept for diagnosis: $stageRoot"
     }
+
+    # Last, after the peers are stopped. Releasing earlier would hand the desktop to another
+    # repository while this run's WPF windows were still closing.
+    Exit-DesktopLock -Handle $desktopLock
 }
 
 Write-Host "L2 $Scenario -> $outcome (evidence: $EvidenceRoot)"
