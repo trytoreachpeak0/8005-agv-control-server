@@ -46,6 +46,7 @@ public static class ControlPlane
         ArgumentNullException.ThrowIfNull(app);
         CommandEngine<FakeOnboardState> engine = app.Services.GetRequiredService<CommandEngine<FakeOnboardState>>();
         OnboardPeerHolder holder = app.Services.GetRequiredService<OnboardPeerHolder>();
+        FakeOnboardOptions peerOptions = app.Services.GetRequiredService<FakeOnboardOptions>();
         RouteGroupBuilder control = app.MapGroup("/control/v1");
 
         control.MapGet("/openapi.json", ControlPlaneConventions.OpenApiDocument);
@@ -66,6 +67,9 @@ public static class ControlPlane
             FakeOnboardState state = engine.Snapshot().State;
             return Results.Json(ControlPlaneConventions.Envelope(engine, new
             {
+                // Which vehicle this process is. With several peers running at once, a
+                // snapshot that did not say would let one stand in for another unnoticed.
+                agvId = peerOptions.AgvId,
                 state.SessionGeneration,
                 state.Readiness,
                 state.ReadinessReasonCode,

@@ -55,7 +55,67 @@ public sealed record FakeOrder
 
 public sealed record FakeMission(string Type, int MapId, int Destination);
 
-public sealed record FakeStation(int Id, string Name);
+/// <summary>
+/// One station as <c>mapInfo/stations/{mapId}</c> reports it.
+/// </summary>
+/// <remarks>
+/// Id and Name are what the catalog Facade reads; the rest is what the route-graph Facade reads,
+/// and it is the same row on the wire. Round 43 measured the placement rule: a station sits on
+/// <c>edge_id</c>, at whichever of that edge's two endpoints it is nearer, and
+/// <c>station_offset</c> is zero on all 206 map25 stations and cannot be used for it.
+/// </remarks>
+public sealed record FakeStation(int Id, string Name)
+{
+    public int EdgeId { get; init; }
+    public double PosX { get; init; }
+    public double PosY { get; init; }
+    public double PosYaw { get; init; }
+    public int StationOffset { get; init; }
+    public int Type { get; init; } = 1;
+}
+
+/// <summary>One directed edge as <c>mapInfo/edges/{mapId}</c> reports it.</summary>
+public sealed record FakeEdge(int Id, int StartNode, int EndNode, double Cost)
+{
+    public int StartX { get; init; }
+    public int StartY { get; init; }
+    public int EndX { get; init; }
+    public int EndY { get; init; }
+    public double StartFacing { get; init; }
+    public double EndFacing { get; init; }
+    public int Direction { get; init; } = 1;
+    public bool IsBackEdge { get; init; }
+    public int Type { get; init; } = 1;
+}
+
+/// <summary>
+/// One edge's membership in a named edge group, as <c>mapEdgeGroup/all</c> reports it.
+/// </summary>
+/// <remarks>
+/// A group name spans Maps on the real RIoT — Round 43 saw 老厂电梯 in both map 14 and map 19 —
+/// so MapId is part of the identity, not decoration.
+/// </remarks>
+public sealed record FakeEdgeGroup(string GroupName, int Id, int MapId, string MapName, int EdgeId, string Type)
+{
+    public string GmtCreate { get; init; } = "2024-06-26 10:57:58";
+    public string GmtUpdate { get; init; } = "2024-06-26 10:57:58";
+    public int IsDelete { get; init; }
+}
+
+/// <summary>
+/// One order-command or emergency-service call, recorded and nothing else.
+/// </summary>
+/// <remarks>
+/// The fake records the call and does not simulate its business consequence: an OrderHold does not
+/// move the order to HELD here. A scenario asserts that the call was made, with these arguments,
+/// this many times — which is what the reconciliation under test has to get right — and never that
+/// the fake reacted the way the real RCS would.
+/// </remarks>
+public sealed record FakeCommandInvocation(
+    string CommandType,
+    string Target,
+    string? ArgumentsJson,
+    DateTimeOffset At);
 
 /// <summary>How the RIoT data plane misbehaves. The control plane is never affected by it.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -73,6 +133,26 @@ public sealed record FakeRiotState
     public required IReadOnlyDictionary<string, FakeVehicle> Vehicles { get; init; }
     public required IReadOnlyDictionary<string, FakeOrder> OrdersByUpperId { get; init; }
     public required IReadOnlyDictionary<int, IReadOnlyList<FakeStation>> StationsByMapId { get; init; }
+
+    /// <summary>Design-state edges per Map. Empty means the Map has no edge table to serve.</summary>
+    public IReadOnlyDictionary<int, IReadOnlyList<FakeEdge>> EdgesByMapId { get; init; } =
+        new Dictionary<int, IReadOnlyList<FakeEdge>>();
+
+    /// <summary>Runtime removals per Map. Empty is the normal case — map25 had none in Round 43.</summary>
+    public IReadOnlyDictionary<int, IReadOnlyList<int>> RemovedEdgeIdsByMapId { get; init; } =
+        new Dictionary<int, IReadOnlyList<int>>();
+
+    public IReadOnlyDictionary<int, IReadOnlyList<int>> RemovedStationIdsByMapId { get; init; } =
+        new Dictionary<int, IReadOnlyList<int>>();
+
+    /// <summary>
+    /// Edge groups across every Map, as the endpoint reports them. Empty by default, which is what
+    /// map25 actually looks like: every group on the production RIoT belongs to another Map.
+    /// </summary>
+    public IReadOnlyList<FakeEdgeGroup> EdgeGroups { get; init; } = [];
+
+    /// <summary>Every order-command and emergency-service call this round, oldest first.</summary>
+    public IReadOnlyList<FakeCommandInvocation> CommandInvocations { get; init; } = [];
     public FakeRiotFaultMode FaultMode { get; init; } = FakeRiotFaultMode.Normal;
     public int DelayMs { get; init; }
 

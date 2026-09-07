@@ -348,6 +348,9 @@ try {
 
     # 5. The onboard last, either way: it connects out to the server, so the server has to be
     #    listening first.
+    # Empty on a real-onboard rig, which has no synthetic peers; the scenario Context carries it
+    # either way, so it must exist before the branch.
+    $onboardDoubles = @()
     $onboard = $null
     if ($realOnboard) {
         # Everything here is a runtime setting the shipped appsettings.json already carries. The
@@ -410,34 +413,66 @@ try {
             -Journal $journal -Criterion 'onboard-modbus' -TimeoutSeconds 60 -Component $onboardHandle `
             -Probe { [int]$simulator.Health().modbus.clientCount } -Until { param($v) $v -ge 1 }
     } else {
-        # OnboardSeed lands on the safety summary the handshake's SafetyStateSnapshot carries,
-        # which is the only way to establish a session that already says the vehicle is moving.
-        $onboardArguments = @(
-            "--FakeOnboard:port=$FakeOnboardPort",
-            "--FakeOnboard:instanceId=l2-onboard",
-            "--FakeOnboard:Peer:port=$ControlPort",
-            "--FakeOnboard:Peer:agvId=$agvId")
-        if ($setup.ContainsKey('OnboardSeed')) {
-            foreach ($key in ($setup.OnboardSeed.Keys | Sort-Object)) {
-                $onboardArguments += "--FakeOnboard:Seed:$key=$($setup.OnboardSeed[$key])"
-            }
-            $journal.Note("Onboard seed from $Scenario.setup.psd1: " +
-                (($setup.OnboardSeed.GetEnumerator() | Sort-Object Key |
-                    ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
-        }
-        $onboardHandle = Start-L2Process -Name 'fake-onboard' `
-            -FilePath (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe') `
-            -ArgumentList $onboardArguments `
-            -WorkingDirectory $onboardDirectory `
-            -Environment @{ 'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential } `
-            -LogRoot $logRoot |
-            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
-        $handles += $onboardHandle
+        # One synthetic peer per configured vehicle. A scenario that says nothing gets exactly one,
+        # on the same port and instance id every existing scenario was written against, so the
+        # evidence layout for those is unchanged. A multi-vehicle scenario lists OnboardPeers and
+        # each peer gets its own process -- separate processes are what makes 'sessions do not
+        # cross' structural rather than something the fake has to remember to enforce.
+        # The outer @() is load bearing: an if-expression's output goes through the pipeline, so
+        # a single-element array coming out of either branch would be unrolled to the hashtable
+        # itself. Indexing that with [0] then looks up the key 0 and yields null -- which is how
+        # every single-peer scenario broke while the three-peer one passed.
+        $peerSpecs = @(if ($setup.ContainsKey('OnboardPeers')) { $setup.OnboardPeers } else { @{ AgvId = $agvId } })
+        for ($peerIndex = 0; $peerIndex -lt $peerSpecs.Count; $peerIndex++) {
+            $spec = $peerSpecs[$peerIndex]
+            $peerAgvId = if ($spec.ContainsKey('AgvId')) { $spec.AgvId } else { $agvId }
+            $peerPort = $FakeOnboardPort + $peerIndex
+            $peerName = if ($peerIndex -eq 0) { 'fake-onboard' } else { "fake-onboard-$peerIndex" }
+            $peerInstance = if ($peerIndex -eq 0) { 'l2-onboard' } else { "l2-onboard-$peerIndex" }
 
-        $onboard = New-L2Double -Name 'fake-onboard' -BaseUrl "http://127.0.0.1:$FakeOnboardPort"
-        $null = Wait-L2Condition -Description 'the synthetic peer reached READY' -Journal $journal -Criterion 'onboard-readiness' `
-            -TimeoutSeconds 60 -Component $onboardHandle `
-            -Probe { $onboard.Snapshot().body.readiness } -Until { param($v) $v -eq 'READY' }
+            # OnboardSeed lands on the safety summary the handshake's SafetyStateSnapshot carries,
+            # which is the only way to establish a session that already says the vehicle is moving.
+            $onboardArguments = @(
+                "--FakeOnboard:port=$peerPort",
+                "--FakeOnboard:instanceId=$peerInstance",
+                "--FakeOnboard:Peer:port=$ControlPort",
+                "--FakeOnboard:Peer:agvId=$peerAgvId")
+            $peerSeed = if ($spec.ContainsKey('Seed')) { $spec.Seed } elseif ($setup.ContainsKey('OnboardSeed')) { $setup.OnboardSeed } else { $null }
+            if ($null -ne $peerSeed) {
+                foreach ($key in ($peerSeed.Keys | Sort-Object)) {
+                    $onboardArguments += "--FakeOnboard:Seed:$key=$($peerSeed[$key])"
+                }
+                $journal.Note("Onboard seed for ${peerName}: " +
+                    (($peerSeed.GetEnumerator() | Sort-Object Key |
+                        ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
+            }
+            $onboardHandle = Start-L2Process -Name $peerName `
+                -FilePath (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe') `
+                -ArgumentList $onboardArguments `
+                -WorkingDirectory $onboardDirectory `
+                -Environment @{ 'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential } `
+                -LogRoot $logRoot |
+                ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
+            $handles += $onboardHandle
+
+            $peerDouble = New-L2Double -Name $peerName -BaseUrl "http://127.0.0.1:$peerPort"
+            $onboardDoubles += [pscustomobject]@{ Name = $peerName; Port = $peerPort; AgvId = $peerAgvId; Double = $peerDouble }
+            # ControlServer's accept loop is serial -- it awaits one connection's handler before
+            # accepting the next -- so today only the first peer reaches READY and the others sit
+            # queued. That is the single-vehicle transport ticket 09 replaces. Until then a
+            # multi-vehicle scenario says WaitForReady = $false on the peers it knows will wait.
+            $waitForReady = if ($spec.ContainsKey('WaitForReady')) { [bool]$spec.WaitForReady } else { $true }
+            if ($waitForReady) {
+                $null = Wait-L2Condition -Description "the synthetic peer $peerAgvId reached READY" -Journal $journal -Criterion 'onboard-readiness' `
+                    -TimeoutSeconds 60 -Component $onboardHandle `
+                    -Probe { $peerDouble.Snapshot().body.readiness } -Until { param($v) $v -eq 'READY' }
+            } else {
+                $journal.Note("Peer $peerAgvId started; not waiting for READY (WaitForReady = false).")
+            }
+        }
+        # Scenario bodies address the first peer as $onboard, which is the only one a
+        # single-vehicle scenario has.
+        $onboard = $onboardDoubles[0].Double
     }
 
     # Now readiness is meaningful: the peer finished the handshake and the server granted it.
@@ -457,6 +492,10 @@ try {
         # synthetic peer's control plane, or the UI Automation driver over the shipped WPF. A
         # scenario is written for one rig, so there is nothing to branch on at this level.
         Onboard             = $onboard
+        # Every synthetic peer, first one first. A single-vehicle scenario never touches this;
+        # a multi-vehicle one needs to address the peer that did not get the order as well as
+        # the one that did.
+        OnboardPeers        = $onboardDoubles
         Simulator           = $simulator
         SkewProxy           = $skewProxy
         Connection          = $connection
@@ -491,7 +530,11 @@ try {
 } catch {
     $outcome = 'FAIL'
     $failureReason = $_.Exception.Message
+    # The stack trace is what turns "a method on a null-valued expression" into a line number.
+    # Without it a failure inside the orchestrator costs a bisect to locate.
     $journal.Note("Run failed: $failureReason")
+    $journal.Note("Failure at: " + ($_.ScriptStackTrace -replace "?
+", " | "))
     Write-Warning $failureReason
 } finally {
     # Snapshots before teardown, so a failed run keeps the state that explains it. Each is written
@@ -504,7 +547,11 @@ try {
         # failed load it says whether the goods were ever there.
         @{ Name = 'slots-simulator'; Url = "http://127.0.0.1:$SimulatorHttpPort/api/v1/snapshot" }
     } else {
-        @{ Name = 'fake-onboard'; Url = "http://127.0.0.1:$FakeOnboardPort/control/v1/snapshot" }
+        # Every peer, not just the first: on a multi-vehicle run the interesting evidence is often
+        # what the peer that did *not* get the order was doing.
+        $onboardDoubles | ForEach-Object {
+            @{ Name = $_.Name; Url = "http://127.0.0.1:$($_.Port)/control/v1/snapshot" }
+        }
     }
     if ($null -ne $clockSkewMs) {
         $snapshotSources += @{

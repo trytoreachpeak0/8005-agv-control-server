@@ -86,7 +86,16 @@ public static class ControlPlane
                 vehicles = state.Vehicles.Values.OrderBy(item => item.DeviceKey, StringComparer.Ordinal),
                 orders = state.OrdersByUpperId.Values.OrderBy(item => item.Id),
                 maps = state.StationsByMapId.OrderBy(pair => pair.Key)
-                    .Select(pair => new { mapId = pair.Key, stations = pair.Value })
+                    .Select(pair => new { mapId = pair.Key, stations = pair.Value }),
+                // Every order-command and emergency-service call this round, oldest first.
+                // A scenario asserts "called, with these arguments, exactly this many times"
+                // off this list -- the fake never applies the command's consequence.
+                commandInvocations = state.CommandInvocations,
+                edgeGroups = state.EdgeGroups,
+                removedEdges = state.RemovedEdgeIdsByMapId.OrderBy(pair => pair.Key)
+                    .Select(pair => new { mapId = pair.Key, edgeIds = pair.Value }),
+                removedStations = state.RemovedStationIdsByMapId.OrderBy(pair => pair.Key)
+                    .Select(pair => new { mapId = pair.Key, stationIds = pair.Value })
             }));
         });
 

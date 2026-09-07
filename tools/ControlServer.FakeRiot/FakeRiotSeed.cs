@@ -26,6 +26,58 @@ public sealed class FakeRiotSeed
         ["11"] = "C15-13"
     };
 
+    /// <summary>
+    /// Vehicle keys beyond <see cref="VehicleKey"/>. Empty by default, so a scenario that says
+    /// nothing faces exactly the single-vehicle fleet every existing scenario was written against.
+    /// A multi-vehicle scenario lists the extra keys here and gets them at rest on the same Map.
+    /// </summary>
+    public List<string> AdditionalVehicleKeys { get; set; } = [];
+
+    /// <summary>
+    /// Which node each station sits on, keyed by station id. Together with <see cref="Nodes"/> this
+    /// is the whole route-graph seed: the station's coordinates are its node's, which is what makes
+    /// the placement rule resolve exactly.
+    /// </summary>
+    public Dictionary<string, int> StationNodes { get; set; } = new(StringComparer.Ordinal)
+    {
+        ["11"] = 1,
+        ["12"] = 3,
+        ["210"] = 5
+    };
+
+    /// <summary>Node id to (x, y) in mm.</summary>
+    public Dictionary<string, int[]> Nodes { get; set; } = new(StringComparer.Ordinal)
+    {
+        ["1"] = [0, 0],
+        ["2"] = [0, 10000],
+        ["3"] = [0, 20000],
+        ["4"] = [10000, 20000],
+        ["5"] = [20000, 20000],
+        ["6"] = [20000, 0]
+    };
+
+    /// <summary>
+    /// Directed edges as "edgeId:startNode:endNode". Cost is the Euclidean distance between the two
+    /// nodes, which is what Round 43 measured Edge.cost to be on the real Map.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not symmetric: only two of the six forward edges have a reverse twin, so a
+    /// consumer that treats the graph as undirected reaches stations it should not be able to.
+    /// map25 is the same shape -- 403 edges, only 148 with a reverse.
+    /// </remarks>
+    public List<string> Edges { get; set; } =
+    [
+        "1:1:2", "2:2:3", "3:3:4", "4:4:5", "5:5:6", "6:6:1", "7:2:1", "8:3:2"
+    ];
+
+    /// <summary>
+    /// Edge ids currently removed from the Map. Empty by default -- that is map25's real state, and
+    /// the state a staleness rule has to read as "nothing removed" rather than "not fetched".
+    /// </summary>
+    public List<int> RemovedEdgeIds { get; set; } = [];
+
+    public List<int> RemovedStationIds { get; set; } = [];
+
     public FakeRiotState BuildInitialState()
     {
         FakeVehicle vehicle = new()
@@ -36,24 +88,106 @@ public sealed class FakeRiotSeed
             Battery = BatteryPercent,
             BatteryState = BatteryState
         };
+        Dictionary<int, int[]> nodes = Nodes.ToDictionary(
+            pair => int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture),
+            pair => pair.Value);
+
+        FakeEdge[] edges = Edges
+            .Select(spec => spec.Split(':'))
+            .Select(parts => BuildEdge(
+                int.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture),
+                int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture),
+                int.Parse(parts[2], System.Globalization.CultureInfo.InvariantCulture),
+                nodes))
+            .OrderBy(edge => edge.Id)
+            .ToArray();
+
         FakeStation[] stations = Stations
-            .Select(pair => new FakeStation(
+            .Select(pair => BuildStation(
                 int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture),
-                pair.Value))
+                pair.Value,
+                nodes,
+                edges))
             .OrderBy(station => station.Id)
             .ToArray();
+
+        Dictionary<string, FakeVehicle> vehicles = new(StringComparer.Ordinal)
+        {
+            [VehicleKey] = vehicle
+        };
+        foreach (string extra in AdditionalVehicleKeys.Where(key => !string.IsNullOrWhiteSpace(key)))
+        {
+            vehicles[extra] = vehicle with { DeviceKey = extra };
+        }
+
         return new FakeRiotState
         {
-            Vehicles = new Dictionary<string, FakeVehicle>(StringComparer.Ordinal)
-            {
-                [VehicleKey] = vehicle
-            },
+            Vehicles = vehicles,
             OrdersByUpperId = new Dictionary<string, FakeOrder>(StringComparer.Ordinal),
             StationsByMapId = new Dictionary<int, IReadOnlyList<FakeStation>>
             {
                 [MapId] = stations
             },
+            EdgesByMapId = new Dictionary<int, IReadOnlyList<FakeEdge>>
+            {
+                [MapId] = edges
+            },
+            RemovedEdgeIdsByMapId = new Dictionary<int, IReadOnlyList<int>>
+            {
+                [MapId] = RemovedEdgeIds
+            },
+            RemovedStationIdsByMapId = new Dictionary<int, IReadOnlyList<int>>
+            {
+                [MapId] = RemovedStationIds
+            },
             NextOrderSequence = 1
+        };
+    }
+
+    private static FakeEdge BuildEdge(int id, int startNode, int endNode, Dictionary<int, int[]> nodes)
+    {
+        int[] start = nodes[startNode];
+        int[] end = nodes[endNode];
+        double cost = Math.Sqrt(
+            Math.Pow(end[0] - start[0], 2) + Math.Pow(end[1] - start[1], 2));
+        return new FakeEdge(id, startNode, endNode, Math.Round(cost, 1))
+        {
+            StartX = start[0],
+            StartY = start[1],
+            EndX = end[0],
+            EndY = end[1],
+        };
+    }
+
+    /// <summary>
+    /// Places a station on its node and points it at an edge touching that node.
+    /// </summary>
+    /// <remarks>
+    /// The station's coordinates are its node's exactly, so the placement rule -- nearer of the
+    /// edge's two endpoints -- resolves with zero residual. Round 43 measured a maximum residual of
+    /// 4 mm on the real Map, so exactness here is a simplification, not a different rule.
+    /// </remarks>
+    private FakeStation BuildStation(
+        int stationId,
+        string name,
+        Dictionary<int, int[]> nodes,
+        IReadOnlyList<FakeEdge> edges)
+    {
+        if (!StationNodes.TryGetValue(
+                stationId.ToString(System.Globalization.CultureInfo.InvariantCulture), out int node) ||
+            !nodes.TryGetValue(node, out int[]? position))
+        {
+            // A station with no node is still a catalog station; it simply is not on the graph.
+            return new FakeStation(stationId, name);
+        }
+
+        FakeEdge? edge = edges.FirstOrDefault(candidate => candidate.EndNode == node)
+            ?? edges.FirstOrDefault(candidate => candidate.StartNode == node);
+        return new FakeStation(stationId, name)
+        {
+            EdgeId = edge?.Id ?? 0,
+            PosX = position[0],
+            PosY = position[1],
         };
     }
 }

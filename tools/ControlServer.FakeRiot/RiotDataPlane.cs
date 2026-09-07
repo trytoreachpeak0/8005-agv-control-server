@@ -94,7 +94,22 @@ public static class RiotDataPlane
             {
                 return Ok(Array.Empty<object>());
             }
-            return Ok(stations.Select(station => new { id = station.Id, name = station.Name }).ToArray());
+            // The real endpoint returns one row carrying both views, and two of this shape's
+            // quirks are load bearing: the keys are snake_case, and the position keys contain a
+            // literal dot. An anonymous type cannot express "pos.x", hence the dictionary.
+            return Ok(stations.Select(station => new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["id"] = station.Id,
+                ["name"] = station.Name,
+                ["edge_id"] = station.EdgeId,
+                ["pos.x"] = station.PosX,
+                ["pos.y"] = station.PosY,
+                ["pos.yaw"] = station.PosYaw,
+                ["station_offset"] = station.StationOffset,
+                ["type"] = station.Type,
+                ["desc"] = "",
+                ["user_define_properties"] = new Dictionary<string, object?>(StringComparer.Ordinal),
+            }).ToArray());
         });
 
         app.MapGet("/api/order/v1/orderRecord/detailByUpperId/{upperId}", async (
@@ -223,14 +238,14 @@ public static class RiotDataPlane
             .ToArray()
     };
 
-    private static IResult Ok(object? result) => Results.Json(new { code = "0", message = "成功", result });
+    internal static IResult Ok(object? result) => Results.Json(new { code = "0", message = "成功", result });
 
     /// <summary>
     /// Injects the configured data-plane fault. NoResponse holds the request until the client gives
     /// up, which is how a read timeout is produced without a real network; the control server must
     /// answer RIOT_READ_TIMEOUT and fail closed rather than treat silence as safe.
     /// </summary>
-    private static async Task<IResult?> ApplyFaultAsync(
+    internal static async Task<IResult?> ApplyFaultAsync(
         CommandEngine<FakeRiotState> engine,
         CancellationToken cancellationToken)
     {

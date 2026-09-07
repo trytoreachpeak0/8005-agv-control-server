@@ -39,6 +39,8 @@ public static class FakeRiotHost
 
         WebApplication app = builder.Build();
         app.MapRiotDataPlane();
+        app.MapRiotRouteGraphPlane();
+        app.MapRiotCommandPlane();
         app.MapControlPlane();
         return app;
     }
