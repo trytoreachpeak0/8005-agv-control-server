@@ -44,12 +44,8 @@ public sealed class PreCreateGateCriterion(
                 evaluation.GraphTraversalCostMm),
             cancellationToken).ConfigureAwait(false);
 
-        if (!outcome.IsAllowed)
-        {
-            return outcome.BlockReason!;
-        }
-
-        evaluation.RiotRouteCostMm = outcome.RiotRouteCostMm;
-        return DispatchAdmissionChain.Eligible;
+        return outcome.IsAllowed
+            ? DispatchAdmissionChain.Eligible
+            : outcome.BlockReason!;
     }
 }

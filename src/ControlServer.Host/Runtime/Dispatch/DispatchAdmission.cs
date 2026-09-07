@@ -112,17 +112,9 @@ public sealed class DispatchCandidateEvaluation(
     /// </summary>
     public long CatalogRevision { get; set; }
 
-    /// <summary>
-    /// What RIoT's <c>getRouteCostsBy</c> answered for this vehicle and pickup station, set by the
-    /// pre-create gate.
-    /// </summary>
-    /// <remarks>
-    /// <b>This one really is a RouteCost</b> — RIoT's number, under RIoT's name. It is kept beside
-    /// <see cref="GraphTraversalCostMm"/> rather than merged with it because the whole point of the
-    /// gate is that two independent sources answered, and a single field would record only that
-    /// something did.
-    /// </remarks>
-    public long? RiotRouteCostMm { get; set; }
+    // RIoT's own RouteCost is deliberately not carried here. The gate writes it straight into the
+    // audit beside the graph's number, and nothing downstream in the round reads it -- unlike
+    // GraphTraversalCostMm, which the ranker needs. A field nobody reads is a field that drifts.
 }
 
 /// <summary>
