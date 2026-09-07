@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.RouteGraph;
+using ControlServer.Host.Runtime.CreateGate;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -33,7 +34,9 @@ public static class DispatchAdmissionCriteria
         WireToGateStore store,
         ISublotBoxCountReader boxCountReader,
         ILogger<SlotCapacityCriterion> slotCapacityLogger,
-        RouteGraphAccess? routeGraph = null)
+        RouteGraphAccess? routeGraph = null,
+        CatalogAvailabilityAccess? catalog = null,
+        PreCreateGate? createGate = null)
     {
         List<IDispatchAdmissionCriterion> criteria =
         [
@@ -57,6 +60,19 @@ public static class DispatchAdmissionCriteria
             criteria.Add(new RouteGraphReachabilityCriterion(routeGraph));
         }
 
+        // FP-C13's two halves. Omitted when not supplied, which is what a unit test that is not
+        // about the catalog gets; the host always supplies both, and there is no configuration
+        // that turns them off -- see MapStationCatalogOptions for why REQ-0302 has no switch.
+        if (catalog is not null)
+        {
+            criteria.Add(new CatalogAvailabilityCriterion(catalog));
+        }
+
+        if (createGate is not null)
+        {
+            criteria.Add(new PreCreateGateCriterion(createGate, options));
+        }
+
         return criteria;
     }
 
@@ -70,11 +86,13 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, RequiredMesFactsCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, AreaScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, AreaEqpUniqueCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, CatalogAvailabilityCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, StationResolutionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, PackageCapacityCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleDynamicFactsCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, StationTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, RouteGraphReachabilityCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, PreCreateGateCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, SlotCapacityCriterion>();
 
         services.AddScoped<DispatchAdmissionChain>();

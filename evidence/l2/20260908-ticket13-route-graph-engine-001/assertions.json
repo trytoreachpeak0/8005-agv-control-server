@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "scenario": "route-graph-engine",
+  "runId": "20260907T164932728Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "controlServerCommit": "646624acc98eb3d7cacb330eadb1f3f3c8ecc76f",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260907T164932728Z",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-RG-01",
+      "description": "设计态读回了种子图的八条有向边",
+      "outcome": "PASS",
+      "expected": 8,
+      "actual": 8
+    },
+    {
+      "id": "L2-RG-02",
+      "description": "设计态读回了三个站点",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-RG-03",
+      "description": "运行态周期也跑过（移除集已读回，空是正常答案）",
+      "outcome": "PASS",
+      "expected": "(非空)",
+      "actual": "2026-09-07 16:49:40.2754021+00:00"
+    },
+    {
+      "id": "L2-RG-04",
+      "description": "边组指纹为空串且已取过一次（合成 RIoT 与 map25 一样没有边组）",
+      "outcome": "PASS",
+      "expected": "'' + 已取过",
+      "actual": "'' + 已取过"
+    },
+    {
+      "id": "L2-RG-05",
+      "description": "快照不是陈旧态",
+      "outcome": "PASS",
+      "expected": "(无陈旧原因)",
+      "actual": "(null)"
+    },
+    {
+      "id": "L2-RG-06",
+      "description": "引擎开着时派车照常走通（可达性判据放行）",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-RG-07",
+      "description": "候选判定结果是 ACCEPTED，没有被任何 ROUTE_GRAPH_* 原因挡住",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    }
+  ]
+}

@@ -658,4 +658,15 @@ public interface ICatalogAvailabilityStore
         CancellationToken cancellationToken);
 
     Task RecordGateVerdictAsync(CreateGateEvaluation evaluation, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The verdict most recently recorded for a demand, or null when the gate has never judged it.
+    /// </summary>
+    /// <remarks>
+    /// Added by ticket 13, after ticket 06 had defined the rest. REQ-0308 forbids manufacturing an
+    /// alarm per polling round or per waiting task, and the gate runs on every round for every open
+    /// demand — so a verdict is recorded only when it differs from the one standing, and this is
+    /// what "the one standing" is read with.
+    /// </remarks>
+    Task<CreateGateVerdict?> ReadLastVerdictAsync(string demandId, CancellationToken cancellationToken);
 }

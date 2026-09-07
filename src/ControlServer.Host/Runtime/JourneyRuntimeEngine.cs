@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
+using ControlServer.Host.Runtime.CreateGate;
 
 namespace ControlServer.Host.Runtime;
 
@@ -24,6 +25,9 @@ public sealed class JourneyRuntimeEngine(
     OnboardJourneyPublisher publisher,
     DispatchAdmissionChain admissionChain,
     IDispatchCandidateRanker candidateRanker,
+    CatalogAvailabilityAccess catalogAvailability,
+    ICatalogAvailabilityStore catalogStore,
+    PreCreateGate createGate,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -65,8 +69,25 @@ public sealed class JourneyRuntimeEngine(
             error is HttpRequestException or InvalidDataException or JsonException or StationResolutionException)
         {
             LogMapStationCatalogFailed(logger, error);
+            // REQ-0302/REQ-0308: a failed attempt is a catalog-level state, and explicitly not a
+            // confirmation -- it must not extend the freshness window. Whether it blocks depends
+            // on how long ago the last real confirmation was, which the availability check decides.
+            await catalogAvailability.RecordFailureAsync(
+                runtimeOptions.MapId,
+                error is StationResolutionException
+                    ? MapStationCatalogState.CandidateInvalid
+                    : MapStationCatalogState.RefreshFailed,
+                error is StationResolutionException resolution
+                    ? resolution.ReasonCode
+                    : "CATALOG_REFRESH_FAILED",
+                cancellationToken).ConfigureAwait(false);
             return;
         }
+
+        // Read whole, gate station found, machine stations parsed: this is what a complete
+        // confirmation is, and the only thing freshness is measured from.
+        await catalogAvailability.RecordConfirmationAsync(currentMap, cancellationToken)
+            .ConfigureAwait(false);
 
         await store.ApplyAdmissionPolicyAsync(
             new AdmissionPolicyDefinition(
@@ -107,7 +128,7 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        await AdvanceAsync(active[0], cancellationToken).ConfigureAwait(false);
+        await AdvanceAsync(active[0], currentMap, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task DiscoverAndAcceptAsync(
@@ -198,7 +219,8 @@ public sealed class JourneyRuntimeEngine(
                     evaluation.ExpectedBasketCount,
                     evaluation.TargetSlots,
                     backlog.FirstSeenAt,
-                    evaluation.GraphTraversalCostMm));
+                    evaluation.GraphTraversalCostMm,
+                    evaluation.CatalogRevision));
             }
         }
 
@@ -234,6 +256,29 @@ public sealed class JourneyRuntimeEngine(
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
         JourneyExecutionPlan plan = CreatePlan(selected, intakeAt);
+        // REQ-0305: the endpoints are taken from the snapshot that was fresh when the demand was
+        // taken, and frozen there. Both ends, because both are stations this task will be sent to
+        // and a later rename of either must not reach the task that already exists. The store
+        // refuses to rewrite an endpoint it already holds rather than silently moving a
+        // destination.
+        await catalogStore.FreezeDemandStationsAsync(
+            selected.Snapshot.DemandId,
+            selected.Snapshot.TransportDemandKey,
+            [
+                new FrozenStationFact(
+                    FrozenStationRole.Pickup,
+                    plan.MapId,
+                    plan.PickupStationRiotId,
+                    plan.PickupStationId),
+                new FrozenStationFact(
+                    FrozenStationRole.Dropoff,
+                    plan.MapId,
+                    plan.GateStationRiotId,
+                    plan.GateStationId),
+            ],
+            selected.CatalogRevision,
+            intakeAt,
+            cancellationToken).ConfigureAwait(false);
         OrderIntent pickup = new(
             plan.PickupMovementLegId,
             selected.Snapshot.DemandId,
@@ -283,7 +328,10 @@ public sealed class JourneyRuntimeEngine(
         }
     }
 
-    private async Task AdvanceAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    private async Task AdvanceAsync(
+        JourneyRuntimeRow runtime,
+        RiotMapStationCatalogSnapshot currentMap,
+        CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
         SessionRecoveryRow? session = await CurrentReadySessionAsync(runtime.AgvId, cancellationToken)
@@ -410,6 +458,21 @@ public sealed class JourneyRuntimeEngine(
                     }
                     return;
                 }
+                // REQ-0305: every RIoT move order that does not exist yet is gated again, against
+                // the frozen endpoint and the catalog as it stands now. The gate leg is a second
+                // order created minutes after the demand was taken, and nothing about the first
+                // order's gate says the vehicle can still reach the gate station from where it now
+                // is.
+                CreateGateOutcome gateLeg = await GateLegAsync(runtime, currentMap, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!gateLeg.IsAllowed)
+                {
+                    runtime.BlockReasonCode = gateLeg.BlockReason;
+                    runtime.UpdatedAt = timeProvider.GetUtcNow();
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
                 OrderIntent gateIntent = GateIntent(runtime, now);
                 await new WireToGateStore(dbContext).AuthorizeMovementAsync(
                     gateIntent, safety, now, cancellationToken).ConfigureAwait(false);
@@ -1103,6 +1166,67 @@ public sealed class JourneyRuntimeEngine(
             $"W2G-{demandId}-GATE-{runtimeOptions.DispatchGeneration}",
             runtimeOptions.DispatchGeneration,
             now);
+    }
+
+    /// <summary>
+    /// Re-runs the pre-create gate for the gate-bound move order, against the endpoint this demand
+    /// froze rather than a freshly resolved one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// REQ-0305 asks for exactly three things before a move order that does not exist yet:
+    /// the catalog must be usable, the frozen <c>mapId + stationId</c> must still be in it, and
+    /// RouteCost must pass. When any of them fails the new action is blocked and the reason
+    /// recorded precisely — never resolved to another station, another Map, or a similar name.
+    /// </para>
+    /// <para>
+    /// The route graph is not consulted here, so this leg has one evidence source rather than two.
+    /// That is not a weaker gate, it is a narrower question: the graph's contribution at selection
+    /// time was to compare candidate stations against each other, and there is nothing to compare
+    /// here — the destination was fixed when the demand was taken.
+    /// </para>
+    /// </remarks>
+    private async Task<CreateGateOutcome> GateLegAsync(
+        JourneyRuntimeRow runtime,
+        RiotMapStationCatalogSnapshot currentMap,
+        CancellationToken cancellationToken)
+    {
+        CatalogAvailability availability = await catalogAvailability
+            .ReadAsync(runtime.MapId, cancellationToken).ConfigureAwait(false);
+        if (!availability.IsUsable)
+        {
+            return new CreateGateOutcome(
+                CreateGateVerdict.BlockedCatalogNotFresh, availability.BlockReason, null);
+        }
+
+        IReadOnlyList<FrozenStationFact> frozen = await catalogStore
+            .ReadFrozenStationsAsync(runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        FrozenStationFact? dropoff = frozen
+            .FirstOrDefault(station => station.Role == FrozenStationRole.Dropoff);
+
+        // A journey created before this gate existed has no frozen row. Falling back to the
+        // runtime's own gate station keeps that journey moving under the same check rather than
+        // blocking it on a record it never had a chance to write.
+        int mapId = dropoff?.MapId ?? runtime.MapId;
+        int stationId = dropoff?.StationId ?? runtime.GateStationRiotId;
+        string transportDemandKey = await dbContext.AcceptedDemands
+            .Where(row => row.DemandId == runtime.DemandId)
+            .Select(row => row.TransportDemandKey)
+            .SingleAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return await createGate.EvaluateAsync(
+            new CreateGateRequest(
+                runtime.DemandId,
+                transportDemandKey,
+                runtime.AgvId,
+                runtime.VehicleKey,
+                mapId,
+                stationId,
+                GraphTraversalCostMm: null,
+                TargetStationInCurrentCatalog: currentMap.MapId == mapId &&
+                    currentMap.Stations.Any(station => station.StationId == stationId)),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static OrderIntent GateIntent(JourneyRuntimeRow runtime, DateTimeOffset now) => new(

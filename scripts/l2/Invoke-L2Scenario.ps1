@@ -183,17 +183,27 @@ try {
     $gateStationRiotId = 210
     $pickupStationRiotId = 12
 
+    # getRouteCostsBy answers reachable for every station unless a scenario says otherwise. A
+    # scenario that wants the pre-create gate to refuse -- or to disagree with the route graph --
+    # seeds a negative cost here, keyed "{mapId}:{stationId}".
+    $riotArguments = @(
+        "--FakeRiot:port=$FakeRiotPort",
+        "--FakeRiot:instanceId=l2-riot",
+        "--FakeRiot:Seed:vehicleKey=$vehicleKey",
+        "--FakeRiot:Seed:mapIdentity=$mapIdentity",
+        "--FakeRiot:Seed:mapId=$mapId",
+        "--FakeRiot:Seed:startStationId=$gateStationRiotId")
+    if ($setup.ContainsKey('RouteCosts')) {
+        foreach ($key in ($setup.RouteCosts.Keys | Sort-Object)) {
+            $riotArguments += "--FakeRiot:Seed:RouteCosts:$key=$($setup.RouteCosts[$key])"
+        }
+    }
+
     # 1. The doubles first. Both are pure loopback services with no dependency on the server, and
     #    starting them first means the server never meets a dead port during its first poll.
     $riotHandle = Start-L2Process -Name 'fake-riot' `
         -FilePath (Join-Path $riotDirectory 'ControlServer.FakeRiot.exe') `
-        -ArgumentList @(
-            "--FakeRiot:port=$FakeRiotPort",
-            "--FakeRiot:instanceId=l2-riot",
-            "--FakeRiot:Seed:vehicleKey=$vehicleKey",
-            "--FakeRiot:Seed:mapIdentity=$mapIdentity",
-            "--FakeRiot:Seed:mapId=$mapId",
-            "--FakeRiot:Seed:startStationId=$gateStationRiotId") `
+        -ArgumentList $riotArguments `
         -WorkingDirectory $riotDirectory -LogRoot $logRoot |
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 1 -PassThru }
     $handles += $riotHandle
@@ -284,6 +294,17 @@ try {
         'JourneyRuntime__gateStationId'                   = $gateStationId
         'JourneyRuntime__gateStationRiotId'               = [string]$gateStationRiotId
         'JourneyRuntime__admissionPolicyDeploymentId'     = "L2-$runId"
+    }
+
+    # FP-C13: the two REQ-0302 values, approved. A commissioned server has them, so every scenario
+    # faces one. `CatalogApproved = $false` in a setup file takes them away, which is the negative
+    # evidence specification 8.6 requires -- and there is no switch that turns the check off, only
+    # the absence of an approval.
+    if (-not $setup.ContainsKey('CatalogApproved') -or [bool]$setup.CatalogApproved) {
+        $serverEnvironment['MapStationCatalog__ApprovedSyncPeriod'] = '00:00:30'
+        $serverEnvironment['MapStationCatalog__ApprovedMaxUnconfirmed'] = '00:05:00'
+    } else {
+        $journal.Note('Map/Station catalog parameters deliberately unapproved for this scenario.')
     }
     if ($recoveryResume) {
         $serverEnvironment['Recovery__AuthenticationProofEnvironmentVariable'] = $recoveryProofVariable
@@ -547,7 +568,8 @@ try {
     # The stack trace is what turns "a method on a null-valued expression" into a line number.
     # Without it a failure inside the orchestrator costs a bisect to locate.
     $journal.Note("Run failed: $failureReason")
-    $journal.Note("Failure at: " + ($_.ScriptStackTrace -replace "?
+    $journal.Note("Failure at: " + ($_.ScriptStackTrace -replace "
+?
 ", " | "))
     Write-Warning $failureReason
 } finally {
@@ -588,7 +610,8 @@ try {
         foreach ($table in @('JourneyRuntimes', 'AcceptedDemands', 'JourneyBacklog', 'OrderIntents',
                              'StationOperations', 'SessionRecoveries', 'OperationResults',
                              'ExceptionRecoverySessions', 'RecoveryWorkflows',
-                             'RouteGraphSnapshots')) {
+                             'RouteGraphSnapshots', 'MapStationCatalogStates',
+                             'FrozenDemandStations', 'CreateGateAudit')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

@@ -76,6 +76,20 @@ public enum CreateGateVerdict
     BlockedUnreachable,
 
     /// <summary>
+    /// RIoT could not be asked, or answered nothing about this vehicle. Deliberately not the same
+    /// verdict as <see cref="BlockedUnreachable"/>: "we did not get an answer" recorded as "the
+    /// station is unreachable" would put a claim about the Map into the audit that nobody made.
+    /// </summary>
+    BlockedRouteCostUnavailable,
+
+    /// <summary>
+    /// A station this demand froze at creation time is no longer in the current fresh catalog.
+    /// This is REQ-0308's task level — a real missing station, proven by a snapshot that is
+    /// itself fresh — as opposed to the catalog level, where the snapshot is what is in doubt.
+    /// </summary>
+    BlockedFrozenStationAbsent,
+
+    /// <summary>
     /// The two evidence sources disagreed. Blocked and alarmed rather than silently picking one
     /// — the self-built graph and RIoT's RouteCost answer different questions and neither
     /// overrides the other.

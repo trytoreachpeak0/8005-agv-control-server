@@ -950,6 +950,25 @@ public sealed class CatalogAvailabilityStore(ControlServerDbContext dbContext) :
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<CreateGateVerdict?> ReadLastVerdictAsync(
+        string demandId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+
+        // Filtered in the database on the (DemandId, EvaluatedAt) index, ordered in memory:
+        // SQLite has no DateTimeOffset ordering, and this server runs on SQLite. The in-memory
+        // half is bounded by the deduplication this read exists for -- a demand only ever
+        // accumulates one row per verdict change, not one per polling round.
+        List<CreateGateAuditRow> rows = await dbContext.CreateGateAudit
+            .AsNoTracking()
+            .Where(audit => audit.DemandId == demandId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return rows.Count == 0 ? null : rows.MaxBy(audit => audit.EvaluatedAt)!.Verdict;
+    }
+
     private async Task<MapStationCatalogStateRow> GetOrCreateAsync(
         int mapId,
         DateTimeOffset at,

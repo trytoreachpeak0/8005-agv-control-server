@@ -78,6 +78,13 @@ public sealed class FakeRiotSeed
 
     public List<int> RemovedStationIds { get; set; } = [];
 
+    /// <summary>
+    /// What <c>getRouteCostsBy</c> answers per station, keyed <c>"{mapId}:{stationId}"</c>.
+    /// Empty by default, so every station answers reachable and a scenario that says nothing sees
+    /// a fleet that can get where it is sent. A negative value is RIoT's "unreachable".
+    /// </summary>
+    public Dictionary<string, long> RouteCosts { get; set; } = new(StringComparer.Ordinal);
+
     public FakeRiotState BuildInitialState()
     {
         FakeVehicle vehicle = new()
@@ -140,6 +147,7 @@ public sealed class FakeRiotSeed
             {
                 [MapId] = RemovedStationIds
             },
+            RouteCostsByStation = new Dictionary<string, long>(RouteCosts, StringComparer.Ordinal),
             NextOrderSequence = 1
         };
     }

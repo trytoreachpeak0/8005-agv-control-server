@@ -105,6 +105,24 @@ public sealed class DispatchCandidateEvaluation(
     /// under RIoT's name, for the pre-create gate.
     /// </remarks>
     public long? GraphTraversalCostMm { get; set; }
+
+    /// <summary>
+    /// The catalog revision this round's endpoints are being taken from, set by the catalog
+    /// criterion. What REQ-0305 freezes alongside the station ids.
+    /// </summary>
+    public long CatalogRevision { get; set; }
+
+    /// <summary>
+    /// What RIoT's <c>getRouteCostsBy</c> answered for this vehicle and pickup station, set by the
+    /// pre-create gate.
+    /// </summary>
+    /// <remarks>
+    /// <b>This one really is a RouteCost</b> — RIoT's number, under RIoT's name. It is kept beside
+    /// <see cref="GraphTraversalCostMm"/> rather than merged with it because the whole point of the
+    /// gate is that two independent sources answered, and a single field would record only that
+    /// something did.
+    /// </remarks>
+    public long? RiotRouteCostMm { get; set; }
 }
 
 /// <summary>
@@ -178,7 +196,8 @@ public sealed record EligibleDispatchCandidate(
     int ExpectedBasketCount,
     int[] TargetSlots,
     DateTimeOffset FirstSeenAt,
-    long? GraphTraversalCostMm = null);
+    long? GraphTraversalCostMm = null,
+    long CatalogRevision = 0);
 
 /// <summary>
 /// Picks which eligible candidate a vehicle takes this round.

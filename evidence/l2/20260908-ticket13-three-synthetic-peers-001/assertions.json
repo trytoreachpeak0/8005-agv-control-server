@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "scenario": "three-synthetic-peers",
+  "runId": "20260907T165022119Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "controlServerCommit": "646624acc98eb3d7cacb330eadb1f3f3c8ecc76f",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260907T165022119Z",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-3P-01",
+      "description": "编排器按 setup 起了三个合成车载端",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-3P-02",
+      "description": "三个控制面各占一个端口",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-3P-03",
+      "description": "三个车载端各报各的 AgvId",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-001,AGV-FAKE-002,AGV-FAKE-003",
+      "actual": "AGV-FAKE-001,AGV-FAKE-002,AGV-FAKE-003"
+    },
+    {
+      "id": "L2-3P-04-AGV-FAKE-001",
+      "description": "AGV-FAKE-001 的控制面在线并报出自己的身份",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-001",
+      "actual": "AGV-FAKE-001"
+    },
+    {
+      "id": "L2-3P-04-AGV-FAKE-002",
+      "description": "AGV-FAKE-002 的控制面在线并报出自己的身份",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-002",
+      "actual": "AGV-FAKE-002"
+    },
+    {
+      "id": "L2-3P-04-AGV-FAKE-003",
+      "description": "AGV-FAKE-003 的控制面在线并报出自己的身份",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-003",
+      "actual": "AGV-FAKE-003"
+    },
+    {
+      "id": "L2-3P-05",
+      "description": "三个控制面报出三个互不相同的身份",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-3P-06",
+      "description": "服务端当前只持有第一台车的会话（accept 循环串行，票 09 前如此）",
+      "outcome": "PASS",
+      "expected": "AGV-FAKE-001",
+      "actual": "AGV-FAKE-001"
+    },
+    {
+      "id": "L2-3P-07",
+      "description": "AGV-FAKE-001 的会话在服务端是 Ready",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready"
+    }
+  ]
+}

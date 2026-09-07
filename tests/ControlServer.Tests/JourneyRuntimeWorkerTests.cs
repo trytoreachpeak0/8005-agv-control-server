@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.CreateGate;
 
 namespace ControlServer.Tests;
 
@@ -747,7 +748,12 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(251, await fixture.Context.JourneyBacklog.CountAsync(
             TestContext.Current.CancellationToken));
         Assert.Equal(1, fixture.Riot.TotalCreateCount);
-        Assert.InRange(fixture.SaveChanges.Count, 1, 10);
+        // 251 candidates, a bounded number of saves: what this pins is that backlog persistence is
+        // batched rather than one save per candidate. The budget went from 10 to 13 with FP-C13,
+        // which adds exactly three writes to an accepting round and none per candidate -- the
+        // catalog confirmation, the gate verdict for the one demand that reached the gate, and the
+        // freeze of its endpoints. A steady round that accepts nothing adds only the confirmation.
+        Assert.InRange(fixture.SaveChanges.Count, 1, 13);
     }
 
     [Fact]
@@ -1122,6 +1128,134 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(expectedStationId, pickup.DestinationStationId);
         Assert.Equal(25, pickup.MapId);
         Assert.Matches("^MAPCAT-[0-9a-f]{64}$", runtime.RouteEvidenceId);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AnUncommissionedCatalogCreatesNothingAtAll()
+    {
+        // REQ-0302's hard block, in the place it has to hold: a whole runtime iteration against a
+        // server whose two approved values were never configured. The server runs, polls, and
+        // writes the demand into the backlog under the block's own name -- and creates no journey
+        // and no RIoT order. Specification 8.6 asks for exactly this negative evidence: take the
+        // parameters away and show that it really blocks.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(catalogApproved: false);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("CATALOG_PARAMETERS_NOT_APPROVED", backlog.ReasonCode);
+        Assert.Null(backlog.AcceptedAt);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        // The station was never resolved either: REQ-0303 forbids resolving execution stations for
+        // a new demand while the catalog is unusable, not merely acting on the result.
+        Assert.Empty(await fixture.Context.FrozenDemandStations.ToArrayAsync(
+            TestContext.Current.CancellationToken));
+        // And RIoT's RouteCost was never asked -- the block is ahead of the gate, not inside it.
+        Assert.Empty(fixture.RouteCosts.Calls);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AcceptingADemandFreezesBothEndpointsAndALaterRenameDoesNotRewriteThem()
+    {
+        // REQ-0305: the endpoints are taken from the snapshot that was fresh at creation time and
+        // frozen there. A later rename changes the catalog, not the identity of the station this
+        // task was already sent to, and it must not re-resolve the task.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        FrozenDemandStationRow[] frozen = await fixture.Context.FrozenDemandStations
+            .OrderBy(row => row.Role)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, frozen.Length);
+        FrozenDemandStationRow pickup = frozen.Single(row => row.Role == FrozenStationRole.Pickup);
+        FrozenDemandStationRow dropoff = frozen.Single(row => row.Role == FrozenStationRole.Dropoff);
+        Assert.Equal(12, pickup.StationId);
+        Assert.Equal("N1-1", pickup.StationName);
+        Assert.Equal(210, dropoff.StationId);
+        Assert.NotEqual(0, pickup.CatalogRevision);
+
+        // The Map renames the pickup station under the running journey.
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(210, "关卡"));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        FrozenDemandStationRow reread = await fixture.Context.FrozenDemandStations
+            .SingleAsync(row => row.Role == FrozenStationRole.Pickup, TestContext.Current.CancellationToken);
+        Assert.Equal(12, reread.StationId);
+        Assert.Equal("N1-1", reread.StationName);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task TheCatalogIsConfirmedOnAWholeReadAndOnlyOnAWholeRead()
+    {
+        // REQ-0302: what a confirmation is. A read that got as far as the gate station and the
+        // machine stations is one; a read that threw is an attempt, and an attempt must not move
+        // the freshness window.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        MapStationCatalogStateRow confirmed = await fixture.Context.MapStationCatalogStates
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(MapStationCatalogState.Fresh, confirmed.State);
+        Assert.Equal(Now, confirmed.LastCompleteConfirmationAt);
+        Assert.Equal(30, confirmed.ApprovedSyncPeriodSeconds);
+        Assert.Equal(300, confirmed.ApprovedMaxUnconfirmedSeconds);
+
+        // Now the gate station disappears from the Map: the read completes, the resolution does
+        // not, and that is not a confirmation.
+        fixture.Riot.SetMapStations(new RiotMapStation(12, "N1-1"));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        MapStationCatalogStateRow afterFailure = await fixture.Context.MapStationCatalogStates
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(MapStationCatalogState.CandidateInvalid, afterFailure.State);
+        Assert.Equal(Now, afterFailure.LastCompleteConfirmationAt);
+        Assert.NotNull(afterFailure.LastFailureReason);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AnUnreachablePickupIsRefusedACreateAndSaysWhy()
+    {
+        // The gate at Order 96, in the runtime. RIoT says the vehicle cannot reach the pickup
+        // station, so the demand is not taken -- REQ-0147/REQ-0293's pre-create RouteCost check.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.RouteCosts.Set(12, -1);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("CREATE_GATE_STATION_UNREACHABLE", backlog.ReasonCode);
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        CreateGateAuditRow audit = (await fixture.Context.CreateGateAudit
+            .ToListAsync(TestContext.Current.CancellationToken)).Single();
+        Assert.Equal(CreateGateVerdict.BlockedUnreachable, audit.Verdict);
+        Assert.Equal(-1, audit.RiotRouteCostMm);
     }
 
     [Fact]
@@ -1505,16 +1639,20 @@ public sealed class JourneyRuntimeWorkerTests
             RecordingBoxCounts boxCounts,
             RecordingRiot riot,
             RecordingPeer peer,
+            RecordingRouteCostProbe routeCosts,
+            bool catalogApproved,
             JourneyRuntimeOptions options,
             FixedTimeProvider clock,
             SaveChangesCounter saveChanges)
         {
+            CatalogApproved = catalogApproved;
             Connection = connection;
             Context = context;
             Catalog = catalog;
             BoxCounts = boxCounts;
             Riot = riot;
             Peer = peer;
+            RouteCosts = routeCosts;
             Options = options;
             Clock = clock;
             SaveChanges = saveChanges;
@@ -1527,12 +1665,17 @@ public sealed class JourneyRuntimeWorkerTests
         public RecordingBoxCounts BoxCounts { get; }
         public RecordingRiot Riot { get; }
         public RecordingPeer Peer { get; }
+        public RecordingRouteCostProbe RouteCosts { get; }
+
+        /// <summary>Whether the REQ-0302 pair is configured. False is the uncommissioned server.</summary>
+        public bool CatalogApproved { get; }
+
         public JourneyRuntimeOptions Options { get; }
         public FixedTimeProvider Clock { get; }
         public SaveChangesCounter SaveChanges { get; }
         public JourneyRuntimeEngine Engine { get; private set; }
 
-        public static async Task<RuntimeFixture> CreateAsync()
+        public static async Task<RuntimeFixture> CreateAsync(bool catalogApproved = true)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -1550,8 +1693,10 @@ public sealed class JourneyRuntimeWorkerTests
             RecordingBoxCounts boxCounts = new();
             RecordingRiot riot = new(options, clock);
             RecordingPeer peer = new();
+            RecordingRouteCostProbe routeCosts = new();
             RuntimeFixture fixture = new(
-                connection, context, catalog, boxCounts, riot, peer, options, clock, saveChanges);
+                connection, context, catalog, boxCounts, riot, peer, routeCosts, catalogApproved,
+                options, clock, saveChanges);
             await fixture.SeedRecoveredPeerAsync();
             saveChanges.Reset();
             return fixture;
@@ -1993,6 +2138,24 @@ public sealed class JourneyRuntimeWorkerTests
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// The FP-C13 catalog gate, configured with approved values. Every runtime test faces a
+        /// commissioned server, which is what these tests are about; the unapproved case is a gate
+        /// test of its own (<see cref="CreateGateTests"/>) rather than a variant of all of them.
+        /// </summary>
+        private CatalogAvailabilityAccess CreateCatalogAccess() => new(
+            new CatalogAvailabilityStore(Context),
+            Microsoft.Extensions.Options.Options.Create(CatalogApproved
+                ? new MapStationCatalogOptions
+                {
+                    ApprovedSyncPeriod = TimeSpan.FromSeconds(30),
+                    ApprovedMaxUnconfirmed = TimeSpan.FromMinutes(5),
+                }
+                : new MapStationCatalogOptions()),
+            new CatalogAlarmLedger(),
+            Clock,
+            NullLogger<CatalogAvailabilityAccess>.Instance);
+
         private JourneyRuntimeEngine CreateEngine()
         {
             WireToGateStore store = new(Context);
@@ -2018,12 +2181,24 @@ public sealed class JourneyRuntimeWorkerTests
                     new PackageCapacityStore(Context),
                     store,
                     BoxCounts,
-                    NullLogger<SlotCapacityCriterion>.Instance)),
+                    NullLogger<SlotCapacityCriterion>.Instance,
+                    routeGraph: null,
+                    catalog: CreateCatalogAccess(),
+                    createGate: CreateGate())),
                 new FirstSeenDispatchCandidateRanker(),
+                CreateCatalogAccess(),
+                new CatalogAvailabilityStore(Context),
+                CreateGate(),
                 options,
                 Clock,
                 NullLogger<JourneyRuntimeEngine>.Instance);
         }
+
+        private PreCreateGate CreateGate() => new(
+            RouteCosts,
+            new CatalogAvailabilityStore(Context),
+            Clock,
+            NullLogger<PreCreateGate>.Instance);
 
         private async Task SeedRecoveredPeerAsync()
         {
@@ -2212,6 +2387,46 @@ public sealed class JourneyRuntimeWorkerTests
             _ = cancellationToken;
             BeforeRead?.Invoke();
             return Task.FromResult(_counts.TryGetValue(sublot, out int count) ? (int?)count : null);
+        }
+    }
+
+    /// <summary>
+    /// RIoT's RouteCost, answering reachable unless a test says otherwise.
+    /// </summary>
+    /// <remarks>
+    /// Reachable is the default because these tests are about the journey, not about the gate: a
+    /// commissioned server whose vehicle can reach its stations is the world they were written
+    /// against. What the gate does with the other answers is <see cref="CreateGateTests"/>'s
+    /// subject.
+    /// </remarks>
+    private sealed class RecordingRouteCostProbe : IRiotRouteCostProbe
+    {
+        private readonly Dictionary<int, long?> _byStation = [];
+
+        public long DefaultCostMm { get; set; } = 12000;
+
+        public List<(int MapId, int StationId, string VehicleKey)> Calls { get; } = [];
+
+        /// <summary>Answer this station with a specific cost; a negative one means unreachable.</summary>
+        public void Set(int stationId, long costMm) => _byStation[stationId] = costMm;
+
+        /// <summary>Make the call itself fail for this station — no answer, not "unreachable".</summary>
+        public void FailFor(int stationId) => _byStation[stationId] = null;
+
+        public Task<RiotRouteCost?> ReadRouteCostAsync(
+            int mapId,
+            int stationId,
+            string vehicleKey,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Calls.Add((mapId, stationId, vehicleKey));
+            if (_byStation.TryGetValue(stationId, out long? configured))
+            {
+                return Task.FromResult(configured is null ? null : new RiotRouteCost(configured.Value));
+            }
+
+            return Task.FromResult<RiotRouteCost?>(new RiotRouteCost(DefaultCostMm));
         }
     }
 

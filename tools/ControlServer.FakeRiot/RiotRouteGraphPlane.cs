@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.TestDoubles;
 
 namespace ControlServer.FakeRiot;
@@ -114,6 +115,47 @@ public static class RiotRouteGraphPlane
 
             FakeRiotState state = engine.Snapshot().State;
             return RiotDataPlane.Ok(state.DynamicRouteCosts);
+        });
+
+        // FP-C13's pre-create gate. Not part of the engine's five endpoints -- it answers the
+        // other question, "can this vehicle reach that station right now" -- but it lives here
+        // because it is the same /route/ surface.
+        app.MapPost("/api/task/v1/route/getRouteCostsBy", async (
+            HttpRequest request, CancellationToken cancellationToken) =>
+        {
+            IResult? fault = await RiotDataPlane.ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
+            if (fault is not null) return fault;
+
+            using JsonDocument document = await JsonDocument
+                .ParseAsync(request.Body, cancellationToken: cancellationToken).ConfigureAwait(false);
+            JsonElement root = document.RootElement;
+            int mapId = root.GetProperty("mapId").GetInt32();
+            int stationId = root.GetProperty("stationId").GetInt32();
+            string[] deviceKeys = root.TryGetProperty("deviceKeys", out JsonElement keys)
+                ? keys.EnumerateArray().Select(item => item.GetString() ?? "").ToArray()
+                : [];
+
+            FakeRiotState state = engine.Snapshot().State;
+            long costs = state.RouteCostsByStation.TryGetValue(
+                string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{mapId}:{stationId}"),
+                out long configured)
+                ? configured
+                : state.DefaultRouteCostMm;
+
+            // One entry per requested deviceKey, which is the shape Round 15 captured. -1 is a
+            // business success carrying "unreachable", never an error envelope -- the control
+            // server has to be able to tell that apart from a failed call.
+            return RiotDataPlane.Ok(new
+            {
+                deviceCostsList = deviceKeys.Select(key => new
+                {
+                    costs,
+                    deviceKey = key,
+                    message = costs < 0 ? "vehicle route to station unreachable" : "ok",
+                }).ToArray(),
+                mapId,
+                stationId,
+            });
         });
 
         app.MapGet("/api/imap/v1/mapEdgeGroup/all", async (CancellationToken cancellationToken) =>

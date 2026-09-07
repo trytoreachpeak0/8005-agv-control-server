@@ -11,6 +11,7 @@ using Microsoft.Extensions.Options;
 using Serilog;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.RouteGraph;
+using ControlServer.Host.Runtime.CreateGate;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
@@ -41,6 +42,18 @@ builder.Services.AddScoped<IRouteGraphSource, HttpRouteGraphSource>();
 builder.Services.AddScoped<IRouteGraphSnapshotStore, RouteGraphSnapshotStore>();
 builder.Services.AddScoped<RouteGraphRefresher>();
 builder.Services.AddScoped<RouteGraphAccess>();
+// FP-C13: the catalog availability state and the pre-create gate. No Enabled switch -- REQ-0302
+// is a hard block, and absence of the two approved values is expressed by not configuring them,
+// which blocks rather than disabling the check.
+builder.Services.AddOptions<MapStationCatalogOptions>()
+    .Bind(builder.Configuration.GetSection(MapStationCatalogOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<MapStationCatalogOptions>, MapStationCatalogOptionsValidator>();
+builder.Services.AddSingleton<CatalogAlarmLedger>();
+builder.Services.AddScoped<ICatalogAvailabilityStore, CatalogAvailabilityStore>();
+builder.Services.AddScoped<CatalogAvailabilityAccess>();
+builder.Services.AddScoped<IRiotRouteCostProbe, HttpRiotRouteCostProbe>();
+builder.Services.AddScoped<PreCreateGate>();
 builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();
 builder.Services.AddScoped<PackageCapacityImportService>();
 builder.Services.AddOptions<OnboardTransportOptions>()
@@ -137,6 +150,27 @@ app.MapGet("/api/runtime/sessions", async (ControlServerDbContext dbContext, Can
             row.SessionGeneration,
             readiness = row.Readiness.ToString(),
             row.ReasonCode,
+            row.UpdatedAt
+        })
+        .ToArrayAsync(cancellationToken));
+// REQ-0308's operator surface: one row per Map, deduplicated by reason and kept updated -- never
+// one alarm per polling round or per waiting task. The approved values it was judged against are
+// reported alongside, because "not fresh" is only meaningful next to the maximum it exceeded, and
+// a null pair here is the uncommissioned server that REQ-0302 blocks.
+app.MapGet("/api/runtime/catalog-availability", async (
+        ControlServerDbContext dbContext, CancellationToken cancellationToken) =>
+    await dbContext.MapStationCatalogStates.AsNoTracking()
+        .OrderBy(row => row.MapId)
+        .Select(row => new
+        {
+            row.MapId,
+            state = row.State.ToString(),
+            row.LastCompleteConfirmationAt,
+            row.LastAttemptAt,
+            row.LastFailureReason,
+            row.CatalogRevision,
+            row.ApprovedSyncPeriodSeconds,
+            row.ApprovedMaxUnconfirmedSeconds,
             row.UpdatedAt
         })
         .ToArrayAsync(cancellationToken));

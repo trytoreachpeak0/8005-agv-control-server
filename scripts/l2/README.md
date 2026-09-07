@@ -23,6 +23,9 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
 | `real-onboard-recovery-entry-missing` | **真的** | 装载失败后车上发起不了任何恢复：授权是齐的，入口是缺的 | **红的，而且红得对**，见下 |
 | `three-synthetic-peers` | 合成 ×3 | 三个合成车载端同时在线，合成侧互不冒充；顺带钉住服务端当前只服务一条车载连接 | `evidence/l2/20260907-ticket03-three-synthetic-peers-001` |
+| `route-graph-engine` | 合成 | 路网引擎开着跑一趟：五个 imap 端点读回、快照不陈旧、可达性判据放行 | `evidence/l2/20260907-ticket12-route-graph-engine-001` |
+| `create-gate` | 合成 | 建单前置门禁：目录被完整确认、两端点冻结、两个证据源分别落进审计 | `evidence/l2/20260908-ticket13-create-gate-002` |
+| `create-gate-unapproved` | 合成 | **负向证据**：拿掉 `REQ-0302` 的两个已批准值，服务端照常启动但什么都不建 | `evidence/l2/20260908-ticket13-create-gate-unapproved-001` |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与

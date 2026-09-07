@@ -166,6 +166,26 @@ public sealed record FakeRiotState
     /// </remarks>
     public IReadOnlyDictionary<string, double> DynamicRouteCosts { get; init; } =
         new Dictionary<string, double>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// What <c>getRouteCostsBy</c> answers, keyed <c>"{mapId}:{stationId}"</c>. A station with no
+    /// entry is answered with <see cref="DefaultRouteCostMm"/>; a negative value is RIoT's way of
+    /// saying unreachable.
+    /// </summary>
+    /// <remarks>
+    /// <b>The fake does not recompute a path cost from its own edge table, on purpose.</b> The
+    /// pre-create gate compares reachability between its two evidence sources and deliberately does
+    /// not compare the two magnitudes -- that they are the same quantity in the same unit is an
+    /// inference nobody has measured -- so a derived number here would look more meaningful than it
+    /// is. What a scenario needs to be able to drive is the sign, and a table drives it exactly.
+    /// It is also the only way to make the two sources disagree: a computed cost would agree with
+    /// the route graph by construction, and the disagreement path would be untestable at L2.
+    /// </remarks>
+    public IReadOnlyDictionary<string, long> RouteCostsByStation { get; init; } =
+        new Dictionary<string, long>(StringComparer.Ordinal);
+
+    /// <summary>The answer for a station the round said nothing about. Reachable.</summary>
+    public long DefaultRouteCostMm { get; init; } = 20000;
     public FakeRiotFaultMode FaultMode { get; init; } = FakeRiotFaultMode.Normal;
     public int DelayMs { get; init; }
 
