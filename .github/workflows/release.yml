@@ -134,13 +134,61 @@ jobs:
           "ARTIFACT_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "STAGE_DIR=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      # Three attempts, not one, and the repetition is the point.
+      #
+      # This runner reaches GitHub over a plant network that drops connections
+      # in bursts lasting a minute or two. Every other network step here already
+      # retries -- actions/checkout fetches three times, dotnet restore has its
+      # own -- and CreateArtifact/FinalizeArtifact are the only unretried calls
+      # in the job. That is exactly where five consecutive release runs died on
+      # 2026-09-07, each after a 21-second TCP connect timeout. upload-artifact
+      # exposes no retry of its own and a `run:` step cannot re-invoke an
+      # action, so the retry has to be written out.
+      #
+      # The waits are 30 seconds because the bursts outlast a quick retry; the
+      # later attempts overwrite because a failed CreateArtifact can still have
+      # registered the name.
       - name: Upload package
+        id: upload-1
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.STAGE_DIR }}
           if-no-files-found: error
           retention-days: 30
+
+      - name: Wait before retrying the upload
+        if: steps.upload-1.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 30
+
+      - name: Upload package (attempt 2)
+        id: upload-2
+        if: steps.upload-1.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.STAGE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
+
+      - name: Wait before the last upload attempt
+        if: steps.upload-1.outcome == 'failure' && steps.upload-2.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 30
+
+      - name: Upload package (attempt 3)
+        if: steps.upload-1.outcome == 'failure' && steps.upload-2.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.STAGE_DIR }}
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
 
       # The scratch trees carry a full second copy of the onboard source and two
       # self-contained publishes. Left behind, every run adds ~1 GB to a guest
