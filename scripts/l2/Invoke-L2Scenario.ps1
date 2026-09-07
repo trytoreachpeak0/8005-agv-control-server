@@ -296,6 +296,20 @@ try {
         $serverEnvironment['OnboardSafetyProjection__enabled'] = 'true'
     }
 
+    # The route-graph engine, off unless a scenario asks for it. Off is the shape every
+    # existing scenario was written against, and the criterion passes when it is off, so a
+    # scenario that says nothing sees dispatch exactly as it was before the engine existed.
+    if ($setup.ContainsKey('RouteGraph') -and $setup.RouteGraph.ContainsKey('Enabled') -and
+        [bool]$setup.RouteGraph.Enabled) {
+        $serverEnvironment['RouteGraph__Enabled'] = 'true'
+        $serverEnvironment['RouteGraph__MapId'] = [string]$mapId
+        foreach ($key in ($setup.RouteGraph.Keys | Sort-Object)) {
+            if ($key -in @('Enabled', 'MapId')) { continue }
+            $serverEnvironment["RouteGraph__$key"] = [string]$setup.RouteGraph[$key]
+        }
+        $journal.Note("Route graph engine enabled for map $mapId.")
+    }
+
     $importEnvironment = @{}
     foreach ($key in $serverEnvironment.Keys) { $importEnvironment[$key] = $serverEnvironment[$key] }
     $importEnvironment['JourneyRuntime__enabled'] = 'false'
@@ -573,7 +587,8 @@ try {
     if ($connection) {
         foreach ($table in @('JourneyRuntimes', 'AcceptedDemands', 'JourneyBacklog', 'OrderIntents',
                              'StationOperations', 'SessionRecoveries', 'OperationResults',
-                             'ExceptionRecoverySessions', 'RecoveryWorkflows')) {
+                             'ExceptionRecoverySessions', 'RecoveryWorkflows',
+                             'RouteGraphSnapshots')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

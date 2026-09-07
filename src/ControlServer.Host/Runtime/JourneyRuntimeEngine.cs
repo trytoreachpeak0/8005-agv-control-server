@@ -197,7 +197,8 @@ public sealed class JourneyRuntimeEngine(
                     evaluation.Route,
                     evaluation.ExpectedBasketCount,
                     evaluation.TargetSlots,
-                    backlog.FirstSeenAt));
+                    backlog.FirstSeenAt,
+                    evaluation.GraphTraversalCostMm));
             }
         }
 

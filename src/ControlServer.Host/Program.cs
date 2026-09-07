@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
+using ControlServer.Host.Runtime.RouteGraph;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
@@ -32,6 +33,14 @@ builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.AddScoped<JourneyIntakeCoordinator>();
 builder.Services.AddScoped<JourneyRuntimeEngine>();
 builder.Services.AddDispatchAdmission();
+builder.Services.AddOptions<RouteGraphOptions>()
+    .Bind(builder.Configuration.GetSection(RouteGraphOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<RouteGraphOptions>, RouteGraphOptionsValidator>();
+builder.Services.AddScoped<IRouteGraphSource, HttpRouteGraphSource>();
+builder.Services.AddScoped<IRouteGraphSnapshotStore, RouteGraphSnapshotStore>();
+builder.Services.AddScoped<RouteGraphRefresher>();
+builder.Services.AddScoped<RouteGraphAccess>();
 builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();
 builder.Services.AddScoped<PackageCapacityImportService>();
 builder.Services.AddOptions<OnboardTransportOptions>()

@@ -3,7 +3,7 @@ using ControlServer.TestDoubles;
 namespace ControlServer.FakeRiot;
 
 /// <summary>
-/// The four route-graph endpoints the RouteGraphSnapshot engine reads, on top of the station
+/// The five route-graph endpoints the RouteGraphSnapshot engine reads, on top of the station
 /// catalog the data plane already serves.
 /// </summary>
 /// <remarks>
@@ -103,6 +103,17 @@ public static class RiotRouteGraphPlane
                 stationName = stations?.FirstOrDefault(station => station.Id == stationId)?.Name,
                 gmtCreate = "2026-09-07 08:00:00",
             }).ToArray());
+        });
+
+        // In REQ-0146's named list since before CP-0001. The engine reads it for presence only,
+        // and every observation of the real one has answered with an empty object.
+        app.MapGet("/api/task/v1/route/", async (CancellationToken cancellationToken) =>
+        {
+            IResult? fault = await RiotDataPlane.ApplyFaultAsync(engine, cancellationToken).ConfigureAwait(false);
+            if (fault is not null) return fault;
+
+            FakeRiotState state = engine.Snapshot().State;
+            return RiotDataPlane.Ok(state.DynamicRouteCosts);
         });
 
         app.MapGet("/api/imap/v1/mapEdgeGroup/all", async (CancellationToken cancellationToken) =>

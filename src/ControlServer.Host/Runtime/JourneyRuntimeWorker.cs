@@ -33,6 +33,20 @@ public sealed class JourneyRuntimeWorker(
             try
             {
                 await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
+                // The route graph refreshes before dispatch decides, so a round is decided against
+                // the freshest snapshot the engine could get. A refresh that fails does not stop
+                // the round: it marks the snapshot stale, and the admission chain blocks on that —
+                // which is the same outcome, reached through the fail-closed path rather than an
+                // exception.
+                RouteGraph.RouteGraphOptions routeGraphOptions = scope.ServiceProvider
+                    .GetRequiredService<IOptions<RouteGraph.RouteGraphOptions>>().Value;
+                if (routeGraphOptions.Enabled)
+                {
+                    RouteGraph.RouteGraphRefresher refresher = scope.ServiceProvider
+                        .GetRequiredService<RouteGraph.RouteGraphRefresher>();
+                    await refresher.RefreshOnceAsync(stoppingToken).ConfigureAwait(false);
+                }
+
                 JourneyRuntimeEngine engine = scope.ServiceProvider.GetRequiredService<JourneyRuntimeEngine>();
                 await engine.ExecuteOnceAsync(stoppingToken).ConfigureAwait(false);
             }

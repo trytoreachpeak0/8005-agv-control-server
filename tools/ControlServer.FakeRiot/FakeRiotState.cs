@@ -153,6 +153,19 @@ public sealed record FakeRiotState
 
     /// <summary>Every order-command and emergency-service call this round, oldest first.</summary>
     public IReadOnlyList<FakeCommandInvocation> CommandInvocations { get; init; } = [];
+
+    /// <summary>
+    /// Dynamic route cost, keyed however RIoT keys it. Empty by default, which is what every
+    /// observation of the real endpoint has returned — Round 15 on the test RCS and Round 43 on
+    /// the production one both answered <c>"result":{}</c>.
+    /// </summary>
+    /// <remarks>
+    /// The route-graph engine reads this for presence only: a graph built while it was empty
+    /// stops being a complete account of routing the moment it is not, and that makes the
+    /// snapshot stale. A scenario that puts something here is exercising that trigger.
+    /// </remarks>
+    public IReadOnlyDictionary<string, double> DynamicRouteCosts { get; init; } =
+        new Dictionary<string, double>(StringComparer.Ordinal);
     public FakeRiotFaultMode FaultMode { get; init; } = FakeRiotFaultMode.Normal;
     public int DelayMs { get; init; }
 

@@ -3,6 +3,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using ControlServer.Host.Runtime.RouteGraph;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -31,19 +32,33 @@ public static class DispatchAdmissionCriteria
         IPackageCapacityStore packageCapacityStore,
         WireToGateStore store,
         ISublotBoxCountReader boxCountReader,
-        ILogger<SlotCapacityCriterion> slotCapacityLogger) =>
-    [
-        new AlreadyAcceptedCriterion(),
-        new WorkTypeScopeCriterion(options),
-        new RequiredMesFactsCriterion(),
-        new AreaScopeCriterion(),
-        new AreaEqpUniqueCriterion(),
-        new StationResolutionCriterion(stationResolver, options),
-        new PackageCapacityCriterion(packageCapacityStore),
-        new VehicleDynamicFactsCriterion(options),
-        new StationTaskTypeAdmissionCriterion(store),
-        new SlotCapacityCriterion(boxCountReader, slotCapacityLogger),
-    ];
+        ILogger<SlotCapacityCriterion> slotCapacityLogger,
+        RouteGraphAccess? routeGraph = null)
+    {
+        List<IDispatchAdmissionCriterion> criteria =
+        [
+            new AlreadyAcceptedCriterion(),
+            new WorkTypeScopeCriterion(options),
+            new RequiredMesFactsCriterion(),
+            new AreaScopeCriterion(),
+            new AreaEqpUniqueCriterion(),
+            new StationResolutionCriterion(stationResolver, options),
+            new PackageCapacityCriterion(packageCapacityStore),
+            new VehicleDynamicFactsCriterion(options),
+            new StationTaskTypeAdmissionCriterion(store),
+            new SlotCapacityCriterion(boxCountReader, slotCapacityLogger),
+        ];
+
+        // Omitted when no engine is supplied, which is the same admission set as before the engine
+        // existed. The criterion itself also passes when the engine is configured off, so the two
+        // ways of not having it agree.
+        if (routeGraph is not null)
+        {
+            criteria.Add(new RouteGraphReachabilityCriterion(routeGraph));
+        }
+
+        return criteria;
+    }
 
     /// <summary>Registers the chain and its ranker for the host.</summary>
     public static IServiceCollection AddDispatchAdmission(this IServiceCollection services)
@@ -59,10 +74,13 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, PackageCapacityCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleDynamicFactsCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, StationTaskTypeAdmissionCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, RouteGraphReachabilityCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, SlotCapacityCriterion>();
 
         services.AddScoped<DispatchAdmissionChain>();
-        services.AddScoped<IDispatchCandidateRanker, FirstSeenDispatchCandidateRanker>();
+        // Cost-ranked, falling back to first-seen when nothing was priced — which is what
+        // REQ-0207 asks for when a cost is missing rather than a reachability.
+        services.AddScoped<IDispatchCandidateRanker, RouteGraphCostRanker>();
         return services;
     }
 }

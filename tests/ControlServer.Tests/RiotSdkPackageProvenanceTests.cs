@@ -6,8 +6,8 @@ namespace ControlServer.Tests;
 
 public sealed class RiotSdkPackageProvenanceTests
 {
-    private const string PackageVersion = "0.2.0-fp.2";
-    private const string RepositoryCommit = "e9b7411055ceeea8cf902688a8e3b424a4ddb70a";
+    private const string PackageVersion = "0.2.0-fp.3";
+    private const string RepositoryCommit = "d9462a6076d9b492f736ef48429d7b55f40312c7";
     private static readonly string[] PackageIds =
     [
         "RIoT.Sdk.Core",

@@ -93,6 +93,18 @@ public sealed class DispatchCandidateEvaluation(
 
     /// <summary>The slots this candidate would occupy, chosen by the slot-capacity criterion.</summary>
     public int[] TargetSlots { get; set; } = [];
+
+    /// <summary>
+    /// What the route graph priced this vehicle's trip to the pickup station at, in mm; null when
+    /// the engine is off or did not price it.
+    /// </summary>
+    /// <remarks>
+    /// Set by the reachability criterion and read by the ranker, which is why the two facts stay
+    /// separate: REQ-0207 evicts a vehicle whose reachability is unconfirmed, but only drops a
+    /// comparison layer when the cost is missing. <b>Not a RouteCost</b> — that is RIoT's fact,
+    /// under RIoT's name, for the pre-create gate.
+    /// </remarks>
+    public long? GraphTraversalCostMm { get; set; }
 }
 
 /// <summary>
@@ -165,7 +177,8 @@ public sealed record EligibleDispatchCandidate(
     ResolvedJourneyRoute Route,
     int ExpectedBasketCount,
     int[] TargetSlots,
-    DateTimeOffset FirstSeenAt);
+    DateTimeOffset FirstSeenAt,
+    long? GraphTraversalCostMm = null);
 
 /// <summary>
 /// Picks which eligible candidate a vehicle takes this round.
