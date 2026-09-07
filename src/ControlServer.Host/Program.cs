@@ -9,6 +9,7 @@ using ControlServer.Host.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
@@ -30,6 +31,7 @@ builder.Services.AddScoped<DemandIntakeService>();
 builder.Services.AddScoped<MovementDispatchService>();
 builder.Services.AddScoped<JourneyIntakeCoordinator>();
 builder.Services.AddScoped<JourneyRuntimeEngine>();
+builder.Services.AddDispatchAdmission();
 builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();
 builder.Services.AddScoped<PackageCapacityImportService>();
 builder.Services.AddOptions<OnboardTransportOptions>()

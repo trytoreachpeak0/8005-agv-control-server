@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
+using ControlServer.Host.Runtime.Dispatch;
 
 namespace ControlServer.Tests;
 
@@ -1998,11 +2000,11 @@ public sealed class JourneyRuntimeWorkerTests
                 new DemandIntakeService(Catalog, store),
                 new MovementDispatchService(store, Riot));
             OnboardJourneyPublisher publisher = new(store, Peer, Clock);
+            Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions> options =
+                Microsoft.Extensions.Options.Options.Create(Options);
             return new JourneyRuntimeEngine(
                 Context,
                 Catalog,
-                BoxCounts,
-                new PackageCapacityStore(Context),
                 Riot,
                 Riot,
                 new MapStationResolver(),
@@ -2010,7 +2012,15 @@ public sealed class JourneyRuntimeWorkerTests
                 new MovementDispatchService(store, Riot),
                 store,
                 publisher,
-                Microsoft.Extensions.Options.Options.Create(Options),
+                new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
+                    options,
+                    new MapStationResolver(),
+                    new PackageCapacityStore(Context),
+                    store,
+                    BoxCounts,
+                    NullLogger<SlotCapacityCriterion>.Instance)),
+                new FirstSeenDispatchCandidateRanker(),
+                options,
                 Clock,
                 NullLogger<JourneyRuntimeEngine>.Instance);
         }

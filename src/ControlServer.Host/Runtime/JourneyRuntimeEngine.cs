@@ -7,14 +7,14 @@ using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 
 namespace ControlServer.Host.Runtime;
 
 public sealed class JourneyRuntimeEngine(
     ControlServerDbContext dbContext,
     IMesIngestCatalog catalog,
-    ISublotBoxCountReader boxCountReader,
-    IPackageCapacityStore packageCapacityStore,
     IRiotVehicleFacts vehicleFacts,
     IRiotMapStationCatalog mapStationCatalog,
     MapStationResolver stationResolver,
@@ -22,6 +22,8 @@ public sealed class JourneyRuntimeEngine(
     MovementDispatchService movementDispatch,
     WireToGateStore store,
     OnboardJourneyPublisher publisher,
+    DispatchAdmissionChain admissionChain,
+    IDispatchCandidateRanker candidateRanker,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -125,10 +127,6 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
-        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
-            runtimeOptions.VehicleKey, cancellationToken).ConfigureAwait(false);
-        DateTimeOffset dynamicFactsNow = timeProvider.GetUtcNow();
         Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
             .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
             .ConfigureAwait(false);
@@ -147,137 +145,59 @@ public sealed class JourneyRuntimeEngine(
                 .Select(row => row.DemandId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .ToHashSet(StringComparer.Ordinal);
-        List<EligibleCandidate> eligible = [];
-        foreach (AcceptedDemandSnapshot candidate in snapshot.Items)
+
+        DispatchRoundFacts round = new(snapshot, currentMap, gate, acceptedDemandIds, now);
+
+        // One worker, vehicles in series -- not one worker per vehicle. Serial iteration is what
+        // keeps a round's snapshot fresh: two workers would each decide against their own read of
+        // the same catalog and could accept the same demand twice.
+        foreach (string vehicleKey in DispatchVehicleKeys())
         {
-            string reason = "ELIGIBLE";
-            ResolvedJourneyRoute? route = null;
-            int expectedBasketCount = 0;
-            int? packageCapacity = null;
-            int[] targetSlots = [];
-            if (acceptedDemandIds.Contains(candidate.DemandId))
-            {
-                // Ahead of every other gate: an accepted demand can never be taken again, so the
-                // route, package, box-count and vehicle reads the gates below perform would be
-                // spent on a decision that is already made.
-                reason = "DEMAND_ALREADY_ACCEPTED";
-            }
-            else if (!runtimeOptions.AllowedWorkTypes.Contains(candidate.WorkType, StringComparer.Ordinal) ||
-                !string.Equals(candidate.WorkType, "WIRE_TO_GATE", StringComparison.Ordinal))
-            {
-                reason = "OUT_OF_SCOPE_WORK_TYPE";
-            }
-            else if (candidate.LiveMesFields is null ||
-                     string.IsNullOrWhiteSpace(candidate.LiveMesFields.Area) ||
-                     string.IsNullOrWhiteSpace(candidate.LiveMesFields.Eqp) ||
-                     string.IsNullOrWhiteSpace(candidate.LiveMesFields.Package))
-            {
-                reason = "REQUIRED_MES_FACT_MISSING";
-            }
-            else if (!candidate.LiveMesFields.Area.StartsWith('N'))
-            {
-                reason = "OUT_OF_SCOPE_AREA";
-            }
-            else
-            {
-                string[] areaEqps = snapshot.Items.Where(item =>
-                        string.Equals(item.WorkType, "WIRE_TO_GATE", StringComparison.Ordinal) &&
-                        string.Equals(item.LiveMesFields?.Area, candidate.LiveMesFields.Area, StringComparison.Ordinal) &&
-                        !string.IsNullOrWhiteSpace(item.LiveMesFields?.Eqp))
-                    .Select(item => item.LiveMesFields!.Eqp!)
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray();
-                if (areaEqps.Length != 1 ||
-                    !string.Equals(areaEqps[0], candidate.LiveMesFields.Eqp, StringComparison.Ordinal))
-                {
-                    reason = "AREA_EQP_NOT_UNIQUE";
-                }
-                else
-                {
-                    try
-                    {
-                        RiotMapStation resolvedPickup = stationResolver.ResolveUniquePickup(
-                            currentMap, candidate.LiveMesFields.Area);
-                        route = new ResolvedJourneyRoute(
-                            runtimeOptions.DispatchZone,
-                            MapStationResolver.BuildRouteEvidenceId(
-                                currentMap,
-                                resolvedPickup,
-                                gate,
-                                candidate.LiveMesFields.Area,
-                                candidate.LiveMesFields.Eqp),
-                            resolvedPickup.StationName,
-                            resolvedPickup.StationId);
-                        reason = ValidateStaticRoute(route);
-                    }
-                    catch (StationResolutionException error)
-                    {
-                        reason = error.ReasonCode;
-                    }
-                }
-            }
+            await DispatchForVehicleAsync(round, vehicleKey, backlogByDemandId, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
 
-            if (reason == "ELIGIBLE" && route is not null)
-            {
-                packageCapacity = await packageCapacityStore.ResolveAndTrackAsync(
-                    candidate.LiveMesFields!.Package!, now, cancellationToken).ConfigureAwait(false);
-                if (packageCapacity is null or <= 0)
-                {
-                    reason = "PACKAGE_CAPACITY_NOT_UNIQUE";
-                }
-            }
+    /// <summary>
+    /// The vehicles this round serves.
+    /// </summary>
+    /// <remarks>
+    /// One vehicle, from the existing single-vehicle configuration. This is the seam ticket 09
+    /// replaces with the configured fleet; nothing else in the loop has to move when it does.
+    /// </remarks>
+    private IReadOnlyList<string> DispatchVehicleKeys() => [runtimeOptions.VehicleKey];
 
-            if (reason == "ELIGIBLE" && route is not null)
-            {
-                reason = ValidateDynamicFacts(onboard, vehicle, dynamicFactsNow);
-            }
-            if (reason == "ELIGIBLE" && route is not null &&
-                !await store.IsTaskTypeAllowedAsync(
-                    route.PickupStationId, candidate.WorkType, cancellationToken).ConfigureAwait(false))
-            {
-                reason = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
-            }
-            if (reason == "ELIGIBLE" && route is not null && onboard is not null)
-            {
-                int? maxBoxCount;
-                try
-                {
-                    maxBoxCount = await boxCountReader.ReadMaxBoxCountAsync(candidate.Sublot, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception error) when (error is HttpRequestException or InvalidDataException or JsonException)
-                {
-                    LogBoxCountFailed(logger, candidate.DemandId, error);
-                    maxBoxCount = null;
-                }
-                if (maxBoxCount is null or <= 0)
-                {
-                    reason = "SUBLOT_BOX_COUNT_UNAVAILABLE";
-                }
-                else
-                {
-                    int capacity = packageCapacity
-                        ?? throw new InvalidOperationException("Eligible PACKAGE must have a frozen capacity.");
-                    expectedBasketCount = checked((maxBoxCount.Value + capacity - 1) / capacity);
-                    if (expectedBasketCount is < 1 or > 8)
-                    {
-                        reason = "EXPECTED_BASKET_COUNT_OUT_OF_RANGE";
-                    }
-                    else if (onboard.AvailableSlots.Length < expectedBasketCount)
-                    {
-                        reason = "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE";
-                    }
-                    else
-                    {
-                        targetSlots = onboard.AvailableSlots.Take(expectedBasketCount).ToArray();
-                    }
-                }
-            }
+    /// <summary>Scores every candidate for one vehicle and dispatches at most one of them.</summary>
+    private async Task DispatchForVehicleAsync(
+        DispatchRoundFacts round,
+        string vehicleKey,
+        Dictionary<string, JourneyBacklogRow> backlogByDemandId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        RiotVehicleObservation vehicle = await vehicleFacts
+            .ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
+        DispatchVehicleFacts vehicleForRound = new(
+            vehicleKey, onboard, vehicle, timeProvider.GetUtcNow());
+
+        List<EligibleDispatchCandidate> eligible = [];
+        foreach (AcceptedDemandSnapshot candidate in round.Catalog.Items)
+        {
+            DispatchCandidateEvaluation evaluation = new(candidate, round, vehicleForRound);
+            string reason = await admissionChain
+                .EvaluateAsync(evaluation, cancellationToken).ConfigureAwait(false);
 
             JourneyBacklogRow backlog = UpsertBacklog(backlogByDemandId, candidate, reason, now);
-            if (reason == "ELIGIBLE" && route is not null)
+            if (string.Equals(reason, DispatchAdmissionChain.Eligible, StringComparison.Ordinal) &&
+                evaluation.Route is not null)
             {
-                eligible.Add(new EligibleCandidate(candidate, route, expectedBasketCount, targetSlots, backlog.FirstSeenAt));
+                eligible.Add(new EligibleDispatchCandidate(
+                    candidate,
+                    evaluation.Route,
+                    evaluation.ExpectedBasketCount,
+                    evaluation.TargetSlots,
+                    backlog.FirstSeenAt));
             }
         }
 
@@ -288,20 +208,17 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
         if (await dbContext.VehicleDispatchLeases.AnyAsync(
-                row => row.VehicleKey == runtimeOptions.VehicleKey && row.ReleasedAt == null,
+                row => row.VehicleKey == vehicleKey && row.ReleasedAt == null,
                 cancellationToken).ConfigureAwait(false))
         {
             return;
         }
 
-        EligibleCandidate selected = eligible
-            .OrderBy(item => item.FirstSeenAt)
-            .ThenBy(item => item.Snapshot.CreatedAt)
-            .ThenBy(item => item.Snapshot.DemandId, StringComparer.Ordinal)
-            .First();
+        EligibleDispatchCandidate selected = candidateRanker.SelectNext(eligible);
         long expectedSessionGeneration = onboard?.SessionGeneration
             ?? throw new InvalidOperationException("An eligible candidate requires current Onboard facts.");
         if (!await FinalDynamicFactsReadyAsync(
+                vehicleKey,
                 expectedSessionGeneration,
                 selected.TargetSlots,
                 cancellationToken).ConfigureAwait(false))
@@ -333,6 +250,7 @@ public sealed class JourneyRuntimeEngine(
             pickup,
             plan,
             token => FinalDynamicFactsReadyAsync(
+                vehicleKey,
                 expectedSessionGeneration,
                 selected.TargetSlots,
                 token),
@@ -550,46 +468,25 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private string ValidateStaticRoute(ResolvedJourneyRoute route)
-    {
-        if (!runtimeOptions.AllowedDispatchZones.Contains(route.DispatchZone, StringComparer.Ordinal))
-            return "DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING";
-        if (string.IsNullOrWhiteSpace(route.RouteEvidenceId))
-            return "ROUTE_EVIDENCE_MISSING";
-        return "ELIGIBLE";
-    }
 
-    private string ValidateDynamicFacts(OnboardFacts? onboard, RiotVehicleObservation vehicle, DateTimeOffset now)
-    {
-        if (onboard is null) return "ONBOARD_FACTS_NOT_READY";
-        if (!onboard.DepartureSafe || !onboard.VehicleStopped || !onboard.AllTargetSlotsLocked ||
-            !onboard.AllUnlockOutputsReset || onboard.UnknownPresent)
-            return "ONBOARD_DEPARTURE_UNSAFE";
-        if (!vehicle.Connected || !vehicle.Enabled) return "RIOT_VEHICLE_NOT_AVAILABLE";
-        if (!string.Equals(vehicle.VehicleKey, runtimeOptions.VehicleKey, StringComparison.Ordinal))
-            return "RIOT_VEHICLE_BINDING_MISMATCH";
-        if (!string.Equals(vehicle.ProcState, "IDLE", StringComparison.Ordinal)) return "RIOT_VEHICLE_NOT_IDLE";
-        if (!string.Equals(vehicle.CurrentMap, runtimeOptions.MapIdentity, StringComparison.Ordinal))
-            return "RIOT_VEHICLE_MAP_MISMATCH";
-        if (vehicle.ObservedAt > now || now - vehicle.ObservedAt > runtimeOptions.MaximumEvidenceAge)
-            return "RIOT_VEHICLE_FACT_STALE";
-        if (vehicle.BatteryPercent is null || string.IsNullOrWhiteSpace(vehicle.BatteryState))
-            return "BATTERY_FACT_UNKNOWN";
-        if (string.Equals(vehicle.BatteryState, "CHARGING", StringComparison.Ordinal) ||
-            vehicle.BatteryPercent < runtimeOptions.MinimumBatteryPercent)
-            return "BATTERY_POLICY_NOT_SATISFIED";
-        if (vehicle.Speed is null || vehicle.Speed != 0) return "RIOT_VEHICLE_NOT_STOPPED";
-        if (vehicle.LockStatus is null || vehicle.LockStatus != 0 || !string.IsNullOrWhiteSpace(vehicle.OrderTaskId))
-            return "RIOT_VEHICLE_ORDER_OCCUPIED";
-        return "ELIGIBLE";
-    }
 
+    /// <summary>
+    /// Re-reads the dynamic facts immediately before intake and re-runs the same verdict the
+    /// admission chain reached.
+    /// </summary>
+    /// <remarks>
+    /// It calls <see cref="VehicleDynamicFactsCriterion.Evaluate"/> rather than repeating its
+    /// clauses, so this check and the chain's cannot drift apart. The session generation and slot
+    /// checks sit on top of it: they are what makes this a re-check of *this* decision rather than
+    /// a fresh one.
+    /// </remarks>
     private async Task<bool> FinalDynamicFactsReadyAsync(
+        string vehicleKey,
         long expectedSessionGeneration,
         IReadOnlyCollection<int> targetSlots,
         CancellationToken cancellationToken)
     {
-        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
         if (onboard is null || onboard.SessionGeneration != expectedSessionGeneration ||
             targetSlots.Any(slot => !onboard.AvailableSlots.Contains(slot)))
         {
@@ -597,9 +494,13 @@ public sealed class JourneyRuntimeEngine(
         }
 
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
-            runtimeOptions.VehicleKey,
+            vehicleKey,
             cancellationToken).ConfigureAwait(false);
-        return ValidateDynamicFacts(onboard, vehicle, timeProvider.GetUtcNow()) == "ELIGIBLE";
+        DispatchVehicleFacts facts = new(vehicleKey, onboard, vehicle, timeProvider.GetUtcNow());
+        return string.Equals(
+            VehicleDynamicFactsCriterion.Evaluate(facts, runtimeOptions),
+            DispatchAdmissionChain.Eligible,
+            StringComparison.Ordinal);
     }
 
     private async Task<bool> IsTrustedArrivalAsync(
@@ -627,7 +528,7 @@ public sealed class JourneyRuntimeEngine(
         }
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
-        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
         return vehicle.Connected && vehicle.Enabled &&
                vehicle.ProcState == "IDLE" &&
@@ -912,7 +813,7 @@ public sealed class JourneyRuntimeEngine(
         return null;
     }
 
-    private async Task<OnboardFacts?> ReadOnboardFactsAsync(CancellationToken cancellationToken)
+    private async Task<OnboardDispatchFacts?> ReadOnboardFactsAsync(CancellationToken cancellationToken)
     {
         SessionRecoveryRow? session = await CurrentReadySessionAsync(runtimeOptions.AgvId, cancellationToken)
             .ConfigureAwait(false);
@@ -995,7 +896,7 @@ public sealed class JourneyRuntimeEngine(
         // slots they touch, and treating that as lost availability would strand every slot the
         // first journey used for the rest of the session.
         JsonElement safety = safetySummaryPayload.GetProperty("safety");
-        return new OnboardFacts(
+        return new OnboardDispatchFacts(
             session.SessionGeneration,
             available,
             safety.GetProperty("departureSafe").GetBoolean(),
@@ -1177,7 +1078,7 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private JourneyExecutionPlan CreatePlan(EligibleCandidate candidate, DateTimeOffset now)
+    private JourneyExecutionPlan CreatePlan(EligibleDispatchCandidate candidate, DateTimeOffset now)
     {
         string demandId = candidate.Snapshot.DemandId;
         return new JourneyExecutionPlan(
@@ -1355,25 +1256,6 @@ public sealed class JourneyRuntimeEngine(
         })?.MessageId;
     }
 
-    private sealed record EligibleCandidate(
-        AcceptedDemandSnapshot Snapshot,
-        ResolvedJourneyRoute Route,
-        int ExpectedBasketCount,
-        int[] TargetSlots,
-        DateTimeOffset FirstSeenAt);
 
-    private sealed record ResolvedJourneyRoute(
-        string DispatchZone,
-        string RouteEvidenceId,
-        string PickupStationId,
-        int PickupStationRiotId);
 
-    private sealed record OnboardFacts(
-        long SessionGeneration,
-        int[] AvailableSlots,
-        bool DepartureSafe,
-        bool VehicleStopped,
-        bool AllTargetSlotsLocked,
-        bool AllUnlockOutputsReset,
-        bool UnknownPresent);
 }
