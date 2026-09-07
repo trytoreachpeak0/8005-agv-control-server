@@ -8,17 +8,31 @@ namespace ControlServer.Domain;
 /// <remarks>
 /// <para>
 /// This exists because nothing was checking. <c>SessionReadiness.reasonCodes</c> is typed
-/// <c>ErrorCode</c>, a closed 43-value enumeration, and on 2026-09-04 every reason code the server
-/// could put there was outside it — seven for seven. Eight gates were green over it: the server has
-/// no schema validation of its own, and <c>CONTROL_SERVER_G2</c> verifies the manifest hash rather
-/// than each message against its schema.
+/// <c>ErrorCode</c>, and on 2026-09-04 every reason code the server could put there was outside the
+/// 43 values the enumeration then held — seven for seven. Eight gates were green over it: the server
+/// has no schema validation of its own, and <c>CONTROL_SERVER_G2</c> verifies the manifest hash
+/// rather than each message against its schema.
 /// </para>
 /// <para>
-/// **Re-sync this list whenever <see cref="ProtocolCandidateIdentity.ManifestSha256"/> changes.**
-/// The source is <c>schemas/common/types.schema.json</c>, <c>$defs/ErrorCode</c>, in the protocol
-/// repository. <c>SessionReadinessReasonCodesTests</c> fails if a reason code the server can emit is
-/// not in here, which catches drift in one direction; nothing catches this list drifting away from
-/// the protocol except re-syncing it on a release.
+/// **This list is synced to the v2 candidate; the identity beside it is not.** The 54 values below
+/// are <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate
+/// manifest <c>84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788</c>
+/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, <c>protocolVersion: 2</c>),
+/// while <see cref="ProtocolCandidateIdentity"/> still names <c>protocol-v0.1.1</c>. The two are
+/// deliberately out of step, and only in the direction that is safe: eleven codes were appended in
+/// v2 and none removed, so the 43 the server speaks today are all still here and its wire behaviour
+/// is unchanged. What re-syncing buys is that the reason-code guard can now tell the truth about
+/// the nine codes this server already emits. Moving the identity is the other half — a two-ended
+/// change that L2 and <c>CONTROL_SERVER_G2</c> are pinned to — and does not belong with this.
+/// </para>
+/// <para>
+/// **Re-sync this list whenever the protocol's error surface moves**, which from here means either a
+/// new candidate manifest or <see cref="ProtocolCandidateIdentity"/> catching up to this one. The
+/// registry is <c>appendOnly</c>, so a re-sync adds and never removes; a code that disappears is a
+/// governance breach rather than a merge to resolve here.
+/// <c>SessionReadinessReasonCodesTests</c> fails if a reason code the server can emit is not in
+/// here, and <c>ProtocolReasonCodeArchitectureTests</c> fails if any of them is, which catches drift
+/// in one direction; nothing catches this list drifting away from the protocol except re-syncing it.
 /// </para>
 /// </remarks>
 public static class ProtocolErrorCodes
@@ -67,7 +81,18 @@ public static class ProtocolErrorCodes
         "RECOVERY_SCOPE_MISMATCH",
         "RECOVERY_CHECKPOINT_NOT_UNIQUE",
         "RECOVERY_AUTHENTICATION_FAILED",
-        "FORCED_RECOVERY_GENERATION_STALE"
+        "FORCED_RECOVERY_GENERATION_STALE",
+        "SLOT_CONFIGURATION_VERIFICATION_FAILED",
+        "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH",
+        "RECOVERY_DEMAND_NOT_BLOCKED",
+        "RECOVERY_EVENT_MISMATCH",
+        "RECOVERY_DEMAND_MISMATCH",
+        "RECOVERY_OPERATOR_MISMATCH",
+        "RECOVERY_ACTION_ALREADY_SELECTED",
+        "RECOVERY_OPERATION_NOT_FOUND",
+        "PROVEN_RECOVERY_CHECKPOINT_REQUIRED",
+        "RECOVERY_ACTION_REQUIRED",
+        "RECOVERY_RESULT_REQUIRED"
     };
 
     public static bool Contains(string code) => Codes.Contains(code);
@@ -81,7 +106,9 @@ public static class ProtocolErrorCodes
     /// reasons collapse onto <c>SESSION_RECOVERY_REQUIRED</c> because the protocol has one code for
     /// "this session needs reconciliation before it can work". The distinction between them is a
     /// diagnosis for whoever reads the server, not a fact the vehicle acts on differently. Keeping
-    /// the internal code on <c>SessionRecoveries.ReasonCode</c> is what preserves it.
+    /// the internal code on <c>SessionRecoveries.ReasonCode</c> is what preserves it. v2 appending
+    /// eleven codes did not change that: none of them is one of these internal reasons, so every arm
+    /// below still maps onto the same wire value it did against the 43.
     /// </remarks>
     public static string ToSessionReadinessReasonCode(string internalReasonCode) => internalReasonCode switch
     {

@@ -29,46 +29,47 @@ namespace ControlServer.Tests;
 /// enumeration -- the server is built against a pinned protocol release and does not read its
 /// schemas at runtime -- and this test asks it rather than keeping a second list that would not
 /// follow a release. What is listed here is the *deviation* set: the codes known to be outside
-/// the enumeration today, pinned exactly so a tenth cannot appear quietly.
+/// the enumeration, pinned exactly so an unregistered one cannot appear quietly. It is empty as
+/// of the v2 candidate, which is the strongest form the comparison takes -- see
+/// <see cref="PinnedDeviations"/> for why an empty set is kept rather than removed.
 /// </para>
 /// </remarks>
 public sealed class ProtocolReasonCodeArchitectureTests
 {
     /// <summary>
-    /// The nine codes this server emits that the protocol's ErrorCode enumeration does not
-    /// contain, as of protocol-v0.1.1.
+    /// The codes this server emits that the protocol's ErrorCode registry does not contain.
+    /// **Empty, and meant to stay that way.**
     /// </summary>
     /// <remarks>
     /// <para>
-    /// There were eleven. Two of them had exact counterparts in the enumeration already, so they
-    /// were renamed on 2026-09-04 and cost no distinction at all: <c>RECOVERY_SESSION_CLOSED</c>
-    /// became <c>RECOVERY_SESSION_NOT_OPEN</c> and <c>FORCED_RECOVERY_GENERATION_MISMATCH</c>
-    /// became <c>FORCED_RECOVERY_GENERATION_STALE</c>.
+    /// It held eleven when this test landed. Two had exact counterparts in the enumeration
+    /// already, so they were renamed on 2026-09-04 and cost no distinction at all:
+    /// <c>RECOVERY_SESSION_CLOSED</c> became <c>RECOVERY_SESSION_NOT_OPEN</c> and
+    /// <c>FORCED_RECOVERY_GENERATION_MISMATCH</c> became
+    /// <c>FORCED_RECOVERY_GENERATION_STALE</c>.
     /// </para>
     /// <para>
-    /// The nine left are not typos, unlike the three renamed the same day --
+    /// The other nine were not typos, unlike the three renamed the same day --
     /// <c>PROTOCOL_RELEASE_MISMATCH</c> was <c>PROTOCOL_RELEASE_IDENTITY_MISMATCH</c> missing a
-    /// word -- but each of these expresses a distinction the protocol has no vocabulary for. The
-    /// enumeration offers one <c>RECOVERY_SCOPE_MISMATCH</c> where the server separates a
+    /// word -- but each expressed a distinction the protocol had no vocabulary for. The
+    /// enumeration offered one <c>RECOVERY_SCOPE_MISMATCH</c> where the server separates a
     /// mismatched event, demand and operator, and one <c>ACTION_NOT_ALLOWED_IN_STATE</c> where it
     /// separates "already chose an action", "no operation found" and "no proven checkpoint".
-    /// Collapsing them onto the enumeration would lose what the onboard shows the operator, so v2
-    /// carries them instead -- the error surface goes from 43 codes to 54 -- and this set empties
-    /// when the vendored enumeration is re-synced to that release.
+    /// Collapsing them onto the enumeration would have lost what the onboard shows the operator,
+    /// so v2 appended them instead -- the error surface went from 43 codes to 54 -- and this set
+    /// emptied when <see cref="ProtocolErrorCodes"/> was re-synced to that candidate.
+    /// </para>
+    /// <para>
+    /// **It is kept rather than deleted, because empty is itself the assertion.** The test below
+    /// compares the deviation set against this one exactly, so an empty set says every code the
+    /// server emits is a registry code, and a new one fails on the spot. Deleting the field would
+    /// leave nowhere to record a deviation, and a deviation with nowhere to go is how eleven of
+    /// them lived through eight green gates. Refilling it is a protocol-side decision first: the
+    /// registry is <c>appendOnly</c>, so a genuinely new code belongs in it rather than on a list
+    /// of exceptions the server keeps to itself.
     /// </para>
     /// </remarks>
-    private static readonly HashSet<string> PinnedDeviations = new(StringComparer.Ordinal)
-    {
-        "RECOVERY_DEMAND_NOT_BLOCKED",
-        "RECOVERY_EVENT_MISMATCH",
-        "RECOVERY_DEMAND_MISMATCH",
-        "RECOVERY_OPERATOR_MISMATCH",
-        "RECOVERY_ACTION_ALREADY_SELECTED",
-        "RECOVERY_OPERATION_NOT_FOUND",
-        "PROVEN_RECOVERY_CHECKPOINT_REQUIRED",
-        "RECOVERY_ACTION_REQUIRED",
-        "RECOVERY_RESULT_REQUIRED"
-    };
+    private static readonly HashSet<string> PinnedDeviations = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The positions a reason code is written at. Each is exact rather than approximate: a scan
