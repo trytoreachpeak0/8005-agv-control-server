@@ -78,8 +78,13 @@ jobs:
 
       # Always: a failed run's evidence is the only account of why, and the runner's temp directory
       # is cleared before the next job.
+      # continue-on-error because the scenario step above is the verdict. This
+      # runner reaches GitHub over a plant network that drops connections in
+      # bursts; losing the upload should cost the evidence, not turn a passing
+      # run red. See issue #7.
       - name: Upload L2 evidence
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: l2-evidence
