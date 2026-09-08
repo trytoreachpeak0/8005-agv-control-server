@@ -2,6 +2,13 @@
 param(
     [ValidateSet('G2')][string]$Gate = 'G2',
     [ValidatePattern('^W2G-IS-0[0-7]$')][string]$Slice,
+    # Feed this the manifest of the *released tag*, not whatever `main` currently has in the
+    # protocol working tree. `CLAUDE.md` is inside the content manifest, so any commit to the
+    # protocol repository -- a doc-only one included -- moves contentManifestSha256 away from the
+    # released value while the tag keeps pointing at the old one. A released-mode run then dies on
+    # 'Protocol manifest hash mismatch', which reads like the pin is stale when the real problem is
+    # that the file came from the wrong commit. `git -C <protocol> show protocol-v0.2.0:manifest/release.json`
+    # is the manifest this pin expects.
     [Parameter(Mandatory)][string]$ProtocolManifest,
     [Parameter(Mandatory)][string]$Output,
     # Runs the gate against a protocol candidate that has not been released yet. The four hashes
