@@ -1,6 +1,5 @@
 using ControlServer.Application;
 using ControlServer.Domain;
-using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
@@ -28,17 +27,16 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// <para>
 /// <b>An identity this server cannot resolve blocks.</b> The fault fact is keyed on 8005's
 /// <c>agvId</c> and dispatch runs on RIoT's <c>vehicleKey</c>; the two are different strings and
-/// <c>remote-ops/fleet.md</c> is the register that maps them. Today the configuration carries
-/// exactly one pair, so an unrecognised vehicle key means the round is deciding for a vehicle whose
-/// fault state this criterion cannot read — and dispatching a vehicle whose fault state is unknown
-/// is precisely what this exists to prevent. Ticket 09 replaces the lookup when there are several
-/// vehicles; until then the fail-closed branch is unreachable in a correctly configured server and
-/// will announce itself immediately if that stops being true.
+/// <c>remote-ops/fleet.md</c> is the register that maps them. The round segment resolves the pair
+/// off the roster before any criterion runs and carries both on
+/// <see cref="DispatchVehicleFacts"/>, so this reads the resolved <c>agvId</c> rather than
+/// comparing the vehicle key against the one configured pair — which, with a fleet, would have
+/// blocked every vehicle but one. What is left here is the guard: facts that reach the chain
+/// without a resolved identity describe a vehicle whose fault state cannot be read, and
+/// dispatching such a vehicle is exactly what this criterion exists to prevent.
 /// </para>
 /// </remarks>
-public sealed class VehicleFaultBlockCriterion(
-    IVehicleFaultStore faults,
-    IOptions<JourneyRuntimeOptions> options) : IDispatchAdmissionCriterion
+public sealed class VehicleFaultBlockCriterion(IVehicleFaultStore faults) : IDispatchAdmissionCriterion
 {
     /// <summary>The vehicle is suspected to be blocked; nothing has proven it faulty.</summary>
     public const string SuspectedReason = "VEHICLE_FAULT_SUSPECTED_BLOCK";
@@ -49,8 +47,6 @@ public sealed class VehicleFaultBlockCriterion(
     /// <summary>The round's vehicle key does not map onto an <c>agvId</c> this server knows.</summary>
     public const string IdentityUnresolvedReason = "VEHICLE_FAULT_IDENTITY_UNRESOLVED";
 
-    private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
-
     public int Order => 15;
 
     public async Task<string> EvaluateAsync(
@@ -59,16 +55,14 @@ public sealed class VehicleFaultBlockCriterion(
     {
         ArgumentNullException.ThrowIfNull(evaluation);
 
-        if (!string.Equals(
-                evaluation.Vehicle.VehicleKey,
-                runtimeOptions.VehicleKey,
-                StringComparison.Ordinal))
+        string agvId = evaluation.Vehicle.AgvId;
+        if (string.IsNullOrWhiteSpace(agvId))
         {
             return IdentityUnresolvedReason;
         }
 
         VehicleFaultFact? fault = await faults
-            .ReadAsync(runtimeOptions.AgvId, cancellationToken).ConfigureAwait(false);
+            .ReadAsync(agvId, cancellationToken).ConfigureAwait(false);
         return fault?.Level switch
         {
             VehicleFaultLevel.ConfirmedIsolated => IsolatedReason,

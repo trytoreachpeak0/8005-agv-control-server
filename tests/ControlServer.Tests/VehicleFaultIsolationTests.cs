@@ -228,14 +228,14 @@ public sealed class VehicleFaultIsolationTests
             Subject.AgvId, level, VehicleFaultEvidence.NavigationFailed, false, Now,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(expected, await fixture.AdmitAsync(Subject.DeviceKey));
+        Assert.Equal(expected, await fixture.AdmitAsync(Subject.AgvId));
     }
 
     [Fact]
     public async Task AVehicleWithNoFaultFactIsAdmitted() =>
         Assert.Equal(
             DispatchAdmissionChain.Eligible,
-            await (await Fixture.CreateAsync()).AdmitAsync(Subject.DeviceKey));
+            await (await Fixture.CreateAsync()).AdmitAsync(Subject.AgvId));
 
     /// <summary>
     /// A cleared fault stops blocking. Level None with a clearing timestamp is what "cleared"
@@ -251,12 +251,14 @@ public sealed class VehicleFaultIsolationTests
         await fixture.Faults.ClearAsync(
             Subject.AgvId, fact.FaultGeneration, "repaired", Now, TestContext.Current.CancellationToken);
 
-        Assert.Equal(DispatchAdmissionChain.Eligible, await fixture.AdmitAsync(Subject.DeviceKey));
+        Assert.Equal(DispatchAdmissionChain.Eligible, await fixture.AdmitAsync(Subject.AgvId));
     }
 
     /// <summary>
     /// A vehicle key this server cannot map onto an agvId is a vehicle whose fault state cannot be
-    /// read, and dispatching one of those is what the criterion exists to prevent.
+    /// read, and dispatching one of those is what the criterion exists to prevent. Ticket 09 moved
+    /// the mapping itself onto the roster, so what reaches the criterion is the resolution's
+    /// result: an unresolved identity arrives as an empty agvId, and still blocks.
     /// </summary>
     [Fact]
     public async Task AVehicleKeyThatResolvesToNoAgvIdIsBlocked()
@@ -265,7 +267,7 @@ public sealed class VehicleFaultIsolationTests
 
         Assert.Equal(
             VehicleFaultBlockCriterion.IdentityUnresolvedReason,
-            await fixture.AdmitAsync("BROKERX-SOMEONE-ELSE"));
+            await fixture.AdmitAsync(string.Empty));
     }
 
     // ---- REQ-0234: the current order is held, never cancelled ---------------------------
@@ -1112,13 +1114,7 @@ public sealed class VehicleFaultIsolationTests
                 Faults, Riot, Motion, Riot, audit, commands, Supervisor,
                 new VehicleMotionLedger(faultOptions), faultOptions, Clock,
                 NullLogger<VehicleFaultCoordinator>.Instance);
-            criterion = new VehicleFaultBlockCriterion(
-                Faults,
-                Options.Create(new JourneyRuntimeOptions
-                {
-                    AgvId = Subject.AgvId,
-                    VehicleKey = Subject.DeviceKey,
-                }));
+            criterion = new VehicleFaultBlockCriterion(Faults);
         }
 
         public MovableClock Clock { get; } = new(Now);
@@ -1181,8 +1177,13 @@ public sealed class VehicleFaultIsolationTests
                     order ?? Order, demandId ?? "demand-77", "tdk-77", "repaired on site"),
                 TestContext.Current.CancellationToken);
 
-        public Task<string> AdmitAsync(string vehicleKey) =>
-            criterion.EvaluateAsync(Evaluation(vehicleKey), TestContext.Current.CancellationToken);
+        /// <summary>
+        /// Runs the criterion for one vehicle. The <c>agvId</c> is what it reads, and the round
+        /// segment resolves it off the roster before the chain runs; passing an empty one is how a
+        /// test says the identity was never resolved.
+        /// </summary>
+        public Task<string> AdmitAsync(string agvId) =>
+            criterion.EvaluateAsync(Evaluation(agvId), TestContext.Current.CancellationToken);
 
         public async Task<VehicleFaultFact> ReadFaultAsync() =>
             await ReadFaultOrNullAsync() ?? throw new InvalidOperationException("No fault fact.");
@@ -1197,21 +1198,24 @@ public sealed class VehicleFaultIsolationTests
         }
 
         /// <summary>
-        /// The least evaluation the criterion reads from: it looks only at the vehicle's key.
+        /// The least evaluation the criterion reads from: it looks only at the resolved agvId.
         /// </summary>
-        private static DispatchCandidateEvaluation Evaluation(string vehicleKey) => new(
+        private static DispatchCandidateEvaluation Evaluation(string agvId) => new(
             new AcceptedDemandSnapshot("demand-77", "tdk-77", 1, "epoch-1", 1, Now),
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot("epoch-1", 1, []),
                 new RiotMapStationCatalogSnapshot(14, Now, "fingerprint", [new RiotMapStation(4, "站 4")]),
                 new RiotMapStation(4, "站 4"),
                 new HashSet<string>(StringComparer.Ordinal),
-                Now),
+                Now,
+                new VehicleDispatchPolicy(
+                    [], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY")),
             new DispatchVehicleFacts(
-                vehicleKey,
+                Subject.DeviceKey,
+                agvId,
                 null,
                 new RiotVehicleObservation(
-                    vehicleKey, true, true, "IDLE", "map14", 4, 90, "IDLE", 0, Now, 0, null),
+                    Subject.DeviceKey, true, true, "IDLE", "map14", 4, 90, "IDLE", 0, Now, 0, null),
                 Now));
     }
 }

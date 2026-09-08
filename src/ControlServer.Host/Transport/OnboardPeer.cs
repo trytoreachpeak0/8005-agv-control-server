@@ -1,47 +1,112 @@
 using System.Text;
+using System.Text.Json;
 using ControlServer.Application;
 
 namespace ControlServer.Host.Transport;
 
+/// <summary>
+/// The Onboard peers this server is currently talking to, one per vehicle.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>N sessions, and they do not cross.</b> Each connection is filed under the <c>agvId</c> its
+/// session established, so one vehicle's outbound traffic can only reach that vehicle's socket.
+/// The single-connection version could not express a fleet at all: the second vehicle to attach
+/// was refused, and until it was every message went to whichever peer had connected first.
+/// </para>
+/// <para>
+/// <b>The address is in the message.</b> Every outbound envelope carries the <c>agvId</c> it was
+/// built for — the publisher stamps it into the wire line and the peer verifies it — so routing
+/// reads the addressee rather than taking it from a second argument that could disagree with the
+/// payload. That also keeps <see cref="IOnboardPeer"/> unchanged, which matters because the port
+/// is what the recovery and publisher tests are written against.
+/// </para>
+/// <para>
+/// <b>No addressee, no send.</b> A line without a readable <c>agvId</c>, or one naming a vehicle
+/// with no attached connection, throws rather than being broadcast or dropped. Both are the same
+/// failure the single-connection version reported when nothing was attached, and the caller
+/// already treats it as one.
+/// </para>
+/// </remarks>
 public sealed class OnboardPeer : IOnboardPeer
 {
     private readonly object _gate = new();
-    private OnboardPeerConnection? _connection;
+    private readonly Dictionary<string, OnboardPeerConnection> _connections = new(StringComparer.Ordinal);
 
-    internal void Attach(OnboardPeerConnection connection)
+    internal void Attach(string agvId, OnboardPeerConnection connection)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         lock (_gate)
         {
-            if (_connection is not null && !ReferenceEquals(_connection, connection))
+            // One vehicle, one live connection. Two sockets claiming the same agvId is not a fleet,
+            // it is the ambiguity the single-connection version refused, and it is still refused --
+            // per vehicle now rather than for the server.
+            if (_connections.TryGetValue(agvId, out OnboardPeerConnection? existing) &&
+                !ReferenceEquals(existing, connection))
             {
-                throw new InvalidOperationException("An Onboard peer is already attached.");
+                throw new InvalidOperationException($"An Onboard peer is already attached for '{agvId}'.");
             }
 
-            _connection = connection;
+            _connections[agvId] = connection;
         }
     }
 
-    internal void Detach(OnboardPeerConnection connection)
+    internal void Detach(string agvId, OnboardPeerConnection connection)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         lock (_gate)
         {
-            if (ReferenceEquals(_connection, connection))
+            if (_connections.TryGetValue(agvId, out OnboardPeerConnection? existing) &&
+                ReferenceEquals(existing, connection))
             {
-                _connection = null;
+                _connections.Remove(agvId);
             }
         }
     }
 
     public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
     {
+        string agvId = ReadAddressee(ndjsonLine.Span);
         OnboardPeerConnection connection;
         lock (_gate)
         {
-            connection = _connection
-                ?? throw new IOException("No recovered Onboard peer is connected.");
+            connection = _connections.TryGetValue(agvId, out OnboardPeerConnection? attached)
+                ? attached
+                : throw new IOException($"No recovered Onboard peer is connected for '{agvId}'.");
         }
 
         return connection.SendAsync(ndjsonLine, cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads the <c>agvId</c> the first envelope in this buffer is addressed to.
+    /// </summary>
+    /// <remarks>
+    /// A buffer may hold several newline-terminated envelopes, and they are sent as one write, so
+    /// they have to share a destination. Only the first is parsed and the rest ride with it: every
+    /// caller builds a buffer for one session, and parsing each line to re-check would cost a JSON
+    /// parse per message to detect a bug no caller can currently have.
+    /// </remarks>
+    private static string ReadAddressee(ReadOnlySpan<byte> ndjsonLine)
+    {
+        int newline = ndjsonLine.IndexOf((byte)'\n');
+        ReadOnlySpan<byte> first = newline < 0 ? ndjsonLine : ndjsonLine[..newline];
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(Encoding.UTF8.GetString(first));
+            if (document.RootElement.TryGetProperty("agvId", out JsonElement agvId) &&
+                agvId.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(agvId.GetString()))
+            {
+                return agvId.GetString()!;
+            }
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException("Onboard outbound data must be a JSON envelope.", error);
+        }
+
+        throw new InvalidDataException("Onboard outbound envelope must name the agvId it is addressed to.");
     }
 }
 

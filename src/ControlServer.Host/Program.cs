@@ -14,6 +14,7 @@ using ControlServer.Host.Runtime.RouteGraph;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
+using ControlServer.Host.Runtime.Fleet;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
@@ -76,6 +77,14 @@ builder.Services.AddOptions<VehicleFaultOptions>()
 builder.Services.AddSingleton<IValidateOptions<VehicleFaultOptions>, VehicleFaultOptionsValidator>();
 builder.Services.AddSingleton<VehicleMotionLedger>();
 builder.Services.AddScoped<VehicleFaultCoordinator>();
+// B2 multi-vehicle: the roster is the identity register and is fixed for the life of the process;
+// the policy access keeps the three configured tables equal to the roster. The checkpoint ledger is
+// a singleton for the reason the motion ledger is -- how long a vehicle has been waiting is a
+// statement about a stretch this process actually watched.
+builder.Services.AddSingleton<VehicleRoster>();
+builder.Services.AddSingleton<CheckpointWaitLedger>();
+builder.Services.AddScoped<IVehicleDispatchPolicyStore, VehicleDispatchPolicyStore>();
+builder.Services.AddScoped<VehicleDispatchPolicyAccess>();
 builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();
 builder.Services.AddScoped<PackageCapacityImportService>();
 builder.Services.AddOptions<OnboardTransportOptions>()

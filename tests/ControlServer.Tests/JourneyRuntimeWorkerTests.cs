@@ -4,6 +4,7 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
+using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -13,6 +14,7 @@ using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.CreateGate;
+using ControlServer.Host.Runtime.Fleet;
 
 namespace ControlServer.Tests;
 
@@ -753,7 +755,10 @@ public sealed class JourneyRuntimeWorkerTests
         // which adds exactly three writes to an accepting round and none per candidate -- the
         // catalog confirmation, the gate verdict for the one demand that reached the gate, and the
         // freeze of its endpoints. A steady round that accepts nothing adds only the confirmation.
-        Assert.InRange(fixture.SaveChanges.Count, 1, 13);
+        // B2 adds three more, still none of them per candidate: applying the configured fleet
+        // policy, which this first round does because the tables start empty and which costs two
+        // saves, and the occupancy claim on the accepted journey's first order.
+        Assert.InRange(fixture.SaveChanges.Count, 1, 15);
     }
 
     [Fact]
@@ -1671,6 +1676,13 @@ public sealed class JourneyRuntimeWorkerTests
         public bool CatalogApproved { get; }
 
         public JourneyRuntimeOptions Options { get; }
+
+        /// <summary>
+        /// Owned by the fixture rather than by the engine so that it survives
+        /// <see cref="RecreateEngineAsync"/>, the way the process-wide singleton survives a scope.
+        /// </summary>
+        public CheckpointWaitLedger CheckpointWaits { get; } = new();
+
         public FixedTimeProvider Clock { get; }
         public SaveChangesCounter SaveChanges { get; }
         public JourneyRuntimeEngine Engine { get; private set; }
@@ -2190,6 +2202,10 @@ public sealed class JourneyRuntimeWorkerTests
                 CreateCatalogAccess(),
                 new CatalogAvailabilityStore(Context),
                 CreateGate(),
+                new VehicleRoster(options),
+                new VehicleDispatchPolicyAccess(new VehicleDispatchPolicyStore(Context), options, Clock),
+                Riot,
+                CheckpointWaits,
                 options,
                 Clock,
                 NullLogger<JourneyRuntimeEngine>.Instance);
@@ -2431,7 +2447,8 @@ public sealed class JourneyRuntimeWorkerTests
         }
     }
 
-    private sealed class RecordingRiot : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog
+    private sealed class RecordingRiot
+        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts
     {
         private readonly JourneyRuntimeOptions _options;
         private readonly FixedTimeProvider _clock;
@@ -2465,6 +2482,14 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         public RiotVehicleObservation Vehicle { get; set; }
+
+        /// <summary>
+        /// What RIoT reports in <c>movementState</c>. Null is the ordinary case for these tests:
+        /// they are not about motion, and a null state reads as Unknown exactly as a field RIoT
+        /// did not send would.
+        /// </summary>
+        public string? MovementState { get; set; }
+
         public Action? BeforeReadVehicle { get; set; }
         public bool LoseNextCreateResponse { get; set; }
         public int TotalCreateCount => _creates.Values.Sum();
@@ -2509,6 +2534,19 @@ public sealed class JourneyRuntimeWorkerTests
             _ = cancellationToken;
             BeforeReadVehicle?.Invoke();
             return Task.FromResult(Vehicle with { VehicleKey = vehicleKey, ObservedAt = _clock.GetUtcNow() });
+        }
+
+        public Task<VehicleMotionSample> SampleMotionAsync(string deviceKey, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new VehicleMotionSample(
+                deviceKey,
+                HttpRiotMovementGateway.ReadMotion(MovementState, Vehicle.Speed),
+                MovementState,
+                Vehicle.Speed,
+                Vehicle.CurrentMap,
+                Vehicle.CurrentStationId,
+                _clock.GetUtcNow()));
         }
 
         public Task<RiotOrderObservation> ReconcileByUpperIdAsync(string upperId, CancellationToken cancellationToken)

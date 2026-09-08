@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.CreateGate;
+using ControlServer.Host.Runtime.Fleet;
 
 namespace ControlServer.Host.Runtime;
 
@@ -28,6 +29,10 @@ public sealed class JourneyRuntimeEngine(
     CatalogAvailabilityAccess catalogAvailability,
     ICatalogAvailabilityStore catalogStore,
     PreCreateGate createGate,
+    VehicleRoster roster,
+    VehicleDispatchPolicyAccess dispatchPolicy,
+    IVehicleMotionFacts motionFacts,
+    CheckpointWaitLedger checkpointWaits,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -45,6 +50,31 @@ public sealed class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2103, nameof(LogMapStationCatalogFailed)),
         "RIoT Map station catalog failed closed; no new journey action was taken.");
+    private static readonly Action<ILogger, string, int, Exception?> LogVehicleRoundBudgetExhausted =
+        LoggerMessage.Define<string, int>(
+            LogLevel.Warning,
+            new EventId(2104, nameof(LogVehicleRoundBudgetExhausted)),
+            "Vehicle {AgvId} exhausted its {BudgetMilliseconds} ms dispatch budget; the round moved on " +
+            "to the remaining vehicles.");
+    private static readonly Action<ILogger, string, string, Exception?> LogCheckpointWaitExceeded =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(2105, nameof(LogCheckpointWaitExceeded)),
+            "Vehicle {AgvId} has been holding at a traffic checkpoint past its budget on journey " +
+            "{DemandId}; it is not arriving on its own.");
+    private static readonly Action<ILogger, string, string, Exception?> LogVehicleOccupancyConflict =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Error,
+            new EventId(2106, nameof(LogVehicleOccupancyConflict)),
+            "Vehicle {AgvId} already holds an in-flight order; the claim for {UpperId} was refused by " +
+            "the occupancy index.");
+
+    /// <summary>The journey is not arriving because the vehicle is holding at a traffic checkpoint.</summary>
+    public const string CheckpointWaitReason = "VEHICLE_WAITING_AT_CHECKPOINT";
+
+    /// <summary>The checkpoint wait has lasted longer than the configured budget.</summary>
+    public const string CheckpointWaitExceededReason = "VEHICLE_CHECKPOINT_WAIT_EXCEEDED";
+
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
@@ -104,36 +134,62 @@ public sealed class JourneyRuntimeEngine(
             .Where(row => row.Stage != JourneyRuntimeStage.Completed)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         active = active.OrderBy(row => row.CreatedAt).ToArray();
-        if (active.Length > 1)
+        // The one-journey invariant is per vehicle, not per server. It was written as a global
+        // check while there was one vehicle, and those are the same statement then; with a fleet
+        // they are not, and reading it globally would refuse to run the fleet at all.
+        string[] doubleBooked = active
+            .GroupBy(row => row.AgvId, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToArray();
+        if (doubleBooked.Length > 0)
         {
-            throw new BusinessIdentityConflictException("More than one unresolved journey exists for the single-vehicle runtime.");
+            throw new BusinessIdentityConflictException(
+                $"More than one unresolved journey exists for vehicle: {string.Join(',', doubleBooked)}.");
         }
-        if (active.Length == 0)
+
+        // Vehicles are advanced before free ones are served, and a journey created this round is
+        // not advanced until the next one. With one vehicle that is exactly the old shape -- either
+        // it had a journey and only advanced, or it had none and only discovered.
+        foreach (JourneyRuntimeRow runtime in active)
         {
-            string[] unresolvedDemandIds = await dbContext.AcceptedDemands
-                .Where(row => row.Status != DemandExecutionStatus.Succeeded &&
-                              row.Status != DemandExecutionStatus.Cancelled)
-                .Select(row => row.DemandId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-            string[] runtimeDemandIds = await dbContext.JourneyRuntimes
-                .Select(row => row.DemandId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-            string[] orphaned = unresolvedDemandIds.Except(runtimeDemandIds, StringComparer.Ordinal).ToArray();
-            if (orphaned.Length > 0)
-            {
-                throw new BusinessIdentityConflictException(
-                    $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
-            }
-            await DiscoverAndAcceptAsync(currentMap, gate, cancellationToken).ConfigureAwait(false);
+            await AdvanceAsync(runtime, currentMap, cancellationToken).ConfigureAwait(false);
+        }
+
+        HashSet<string> busy = active.Select(row => row.AgvId).ToHashSet(StringComparer.Ordinal);
+        FleetVehicle[] free = roster.Vehicles
+            .Where(vehicle => !busy.Contains(vehicle.AgvId))
+            .ToArray();
+        if (free.Length == 0)
+        {
             return;
         }
 
-        await AdvanceAsync(active[0], currentMap, cancellationToken).ConfigureAwait(false);
+        // The orphan check guards intake, so it runs when this round is about to take work on --
+        // which with one vehicle is exactly when it ran before, since the single vehicle being
+        // free is the same statement as no journey being active.
+        string[] unresolvedDemandIds = await dbContext.AcceptedDemands
+            .Where(row => row.Status != DemandExecutionStatus.Succeeded &&
+                          row.Status != DemandExecutionStatus.Cancelled)
+            .Select(row => row.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] runtimeDemandIds = await dbContext.JourneyRuntimes
+            .Select(row => row.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] orphaned = unresolvedDemandIds.Except(runtimeDemandIds, StringComparer.Ordinal).ToArray();
+        if (orphaned.Length > 0)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
+        }
+
+        await DiscoverAndAcceptAsync(currentMap, gate, free, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task DiscoverAndAcceptAsync(
         RiotMapStationCatalogSnapshot currentMap,
         RiotMapStation gate,
+        IReadOnlyList<FleetVehicle> vehicles,
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
@@ -162,45 +218,97 @@ public sealed class JourneyRuntimeEngine(
         // finished demand stayed in the catalog. A demand this server has accepted is bound to its
         // one journey permanently; it is never a candidate again, whatever stage that journey
         // reached.
+        // Kept as a live set rather than a snapshot: a demand taken by an earlier vehicle in this
+        // same round has to stop being a candidate for the later ones. See DispatchRoundFacts.
         HashSet<string> acceptedDemandIds = (await dbContext.AcceptedDemands
                 .Select(row => row.DemandId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .ToHashSet(StringComparer.Ordinal);
 
-        DispatchRoundFacts round = new(snapshot, currentMap, gate, acceptedDemandIds, now);
+        VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        DispatchRoundFacts round = new(snapshot, currentMap, gate, acceptedDemandIds, now, policy);
 
         // One worker, vehicles in series -- not one worker per vehicle. Serial iteration is what
         // keeps a round's snapshot fresh: two workers would each decide against their own read of
         // the same catalog and could accept the same demand twice.
-        foreach (string vehicleKey in DispatchVehicleKeys())
+        //
+        // Each vehicle gets its own budget rather than the round getting one. The failure this
+        // guards against is a single vehicle's reads hanging -- an unreachable peer, a RIoT call
+        // that never answers -- and a round-level budget would let that one vehicle consume the
+        // whole round and starve every vehicle behind it. A vehicle that runs out is skipped for
+        // this round only; nothing about it is remembered, so it is served again next round.
+        foreach (FleetVehicle vehicle in vehicles)
         {
-            await DispatchForVehicleAsync(round, vehicleKey, backlogByDemandId, now, cancellationToken)
-                .ConfigureAwait(false);
+            TimeSpan budget = RoundBudget(policy, vehicle.AgvId);
+            using CancellationTokenSource expiry = new(budget, timeProvider);
+            using CancellationTokenSource linked =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
+            try
+            {
+                await DispatchForVehicleAsync(
+                    round, vehicle, acceptedDemandIds, backlogByDemandId, now, linked.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (expiry.IsCancellationRequested &&
+                                                     !cancellationToken.IsCancellationRequested)
+            {
+                LogVehicleRoundBudgetExhausted(
+                    logger, vehicle.AgvId, (int)budget.TotalMilliseconds, null);
+                // Whatever the abandoned segment had staged is not this vehicle's decision any
+                // more and must not be written under the next vehicle's SaveChanges. Dropping it
+                // is what actually keeps one vehicle's timeout from reaching the others -- the
+                // budget only stops the work, the tracker is what would have carried it across.
+                dbContext.ChangeTracker.Clear();
+                backlogByDemandId.Clear();
+                foreach (JourneyBacklogRow row in await dbContext.JourneyBacklog
+                             .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    backlogByDemandId[row.DemandId] = row;
+                }
+            }
         }
     }
 
     /// <summary>
-    /// The vehicles this round serves.
+    /// How long this vehicle's segment of the round may take.
     /// </summary>
     /// <remarks>
-    /// One vehicle, from the existing single-vehicle configuration. This is the seam ticket 09
-    /// replaces with the configured fleet; nothing else in the loop has to move when it does.
+    /// A vehicle the policy does not mention still gets the default budget rather than none. It
+    /// cannot be dispatched — the task-type criterion refuses an unconfigured vehicle — but the
+    /// point of running it anyway is that refusal reaching the backlog under its own reason code.
+    /// A zero budget would replace that diagnosis with a timeout every round.
     /// </remarks>
-    private IReadOnlyList<string> DispatchVehicleKeys() => [runtimeOptions.VehicleKey];
+    private static TimeSpan RoundBudget(VehicleDispatchPolicy policy, string agvId)
+    {
+        VehicleDispatchProfile? profile = policy.Vehicles
+            .FirstOrDefault(vehicle => string.Equals(vehicle.AgvId, agvId, StringComparison.Ordinal));
+        int milliseconds = profile?.RoundTimeoutMilliseconds ?? 0;
+        return TimeSpan.FromMilliseconds(milliseconds > 0
+            ? milliseconds
+            : new FleetVehicleOptions().RoundTimeoutMilliseconds);
+    }
 
     /// <summary>Scores every candidate for one vehicle and dispatches at most one of them.</summary>
     private async Task DispatchForVehicleAsync(
         DispatchRoundFacts round,
-        string vehicleKey,
+        FleetVehicle fleetVehicle,
+        HashSet<string> claimedDemandIds,
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        string vehicleKey = fleetVehicle.VehicleKey;
+        // Onboard facts are read for this vehicle's own agvId. Reading them off the single
+        // configured one, as this did while there was one vehicle, would have judged every
+        // vehicle in the fleet against the first vehicle's session -- the exact cross-talk the
+        // per-vehicle iteration exists to prevent.
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(fleetVehicle.AgvId, cancellationToken)
+            .ConfigureAwait(false);
         RiotVehicleObservation vehicle = await vehicleFacts
             .ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
         DispatchVehicleFacts vehicleForRound = new(
-            vehicleKey, onboard, vehicle, timeProvider.GetUtcNow());
+            vehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow());
 
         List<EligibleDispatchCandidate> eligible = [];
         foreach (AcceptedDemandSnapshot candidate in round.Catalog.Items)
@@ -241,7 +349,7 @@ public sealed class JourneyRuntimeEngine(
         long expectedSessionGeneration = onboard?.SessionGeneration
             ?? throw new InvalidOperationException("An eligible candidate requires current Onboard facts.");
         if (!await FinalDynamicFactsReadyAsync(
-                vehicleKey,
+                fleetVehicle,
                 expectedSessionGeneration,
                 selected.TargetSlots,
                 cancellationToken).ConfigureAwait(false))
@@ -255,7 +363,7 @@ public sealed class JourneyRuntimeEngine(
         }
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
-        JourneyExecutionPlan plan = CreatePlan(selected, intakeAt);
+        JourneyExecutionPlan plan = CreatePlan(fleetVehicle, selected, intakeAt);
         // REQ-0305: the endpoints are taken from the snapshot that was fresh when the demand was
         // taken, and frozen there. Both ends, because both are stations this task will be sent to
         // and a later rename of either must not reach the task that already exists. The store
@@ -291,12 +399,16 @@ public sealed class JourneyRuntimeEngine(
             plan.PickupStationRiotId,
             plan.AgvLifecycleGeneration,
             plan.DispatchGeneration);
+        // Taken before the call rather than after it: a candidate this vehicle is committing to
+        // must stop being a candidate for the vehicles behind it in this round whatever the intake
+        // then reports, because every refusal below leaves the demand bound to this attempt.
+        claimedDemandIds.Add(selected.Snapshot.DemandId);
         JourneyIntakeResult result = await intakeCoordinator.AcceptAndDispatchToPickupAsync(
             selected.Snapshot,
             pickup,
             plan,
             token => FinalDynamicFactsReadyAsync(
-                vehicleKey,
+                fleetVehicle,
                 expectedSessionGeneration,
                 selected.TargetSlots,
                 token),
@@ -317,6 +429,25 @@ public sealed class JourneyRuntimeEngine(
                 cancellationToken).ConfigureAwait(false);
             return;
         }
+        // The vehicle is now carrying this journey's first order, and that is what the occupancy
+        // claim records. It is decided by the filtered unique index on OrderIntents rather than by
+        // a read, so it is the constraint the lease check above cannot be: the lease is checked
+        // before the round decides and the database enforces this one at the moment of writing. A
+        // refusal here therefore means a second writer got in between, and it is reported rather
+        // than worked around -- the journey exists, so the operator has to see which vehicle is
+        // double-booked.
+        if (!await dispatchPolicy.TryClaimVehicleOccupancyAsync(plan.PickupUpperId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            LogVehicleOccupancyConflict(logger, fleetVehicle.AgvId, plan.PickupUpperId, null);
+            JourneyRuntimeRow conflicted = await dbContext.JourneyRuntimes
+                .SingleAsync(row => row.DemandId == selected.Snapshot.DemandId, cancellationToken)
+                .ConfigureAwait(false);
+            Block(conflicted, "VEHICLE_OCCUPANCY_CONFLICT", timeProvider.GetUtcNow());
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
         {
             JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
@@ -383,6 +514,7 @@ public sealed class JourneyRuntimeEngine(
                 }
                 if (!await IsTrustedArrivalAsync(runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false))
                 {
+                    await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 await PublishPickupStateAsync(runtime, session, cancellationToken).ConfigureAwait(false);
@@ -495,6 +627,7 @@ public sealed class JourneyRuntimeEngine(
                 }
                 if (!await IsTrustedArrivalAsync(runtime, "TO_GATE", session, cancellationToken).ConfigureAwait(false))
                 {
+                    await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 await PublishGateStateAndUnloadAsync(runtime, session, cancellationToken).ConfigureAwait(false);
@@ -520,6 +653,15 @@ public sealed class JourneyRuntimeEngine(
                     await store.SettleAnsweredCommandAsync(
                         runtime.UnloadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
                     SetStage(runtime, JourneyRuntimeStage.Completed, now);
+                    checkpointWaits.Clear(runtime.VehicleKey);
+                    // The journey is over, so the vehicle stops being occupied by it. Released
+                    // here rather than at the gate arrival because the claim covers the whole
+                    // journey, not one leg -- a vehicle that has arrived but not unloaded is still
+                    // executing this demand and must not be given another. It runs after the stage
+                    // is set so that the store's save commits both, and a crash between them
+                    // cannot leave a completed journey still holding its vehicle.
+                    await dispatchPolicy.ReleaseVehicleOccupancyAsync(
+                        runtime.PickupUpperId, cancellationToken).ConfigureAwait(false);
                 }
                 break;
             case JourneyRuntimeStage.Blocked:
@@ -545,12 +687,13 @@ public sealed class JourneyRuntimeEngine(
     /// a fresh one.
     /// </remarks>
     private async Task<bool> FinalDynamicFactsReadyAsync(
-        string vehicleKey,
+        FleetVehicle fleetVehicle,
         long expectedSessionGeneration,
         IReadOnlyCollection<int> targetSlots,
         CancellationToken cancellationToken)
     {
-        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(fleetVehicle.AgvId, cancellationToken)
+            .ConfigureAwait(false);
         if (onboard is null || onboard.SessionGeneration != expectedSessionGeneration ||
             targetSlots.Any(slot => !onboard.AvailableSlots.Contains(slot)))
         {
@@ -558,9 +701,10 @@ public sealed class JourneyRuntimeEngine(
         }
 
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
-            vehicleKey,
+            fleetVehicle.VehicleKey,
             cancellationToken).ConfigureAwait(false);
-        DispatchVehicleFacts facts = new(vehicleKey, onboard, vehicle, timeProvider.GetUtcNow());
+        DispatchVehicleFacts facts = new(
+            fleetVehicle.VehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow());
         return string.Equals(
             VehicleDynamicFactsCriterion.Evaluate(facts, runtimeOptions),
             DispatchAdmissionChain.Eligible,
@@ -592,7 +736,8 @@ public sealed class JourneyRuntimeEngine(
         }
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
-        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(runtime.AgvId, cancellationToken)
+            .ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
         return vehicle.Connected && vehicle.Enabled &&
                vehicle.ProcState == "IDLE" &&
@@ -606,6 +751,74 @@ public sealed class JourneyRuntimeEngine(
                onboard.VehicleStopped && onboard.AllTargetSlotsLocked && onboard.AllUnlockOutputsReset &&
                !onboard.UnknownPresent;
     }
+
+    /// <summary>
+    /// Says why a journey that has not arrived is not arriving, when RIoT's answer is that the
+    /// vehicle is holding at a traffic checkpoint.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is B2's <c>MT_WAIT_FOR_CHECKPOINT</c> handling, and it deliberately stops short of
+    /// the motion model.</b> The state stays
+    /// <see cref="VehicleMotionReading.Unknown"/> — a vehicle waiting for its turn at a checkpoint
+    /// has not been shown to have stopped rolling, and adding the state to the gateway's
+    /// not-moving list would weaken REQ-0247's stop proof to buy a nicer word here. What this adds
+    /// is the other half of "recognised": the reason the journey is standing still is named
+    /// instead of being left blank, which with one vehicle almost never happened and with several
+    /// is the ordinary case.
+    /// </para>
+    /// <para>
+    /// <b>The disposition is bounded waiting, not escalation.</b> Below the budget the wait is
+    /// traffic working as designed and the journey simply says so. Past it, the reason changes and
+    /// the wait is logged for a person, because a vehicle that never gets its turn will not fix
+    /// itself. It is deliberately not routed into the two-level fault model: that path proves a
+    /// stop before it decides, an unknown reading satisfies its escalation condition by
+    /// construction, and every long checkpoint wait would therefore end in an emergency stop.
+    /// </para>
+    /// <para>
+    /// A vehicle that is not waiting has its wait forgotten, so the next wait is measured from its
+    /// own beginning, and any block reason this wrote is cleared rather than left to describe a
+    /// situation that has passed.
+    /// </para>
+    /// </remarks>
+    private async Task NameCheckpointWaitAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        VehicleMotionSample sample = await motionFacts
+            .SampleMotionAsync(runtime.VehicleKey, cancellationToken).ConfigureAwait(false);
+        bool waiting = string.Equals(
+            sample.MovementState, RiotMovementStates.WaitForCheckpoint, StringComparison.Ordinal);
+        if (!waiting)
+        {
+            checkpointWaits.Clear(runtime.VehicleKey);
+            if (IsCheckpointReason(runtime.BlockReasonCode))
+            {
+                runtime.BlockReasonCode = null;
+                runtime.UpdatedAt = timeProvider.GetUtcNow();
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return;
+        }
+
+        TimeSpan waited = checkpointWaits.Observe(runtime.VehicleKey, sample.ObservedAt);
+        bool exceeded = waited > runtimeOptions.CheckpointWaitBudget;
+        string reason = exceeded ? CheckpointWaitExceededReason : CheckpointWaitReason;
+        if (exceeded)
+        {
+            LogCheckpointWaitExceeded(logger, runtime.AgvId, runtime.DemandId, null);
+        }
+        if (string.Equals(runtime.BlockReasonCode, reason, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        runtime.BlockReasonCode = reason;
+        runtime.UpdatedAt = timeProvider.GetUtcNow();
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsCheckpointReason(string? reason) =>
+        string.Equals(reason, CheckpointWaitReason, StringComparison.Ordinal) ||
+        string.Equals(reason, CheckpointWaitExceededReason, StringComparison.Ordinal);
 
     private async Task<bool> EnsureMovementConfirmedAsync(
         JourneyRuntimeRow runtime,
@@ -877,9 +1090,20 @@ public sealed class JourneyRuntimeEngine(
         return null;
     }
 
-    private async Task<OnboardDispatchFacts?> ReadOnboardFactsAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// One vehicle's Onboard-side facts, read against that vehicle's own session.
+    /// </summary>
+    /// <remarks>
+    /// The <c>agvId</c> is a parameter rather than the configured one because every read below is
+    /// session-scoped: the session row, the two snapshots and the last inbound message all belong
+    /// to one vehicle's session generation. Reading them for the configured vehicle while deciding
+    /// for another would admit a vehicle on a different vehicle's safety evidence.
+    /// </remarks>
+    private async Task<OnboardDispatchFacts?> ReadOnboardFactsAsync(
+        string agvId,
+        CancellationToken cancellationToken)
     {
-        SessionRecoveryRow? session = await CurrentReadySessionAsync(runtimeOptions.AgvId, cancellationToken)
+        SessionRecoveryRow? session = await CurrentReadySessionAsync(agvId, cancellationToken)
             .ConfigureAwait(false);
         if (session is null)
         {
@@ -890,10 +1114,10 @@ public sealed class JourneyRuntimeEngine(
             return null;
         }
         ProtocolInboxRow? capability = await LatestInboxForSessionAsync(
-            "CapabilitySnapshot", runtimeOptions.AgvId, session.SessionGeneration, cancellationToken)
+            "CapabilitySnapshot", agvId, session.SessionGeneration, cancellationToken)
             .ConfigureAwait(false);
         ProtocolInboxRow? safetyRow = await LatestInboxForSessionAsync(
-            "SafetyStateSnapshot", runtimeOptions.AgvId, session.SessionGeneration, cancellationToken)
+            "SafetyStateSnapshot", agvId, session.SessionGeneration, cancellationToken)
             .ConfigureAwait(false);
         // The snapshot is sent once per session; every later change arrives as SafetyStateChanged
         // (ADR-cross-0033), which carries the same safety summary and no slotStates. Reading the
@@ -904,7 +1128,7 @@ public sealed class JourneyRuntimeEngine(
         // does update, correctly showed Ready. The reverse is worse: a session opened at rest went
         // on reporting the vehicle stopped after Onboard said it had moved.
         ProtocolInboxRow? safetySummaryRow = await LatestSafetySummaryForSessionAsync(
-            runtimeOptions.AgvId, session.SessionGeneration, safetyRevision, cancellationToken)
+            agvId, session.SessionGeneration, safetyRevision, cancellationToken)
             .ConfigureAwait(false);
         if (capability is null || safetyRow is null || safetySummaryRow is null)
         {
@@ -941,7 +1165,7 @@ public sealed class JourneyRuntimeEngine(
             return null;
         }
         DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
-            runtimeOptions.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+            agvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
         if (lastInboundAt is null || lastInboundAt > now ||
             now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
         {
@@ -1142,13 +1366,16 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private JourneyExecutionPlan CreatePlan(EligibleDispatchCandidate candidate, DateTimeOffset now)
+    private JourneyExecutionPlan CreatePlan(
+        FleetVehicle fleetVehicle,
+        EligibleDispatchCandidate candidate,
+        DateTimeOffset now)
     {
         string demandId = candidate.Snapshot.DemandId;
         return new JourneyExecutionPlan(
-            runtimeOptions.AgvId,
-            runtimeOptions.VehicleKey,
-            runtimeOptions.AgvLifecycleGeneration,
+            fleetVehicle.AgvId,
+            fleetVehicle.VehicleKey,
+            fleetVehicle.AgvLifecycleGeneration,
             runtimeOptions.MapId,
             runtimeOptions.MapIdentity,
             candidate.Route.DispatchZone,

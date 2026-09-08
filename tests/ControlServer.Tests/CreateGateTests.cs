@@ -26,6 +26,15 @@ public sealed class CreateGateTests
     private static readonly DateTimeOffset Origin = new(2026, 9, 8, 8, 0, 0, TimeSpan.Zero);
     private const int MapId = 25;
     private const string VehicleKey = "BROKERX-TEST-0001";
+    private const string AgvId = "AGV-TEST-0001";
+
+    /// <summary>
+    /// The fleet policy the round carries. These tests are about the create gate, and no criterion
+    /// they exercise reads the policy, so an empty one keeps the fixture honest about what it does
+    /// not configure.
+    /// </summary>
+    private static readonly VehicleDispatchPolicy EmptyPolicy =
+        new([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY");
 
     // ---- REQ-0302: the two approved parameters ------------------------------------------------
 
@@ -438,9 +447,11 @@ public sealed class CreateGateTests
             new RiotMapStationCatalogSnapshot(MapId, Origin, new string('a', 64), []),
             new RiotMapStation(210, "关卡"),
             new HashSet<string>(),
-            Origin);
+            Origin,
+            EmptyPolicy);
         DispatchVehicleFacts vehicle = new(
             VehicleKey,
+            AgvId,
             new OnboardDispatchFacts(1, [1, 2], true, true, true, true, false),
             new RiotVehicleObservation(VehicleKey, true, true, "IDLE", "MAP", 11, 80, "NO_CHARGE", 0, Origin, 0, null),
             Origin);

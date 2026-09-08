@@ -27,28 +27,68 @@ public sealed partial class OnboardTcpServer(
         TcpListener listener = new(address, _options.Port);
         listener.Start();
         LogTransportStarted(logger, address, _options.Port);
+        // Connections are served concurrently, one task each. Serving them one at a time was
+        // adequate while there was one vehicle and is a deadlock with a fleet: the accept loop only
+        // came back round when the current peer's session ended, so the second vehicle waited in
+        // the listen backlog for the whole life of the first vehicle's session.
+        List<Task> connections = [];
+        using SemaphoreSlim slots = new(_options.MaxConcurrentSessions, _options.MaxConcurrentSessions);
         try
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                using TcpClient client = await listener.AcceptTcpClientAsync(stoppingToken).ConfigureAwait(false);
-                try
+                TcpClient client = await listener.AcceptTcpClientAsync(stoppingToken).ConfigureAwait(false);
+                // Bounded rather than unbounded: every accepted connection holds a service scope, a
+                // read buffer and a socket, and the fleet size is known. A connection past the
+                // bound is closed at once, which a peer retries, rather than queued behind sessions
+                // that may last hours.
+                if (!await slots.WaitAsync(TimeSpan.Zero, stoppingToken).ConfigureAwait(false))
                 {
-                    await HandleClientAsync(client, stoppingToken).ConfigureAwait(false);
+                    LogConnectionRefused(logger, _options.MaxConcurrentSessions);
+                    client.Dispose();
+                    continue;
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (Exception error)
-                {
-                    LogConnectionEnded(logger, error);
-                }
+
+                connections.RemoveAll(task => task.IsCompleted);
+                connections.Add(ServeAsync(client, slots, stoppingToken));
             }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Shutdown, not a fault. The connection tasks are watching the same token.
         }
         finally
         {
             listener.Stop();
+            await Task.WhenAll(connections).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Serves one connection to its end, whatever ends it.</summary>
+    /// <remarks>
+    /// Every failure is confined here. One peer's protocol error, disconnect or timeout must not
+    /// reach the accept loop, because the accept loop is now shared with every other vehicle.
+    /// </remarks>
+    private async Task ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using (client)
+            {
+                await HandleClientAsync(client, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Shutdown.
+        }
+        catch (Exception error)
+        {
+            LogConnectionEnded(logger, error);
+        }
+        finally
+        {
+            slots.Release();
         }
     }
 
@@ -60,7 +100,7 @@ public sealed partial class OnboardTcpServer(
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
         OnboardMessageProcessor processor = scope.ServiceProvider.GetRequiredService<OnboardMessageProcessor>();
         OnboardConnectionState state = new() { DeferOutboundUntilResponseWritten = true };
-        bool attached = false;
+        string? attachedAgvId = null;
         try
         {
             while (!cancellationToken.IsCancellationRequested)
@@ -82,18 +122,23 @@ public sealed partial class OnboardTcpServer(
                         cancellationToken).ConfigureAwait(false);
                 }
                 await processor.FlushDeferredOutboundAsync(state, cancellationToken).ConfigureAwait(false);
-                if (state.SessionGeneration is not null && !attached)
+                // The agvId is what files this connection, so both halves of the session identity
+                // have to be established before it can be attached. Until then nothing addressed to
+                // this vehicle can be routed to it, which is correct: it has no session yet.
+                if (attachedAgvId is null &&
+                    state.SessionGeneration is not null &&
+                    !string.IsNullOrWhiteSpace(state.AgvId))
                 {
-                    peer.Attach(connection);
-                    attached = true;
+                    peer.Attach(state.AgvId, connection);
+                    attachedAgvId = state.AgvId;
                 }
             }
         }
         finally
         {
-            if (attached)
+            if (attachedAgvId is not null)
             {
-                peer.Detach(connection);
+                peer.Detach(attachedAgvId, connection);
             }
         }
     }
@@ -108,6 +153,10 @@ public sealed partial class OnboardTcpServer(
         {
             throw new InvalidOperationException("OnboardTransport:MaxLineBytes must be at least 4096.");
         }
+        if (_options.MaxConcurrentSessions < 1)
+        {
+            throw new InvalidOperationException("OnboardTransport:MaxConcurrentSessions must be at least 1.");
+        }
     }
 
     [LoggerMessage(EventId = 1001, Level = LogLevel.Warning,
@@ -121,4 +170,8 @@ public sealed partial class OnboardTcpServer(
     [LoggerMessage(EventId = 1003, Level = LogLevel.Warning,
         Message = "Onboard connection ended with a protocol or transport error.")]
     private static partial void LogConnectionEnded(ILogger logger, Exception error);
+
+    [LoggerMessage(EventId = 1004, Level = LogLevel.Warning,
+        Message = "Onboard connection refused: {MaxConcurrentSessions} concurrent sessions are already open.")]
+    private static partial void LogConnectionRefused(ILogger logger, int maxConcurrentSessions);
 }

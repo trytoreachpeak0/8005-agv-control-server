@@ -18,14 +18,26 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// <param name="AcceptedDemandIds">
 /// Demands this server has already accepted. A demand it has accepted is bound to its one journey
 /// permanently and is never a candidate again, whatever stage that journey reached.
+/// <para>
+/// <b>This set grows while the round runs.</b> Every vehicle in a round ranks the same catalog by
+/// the same total order, so without this they would all select the same demand and every vehicle
+/// after the first would collide on it in intake. The round's segments are strictly serial, which
+/// is what makes adding to it sound: no segment reads it while another writes.
+/// </para>
 /// </param>
 /// <param name="Now">The round's clock.</param>
+/// <param name="Policy">
+/// The fleet's dispatch policy: which vehicle may take which task type, and which vehicles serve
+/// which zone. Read once for the same reason the catalog is — two vehicles judged against two
+/// reads of the policy could both be admitted under rules that never held at the same instant.
+/// </param>
 public sealed record DispatchRoundFacts(
     DemandCatalogSnapshot Catalog,
     RiotMapStationCatalogSnapshot Map,
     RiotMapStation Gate,
     IReadOnlySet<string> AcceptedDemandIds,
-    DateTimeOffset Now);
+    DateTimeOffset Now,
+    VehicleDispatchPolicy Policy);
 
 /// <summary>
 /// One vehicle's facts for this round, plus the configuration slice that applies to it.
@@ -36,11 +48,19 @@ public sealed record DispatchRoundFacts(
 /// exactly what the loop used to read directly, which is why N=1 stays behaviour-identical.
 /// </remarks>
 /// <param name="VehicleKey">The RIoT vehicle key this round segment is deciding for.</param>
+/// <param name="AgvId">
+/// 8005's name for the same vehicle, resolved by the roster before the round segment starts.
+/// Carried here rather than looked up per criterion: a criterion that resolves identity itself has
+/// to be given the register, and two criteria resolving it separately can disagree. An empty
+/// string is not a vehicle — it means identity was never resolved, and the fault criterion blocks
+/// on it.
+/// </param>
 /// <param name="Onboard">Onboard facts, or null when they are not ready.</param>
 /// <param name="Vehicle">The RIoT vehicle observation.</param>
 /// <param name="ObservedAt">When the dynamic facts above were read.</param>
 public sealed record DispatchVehicleFacts(
     string VehicleKey,
+    string AgvId,
     OnboardDispatchFacts? Onboard,
     RiotVehicleObservation Vehicle,
     DateTimeOffset ObservedAt);

@@ -10,6 +10,12 @@ public sealed class OnboardTransportOptions
     public string ListenAddress { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 58005;
     public int MaxLineBytes { get; set; } = 1_048_576;
+
+    /// <summary>
+    /// How many Onboard sessions may be open at once — one per vehicle, plus room for a peer that
+    /// is reconnecting before its old socket has been noticed as dead.
+    /// </summary>
+    public int MaxConcurrentSessions { get; set; } = 8;
     public string CredentialEnvironmentVariable { get; set; } = "CONTROL_SERVER_ONBOARD_CREDENTIAL";
 }
 

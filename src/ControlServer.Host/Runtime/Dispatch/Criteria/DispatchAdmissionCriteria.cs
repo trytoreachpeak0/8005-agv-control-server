@@ -44,12 +44,17 @@ public static class DispatchAdmissionCriteria
             new AlreadyAcceptedCriterion(),
             // Required rather than optional, unlike the three appended below: a safety block a
             // caller may leave out is a safety block that will be left out.
-            new VehicleFaultBlockCriterion(faultStore, options),
+            new VehicleFaultBlockCriterion(faultStore),
             new WorkTypeScopeCriterion(options),
+            // Required rather than optional for the same reason as the fault block: B2's two
+            // vehicle filters are fail-closed, and a fail-closed rule a caller may omit is one
+            // that will be omitted by the caller that most needed it.
+            new VehicleTaskTypeAdmissionCriterion(),
             new RequiredMesFactsCriterion(),
             new AreaScopeCriterion(),
             new AreaEqpUniqueCriterion(),
             new StationResolutionCriterion(stationResolver, options),
+            new DispatchZoneVehicleCriterion(),
             new PackageCapacityCriterion(packageCapacityStore),
             new VehicleDynamicFactsCriterion(options),
             new StationTaskTypeAdmissionCriterion(store),
@@ -88,6 +93,8 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, AlreadyAcceptedCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, DispatchZoneVehicleCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, RequiredMesFactsCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, AreaScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, AreaEqpUniqueCriterion>();

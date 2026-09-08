@@ -17,6 +17,13 @@ namespace ControlServer.Tests;
 /// </summary>
 public sealed class RouteGraphDispatchTests
 {
+    /// <summary>
+    /// The fleet policy the round carries. The reachability criterion under test does not read it,
+    /// so an empty one states plainly that these tests configure no fleet.
+    /// </summary>
+    private static readonly VehicleDispatchPolicy EmptyPolicy =
+        new([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY");
+
     private static readonly DateTimeOffset Origin = new(2026, 9, 7, 8, 0, 0, TimeSpan.Zero);
     private const int MapId = 25;
 
@@ -242,10 +249,12 @@ public sealed class RouteGraphDispatchTests
             new RiotMapStationCatalogSnapshot(MapId, Origin, "sha", []),
             new RiotMapStation(pickupStation, "N1-3_N1-7"),
             new HashSet<string>(),
-            Origin);
+            Origin,
+            EmptyPolicy);
 
         DispatchVehicleFacts vehicle = new(
             "BROKERX-TEST-0001",
+            "AGV-TEST-0001",
             new OnboardDispatchFacts(1, [1, 2], true, true, true, true, false),
             new RiotVehicleObservation(
                 "BROKERX-TEST-0001", true, true, "IDLE", "MAP", vehicleAtStation, 80, "NO_CHARGE",
