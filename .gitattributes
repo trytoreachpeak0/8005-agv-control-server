@@ -14,3 +14,7 @@ evidence/rc/*/release-artifacts/** -text
 # 白名单文档的副本按字节绑定 SHA-256（钉在 RiotCallAllowlistArchitectureTests 里），
 # 行尾转换会让摘要漂移。整份 cp 自 8005-agv-program，不手工编辑。
 vendor/8005-agv-program/** -text
+
+# 切片家族表副本按字节绑定 SHA-256（钉在 ProtocolVectorTestBindingArchitectureTests 里），
+# 行尾转换会让摘要漂移。整份 cp 自 8005-agv-protocol，不手工编辑。
+vendor/8005-agv-protocol/** -text

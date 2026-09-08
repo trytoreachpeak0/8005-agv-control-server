@@ -10,6 +10,7 @@ public sealed class ApplicationOrchestrationTests
 {
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
     public async Task IntakeUsesFinalMesReadBeforeAtomicCommit()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");

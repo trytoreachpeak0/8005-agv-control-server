@@ -33,6 +33,7 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
     public async Task ResumeAuthorizationPersistsFormalCommandBeforeSendAndReplaysSameIdentityAfterRestart()
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME";
@@ -168,6 +169,7 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
     public async Task ResumeAdmitsExactlyOneReplacementResultForTheOperationThatAlreadyFailedItsFirstResult()
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REPLACEMENT";
@@ -224,6 +226,7 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
     public async Task ResumeRejectsAReplacementResultReportedOutsideTheAuthorizedSlotScope()
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_SCOPE";
@@ -266,6 +269,7 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
     public async Task ARefusedResultTellsTheVehicleItsSessionNeedsRecovery()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -327,6 +331,8 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("ProtocolVector", "CV-CONNECTION-LOSS-SAFE-FINISH")]
+    [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
     public async Task ASessionIsNotReadyWhileTheServerHoldsAnOperationNeedingRecovery()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -378,6 +384,7 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
     public async Task AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized()
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_PRODUCTION_SHAPE";
@@ -444,6 +451,7 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
     public async Task ForcedRecoveryAdvancesOnceFencesOldOutboxAndKeepsLateGenerationAsEvidenceOnly()
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED";
@@ -541,6 +549,8 @@ public sealed class RecoveryStateMachineG2Tests
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
     public async Task FailedCompensationResultIsDurableReplayableAndNeverReleasesDemandOrVehicle()
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_COMPENSATE";
@@ -676,6 +686,7 @@ public sealed class RecoveryStateMachineG2Tests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
     public async Task RecoveryReportCannotRegressOrInventForcedRecoveryGeneration()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -714,6 +725,8 @@ public sealed class RecoveryStateMachineG2Tests
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
     public async Task FormalCorrectionAndFaultCommandsUseDurableOutboxReplayAndExactAck()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");

@@ -31,6 +31,7 @@ public sealed class JourneyRuntimeWorkerTests
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-03")]
     [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
     public async Task ProductionRuntimeResumesOneJourneyThroughTrustedArrivalsAndAtomicCompletion()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -235,6 +236,7 @@ public sealed class JourneyRuntimeWorkerTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("ProtocolVector", "CV-SNAPSHOT-REPLACE-AND-ACK")]
     public async Task EachStopPublishesItsWorklistUnderItsOwnRevision()
     {
         // The peer keys a snapshot's identity on its type and revision, so two worklists published
@@ -267,6 +269,7 @@ public sealed class JourneyRuntimeWorkerTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("ProtocolVector", "CV-SNAPSHOT-SAME-REVISION-CONFLICT")]
     public async Task ASecondJourneyOnTheSameVehicleNeverRepublishesAnAdoptedRevision()
     {
         // The peer journals the adopted revision of each snapshot type in SQLite keyed on the type
@@ -528,6 +531,7 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-REQUEST-FIRST-RESULT-REPLAY")]
     public async Task CommandsAnsweredByABusinessResultAreNotLeftPendingForReplay()
     {
         // SublotEntryRequested, SlotOperationCommand and PreDepartureSafetyCheck are answered with a
@@ -582,6 +586,7 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
     public async Task DepartureSafetyAnsweredPromptlyIsJudgedWhileItIsStillValid()
     {
         // The peer answers a pre-departure safety check in tens of milliseconds and stamps the
@@ -1496,6 +1501,7 @@ public sealed class JourneyRuntimeWorkerTests
     [Trait("IntegrationSlice", "W2G-IS-01")]
     [Trait("IntegrationSlice", "W2G-IS-03")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
     public async Task RestartReconcilesUnknownPickupCreateWithoutSecondOrderOrIdentityChange()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();

@@ -9,6 +9,8 @@ public sealed class WireToGateStoreTests
 {
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
+    [Trait("ProtocolVector", "CV-SESSION-RECOVERY-HAPPY")]
     public async Task FiveStepRecoveryRequiresCurrentGenerationAndUniqueConsistentFacts()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -144,6 +146,7 @@ public sealed class WireToGateStoreTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
     public async Task SlotPlanAndReliableCommandAreAtomicAndBatchNeedsCompleteSafeEvidence()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -174,6 +177,7 @@ public sealed class WireToGateStoreTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
     public async Task UnsafeCompletedOperationResultIsDurableButMovesDemandToRecovery()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -235,6 +239,7 @@ public sealed class WireToGateStoreTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
     public async Task GateMovementRequiresFreshSafeCheckAndStableIntentIdentity()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -252,6 +257,7 @@ public sealed class WireToGateStoreTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("ProtocolVector", "CV-DESTINATION-UNLOAD-ALL-EMPTY")]
     public async Task UnloadCompletionCommitsAllFourFactsExactlyOnce()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -281,6 +287,7 @@ public sealed class WireToGateStoreTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("ProtocolVector", "CV-CONNECTION-LOSS-SAFE-FINISH")]
     public async Task ConnectionLossCanFinishButNeverExpandActiveUnlockSet()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -298,6 +305,9 @@ public sealed class WireToGateStoreTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-DIFFERENT-CONTENT")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
+    [Trait("ProtocolVector", "CV-REQUEST-FIRST-RESULT-REPLAY")]
     public async Task InboxReplaysFirstResponseAndRejectsDifferentContent()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -319,6 +329,7 @@ public sealed class WireToGateStoreTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
     public async Task ForcedRecoveryGenerationFencesLateResultsAndPersistsDecision()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();

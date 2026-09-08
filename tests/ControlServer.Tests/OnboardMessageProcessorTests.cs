@@ -91,6 +91,7 @@ public sealed class OnboardMessageProcessorTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-SNAPSHOT-REPLACE-AND-ACK")]
     public async Task SnapshotAppliedAcksUseExactWireContentHashAndProtocolKinds()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_ONBOARD_WIRE_HASH_CREDENTIAL";
@@ -173,6 +174,7 @@ public sealed class OnboardMessageProcessorTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-SESSION-RECOVERY-HAPPY")]
     public async Task CandidateHandshakeReachesReadyAndReplaysSessionResponse()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_ONBOARD_CREDENTIAL";
@@ -255,6 +257,7 @@ public sealed class OnboardMessageProcessorTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-00")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     public async Task RecoveryStateReportAckDropRebindsAcrossSessionWithoutContentConflict()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_RECOVERY_REBIND_CREDENTIAL";
@@ -386,6 +389,7 @@ public sealed class OnboardMessageProcessorTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
     public async Task OnboardBusinessMessagesAreDurablyAcknowledgedAndOperationResultIsUniquePerAttempt()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_BUSINESS_MESSAGE_CREDENTIAL";
@@ -552,6 +556,7 @@ public sealed class OnboardMessageProcessorTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-04")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-DESTINATION-UNLOAD-ALL-EMPTY")]
     public async Task CompletedUnloadResultAtomicallyClosesDemandBeforeDurableAck()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -649,6 +654,7 @@ public sealed class OnboardMessageProcessorTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
     [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
     public async Task UnsafeSafetyStateChangeIsAcknowledgedThenFailClosesSessionReadiness()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_SAFETY_CHANGE_CREDENTIAL";
@@ -818,6 +824,7 @@ public sealed class OnboardMessageProcessorTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-07")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-MANUAL-CHARGING-RETURN")]
     public async Task ManualChargingReturnToServiceIsAnsweredAndDecidedOncePerRequestId()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_MANUAL_CHARGING_CREDENTIAL";
@@ -907,6 +914,7 @@ public sealed class OnboardMessageProcessorTests
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("ProtocolVector", "CV-MANUAL-CHARGING-RETURN")]
     public async Task ManualChargingReturnToServiceIsRejectedWhileTheSessionStillNeedsRecovery()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_MANUAL_CHARGING_RECOVERY_CREDENTIAL";
@@ -975,6 +983,7 @@ public sealed class OnboardMessageProcessorTests
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("ProtocolVector", "CV-MANUAL-CHARGING-RETURN")]
     public async Task ManualChargingReturnToServiceRefusesARoleTheProfileDoesNotDefine()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_MANUAL_CHARGING_ROLE_CREDENTIAL";

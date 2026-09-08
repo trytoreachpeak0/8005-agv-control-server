@@ -16,6 +16,7 @@ public sealed class OnboardJourneyPublisherTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-SNAPSHOT-REPLACE-AND-ACK")]
     public async Task JourneySnapshotIsPersistedBeforeSendReplayedByteForByteAndAcknowledgedByExactHash()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -168,6 +169,7 @@ public sealed class OnboardJourneyPublisherTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
     public async Task UnchangedSnapshotRepublishesIntoAnAdvancingSessionGeneration()
     {
         // The snapshot keeps one deterministic messageId per journey stage, so after a reconnect
@@ -206,6 +208,8 @@ public sealed class OnboardJourneyPublisherTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-DIFFERENT-CONTENT")]
+    [Trait("ProtocolVector", "CV-SNAPSHOT-SAME-REVISION-CONFLICT")]
     public async Task SnapshotReplayWithDifferentContentOrAcknowledgementHashIsRejected()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -380,6 +384,7 @@ public sealed class OnboardJourneyPublisherTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
     public async Task DurableCommandIsPersistedBeforeByteExactReplayAndStopsAfterMatchingAck()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -553,6 +558,7 @@ public sealed class OnboardJourneyPublisherTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("ProtocolVector", "CV-REQUEST-FIRST-RESULT-REPLAY")]
     public async Task ReplayIntoANewGenerationLeavesTheWireThePublisherWouldWriteAgain()
     {
         // ReplayPendingForSessionAsync rebinds a pending envelope through JsonNode, which writes
