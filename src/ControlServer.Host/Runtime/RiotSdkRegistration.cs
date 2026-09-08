@@ -59,6 +59,11 @@ internal static class RiotSdkRegistration
             services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotVehicleSafetyFacts>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
+        services.AddScoped<HttpRiotOrderCommandGateway>();
+        services.AddScoped<IRiotOrderCommandGateway>(services =>
+            services.GetRequiredService<HttpRiotOrderCommandGateway>());
+        services.AddScoped<IRiotVehicleEmergencyFacts>(services =>
+            services.GetRequiredService<HttpRiotOrderCommandGateway>());
         return services;
     }
 }

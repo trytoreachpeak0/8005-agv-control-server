@@ -81,8 +81,15 @@ public sealed class RiotCallAllowlistArchitectureTests
     /// is neither on this list nor on the approved list is reported. So this list holds what
     /// product code references today and nothing more: pre-listing members nobody uses would be
     /// waiving a check in advance for a call nobody has thought about yet. The first use of
-    /// <c>get_Device</c> or <c>DisposeAsync</c> costs one line here, and that red is the intended
+    /// <c>get_Options</c> or <c>DisposeAsync</c> costs one line here, and that red is the intended
     /// moment for someone to look at what is reaching into the session.
+    /// </para>
+    /// <para>
+    /// <c>get_Device</c> arrived on 2026-09-08 by exactly that route. Ticket 10 reached the two
+    /// emergency commands, which hang off <c>DeviceClient</c> rather than <c>TaskClient</c>, and
+    /// this test went red until someone confirmed that navigating there was intended. Both
+    /// commands are approved (allowlist 1.5); what the red reported is that product code now
+    /// touches that client at all.
     /// </para>
     /// <para>
     /// <b><c>get_Raw</c> will never belong here.</b> It is a property getter like
@@ -94,6 +101,7 @@ public sealed class RiotCallAllowlistArchitectureTests
     private static readonly HashSet<string> NavigationMembers = new(StringComparer.Ordinal)
     {
         ".ctor",
+        "get_Device",
         "get_Maps",
         "get_Order",
         "get_Tasks"

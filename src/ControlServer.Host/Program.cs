@@ -12,6 +12,7 @@ using Serilog;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.RouteGraph;
 using ControlServer.Host.Runtime.CreateGate;
+using ControlServer.Host.Runtime.Commands;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
@@ -54,6 +55,16 @@ builder.Services.AddScoped<ICatalogAvailabilityStore, CatalogAvailabilityStore>(
 builder.Services.AddScoped<CatalogAvailabilityAccess>();
 builder.Services.AddScoped<IRiotRouteCostProbe, HttpRiotRouteCostProbe>();
 builder.Services.AddScoped<PreCreateGate>();
+// FP-C11: the RIoT order command surface and the emergency-stop supervisor. Both are driven --
+// ticket 11's fault flow is the caller -- so neither takes a hosted service of its own.
+builder.Services.AddOptions<RiotCommandOptions>()
+    .Bind(builder.Configuration.GetSection(RiotCommandOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<RiotCommandOptions>, RiotCommandOptionsValidator>();
+builder.Services.AddScoped<IRiotOrderCommandAuditStore, RiotOrderCommandAuditStore>();
+builder.Services.AddScoped<IVehicleFaultStore, VehicleFaultStore>();
+builder.Services.AddScoped<RiotOrderCommandService>();
+builder.Services.AddScoped<EmergencyStopSupervisor>();
 builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();
 builder.Services.AddScoped<PackageCapacityImportService>();
 builder.Services.AddOptions<OnboardTransportOptions>()

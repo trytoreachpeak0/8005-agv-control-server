@@ -76,7 +76,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             throw;
         }
-        catch (Exception error) when (IsSdkFailure(error))
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
             return Unknown(upperId, FailureReceipt("RECONCILE", error));
         }
@@ -138,7 +138,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
                     businessCode: OrderAlreadyExistsBusinessCode,
                     resultPresent: false));
         }
-        catch (Exception error) when (IsSdkFailure(error))
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
             return Unknown(intent.UpperId, FailureReceipt("CREATE", error));
         }
@@ -172,7 +172,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             throw;
         }
-        catch (Exception error) when (IsSdkFailure(error))
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
             return UnknownVehicle(vehicleKey);
         }
@@ -194,7 +194,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             throw;
         }
-        catch (Exception error) when (IsSdkFailure(error))
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
             throw new InvalidDataException("RIoT Map station catalog response was not valid.", error);
         }
@@ -277,11 +277,11 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             throw;
         }
-        catch (Exception error) when (IsTimeout(error))
+        catch (Exception error) when (RiotCallFailureClassification.IsTimeout(error))
         {
             return UnknownSafety(vehicleKey, "RIOT_READ_TIMEOUT");
         }
-        catch (Exception error) when (IsSdkFailure(error))
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
             return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
         }
@@ -364,15 +364,6 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
     }
 
-    private static bool IsTimeout(Exception error) =>
-        error is OperationCanceledException ||
-        error.InnerException is OperationCanceledException ||
-        error is RiotApiException { BusinessCode: "riot-read-timeout" };
-
-    private static bool IsSdkFailure(Exception error) =>
-        error is RiotApiException or ApiException or HttpRequestException or IOException or JsonException or
-            InvalidOperationException or OperationCanceledException;
-
     private RiotOrderCallReceipt Receipt(
         string operation,
         string classification,
@@ -391,25 +382,15 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
 
     private RiotOrderCallReceipt FailureReceipt(string operation, Exception error)
     {
-        int? httpStatusCode = error switch
-        {
-            RiotApiException riot => riot.StatusCode,
-            ApiException api => api.ResponseStatusCode,
-            _ => null
-        };
-        string? rawBusinessCode = error is RiotApiException riotError ? riotError.BusinessCode : null;
+        int? httpStatusCode = RiotCallFailureClassification.HttpStatusCode(error);
+        string? rawBusinessCode = RiotCallFailureClassification.RawBusinessCode(error);
         string? businessCode = RiotAuditSanitizer.BusinessCode(rawBusinessCode);
-        string failureCategory = IsTimeout(error)
-            ? "TIMEOUT"
-            : error switch
-            {
-                HttpRequestException or IOException => "TRANSPORT_FAILURE",
-                JsonException => "PROTOCOL_FAILURE",
-                RiotApiException { BusinessCode: "order-ref-missing" } => "PROTOCOL_FAILURE",
-                RiotApiException => "RIOT_API_FAILURE",
-                ApiException => "HTTP_API_FAILURE",
-                _ => "SDK_FAILURE"
-            };
+        // order-ref-missing is this gateway's own case: the SDK reached RIoT and RIoT answered
+        // without the order reference, which is a protocol failure rather than a business one.
+        // Everything else is the shared classification.
+        string failureCategory = error is RiotApiException { BusinessCode: "order-ref-missing" }
+            ? "PROTOCOL_FAILURE"
+            : RiotCallFailureClassification.FailureCategory(error);
         bool? resultPresent = rawBusinessCode == "order-ref-missing" ? false : null;
         return Receipt(
             operation,
