@@ -1,6 +1,9 @@
 # 缺陷：服务重启后会话落入 RecoveryRequired，车静止时永远不会自己出来
 
-Status: open（根因已定位，修复未落地）
+Status: fixed（修复已交付，待合并与现场复跑）
+Fixed in: `8005-agv-onboard-hmi` commit `004891f`，PR
+[#18](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/pull/18)（叠在 #17 上，因为两者改同一
+个文件）。**现场复跑仍待安排**——发现条件是真实服务重启加一台真车，两者 L2 都不提供。
 Owner repository: **`8005-agv-onboard-hmi`** —— 现象在服务端的 `readiness` 上，根因在车载端的安全
 快照去重里，见下面的根因一节。本文档留在本仓，因为它是从服务端的观测查起的；真正动手要在
 `8005-agv-onboard-hmi` 的 `w2g/*` 分支并以 PR 交付。
@@ -124,6 +127,24 @@ if (_pendingSafetyChange is null
 交付；而 2026-09-08 当天该仓工作树有十个文件的未提交改动（`w2g/multi-demand-worklist` 上的多单
 改造），其中就包括 `WireToGateBusinessService.cs`。在同一个文件上叠加会把两件事混成一团，因此
 只留方案不动代码。
+
+## 修复落地时查到的两件事（2026-09-08 晚）
+
+**本文档上面那句「`DepartureSafe` 只有一个来源：`SafetyStateChanged`」是错的。**
+`OnboardMessageProcessor.cs:196` 处理 `SafetyStateSnapshot` 时同样调
+`store.ApplySafetySnapshotAsync(..., departureSafe, ...)`，而 `SafetyStateSnapshot` 是每次干净
+重连都会发的。所以服务端在换代握手里本来就会拿到一份 `departureSafe`。这不改变修复方向——
+ADR-cross-0022 要求的「连接时全量同步」在车载端这一侧确实没做到，签名去重跨代不重置是实打实的
+缺陷——但它说明**本文档对现场那 6 分 36 秒的机制解释还没有闭合**：握手里那份快照当时携带的
+`departureSafe` 是什么值，没有证据。现场复跑时应当把 `SafetyStateSnapshot` 的 payload 一并抓下来。
+
+**`FakeControlServer` 建模不了干净重连，所以现场最常见的那条路径在车载端没有测试覆盖。**
+它跨重连保留快照 revision 记忆（`SameRevisionDifferentContentFailsClosedWithProtocolProblemReasonCode`
+依赖这一点），而重连必然换 `sessionGeneration`、整信封哈希必然变，于是干净重连一定以
+`SNAPSHOT_REVISION_CONTENT_CONFLICT` 收场。真实服务端不是这样：
+`WireToGateStore.BeginSessionRecoveryAsync` 在每个新代际把 `CapabilityRevision`、`SafetyRevision`、
+两个哈希与 `DepartureSafe` 全部置空——现场那次实跑里 generation 94→95→96→97 都建立成功，也证明
+重连本身是能成的。分歧在假服务端一侧，值得单独收拾。
 
 ## 尚未查清的一点
 
