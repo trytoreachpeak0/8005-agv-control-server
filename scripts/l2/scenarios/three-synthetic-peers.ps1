@@ -1,15 +1,17 @@
 #Requires -Version 7
 
 <#
-三个合成车载端同时在线，合成侧互不冒充。
+三个合成车载端同时在线，服务端同时持有三条会话，两侧都互不冒充。
 
-这条场景只证一件事：合成对端能同时承载三台车，三个进程各是各的。它不派单、不装货、不走
-journey。
+这条场景证的是会话这一层：合成对端能同时承载三台车（三个进程各是各的），并且服务端同时
+接得住三条连接、给三台车各建一条 Ready 会话。它不派单、不装货、不走 journey——三车端到端
+是票 18 的出口。
 
-**它同时钉住了一个当前的真实边界**：服务端一次只服务一条车载连接。ControlServer 的 accept
-循环是串行的（`OnboardTcpServer.cs`，`await HandleClientAsync` 在 `while` 里），处理完一个
-连接才接下一个，所以三台车里只有第一台的会话是活的，另两台排队。那是票 09 第 1 项要换掉的
-单车传输层；服务端能同时持有三条会话是票 09 的出口，三车端到端是票 18 的出口。
+**这条断言集在票 09 之前钉的是相反的事**：那时 ControlServer 的 accept 循环是串行的
+（`OnboardTcpServer.cs` 里 `await HandleClientAsync` 写在 `while` 内），处理完一个连接才接
+下一个，所以三台车里只有第一台的会话是活的，另两台排队，`L2-3P-06` 断言的就是「只有第一
+台」。票 09 把 accept 改成并发、把 `OnboardPeer` 改成按 `AgvId` 持有 N 条连接之后，边界移
+动了，断言跟着移动。
 
 为什么值得单独有一条：票 03 要把合成装置扩到能承载三台车，而「能承载」这句话如果没有一条
 真的把三台都拉起来的运行，就只是一句配置读起来应该可以。这条跑起来才发现服务端那道串行
@@ -76,26 +78,29 @@ $assertions.Add(
     3,
     @($reportedAgvIds | Sort-Object -Unique).Count)
 
-# 服务端侧：SessionRecoveries 主键是 AgvId，所以一台车一行。今天只会有第一台的那一行——
-# 这条断言写的是当前边界，不是期望的终态。票 09 让三条会话同时活之后，这里应当变成三行，
-# 那时这条会红，而它红得对：它在提醒边界已经移动，把它改掉即可。
+# 服务端侧：SessionRecoveries 主键是 AgvId，所以一台车一行。三台车都连上之后应当有三行，
+# 每行 Ready——这正是票 09 把 accept 改成并发、把 OnboardPeer 改成按 AgvId 分槽换来的东西。
 $sessions = @(Invoke-L2Query -Connection $connection `
     -Sql "SELECT AgvId, Readiness FROM SessionRecoveries ORDER BY AgvId")
 $sessionAgvIds = @($sessions | ForEach-Object { [string]$_.AgvId })
 
 $assertions.Add(
     'L2-3P-06',
-    '服务端当前只持有第一台车的会话（accept 循环串行，票 09 前如此）',
-    (($sessionAgvIds -join ',') -eq 'AGV-FAKE-001'),
-    'AGV-FAKE-001',
+    '服务端同时持有三台车的会话，一台一行',
+    (($sessionAgvIds -join ',') -eq ($expectedAgvIds -join ',')),
+    ($expectedAgvIds -join ','),
     ($sessionAgvIds -join ','))
 
-$first = $sessions | Where-Object { [string]$_.AgvId -eq 'AGV-FAKE-001' } | Select-Object -First 1
-$assertions.Add(
-    'L2-3P-07',
-    'AGV-FAKE-001 的会话在服务端是 Ready',
-    ($null -ne $first -and [string]$first.Readiness -eq 'Ready'),
-    'Ready',
-    $(if ($null -eq $first) { '(缺行)' } else { [string]$first.Readiness }))
+# 逐台断言，而不是只数行数：三行里有一行不是 Ready，是「接住了但没握完手」，与「没接住」
+# 要人做的事不一样，合并成一条断言就看不出是哪台。
+foreach ($expected in $expectedAgvIds) {
+    $row = $sessions | Where-Object { [string]$_.AgvId -eq $expected } | Select-Object -First 1
+    $assertions.Add(
+        "L2-3P-07-$expected",
+        "$expected 的会话在服务端是 Ready",
+        ($null -ne $row -and [string]$row.Readiness -eq 'Ready'),
+        'Ready',
+        $(if ($null -eq $row) { '(缺行)' } else { [string]$row.Readiness }))
+}
 
-$journal.Note('合成侧三实例各自独立。服务端同时持有三条会话属票 09，三车端到端出口属票 18。')
+$journal.Note('合成侧三实例各自独立，服务端同时持有三条 Ready 会话。三车端到端出口属票 18。')
