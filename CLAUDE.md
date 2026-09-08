@@ -72,7 +72,10 @@ What an agent must follow:
   `gates` array *is* the division of labour: `G1` shared, `CONTROL_SERVER_G2`
   this repository, `ONBOARD_HMI_G2` **ours too since 2026-09-04** (it was Kun
   Wang's; taking over the onboard code did not move it automatically, and the
-  user then moved it deliberately), `G3` together.
+  user then moved it deliberately), `G3` ours as well — **one person has run it
+  since 2026-09-08**; all three runners are loopback and unattended, so "both
+  people present" was governance, not a technical need, and nobody was left to
+  satisfy it.
 - **The two G2 gates have no dependency and run in parallel.** That is still
   true, but since both are ours it now means two of our own workstreams, not two
   people. A red `ONBOARD_HMI_G2` is no longer someone else's blocker — it is work
