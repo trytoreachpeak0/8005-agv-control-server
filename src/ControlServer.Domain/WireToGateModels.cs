@@ -120,12 +120,30 @@ public sealed record UpcomingStopPlanProjection(
     string? DemandId,
     IReadOnlyList<UpcomingMovementLeg> Legs);
 
+/// <summary>
+/// What the operator may enter at this stop. <see cref="ExpectedSublots"/> is a set because
+/// FR-001 AC-3 and BR-001 scope entry to the whole dispatch range, not to the stop the vehicle
+/// happens to be parked at: "允许 T 的目标站点与操作员当前物理站点不完全相同，只要 T 在范围内".
+/// A single-demand journey simply puts one entry in it.
+/// </summary>
 public sealed record SublotEntryRequest(
     string DemandId,
     string OperationSessionId,
     string StationId,
     long WorklistRevision,
-    string ExpectedSublot);
+    IReadOnlyList<string> ExpectedSublots);
+
+/// <summary>
+/// Why an entered sublot was refused, in terms the operator can act on. The reason codes are the
+/// protocol's own registered ones; the display message is what appears at the vehicle.
+/// </summary>
+public sealed record SublotRejection(
+    string DemandId,
+    string OperationSessionId,
+    long WorklistRevision,
+    string ReasonCode,
+    string? FieldPath,
+    string DisplayMessage);
 
 public enum SlotOperationType
 {

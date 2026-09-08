@@ -108,7 +108,16 @@ public sealed class OnboardJourneyPublisher(
         ValidateUuid(request.OperationSessionId, nameof(request.OperationSessionId));
         ArgumentException.ThrowIfNullOrWhiteSpace(request.StationId);
         ArgumentOutOfRangeException.ThrowIfNegative(request.WorklistRevision);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.ExpectedSublot);
+        ArgumentNullException.ThrowIfNull(request.ExpectedSublots);
+        if (request.ExpectedSublots.Count == 0)
+        {
+            throw new ArgumentException(
+                "A sublot entry request must name at least one enterable sublot.", nameof(request));
+        }
+        foreach (string sublot in request.ExpectedSublots)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(sublot);
+        }
 
         return PublishEnvelopeAsync(
             "SublotEntryRequested",
@@ -122,9 +131,51 @@ public sealed class OnboardJourneyPublisher(
                 request.OperationSessionId,
                 request.StationId,
                 request.WorklistRevision,
-                request.ExpectedSublot,
+                expectedSublots = request.ExpectedSublots,
                 entryMethods = SublotEntryMethods,
                 expiresOnRevisionChange = true
+            },
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Tells the vehicle why an entered sublot was refused. Until this existed the server simply
+    /// did not answer a submission it would not act on, and the operator's only feedback was the
+    /// peer's own local guess -- "不在清单里" -- which is wrong whenever the real reason is that
+    /// the PACKAGE has no approved basket capacity. BR-013 requires the refusal to be explicit and
+    /// to stop the load without allocating slots or unlocking anything.
+    /// </summary>
+    public Task PublishSublotRejectedAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        SublotRejection rejection,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rejection);
+        ValidateUuid(rejection.DemandId, nameof(rejection.DemandId));
+        ValidateUuid(rejection.OperationSessionId, nameof(rejection.OperationSessionId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(rejection.ReasonCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(rejection.DisplayMessage);
+        ArgumentOutOfRangeException.ThrowIfNegative(rejection.WorklistRevision);
+
+        return PublishEnvelopeAsync(
+            "SublotRejected",
+            messageId,
+            correlationId: null,
+            agvId,
+            sessionGeneration,
+            new
+            {
+                rejection.DemandId,
+                rejection.OperationSessionId,
+                problem = new
+                {
+                    reasonCode = rejection.ReasonCode,
+                    fieldPath = rejection.FieldPath,
+                    displayMessage = rejection.DisplayMessage
+                },
+                currentWorklistRevision = rejection.WorklistRevision
             },
             cancellationToken);
     }

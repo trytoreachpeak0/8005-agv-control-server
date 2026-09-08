@@ -1853,6 +1853,111 @@ public sealed class JourneyRuntimeWorkerTests
                 TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ASublotWhosePackageLostItsCapacityIsRefusedWithTheRealReasonAndOpensNoSlot()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+
+        // The capacity table is a server-side rule table an operator maintains, and it can change
+        // between dispatch and entry. BR-013 puts the recomputation after entry precisely for this.
+        await fixture.SupersedePackageCapacityAsync("PDFN5×6-8L(12R)");
+        await fixture.SubmitSublotAsync(runtime, "SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal("EXPECTED_BASKET_COUNT_MISMATCH", runtime.BlockReasonCode);
+        // Not a single slot may be commanded or unlocked when the count cannot be established.
+        Assert.Empty(await fixture.Context.StationOperations.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
+
+        // The operator has to see why. "Not in the worklist" -- the peer's local guess before this
+        // existed -- would be the wrong reason.
+        ProtocolOutboxRow rejected = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageType == "SublotRejected", TestContext.Current.CancellationToken);
+        using JsonDocument document = JsonDocument.Parse(rejected.PayloadJson);
+        JsonElement problem = document.RootElement.GetProperty("payload").GetProperty("problem");
+        Assert.Equal("EXPECTED_BASKET_COUNT_MISMATCH", problem.GetProperty("reasonCode").GetString());
+        Assert.Contains("PACKAGE", problem.GetProperty("displayMessage").GetString()!, StringComparison.Ordinal);
+        Assert.Equal(
+            runtime.WorklistRevision,
+            document.RootElement.GetProperty("payload").GetProperty("currentWorklistRevision").GetInt64());
+
+        // Judged once, not once per poll: the refused submission stays in the inbox, and re-judging
+        // it would re-run the remote box-count read on every iteration.
+        int reads = fixture.BoxCounts.ReadCount;
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(reads, fixture.BoxCounts.ReadCount);
+        Assert.Single(await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotRejected")
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        // Once the rule table is fixed, a fresh entry goes through -- the refusal blocked this
+        // load, it did not kill the demand.
+        await fixture.RestorePackageCapacityAsync("PDFN5×6-8L(12R)", 4);
+        await fixture.SubmitSublotAsync(runtime, "SUBLOT-001");
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        Assert.Single(await fixture.Context.StationOperations.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ASublotWhoseBoxCountGrewSinceDispatchIsRefusedRatherThanLoadedIntoTooFewSlots()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        Assert.Equal(2, runtime.ExpectedBasketCount);
+
+        // 7 boxes at 4 per basket reserved two slots. MES now says 12, which needs three -- and the
+        // reservation this journey holds is still two.
+        fixture.BoxCounts.Set("SUBLOT-001", 12);
+        await fixture.SubmitSublotAsync(runtime, "SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal("EXPECTED_BASKET_COUNT_MISMATCH", runtime.BlockReasonCode);
+        Assert.Empty(await fixture.Context.StationOperations.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        ProtocolOutboxRow rejected = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageType == "SublotRejected", TestContext.Current.CancellationToken);
+        using JsonDocument document = JsonDocument.Parse(rejected.PayloadJson);
+        string message = document.RootElement.GetProperty("payload").GetProperty("problem")
+            .GetProperty("displayMessage").GetString()!;
+        Assert.Contains("2", message, StringComparison.Ordinal);
+        Assert.Contains("3", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task TheEntryRequestNamesEverySublotTheOperatorMayEnter()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.AdvanceToSublotWaitAsync("10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+
+        ProtocolOutboxRow request = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageType == "SublotEntryRequested",
+                TestContext.Current.CancellationToken);
+        using JsonDocument document = JsonDocument.Parse(request.PayloadJson);
+        JsonElement sublots = document.RootElement.GetProperty("payload").GetProperty("expectedSublots");
+
+        // One entry while a journey carries one demand. It is a set rather than a string because
+        // FR-001 AC-3 scopes entry to the dispatch range, not to the stop the vehicle is parked at.
+        Assert.Equal(JsonValueKind.Array, sublots.ValueKind);
+        Assert.Equal("SUBLOT-001", Assert.Single(sublots.EnumerateArray()).GetString());
+    }
+
     private sealed class RuntimeFixture : IAsyncDisposable
     {
         private RuntimeFixture(
@@ -2281,6 +2386,35 @@ public sealed class JourneyRuntimeWorkerTests
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// Retires the approved basket-capacity rule for a PACKAGE, the way an operator maintaining
+        /// the rule table does. The rules are EF seed data rather than a double, so this edits the
+        /// real table the store reads.
+        /// </summary>
+        public async Task SupersedePackageCapacityAsync(string package)
+        {
+            PackageCapacityRuleRow rule = await Context.PackageCapacityRules.SingleAsync(
+                row => row.Pattern == package && row.SupersededAt == null,
+                TestContext.Current.CancellationToken);
+            rule.SupersededAt = Clock.GetUtcNow();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        public async Task RestorePackageCapacityAsync(string package, int capacity)
+        {
+            Context.PackageCapacityRules.Add(new PackageCapacityRuleRow
+            {
+                RuleId = Guid.NewGuid().ToString("D"),
+                Pattern = package,
+                MatchType = "exact",
+                MaxBoxesPerBasket = capacity,
+                Source = "test",
+                EffectiveAt = Clock.GetUtcNow(),
+                Version = 2
+            });
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
         public Task<AutoChargingRunRow> ChargingRunAsync() => Context.AutoChargingRuns
             .AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
@@ -2639,12 +2773,16 @@ public sealed class JourneyRuntimeWorkerTests
 
         public Action? BeforeRead { get; set; }
 
+        /// <summary>Remote reads performed. A refused entry must not re-read on every poll.</summary>
+        public int ReadCount { get; private set; }
+
         public void Set(string sublot, int count) => _counts[sublot] = count;
         public void Remove(string sublot) => _counts.Remove(sublot);
 
         public Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            ReadCount++;
             BeforeRead?.Invoke();
             return Task.FromResult(_counts.TryGetValue(sublot, out int count) ? (int?)count : null);
         }

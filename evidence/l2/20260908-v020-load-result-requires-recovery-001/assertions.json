@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-result-requires-recovery",
+  "runId": "20260908T031303252Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "37ae1e4da337ddf7f5483a6322dfa64d92796f85",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260908T031303252Z",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-LR-01",
+      "description": "装载指令已下发，旅程在等结果",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult",
+      "actual": "AwaitingLoadResult"
+    },
+    {
+      "id": "L2-LR-02",
+      "description": "旅程进入 Blocked",
+      "outcome": "PASS",
+      "expected": "Blocked",
+      "actual": "Blocked"
+    },
+    {
+      "id": "L2-LR-03",
+      "description": "阻塞原因是 LOAD_RESULT_REQUIRES_RECOVERY",
+      "outcome": "PASS",
+      "expected": "LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-LR-04",
+      "description": "装载操作判 RecoveryRequired（不是 Committed，也不是停在 Prepared）",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-LR-05",
+      "description": "需求状态转为 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-LR-06",
+      "description": "装载没成时不建 TO_GATE 单（RIoT 单仍只有一条）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-LR-07",
+      "description": "装载转入恢复后，它造成的不安全不再被自身命令豁免",
+      "outcome": "PASS",
+      "expected": "DEPARTURE_SAFETY_NOT_READY",
+      "actual": "DEPARTURE_SAFETY_NOT_READY"
+    },
+    {
+      "id": "L2-LR-08",
+      "description": "会话离开 Ready 后阻塞原因不被 ONBOARD_SESSION_NOT_READY 覆盖",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-LR-09",
+      "description": "车载端关机后阻塞原因仍在",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-LR-10",
+      "description": "Blocked 期间新需求连候选评估都没进（没有 backlog 记录）",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-LR-11",
+      "description": "新需求没有被受理",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-LR-12",
+      "description": "新需求没有 journey",
+      "outcome": "PASS",
+      "expected": "(none)",
+      "actual": "(none)"
+    },
+    {
+      "id": "L2-LR-13",
+      "description": "Blocked 期间没有为任何需求派过车（RIoT 单仍只有一条）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    }
+  ]
+}

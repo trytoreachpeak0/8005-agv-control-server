@@ -284,7 +284,7 @@ public sealed class OnboardJourneyPublisherTests
             sublotMessageId,
             "AGV-001",
             11,
-            new SublotEntryRequest(demandId, operationSessionId, "PICKUP-01", 5, "SUBLOT-001"),
+            new SublotEntryRequest(demandId, operationSessionId, "PICKUP-01", 5, ["SUBLOT-001"]),
             TestContext.Current.CancellationToken);
         await publisher.PublishSlotOperationCommandAsync(
             slotMessageId,
@@ -399,7 +399,7 @@ public sealed class OnboardJourneyPublisherTests
             "00000000-0000-4000-8000-000000000413",
             "PICKUP-01",
             8,
-            "SUBLOT-008");
+            ["SUBLOT-008"]);
 
         await publisher.PublishSublotEntryRequestAsync(
             messageId, "AGV-001", 12, request, TestContext.Current.CancellationToken);
@@ -416,7 +416,7 @@ public sealed class OnboardJourneyPublisherTests
                 messageId,
                 "AGV-001",
                 12,
-                request with { ExpectedSublot = "SUBLOT-DIFFERENT" },
+                request with { ExpectedSublots = ["SUBLOT-DIFFERENT"] },
                 TestContext.Current.CancellationToken));
 
         OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(

@@ -59,6 +59,11 @@ public sealed class JourneyRuntimeEngine(
             LogLevel.Warning,
             new EventId(2107, nameof(LogChargerStationUnresolved)),
             "Charger station could not be resolved on the current map ({ReasonCode}); no charging run was started.");
+    private static readonly Action<ILogger, string, string, Exception?> LogSublotRejected =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Information,
+            new EventId(2108, nameof(LogSublotRejected)),
+            "Entered sublot for demand {DemandId} was refused: {ReasonCode}.");
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
@@ -471,6 +476,30 @@ public sealed class JourneyRuntimeEngine(
                     }
                     return;
                 }
+                // BR-013 第 2 节把这次重算的时机写死在「操作员输入 SUBLOT 后」：查 SUBLOT_BOX_COUNT
+                // 得到 MAX_BOX_COUNT，结合冻结的 PACKAGE 与已批准的花篮容量对照算出权威数量，算不
+                // 出就报错并停止，不分配仓位、不发送开锁指令。受理阶段那次预检拦不住这些——容量
+                // 对照表与 MES 的箱数都可能在派车之后变化，而受理时被拦下的需求压根不会进作业清
+                // 单，操作员看到的只会是对端本地那句「不在清单里」。
+                SublotRejection? rejection = await RevalidateEnteredSublotAsync(
+                    runtime, now, cancellationToken).ConfigureAwait(false);
+                if (rejection is not null)
+                {
+                    await publisher.PublishSublotRejectedAsync(
+                        StableGuid(sublot.MessageId, "sublot-rejected"),
+                        runtime.AgvId,
+                        session.SessionGeneration,
+                        rejection,
+                        cancellationToken).ConfigureAwait(false);
+                    // 这条提交判过了，别再判第二次——否则每一轮都要重跑一次远程查询。操作员重扫会
+                    // 产生新的 SublotSubmitted，那条会被重新判。
+                    runtime.ConsumedSublotMessageId = sublot.MessageId;
+                    runtime.BlockReasonCode = rejection.ReasonCode;
+                    runtime.UpdatedAt = now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    LogSublotRejected(logger, runtime.DemandId, rejection.ReasonCode, null);
+                    return;
+                }
                 await PublishLoadAsync(runtime, session, sublot.MessageId, cancellationToken).ConfigureAwait(false);
                 runtime.ConsumedSublotMessageId = sublot.MessageId;
                 // The submission is this command's answer. Leaving the command unsettled replayed it
@@ -750,7 +779,10 @@ public sealed class JourneyRuntimeEngine(
                 runtime.OperationSessionId,
                 runtime.PickupStationId,
                 runtime.WorklistRevision,
-                demand.Sublot),
+                // One entry while a journey carries one demand. The set is what FR-001 AC-3 scopes
+                // entry to -- the whole dispatch range -- so it widens on its own once a journey
+                // carries a stop sequence.
+                [demand.Sublot]),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -842,6 +874,12 @@ public sealed class JourneyRuntimeEngine(
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
             JsonElement payload = root.GetProperty("payload");
+            // 判过一次的提交不再进入匹配：被拒的那条留在 inbox 里，否则每一轮都会重新触发一次
+            // 远程重算，也会把同一条拒绝反复发给对端。
+            if (row.MessageId == runtime.ConsumedSublotMessageId)
+            {
+                continue;
+            }
             bool matches = RequiredString(root, "agvId") == runtime.AgvId &&
                            root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
                            RequiredString(payload, "demandId") == runtime.DemandId &&
@@ -876,6 +914,95 @@ public sealed class JourneyRuntimeEngine(
     /// staler. An answer that is present but not safe stops the wait immediately -- this shortens
     /// the gap between asking and judging, and relaxes nothing.
     /// </remarks>
+    /// <summary>
+    /// Recomputes the authoritative basket count for a sublot the operator has just entered, and
+    /// returns the refusal to send back when it cannot be established. Returning <c>null</c> means
+    /// the load may proceed.
+    /// </summary>
+    /// <remarks>
+    /// BR-013 makes this count authoritative and forbids falling back to a default, a minimum or an
+    /// operator-editable value, so every failure here stops the load. The count is compared against
+    /// the one frozen at acceptance because the slots were reserved against that number: a demand
+    /// whose box count grew between dispatch and entry no longer fits the reservation it was given.
+    /// </remarks>
+    private async Task<SublotRejection?> RevalidateEnteredSublotAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
+            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+
+        SublotRejection Refuse(string reasonCode, string fieldPath, string displayMessage) => new(
+            runtime.DemandId,
+            runtime.OperationSessionId,
+            runtime.WorklistRevision,
+            reasonCode,
+            fieldPath,
+            displayMessage);
+
+        if (!await store.IsTaskTypeAllowedAsync(
+                runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
+        {
+            return Refuse(
+                "ACTION_NOT_ALLOWED_IN_STATE",
+                "payload.stationId",
+                $"本站不允许 {demand.WorkType} 作业，无法在此装货。");
+        }
+
+        LiveMesFieldSet? fields = JsonSerializer.Deserialize<LiveMesFieldSet>(
+            demand.LiveMesFieldsJson, SerializerOptions);
+        if (string.IsNullOrWhiteSpace(fields?.Package))
+        {
+            return Refuse(
+                "EXPECTED_BASKET_COUNT_MISMATCH",
+                "payload.sublot",
+                $"子批 {demand.Sublot} 没有 PACKAGE 型号，算不出花篮数量，不予开仓。");
+        }
+
+        int? capacity = await packageCapacityStore.ResolveAndTrackAsync(
+            fields.Package, now, cancellationToken).ConfigureAwait(false);
+        if (capacity is null or <= 0)
+        {
+            return Refuse(
+                "EXPECTED_BASKET_COUNT_MISMATCH",
+                "payload.sublot",
+                $"PACKAGE {fields.Package} 没有已批准的花篮容量对照，算不出花篮数量，不予开仓。");
+        }
+
+        int? maxBoxCount;
+        try
+        {
+            maxBoxCount = await boxCountReader.ReadMaxBoxCountAsync(demand.Sublot, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (
+            error is HttpRequestException or InvalidDataException or JsonException)
+        {
+            LogBoxCountFailed(logger, runtime.DemandId, error);
+            maxBoxCount = null;
+        }
+        if (maxBoxCount is null or <= 0)
+        {
+            return Refuse(
+                "EXPECTED_BASKET_COUNT_MISMATCH",
+                "payload.sublot",
+                $"查不到子批 {demand.Sublot} 的箱数，算不出花篮数量，不予开仓。");
+        }
+
+        int expected = checked((maxBoxCount.Value + capacity.Value - 1) / capacity.Value);
+        if (expected != runtime.ExpectedBasketCount)
+        {
+            return Refuse(
+                "EXPECTED_BASKET_COUNT_MISMATCH",
+                "payload.sublot",
+                $"子批 {demand.Sublot} 的花篮数量由 {runtime.ExpectedBasketCount} 变为 {expected}，" +
+                "与本次派车预留的仓位不符，不予开仓。");
+        }
+
+        return null;
+    }
+
     private async Task<SafetyCheckObservation?> AwaitSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
         SessionRecoveryRow session,

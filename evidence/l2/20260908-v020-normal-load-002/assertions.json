@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "scenario": "normal-load",
+  "runId": "20260908T031224417Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260908T031224417Z",
+    "controlServerCommit": "37ae1e4da337ddf7f5483a6322dfa64d92796f85",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-NL-01",
+      "description": "受理后建出 TO_PICKUP 单并确认",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-NL-02",
+      "description": "候选判定结果是 ACCEPTED",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    },
+    {
+      "id": "L2-NL-03",
+      "description": "车在路上时不采信到站",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-NL-04",
+      "description": "装载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-NL-05",
+      "description": "出发前安全检查通过后才建 TO_GATE 单",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-NL-06",
+      "description": "journey 走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-NL-07",
+      "description": "卸载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-NL-08",
+      "description": "需求终态为 Succeeded",
+      "outcome": "PASS",
+      "expected": "Succeeded",
+      "actual": "Succeeded"
+    },
+    {
+      "id": "L2-NL-09",
+      "description": "全程只建了两条 RIoT 单（取货一条、关卡一条）",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    }
+  ]
+}

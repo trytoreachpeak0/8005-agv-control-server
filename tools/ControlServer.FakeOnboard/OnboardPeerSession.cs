@@ -329,7 +329,10 @@ public sealed class OnboardPeerSession(
             operationSessionId = requestPayload.GetProperty("operationSessionId").GetString(),
             stationId = requestPayload.GetProperty("stationId").GetString(),
             worklistRevision = requestPayload.GetProperty("worklistRevision").GetInt64(),
-            sublot = requestPayload.GetProperty("expectedSublot").GetString(),
+            // The request now names every sublot still enterable in this dispatch range. A real
+            // operator picks one; this peer takes the first, which is the whole set while a journey
+            // carries a single demand.
+            sublot = requestPayload.GetProperty("expectedSublots").EnumerateArray().First().GetString(),
             entryMethod = "SCANNER",
             @operator = new
             {
