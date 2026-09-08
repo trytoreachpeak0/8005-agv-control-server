@@ -52,6 +52,7 @@ jobs:
         run: |
           $scenarios = @(
               'normal-load'
+              'multi-demand-one-stop'
               'session-established-while-moving'
               'load-result-requires-recovery'
               'load-command-never-answered'

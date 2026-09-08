@@ -1591,6 +1591,391 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
     }
 
+    /// <summary>
+    /// ADR-cross-0057's baseline shape: one journey, one stop, several demands. The operator scans
+    /// the second sublot first, which is the point -- entry decides which demand loads, and the
+    /// worklist offers the whole dispatch range rather than one expected string.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task OneJourneyLoadsSeveralDemandsAtOneStopAndUnloadsThemOneAtATime()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)),
+            fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+
+        // Both demands ride one journey, at one stop, holding disjoint slots.
+        JourneyDemandRow[] demands = await fixture.DemandRowsAsync();
+        Assert.Equal(2, demands.Length);
+        Assert.Single(demands.Select(row => row.JourneyId).Distinct(StringComparer.Ordinal));
+        Assert.Single(demands.Select(row => row.StopSequence).Distinct());
+        Assert.Equal(
+            [1, 2, 3, 4],
+            demands.SelectMany(row => JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson)!).Order());
+        Assert.Single(await fixture.Context.VehicleDispatchLeases
+            .AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
+
+        // The entry request offers the whole range, not one expected sublot (FR-001 AC-3).
+        Assert.Equal(
+            ["SUBLOT-001", "SUBLOT-002"],
+            (await fixture.SublotEntryRequestSublotsAsync()).Order(StringComparer.Ordinal));
+        Assert.Equal(2, await fixture.WorklistItemCountAsync());
+
+        // Scanned out of order on purpose: the sublot picks the demand.
+        await fixture.LoadSublotAsync("SUBLOT-002");
+        Assert.Equal(
+            JourneyDemandState.Loaded,
+            (await fixture.DemandRowsAsync())
+                .Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002").State);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Equal(["SUBLOT-001"], await fixture.SublotEntryRequestSublotsAsync());
+
+        await fixture.LoadSublotAsync("SUBLOT-001");
+
+        // Nothing left to load and nothing else on offer, so the journey leaves for the gate.
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.JourneyRowAsync()).Stage);
+        await fixture.ConfirmDepartureSafeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.JourneyRowAsync()).Stage);
+
+        await fixture.ArriveAtCurrentStopAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.JourneyRowAsync()).Stage);
+        // One door at a time: only one unload is commanded before its batch closes.
+        Assert.Single(await fixture.DemandRowsAsync(), row => row.UnloadCommandedAt is not null);
+
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.JourneyRowAsync()).Stage);
+        await fixture.UnloadCurrentAsync();
+
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+        Assert.All(
+            await fixture.DemandRowsAsync(),
+            row => Assert.Equal(JourneyDemandState.Unloaded, row.State));
+        Assert.All(
+            await fixture.Context.AcceptedDemands.AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken),
+            row => Assert.Equal(DemandExecutionStatus.Succeeded, row.Status));
+        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+    }
+
+    /// <summary>
+    /// A journey grows a stop sequence: demands whose pickup stations differ are visited in turn,
+    /// each stop publishing its own snapshots, before the vehicle leaves for the gate.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task OneJourneyVisitsSeveralPickupStopsBeforeTheGate()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+
+        // Two pickup stops at different stations, plus the gate. The gate keeps its fixed sequence
+        // above every pickup stop so appending one never renumbers it.
+        JourneyStopRow[] stops = await fixture.StopRowsAsync();
+        Assert.Equal(3, stops.Length);
+        Assert.Equal([12, 13, 210], stops.Select(row => row.StationRiotId).Order());
+        Assert.Equal(9, stops.Single(row => row.Role == JourneyStopRole.Gate).Sequence);
+        // Only the stop the vehicle is at offers entry; the other one is still planned.
+        Assert.Equal(1, await fixture.WorklistItemCountAsync());
+        // Entry is scoped to the dispatch range, not to the stop -- BR-001 makes it set membership.
+        Assert.Equal(
+            ["SUBLOT-001", "SUBLOT-002"],
+            (await fixture.SublotEntryRequestSublotsAsync()).Order(StringComparer.Ordinal));
+
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.JourneyRowAsync()).Stage);
+        // Leaving for the second pickup stop, not the gate: loading is not over.
+        JourneyRuntimeRow leaving = await fixture.JourneyRowAsync();
+        Assert.Null(leaving.LoadingClosedReason);
+        Assert.Equal(2, leaving.NextStopSequence);
+
+        await fixture.ConfirmDepartureSafeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.JourneyRowAsync()).Stage);
+        await fixture.ArriveAtCurrentStopAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.JourneyRowAsync()).Stage);
+
+        await fixture.LoadSublotAsync("SUBLOT-002");
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Equal(9, (await fixture.JourneyRowAsync()).NextStopSequence);
+
+        // Every stop published at its own revision, strictly increasing: the peer refuses a
+        // revision that does not advance, and two stops sharing one would look like that.
+        long[] worklistRevisions = (await fixture.StopRowsAsync())
+            .Where(row => row.WorklistRevision > 0)
+            .Select(row => row.WorklistRevision)
+            .ToArray();
+        Assert.Equal(worklistRevisions.Distinct().Count(), worklistRevisions.Length);
+
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.UnloadCurrentAsync();
+        await fixture.UnloadCurrentAsync();
+
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+        Assert.All(
+            await fixture.Context.AcceptedDemands.AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken),
+            row => Assert.Equal(DemandExecutionStatus.Succeeded, row.Status));
+        Assert.All(
+            await fixture.StopRowsAsync(),
+            row => Assert.Equal(JourneyStopState.Completed, row.State));
+    }
+
+    /// <summary>
+    /// FR-001 AC-3: what the operator enters need not belong to the stop they are standing at, only
+    /// to the dispatch range. BR-001 allows a range to span neighbouring stations, so a sublot
+    /// entered here is loaded here -- and the stop it was planned for drops out of the itinerary.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ASublotEnteredAwayFromItsPlannedStopIsLoadedWhereItWasEntered()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+
+        JourneyStopRow[] planned = await fixture.StopRowsAsync();
+        Assert.Equal(
+            2,
+            (await fixture.DemandRowsAsync()).Select(row => row.StopSequence).Distinct().Count());
+        Assert.Equal(3, planned.Length);
+
+        // The operator at the first stop is holding the second stop's sublot and scans it.
+        await fixture.LoadSublotAsync("SUBLOT-002");
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        JourneyDemandRow moved = (await fixture.DemandRowsAsync())
+            .Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002");
+        Assert.Equal(JourneyDemandState.Loaded, moved.State);
+        Assert.Equal(journey.CurrentStopSequence, moved.StopSequence);
+
+        // Its own sublot is still on offer, at this stop, and loads here too.
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, journey.Stage);
+        Assert.Equal(["SUBLOT-001"], await fixture.SublotEntryRequestSublotsAsync());
+        await fixture.LoadSublotAsync("SUBLOT-001");
+
+        // Both are aboard from one stop, so the second pickup stop has nothing to do and the
+        // vehicle heads straight for the gate.
+        journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        Assert.Equal(9, journey.NextStopSequence);
+        Assert.Equal(
+            JourneyStopState.Planned,
+            (await fixture.StopRowsAsync()).Single(row => row.Sequence == 2).State);
+    }
+
+    /// <summary>
+    /// "Full" is not every slot occupied: it is too few free to take the next candidate whole, since
+    /// a demand's baskets have to go on in one go.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task LoadingEndsWhenTheFreeSlotsCannotTakeTheNextDemandWhole()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // 15 boxes at 4 per basket is 4 baskets, so two demands fill all eight slots and the third
+        // cannot go on whole -- which is what "full" means here, not "no slot is empty".
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)),
+            fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-9)),
+            fixture.Demand("10000000-0000-4000-8000-000000000003", "SUBLOT-003", createdAt: Now.AddMinutes(-8)));
+        fixture.BoxCounts.Set("SUBLOT-001", 15);
+        fixture.BoxCounts.Set("SUBLOT-002", 15);
+        fixture.BoxCounts.Set("SUBLOT-003", 15);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+
+        JourneyDemandRow[] demands = await fixture.DemandRowsAsync();
+        Assert.Equal(2, demands.Length);
+        Assert.All(demands, row => Assert.Equal(4, row.ExpectedBasketCount));
+        Assert.DoesNotContain("10000000-0000-4000-8000-000000000003", demands.Select(row => row.DemandId));
+        Assert.Equal(
+            "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE",
+            (await fixture.BacklogAsync("10000000-0000-4000-8000-000000000003")).ReasonCode);
+
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.LoadSublotAsync("SUBLOT-002");
+
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal("VEHICLE_FULL", journey.LoadingClosedReason);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+    }
+
+    /// <summary>
+    /// The holding limit runs from the first LoadBatch that closed safely, and ends the loading
+    /// phase even while more cargo is on offer.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task LoadingEndsWhenTheVehicleHasHeldCargoTooLong()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.HoldingTimeout = TimeSpan.FromMinutes(30);
+        // The station wait is the other deadline and would end the stop first. Off, so that what is
+        // measured here is only the holding clock.
+        fixture.Options.SublotWaitTimeout = TimeSpan.Zero;
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)),
+            fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+
+        // Nothing is aboard yet, so no clock is running: this much time passing changes nothing.
+        Assert.Null((await fixture.JourneyRowAsync()).HoldingStartedAt);
+        fixture.Clock.Advance(TimeSpan.FromHours(2));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Null((await fixture.JourneyRowAsync()).LoadingClosedReason);
+
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        DateTimeOffset? startedAt = (await fixture.JourneyRowAsync()).HoldingStartedAt;
+        Assert.NotNull(startedAt);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.JourneyRowAsync()).Stage);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(31));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal("HOLDING_TIMEOUT", journey.LoadingClosedReason);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        // The clock did not restart on the second batch: it is the first one that started it.
+        Assert.Equal(startedAt, journey.HoldingStartedAt);
+        // SUBLOT-002 never loaded, and it is not carried to the gate unloadable either: a hard
+        // deadline terminates what it abandons, under the reason for "loading here is finished".
+        Assert.Equal(
+            JourneyDemandState.Cancelled,
+            (await fixture.DemandRowsAsync())
+                .Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002").State);
+        Assert.Equal(
+            "CANCELLED_BY_STOP_COMPLETE",
+            (await fixture.Context.TransportDemandSuppressions.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.Empty(await fixture.Context.StationOperations.AsNoTracking()
+            .Where(row => row.DemandId == "10000000-0000-4000-8000-000000000002")
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// The holding limit does not interrupt a slot operation that is under way. ADR-cross-0057 puts
+    /// the convergence of physical safety ahead of the deadline, the same way ADR-cross-0055 does.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task TheHoldingLimitWaitsForTheBatchInProgressToCloseSafely()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.HoldingTimeout = TimeSpan.FromMinutes(30);
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)),
+            fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+
+        // The second batch is commanded and outstanding when the limit passes.
+        await fixture.ScanSublotAsync("SUBLOT-002");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.JourneyRowAsync()).Stage);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(31));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Null((await fixture.JourneyRowAsync()).LoadingClosedReason);
+
+        JourneyDemandRow loading = (await fixture.DemandRowsAsync())
+            .Single(row => row.State == JourneyDemandState.Planned && row.LoadCommandedAt is not null);
+        StationOperationRow load = await fixture.OperationForAsync(loading.LoadSlotOperationAttemptId);
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // The batch closed, both demands are aboard, and only then does the phase end.
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal("HOLDING_TIMEOUT", journey.LoadingClosedReason);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        Assert.All(
+            await fixture.DemandRowsAsync(),
+            row => Assert.Equal(JourneyDemandState.Loaded, row.State));
+    }
+
+    /// <summary>
+    /// The station wait ends the stop, not the journey: ADR-cross-0055 and this are two independent
+    /// deadlines, and cargo already aboard still goes to the gate.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task TheStationWaitEndsTheStopWhileTheCargoAlreadyAboardStillReachesTheGate()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)),
+            fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+
+        // Nobody scans the second one. The stop's own window runs out.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyDemandRow[] demands = await fixture.DemandRowsAsync();
+        Assert.Equal(
+            JourneyDemandState.Cancelled,
+            demands.Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002").State);
+        Assert.Equal(
+            JourneyDemandState.Loaded,
+            demands.Single(row => row.DemandId == "10000000-0000-4000-8000-000000000001").State);
+        // FR-004: the cancellation bars the business key, and it is the station timeout that did it.
+        Assert.Equal(
+            "CANCELLED_BY_STATION_TIMEOUT",
+            (await fixture.Context.TransportDemandSuppressions.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).ReasonCode);
+
+        // The journey is not over -- the first demand's cargo is aboard and bound for the gate.
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.JourneyRowAsync()).Stage);
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task ALowVehicleDrivesItselfToTheChargerAndBecomesAvailableAgainAtTheResumeLevel()
@@ -2305,6 +2690,177 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         /// <summary>Carries the journey to the pickup stop, waiting for an operator to enter a sublot.</summary>
+        /// <summary>
+        /// The journey's stops and demands as they stand. A multi-demand journey has no single
+        /// pickup station or single load command, so <see cref="SingleDemandJourneyView"/> refuses
+        /// it -- these read the rows directly instead.
+        /// </summary>
+        public async Task<JourneyStopRow[]> StopRowsAsync()
+        {
+            JourneyStopRow[] rows = await Context.JourneyStops
+                .AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            return rows.OrderBy(row => row.Sequence).ToArray();
+        }
+
+        public async Task<JourneyDemandRow[]> DemandRowsAsync()
+        {
+            JourneyDemandRow[] rows = await Context.JourneyDemands
+                .AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            return rows.OrderBy(row => row.CreatedAt).ThenBy(row => row.DemandId, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        public Task<JourneyRuntimeRow> JourneyRowAsync() => Context.JourneyRuntimes
+            .AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+
+        public Task<StationOperationRow> OperationForAsync(string attemptId) => Context.StationOperations
+            .AsNoTracking()
+            .SingleAsync(row => row.SlotOperationAttemptId == attemptId, TestContext.Current.CancellationToken);
+
+        /// <summary>
+        /// What the newest entry request offers the operator. Read off the wire rather than from the
+        /// runtime, because the whole point of <c>expectedSublots</c> is what reaches the vehicle.
+        /// </summary>
+        public async Task<string[]> SublotEntryRequestSublotsAsync()
+        {
+            JsonElement payload = await CurrentRoundPayloadAsync(WireToGateStore.SublotRequestId);
+            return payload.GetProperty("expectedSublots")
+                .EnumerateArray()
+                .Select(item => item.GetString()!)
+                .ToArray();
+        }
+
+        public async Task<int> WorklistItemCountAsync()
+        {
+            JsonElement payload = await CurrentRoundPayloadAsync(WireToGateStore.WorklistId);
+            return payload.GetProperty("items").GetArrayLength();
+        }
+
+        /// <summary>
+        /// The payload the current stop published in its current load round. Addressed by derived id
+        /// rather than by "the newest row": the test clock does not move between rounds, so ordering
+        /// on a timestamp picks whichever of them the database happens to return first.
+        /// </summary>
+        private async Task<JsonElement> CurrentRoundPayloadAsync(Func<string, int, int, string> id)
+        {
+            JourneyRuntimeRow journey = await JourneyRowAsync();
+            JourneyStopRow stop = (await StopRowsAsync())
+                .Single(row => row.Sequence == journey.CurrentStopSequence);
+            string messageId = id(journey.JourneyId, stop.Sequence, stop.LoadRound);
+            ProtocolOutboxRow row = await Context.ProtocolOutbox
+                .AsNoTracking()
+                .SingleAsync(item => item.MessageId == messageId, TestContext.Current.CancellationToken);
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            return document.RootElement.GetProperty("payload").Clone();
+        }
+
+        /// <summary>
+        /// Scans a sublot at the stop the vehicle is parked at. Which demand that names is the
+        /// server's to work out -- the operator scans a label, not a demand id -- so the caller
+        /// passes the sublot and nothing else.
+        /// </summary>
+        public async Task ScanSublotAsync(string sublot)
+        {
+            JourneyRuntimeRow journey = await JourneyRowAsync();
+            JourneyStopRow stop = (await StopRowsAsync())
+                .Single(row => row.Sequence == journey.CurrentStopSequence);
+            JourneyDemandRow[] demands = await DemandRowsAsync();
+            string[] demandIds = demands.Select(row => row.DemandId).ToArray();
+            AcceptedDemandRow demand = await Context.AcceptedDemands
+                .AsNoTracking()
+                .SingleAsync(
+                    row => row.Sublot == sublot && demandIds.Contains(row.DemandId),
+                    TestContext.Current.CancellationToken);
+            await AddInboxAsync(
+                Guid.NewGuid().ToString("D"),
+                "SublotSubmitted",
+                new
+                {
+                    demandId = demand.DemandId,
+                    operationSessionId = journey.OperationSessionId,
+                    stationId = stop.StationId,
+                    worklistRevision = stop.WorklistRevision,
+                    sublot,
+                    entryMethod = "SCANNER",
+                    @operator = new
+                    {
+                        operatorId = "OP-001",
+                        verificationMethod = "BADGE",
+                        verifiedAt = Clock.GetUtcNow()
+                    }
+                });
+        }
+
+        /// <summary>
+        /// Scans a sublot, lets the load be commanded, and closes that batch safely. One demand's
+        /// whole loading step.
+        /// </summary>
+        public async Task LoadSublotAsync(string sublot)
+        {
+            await ScanSublotAsync(sublot);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            JourneyDemandRow loading = (await DemandRowsAsync())
+                .Single(row => row.State == JourneyDemandState.Planned && row.LoadCommandedAt is not null);
+            StationOperationRow load = await OperationForAsync(loading.LoadSlotOperationAttemptId);
+            await ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>Answers the pre-departure safety check the current stop is waiting on.</summary>
+        public async Task ConfirmDepartureSafeAsync()
+        {
+            JourneyRuntimeRow journey = await JourneyRowAsync();
+            JourneyStopRow stop = (await StopRowsAsync())
+                .Single(row => row.Sequence == journey.CurrentStopSequence);
+            await AddInboxAsync(
+                Guid.NewGuid().ToString("D"),
+                "PreDepartureSafetyCheckResult",
+                new
+                {
+                    preDepartureSafetyCheckId = stop.PreDepartureSafetyCheckId,
+                    outcome = "SAFE",
+                    observedAt = Clock.GetUtcNow(),
+                    safetyStateVersion = 7,
+                    validUntil = Clock.GetUtcNow().AddMinutes(1),
+                    safety = new
+                    {
+                        departureSafe = true,
+                        vehicleStopped = true,
+                        allTargetSlotsLocked = true,
+                        allUnlockOutputsReset = true,
+                        unknownPresent = false,
+                        reasonCodes = Array.Empty<string>()
+                    }
+                },
+                stop.PreDepartureSafetyCheckMessageId);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>Drives the vehicle to the stop it is currently heading for.</summary>
+        public async Task ArriveAtCurrentStopAsync()
+        {
+            JourneyRuntimeRow journey = await JourneyRowAsync();
+            JourneyStopRow stop = (await StopRowsAsync())
+                .Single(row => row.Sequence == journey.CurrentStopSequence);
+            Riot.SetSuccessfulArrival(
+                stop.LegType == "TO_GATE" ? "TO_GATE" : "TO_PICKUP", stop.UpperId, stop.StationRiotId);
+            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = stop.StationRiotId };
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>Closes the unload batch the gate stop is waiting on.</summary>
+        public async Task UnloadCurrentAsync()
+        {
+            JourneyDemandRow unloading = (await DemandRowsAsync())
+                .Single(row => row.State == JourneyDemandState.Loaded && row.UnloadCommandedAt is not null);
+            StationOperationRow unload = await OperationForAsync(unloading.UnloadSlotOperationAttemptId);
+            await ApplySafeResultAsync(unload, SlotOperationType.Unload, SlotBusinessState.Empty);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        }
+
         public async Task<SingleDemandJourneyView> AdvanceToSublotWaitAsync(string demandId, string sublot)
         {
             Catalog.Set(Demand(demandId, sublot, createdAt: Clock.GetUtcNow().AddMinutes(-10)));
@@ -2487,7 +3043,6 @@ public sealed class JourneyRuntimeWorkerTests
             object payload,
             string? correlationId = null)
         {
-            SingleDemandJourneyView runtime = await RuntimeAsync();
             string json = JsonSerializer.Serialize(new
             {
                 protocolVersion = 1,

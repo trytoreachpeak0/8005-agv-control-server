@@ -334,6 +334,119 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Takes one more demand onto a journey that is already under way (ADR-cross-0057). No lease and
+    /// no order intent: the journey already holds the vehicle, and the leg that reaches a stop is
+    /// authorized when the vehicle leaves the previous one.
+    /// </summary>
+    /// <remarks>
+    /// A replay is a no-op rather than a conflict, on the same terms as an accepted demand's replay:
+    /// the demand is already on this journey, at this stop, with this reservation. Anything else is
+    /// a conflict -- the same demand cannot ride two journeys, and a reservation that moved would
+    /// mean slots were promised twice.
+    /// </remarks>
+    public async Task JoinJourneyAsync(
+        AcceptedDemandSnapshot snapshot,
+        string journeyId,
+        JourneyStopPlan? appendedStop,
+        JourneyDemandPlan demand,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(snapshot.DemandId, demand.DemandId, StringComparison.Ordinal))
+        {
+            throw new BusinessIdentityConflictException("Journey demand does not match the accepted demand.");
+        }
+
+        JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
+            .SingleAsync(row => row.JourneyId == journeyId, cancellationToken).ConfigureAwait(false);
+        JourneyDemandRow? existingMembership = await dbContext.JourneyDemands
+            .SingleOrDefaultAsync(row => row.DemandId == demand.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        if (existingMembership is not null)
+        {
+            if (existingMembership.JourneyId != journeyId || !Matches(existingMembership, demand))
+            {
+                throw new BusinessIdentityConflictException(
+                    "Demand is already bound to a different journey or a different reservation.");
+            }
+            return;
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        dbContext.AcceptedDemands.Add(new AcceptedDemandRow
+        {
+            DemandId = snapshot.DemandId,
+            SeriesId = snapshot.SeriesId,
+            TransportDemandKey = snapshot.TransportDemandKey,
+            WorkType = snapshot.WorkType,
+            Sublot = snapshot.Sublot,
+            Generation = snapshot.Generation,
+            DemandRevision = snapshot.DemandRevision,
+            HistoryEpoch = snapshot.HistoryEpoch,
+            CatalogRevision = snapshot.CatalogRevision,
+            CreatedAt = snapshot.CreatedAt,
+            ValueObservedAt = snapshot.ValueObservedAt,
+            ValuePollTraceId = snapshot.ValuePollTraceId,
+            ValueProjectionCommitId = snapshot.ValueProjectionCommitId,
+            LiveMesFieldsJson = JsonSerializer.Serialize(snapshot.LiveMesFields),
+            AcceptedAt = snapshot.AcceptedAt,
+            Status = DemandExecutionStatus.Accepted
+        });
+        if (appendedStop is not null)
+        {
+            dbContext.JourneyStops.Add(new JourneyStopRow
+            {
+                JourneyId = journeyId,
+                Sequence = appendedStop.Sequence,
+                Role = appendedStop.Role,
+                StationId = appendedStop.StationId,
+                StationRiotId = appendedStop.StationRiotId,
+                RouteEvidenceId = appendedStop.RouteEvidenceId,
+                MovementLegId = appendedStop.MovementLegId,
+                UpperId = appendedStop.UpperId,
+                LegType = appendedStop.LegType,
+                State = JourneyStopState.Planned,
+                VehicleBusinessRevision = 0,
+                WorklistRevision = 0,
+                PlanRevision = 0,
+                VehicleBusinessMessageId = StopId(journeyId, appendedStop.Sequence, "vehicle-state"),
+                PlanMessageId = StopId(journeyId, appendedStop.Sequence, "plan"),
+                PreDepartureSafetyCheckMessageId = StopId(journeyId, appendedStop.Sequence, "safety-request"),
+                PreDepartureSafetyCheckId = StopId(journeyId, appendedStop.Sequence, "safety-check"),
+                LoadRound = 0,
+                CreatedAt = snapshot.AcceptedAt,
+                UpdatedAt = snapshot.AcceptedAt
+            });
+        }
+        dbContext.JourneyDemands.Add(new JourneyDemandRow
+        {
+            JourneyId = journeyId,
+            DemandId = demand.DemandId,
+            StopSequence = demand.StopSequence,
+            ExpectedBasketCount = demand.ExpectedBasketCount,
+            TargetSlotsJson = JsonSerializer.Serialize(demand.TargetSlots),
+            LoadCommandMessageId = JourneyDemandId(journeyId, demand.DemandId, "load-command"),
+            LoadSlotOperationAttemptId = JourneyDemandId(journeyId, demand.DemandId, "load-attempt"),
+            UnloadCommandMessageId = JourneyDemandId(journeyId, demand.DemandId, "unload-command"),
+            UnloadSlotOperationAttemptId = JourneyDemandId(journeyId, demand.DemandId, "unload-attempt"),
+            State = JourneyDemandState.Planned,
+            CreatedAt = snapshot.AcceptedAt
+        });
+        JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
+            .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        if (backlog is not null)
+        {
+            backlog.AcceptedAt = snapshot.AcceptedAt;
+            backlog.ReasonCode = "ACCEPTED";
+            backlog.LastSeenAt = snapshot.AcceptedAt;
+        }
+        runtime.UpdatedAt = snapshot.AcceptedAt;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<StoredMovementIntent?> GetByUpperIdAsync(
         string upperId, CancellationToken cancellationToken)
     {

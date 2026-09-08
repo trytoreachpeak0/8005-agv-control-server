@@ -1,0 +1,25 @@
+{"at":"2026-09-08T05:33:26.1340284+00:00","note":"L2 run 20260908T053326100Z starting for scenario 'normal-load'."}
+{"at":"2026-09-08T05:33:26.1632398+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T05:33:30.0388993+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T05:33:30.2679338+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T05:33:31.8647202+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T05:33:32.9781175+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T05:33:33.6123771+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T05:33:33.6490811+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T05:33:33.7156801+00:00","note":"Environment is up; entering scenario 'normal-load'."}
+{"at":"2026-09-08T05:33:33.7515156+00:00","note":"Publishing demand 2ba807689687461e82c8e24402dcd39b (sublot L2-SUBLOT-20260908T053326100Z) to the fake MesIngest catalog."}
+{"at":"2026-09-08T05:33:33.8700888+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-08T05:33:35.2545658+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T05:33:35.2912872+00:00","criterion":"to-pickup-intent","value":"PENDING_RECONCILIATION"}
+{"at":"2026-09-08T05:33:35.5706549+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-08T05:33:35.5869589+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-08T05:33:35.6537575+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-08T05:33:35.9513559+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-08T05:33:37.0198826+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-08T05:33:37.8150104+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-08T05:33:38.0811965+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-08T05:33:38.0865624+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-09-08T05:33:38.1043577+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-08T05:33:39.1856210+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-08T05:33:39.7207310+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-08T05:33:39.7313054+00:00","note":"Scenario finished."}

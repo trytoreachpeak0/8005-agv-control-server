@@ -158,6 +158,111 @@ public sealed class JourneyRuntimeEngine(
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
+        // Nothing of this journey exists yet, so no slot is reserved and every available one counts.
+        CandidateScoring scoring = await ScoreCandidatesAsync(
+            currentMap, gate, [], now, cancellationToken).ConfigureAwait(false);
+        if (scoring.Onboard is null || scoring.Eligible.Count == 0)
+        {
+            return;
+        }
+        if (await dbContext.VehicleDispatchLeases.AnyAsync(
+                row => row.VehicleKey == runtimeOptions.VehicleKey && row.ReleasedAt == null,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        EligibleCandidate selected = Preferred(scoring.Eligible);
+        long expectedSessionGeneration = scoring.Onboard.SessionGeneration;
+        if (!await FinalDynamicFactsReadyAsync(
+                expectedSessionGeneration,
+                selected.TargetSlots,
+                cancellationToken).ConfigureAwait(false))
+        {
+            await SetBacklogReasonAsync(
+                selected.Snapshot.DemandId,
+                "FINAL_DYNAMIC_FACTS_NOT_READY",
+                timeProvider.GetUtcNow(),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        DateTimeOffset intakeAt = timeProvider.GetUtcNow();
+        JourneyExecutionPlan plan = CreatePlan(selected, intakeAt);
+        JourneyStopPlan firstStop = plan.Stops.Single(stop => stop.Sequence == FirstStopSequence);
+        OrderIntent pickup = new(
+            firstStop.MovementLegId,
+            selected.Snapshot.DemandId,
+            firstStop.UpperId,
+            "TO_PICKUP",
+            firstStop.StationId,
+            intakeAt,
+            plan.VehicleKey,
+            plan.MapId,
+            firstStop.StationRiotId,
+            plan.AgvLifecycleGeneration,
+            plan.DispatchGeneration);
+        JourneyIntakeResult result = await intakeCoordinator.AcceptAndDispatchToPickupAsync(
+            selected.Snapshot,
+            pickup,
+            plan,
+            token => FinalDynamicFactsReadyAsync(
+                expectedSessionGeneration,
+                selected.TargetSlots,
+                token),
+            cancellationToken).ConfigureAwait(false);
+        if (result.IntakeOutcome != DemandIntakeOutcome.Accepted)
+        {
+            await SetBacklogReasonAsync(
+                selected.Snapshot.DemandId,
+                BacklogReasonFor(result.IntakeOutcome),
+                timeProvider.GetUtcNow(),
+                cancellationToken).ConfigureAwait(false);
+            return;
+        }
+        if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
+        {
+            JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
+                .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken)
+                .ConfigureAwait(false);
+            runtime.BlockReasonCode = result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED";
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The stable order candidates are taken in: oldest in the backlog first, then oldest demand,
+    /// then by id. Ties have to break the same way on every poll or the vehicle would be sent to a
+    /// different stop each time the catalog is re-read.
+    /// </summary>
+    private static EligibleCandidate Preferred(IEnumerable<EligibleCandidate> eligible) => eligible
+        .OrderBy(item => item.FirstSeenAt)
+        .ThenBy(item => item.Snapshot.CreatedAt)
+        .ThenBy(item => item.Snapshot.DemandId, StringComparer.Ordinal)
+        .First();
+
+    private static string BacklogReasonFor(DemandIntakeOutcome outcome) => outcome switch
+    {
+        DemandIntakeOutcome.CandidateGone => "FINAL_CATALOG_CANDIDATE_GONE",
+        DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
+        DemandIntakeOutcome.FinalAdmissionRejected => "FINAL_DYNAMIC_FACTS_NOT_READY",
+        _ => throw new InvalidOperationException($"Unsupported intake outcome '{outcome}'.")
+    };
+
+    /// <summary>
+    /// Scores every demand in the catalog and records the verdict in the backlog, returning the ones
+    /// that may be dispatched. <paramref name="reservedSlots"/> is what the current journey has
+    /// already promised: Onboard reports slot availability from the session baseline and never takes
+    /// a loaded slot out of it, so the free set is the server's own ledger, not the vehicle's.
+    /// </summary>
+    private async Task<CandidateScoring> ScoreCandidatesAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        RiotMapStation gate,
+        IReadOnlyCollection<int> reservedSlots,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
         DemandCatalogSnapshot snapshot;
         try
         {
@@ -166,7 +271,7 @@ public sealed class JourneyRuntimeEngine(
         catch (Exception error) when (error is HttpRequestException or InvalidDataException or JsonException)
         {
             LogCatalogPollFailed(logger, error);
-            return;
+            return new CandidateScoring([], null, false);
         }
 
         OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
@@ -194,6 +299,9 @@ public sealed class JourneyRuntimeEngine(
         HashSet<string> suppressedKeys = await store
             .ReadSuppressedTransportDemandKeysAsync(cancellationToken).ConfigureAwait(false);
         List<EligibleCandidate> eligible = [];
+        // Whether some candidate was refused for capacity alone. That is what "the vehicle is full"
+        // means, and it is only knowable here: it takes the candidate's own basket count.
+        bool slotStarved = false;
         foreach (AcceptedDemandSnapshot candidate in snapshot.Items)
         {
             string reason = "ELIGIBLE";
@@ -317,13 +425,24 @@ public sealed class JourneyRuntimeEngine(
                     {
                         reason = "EXPECTED_BASKET_COUNT_OUT_OF_RANGE";
                     }
-                    else if (onboard.AvailableSlots.Length < expectedBasketCount)
-                    {
-                        reason = "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE";
-                    }
                     else
                     {
-                        targetSlots = onboard.AvailableSlots.Take(expectedBasketCount).ToArray();
+                        int[] free = onboard.AvailableSlots
+                            .Except(reservedSlots)
+                            .Order()
+                            .ToArray();
+                        if (free.Length < expectedBasketCount)
+                        {
+                            // ADR-cross-0057's "full": not every slot occupied, but too few free to
+                            // take this candidate whole. A demand's baskets go on in one go or not
+                            // at all.
+                            reason = "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE";
+                            slotStarved = true;
+                        }
+                        else
+                        {
+                            targetSlots = free.Take(expectedBasketCount).ToArray();
+                        }
                     }
                 }
             }
@@ -336,87 +455,7 @@ public sealed class JourneyRuntimeEngine(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        if (eligible.Count == 0)
-        {
-            return;
-        }
-        if (await dbContext.VehicleDispatchLeases.AnyAsync(
-                row => row.VehicleKey == runtimeOptions.VehicleKey && row.ReleasedAt == null,
-                cancellationToken).ConfigureAwait(false))
-        {
-            return;
-        }
-
-        EligibleCandidate selected = eligible
-            .OrderBy(item => item.FirstSeenAt)
-            .ThenBy(item => item.Snapshot.CreatedAt)
-            .ThenBy(item => item.Snapshot.DemandId, StringComparer.Ordinal)
-            .First();
-        long expectedSessionGeneration = onboard?.SessionGeneration
-            ?? throw new InvalidOperationException("An eligible candidate requires current Onboard facts.");
-        if (!await FinalDynamicFactsReadyAsync(
-                expectedSessionGeneration,
-                selected.TargetSlots,
-                cancellationToken).ConfigureAwait(false))
-        {
-            await SetBacklogReasonAsync(
-                selected.Snapshot.DemandId,
-                "FINAL_DYNAMIC_FACTS_NOT_READY",
-                timeProvider.GetUtcNow(),
-                cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        DateTimeOffset intakeAt = timeProvider.GetUtcNow();
-        JourneyExecutionPlan plan = CreatePlan(selected, intakeAt);
-        JourneyStopPlan firstStop = plan.Stops.Single(stop => stop.Sequence == FirstStopSequence);
-        OrderIntent pickup = new(
-            firstStop.MovementLegId,
-            selected.Snapshot.DemandId,
-            firstStop.UpperId,
-            "TO_PICKUP",
-            firstStop.StationId,
-            intakeAt,
-            plan.VehicleKey,
-            plan.MapId,
-            firstStop.StationRiotId,
-            plan.AgvLifecycleGeneration,
-            plan.DispatchGeneration);
-        JourneyIntakeResult result = await intakeCoordinator.AcceptAndDispatchToPickupAsync(
-            selected.Snapshot,
-            pickup,
-            plan,
-            token => FinalDynamicFactsReadyAsync(
-                expectedSessionGeneration,
-                selected.TargetSlots,
-                token),
-            cancellationToken).ConfigureAwait(false);
-        if (result.IntakeOutcome != DemandIntakeOutcome.Accepted)
-        {
-            await SetBacklogReasonAsync(
-                selected.Snapshot.DemandId,
-                result.IntakeOutcome switch
-                {
-                    DemandIntakeOutcome.CandidateGone => "FINAL_CATALOG_CANDIDATE_GONE",
-                    DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
-                    DemandIntakeOutcome.FinalAdmissionRejected => "FINAL_DYNAMIC_FACTS_NOT_READY",
-                    _ => throw new InvalidOperationException(
-                        $"Unsupported intake outcome '{result.IntakeOutcome}'.")
-                },
-                timeProvider.GetUtcNow(),
-                cancellationToken).ConfigureAwait(false);
-            return;
-        }
-        if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
-        {
-            JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
-                .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken)
-                .ConfigureAwait(false);
-            runtime.BlockReasonCode = result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED";
-            runtime.UpdatedAt = now;
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
+        return new CandidateScoring(eligible, onboard, slotStarved);
     }
 
     private async Task AdvanceAsync(
@@ -425,8 +464,6 @@ public sealed class JourneyRuntimeEngine(
         RiotMapStation gate,
         CancellationToken cancellationToken)
     {
-        _ = currentMap;
-        _ = gate;
         DateTimeOffset now = timeProvider.GetUtcNow();
         JourneyStopRow[] stops = await StopsAsync(runtime, cancellationToken).ConfigureAwait(false);
         JourneyDemandRow[] demands = await DemandsAsync(runtime, cancellationToken).ConfigureAwait(false);
@@ -483,13 +520,23 @@ public sealed class JourneyRuntimeEngine(
                     return;
                 }
                 stop.State = JourneyStopState.Arrived;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                // Everything the catalog offers at this stop goes into the first worklist, rather
+                // than one demand now and the rest one batch at a time. ADR-cross-0048 describes a
+                // stop's worklist as what is waiting *there*, plural.
+                (stops, demands, stop) = await FillJourneyAsync(
+                    runtime, stops, stop, demands, currentMap, gate, now, cancellationToken)
+                    .ConfigureAwait(false);
                 await PublishStopArrivalAsync(runtime, stops, stop, demands, session, cancellationToken)
                     .ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now, stop);
                 break;
             case JourneyRuntimeStage.AwaitingSublot:
                 JourneyDemandRow[] pending = UncommandedAt(demands, stop);
-                if (pending.Length == 0)
+                // Waiting for an operator is where the holding limit actually bites: the vehicle
+                // stands loaded while nobody scans. Nothing is commanded in this stage, so leaving
+                // now interrupts no slot operation.
+                if (pending.Length == 0 || HoldingExpired(runtime, now))
                 {
                     // Nothing left to load here. Whether that means the next pickup stop or the gate
                     // is one decision, made in one place.
@@ -498,7 +545,7 @@ public sealed class JourneyRuntimeEngine(
                     break;
                 }
                 SublotEntry? entry = await FindMatchingSublotAsync(
-                    runtime, stop, pending, session, cancellationToken).ConfigureAwait(false);
+                    runtime, stop, demands, session, cancellationToken).ConfigureAwait(false);
                 if (entry is null)
                 {
                     if (await TryTimeOutSublotWaitAsync(
@@ -572,6 +619,13 @@ public sealed class JourneyRuntimeEngine(
                     // later batch or a later stop -- a vehicle that keeps being given new demands
                     // would otherwise never leave for the gate.
                     runtime.HoldingStartedAt ??= now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    // A batch just closed, so the vehicle is safe to take on more -- and whether it
+                    // can is exactly what decides between another round here, another stop, and the
+                    // gate.
+                    (stops, demands, stop) = await FillJourneyAsync(
+                        runtime, stops, stop, demands, currentMap, gate, now, cancellationToken)
+                        .ConfigureAwait(false);
                     if (await TryContinueLoadingAtStopAsync(
                             runtime, stop, demands, session, now, cancellationToken).ConfigureAwait(false))
                     {
@@ -868,7 +922,7 @@ public sealed class JourneyRuntimeEngine(
             stop.PlanMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Plan(runtime, stops, stop),
+            Plan(runtime, stops, stop, demands),
             cancellationToken).ConfigureAwait(false);
         await PublishLoadRoundAsync(runtime, stop, demands, session, cancellationToken).ConfigureAwait(false);
     }
@@ -920,7 +974,7 @@ public sealed class JourneyRuntimeEngine(
                 // the request happens to name: "允许 T 的目标站点与操作员当前物理站点不完全相同，
                 // 只要 T 在范围内". Every sublot this journey still has to load is offered, wherever
                 // its stop is; which one the operator scans decides which demand loads next.
-                LoadableSublots(demands, accepted)),
+                LoadableSublots(demands, accepted, stop)),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -983,7 +1037,7 @@ public sealed class JourneyRuntimeEngine(
             stop.PlanMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Plan(runtime, stops, stop),
+            Plan(runtime, stops, stop, demands),
             cancellationToken).ConfigureAwait(false);
         JourneyDemandRow first = UnloadingAt(demands);
         first.UnloadCommandedAt = timeProvider.GetUtcNow();
@@ -1020,17 +1074,26 @@ public sealed class JourneyRuntimeEngine(
 
     /// <summary>
     /// The operator's entry, matched to the demand it names. The sublot decides which demand loads
-    /// next, so the match is against every demand still pending at this stop rather than against one
-    /// expected string -- BR-001 scopes entry to the dispatch range, not to a single task.
+    /// next, and the candidates are every demand this journey has still to load -- not just the ones
+    /// planned for this stop.
     /// </summary>
+    /// <remarks>
+    /// FR-001 AC-3 is explicit that the target station of what is entered need not be the station
+    /// the operator is standing at, as long as it is in the dispatch range, and BR-001 says a range
+    /// may span neighbouring stations. So a demand entered here is loaded here: its planned stop
+    /// moves to this one, and the stop it was going to be loaded at simply has nothing left to do.
+    /// </remarks>
     private async Task<SublotEntry?> FindMatchingSublotAsync(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
-        IReadOnlyList<JourneyDemandRow> pending,
+        IReadOnlyList<JourneyDemandRow> demands,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow[] accepted = await AcceptedDemandsForAsync(pending, cancellationToken)
+        JourneyDemandRow[] enterable = demands
+            .Where(row => row.State == JourneyDemandState.Planned && row.LoadCommandedAt is null)
+            .ToArray();
+        AcceptedDemandRow[] accepted = await AcceptedDemandsForAsync(enterable, cancellationToken)
             .ConfigureAwait(false);
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SublotSubmitted")
@@ -1043,7 +1106,7 @@ public sealed class JourneyRuntimeEngine(
             JsonElement payload = root.GetProperty("payload");
             // 判过一次的提交不再进入匹配：被拒的那条留在 inbox 里，否则每一轮都会重新触发一次
             // 远程重算，也会把同一条拒绝反复发给对端。
-            if (pending.Any(demand => demand.ConsumedSublotMessageId == row.MessageId))
+            if (enterable.Any(demand => demand.ConsumedSublotMessageId == row.MessageId))
             {
                 continue;
             }
@@ -1061,7 +1124,7 @@ public sealed class JourneyRuntimeEngine(
                 string.Equals(item.Sublot, submittedSublot, StringComparison.Ordinal));
             JourneyDemandRow? membership = demand is null
                 ? null
-                : pending.SingleOrDefault(item => item.DemandId == demand.DemandId);
+                : enterable.SingleOrDefault(item => item.DemandId == demand.DemandId);
             if (demand is null || membership is null)
             {
                 runtime.BlockReasonCode = "SUBLOT_SUBMISSION_MISMATCH";
@@ -1073,6 +1136,8 @@ public sealed class JourneyRuntimeEngine(
                 runtime.BlockReasonCode = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
                 return null;
             }
+            // Entered here, so loaded here. The station admission just checked is this stop's.
+            membership.StopSequence = stop.Sequence;
             return new SublotEntry(row, membership);
         }
         return null;
@@ -1905,12 +1970,18 @@ public sealed class JourneyRuntimeEngine(
     private static UpcomingStopPlanProjection Plan(
         JourneyRuntimeRow runtime,
         IReadOnlyList<JourneyStopRow> stops,
-        JourneyStopRow current) => new(
+        JourneyStopRow current,
+        IReadOnlyList<JourneyDemandRow> demands) => new(
             current.PlanRevision,
             // Null because a journey's plan belongs to the journey, not to any one demand it
             // carries. The field is nullable in the schema for exactly this.
             null,
-            stops.OrderBy(row => row.Sequence)
+            stops.Where(row =>
+                    row.Sequence == current.Sequence ||
+                    row.Role == JourneyStopRole.Gate ||
+                    row.State != JourneyStopState.Planned ||
+                    UncommandedAt(demands, row).Length > 0)
+                .OrderBy(row => row.Sequence)
                 .Select((row, index) => new UpcomingMovementLeg(
                     row.MovementLegId,
                     row.LegType,
@@ -2180,8 +2251,13 @@ public sealed class JourneyRuntimeEngine(
     /// </summary>
     private static string[] LoadableSublots(
         IReadOnlyList<JourneyDemandRow> demands,
-        IReadOnlyList<AcceptedDemandRow> accepted) =>
-        demands.Where(row => row.State == JourneyDemandState.Planned)
+        IReadOnlyList<AcceptedDemandRow> accepted,
+        JourneyStopRow stop) =>
+        demands.Where(row => row.State == JourneyDemandState.Planned && row.LoadCommandedAt is null)
+            // The set is the whole range; the order puts this stop's own first, because that is what
+            // the operator standing here is most likely holding.
+            .OrderBy(row => row.StopSequence == stop.Sequence ? 0 : 1)
+            .ThenBy(row => row.CreatedAt)
             .Select(row => accepted.Single(item => item.DemandId == row.DemandId).Sublot)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
@@ -2217,8 +2293,11 @@ public sealed class JourneyRuntimeEngine(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (UncommandedAt(demands, stop).Length == 0 ||
-            CloseLoading(runtime, demands, now) is not null)
+        // Not gated on the loading phase being closed: a demand already on this journey has its
+        // slots reserved and is on the worklist in front of the operator. "Full" means no *further*
+        // candidate fits, not that what was promised gets left on the platform. Only the holding
+        // limit cuts a stop short, and it terminates what it abandons rather than dropping it.
+        if (UncommandedAt(demands, stop).Length == 0 || HoldingExpired(runtime, now))
         {
             return false;
         }
@@ -2237,30 +2316,177 @@ public sealed class JourneyRuntimeEngine(
     /// Why the loading phase should end now, or <c>null</c> when it should not.
     /// </summary>
     /// <remarks>
-    /// ADR-cross-0057: "full" is not every slot occupied but too few free to take the next candidate
-    /// whole -- a demand's baskets have to go on in one go to be worth loading -- and the holding
-    /// limit runs from the first batch that closed safely, once, for the journey. An empty vehicle
-    /// is never held too long: before cargo is aboard there is no holding risk, and a stop with
-    /// nothing to load is ADR-cross-0055's business.
+    /// ADR-cross-0057 gives two reasons, whichever comes first. This is the deadline half: the
+    /// holding limit runs from the first batch that closed safely, once, for the whole journey. An
+    /// empty vehicle is never held too long -- before cargo is aboard there is no holding risk, and
+    /// a stop with nothing to load is ADR-cross-0055's business, not this one's.
+    ///
+    /// The other half, "full", cannot be decided from the journey alone: it is not every slot
+    /// occupied but too few free to take the *next candidate* whole, and what that candidate needs
+    /// comes from the catalog. <see cref="TryTakeOnMoreCargoAsync"/> records it when the scoring says
+    /// so, and this reads it back off <see cref="JourneyRuntimeRow.LoadingClosedReason"/>.
     /// </remarks>
     private string? CloseLoading(
         JourneyRuntimeRow runtime,
         IReadOnlyList<JourneyDemandRow> demands,
         DateTimeOffset now)
     {
+        _ = demands;
         if (runtime.LoadingClosedReason is { } already)
         {
             return already;
         }
-        if (runtimeOptions.HoldingTimeout > TimeSpan.Zero &&
-            runtime.HoldingStartedAt is { } holdingSince &&
-            now - holdingSince >= runtimeOptions.HoldingTimeout)
+        return HoldingExpired(runtime, now) ? "HOLDING_TIMEOUT" : null;
+    }
+
+    /// <summary>
+    /// Whether the journey has held cargo past the limit. Measured from the first batch that closed
+    /// safely, not from acceptance or arrival: before cargo is aboard there is nothing being held.
+    /// </summary>
+    private bool HoldingExpired(JourneyRuntimeRow runtime, DateTimeOffset now) =>
+        runtimeOptions.HoldingTimeout > TimeSpan.Zero &&
+        runtime.HoldingStartedAt is { } holdingSince &&
+        now - holdingSince >= runtimeOptions.HoldingTimeout;
+
+    /// <summary>
+    /// Takes on demands until the vehicle can hold no more, then re-reads the journey. The re-read
+    /// is what the caller needs: every acceptance adds rows the arrays it holds do not have.
+    /// </summary>
+    /// <remarks>
+    /// Bounded by the vehicle's slot count rather than left to terminate on its own. It does
+    /// terminate -- an accepted demand is never a candidate again and its reservation shrinks the
+    /// free set -- but a loop that drives real dispatch should not be relying on that.
+    /// </remarks>
+    private async Task<(JourneyStopRow[] Stops, JourneyDemandRow[] Demands, JourneyStopRow Stop)> FillJourneyAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow[] stops,
+        JourneyStopRow stop,
+        JourneyDemandRow[] demands,
+        RiotMapStationCatalogSnapshot currentMap,
+        RiotMapStation gate,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        for (int taken = 0; taken < MaxPickupStops; taken++)
         {
-            return "HOLDING_TIMEOUT";
+            if (!await TryTakeOnMoreCargoAsync(
+                    runtime, stops, stop, demands, currentMap, gate, now, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                break;
+            }
+            stops = await StopsAsync(runtime, cancellationToken).ConfigureAwait(false);
+            demands = await DemandsAsync(runtime, cancellationToken).ConfigureAwait(false);
+            stop = stops.Single(row => row.Sequence == stop.Sequence);
         }
-        return demands.Count(row => row.State != JourneyDemandState.Cancelled) >= MaxPickupStops
-            ? "VEHICLE_FULL"
+        return (stops, demands, stop);
+    }
+
+    /// <summary>
+    /// Takes one more demand onto this journey while it is still loading: at the stop the vehicle is
+    /// parked at when the demand's pickup station is that stop, otherwise at a stop appended for it.
+    /// Returns whether anything was taken on.
+    /// </summary>
+    /// <remarks>
+    /// This is what makes "full or held too long" a real decision -- ADR-cross-0057's loading phase
+    /// ends when the vehicle can take no more or has held cargo too long, and without new candidates
+    /// arriving it would always end at the first demand instead. Every gate discovery applies still
+    /// applies: the same scoring, the same suppression list, the same re-read of the catalog before
+    /// the demand is recorded. What it does not do is take a lease or create a movement intent --
+    /// the journey already holds the vehicle, and the leg is authorized on departure.
+    /// </remarks>
+    private async Task<bool> TryTakeOnMoreCargoAsync(
+        JourneyRuntimeRow runtime,
+        IReadOnlyList<JourneyStopRow> stops,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyDemandRow> demands,
+        RiotMapStationCatalogSnapshot currentMap,
+        RiotMapStation gate,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (runtime.LoadingClosedReason is not null || CloseLoading(runtime, demands, now) is not null)
+        {
+            return false;
+        }
+
+        int[] reserved = demands
+            .Where(row => row.State != JourneyDemandState.Cancelled)
+            .SelectMany(row => JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? [])
+            .Distinct()
+            .ToArray();
+        CandidateScoring scoring = await ScoreCandidatesAsync(
+            currentMap, gate, reserved, now, cancellationToken).ConfigureAwait(false);
+        if (scoring.Onboard is null || scoring.Eligible.Count == 0)
+        {
+            if (scoring.SlotStarved)
+            {
+                // ADR-cross-0057's "full": something is waiting and the vehicle cannot take it
+                // whole. The loading phase ends here rather than at the next stop, because the
+                // answer will not change until cargo comes off at the gate.
+                runtime.LoadingClosedReason ??= "VEHICLE_FULL";
+            }
+            return false;
+        }
+
+        int pickupStops = stops.Count(row => row.Role == JourneyStopRole.Pickup);
+        // A candidate at this very stop needs no new stop; one elsewhere does, and the itinerary
+        // cannot grow past the vehicle's slot count.
+        EligibleCandidate[] reachable = scoring.Eligible
+            .Where(candidate =>
+                string.Equals(candidate.Route.PickupStationId, stop.StationId, StringComparison.Ordinal) ||
+                stops.Any(row =>
+                    row.Role == JourneyStopRole.Pickup &&
+                    row.State == JourneyStopState.Planned &&
+                    string.Equals(row.StationId, candidate.Route.PickupStationId, StringComparison.Ordinal)) ||
+                pickupStops < MaxPickupStops)
+            .ToArray();
+        if (reachable.Length == 0)
+        {
+            return false;
+        }
+
+        EligibleCandidate selected = Preferred(reachable);
+        JourneyStopRow? existingStop = stops.FirstOrDefault(row =>
+            row.Role == JourneyStopRole.Pickup &&
+            string.Equals(row.StationId, selected.Route.PickupStationId, StringComparison.Ordinal) &&
+            (row.Sequence == stop.Sequence || row.State == JourneyStopState.Planned));
+        JourneyStopPlan? appended = existingStop is null
+            ? StopPlan(
+                runtime.JourneyId,
+                stops.Where(row => row.Role == JourneyStopRole.Pickup).Max(row => row.Sequence) + 1,
+                JourneyStopRole.Pickup,
+                selected.Route.PickupStationId,
+                selected.Route.PickupStationRiotId,
+                selected.Route.RouteEvidenceId,
+                "TO_PICKUP")
             : null;
+        long expectedSessionGeneration = scoring.Onboard.SessionGeneration;
+        DemandIntakeOutcome outcome = await intakeCoordinator.JoinJourneyAsync(
+            selected.Snapshot,
+            runtime.JourneyId,
+            appended,
+            new JourneyDemandPlan(
+                selected.Snapshot.DemandId,
+                existingStop?.Sequence ?? appended!.Sequence,
+                selected.ExpectedBasketCount,
+                selected.TargetSlots),
+            token => FinalDynamicFactsReadyAsync(
+                expectedSessionGeneration,
+                selected.TargetSlots,
+                token),
+            cancellationToken).ConfigureAwait(false);
+        if (outcome != DemandIntakeOutcome.Accepted)
+        {
+            await SetBacklogReasonAsync(
+                selected.Snapshot.DemandId,
+                BacklogReasonFor(outcome),
+                timeProvider.GetUtcNow(),
+                cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -2281,14 +2507,37 @@ public sealed class JourneyRuntimeEngine(
         {
             runtime.LoadingClosedReason ??= reason;
         }
-        JourneyStopRow? nextPickup = runtime.LoadingClosedReason is null
-            ? stops.FirstOrDefault(row =>
-                row.Role == JourneyStopRole.Pickup &&
-                row.Sequence > stop.Sequence &&
-                UncommandedAt(demands, row).Length > 0)
-            : null;
+        if (HoldingExpired(runtime, now))
+        {
+            // The limit is a hard one, so what has not started loading is terminated here rather
+            // than carried to the gate unloadable. CANCELLED_BY_STOP_COMPLETE is the registered
+            // reason for "loading at this stop is judged finished and the untouched demands end with
+            // it" -- UC-002 reaches it by an operator pressing the button, this reaches it by the
+            // clock, and the audit subject is the same. Leaving them Planned would also hold the
+            // vehicle's lease forever: a journey is settled only when no demand is still open.
+            foreach (JourneyDemandRow abandoned in demands
+                .Where(row => row.State == JourneyDemandState.Planned && row.LoadCommandedAt is null)
+                .ToArray())
+            {
+                await store.CancelDemandBeforeLoadAsync(
+                    abandoned.DemandId, "CANCELLED_BY_STOP_COMPLETE", now, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            demands = await DemandsAsync(runtime, cancellationToken).ConfigureAwait(false);
+        }
+        JourneyStopRow? nextPickup = stops.FirstOrDefault(row =>
+            row.Role == JourneyStopRole.Pickup &&
+            row.Sequence > stop.Sequence &&
+            UncommandedAt(demands, row).Length > 0);
         JourneyStopRow target = nextPickup
             ?? stops.Single(row => row.Role == JourneyStopRole.Gate);
+        if (target.Role == JourneyStopRole.Gate)
+        {
+            // Heading for the gate always means loading is over, so the field always names why.
+            // Without this it would read null on the ordinary case -- nothing more on offer -- which
+            // is indistinguishable from "still loading".
+            runtime.LoadingClosedReason ??= "NO_FURTHER_CARGO";
+        }
         if (target.Role == JourneyStopRole.Gate && !demands.Any(row =>
                 row.State is JourneyDemandState.Planned or JourneyDemandState.Loaded))
         {
@@ -2316,6 +2565,17 @@ public sealed class JourneyRuntimeEngine(
 
     /// <summary>One operator entry, paired with the demand its sublot names.</summary>
     private sealed record SublotEntry(ProtocolInboxRow Submission, JourneyDemandRow Demand);
+
+    /// <summary>
+    /// One pass over the catalog: which candidates may be dispatched, and the Onboard facts they
+    /// were judged against. <see cref="Onboard"/> is null when the vehicle told us nothing usable,
+    /// which is also why the list is then empty -- the two travel together so a caller cannot act on
+    /// a candidate without the facts behind it.
+    /// </summary>
+    private sealed record CandidateScoring(
+        IReadOnlyList<EligibleCandidate> Eligible,
+        OnboardFacts? Onboard,
+        bool SlotStarved);
 
     private sealed record EligibleCandidate(
         AcceptedDemandSnapshot Snapshot,

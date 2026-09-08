@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text.Json;
 using ControlServer.Domain;
 
@@ -43,10 +43,42 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         CancellationToken cancellationToken) =>
         AcceptCoreAsync(discovered, orderIntent, journey, finalAdmissionGate, cancellationToken);
 
-    private async Task<DemandIntakeOutcome> AcceptCoreAsync(
+    /// <summary>
+    /// Takes a demand onto a journey that is already under way. The catalog is re-read and the
+    /// decision facts re-checked exactly as they are when a journey starts -- the demand was scored
+    /// against a poll that is now seconds old either way.
+    /// </summary>
+    public async Task<DemandIntakeOutcome> JoinJourneyAsync(
         AcceptedDemandSnapshot discovered,
-        OrderIntent orderIntent,
-        JourneyExecutionPlan? journey,
+        string journeyId,
+        JourneyStopPlan? appendedStop,
+        JourneyDemandPlan demand,
+        Func<CancellationToken, Task<bool>> finalAdmissionGate,
+        CancellationToken cancellationToken)
+    {
+        (DemandIntakeOutcome outcome, AcceptedDemandSnapshot? accepted) = await RevalidateAsync(
+            discovered, finalAdmissionGate, cancellationToken).ConfigureAwait(false);
+        if (accepted is null)
+        {
+            return outcome;
+        }
+        if (store is not IJourneyAcceptanceStore journeyStore)
+        {
+            throw new InvalidOperationException("The configured demand store cannot join a journey.");
+        }
+
+        await journeyStore.JoinJourneyAsync(accepted, journeyId, appendedStop, demand, cancellationToken)
+            .ConfigureAwait(false);
+        return DemandIntakeOutcome.Accepted;
+    }
+
+    /// <summary>
+    /// Re-reads the catalog and re-checks the decision facts the candidate was scored on. The
+    /// snapshot it returns carries the final poll's history epoch and catalog revision, which is
+    /// what the acceptance is recorded against.
+    /// </summary>
+    private async Task<(DemandIntakeOutcome Outcome, AcceptedDemandSnapshot? Snapshot)> RevalidateAsync(
+        AcceptedDemandSnapshot discovered,
         Func<CancellationToken, Task<bool>>? finalAdmissionGate,
         CancellationToken cancellationToken)
     {
@@ -55,26 +87,40 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
             string.Equals(candidate.DemandId, discovered.DemandId, StringComparison.Ordinal));
         if (current is null)
         {
-            return DemandIntakeOutcome.CandidateGone;
+            return (DemandIntakeOutcome.CandidateGone, null);
         }
-
-        bool sameDecisionFacts = HasSameDecisionFacts(discovered, current) &&
-                                 string.Equals(finalCatalog.HistoryEpoch, discovered.HistoryEpoch, StringComparison.Ordinal);
-        if (!sameDecisionFacts)
+        if (!HasSameDecisionFacts(discovered, current) ||
+            !string.Equals(finalCatalog.HistoryEpoch, discovered.HistoryEpoch, StringComparison.Ordinal))
         {
-            return DemandIntakeOutcome.CandidateChanged;
+            return (DemandIntakeOutcome.CandidateChanged, null);
         }
         if (finalAdmissionGate is not null &&
             !await finalAdmissionGate(cancellationToken).ConfigureAwait(false))
         {
-            return DemandIntakeOutcome.FinalAdmissionRejected;
+            return (DemandIntakeOutcome.FinalAdmissionRejected, null);
         }
 
-        AcceptedDemandSnapshot accepted = current with
+        return (DemandIntakeOutcome.Accepted, current with
         {
             HistoryEpoch = finalCatalog.HistoryEpoch,
             CatalogRevision = finalCatalog.CatalogRevision
-        };
+        });
+    }
+
+    private async Task<DemandIntakeOutcome> AcceptCoreAsync(
+        AcceptedDemandSnapshot discovered,
+        OrderIntent orderIntent,
+        JourneyExecutionPlan? journey,
+        Func<CancellationToken, Task<bool>>? finalAdmissionGate,
+        CancellationToken cancellationToken)
+    {
+        (DemandIntakeOutcome outcome, AcceptedDemandSnapshot? accepted) = await RevalidateAsync(
+            discovered, finalAdmissionGate, cancellationToken).ConfigureAwait(false);
+        if (accepted is null)
+        {
+            return outcome;
+        }
+
         if (journey is null)
         {
             await store.AcceptWithOrderIntentAsync(accepted, orderIntent, cancellationToken).ConfigureAwait(false);
@@ -914,6 +960,26 @@ public sealed class JourneyIntakeCoordinator(
             cancellationToken).ConfigureAwait(false);
         return new JourneyIntakeResult(intakeOutcome, dispatch);
     }
+
+    /// <summary>
+    /// Takes a demand onto a journey already under way. There is no dispatch here: the leg that
+    /// reaches its stop is created when the vehicle leaves the previous one, so this is intake
+    /// alone.
+    /// </summary>
+    public Task<DemandIntakeOutcome> JoinJourneyAsync(
+        AcceptedDemandSnapshot prevalidatedCandidate,
+        string journeyId,
+        JourneyStopPlan? appendedStop,
+        JourneyDemandPlan demand,
+        Func<CancellationToken, Task<bool>> finalAdmissionGate,
+        CancellationToken cancellationToken) =>
+        intake.JoinJourneyAsync(
+            prevalidatedCandidate,
+            journeyId,
+            appendedStop,
+            demand,
+            finalAdmissionGate,
+            cancellationToken);
 
     public async Task<JourneyIntakeResult> AcceptAndDispatchToPickupAsync(
         AcceptedDemandSnapshot prevalidatedCandidate,

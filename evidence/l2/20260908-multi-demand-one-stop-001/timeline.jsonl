@@ -1,0 +1,27 @@
+{"at":"2026-09-08T05:31:45.8812209+00:00","note":"L2 run 20260908T053145845Z starting for scenario 'multi-demand-one-stop'."}
+{"at":"2026-09-08T05:31:45.9097704+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T05:31:50.9675747+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T05:31:51.1098936+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T05:31:53.1547478+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T05:31:54.2617959+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T05:31:54.9498480+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T05:31:54.9670184+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T05:31:55.0349728+00:00","note":"Environment is up; entering scenario 'multi-demand-one-stop'."}
+{"at":"2026-09-08T05:31:55.1323558+00:00","note":"Publishing two demands (L2-SUBLOT-A-20260908T053145845Z, L2-SUBLOT-B-20260908T053145845Z) at one pickup station."}
+{"at":"2026-09-08T05:31:55.2551950+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-08T05:31:56.5906931+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T05:31:56.6017274+00:00","criterion":"to-pickup-intent","value":"PENDING_RECONCILIATION"}
+{"at":"2026-09-08T05:31:56.8634905+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-08T05:31:56.8808637+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-08T05:31:56.9513031+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-08T05:31:56.9839784+00:00","criterion":"loaded-demands","value":"0"}
+{"at":"2026-09-08T05:31:58.5478430+00:00","criterion":"loaded-demands","value":"1"}
+{"at":"2026-09-08T05:32:00.0973953+00:00","criterion":"loaded-demands","value":"2"}
+{"at":"2026-09-08T05:32:00.1675542+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-08T05:32:00.4252019+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-08T05:32:01.2236627+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-08T05:32:01.2320296+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-09-08T05:32:01.2445018+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-08T05:32:02.5798270+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-08T05:32:04.1267743+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-08T05:32:04.1782989+00:00","note":"Scenario finished."}

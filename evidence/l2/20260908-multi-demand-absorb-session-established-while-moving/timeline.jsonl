@@ -1,0 +1,28 @@
+{"at":"2026-09-08T05:33:40.6197386+00:00","note":"L2 run 20260908T053340590Z starting for scenario 'session-established-while-moving'."}
+{"at":"2026-09-08T05:33:40.6311426+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T05:33:44.1440835+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T05:33:44.2507240+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T05:33:45.7865063+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T05:33:46.8824016+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T05:33:46.8989958+00:00","note":"Onboard seed from session-established-while-moving.setup.psd1: vehicleStopped=false"}
+{"at":"2026-09-08T05:33:47.5198534+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T05:33:47.5357013+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T05:33:47.5886150+00:00","note":"Environment is up; entering scenario 'session-established-while-moving'."}
+{"at":"2026-09-08T05:33:47.7479590+00:00","note":"Publishing demand 3ef5ebe4ee384ca2b12cc2f3724b80bf (sublot L2-SUBLOT-20260908T053340590Z) while the vehicle is still moving."}
+{"at":"2026-09-08T05:33:47.7935613+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-08T05:33:48.8398747+00:00","criterion":"backlog-reason","value":"ONBOARD_DEPARTURE_UNSAFE"}
+{"at":"2026-09-08T05:33:48.8566345+00:00","note":"Vehicle comes to rest; the peer reports the change."}
+{"at":"2026-09-08T05:33:48.8754346+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-08T05:33:50.2124876+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T05:33:50.2435204+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-08T05:33:50.5094780+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-bde58201-c49a-1f5f-b253-87433b717d01-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-08T05:33:50.5129223+00:00","note":"Vehicle departs for the pickup station; the peer reports it moving again."}
+{"at":"2026-09-08T05:33:50.5953369+00:00","note":"RIoT reports a complete arrival while the peer still says the vehicle is moving."}
+{"at":"2026-09-08T05:33:50.6360339+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-08T05:33:51.6944613+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-08T05:33:52.7562829+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-08T05:33:53.8178880+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-08T05:33:54.6146098+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-08T05:33:54.6203179+00:00","note":"Vehicle comes to rest at the pickup station; the peer reports the change."}
+{"at":"2026-09-08T05:33:55.9616426+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-08T05:33:55.9716776+00:00","note":"Scenario finished."}
