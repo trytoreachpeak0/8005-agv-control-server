@@ -89,6 +89,7 @@ public sealed record VehicleBusinessBlockingFact(
 public sealed record VehicleBusinessProjection(
     long Revision,
     string Readiness,
+    string? ActivePurpose,
     bool ManualChargingHold,
     string BatteryState,
     IReadOnlyList<VehicleBusinessBlockingFact> BlockingFacts);
@@ -107,9 +108,32 @@ public sealed record CurrentStopWorklistProjection(
     string? OperationSessionId,
     IReadOnlyList<CurrentStopWorklistItem> Items);
 
+/// <summary>
+/// One leg of the plan the vehicle is shown.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b><see cref="LegType"/> is <c>TO_PICKUP</c> or <c>TO_DROPOFF</c>, never <c>TO_GATE</c>.</b>
+/// The gate is one destination among the six task types v2 froze, and the protocol renamed the leg
+/// after what it is rather than after this profile's only instance of it -- the same rename that
+/// took <c>CV-GATE-UNLOAD-ALL-EMPTY</c> to <c>CV-DESTINATION-UNLOAD-ALL-EMPTY</c>. The server's own
+/// internal movement purpose is still <c>TO_GATE</c>; that string is a RIoT intent and an arrival
+/// purpose, not a wire value, and the two must not be conflated.
+/// </para>
+/// <para>
+/// <see cref="DemandId"/> moved here from the payload's top level in v2: with <c>legs.maxItems</c>
+/// at 9 a plan can span several demands, so one demand id for the whole snapshot has no meaning.
+/// <see cref="PublicStationFunction"/> is nullable and null today -- binding a station to a public
+/// function is <c>FP-C9b</c>, batch 4, and naming one from the leg's own station id would be
+/// inventing that capability rather than reporting it.
+/// </para>
+/// </remarks>
 public sealed record UpcomingMovementLeg(
     string MovementLegId,
-    string LegType,
+    string? LegType,
+    string StopPurposeCategory,
+    string? DemandId,
+    string? PublicStationFunction,
     int Sequence,
     string StationId,
     string MapId,
@@ -117,7 +141,6 @@ public sealed record UpcomingMovementLeg(
 
 public sealed record UpcomingStopPlanProjection(
     long Revision,
-    string? DemandId,
     IReadOnlyList<UpcomingMovementLeg> Legs);
 
 public sealed record SublotEntryRequest(

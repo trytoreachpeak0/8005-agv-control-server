@@ -14,16 +14,15 @@ namespace ControlServer.Domain;
 /// rather than each message against its schema.
 /// </para>
 /// <para>
-/// **This list is synced to the v2 candidate; the identity beside it is not.** The 54 values below
-/// are <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate
-/// manifest <c>84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788</c>
+/// **This list and the identity beside it now name the same candidate.** The 54 values below are
+/// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
+/// <c>84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788</c>
 /// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, <c>protocolVersion: 2</c>),
-/// while <see cref="ProtocolCandidateIdentity"/> still names <c>protocol-v0.1.1</c>. The two are
-/// deliberately out of step, and only in the direction that is safe: eleven codes were appended in
-/// v2 and none removed, so the 43 the server speaks today are all still here and its wire behaviour
-/// is unchanged. What re-syncing buys is that the reason-code guard can now tell the truth about
-/// the nine codes this server already emits. Moving the identity is the other half — a two-ended
-/// change that L2 and <c>CONTROL_SERVER_G2</c> are pinned to — and does not belong with this.
+/// and <see cref="ProtocolCandidateIdentity"/> names that same commit. They were deliberately out
+/// of step for four days: this list moved to v2 first because eleven codes were appended and none
+/// removed, so re-syncing it could only let the reason-code guard tell the truth about the nine
+/// codes this server already emits, without touching wire behaviour. Moving the identity was the
+/// other half, and it is done.
 /// </para>
 /// <para>
 /// **Re-sync this list whenever the protocol's error surface moves**, which from here means either a

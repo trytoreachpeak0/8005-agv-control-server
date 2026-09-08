@@ -31,8 +31,9 @@ public sealed class RecoveryStateMachineG2Tests
     private const string OperatorId = "maintenance-001";
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
     public async Task ResumeAuthorizationPersistsFormalCommandBeforeSendAndReplaysSameIdentityAfterRestart()
     {
@@ -167,8 +168,9 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
     public async Task ResumeAdmitsExactlyOneReplacementResultForTheOperationThatAlreadyFailedItsFirstResult()
     {
@@ -224,8 +226,9 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
     public async Task ResumeRejectsAReplacementResultReportedOutsideTheAuthorizedSlotScope()
     {
@@ -267,8 +270,9 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
     public async Task ARefusedResultTellsTheVehicleItsSessionNeedsRecovery()
     {
@@ -329,8 +333,9 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-CONNECTION-LOSS-SAFE-FINISH")]
     [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
     public async Task ASessionIsNotReadyWhileTheServerHoldsAnOperationNeedingRecovery()
@@ -359,7 +364,7 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task ASessionIsReadyOnceItsOperationIsCommitted()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -382,8 +387,8 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
     public async Task AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized()
     {
@@ -449,8 +454,8 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
     public async Task ForcedRecoveryAdvancesOnceFencesOldOutboxAndKeepsLateGenerationAsEvidenceOnly()
     {
@@ -545,10 +550,10 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
     [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
     public async Task FailedCompensationResultIsDurableReplayableAndNeverReleasesDemandOrVehicle()
@@ -684,8 +689,8 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
     public async Task RecoveryReportCannotRegressOrInventForcedRecoveryGeneration()
     {
@@ -722,9 +727,10 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
     [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
     public async Task FormalCorrectionAndFaultCommandsUseDurableOutboxReplayAndExactAck()

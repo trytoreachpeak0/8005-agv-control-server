@@ -154,7 +154,7 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 
 - `protocolReleaseIdentity` —— 从跑起来的服务端 `/version` **读回**，不在脚本里复述。能按协议
   换代作废 L2 证据的只有 build 真的在线上强制的那一份身份；复述一遍只会让证据与脚本自洽而与
-  服务端无关。今天读回的是 `protocol-v0.1.1` 的九个字段加 `approvalStatus`。
+  服务端无关。今天读回的是 `protocol-v1.0.0` 候选的九个字段加 `approvalStatus`（`SUPERSEDING_CANDIDATE`）。
 - `batchId` —— `Invoke-L2Scenario.ps1` 的 `-BatchId` 参数，默认 `batch-2`。批次是计划，仓库里
   推不出来，所以它是参数而不是常量；CI 显式传，换批次改一个实参。
 

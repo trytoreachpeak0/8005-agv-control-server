@@ -16,12 +16,15 @@ public sealed class OnboardMessageProcessorTests
     private static readonly int[] FirstTwoSlots = [1, 2];
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task ProtocolProblemIsRecordedWithoutAnsweringOrDroppingTheSession()
     {
-        // protocol-v0.1.1 defines ProtocolProblem as how the peer reports a rejection. Throwing
-        // on it killed the transport, so the peer reconnected in a loop and the complaint that
-        // explained the rejection was lost.
+        // The protocol defines ProtocolProblem as how the peer reports a rejection. Throwing on it
+        // killed the transport, so the peer reconnected in a loop and the complaint that explained
+        // the rejection was lost. The expected* fields below deliberately still say v1: they are
+        // the peer's own account of what it was built against, and a peer complaining that it
+        // expected WIRE_TO_GATE_MVP is exactly what the v2 identity switch makes possible. The
+        // server records it and neither answers nor drops the session either way.
         const string credentialVariable = "CONTROL_SERVER_TEST_ONBOARD_PROBLEM_CREDENTIAL";
         const string credential = "test-credential-not-for-production";
         Environment.SetEnvironmentVariable(credentialVariable, credential);
@@ -89,8 +92,8 @@ public sealed class OnboardMessageProcessorTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-SNAPSHOT-REPLACE-AND-ACK")]
     public async Task SnapshotAppliedAcksUseExactWireContentHashAndProtocolKinds()
     {
@@ -172,8 +175,8 @@ public sealed class OnboardMessageProcessorTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-SESSION-RECOVERY-HAPPY")]
     public async Task CandidateHandshakeReachesReadyAndReplaysSessionResponse()
     {
@@ -255,8 +258,8 @@ public sealed class OnboardMessageProcessorTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     public async Task RecoveryStateReportAckDropRebindsAcrossSessionWithoutContentConflict()
     {
@@ -387,8 +390,8 @@ public sealed class OnboardMessageProcessorTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
     public async Task OnboardBusinessMessagesAreDurablyAcknowledgedAndOperationResultIsUniquePerAttempt()
     {
@@ -554,8 +557,8 @@ public sealed class OnboardMessageProcessorTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-DESTINATION-UNLOAD-ALL-EMPTY")]
     public async Task CompletedUnloadResultAtomicallyClosesDemandBeforeDurableAck()
     {
@@ -652,8 +655,8 @@ public sealed class OnboardMessageProcessorTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
     [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
     public async Task UnsafeSafetyStateChangeIsAcknowledgedThenFailClosesSessionReadiness()
     {
@@ -732,8 +735,8 @@ public sealed class OnboardMessageProcessorTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
     public async Task SafeSafetyStateChangeAcknowledgesAndPublishesReadyTransition()
     {
         const string credentialVariable = "CONTROL_SERVER_TEST_SAFE_CHANGE_CREDENTIAL";
@@ -819,11 +822,12 @@ public sealed class OnboardMessageProcessorTests
     /// <summary>
     /// The vehicle sends ManualChargingReturnToServiceRequested and nothing answered it: the type
     /// fell through to the switch's default and threw, which kills the transport. The pair is
-    /// frozen in protocol-v0.1.1 and the onboard client already sends the request.
+    /// frozen since protocol-v0.1.1, carried unchanged into the v2 candidate, and the onboard
+    /// client already sends the request.
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-MANUAL-CHARGING-RETURN")]
     public async Task ManualChargingReturnToServiceIsAnsweredAndDecidedOncePerRequestId()
     {
@@ -913,7 +917,7 @@ public sealed class OnboardMessageProcessorTests
     /// enumeration contains.
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-MANUAL-CHARGING-RETURN")]
     public async Task ManualChargingReturnToServiceIsRejectedWhileTheSessionStillNeedsRecovery()
     {
@@ -982,7 +986,7 @@ public sealed class OnboardMessageProcessorTests
     /// trusted.
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-MANUAL-CHARGING-RETURN")]
     public async Task ManualChargingReturnToServiceRefusesARoleTheProfileDoesNotDefine()
     {

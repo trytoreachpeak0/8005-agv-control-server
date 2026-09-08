@@ -613,7 +613,7 @@ $restartedHostServesTheSameStorePass = $null -ne $handshakeResult -and $null -ne
 
 $protocolBindingPass = $null -ne $version -and
     $version.protocolCommit -eq $ProtocolCommit -and
-    $version.protocolTag -eq 'protocol-v0.1.1' -and
+    $version.protocolTag -eq 'protocol-v1.0.0' -and
     $null -ne $probeResult -and
     [string]$probeResult.serverBuildCommit -eq $ControlServerCommit -and
     $null -ne $baseline -and
@@ -727,8 +727,8 @@ $result = [ordered]@{
         vectorSlice = $status
         formalSlicePass = $false
         officialSlices = @(
-            [ordered]@{ integrationSliceId = 'W2G-IS-04'; status = 'INCONCLUSIVE' },
-            [ordered]@{ integrationSliceId = 'W2G-IS-05'; status = 'INCONCLUSIVE' }
+            [ordered]@{ integrationSliceId = 'FP-IS-04'; status = 'INCONCLUSIVE' },
+            [ordered]@{ integrationSliceId = 'FP-IS-05'; status = 'INCONCLUSIVE' }
         )
         fullG3 = 'INCONCLUSIVE'
         releaseCandidate = 'INCONCLUSIVE'

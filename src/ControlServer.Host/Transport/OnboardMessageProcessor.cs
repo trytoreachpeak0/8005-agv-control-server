@@ -435,7 +435,7 @@ public sealed partial class OnboardMessageProcessor(
                 }
             case "ProtocolProblem":
                 {
-                    // protocol-v0.1.1 defines ProtocolProblem as how a peer reports that it
+                    // The protocol defines ProtocolProblem as how a peer reports that it
                     // rejected one of our messages. Falling through to "unsupported" threw, which
                     // killed the transport and sent the session into a reconnect loop -- and threw
                     // away the only diagnostic saying why the rejection happened. It carries no

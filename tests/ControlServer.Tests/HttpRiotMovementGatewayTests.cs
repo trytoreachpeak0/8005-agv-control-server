@@ -12,7 +12,7 @@ namespace ControlServer.Tests;
 public sealed class HttpRiotMovementGatewayTests
 {
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task ReconcileUsesSdkUpperIdEndpointAndParsesCompleteActiveOrder()
     {
         RecordingHandler handler = new((request, _) =>
@@ -47,7 +47,7 @@ public sealed class HttpRiotMovementGatewayTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task QueueingOrderWithoutABoundVehicleIsIdentifiedByItsAppointedKey(string? executeVehicle)
     {
         // BC-ORDER-012 / BC-ORDER-013: a QUEUEING order reports "--" in executeVehicleKey until
@@ -69,7 +69,7 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task OnceRiotBindsAVehicleTheExecutingKeyWinsOverTheAppointedOne()
     {
         RecordingHandler handler = new((_, _) => JsonResponse(FoundOrderJson(
@@ -91,7 +91,7 @@ public sealed class HttpRiotMovementGatewayTests
     [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":[]}")]
     [InlineData("{\"code\":\"0\",\"message\":\"成功\",\"result\":{\"upperId\":\"UPPER-001\"}}")]
     [InlineData("{\"code\":\"0\",\"result\":{\"id\":1,\"orderId\":\"ORDER-001\",\"upperId\":\"OTHER\",\"orderState\":1,\"appointVehicleKey\":\"VEHICLE-KEY-01\",\"missions\":[{\"type\":\"move\",\"mapId\":29,\"destination\":12}]}}")]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task ReconcileAbsentOrIndeterminateSdkObservationRemainsUnknownPendingContractConfirmation(
         string body)
     {
@@ -157,7 +157,7 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task ReconcileHttp404IsConfirmedNotFound()
     {
         RecordingHandler handler = new((request, _) =>
@@ -272,7 +272,7 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task CreateUsesSdkFrozenIntentBodyAndReturnsFrozenEvidence()
     {
         RecordingHandler handler = new(async (request, cancellationToken) =>
@@ -412,7 +412,7 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task VehicleFactsAreMappedAndObservedAfterSdkReadCompletes()
     {
         DateTimeOffset before = new(2026, 8, 28, 1, 0, 0, TimeSpan.Zero);
@@ -464,7 +464,7 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task StrictMapCatalogIsCanonicalAndObservedAfterSdkReadCompletes()
     {
         DateTimeOffset before = new(2026, 8, 28, 2, 0, 0, TimeSpan.Zero);

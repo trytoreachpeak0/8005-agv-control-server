@@ -8,10 +8,21 @@ param(
     [string]$OnboardRepository = 'https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git',
     [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git',
     [string]$ProtocolRepository = 'https://github.com/trytoreachpeak0/8005-agv-protocol.git',
+    # These four are literal defaults, so a run inherits whatever the last one froze. CLAUDE.md
+    # already says to move them before a G3 run; since the v2 identity switch there is a second
+    # reason, and it is sharper.
+    #
+    # $ProtocolCommit moved to the v2 candidate. The other three still name pre-v2 builds, and no
+    # v2 build of the onboard HMI or the simulator exists yet -- that is ticket 15. A run left on
+    # these defaults therefore starts a server that says protocol-v0.1.1 against a synthetic peer
+    # that says protocol-v1.0.0, and the handshake is refused with a full expected identity. It
+    # fails loudly rather than certifying anything, which is the behaviour the exact-identity rule
+    # exists to produce -- but it is a wasted staged run, so move all four together when ticket 15
+    # lands.
     [string]$ControlServerCommit = '4746ed27bfe0606238910bf31b493be2770395f7',
     [string]$OnboardCommit = 'f0465d9ad9f84607e3db972f1c6cb0ead910ab3d',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279'
+    [string]$ProtocolCommit = 'f6ee75defe6e2d18f63f4082bee445dbb678ab1b'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,10 +61,18 @@ if ($null -ne $pnpmCommand) {
     $pnpmPrefixArguments = @($bundledPnpm)
 }
 
-$protocolTag = 'protocol-v0.1.1'
-$manifestSha256 = 'a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f'
-$schemaBundleSha256 = 'e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c'
-$vectorsSha256 = 'fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e'
+# Read, not restated. These four used to be literals here, a third hand-kept copy of the identity
+# beside ProtocolCandidateIdentity.cs and appsettings.json -- and three copies of nine hashes is how
+# a gate ends up certifying a protocol nobody is running. ProtocolIdentityArchitectureTests keeps the
+# settings mirror equal to the constants; this reads the mirror.
+$expectedProtocol = (Get-Content -Raw -LiteralPath (
+    Join-Path (Split-Path -Parent $PSScriptRoot) 'src\ControlServer.Hostppsettings.json') |
+    ConvertFrom-Json).ProtocolCandidate
+if ($null -eq $expectedProtocol) { throw 'appsettings.json carries no ProtocolCandidate identity.' }
+$protocolTag = $expectedProtocol.tag
+$manifestSha256 = $expectedProtocol.manifestSha256
+$schemaBundleSha256 = $expectedProtocol.schemaBundleSha256
+$vectorsSha256 = $expectedProtocol.vectorsSha256
 $controlPort = 58205
 $healthPort = 58207
 $proxyPort = 58215
@@ -1908,9 +1927,9 @@ public static class StagedG3TlsHarness
         {
             ["repository"] = "8005-agv-protocol",
             ["releaseVersion"] = release,
-            ["tag"] = "protocol-v0.1.1",
+            ["tag"] = "protocol-v1.0.0",
             ["commit"] = Protocol.Commit,
-            ["protocolVersion"] = 1,
+            ["protocolVersion"] = 2,
             ["profileId"] = Protocol.Profile,
             ["manifestSha256"] = manifest,
             ["schemaBundleSha256"] = Protocol.Schema,
@@ -1957,7 +1976,7 @@ public static class StagedG3TlsHarness
         long? generation,
         object payload) => JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            ["protocolVersion"] = 1,
+            ["protocolVersion"] = 2,
             ["profileId"] = Protocol.Profile,
             ["protocolReleaseVersion"] = release,
             ["protocolReleaseManifestSha256"] = manifest,
@@ -2015,12 +2034,12 @@ public static class StagedG3TlsHarness
 
     private static class Protocol
     {
-        public const string Release = "0.1.1";
-        public const string Profile = "WIRE_TO_GATE_MVP";
-        public const string Commit = "1531489e42e328f28bfe0c51ed3f8c56e5ce0279";
-        public const string Manifest = "a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f";
-        public const string Schema = "e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c";
-        public const string Vectors = "fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e";
+        public const string Release = "1.0.0";
+        public const string Profile = "AGV_FULL_PRODUCT";
+        public const string Commit = "f6ee75defe6e2d18f63f4082bee445dbb678ab1b";
+        public const string Manifest = "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788";
+        public const string Schema = "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b";
+        public const string Vectors = "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df";
     }
 
     private sealed class Connection : IAsyncDisposable
@@ -2088,6 +2107,38 @@ public static class StagedG3TlsHarness
     }
 }
 '@
+
+# The synthetic peer's identity is compiled into that literal here-string, so it cannot read
+# appsettings.json the way the rest of this script now does. Assert instead of substitute: a peer
+# built against a different release than the server it handshakes with is the exact failure the
+# identity switch is supposed to make loud, and it must not be discovered as a puzzling rejection
+# halfway through a staged run.
+$embeddedIdentity = [ordered]@{
+    'Protocol.Release'  = $expectedProtocol.releaseVersion
+    'Protocol.Profile'  = $expectedProtocol.profileId
+    'Protocol.Commit'   = $expectedProtocol.repositoryCommit
+    'Protocol.Manifest' = $expectedProtocol.manifestSha256
+    'Protocol.Schema'   = $expectedProtocol.schemaBundleSha256
+    'Protocol.Vectors'  = $expectedProtocol.vectorsSha256
+}
+$identityDrift = @(
+    foreach ($name in $embeddedIdentity.Keys) {
+        $constant = $name.Split('.')[1]
+        $pattern = "public const string $constant = ""$($embeddedIdentity[$name])"";"
+        if ($harnessSource -notmatch [regex]::Escape($pattern)) { $name }
+    }
+)
+if ($harnessSource -notmatch '\["protocolVersion"\] = ' + $expectedProtocol.protocolVersion + ',') {
+    $identityDrift += 'protocolVersion'
+}
+if ($harnessSource -notmatch '\["tag"\] = "' + [regex]::Escape($expectedProtocol.tag) + '",') {
+    $identityDrift += 'tag'
+}
+if ($identityDrift.Count -gt 0) {
+    throw ("The synthetic peer compiled into this script names a different protocol release than " +
+           "appsettings.json does. Drifted: " + ($identityDrift -join ', ') +
+           ". Update the harness source in this file to match ProtocolCandidateIdentity.")
+}
 
 Add-Type -TypeDefinition $harnessSource -Language CSharp
 
@@ -2847,8 +2898,8 @@ $result = [ordered]@{
         stagedSlice = $status
         formalSlicePass = $false
         officialSlices = @(
-            [ordered]@{ integrationSliceId = 'W2G-IS-00'; status = 'INCONCLUSIVE' },
-            [ordered]@{ integrationSliceId = 'W2G-IS-06'; status = 'INCONCLUSIVE' }
+            [ordered]@{ integrationSliceId = 'FP-IS-00'; status = 'INCONCLUSIVE' },
+            [ordered]@{ integrationSliceId = 'FP-IS-06'; status = 'INCONCLUSIVE' }
         )
         fullG3 = 'INCONCLUSIVE'
         releaseCandidate = 'INCONCLUSIVE'

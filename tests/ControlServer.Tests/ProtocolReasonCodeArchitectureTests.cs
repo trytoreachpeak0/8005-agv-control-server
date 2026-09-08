@@ -86,7 +86,7 @@ public sealed class ProtocolReasonCodeArchitectureTests
     ];
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void EveryReasonCodeTheServerEmitsIsInTheRegistryOrAPinnedDeviation()
     {
         string[] emitted = EmittedReasonCodes();
@@ -104,7 +104,7 @@ public sealed class ProtocolReasonCodeArchitectureTests
     /// was pinned but is no longer emitted is reported too.
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void ThePinnedDeviationComparisonCatchesACodeNobodyRegistered()
     {
         string[] withAnExtraCode = [.. EmittedReasonCodes(), "A_CODE_NOBODY_REGISTERED"];
@@ -125,7 +125,7 @@ public sealed class ProtocolReasonCodeArchitectureTests
     /// never appear in that class and so would never be compared against the registry.
     /// </remarks>
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void NoReasonCodeIsWrittenAsABareLiteral()
     {
         string sourceRoot = Path.Combine(RepositoryRoot(), "src");
@@ -153,7 +153,7 @@ public sealed class ProtocolReasonCodeArchitectureTests
     /// Proves the scan above is not vacuous: it is run over source that does write a bare literal.
     /// </summary>
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void TheBareLiteralScanCatchesEachWritingPosition()
     {
         const string source = """

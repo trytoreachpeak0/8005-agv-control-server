@@ -10,7 +10,7 @@ namespace ControlServer.Tests;
 public sealed class OnboardTcpServerTests
 {
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task NonLoopbackListenerStartsAndAcceptsPlaintextConnections()
     {
         int port = ReserveFreePort();

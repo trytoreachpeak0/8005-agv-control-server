@@ -24,7 +24,7 @@ public sealed class JourneyRuntimeOptionsTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public void EnabledRuntimeRejectsMissingRemoteExternalSecretReferencesButAllowsLoopbackMesIngest()
     {
         string suffix = Guid.NewGuid().ToString("N");
@@ -48,7 +48,7 @@ public sealed class JourneyRuntimeOptionsTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     public void EnabledRuntimeRejectsCrossOriginSublotQueryPath()
     {
         IConfiguration configuration = new ConfigurationBuilder().Build();

@@ -84,6 +84,7 @@ public sealed class OnboardJourneyPublisher(
             {
                 vehicleBusinessStateRevision = projection.Revision,
                 readiness = projection.Readiness,
+                projection.ActivePurpose,
                 projection.ManualChargingHold,
                 projection.BatteryState,
                 blockingFacts = projection.BlockingFacts.Select(fact => new
@@ -457,11 +458,13 @@ public sealed class OnboardJourneyPublisher(
             new
             {
                 planRevision = projection.Revision,
-                projection.DemandId,
                 legs = projection.Legs.Select(leg => new
                 {
                     leg.MovementLegId,
                     leg.LegType,
+                    leg.StopPurposeCategory,
+                    leg.DemandId,
+                    leg.PublicStationFunction,
                     leg.Sequence,
                     leg.StationId,
                     leg.MapId,

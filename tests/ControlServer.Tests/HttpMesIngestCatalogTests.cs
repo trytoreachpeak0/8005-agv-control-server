@@ -26,7 +26,7 @@ public sealed class HttpMesIngestCatalogTests
     ];
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task UsesOnlyFrozenV2GetContractAndReturnsFinalCatalogFact()
     {
         Guid historyEpoch = new("11111111-1111-4111-8111-111111111111");
@@ -55,7 +55,7 @@ public sealed class HttpMesIngestCatalogTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task RejectsContractWithoutTheExactSublotBoxCountCapabilityVersion()
     {
         Guid historyEpoch = new("11111111-1111-4111-8111-111111111111");

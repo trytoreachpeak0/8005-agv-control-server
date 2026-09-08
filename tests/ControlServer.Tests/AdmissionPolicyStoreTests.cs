@@ -11,7 +11,7 @@ public sealed class AdmissionPolicyStoreTests
     private static readonly DateTimeOffset Now = new(2026, 8, 26, 1, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task VersionedImportIsAuditedAndSameVersionCannotChangeContent()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -35,7 +35,7 @@ public sealed class AdmissionPolicyStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task LoadCommitFreezesCurrentAdmissionAndRevocationBlocksOnlyNewOperations()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();

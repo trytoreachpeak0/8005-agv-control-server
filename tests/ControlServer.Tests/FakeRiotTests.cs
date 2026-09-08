@@ -21,7 +21,7 @@ public sealed class FakeRiotTests
     private const string VehicleKey = "BROKERX-TEST-0001";
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task VehicleFactsAndMapCatalogAreServedInTheShapeTheProductionAdapterParses()
     {
         await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
@@ -45,7 +45,7 @@ public sealed class FakeRiotTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task DrivingTheVehicleThroughTheControlPlaneChangesWhatTheAdapterSees()
     {
         // The whole reason the fake exists: two of the 2026-09-03 defects needed the vehicle to
@@ -83,7 +83,7 @@ public sealed class FakeRiotTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task CreatingAnOrderQueuesItAndTheSameUpperIdIsRefusedAsAlreadyExisting()
     {
         await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
@@ -111,7 +111,7 @@ public sealed class FakeRiotTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task AnOrderAdvancedToCompleteBecomesATerminalArrivalObservation()
     {
         await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
@@ -289,7 +289,7 @@ public sealed class FakeRiotTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task MapStationReadsCountEveryIterationWithoutMovingTheStateRevision()
     {
         // JourneyRuntimeEngine.ExecuteOnceAsync reads the Map station catalog first thing on every

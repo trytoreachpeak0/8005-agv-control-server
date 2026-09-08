@@ -319,8 +319,20 @@ if (-not (Test-Path -LiteralPath $publishedSettingsPath -PathType Leaf)) {
 }
 $publishedSettings = Get-Content -Raw -LiteralPath $publishedSettingsPath | ConvertFrom-Json
 $protocol = $publishedSettings.ProtocolCandidate
-if ($null -eq $protocol -or $protocol.approvalStatus -ne 'APPROVED_RELEASE') {
-    throw 'The published ControlServer package is not bound to an approved protocol release.'
+if ($null -eq $protocol) {
+    throw 'The published ControlServer package carries no ProtocolCandidate identity.'
+}
+if ($protocol.approvalStatus -ne 'APPROVED_RELEASE') {
+    # Since the v2 identity switch this is the expected outcome rather than an accident: the server
+    # is bound to the protocol v2 candidate, whose approvalStatus is SUPERSEDING_CANDIDATE. Section
+    # 6.6 of the full-product scope specification lists what the candidate still owes before a
+    # ProtocolRelease can be cut, and item 6 is two product owners' external attestation plus the
+    # annotated tag protocol-v1.0.0. Packaging a release candidate over that is the thing the check
+    # exists to refuse; name the status so the operator is not left guessing.
+    throw ("The published ControlServer package is bound to protocol {0} ({1}) with approvalStatus " +
+           "'{2}', not 'APPROVED_RELEASE'. A release candidate cannot be packaged until that " +
+           "protocol release is approved and tagged (scope specification 6.6).") -f
+        $protocol.releaseVersion, $protocol.tag, $protocol.approvalStatus
 }
 
 # --- Deliverable documents and operator scripts -----------------------------
@@ -430,6 +442,7 @@ $releaseManifest = [ordered]@{
             schemaBundleSha256 = $protocol.schemaBundleSha256
             vectorsSha256 = $protocol.vectorsSha256
             protocolVersion = $protocol.protocolVersion
+            profileId = $protocol.profileId
             approvalStatus = $protocol.approvalStatus
             identitySource = 'controlserver/appsettings.json:ProtocolCandidate'
         }

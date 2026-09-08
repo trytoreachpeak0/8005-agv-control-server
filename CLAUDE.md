@@ -64,10 +64,16 @@ and in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
 What an agent must follow:
 
 - **The unit of collaboration is the integration slice.** Do not invent another
-  one. `8005-agv-protocol/integration-slices/index.json` defines `W2G-IS-00`
-  through `W2G-IS-07`, each with a `sequence` and `prerequisites`. Each slice's
+  one. `8005-agv-protocol/integration-slices/index.json` defines `FP-IS-00`
+  through `FP-IS-15`, each with a `sequence` and `prerequisites`. Each slice's
   `gates` array *is* the division of labour: `G1` shared, `CONTROL_SERVER_G2`
   this repository, `ONBOARD_HMI_G2` theirs, `G3` together.
+  **The family replaced `W2G-IS-00` through `07` rather than joining them**
+  (scope specification 7.1); `FP-IS-00` through `07` correspond to the old eight
+  one for one, but as *recertification under v2* — there is no passing verdict to
+  carry over, and section 12 of `docs/RELEASE-CANDIDATE.md` says so in as many
+  words. Existing evidence directories keep the `W2G-IS-NN` ids they were written
+  with; nothing renames them.
 - **The two G2 gates have no dependency and run in parallel.** G3 needs both
   people present and is the most expensive resource, so do not propose it while
   the other side's G2 is not green.
@@ -81,7 +87,7 @@ What an agent must follow:
   `docs/defects/`: a `Found by:` line linking the G3 evidence `SUMMARY.md`.
 - **`8005-agv-protocol` needs no advance approval** — Zhengyu Shao decides its
   content alone — **but every push must be announced in an issue that
-  `@SocialKKKK`**, stating what changed, which `W2G-IS-*` slices it touches, and
+  `@SocialKKKK`**, stating what changed, which `FP-IS-*` slices it touches, and
   whether their `ONBOARD_HMI_G2` evidence is now void, in the same task as the
   push. Tagging a release still needs the two-owner attestation; **AI and CI
   cannot approve.**
@@ -100,7 +106,7 @@ titles and bodies, and commit message bodies.
 
 Stay English inside Chinese text: conventional commit prefixes (`feat:`, `fix:`,
 `docs:`, `chore:`), identifiers, paths, commands, environment variables, error
-codes, gate and slice names (`G1`, `W2G-IS-00`), and protocol message names,
+codes, gate and slice names (`G1`, `FP-IS-00`), and protocol message names,
 schema fields and `vectorId` values — those are the contract itself. Quote an
 error or a test result in its original English first, then explain it in
 Chinese. Do not rewrite existing text to match; this governs new writing.
@@ -113,7 +119,7 @@ Chinese. Do not rewrite existing text to match; this governs new writing.
 dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
 ```
 
-Historically 243–249 passed / 0 skipped. Build with the .NET SDK pinned in
+Historically 583 passed / 0 skipped. Build with the .NET SDK pinned in
 `global.json` (`8.0.424`); when it is not on `PATH`, point
 `WIRE_TO_GATE_DOTNET_EXE` at that version's `dotnet.exe` and run
 `.\scripts\build.ps1`.
@@ -181,7 +187,9 @@ Load-bearing details:
 - **The G2 entry point verifies the exact protocol manifest hash first.** When
   the protocol version changes, old evidence cannot carry over — `W2G-IS-01` was
   remapped to `CV-DEMAND-ACCEPT-TO-PICKUP` in `protocol-v0.1.1`, which already
-  voided the `v0.1.0` G2 evidence once.
+  voided the `v0.1.0` G2 evidence once. The v2 identity switch is the second
+  time: every `protocol-v0.1.1` gate result is bound to a manifest hash the
+  server no longer sends.
 - **`-Output` and `-EvidenceRoot` must be new directories.** Never overwrite
   existing evidence.
 - `run-staged-g3.ps1` needs Node.js and pnpm because it runs the protocol's G1.

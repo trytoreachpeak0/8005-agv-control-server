@@ -27,10 +27,10 @@ public sealed class JourneyRuntimeWorkerTests
     private static readonly string[] UnknownReasonCodes = ["IO_FACT_UNKNOWN"];
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
     public async Task ProductionRuntimeResumesOneJourneyThroughTrustedArrivalsAndAtomicCompletion()
     {
@@ -157,8 +157,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     public async Task ACompletedDemandStillListedByMesIngestIsNeverOfferedForIntakeAgain()
     {
         // MesIngest publishes MES's own list of open transport demands; our journey completing does
@@ -194,8 +194,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     public async Task ACompletedDemandStillListedByMesIngestDoesNotBlockTheNextEligibleDemand()
     {
         // The operational cost of the replay refusal: it aborted the whole runtime iteration, so no
@@ -234,8 +234,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     [Trait("ProtocolVector", "CV-SNAPSHOT-REPLACE-AND-ACK")]
     public async Task EachStopPublishesItsWorklistUnderItsOwnRevision()
     {
@@ -267,8 +267,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     [Trait("ProtocolVector", "CV-SNAPSHOT-SAME-REVISION-CONFLICT")]
     public async Task ASecondJourneyOnTheSameVehicleNeverRepublishesAnAdoptedRevision()
     {
@@ -345,8 +345,8 @@ public sealed class JourneyRuntimeWorkerTests
     [InlineData(6)]
     [InlineData(7)]
     [InlineData(8)]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     public async Task ALostAcknowledgementNeverLeavesASupersededSnapshotToBeRedelivered(int iterationLosingAcks)
     {
         // Every runtime iteration replays each unacknowledged outbox row before it does anything
@@ -374,8 +374,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     public async Task OnlyAPeerThatNeverAcknowledgesIsShownASupersededSnapshot()
     {
         // The falsifiability of the theory above: the detector does fire, and what it takes is a
@@ -402,8 +402,8 @@ public sealed class JourneyRuntimeWorkerTests
     [InlineData(3, 7, true)]
     [InlineData(4, 7, false)]
     [InlineData(3, 6, false)]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     public async Task TheRedeliveredRevisionNeedsEveryAcknowledgementFromThePickupToTheGateLost(
         int firstLostIteration,
         int lastLostIteration,
@@ -530,7 +530,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-REQUEST-FIRST-RESULT-REPLAY")]
     public async Task CommandsAnsweredByABusinessResultAreNotLeftPendingForReplay()
     {
@@ -560,7 +560,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     public async Task CommandsAnsweredAfterTheGateDepartureAreSettledToo()
     {
         // The same commit settles four answered commands, but only the sublot request and the load
@@ -585,7 +585,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
     public async Task DepartureSafetyAnsweredPromptlyIsJudgedWhileItIsStillValid()
     {
@@ -642,7 +642,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task HardAdmissionFiltersBeforeStableBacklogOrderingAndRemoteSideEffects()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -675,7 +675,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task VolatileCatalogReadMetadataDoesNotOverwriteCurrentBacklogReason()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -729,7 +729,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task LargeCatalogBatchesBacklogPersistenceBeforeAcceptingEligibleJourney()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -769,7 +769,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task VehicleReadsThatAdvanceClockUsePostReadTimeForAdmission()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -807,7 +807,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task SnapshotsFromEarlierInALiveSessionStillAdmit()
     {
         // Onboard sends CapabilitySnapshot and SafetyStateSnapshot once per session and the
@@ -830,7 +830,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task AdmissionSafetyFactsComeFromTheLatestChangeNotTheSessionSnapshot()
     {
         // Onboard sends SafetyStateSnapshot once per session and reports every later change with
@@ -857,7 +857,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task ArrivalIsNotTrustedWhileTheLatestSafetyStateSaysTheVehicleIsMoving()
     {
         // The same staleness in the other direction, and the dangerous one: the session-start
@@ -888,8 +888,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     public async Task ABlockedJourneyKeepsTheReasonItWasBlockedForWhenTheSessionDrops()
     {
         // A station operation that times out blocks the journey and, per ADR-cross-0006 and
@@ -922,8 +922,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     public async Task AResultThatTurnsTheSessionRecoveryRequiredStillBlocksTheJourneyForItsOwnReason()
     {
         // 147f02c made a refused result move the session to RecoveryRequired, so the vehicle would
@@ -961,8 +961,8 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     public async Task ABlockedJourneyKeepsTheVehicleOutOfEveryOtherDemand()
     {
         // The single active slot is what makes the one-vehicle runtime safe. A blocked journey is
@@ -993,7 +993,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task InboundEnvelopesWithoutASessionGenerationDoNotBreakLiveness()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1011,11 +1011,12 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task SupportsBatchUnlockFalseDoesNotBlockAdmission()
     {
-        // protocol-v0.1.1 declares supportsBatchUnlock with no semantics and its own canonical
-        // example sets it false. Whether the vehicle can operate a given slot set is decided
+        // The protocol declares supportsBatchUnlock with no semantics -- a bare boolean, unchanged
+        // from protocol-v0.1.1 through the v2 candidate -- and its own canonical example sets it
+        // false. Whether the vehicle can operate a given slot set is decided
         // against AvailableSlots when the command is sent, not by this flag.
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(
@@ -1033,7 +1034,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task CandidateProcessingThatExpiresDynamicFactsDoesNotAcceptOrDispatch()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1058,7 +1059,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task FinalCatalogRefreshThatExpiresDynamicFactsDoesNotAcceptOrDispatch()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1089,7 +1090,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task UnknownOrStaleDynamicFactsFailClosedWithoutAcceptingOrDispatching()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1113,7 +1114,7 @@ public sealed class JourneyRuntimeWorkerTests
     [Theory]
     [InlineData("N1-1", "EQP-01", "N1-1", 12)]
     [InlineData("N1-2", "EQP-02", "N1-2_N1-3", 13)]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task DynamicMapPickupResolutionFreezesEveryMatchingDemandStation(
         string area,
         string eqp,
@@ -1143,7 +1144,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task AnUncommissionedCatalogCreatesNothingAtAll()
     {
         // REQ-0302's hard block, in the place it has to hold: a whole runtime iteration against a
@@ -1175,7 +1176,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task AcceptingADemandFreezesBothEndpointsAndALaterRenameDoesNotRewriteThem()
     {
         // REQ-0305: the endpoints are taken from the snapshot that was fresh at creation time and
@@ -1215,7 +1216,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task TheCatalogIsConfirmedOnAWholeReadAndOnlyOnAWholeRead()
     {
         // REQ-0302: what a confirmation is. A read that got as far as the gate station and the
@@ -1245,7 +1246,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task AnUnreachablePickupIsRefusedACreateAndSaysWhy()
     {
         // The gate at Order 96, in the runtime. RIoT says the vehicle cannot reach the pickup
@@ -1271,7 +1272,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task AmbiguousAreaStationMappingRemainsBackloggedAndNeverCreatesMovement()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1299,7 +1300,7 @@ public sealed class JourneyRuntimeWorkerTests
     [InlineData("D11-10", "OUT_OF_SCOPE_AREA")]
     [InlineData("Q18-10", "OUT_OF_SCOPE_AREA")]
     [InlineData("N22-1", "AREA_STATION_NOT_FOUND")]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task OutOfScopeOrMap25UnresolvableAreaNeverCreatesMissingPackageNoise(
         string area,
         string expectedReason)
@@ -1325,7 +1326,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task InScopeResolvedUnknownPackageIsDeduplicatedAndNeverCreatesOrder()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1350,7 +1351,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task BatteryAtConfirmedThirtyPercentThresholdRemainsEligible()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1368,7 +1369,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task MultipleEqpsForOneAreaRemainBackloggedAndNeverCreateMovement()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1412,7 +1413,7 @@ public sealed class JourneyRuntimeWorkerTests
     [InlineData("onboard-silent", "ONBOARD_FACTS_NOT_READY")]
     [InlineData("onboard-unsafe", "ONBOARD_DEPARTURE_UNSAFE")]
     [InlineData("slot-capacity", "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE")]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task EveryAdmissionGateFailsClosedBeforeAcceptance(
         string scenario,
         string expectedReason)
@@ -1475,7 +1476,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task RestartKeepsOriginalVehicleLeaseAndStablePickupIdentity()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1498,9 +1499,9 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
     public async Task RestartReconcilesUnknownPickupCreateWithoutSecondOrderOrIdentityChange()
     {
@@ -1532,7 +1533,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task AcceptedDemandWithoutPersistedRuntimeFailsClosedInsteadOfBeingAdopted()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1565,7 +1566,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     public async Task RestartReenvelopesPendingServerMessagesForTheCurrentSessionWithoutChangingSemantics()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -1603,7 +1604,7 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task UnknownPreDepartureSafetyCannotCreateTheGateOrder()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -2056,9 +2057,9 @@ public sealed class JourneyRuntimeWorkerTests
             JourneyRuntimeRow runtime = await RuntimeAsync();
             string json = JsonSerializer.Serialize(new
             {
-                protocolVersion = 1,
-                profileId = "WIRE_TO_GATE_MVP",
-                protocolReleaseVersion = "0.1.1",
+                protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+                profileId = ProtocolCandidateIdentity.ProfileId,
+                protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
                 protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
                 messageType,
                 messageId,

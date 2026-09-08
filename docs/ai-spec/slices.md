@@ -1,4 +1,13 @@
-# W2G-IS-00～07 服务端切片
+# `FP-IS-00`～`07` 服务端切片
+
+编号取自协议 v2 的切片家族 `FP-IS-00`～`FP-IS-15`（规格 7.1）。下表这八条与旧的
+`W2G-IS-00`～`07` **一一对应**，但关系是「v2 下的重证」而不是可沿用的通过结论。
+`FP-IS-08`～`15` 排在批次 3～8，本仓尚无实现，故不在此表。
+
+`CV-GATE-UNLOAD-ALL-EMPTY` 在 v2 改名为 `CV-DESTINATION-UNLOAD-ALL-EMPTY`，
+`CV-LOAD-CANCELLATION-BEFORE-LOAD` 与 `FP-IS-06` 上那条
+`CV-OPERATION-RESULT-UNKNOWN-RECONCILE` 已从切片表移除；本表按业务面写，不复制向量清单
+（权威在 `vendor/8005-agv-protocol/integration-slices/index.json`）。
 
 | Slice | 权威输入 | 最小持久边界与接口 | 失败/恢复 | 验收 | 禁止副作用 |
 | --- | --- | --- | --- | --- | --- |

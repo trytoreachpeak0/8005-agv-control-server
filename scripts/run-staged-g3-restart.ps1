@@ -891,8 +891,8 @@ $result = [ordered]@{
         stagedSlice = $status
         formalSlicePass = $false
         officialSlices = @(
-            [ordered]@{ integrationSliceId = 'W2G-IS-00'; status = 'INCONCLUSIVE' },
-            [ordered]@{ integrationSliceId = 'W2G-IS-06'; status = 'INCONCLUSIVE' }
+            [ordered]@{ integrationSliceId = 'FP-IS-00'; status = 'INCONCLUSIVE' },
+            [ordered]@{ integrationSliceId = 'FP-IS-06'; status = 'INCONCLUSIVE' }
         )
         fullG3 = 'INCONCLUSIVE'
         releaseCandidate = 'INCONCLUSIVE'

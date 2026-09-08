@@ -38,11 +38,14 @@ dotnet run --project .\tools\ControlServer.FakeOnboard -c Release -- --host 127.
 逐切片 G2 入口会先验证精确 protocol manifest 哈希，并要求新证据目录：
 
 ```powershell
-.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice W2G-IS-00 `
+.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice FP-IS-00 `
   -ProtocolManifest <protocol-repo>\manifest\release.json -Output <new-evidence-directory>
 ```
 
-`W2G-IS-01` 在 `protocol-v0.1.1` 中映射到专用轨迹 `CV-DEMAND-ACCEPT-TO-PICKUP`；旧 `v0.1.0` G2 证据不能继承。
+切片家族是 `FP-IS-00`～`FP-IS-15`，**替换**（不并存）`W2G-IS-00`～`07`；`FP-IS-00`～`07` 与旧的八条一一对应，
+关系是「v2 下的重证」而非可沿用的通过结论。`FP-IS-01` 映射到专用轨迹 `CV-DEMAND-ACCEPT-TO-PICKUP`。
+**证据不能跨协议换代继承**：`W2G-IS-01` 当年在 `protocol-v0.1.1` 中的重映射就作废过一次 `v0.1.0` 的 G2 证据，
+这次切到 v2 是第二次。已有证据目录保留写入时的 `W2G-IS-NN` 编号，不改名。
 
 实施入口见 [`docs/ai-spec/README.md`](docs/ai-spec/README.md)。秘密、PFX 和 CallApiKey 不得提交；生产值从受 ACL 保护的外部配置或环境变量注入。
 

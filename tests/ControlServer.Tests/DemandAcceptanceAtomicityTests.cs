@@ -10,7 +10,7 @@ namespace ControlServer.Tests;
 public sealed class DemandAcceptanceAtomicityTests
 {
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
     public async Task AcceptedDemandAndToPickupIntentAreCommittedAtomically()
     {
@@ -37,8 +37,8 @@ public sealed class DemandAcceptanceAtomicityTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     public async Task VehicleLeaseRejectsSecondDemandUntilSuccessfulUnloadReleasesIt()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -89,8 +89,8 @@ public sealed class DemandAcceptanceAtomicityTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     public async Task VehicleLeaseMigrationBackfillsAnUnresolvedAcceptedDemand()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");

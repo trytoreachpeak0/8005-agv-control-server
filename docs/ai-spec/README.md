@@ -5,12 +5,18 @@
 ## 固定身份与边界
 
 - 分支：`ControlServer_MVP`
-- 协议 release：`protocol-v0.1.1@1531489e42e328f28bfe0c51ed3f8c56e5ce0279`
-- manifest：`a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f`
-- schema bundle：`e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c`
-- vectors：`fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e`
-- 状态：`APPROVED_RELEASE`；所有 G2/G3 证据必须绑定该精确身份。
-- `W2G-IS-01` 使用专用轨迹 `CV-DEMAND-ACCEPT-TO-PICKUP`；通用重试与首结果重放轨迹继续归属 `W2G-IS-06`。
+- 协议 release：`protocol-v1.0.0@f6ee75defe6e2d18f63f4082bee445dbb678ab1b`
+- manifest：`84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788`
+- schema bundle：`71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b`
+- vectors：`51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df`
+- 状态：`SUPERSEDING_CANDIDATE`；所有 G2/G3 证据必须绑定该精确身份。**这是候选，不是已批准
+  的发布**——`protocol-v1.0.0` 这个 tag 在协议仓里还没打，规格 6.6 第 6 条要两名产品负责人的
+  外部 attestation，故 `New-WireToGateReleaseCandidate.ps1` 目前拒绝打 RC。九个常量的权威在
+  `src/ControlServer.Domain/ProtocolCandidateIdentity.cs`，`ProtocolIdentityArchitectureTests`
+  拿 vendored manifest 逐字段核。
+- 切片家族是 `FP-IS-00`～`FP-IS-15`（规格 7.1，**替换** `W2G-IS-00`～`07`，不并存）。
+  `FP-IS-01` 使用专用轨迹 `CV-DEMAND-ACCEPT-TO-PICKUP`；通用重试与首结果重放轨迹继续归属
+  `FP-IS-06`。
 - MesIngest 只读；RIoT 只由 ControlServer 通过具名端口调用；Onboard 只接收业务级协议，不接收原始 IO。
 
 ## 事务与副作用顺序

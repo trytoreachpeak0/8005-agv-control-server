@@ -472,10 +472,10 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
 dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
 ```
 
-逐切片 G2（绑定精确协议 manifest，`W2G-IS-00` 到 `W2G-IS-07`；`-Output` 必须是新目录）：
+逐切片 G2（绑定精确协议 manifest，`FP-IS-00` 到 `FP-IS-07`；`-Output` 必须是新目录）：
 
 ```powershell
-.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice W2G-IS-00 `
+.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice FP-IS-00 `
     -ProtocolManifest <protocol 仓>\manifest\release.json -Output <新证据目录>
 ```
 
@@ -496,8 +496,10 @@ staged G3 向量（合成对端，无移动；runner 自行克隆四个仓库并
 都可无人值守运行。三者共用 `run-staged-g3.ps1` param 块里的四个 commit 绑定，另两个 runner 从中回读
 而不是各自重述。脚本内部仍有 `StagedG3TlsHarness` 这类 TLS 期的**命名**残留，是历史名称，不代表行为。
 
-**这些场景的通过与否不改变当前的门禁状态**：W2G-IS-00～07 与 RC 目前仍为 `INCONCLUSIVE`，八类
-G3 向量各有证据不等于八个切片通过。
+**这些场景的通过与否不改变当前的门禁状态**：`W2G-IS-00`～`07` 与 RC 当时即记作 `INCONCLUSIVE`，
+八类 G3 向量各有证据不等于八个切片通过。**切到协议 v2 之后这句话只会更硬**：那些证据绑定的是
+`protocol-v0.1.1` 的 manifest 哈希，服务端已经不再发送它，所以 `FP-IS-00`～`07` 在 v2 下**一条
+都还没有 G2 或 G3 结论**——不是继承了 `INCONCLUSIVE`，是重新开始。重证由票 17 负责。
 
 ## 13. 证据在哪里
 

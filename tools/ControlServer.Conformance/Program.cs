@@ -8,7 +8,17 @@ string slice = arguments.GetValueOrDefault("slice")
     ?? throw new ArgumentException("--slice is required.");
 string manifestPath = arguments.GetValueOrDefault("manifest")
     ?? throw new ArgumentException("--manifest is required.");
-if (!Regex.IsMatch(slice, "^W2G-IS-0[0-7]$", RegexOptions.CultureInvariant))
+// The v2 family is FP-IS-NN and replaces W2G-IS-00 through 07 outright: the scope specification's
+// section 7.1 rejected coexistence, so a W2G id reaching this preflight is a caller still pointed
+// at the superseded family rather than a slice to run.
+//
+// The pattern is the protocol's own, character for character -- it is
+// schemas/governance/integration-slice-index.schema.json's, and section 6.6 item 4 calls this the
+// second copy of that regex. A tighter one here (^FP-IS-(0[0-9]|1[0-5])$, say) would say something
+// the protocol does not: how many slices exist is a fact of the index, and checking an id against
+// the index is scripts/test-wire-to-gate.ps1's job, which it does by looking the slice up in the
+// vendored copy and refusing when it is absent. Shape here, membership there.
+if (!Regex.IsMatch(slice, "^FP-IS-[0-9]{2}$", RegexOptions.CultureInvariant))
 {
     throw new ArgumentException($"Invalid IntegrationSliceId '{slice}'.");
 }

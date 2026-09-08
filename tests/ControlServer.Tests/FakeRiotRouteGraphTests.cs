@@ -28,7 +28,7 @@ public sealed class FakeRiotRouteGraphTests
     private const int MapId = 25;
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task EdgesAreServedInTheSnakeCaseShapeTheSdkDeserializesByHand()
     {
         await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync();
@@ -57,7 +57,7 @@ public sealed class FakeRiotRouteGraphTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task StationDetailsCarryTheDottedPositionKeysAndTheEdgeTheySitOn()
     {
         await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync();
@@ -79,7 +79,7 @@ public sealed class FakeRiotRouteGraphTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task TheCatalogFacadeStillReadsTheSameStationsAfterTheShapeGrew()
     {
         // The route-graph fields were added to the row the catalog Facade already read. If that
@@ -95,7 +95,7 @@ public sealed class FakeRiotRouteGraphTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task RemovalsAndEdgeGroupsAreEmptyByDefaultJustAsMap25Is()
     {
         await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync();
@@ -109,7 +109,7 @@ public sealed class FakeRiotRouteGraphTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task SeededRemovalsReachTheFacadeAsDomainFacts()
     {
         await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync(
@@ -128,7 +128,7 @@ public sealed class FakeRiotRouteGraphTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task ThreeVehiclesAreServedAtRestOnTheSameMap()
     {
         await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync(
@@ -149,7 +149,7 @@ public sealed class FakeRiotRouteGraphTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task OrderCommandsAreRecordedWithTheirArgumentsAndNeverApplied()
     {
         await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync();
@@ -179,7 +179,7 @@ public sealed class FakeRiotRouteGraphTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task EmergencyServicesAreRecordedAndRejectABodyMissingThingsProperties()
     {
         await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync();
@@ -208,7 +208,7 @@ public sealed class FakeRiotRouteGraphTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task RemovedEdgeDetailIsNotServedBecauseCp0001DidNotApproveIt()
     {
         await using RouteGraphFixture fixture = await RouteGraphFixture.StartAsync();

@@ -973,7 +973,7 @@ public sealed class JourneyRuntimeEngine(
             runtime.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision, "READY", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(runtime.VehicleBusinessRevision, "READY", TransportPurpose, false, "SUFFICIENT", []),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishCurrentStopWorklistAsync(
             runtime.WorklistMessageId,
@@ -1040,13 +1040,13 @@ public sealed class JourneyRuntimeEngine(
             runtime.GateVehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision + 1, "READY", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(runtime.VehicleBusinessRevision + 1, "READY", TransportPurpose, false, "SUFFICIENT", []),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishCurrentStopWorklistAsync(
             runtime.GateWorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.GateStationId, "GATE", runtime.WorklistRevision + 1),
+            Worklist(runtime, demand, runtime.GateStationId, "DROPOFF", runtime.WorklistRevision + 1),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             runtime.GatePlanMessageId,
@@ -1267,9 +1267,10 @@ public sealed class JourneyRuntimeEngine(
         // session-start snapshot. MaximumEvidenceAge still separately governs the RIoT vehicle
         // observation in ValidateDynamicFacts, which genuinely is polled.
         //
-        // supportsBatchUnlock is deliberately not consulted: protocol-v0.1.1 declares it with no
-        // semantics and its own canonical example sets it false, while the real question -- can
-        // the vehicle operate this slot set -- is answered against AvailableSlots when the command
+        // supportsBatchUnlock is deliberately not consulted: the protocol declares it with no
+        // semantics -- a bare boolean in CapabilitySnapshot, unchanged from protocol-v0.1.1 through
+        // the v2 candidate -- and its own canonical example sets it false, while the real question,
+        // can the vehicle operate this slot set, is answered against AvailableSlots when the command
         // is actually sent. See docs/defects/20260829-intake-gates-on-unspecified-onboard-facts.md.
         DateTimeOffset now = timeProvider.GetUtcNow();
         DateTimeOffset capabilityAt = capabilityPayload.GetProperty("observedAt").GetDateTimeOffset();
@@ -1609,21 +1610,47 @@ public sealed class JourneyRuntimeEngine(
                 role,
                 runtime.ExpectedBasketCount)]);
 
+    // Every leg this runtime plans is BUSINESS: it moves a demand from a pickup station to a
+    // dropoff station and does nothing else. WAITING_POINT is FP-C4, batch 5, and CHARGER is
+    // FP-C1, batch 8 -- neither exists here to be reported, so the constant is a fact about this
+    // profile rather than a placeholder for one.
+    private const string BusinessStopPurpose = "BUSINESS";
+
+    // Likewise the only activePurpose this runtime can be in. CHARGING is batch 8, IDLE_RETURN is
+    // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.
+    private const string TransportPurpose = "TRANSPORT";
+
     private static UpcomingStopPlanProjection PickupPlan(JourneyRuntimeRow runtime) => new(
         runtime.PlanRevision,
-        runtime.DemandId,
         [
-            new UpcomingMovementLeg(runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, runtime.MapIdentity, "ARRIVED"),
-            new UpcomingMovementLeg(runtime.GateMovementLegId, "TO_GATE", 2, runtime.GateStationId, runtime.MapIdentity, "PLANNED")
+            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "ARRIVED"),
+            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "PLANNED")
         ]);
 
     private static UpcomingStopPlanProjection GatePlan(JourneyRuntimeRow runtime) => new(
         runtime.PlanRevision + 1,
-        runtime.DemandId,
         [
-            new UpcomingMovementLeg(runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, runtime.MapIdentity, "COMPLETED"),
-            new UpcomingMovementLeg(runtime.GateMovementLegId, "TO_GATE", 2, runtime.GateStationId, runtime.MapIdentity, "ARRIVED")
+            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "COMPLETED"),
+            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "ARRIVED")
         ]);
+
+    private static UpcomingMovementLeg PlanLeg(
+        JourneyRuntimeRow runtime,
+        string movementLegId,
+        string legType,
+        int sequence,
+        string stationId,
+        string state) => new(
+            movementLegId,
+            legType,
+            BusinessStopPurpose,
+            runtime.DemandId,
+            // FP-C9b, batch 4. Null is what this server knows, not a value it is withholding.
+            null,
+            sequence,
+            stationId,
+            runtime.MapIdentity,
+            state);
 
     private static string BusinessHash(string demandId, string sublot, string operation, IEnumerable<int> slots) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(

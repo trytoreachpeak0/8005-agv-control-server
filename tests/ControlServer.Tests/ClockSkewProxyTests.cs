@@ -22,7 +22,7 @@ public sealed class ClockSkewProxyTests
         new(2026, 9, 3, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task ObservedAtIsShiftedAndEveryOtherFieldSurvivesUntouched()
     {
         await using UpstreamStub upstream = await UpstreamStub.StartAsync();
@@ -45,7 +45,7 @@ public sealed class ClockSkewProxyTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task ANegativeSkewMovesTheEvidenceIntoThePast()
     {
         // The plan's scenario list has both directions: a fast onboard clock must still be normal.
@@ -63,7 +63,7 @@ public sealed class ClockSkewProxyTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task TheControlPlaneChangesTheOffsetWhileTheProxyIsRunning()
     {
         // The scenario pushes the skew past the onboard's tolerance mid-run and pulls it back, so
@@ -81,7 +81,7 @@ public sealed class ClockSkewProxyTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task TheForwardLogRecordsWhatWentInAndWhatCameOut()
     {
         // Without this the scenario cannot tell "the onboard failed closed" from "the proxy was
@@ -101,7 +101,7 @@ public sealed class ClockSkewProxyTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task AnUpstreamRefusalIsForwardedExactlyAsItArrived()
     {
         // Repairing a 401 into something friendlier would hide the fail-closed behaviour the
@@ -115,7 +115,7 @@ public sealed class ClockSkewProxyTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task TheCallersCredentialReachesTheUpstreamUnchanged()
     {
         // The proxy must not be able to read a projection the onboard itself could not.
@@ -131,7 +131,7 @@ public sealed class ClockSkewProxyTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task AnOffsetOutsideTheAllowedRangeIsRefused()
     {
         await using UpstreamStub upstream = await UpstreamStub.StartAsync();
@@ -144,7 +144,7 @@ public sealed class ClockSkewProxyTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void WithoutATargetItRefusesToStart()
     {
         // Every other double answers for a system that does not exist here; this one forwards to a
@@ -153,7 +153,7 @@ public sealed class ClockSkewProxyTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void ANonLoopbackListenerIsRefused()
     {
         Assert.Null(ClockSkewProxyHost.TryCreate(

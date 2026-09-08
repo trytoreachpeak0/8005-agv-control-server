@@ -28,7 +28,7 @@ public sealed class SessionReadinessReasonCodesTests
 
     [Theory]
     [MemberData(nameof(InternalReasonCodes))]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void EverySessionReasonCodeMapsToAProtocolErrorCode(string internalReasonCode)
     {
         string wire = ProtocolErrorCodes.ToSessionReadinessReasonCode(internalReasonCode);
@@ -47,7 +47,7 @@ public sealed class SessionReadinessReasonCodesTests
     /// </summary>
     [Theory]
     [MemberData(nameof(InternalReasonCodes))]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void TheServerInternalReasonCodesAreNotThemselvesProtocolErrorCodes(string internalReasonCode)
     {
         Assert.False(
@@ -57,7 +57,7 @@ public sealed class SessionReadinessReasonCodesTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public void AnUnmappedReasonCodeThrowsRatherThanReachingTheWire()
     {
         Assert.Throws<InvalidDataException>(

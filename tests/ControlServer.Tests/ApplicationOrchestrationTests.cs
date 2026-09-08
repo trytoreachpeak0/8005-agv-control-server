@@ -9,7 +9,7 @@ namespace ControlServer.Tests;
 public sealed class ApplicationOrchestrationTests
 {
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
     public async Task IntakeUsesFinalMesReadBeforeAtomicCommit()
     {
@@ -36,7 +36,7 @@ public sealed class ApplicationOrchestrationTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task IntakeCoordinatorPersistsFinalDecisionFactsBeforeRiotMutation()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -75,7 +75,7 @@ public sealed class ApplicationOrchestrationTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task IntakeCoordinatorDoesNotDispatchWhenAnyDecisionFactChanged()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -106,8 +106,8 @@ public sealed class ApplicationOrchestrationTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     public async Task UnknownRiotResultKeepsOriginalUpperIdAndDoesNotBlindlyCreate()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -132,7 +132,7 @@ public sealed class ApplicationOrchestrationTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task CreateIsConfirmedOnlyByIndependentUpperIdRead()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -164,8 +164,8 @@ public sealed class ApplicationOrchestrationTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     public async Task UnknownCreateOutcomeSurvivesRestartAndConfirmedAbsenceDoesNotCreateAgain()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -213,7 +213,7 @@ public sealed class ApplicationOrchestrationTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     public async Task TerminalObservationIsPersistedAndFrozenIdentityMismatchNeverConfirms()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");

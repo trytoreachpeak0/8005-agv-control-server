@@ -8,7 +8,7 @@ namespace ControlServer.Tests;
 public sealed class WireToGateStoreTests
 {
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("ProtocolVector", "CV-SESSION-RECONNECT-DURING-RECOVERY")]
     [Trait("ProtocolVector", "CV-SESSION-RECOVERY-HAPPY")]
     public async Task FiveStepRecoveryRequiresCurrentGenerationAndUniqueConsistentFacts()
@@ -38,8 +38,8 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task SessionStaysUsableWhileOurOwnSlotOperationHoldsASlotUnlocked()
     {
         // Carrying out a SlotOperationCommand means unlocking a slot, and an unlocked slot is
@@ -66,7 +66,7 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task UnsafetyOurOwnOperationDoesNotExplainStillFailsTheSessionClosed()
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
@@ -109,7 +109,7 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task AnUnlockedSlotWithNoOperationOfOursInFlightFailsTheSessionClosed()
     {
         // An idle vehicle standing with a locker open is exactly what this gate is for. Nothing
@@ -145,7 +145,7 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
     public async Task SlotPlanAndReliableCommandAreAtomicAndBatchNeedsCompleteSafeEvidence()
     {
@@ -175,8 +175,8 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
     public async Task UnsafeCompletedOperationResultIsDurableButMovesDemandToRecovery()
     {
@@ -238,7 +238,7 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
     [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
     public async Task GateMovementRequiresFreshSafeCheckAndStableIntentIdentity()
     {
@@ -256,7 +256,7 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     [Trait("ProtocolVector", "CV-DESTINATION-UNLOAD-ALL-EMPTY")]
     public async Task UnloadCompletionCommitsAllFourFactsExactlyOnce()
     {
@@ -286,7 +286,7 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
     [Trait("ProtocolVector", "CV-CONNECTION-LOSS-SAFE-FINISH")]
     public async Task ConnectionLossCanFinishButNeverExpandActiveUnlockSet()
     {
@@ -304,7 +304,7 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-RELIABLE-RETRY-DIFFERENT-CONTENT")]
     [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
     [Trait("ProtocolVector", "CV-REQUEST-FIRST-RESULT-REPLAY")]
@@ -328,7 +328,7 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-07")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
     public async Task ForcedRecoveryGenerationFencesLateResultsAndPersistsDecision()
     {

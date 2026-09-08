@@ -10,7 +10,7 @@ public sealed class HttpSublotBoxCountReaderTests
     private static readonly DateTimeOffset Now = new(2026, 8, 26, 1, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task ReadsOnlyTheConfiguredBoundSublotQueryAndValidatesResponseIdentity()
     {
         RecordingHandler handler = new();
@@ -31,7 +31,7 @@ public sealed class HttpSublotBoxCountReaderTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
     public async Task RejectsStaleBoxCountEvidence()
     {
         RecordingHandler handler = new(Now.AddMinutes(-2));

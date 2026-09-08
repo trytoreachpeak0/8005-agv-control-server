@@ -14,8 +14,9 @@ namespace ControlServer.Tests;
 public sealed class OnboardJourneyPublisherTests
 {
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-SNAPSHOT-REPLACE-AND-ACK")]
     public async Task JourneySnapshotIsPersistedBeforeSendReplayedByteForByteAndAcknowledgedByExactHash()
     {
@@ -34,6 +35,7 @@ public sealed class OnboardJourneyPublisherTests
         VehicleBusinessProjection projection = new(
             4,
             "READY",
+            "TRANSPORT",
             false,
             "SUFFICIENT",
             []);
@@ -95,7 +97,7 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task AllJourneyProjectionKindsEmitFormalReleaseEnvelopesAndPersistExactWire()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -115,7 +117,7 @@ public sealed class OnboardJourneyPublisherTests
             "00000000-0000-4000-8000-000000000323",
             "AGV-001",
             9,
-            new VehicleBusinessProjection(3, "READY", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(3, "READY", "TRANSPORT", false, "SUFFICIENT", []),
             TestContext.Current.CancellationToken);
         await publisher.PublishCurrentStopWorklistAsync(
             "00000000-0000-4000-8000-000000000324",
@@ -134,10 +136,12 @@ public sealed class OnboardJourneyPublisherTests
             9,
             new UpcomingStopPlanProjection(
                 7,
-                demandId,
                 [new UpcomingMovementLeg(
                     "00000000-0000-4000-8000-000000000326",
                     "TO_PICKUP",
+                    "BUSINESS",
+                    demandId,
+                    null,
                     1,
                     "PICKUP-01",
                     "25",
@@ -168,7 +172,7 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
     public async Task UnchangedSnapshotRepublishesIntoAnAdvancingSessionGeneration()
     {
@@ -188,7 +192,7 @@ public sealed class OnboardJourneyPublisherTests
         RecordingPeer peer = new(context);
         OnboardJourneyPublisher publisher = new(store, peer, new AdvancingTimeProvider());
         const string messageId = "00000000-0000-4000-8000-000000000331";
-        VehicleBusinessProjection projection = new(2, "READY", false, "SUFFICIENT", []);
+        VehicleBusinessProjection projection = new(2, "READY", "TRANSPORT", false, "SUFFICIENT", []);
 
         await publisher.PublishVehicleBusinessStateAsync(
             messageId, "AGV-001", 1, projection, TestContext.Current.CancellationToken);
@@ -207,7 +211,8 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-RELIABLE-RETRY-DIFFERENT-CONTENT")]
     [Trait("ProtocolVector", "CV-SNAPSHOT-SAME-REVISION-CONFLICT")]
     public async Task SnapshotReplayWithDifferentContentOrAcknowledgementHashIsRejected()
@@ -224,7 +229,7 @@ public sealed class OnboardJourneyPublisherTests
         AdvancingTimeProvider clock = new();
         OnboardJourneyPublisher publisher = new(store, peer, clock);
         const string messageId = "00000000-0000-4000-8000-000000000311";
-        VehicleBusinessProjection original = new(1, "READY", false, "SUFFICIENT", []);
+        VehicleBusinessProjection original = new(1, "READY", "TRANSPORT", false, "SUFFICIENT", []);
         await publisher.PublishVehicleBusinessStateAsync(
             messageId, "AGV-001", 1, original, TestContext.Current.CancellationToken);
 
@@ -259,10 +264,10 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-01")]
-    [Trait("IntegrationSlice", "W2G-IS-02")]
-    [Trait("IntegrationSlice", "W2G-IS-03")]
-    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     public async Task CoreJourneyCommandsEmitFormalSchemaPayloadsWithExactCorrelationRules()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -383,7 +388,7 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-RELIABLE-RETRY-SAME-CONTENT")]
     public async Task DurableCommandIsPersistedBeforeByteExactReplayAndStopsAfterMatchingAck()
     {
@@ -451,6 +456,8 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
     public async Task SlotOperationRejectsInvalidCorrelationAndSlotOrderBeforePersistence()
     {
         await using SqliteConnection connection = new("Data Source=:memory:");
@@ -499,7 +506,7 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     public async Task SnapshotWireIsReproducibleByThePeerThatAcknowledgesIt()
     {
         // The acknowledgement requires the peer to reproduce our wire byte for byte, so the
@@ -526,7 +533,7 @@ public sealed class OnboardJourneyPublisherTests
             messageId,
             "AGV-001",
             1,
-            new VehicleBusinessProjection(6, "READY", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(6, "READY", "TRANSPORT", false, "SUFFICIENT", []),
             TestContext.Current.CancellationToken);
 
         ProtocolOutboxRow row = await context.ProtocolOutbox.SingleAsync(
@@ -557,7 +564,7 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     [Fact]
-    [Trait("IntegrationSlice", "W2G-IS-06")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("ProtocolVector", "CV-REQUEST-FIRST-RESULT-REPLAY")]
     public async Task ReplayIntoANewGenerationLeavesTheWireThePublisherWouldWriteAgain()
     {
@@ -577,7 +584,7 @@ public sealed class OnboardJourneyPublisherTests
         RecordingPeer peer = new(context);
         OnboardJourneyPublisher publisher = new(store, peer, new AdvancingTimeProvider());
         const string messageId = "00000000-0000-4000-8000-000000000351";
-        VehicleBusinessProjection projection = new(6, "READY", false, "SUFFICIENT", []);
+        VehicleBusinessProjection projection = new(6, "READY", "TRANSPORT", false, "SUFFICIENT", []);
 
         await publisher.PublishVehicleBusinessStateAsync(
             messageId, "AGV-001", 1, projection, TestContext.Current.CancellationToken);
