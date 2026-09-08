@@ -3,9 +3,11 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
+using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Adapters;
@@ -259,6 +261,126 @@ public sealed class MultiVehicleExecutionTests
         Assert.All(
             await fixture.Context.JourneyRuntimes.ToArrayAsync(TestContext.Current.CancellationToken),
             row => Assert.Equal(JourneyRuntimeEngine.CheckpointWaitExceededReason, row.BlockReasonCode));
+    }
+
+    // ---- the command surface, reached from the loop ------------------------------------------
+
+    /// <summary>
+    /// RIoT reporting a leg's order FAILED is REQ-0232's symptom, and it reaches the fault model
+    /// with the order this project has in flight, so REQ-0234's OrderHold has a target.
+    /// </summary>
+    [Fact]
+    public async Task AFailedLegOrderIsRecordedAsASymptomAndHoldsThatOrder()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Riot.MovementState = "MT_FINISHED";
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(FleetFixture.AgvIds[0]);
+        fixture.Riot.FailOrder(journey.PickupUpperId);
+
+        await fixture.RunRoundAsync();
+
+        RiotOrderCommandAuditRow[] holds = await fixture.HoldAttemptsAsync();
+        RiotOrderCommandAuditRow hold = Assert.Single(holds);
+        Assert.Equal(RiotCommandTypeNames.OrderHold, hold.CommandType);
+        Assert.Equal(FleetFixture.AgvIds[0], hold.AgvId);
+        Assert.Equal(journey.PickupUpperId, hold.TargetUpperId);
+        Assert.Equal(1, hold.AttemptNumber);
+
+        VehicleFaultStateRow fault = Assert.Single(
+            await fixture.Context.VehicleFaultStates.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(FleetFixture.AgvIds[0], fault.AgvId);
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, fault.Level);
+        Assert.Equal(VehicleFaultEvidence.OrderFailed, fault.EvidenceCode);
+        Assert.Equal(
+            VehicleFaultEvidence.OrderFailed,
+            (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).BlockReasonCode);
+    }
+
+    /// <summary>
+    /// The hold goes out once, however many rounds run over it.
+    /// </summary>
+    /// <remarks>
+    /// This is specification 8.3's "called once" for the command surface, and it is not an accident
+    /// of the loop's rate: reconciliation reads the order back and finds it terminal in a state the
+    /// hold was not for, which is <c>Failed</c> — the command did not achieve what it was for and
+    /// no longer can. Re-issuing that is a repeated dispatch, so the coordinator does not. Counted
+    /// off the audit table rather than off the double's call list, because a retry is a new attempt
+    /// row and that is what makes "once" and "three times" different facts rather than a matter of
+    /// trust.
+    /// </remarks>
+    [Fact]
+    public async Task AFailedLegOrderIsHeldOnceHoweverManyRoundsRun()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Riot.MovementState = "MT_FINISHED";
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(FleetFixture.AgvIds[0]);
+        fixture.Riot.FailOrder(journey.PickupUpperId);
+
+        for (int round = 0; round < 6; round++)
+        {
+            await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        }
+
+        Assert.Single(await fixture.HoldAttemptsAsync());
+        Assert.Single(
+            fixture.Riot.OrderCommands,
+            call => call.CommandType == RiotCommandTypeNames.OrderHold);
+        // A vehicle standing still at a known station has proven it stopped, so REQ-0246's
+        // escalation does not fire and no emergency stop is issued. The two halves are asserted
+        // together because "held once" would also be true of a vehicle that was emergency-stopped
+        // on the first round, and that is a different event entirely.
+        Assert.Empty(fixture.Riot.EmergencyCommands);
+    }
+
+    /// <summary>
+    /// One vehicle's failed order is one vehicle's business: the other two keep their journeys,
+    /// their reasons and their absence from the command audit.
+    /// </summary>
+    [Fact]
+    public async Task AFailedLegOrderDoesNotReachTheOtherVehicles()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Riot.MovementState = "MT_FINISHED";
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow journey = await fixture.JourneyOfAsync(FleetFixture.AgvIds[1]);
+        fixture.Riot.FailOrder(journey.PickupUpperId);
+
+        await fixture.RunRoundAsync();
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        RiotOrderCommandAuditRow hold = Assert.Single(await fixture.HoldAttemptsAsync());
+        Assert.Equal(FleetFixture.AgvIds[1], hold.AgvId);
+        Assert.Equal(
+            FleetFixture.AgvIds[1],
+            Assert.Single(await fixture.Context.VehicleFaultStates.ToArrayAsync(
+                TestContext.Current.CancellationToken)).AgvId);
+        foreach (string agvId in new[] { FleetFixture.AgvIds[0], FleetFixture.AgvIds[2] })
+        {
+            Assert.Null((await fixture.JourneyOfAsync(agvId)).BlockReasonCode);
+        }
+    }
+
+    /// <summary>
+    /// A leg that is merely still running issues nothing. "Called when it was due" needs the
+    /// negative half as much as the positive one.
+    /// </summary>
+    [Fact]
+    public async Task AHealthyLegIssuesNoCommandAtAll()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Riot.MovementState = "MT_FINISHED";
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Empty(await fixture.Context.RiotOrderCommandAudit.ToArrayAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Empty(fixture.Riot.OrderCommands);
+        Assert.Empty(await fixture.Context.VehicleFaultStates.ToArrayAsync(
+            TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -598,6 +720,34 @@ public sealed class MultiVehicleExecutionTests
             return fixture;
         }
 
+        /// <summary>One more round, with the clock moved on first so samples are spaced.</summary>
+        /// <remarks>
+        /// The tracker is cleared between rounds because each round is a fresh scope in the worker
+        /// and these tests share one context; without it a row this test read stays attached and
+        /// the next round's read comes back from memory rather than from the database.
+        /// </remarks>
+        public async Task RunRoundAsync(TimeSpan? advance = null)
+        {
+            if (advance is TimeSpan elapsed)
+            {
+                Clock.Advance(elapsed);
+            }
+
+            Context.ChangeTracker.Clear();
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
+        public async Task<JourneyRuntimeRow> JourneyOfAsync(string agvId) =>
+            await Context.JourneyRuntimes.AsNoTracking()
+                .SingleAsync(row => row.AgvId == agvId, TestContext.Current.CancellationToken);
+
+        public async Task<RiotOrderCommandAuditRow[]> HoldAttemptsAsync() =>
+            await Context.RiotOrderCommandAudit.AsNoTracking()
+                .Where(row => row.CommandType == RiotCommandTypeNames.OrderHold)
+                .OrderBy(row => row.AttemptNumber)
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+
         public async Task RecreateEngineAsync()
         {
             Context.ChangeTracker.Clear();
@@ -723,9 +873,37 @@ public sealed class MultiVehicleExecutionTests
                 new VehicleDispatchPolicyAccess(new VehicleDispatchPolicyStore(Context), options, Clock),
                 Riot,
                 CheckpointWaits,
+                CreateFaultCoordinator(),
                 options,
                 Clock,
                 NullLogger<JourneyRuntimeEngine>.Instance);
+        }
+
+        private VehicleFaultCoordinator CreateFaultCoordinator()
+        {
+            VehicleFaultStore faults = new(Context);
+            RiotOrderCommandAuditStore audit = new(Context);
+            IOptions<VehicleFaultOptions> faultOptions =
+                Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions());
+            return new VehicleFaultCoordinator(
+                faults,
+                Riot,
+                Riot,
+                Riot,
+                audit,
+                new RiotOrderCommandService(Riot, audit, Riot, Clock),
+                new EmergencyStopSupervisor(
+                    Riot,
+                    Riot,
+                    audit,
+                    faults,
+                    Microsoft.Extensions.Options.Options.Create(new RiotCommandOptions()),
+                    Clock,
+                    NullLogger<EmergencyStopSupervisor>.Instance),
+                new VehicleMotionLedger(faultOptions),
+                faultOptions,
+                Clock,
+                NullLogger<VehicleFaultCoordinator>.Instance);
         }
 
         private async Task SeedAsync()
@@ -943,7 +1121,8 @@ public sealed class MultiVehicleExecutionTests
     /// on one vehicle the way an unanswered call does.
     /// </summary>
     private sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
-        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts, IRiotRouteCostProbe
+        : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts,
+          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts
     {
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
 
@@ -1047,6 +1226,64 @@ public sealed class MultiVehicleExecutionTests
             _ = vehicleKey;
             _ = cancellationToken;
             return Task.FromResult<RiotRouteCost?>(new RiotRouteCost(12_000));
+        }
+
+        /// <summary>Every order command issued, oldest first, as (commandType, orderId).</summary>
+        public List<(string CommandType, string OrderId)> OrderCommands { get; } = [];
+
+        /// <summary>Every emergency command issued, oldest first, as (commandType, deviceKey).</summary>
+        public List<(string CommandType, string DeviceKey)> EmergencyCommands { get; } = [];
+
+        /// <summary>
+        /// Moves an order to RIoT's terminal FAILED, the way RIoT reports a move order that could
+        /// not be carried out. The fake never applies a command's consequence, so a hold issued
+        /// against this order leaves it here -- which is what makes the retry rule observable.
+        /// </summary>
+        public void FailOrder(string upperId)
+        {
+            RiotOrderObservation order = _orders[upperId];
+            _orders[upperId] = order with
+            {
+                Kind = RiotOrderObservationKind.Terminal,
+                OrderState = RiotOrderState.Failed,
+            };
+        }
+
+        public Task<RiotCommandCallResult> IssueOrderCommandAsync(
+            RiotOrderCommandKind kind,
+            string orderId,
+            string? reason,
+            CancellationToken cancellationToken)
+        {
+            _ = reason;
+            _ = cancellationToken;
+            string commandType = RiotCommandTypeNames.For(kind);
+            OrderCommands.Add((commandType, orderId));
+            return Task.FromResult(new RiotCommandCallResult(
+                RiotCommandCallDisposition.Accepted,
+                new RiotOrderCallReceipt(commandType, "SdkAccepted", clock.GetUtcNow(), ResultPresent: true)));
+        }
+
+        public Task<RiotCommandCallResult> IssueEmergencyCommandAsync(
+            RiotEmergencyCommandKind kind,
+            string deviceKey,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            string commandType = RiotCommandTypeNames.For(kind);
+            EmergencyCommands.Add((commandType, deviceKey));
+            return Task.FromResult(new RiotCommandCallResult(
+                RiotCommandCallDisposition.Accepted,
+                new RiotOrderCallReceipt(commandType, "SdkAccepted", clock.GetUtcNow(), ResultPresent: true)));
+        }
+
+        public Task<RiotVehicleEmergencyObservation> ReadEmergencyStateAsync(
+            string deviceKey,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotVehicleEmergencyObservation(
+                deviceKey, RiotVehicleEmergencyObservation.Ok, clock.GetUtcNow()));
         }
     }
 

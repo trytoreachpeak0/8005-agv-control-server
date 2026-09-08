@@ -579,10 +579,22 @@ public sealed class VehicleFaultCoordinator(
     /// </para>
     /// <para>
     /// A hold already confirmed is not re-issued — the order is where the command wanted it. A hold
-    /// that is not confirmed is re-issued on the next evaluation, until the vehicle escalates: once
+    /// that is still open is re-issued on the next evaluation, until the vehicle escalates: once
     /// an emergency stop has been triggered the vehicle is held by something stronger than an order
     /// state, and REQ-0234 asks for the block and a high-priority event from there on, not for a
     /// command repeated at whatever rate the caller happens to evaluate.
+    /// </para>
+    /// <para>
+    /// <b>A hold that came back <see cref="RiotOrderCommandOutcome.Failed"/> is not re-issued
+    /// either.</b> Failed is reconciliation's word for a terminal state that is not the intended
+    /// one — the order is CANCELLED, FAILED, SUCCESS, DELETED or SUSPENDED — and
+    /// <c>RiotOrderCommandService.Reconcile</c> reaches it precisely because the command "did not
+    /// achieve what it was for and no longer can". Sending it again cannot change that, and the
+    /// commonest way into this class is a vehicle whose order RIoT already reports FAILED: without
+    /// this, that vehicle would take one <c>CMD_ORDER_HELD</c> per evaluation for as long as the
+    /// fault stood, which is the repeated dispatch specification 8.3 asks the exit evidence to
+    /// rule out. Open outcomes — Pending and Unknown — still retry, because those are the ones a
+    /// later read can still settle.
     /// </para>
     /// </remarks>
     private async Task<RiotOrderCommandOutcome?> HoldCurrentOrderAsync(
@@ -604,9 +616,11 @@ public sealed class VehicleFaultCoordinator(
             return RiotOrderCommandOutcome.Confirmed;
         }
 
-        if (thisEpisode.Length > 0 && fault.EscalatedAt is not null)
+        RiotOrderCommandAttempt? last = thisEpisode.Length > 0 ? thisEpisode[^1] : null;
+        if (last is not null &&
+            (fault.EscalatedAt is not null || last.Outcome == RiotOrderCommandOutcome.Failed))
         {
-            return thisEpisode[^1].Outcome;
+            return last.Outcome;
         }
 
         RiotOrderCommandRecord record = await commands.IssueAsync(

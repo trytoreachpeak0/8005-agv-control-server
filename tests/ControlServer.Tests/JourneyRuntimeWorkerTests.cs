@@ -11,9 +11,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.CreateGate;
+using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 
 namespace ControlServer.Tests;
@@ -2206,9 +2208,44 @@ public sealed class JourneyRuntimeWorkerTests
                 new VehicleDispatchPolicyAccess(new VehicleDispatchPolicyStore(Context), options, Clock),
                 Riot,
                 CheckpointWaits,
+                CreateFaultCoordinator(),
                 options,
                 Clock,
                 NullLogger<JourneyRuntimeEngine>.Instance);
+        }
+
+        /// <summary>
+        /// The fault model, reachable but never reached by these tests: the engine consults it
+        /// only when RIoT reports a leg's order FAILED, and nothing here produces one. It is built
+        /// over the real stores so that a test which ever does produce one fails on the behaviour
+        /// rather than on a stub that was never taught to answer.
+        /// </summary>
+        private VehicleFaultCoordinator CreateFaultCoordinator()
+        {
+            VehicleFaultStore faults = new(Context);
+            RiotOrderCommandAuditStore audit = new(Context);
+            Microsoft.Extensions.Options.IOptions<VehicleFaultOptions> faultOptions =
+                Microsoft.Extensions.Options.Options.Create(new VehicleFaultOptions());
+            SilentCommandGateway gateway = new(Clock);
+            return new VehicleFaultCoordinator(
+                faults,
+                gateway,
+                Riot,
+                Riot,
+                audit,
+                new RiotOrderCommandService(gateway, audit, Riot, Clock),
+                new EmergencyStopSupervisor(
+                    gateway,
+                    gateway,
+                    audit,
+                    faults,
+                    Microsoft.Extensions.Options.Options.Create(new RiotCommandOptions()),
+                    Clock,
+                    NullLogger<EmergencyStopSupervisor>.Instance),
+                new VehicleMotionLedger(faultOptions),
+                faultOptions,
+                Clock,
+                NullLogger<VehicleFaultCoordinator>.Instance);
         }
 
         private PreCreateGate CreateGate() => new(
@@ -2216,6 +2253,53 @@ public sealed class JourneyRuntimeWorkerTests
             new CatalogAvailabilityStore(Context),
             Clock,
             NullLogger<PreCreateGate>.Instance);
+
+        /// <summary>
+        /// A command surface that answers but is never asked here. Every method throws nothing and
+        /// records nothing on purpose: if one of these tests ever does drive a leg to FAILED, the
+        /// assertion that fails should be about the fault model, not about a double that was left
+        /// unable to answer.
+        /// </summary>
+        private sealed class SilentCommandGateway(TimeProvider clock)
+            : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts
+        {
+            public Task<RiotCommandCallResult> IssueOrderCommandAsync(
+                RiotOrderCommandKind kind,
+                string orderId,
+                string? reason,
+                CancellationToken cancellationToken)
+            {
+                _ = orderId;
+                _ = reason;
+                _ = cancellationToken;
+                return Task.FromResult(new RiotCommandCallResult(
+                    RiotCommandCallDisposition.Accepted,
+                    new RiotOrderCallReceipt(
+                        RiotCommandTypeNames.For(kind), "SdkAccepted", clock.GetUtcNow())));
+            }
+
+            public Task<RiotCommandCallResult> IssueEmergencyCommandAsync(
+                RiotEmergencyCommandKind kind,
+                string deviceKey,
+                CancellationToken cancellationToken)
+            {
+                _ = deviceKey;
+                _ = cancellationToken;
+                return Task.FromResult(new RiotCommandCallResult(
+                    RiotCommandCallDisposition.Accepted,
+                    new RiotOrderCallReceipt(
+                        RiotCommandTypeNames.For(kind), "SdkAccepted", clock.GetUtcNow())));
+            }
+
+            public Task<RiotVehicleEmergencyObservation> ReadEmergencyStateAsync(
+                string deviceKey,
+                CancellationToken cancellationToken)
+            {
+                _ = cancellationToken;
+                return Task.FromResult(new RiotVehicleEmergencyObservation(
+                    deviceKey, RiotVehicleEmergencyObservation.Ok, clock.GetUtcNow()));
+            }
+        }
 
         private async Task SeedRecoveredPeerAsync()
         {

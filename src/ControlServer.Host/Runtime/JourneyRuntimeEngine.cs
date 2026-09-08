@@ -9,7 +9,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
+using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.CreateGate;
+using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 
 namespace ControlServer.Host.Runtime;
@@ -33,6 +35,7 @@ public sealed class JourneyRuntimeEngine(
     VehicleDispatchPolicyAccess dispatchPolicy,
     IVehicleMotionFacts motionFacts,
     CheckpointWaitLedger checkpointWaits,
+    VehicleFaultCoordinator faults,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -68,6 +71,12 @@ public sealed class JourneyRuntimeEngine(
             new EventId(2106, nameof(LogVehicleOccupancyConflict)),
             "Vehicle {AgvId} already holds an in-flight order; the claim for {UpperId} was refused by " +
             "the occupancy index.");
+    private static readonly Action<ILogger, string, string, string, Exception?> LogOrderFailedSymptom =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2107, nameof(LogOrderFailedSymptom)),
+            "RIoT reports order {UpperId} FAILED on vehicle {AgvId}; journey {DemandId} recorded the " +
+            "symptom with the fault model and stopped advancing on its own.");
 
     /// <summary>The journey is not arriving because the vehicle is holding at a traffic checkpoint.</summary>
     public const string CheckpointWaitReason = "VEHICLE_WAITING_AT_CHECKPOINT";
@@ -512,8 +521,15 @@ public sealed class JourneyRuntimeEngine(
                 {
                     return;
                 }
-                if (!await IsTrustedArrivalAsync(runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false))
+                ArrivalCheck pickupArrival = await CheckArrivalAsync(
+                    runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false);
+                if (!pickupArrival.Trusted)
                 {
+                    if (await ObserveOrderFailureAsync(runtime, pickupArrival, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        return;
+                    }
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
@@ -625,8 +641,15 @@ public sealed class JourneyRuntimeEngine(
                 {
                     return;
                 }
-                if (!await IsTrustedArrivalAsync(runtime, "TO_GATE", session, cancellationToken).ConfigureAwait(false))
+                ArrivalCheck gateArrival = await CheckArrivalAsync(
+                    runtime, "TO_GATE", session, cancellationToken).ConfigureAwait(false);
+                if (!gateArrival.Trusted)
                 {
+                    if (await ObserveOrderFailureAsync(runtime, gateArrival, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        return;
+                    }
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
@@ -711,7 +734,23 @@ public sealed class JourneyRuntimeEngine(
             StringComparison.Ordinal);
     }
 
-    private async Task<bool> IsTrustedArrivalAsync(
+    /// <summary>
+    /// One arrival evaluation, with the order reading it was decided from.
+    /// </summary>
+    /// <remarks>
+    /// The observation is carried out rather than discarded because a journey that did not arrive
+    /// still has to say why, and the order's own state is the first thing that answers it. Reading
+    /// it a second time for that would be a second RIoT call per poll and, worse, a second answer:
+    /// the two reads could disagree, and then "not arrived" and "the order failed" would be judged
+    /// against different facts.
+    /// </remarks>
+    private sealed record ArrivalCheck(
+        bool Trusted,
+        string Purpose,
+        OrderIntentRow Intent,
+        RiotOrderObservation Order);
+
+    private async Task<ArrivalCheck> CheckArrivalAsync(
         JourneyRuntimeRow runtime,
         string purpose,
         SessionRecoveryRow session,
@@ -724,7 +763,7 @@ public sealed class JourneyRuntimeEngine(
             .ConfigureAwait(false);
         int targetStation = purpose == "TO_PICKUP" ? runtime.PickupStationRiotId : runtime.GateStationRiotId;
         bool exactOrder = order.Kind == RiotOrderObservationKind.Terminal &&
-                          order.OrderState == 5 &&
+                          order.OrderState == RiotOrderState.Success &&
                           !string.IsNullOrWhiteSpace(order.OrderId) &&
                           order.OrderId == intent.OrderId &&
                           order.VehicleKey == runtime.VehicleKey &&
@@ -732,14 +771,14 @@ public sealed class JourneyRuntimeEngine(
                           order.DestinationStationId == targetStation;
         if (!exactOrder)
         {
-            return false;
+            return new ArrivalCheck(false, purpose, intent, order);
         }
         RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(runtime.VehicleKey, cancellationToken)
             .ConfigureAwait(false);
         OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         DateTimeOffset now = timeProvider.GetUtcNow();
-        return vehicle.Connected && vehicle.Enabled &&
+        bool trusted = vehicle.Connected && vehicle.Enabled &&
                vehicle.ProcState == "IDLE" &&
                vehicle.CurrentMap == runtime.MapIdentity &&
                vehicle.CurrentStationId == targetStation &&
@@ -750,6 +789,81 @@ public sealed class JourneyRuntimeEngine(
                onboard is not null && onboard.SessionGeneration == session.SessionGeneration &&
                onboard.VehicleStopped && onboard.AllTargetSlotsLocked && onboard.AllUnlockOutputsReset &&
                !onboard.UnknownPresent;
+        return new ArrivalCheck(trusted, purpose, intent, order);
+    }
+
+    /// <summary>
+    /// REQ-0232's one symptom this loop can establish for itself: RIoT reports the move order this
+    /// journey has in flight as FAILED.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why this symptom and not the other four.</b> REQ-0232 names five - offline, comms lost,
+    /// navigation failed, one order FAILED, elapsed time - and the fault model treats all five
+    /// alike once they arrive. What separates this one is that the loop can establish it without
+    /// guessing: a terminal FAILED on an order this server created is RIoT's own statement about
+    /// this project's own task, and it arrives with the two things the model needs before it can
+    /// protect anything - a vehicle with an order in flight, so <c>OrderHold</c> has a target, and
+    /// an order <c>ResumeAsync</c> can later be asked about, so the fault has a clearing path.
+    /// A vehicle merely unreachable has neither, which is why ticket 09 declined to route
+    /// <c>VEHICLE_OFFLINE</c> here: it would record a fault nothing could clear.
+    /// </para>
+    /// <para>
+    /// <b>The stage is deliberately not moved to Blocked.</b> The fault fact is what blocks new
+    /// dispatch, and it does so from the moment it is recorded. Leaving the journey in its arrival
+    /// stage keeps this loop evaluating, which is the only thing that advances REQ-0247's stop
+    /// proof - a window of samples needs the loop to keep sampling - and keeps the escalation live
+    /// if the vehicle turns out to be moving after all. What changes is the reason the journey
+    /// names for standing still, in the same shape a checkpoint wait names its own.
+    /// </para>
+    /// <para>
+    /// Cargo is claimed only on the gate leg. On the way to the pickup the vehicle is empty and
+    /// that is known, which is REQ-0238's one case for not binding; past a committed load it is
+    /// carrying this demand's product and the binding has to hold.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> ObserveOrderFailureAsync(
+        JourneyRuntimeRow runtime,
+        ArrivalCheck arrival,
+        CancellationToken cancellationToken)
+    {
+        if (arrival.Order.Kind != RiotOrderObservationKind.Terminal ||
+            arrival.Order.OrderState != RiotOrderState.Failed ||
+            arrival.Intent.OrderId is not string orderId)
+        {
+            return false;
+        }
+
+        string transportDemandKey = await dbContext.AcceptedDemands
+            .Where(row => row.DemandId == runtime.DemandId)
+            .Select(row => row.TransportDemandKey)
+            .SingleAsync(cancellationToken).ConfigureAwait(false);
+        FaultedVehicleCargoFacts? cargo = arrival.Purpose == "TO_GATE"
+            ? new FaultedVehicleCargoFacts(
+                runtime.DemandId,
+                runtime.GateMovementLegId,
+                transportDemandKey,
+                LoadingWitnessed: true,
+                CargoStateKnown: true)
+            : null;
+
+        await faults.ObserveAsync(
+            new EmergencyStopSubject(runtime.AgvId, runtime.VehicleKey),
+            VehicleFaultEvidence.OrderFailed,
+            new FaultedVehicleContext(
+                new RiotOrderCommandTarget(runtime.AgvId, arrival.Intent.UpperId, orderId),
+                cargo),
+            cancellationToken).ConfigureAwait(false);
+
+        LogOrderFailedSymptom(logger, arrival.Intent.UpperId, runtime.AgvId, runtime.DemandId, null);
+        checkpointWaits.Clear(runtime.VehicleKey);
+        if (!string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal))
+        {
+            runtime.BlockReasonCode = VehicleFaultEvidence.OrderFailed;
+            runtime.UpdatedAt = timeProvider.GetUtcNow();
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        return true;
     }
 
     /// <summary>
