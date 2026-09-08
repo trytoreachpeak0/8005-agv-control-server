@@ -54,6 +54,37 @@ public sealed record FaultCommand : CommandEnvelope
 }
 
 /// <summary>
+/// Replaces the Map's edge-group membership, as <c>mapEdgeGroup/all</c> reports it.
+/// </summary>
+/// <remarks>
+/// A scenario drives this to make the route-graph engine's fingerprint change under a snapshot it
+/// has already taken. It is a replacement rather than an addition because the fingerprint is over
+/// the whole membership, and a scenario that could only add would never be able to drive the other
+/// direction.
+/// </remarks>
+public sealed record EdgeGroupsCommand : CommandEnvelope
+{
+    /// <summary>Group name to the edge ids in it. An empty dictionary clears every group.</summary>
+    public Dictionary<string, int[]>? Groups { get; init; }
+
+    /// <summary>The Map the groups belong to. Groups span Maps on the real RIoT, so this is not optional.</summary>
+    public int? MapId { get; init; }
+}
+
+/// <summary>
+/// Replaces what <c>GET /api/task/v1/route/</c> answers.
+/// </summary>
+/// <remarks>
+/// The engine reads it for presence only: empty is what every observation of the real endpoint has
+/// returned, and a graph built while it was empty stops being a complete account of routing the
+/// moment it is not. A scenario that puts anything here is exercising that trigger.
+/// </remarks>
+public sealed record DynamicRouteCostsCommand : CommandEnvelope
+{
+    public Dictionary<string, double>? Costs { get; init; }
+}
+
+/// <summary>
 /// The loopback control plane. It can only say what RIoT <em>observes</em>; it offers no way to
 /// move the vehicle or complete an order, because dispatching is the control server's job and a
 /// scenario that could stage the end state would be testing itself.
@@ -92,6 +123,7 @@ public static class ControlPlane
                 // off this list -- the fake never applies the command's consequence.
                 commandInvocations = state.CommandInvocations,
                 edgeGroups = state.EdgeGroups,
+                dynamicRouteCosts = state.DynamicRouteCosts,
                 removedEdges = state.RemovedEdgeIdsByMapId.OrderBy(pair => pair.Key)
                     .Select(pair => new { mapId = pair.Key, edgeIds = pair.Value }),
                 removedStations = state.RemovedStationIdsByMapId.OrderBy(pair => pair.Key)
@@ -213,6 +245,48 @@ public static class ControlPlane
                     };
                     return state with { StationsByMapId = maps };
                 }));
+
+        control.MapPut("/edge-groups", (EdgeGroupsCommand command) =>
+            ControlPlaneConventions.Handle(engine, "edge-groups", command, state =>
+            {
+                if (command.Groups is null || command.MapId is not int mapId)
+                {
+                    throw new CommandRefusedException(ReasonCodes.InvalidArgument);
+                }
+
+                // Ids are allocated here rather than taken from the caller: they are RIoT's row
+                // ids, they mean nothing to a scenario, and letting a scenario choose them would
+                // be one more way for two runs to differ for no reason.
+                int nextId = 1;
+                List<FakeEdgeGroup> groups = [];
+                foreach (KeyValuePair<string, int[]> group in command.Groups.OrderBy(
+                             pair => pair.Key, StringComparer.Ordinal))
+                {
+                    foreach (int edgeId in group.Value.OrderBy(id => id))
+                    {
+                        groups.Add(new FakeEdgeGroup(
+                            group.Key, nextId++, mapId, state.Vehicles.Values.First().CurrentMap, edgeId, "NORMAL"));
+                    }
+                }
+
+                return state.EdgeGroups.SequenceEqual(groups) ? null : state with { EdgeGroups = groups };
+            }));
+
+        control.MapPut("/dynamic-route-costs", (DynamicRouteCostsCommand command) =>
+            ControlPlaneConventions.Handle(engine, "dynamic-route-costs", command, state =>
+            {
+                if (command.Costs is null)
+                {
+                    throw new CommandRefusedException(ReasonCodes.InvalidArgument);
+                }
+
+                Dictionary<string, double> costs = new(command.Costs, StringComparer.Ordinal);
+                return state.DynamicRouteCosts.Count == costs.Count &&
+                       state.DynamicRouteCosts.All(pair =>
+                           costs.TryGetValue(pair.Key, out double value) && value == pair.Value)
+                    ? null
+                    : state with { DynamicRouteCosts = costs };
+            }));
 
         control.MapPut("/faults/http", (FaultCommand command) =>
             ControlPlaneConventions.Handle(engine, "fault", command, state =>

@@ -52,7 +52,13 @@ param(
     # default, which is how the workspace lays them out.
     [string]$OnboardRepository,
     [string]$SimulatorRepository,
-    [string]$PeerCacheRoot = (Join-Path $env:LOCALAPPDATA '8005-l2-peers')
+    [string]$PeerCacheRoot = (Join-Path $env:LOCALAPPDATA '8005-l2-peers'),
+
+    # Which batch's exit this run is evidence for. Specification 8.4 asks assertions.json to be
+    # able to answer "whose exit evidence is this", and nothing in the repository can derive it:
+    # a batch is a plan, not a property of the code. It is a parameter with a default rather than
+    # a constant so that CI states it explicitly and a later batch changes one argument.
+    [string]$BatchId = 'batch-2'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -142,6 +148,11 @@ $failureReason = $null
 # the peers are built.
 $onboardPublish = $null
 $simulatorPublish = $null
+# Read off /version once the server is up, never restated here. Specification 8.4 wants L2 evidence
+# to be invalidated by a protocol generation the way a G2 gate-result is, and the only identity that
+# can do that is the one the build actually enforces on the wire -- restating a triple in this
+# script would make the evidence agree with the script rather than with the server.
+$protocolReleaseIdentity = $null
 # Held only by the real-onboard rig, and released in `finally` after teardown. Declared here so that
 # release is unconditional even when the run dies before acquiring it.
 $desktopLock = $null
@@ -194,6 +205,24 @@ try {
     $credential = [guid]::NewGuid().ToString('N')
     $agvId = 'AGV-L2-001'
     $vehicleKey = 'BROKERX-L2-0001'
+    # The vehicles this run drives, primary first. A scenario that says nothing gets exactly one
+    # -- the single-vehicle deployment every existing scenario was written against, where
+    # JourneyRuntime:Fleet stays empty and the server derives its one roster entry from the fields
+    # below. A scenario that lists Fleet gets those vehicles *in addition to* the primary pair
+    # rather than instead of it, because the options validator requires the roster to contain the
+    # primary pair: stating it in every setup file would be a line nobody could get right in a
+    # second way.
+    $fleet = @(
+        @{ AgvId = $agvId; VehicleKey = $vehicleKey }
+    )
+    if ($setup.ContainsKey('Fleet')) {
+        foreach ($vehicle in $setup.Fleet) {
+            if (-not $vehicle.ContainsKey('AgvId') -or -not $vehicle.ContainsKey('VehicleKey')) {
+                throw "Every Fleet entry in $Scenario.setup.psd1 needs both AgvId and VehicleKey."
+            }
+            $fleet += @{ AgvId = $vehicle.AgvId; VehicleKey = $vehicle.VehicleKey }
+        }
+    }
     $mapIdentity = 'MAP-L2'
     $mapId = 25
     $gateStationId = '关卡'
@@ -210,6 +239,11 @@ try {
         "--FakeRiot:Seed:mapIdentity=$mapIdentity",
         "--FakeRiot:Seed:mapId=$mapId",
         "--FakeRiot:Seed:startStationId=$gateStationRiotId")
+    # Every vehicle past the first. They start at rest on the same Map at the same station, which
+    # is what a fleet parked at the gate looks like before the first round.
+    for ($index = 1; $index -lt $fleet.Count; $index++) {
+        $riotArguments += "--FakeRiot:Seed:AdditionalVehicleKeys:$($index - 1)=$($fleet[$index].VehicleKey)"
+    }
     if ($setup.ContainsKey('RouteCosts')) {
         foreach ($key in ($setup.RouteCosts.Keys | Sort-Object)) {
             $riotArguments += "--FakeRiot:Seed:RouteCosts:$key=$($setup.RouteCosts[$key])"
@@ -313,6 +347,26 @@ try {
         'JourneyRuntime__admissionPolicyDeploymentId'     = "L2-$runId"
     }
 
+    # The roster, only when there is more than one vehicle. Left absent for a single-vehicle run
+    # so that those scenarios keep facing the empty-Fleet path -- the one an upgraded single-vehicle
+    # deployment actually runs -- rather than a roster of one that merely behaves the same.
+    #
+    # The policy slice is stated per vehicle because an unstated one admits nothing: an empty
+    # AllowedTaskTypes means the vehicle may take no task at all, and an empty Zones means it
+    # serves none. Both are read from the same single-vehicle fields the server would otherwise
+    # derive its one entry from, so the fleet runs the configuration the single vehicle ran.
+    if ($fleet.Count -gt 1) {
+        for ($index = 0; $index -lt $fleet.Count; $index++) {
+            $serverEnvironment["JourneyRuntime__Fleet__${index}__AgvId"] = $fleet[$index].AgvId
+            $serverEnvironment["JourneyRuntime__Fleet__${index}__VehicleKey"] = $fleet[$index].VehicleKey
+            $serverEnvironment["JourneyRuntime__Fleet__${index}__AgvLifecycleGeneration"] = '1'
+            $serverEnvironment["JourneyRuntime__Fleet__${index}__AllowedTaskTypes__0"] = 'WIRE_TO_GATE'
+            $serverEnvironment["JourneyRuntime__Fleet__${index}__Zones__0"] = 'MAP-25-WIRE_TO_GATE'
+        }
+        $journal.Note("Fleet of $($fleet.Count): " +
+            (($fleet | ForEach-Object { "$($_.AgvId)/$($_.VehicleKey)" }) -join ', '))
+    }
+
     # FP-C13: the two REQ-0302 values, approved. A commissioned server has them, so every scenario
     # faces one. `CatalogApproved = $false` in a setup file takes them away, which is the negative
     # evidence specification 8.6 requires -- and there is no switch that turns the check off, only
@@ -375,6 +429,22 @@ try {
         -TimeoutSeconds 120 -Component $serverHandle `
         -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
         -Until { param($v) $v -eq 'live' }
+
+    $version = Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/version" -TimeoutSec 5
+    $protocolReleaseIdentity = [ordered]@{
+        repository         = '8005-agv-protocol'
+        releaseVersion     = $version.protocolReleaseVersion
+        tag                = $version.protocolTag
+        commit             = $version.protocolCommit
+        protocolVersion    = $version.protocolVersion
+        profileId          = $version.profileId
+        manifestSha256     = $version.manifestSha256
+        schemaBundleSha256 = $version.schemaBundleSha256
+        vectorsSha256      = $version.vectorsSha256
+        approvalStatus     = $version.approvalStatus
+    }
+    $journal.Note("Protocol release identity: $($version.protocolTag) " +
+        "(protocolVersion $($version.protocolVersion), $($version.approvalStatus)).")
 
     # 4b. The skew proxy, when a scenario asked for one. After the server (it forwards to it) and
     #     before the onboard (which must find it listening on its first poll).
@@ -474,7 +544,13 @@ try {
         # a single-element array coming out of either branch would be unrolled to the hashtable
         # itself. Indexing that with [0] then looks up the key 0 and yields null -- which is how
         # every single-peer scenario broke while the three-peer one passed.
-        $peerSpecs = @(if ($setup.ContainsKey('OnboardPeers')) { $setup.OnboardPeers } else { @{ AgvId = $agvId } })
+        # A scenario that drives a fleet gets one peer per vehicle without listing them twice:
+        # a roster entry the server drives and a peer it drives it through are the same vehicle,
+        # and two lists of the same names is one way for them to disagree.
+        $peerSpecs = @(
+            if ($setup.ContainsKey('OnboardPeers')) { $setup.OnboardPeers }
+            elseif ($fleet.Count -gt 1) { $fleet | ForEach-Object { @{ AgvId = $_.AgvId } } }
+            else { @{ AgvId = $agvId } })
         for ($peerIndex = 0; $peerIndex -lt $peerSpecs.Count; $peerIndex++) {
             $spec = $peerSpecs[$peerIndex]
             $peerAgvId = if ($spec.ContainsKey('AgvId')) { $spec.AgvId } else { $agvId }
@@ -509,10 +585,12 @@ try {
 
             $peerDouble = New-L2Double -Name $peerName -BaseUrl "http://127.0.0.1:$peerPort"
             $onboardDoubles += [pscustomobject]@{ Name = $peerName; Port = $peerPort; AgvId = $peerAgvId; Double = $peerDouble }
-            # ControlServer's accept loop is serial -- it awaits one connection's handler before
-            # accepting the next -- so today only the first peer reaches READY and the others sit
-            # queued. That is the single-vehicle transport ticket 09 replaces. Until then a
-            # multi-vehicle scenario says WaitForReady = $false on the peers it knows will wait.
+            # Every peer waits for READY by default. It did not always: before ticket 09 the
+            # server's accept loop awaited one connection's handler before accepting the next, so
+            # only the first peer ever reached READY and a multi-vehicle scenario had to say
+            # WaitForReady = $false on the rest. Both halves of that are gone -- the accept loop
+            # is concurrent and OnboardPeer holds one connection per AgvId -- and the switch is
+            # kept only for a scenario that deliberately wants an unfinished session.
             $waitForReady = if ($spec.ContainsKey('WaitForReady')) { [bool]$spec.WaitForReady } else { $true }
             if ($waitForReady) {
                 $null = Wait-L2Condition -Description "the synthetic peer $peerAgvId reached READY" -Journal $journal -Criterion 'onboard-readiness' `
@@ -650,6 +728,14 @@ try {
         vehicleKey          = $vehicleKey
         stageRoot           = $stageRoot
         rig                 = if ($realOnboard) { 'RealOnboard' } else { 'SyntheticOnboard' }
+        batchId             = $BatchId
+    }
+    # Null only when the run died before the server answered /version. Written as null rather than
+    # omitted: "this run never got far enough to read it" and "this evidence predates the field"
+    # are different, and a reader of a failed run's evidence needs to be able to tell them apart.
+    $identity['protocolReleaseIdentity'] = $protocolReleaseIdentity
+    if ($fleet.Count -gt 1) {
+        $identity['fleet'] = $fleet | ForEach-Object { "$($_.AgvId)/$($_.VehicleKey)" }
     }
     if ($null -ne $clockSkewMs) { $identity['clockSkewMs'] = $clockSkewMs }
     if ($onboardPublish) { $identity['onboardHmiCommit'] = $onboardPublish.Commit }

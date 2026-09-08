@@ -650,6 +650,36 @@ class L2Assertions {
 
 function New-L2Assertions { return [L2Assertions]::new() }
 
+<#
+Renders one identity entry as one or more table rows.
+
+A nested value -- protocolReleaseIdentity is nine fields and a fleet is a list -- would otherwise
+print as its type name, which is worse than not printing it: the SUMMARY.md is the half of the
+evidence a person reads, and "System.Collections.Specialized.OrderedDictionary" in the protocol
+identity row is exactly the field a reader came to check.
+#>
+function Format-L2IdentityRows {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [AllowNull()][object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return @("| $Name | ``(null)`` |")
+    }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $rows = @()
+        foreach ($key in $Value.Keys) {
+            $rows += "| $Name.$key | ``$($Value[$key])`` |"
+        }
+        return $rows
+    }
+    if ($Value -isnot [string] -and $Value -is [System.Collections.IEnumerable]) {
+        return @("| $Name | ``$(($Value | ForEach-Object { [string]$_ }) -join ', ')`` |")
+    }
+    return @("| $Name | ``$Value`` |")
+}
+
 function Write-L2Evidence {
     param(
         [Parameter(Mandatory)][string]$EvidenceRoot,
@@ -658,6 +688,10 @@ function Write-L2Evidence {
         [Parameter(Mandatory)][L2Assertions]$Assertions,
         [Parameter(Mandatory)][string]$Outcome,
         [string]$FailureReason,
+        # Free-form, and deliberately so: what identifies a run differs by rig and by scenario, and
+        # a fixed schema here would have to be edited for every one. Specification 8.4 names the two
+        # the full product requires -- protocolReleaseIdentity and batchId -- and the orchestrator
+        # supplies both; nested values render as their own rows below rather than as a type name.
         [hashtable]$Identity = @{},
         # What was actually real in this run. The caveat at the end of SUMMARY.md is the only place
         # a reader learns whether "车载端" meant a synthetic protocol peer or the shipped WPF, and
@@ -695,7 +729,9 @@ function Write-L2Evidence {
     $lines.Add('| --- | --- |')
     $lines.Add("| runId | ``$RunId`` |")
     foreach ($key in ($Identity.Keys | Sort-Object)) {
-        $lines.Add("| $key | ``$($Identity[$key])`` |")
+        foreach ($row in (Format-L2IdentityRows -Name $key -Value $Identity[$key])) {
+            $lines.Add($row)
+        }
     }
     $lines.Add('')
     $lines.Add('## 判据')
@@ -735,4 +771,4 @@ function Write-L2Evidence {
 Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Assert-L2ComponentAlive,
     Wait-L2Iterations, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
-    Write-L2Evidence, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver
+    Write-L2Evidence, Format-L2IdentityRows, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver
