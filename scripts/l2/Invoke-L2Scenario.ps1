@@ -35,17 +35,31 @@ param(
     # Clear of the field run (58105/58107), the staged runners (58205/58207) and the demand-bearing
     # runner (58305/58307), so an accidental overlap fails to bind rather than quietly talking to
     # the wrong server.
-    [int]$ControlPort = 58405,
-    [int]$HealthPort = 58407,
-    [int]$FakeRiotPort = 58408,
-    [int]$FakeMesIngestPort = 58409,
-    [int]$FakeOnboardPort = 58410,
+    #
+    # **Below 49152, which is where they moved on 2026-09-08 and why.** Windows' default dynamic
+    # port range is 49152-65535, and an outbound connection may take any port in it as its source.
+    # The old block (58405-58413) sat inside that range, so an unrelated program on the machine
+    # could hold one of these ports at any moment -- and it did: a proxy's outbound connection had
+    # 58410 bound to 0.0.0.0, and the run died with SocketException 10013 rather than 10048,
+    # which reads like a permissions problem rather than a collision. A fixed-port rig inside the
+    # ephemeral range is flaky by construction, and this ticket's own exit criterion is three
+    # consecutive green runs.
+    [int]$ControlPort = 48405,
+    [int]$HealthPort = 48407,
+    [int]$FakeRiotPort = 48408,
+    [int]$FakeMesIngestPort = 48409,
     # Real-onboard rig only. The simulator's own defaults are 58006/1502; moving both keeps an L2
     # run from talking to a simulator someone left open for hand testing.
-    [int]$SimulatorHttpPort = 58411,
-    [int]$SimulatorModbusPort = 58412,
+    [int]$SimulatorHttpPort = 48411,
+    [int]$SimulatorModbusPort = 48412,
     # Only started when a scenario asks for clock skew; see scenarios/*.setup.psd1.
-    [int]$ClockSkewProxyPort = 58413,
+    [int]$ClockSkewProxyPort = 48413,
+    # One port per synthetic peer, counting up from here, so a fleet of N takes 48420..48420+N-1.
+    # Its own block rather than a neighbour of the others: the peers are the only component whose
+    # count is not fixed, and the old layout put peer 1 and peer 2 straight onto the simulator's
+    # two ports. Those two rigs are mutually exclusive today, which made it a latent collision
+    # rather than a live one -- the kind that surfaces the first time someone relaxes that.
+    [int]$FakeOnboardPort = 48420,
 
     # The two peer repositories are read-only for agents, so they are never built in place: each is
     # cloned to the cache below and published from the clone. Siblings of this repository by
