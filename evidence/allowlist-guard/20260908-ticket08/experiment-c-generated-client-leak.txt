@@ -1,0 +1,30 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\src\ControlServer.Domain\bin\Debug\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Debug\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\src\ControlServer.Application\bin\Debug\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Debug\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Debug\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\src\ControlServer.Infrastructure\bin\Debug\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\src\ControlServer.Host\bin\Debug\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:01.12]     ControlServer.Tests.RiotCallAllowlistArchitectureTests.EveryRiotCallProductCodeMakesIsOnTheAllowlist [FAIL]
+[xUnit.net 00:00:01.13]     ControlServer.Tests.RiotCallAllowlistArchitectureTests.ProductCodeReachesRiotOnlyThroughNamedFacades [FAIL]
+  Failed ControlServer.Tests.RiotCallAllowlistArchitectureTests.EveryRiotCallProductCodeMakesIsOnTheAllowlist [20 ms]
+  Error Message:
+   Product code calls RIoT Facade methods that section 1 of the allowlist does not approve: ListDevicesAsync
+  Stack Trace:
+     at ControlServer.Tests.RiotCallAllowlistArchitectureTests.EveryRiotCallProductCodeMakesIsOnTheAllowlist() in C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\tests\ControlServer.Tests\RiotCallAllowlistArchitectureTests.cs:line 198
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.RiotCallAllowlistArchitectureTests.ProductCodeReachesRiotOnlyThroughNamedFacades [4 ms]
+  Error Message:
+   Product code escapes the named RIoT Facade, which REQ-0309 forbids: ControlServer.Infrastructure references RIoT.Sdk.Generated, the generated client, which section 2 of the allowlist denies product code
+  Stack Trace:
+     at ControlServer.Tests.RiotCallAllowlistArchitectureTests.ProductCodeReachesRiotOnlyThroughNamedFacades() in C:\Users\szy\Desktop\8005-fp\8005-agv-control-server\tests\ControlServer.Tests\RiotCallAllowlistArchitectureTests.cs:line 181
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     2, Passed:     5, Skipped:     0, Total:     7, Duration: 85 ms - ControlServer.Tests.dll (net8.0)

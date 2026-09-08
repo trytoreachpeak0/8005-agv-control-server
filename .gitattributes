@@ -10,3 +10,7 @@
 # and any line-ending normalisation would make a checkout hash to something other than what the
 # evidence claims. Store and check them out byte-for-byte.
 evidence/rc/*/release-artifacts/** -text
+
+# 白名单文档的副本按字节绑定 SHA-256（钉在 RiotCallAllowlistArchitectureTests 里），
+# 行尾转换会让摘要漂移。整份 cp 自 8005-agv-program，不手工编辑。
+vendor/8005-agv-program/** -text
