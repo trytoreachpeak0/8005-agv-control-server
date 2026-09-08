@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "scenario": "create-gate",
+  "runId": "20260908T074430339Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260908T074430339Z",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "7b6231bd8b2157ebad47e1348178a0143a771aac"
+  },
+  "assertions": [
+    {
+      "id": "L2-CG-01",
+      "description": "目录处于 Fresh 且有一次完整确认",
+      "outcome": "PASS",
+      "expected": "Fresh + 已确认",
+      "actual": "Fresh + 2026-09-08 07:44:37.6371147+00:00"
+    },
+    {
+      "id": "L2-CG-02",
+      "description": "判定所依据的两个已批准值被一并记下（30 秒周期 / 300 秒最大未确认）",
+      "outcome": "PASS",
+      "expected": "30 / 300",
+      "actual": "30 / 300"
+    },
+    {
+      "id": "L2-CG-03",
+      "description": "门禁在链路里放行，派车照常走通",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-CG-04",
+      "description": "取货端与卸货端两个端点都被冻结",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "id": "L2-CG-05",
+      "description": "冻结的端点带着当时的目录修订（不是 0）",
+      "outcome": "PASS",
+      "expected": "非 0",
+      "actual": "1017238931678627222"
+    },
+    {
+      "id": "L2-CG-06",
+      "description": "卸货端冻的是关卡站",
+      "outcome": "PASS",
+      "expected": "210",
+      "actual": "210"
+    },
+    {
+      "id": "L2-CG-07",
+      "description": "门禁写了一条 Allowed 审计（同一裁决不重复写，所以只有一条）",
+      "outcome": "PASS",
+      "expected": "1 条 Allowed",
+      "actual": "1 条 / Allowed"
+    },
+    {
+      "id": "L2-CG-08",
+      "description": "RIoT 的 RouteCost 与自建图的遍历代价分列两栏，都有值",
+      "outcome": "PASS",
+      "expected": "两栏都有值",
+      "actual": "RIoT=20000 / Graph=60000"
+    },
+    {
+      "id": "L2-CG-09",
+      "description": "两个源都说可达，没有分歧要处置",
+      "outcome": "PASS",
+      "expected": "可达 + 可达 + 无分歧",
+      "actual": "RIoT=20000 / GraphReachable=1 / Conflict="
+    },
+    {
+      "id": "L2-CG-10",
+      "description": "目录级状态经正式 API 读得回来，一张图一行（按原因去重，不是每轮一条）",
+      "outcome": "PASS",
+      "expected": "1 行 Fresh",
+      "actual": "1 行 / Fresh"
+    }
+  ]
+}

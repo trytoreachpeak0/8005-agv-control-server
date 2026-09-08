@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-onboard",
+  "runId": "run-1cad46b0",
+  "revision": 2,
+  "observedAt": "2026-09-08T15:45:01.758997+08:00",
+  "body": {
+    "agvId": "AGV-L2-001",
+    "sessionGeneration": 1,
+    "readiness": "READY",
+    "readinessReasonCode": "READY",
+    "safetyStateVersion": 1,
+    "safety": {
+      "departureSafe": true,
+      "vehicleStopped": true,
+      "allTargetSlotsLocked": true,
+      "allUnlockOutputsReset": true,
+      "unknownPresent": false,
+      "reasonCodes": []
+    },
+    "policy": {
+      "sublot": 0,
+      "loadResult": 0,
+      "unloadResult": 0,
+      "safetyCheck": 0
+    },
+    "pending": [],
+    "wire": [
+      {
+        "direction": "out",
+        "messageType": "SessionHello",
+        "messageId": "92cc89ae-1a18-42e8-affc-871f806dbada",
+        "at": "2026-09-08T15:45:00.1003073+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SessionAccepted",
+        "messageId": "ea9a0df9-a582-48d2-a401-53eefcc22daf",
+        "at": "2026-09-08T15:45:00.2667665+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "CapabilitySnapshot",
+        "messageId": "5e89f815-9aba-4eef-a949-a7b1e2e25d1a",
+        "at": "2026-09-08T15:45:00.2760183+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "74f33ab0-0bec-481d-901a-b564bf489f3d",
+        "at": "2026-09-08T15:45:00.2942865+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "SafetyStateSnapshot",
+        "messageId": "384a65c3-6ab2-4d2b-a2b6-e0857658da29",
+        "at": "2026-09-08T15:45:00.2998729+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SnapshotAppliedAck",
+        "messageId": "1dc27080-9e61-4591-982f-e4d63acb7332",
+        "at": "2026-09-08T15:45:00.3105883+08:00"
+      },
+      {
+        "direction": "out",
+        "messageType": "RecoveryStateReport",
+        "messageId": "4c82be42-efe2-4e18-867e-d754887cb428",
+        "at": "2026-09-08T15:45:00.3130017+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "DurableAck",
+        "messageId": "87285321-e918-4a05-bf81-e93b924aca17",
+        "at": "2026-09-08T15:45:00.3576424+08:00"
+      },
+      {
+        "direction": "in",
+        "messageType": "SessionReadiness",
+        "messageId": "b10650bd-cf2c-43df-8911-7ca0b33ad13e",
+        "at": "2026-09-08T15:45:00.3577186+08:00"
+      }
+    ]
+  }
+}

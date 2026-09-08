@@ -1,0 +1,36 @@
+# L2 场景证据：create-gate-unapproved
+
+结论：**PASS**
+
+## 身份
+
+| 项 | 值 |
+| --- | --- |
+| runId | `20260908T074439806Z` |
+| agvId | `AGV-L2-001` |
+| controlServerCommit | `7b6231bd8b2157ebad47e1348178a0143a771aac` |
+| rig | `SyntheticOnboard` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260908T074439806Z` |
+| vehicleKey | `BROKERX-L2-0001` |
+
+## 判据
+
+| 判据 | 结论 | 期望 | 实际 |
+| --- | --- | --- | --- |
+| 两个参数未批准时服务端照常启动（REQ-0303） | PASS | `已启动` | `已启动` |
+| 阻断原因是 CATALOG_PARAMETERS_NOT_APPROVED，能追到具体这道门禁 | PASS | `CATALOG_PARAMETERS_NOT_APPROVED` | `CATALOG_PARAMETERS_NOT_APPROVED` |
+| 一个 JourneyRuntime 都没有 | PASS | `0` | `0` |
+| 一张 RIoT move 单都没建 | PASS | `0` | `0` |
+| 需求没有被接受 | PASS | `0` | `0` |
+| 没有冻结任何端点——站点解析压根没发生（REQ-0303） | PASS | `0` | `0` |
+| 门禁审计是空的——目录级阻断不是关于任何一个需求端点的裁决 | PASS | `0` | `0` |
+
+## 目录内容
+
+- `assertions.json` —— 机器可读的判据结论
+- `timeline.jsonl` —— 一行一次判据翻转，只追加
+- `logs/` —— 每个组件的 stdout 与 stderr
+- `snapshots/` —— 收尾时各控制面与服务端数据库的快照
+
+L2 PASS 只证明服务端在假 RIoT、假 MesIngest 与合成车载端下的跨端时序，
+**不代表真实 RCS、真车、真实 IO 模块或接线合格**。
