@@ -22,10 +22,13 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-005` |
 | `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
 | `real-onboard-recovery-entry-missing` | **真的** | 装载失败后车上发起不了任何恢复：授权是齐的，入口是缺的 | **红的，而且红得对**，见下 |
-| `three-synthetic-peers` | 合成 ×3 | 三个合成车载端同时在线，合成侧互不冒充；顺带钉住服务端当前只服务一条车载连接 | `evidence/l2/20260907-ticket03-three-synthetic-peers-001` |
+| `three-synthetic-peers` | 合成 ×3 | 三个合成车载端同时在线，两侧互不冒充，服务端同时持有三条 Ready 会话（票 09 之前它钉的是相反的边界：accept 循环串行，只有第一台到 READY） | `evidence/l2/20260909-ticket09-three-synthetic-peers-002` |
 | `route-graph-engine` | 合成 | 路网引擎开着跑一趟：五个 imap 端点读回、快照不陈旧、可达性判据放行 | `evidence/l2/20260907-ticket12-route-graph-engine-001` |
 | `create-gate` | 合成 | 建单前置门禁：目录被完整确认、两端点冻结、两个证据源分别落进审计 | `evidence/l2/20260908-ticket13-create-gate-002` |
 | `create-gate-unapproved` | 合成 | **负向证据**：拿掉 `REQ-0302` 的两个已批准值，服务端照常启动但什么都不建 | `evidence/l2/20260908-ticket13-create-gate-unapproved-001` |
+| `three-vehicle-exit` | 合成 ×3 | **轨 B 出口**：三台车在同一次运行里各自派单、装货、卸货、走到 `Completed` | `evidence/l2/20260910-ticket18-three-vehicle-exit-001` |
+| `command-surface-order-hold` | 合成 ×3 | **轨 B 出口**：一台车的在途单被报成 FAILED，命令面「该调用时调用了、参数正确、只调一次」，另两台不受牵连 | `evidence/l2/20260910-ticket18-command-surface-order-hold-002` |
+| `route-graph-staleness` | 合成 | **轨 B 出口**：引擎陈旧态三种触发各一次 fail-closed 证据 | `evidence/l2/20260910-ticket18-route-graph-staleness-001` |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -147,6 +150,14 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 | `logs/` | 每个组件的 stdout、stderr，以及构建日志 |
 | `snapshots/` | 收尾时各控制面与六张关键表的快照 |
 
+`assertions.json` 的 `identity` 块在完整产品下带两项额外身份（规格 8.4）：
+
+- `protocolReleaseIdentity` —— 从跑起来的服务端 `/version` **读回**，不在脚本里复述。能按协议
+  换代作废 L2 证据的只有 build 真的在线上强制的那一份身份；复述一遍只会让证据与脚本自洽而与
+  服务端无关。今天读回的是 `protocol-v0.1.1` 的九个字段加 `approvalStatus`。
+- `batchId` —— `Invoke-L2Scenario.ps1` 的 `-BatchId` 参数，默认 `batch-2`。批次是计划，仓库里
+  推不出来，所以它是参数而不是常量；CI 显式传，换批次改一个实参。
+
 时间线的形状抄自 `remote-ops/status/Get-WireToGateStatus.ps1`——2026-09-03 定位缺陷时，就是靠
 它把「12:56:49 STOPPED → 12:57:15 UNKNOWN」精确卡到秒。
 
@@ -167,7 +178,7 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 故障。后面每个异常场景都只是在它上面改一处——把车载端某一类应答的策略从 `Auto` 改成 `Manual` 或
 `Silent`，或者给假 RIoT 或模拟器注入一个故障模式，然后断言服务端**没有**做它不该做的事。
 
-**要改环境启动方式的场景，写一个同名的 `scenarios/<名字>.setup.psd1`。**目前认两个键：
+**要改环境启动方式的场景，写一个同名的 `scenarios/<名字>.setup.psd1`。**目前认这些键：
 
 - `Onboard = 'Real'` —— 换成真车载端 + 真模拟器那套装置（默认 `'Synthetic'`）；
 - `OnboardSeed` —— 只对合成装置有效，会变成 `--FakeOnboard:Seed:*`，落在握手那条
@@ -178,8 +189,36 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   `observedAt` 往后推这么多毫秒，等价于车载端时钟慢了这么多。合成对端没有新鲜度判定，给它设这个
   键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。
 
+- `Fleet` —— 主车**之外**的车，每项一对 `AgvId` / `VehicleKey`。编排器把主对放在第一位再逐车
+  注入 `JourneyRuntime:Fleet`（`JourneyRuntimeOptions` 的校验器要求名册包含主对，让每个 setup
+  文件自己重写一遍主对就是给它一个写错的机会），同时把额外的 key 交给假 RIoT 的
+  `Seed:AdditionalVehicleKeys`。**`OnboardPeers` 缺席时按 `Fleet` 逐车派生对端**，一台车一个
+  进程一个控制面。为空即单车，走的是空 `Fleet` 那条路径——一台升级上来的单车部署实际跑的就是它。
+- `OnboardPeers` —— 直接列合成对端，每项可带 `AgvId`、`Seed`、`WaitForReady`。只想造几条会话
+  而不驱动车队时用它（`three-synthetic-peers` 就是），需要服务端真的派车时用 `Fleet`。
+- `RouteGraph` —— 路网引擎的配置，`Enabled` 之外的键原样变成 `RouteGraph__*`。默认不写即引擎
+  关闭，那是它出现之前那台服务端。
+- `CatalogApproved = $false` —— 拿掉 `REQ-0302` 的两个已批准值。**没有「把门禁关掉」的开关**，
+  表达「未批准」的唯一方式就是不配置它们。
+- `RouteCosts` —— 假 RIoT 的 `getRouteCostsBy` 应答表，键是 `"{mapId}:{stationId}"`，负值是
+  RIoT 说的「不可达」。
+
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
+
+**写场景时最容易踩的一条：不要把返回查询结果的函数直接送进管道。**`Invoke-L2Query` 用
+`return , $rows` 保住整张结果集，而这个包装**穿得过一层 `return`**：
+
+```powershell
+function Get-Journeys { return Invoke-L2Query -Connection $connection -Sql '...' }
+
+Get-Journeys | Where-Object { $_.AgvId -eq $id }   # 错：管道里只有一个元素，那个元素是整张结果集
+$rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外面那层
+```
+
+写错的症状是「三趟 journey 都在库里，却一趟都找不到」——`$_.AgvId` 成员展开成三个值拼成一行，
+一条也匹配不上。单行结果时完全看不出来，多行才现形。`Wait-L2Condition` 会吞掉探针里的异常
+（那是「还没到」和「探针写错了」共用的路径），所以它表现为一次干等到超时。
 
 **真装置下驱动条码只用 `SetSublot()` + `Submit()`，不注入按键。**`ValuePattern.SetValue` 和
 「手动提交」按钮的 `InvokePattern` 都不需要窗口有焦点，所以跑的时候不跟操作员抢键盘，别的窗口

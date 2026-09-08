@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "create-gate-unapproved",
+  "runId": "20260908T090123381Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "b068eee4ffc0c727cf342d51e149a209ad59bbd2",
+    "batchId": "batch-2",
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "0.1.1",
+      "tag": "protocol-v0.1.1",
+      "commit": "1531489e42e328f28bfe0c51ed3f8c56e5ce0279",
+      "protocolVersion": 1,
+      "profileId": "WIRE_TO_GATE_MVP",
+      "manifestSha256": "a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f",
+      "schemaBundleSha256": "e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c",
+      "vectorsSha256": "fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260908T090123381Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-CGU-01",
+      "description": "两个参数未批准时服务端照常启动（REQ-0303）",
+      "outcome": "PASS",
+      "expected": "已启动",
+      "actual": "已启动"
+    },
+    {
+      "id": "L2-CGU-02",
+      "description": "阻断原因是 CATALOG_PARAMETERS_NOT_APPROVED，能追到具体这道门禁",
+      "outcome": "PASS",
+      "expected": "CATALOG_PARAMETERS_NOT_APPROVED",
+      "actual": "CATALOG_PARAMETERS_NOT_APPROVED"
+    },
+    {
+      "id": "L2-CGU-03",
+      "description": "一个 JourneyRuntime 都没有",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CGU-04",
+      "description": "一张 RIoT move 单都没建",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CGU-05",
+      "description": "需求没有被接受",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CGU-06",
+      "description": "没有冻结任何端点——站点解析压根没发生（REQ-0303）",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CGU-07",
+      "description": "门禁审计是空的——目录级阻断不是关于任何一个需求端点的裁决",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    }
+  ]
+}

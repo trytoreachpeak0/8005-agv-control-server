@@ -1,0 +1,36 @@
+{"at":"2026-09-08T09:02:35.8766841+00:00","note":"L2 run 20260908T090235822Z starting for scenario 'three-vehicle-exit'."}
+{"at":"2026-09-08T09:02:35.8938309+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T09:02:41.2986569+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T09:02:41.4903697+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T09:02:41.5119214+00:00","note":"Fleet of 3: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002, AGV-L2-003/BROKERX-L2-0003"}
+{"at":"2026-09-08T09:02:41.5266644+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-08T09:02:43.4576596+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T09:02:45.1372038+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T09:02:45.1786178+00:00","note":"Protocol release identity: protocol-v0.1.1 (protocolVersion 1, APPROVED_RELEASE)."}
+{"at":"2026-09-08T09:02:45.8482998+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-08T09:02:46.1341382+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T09:02:47.4461991+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T09:02:47.5430082+00:00","note":"Environment is up; entering scenario 'three-vehicle-exit'."}
+{"at":"2026-09-08T09:02:47.5781491+00:00","note":"Publishing demand 84e5a92bd6254bfc951b59b7517ab55f (sublot L2-3V-20260908T090235822Z-0)."}
+{"at":"2026-09-08T09:02:47.6288660+00:00","note":"Publishing demand 3ec75b4b702f4e658baf82113da071b7 (sublot L2-3V-20260908T090235822Z-1)."}
+{"at":"2026-09-08T09:02:47.6369547+00:00","note":"Publishing demand 433907ecc85c4e0095837a6dc65d1860 (sublot L2-3V-20260908T090235822Z-2)."}
+{"at":"2026-09-08T09:02:47.6781437+00:00","criterion":"journeys-dispatched","value":"0"}
+{"at":"2026-09-08T09:02:49.5261015+00:00","criterion":"journeys-dispatched","value":"1"}
+{"at":"2026-09-08T09:02:49.7916658+00:00","criterion":"journeys-dispatched","value":"3"}
+{"at":"2026-09-08T09:02:49.8378786+00:00","criterion":"to-pickup-AGV-L2-001","value":"CONFIRMED"}
+{"at":"2026-09-08T09:02:49.8447656+00:00","criterion":"to-pickup-AGV-L2-002","value":"CONFIRMED"}
+{"at":"2026-09-08T09:02:49.8526260+00:00","criterion":"to-pickup-AGV-L2-003","value":"CONFIRMED"}
+{"at":"2026-09-08T09:02:49.8638950+00:00","note":"All three vehicles depart for their pickup stations."}
+{"at":"2026-09-08T09:02:50.0235616+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T09:02:51.0531703+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingSublot"}
+{"at":"2026-09-08T09:02:51.8434373+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingLoadResult"}
+{"at":"2026-09-08T09:02:52.6383996+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingGateArrival"}
+{"at":"2026-09-08T09:02:52.6411499+00:00","criterion":"stage-AGV-L2-002","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-08T09:02:52.9032813+00:00","criterion":"stage-AGV-L2-002","value":"AwaitingGateArrival"}
+{"at":"2026-09-08T09:02:52.9056536+00:00","criterion":"stage-AGV-L2-003","value":"AwaitingGateArrival"}
+{"at":"2026-09-08T09:02:52.9210710+00:00","note":"All three vehicles depart for the gate."}
+{"at":"2026-09-08T09:02:54.0433451+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingUnloadResult"}
+{"at":"2026-09-08T09:02:55.6141294+00:00","criterion":"stage-AGV-L2-001","value":"Completed"}
+{"at":"2026-09-08T09:02:55.6166775+00:00","criterion":"stage-AGV-L2-002","value":"Completed"}
+{"at":"2026-09-08T09:02:55.6285643+00:00","criterion":"stage-AGV-L2-003","value":"Completed"}
+{"at":"2026-09-08T09:02:55.6576892+00:00","note":"三台车在同一次运行里各自完成一趟 WIRE_TO_GATE（本轮共派出 3 趟）。"}
