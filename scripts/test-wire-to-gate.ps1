@@ -7,12 +7,12 @@ param(
     # protocol repository -- a doc-only one included -- moves contentManifestSha256 away from the
     # released value while the tag keeps pointing at the old one. A released-mode run then dies on
     # 'Protocol manifest hash mismatch', which reads like the pin is stale when the real problem is
-    # that the file came from the wrong commit. `git -C <protocol> show protocol-v0.2.0:manifest/release.json`
+    # that the file came from the wrong commit. `git -C <protocol> show protocol-v0.3.0:manifest/release.json`
     # is the manifest this pin expects.
     [Parameter(Mandatory)][string]$ProtocolManifest,
     [Parameter(Mandatory)][string]$Output,
     # Runs the gate against a protocol candidate that has not been released yet. The four hashes
-    # below are pinned to protocol-v0.2.0 on purpose: without that pin anyone could hand this script
+    # below are pinned to protocol-v0.3.0 on purpose: without that pin anyone could hand this script
     # a locally edited manifest and get a green G2 out of it. That protection is exactly what has to
     # stay, so this switch does not weaken it -- it takes a different path that reads the identity
     # out of the supplied manifest and stamps the evidence UNRELEASED_CANDIDATE, so a run against an
@@ -27,9 +27,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $ProtocolManifest -PathType Leaf)) { throw "Protocol manifest not found: $ProtocolManifest" }
-$expectedProtocolCommit = 'dff1686751d1d05c4c06b19ac024b41e84bb8078'
-$expectedManifestSha256 = '31bb730565f21b8011b88d447b5b81fc4be28ba34b2fdfb3592bd7586f0a59d6'
-$expectedSchemaBundleSha256 = 'bc069d6ab5db55c658d67c2457fcb12812582a94febaa5d2d2a9921aaaca5616'
+$expectedProtocolCommit = '345c53c58517968192c87c3e7777ed08ddb48726'
+$expectedManifestSha256 = 'b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138'
+$expectedSchemaBundleSha256 = '68bfd531c4b9c08bc80f6d9c5a67264891efa200acdb154eb18e1d083bf4ed98'
 $expectedVectorsSha256 = 'bd272b63a1d0663d61c4a38d6e8633d7e7d4f7b561a7915c3df51c7a93bd4576'
 $sliceVectors = @{
     'W2G-IS-00' = @('CV-SESSION-RECOVERY-HAPPY', 'CV-SESSION-RECONNECT-DURING-RECOVERY', 'CV-SNAPSHOT-REPLACE-AND-ACK', 'CV-SNAPSHOT-SAME-REVISION-CONFLICT')
@@ -67,7 +67,7 @@ if ($UnreleasedCandidate) {
         (git -c safe.directory=$protocolRoot -C $protocolRoot rev-parse HEAD 2>$null).Trim()
     } catch { $null }
     if (-not $protocolRepositoryCommit) { $protocolRepositoryCommit = '(unknown)' }
-    # The released slice-to-vector table below is frozen at v0.2.0 and a candidate may have moved
+    # The released slice-to-vector table below is frozen at v0.3.0 and a candidate may have moved
     # it, so read the candidate's own index instead of reporting a stale vector list.
     $indexPath = Join-Path $protocolRoot 'integration-slices/index.json'
     if (Test-Path -LiteralPath $indexPath -PathType Leaf) {
@@ -79,15 +79,15 @@ if ($UnreleasedCandidate) {
     if ($actualManifestSha256 -ne $expectedManifestSha256) {
         throw "Protocol manifest hash mismatch: expected $expectedManifestSha256, actual $actualManifestSha256"
     }
-    if ($manifest.releaseVersion -ne '0.2.0' -or
-        $manifest.protocolVersion -ne 2 -or
+    if ($manifest.releaseVersion -ne '0.3.0' -or
+        $manifest.protocolVersion -ne 3 -or
         $manifest.schemaBundleSha256 -ne $expectedSchemaBundleSha256 -or
         $manifest.vectorsSha256 -ne $expectedVectorsSha256) {
-        throw 'Protocol manifest composite identity differs from protocol-v0.2.0.'
+        throw 'Protocol manifest composite identity differs from protocol-v0.3.0.'
     }
     $protocolReleaseStatus = 'RELEASED'
-    $protocolTag = 'protocol-v0.2.0'
-    $protocolReleaseVersion = '0.2.0'
+    $protocolTag = 'protocol-v0.3.0'
+    $protocolReleaseVersion = '0.3.0'
     $protocolSchemaBundleSha256 = $expectedSchemaBundleSha256
     $protocolVectorsSha256 = $expectedVectorsSha256
     $protocolRepositoryCommit = $expectedProtocolCommit

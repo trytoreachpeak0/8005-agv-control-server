@@ -67,7 +67,8 @@ public static class ProtocolErrorCodes
         "RECOVERY_SCOPE_MISMATCH",
         "RECOVERY_CHECKPOINT_NOT_UNIQUE",
         "RECOVERY_AUTHENTICATION_FAILED",
-        "FORCED_RECOVERY_GENERATION_STALE"
+        "FORCED_RECOVERY_GENERATION_STALE",
+        "OPERATOR_TIMEOUT"
     };
 
     public static bool Contains(string code) => Codes.Contains(code);
