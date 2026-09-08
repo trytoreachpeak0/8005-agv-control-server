@@ -80,8 +80,11 @@ $assertions.Add(
 
 # 服务端侧：SessionRecoveries 主键是 AgvId，所以一台车一行。三台车都连上之后应当有三行，
 # 每行 Ready——这正是票 09 把 accept 改成并发、把 OnboardPeer 改成按 AgvId 分槽换来的东西。
-$sessions = @(Invoke-L2Query -Connection $connection `
-    -Sql "SELECT AgvId, Readiness FROM SessionRecoveries ORDER BY AgvId")
+# 不要写成 @(Invoke-L2Query ...)：这个 helper 以 `return , $rows` 返回，外面再包一层 @()
+# 得到的是「一个元素、那个元素是三行的数组」，`$_.AgvId` 于是成员展开成三个值，串起来长得
+# 像一行里塞了三台车。单行时这个错看不出来，正是本条断言从一行改成三行时撞上的东西。
+$sessions = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT AgvId, Readiness FROM SessionRecoveries ORDER BY AgvId"
 $sessionAgvIds = @($sessions | ForEach-Object { [string]$_.AgvId })
 
 $assertions.Add(
