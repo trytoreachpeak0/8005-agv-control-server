@@ -3,7 +3,19 @@ param(
     [ValidateSet('G2')][string]$Gate = 'G2',
     [ValidatePattern('^W2G-IS-0[0-7]$')][string]$Slice,
     [Parameter(Mandatory)][string]$ProtocolManifest,
-    [Parameter(Mandatory)][string]$Output
+    [Parameter(Mandatory)][string]$Output,
+    # Runs the gate against a protocol candidate that has not been released yet. The four hashes
+    # below are pinned to protocol-v0.1.1 on purpose: without that pin anyone could hand this script
+    # a locally edited manifest and get a green G2 out of it. That protection is exactly what has to
+    # stay, so this switch does not weaken it -- it takes a different path that reads the identity
+    # out of the supplied manifest and stamps the evidence UNRELEASED_CANDIDATE, so a run against an
+    # unsigned candidate can never be mistaken for one against a released contract.
+    #
+    # It exists because implementation has to be written before there is anything to sign: a
+    # breaking candidate leaves the server unverifiable by the released gate (the code no longer
+    # matches it) and by the new one (no tag yet). Without this the whole window has unit tests and
+    # L2 only, and neither checks conformance against a frozen contract identity.
+    [switch]$UnreleasedCandidate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,15 +35,55 @@ $sliceVectors = @{
     'W2G-IS-07' = @('CV-OPERATION-RESULT-UNKNOWN-RECONCILE', 'CV-EXCEPTION-RESUME', 'CV-EXCEPTION-COMPENSATE', 'CV-FAULT-CARGO-HANDOFF', 'CV-FORCED-MECHANICAL-RECOVERY', 'CV-MANUAL-CHARGING-RETURN')
 }
 $actualManifestSha256 = (Get-FileHash -LiteralPath $ProtocolManifest -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actualManifestSha256 -ne $expectedManifestSha256) {
-    throw "Protocol manifest hash mismatch: expected $expectedManifestSha256, actual $actualManifestSha256"
-}
 $manifest = Get-Content -LiteralPath $ProtocolManifest -Raw | ConvertFrom-Json
-if ($manifest.releaseVersion -ne '0.1.1' -or
-    $manifest.protocolVersion -ne 1 -or
-    $manifest.schemaBundleSha256 -ne $expectedSchemaBundleSha256 -or
-    $manifest.vectorsSha256 -ne $expectedVectorsSha256) {
-    throw 'Protocol manifest composite identity differs from protocol-v0.1.1.'
+if ($UnreleasedCandidate) {
+    # No pinned comparison to make -- the candidate has no released identity yet. What is still
+    # enforced is that the manifest is a real content snapshot and that the evidence carries the
+    # exact identity this run was measured against, so a later released run can be told apart from
+    # this one by inspection rather than by memory.
+    if ($manifest.status -ne 'CONTENT_SNAPSHOT') {
+        throw "Protocol manifest is not a content snapshot: $($manifest.status)"
+    }
+    foreach ($field in @('releaseVersion', 'protocolVersion', 'schemaBundleSha256', 'vectorsSha256')) {
+        if (-not $manifest.$field) { throw "Protocol manifest is missing $field." }
+    }
+    $protocolReleaseStatus = 'UNRELEASED_CANDIDATE'
+    $protocolTag = "(unreleased candidate $($manifest.releaseVersion))"
+    $protocolReleaseVersion = $manifest.releaseVersion
+    $protocolSchemaBundleSha256 = $manifest.schemaBundleSha256
+    $protocolVectorsSha256 = $manifest.vectorsSha256
+    # The manifest sits inside the protocol repository, so its own HEAD is the candidate's commit.
+    # A candidate has no tag to name it by, and recording nothing would make the evidence
+    # unreproducible.
+    $protocolRoot = Split-Path -Parent (Split-Path -Parent (Resolve-Path -LiteralPath $ProtocolManifest))
+    $protocolRepositoryCommit = try {
+        (git -c safe.directory=$protocolRoot -C $protocolRoot rev-parse HEAD 2>$null).Trim()
+    } catch { $null }
+    if (-not $protocolRepositoryCommit) { $protocolRepositoryCommit = '(unknown)' }
+    # The released slice-to-vector table below is frozen at v0.1.1 and a candidate may have moved
+    # it, so read the candidate's own index instead of reporting a stale vector list.
+    $indexPath = Join-Path $protocolRoot 'integration-slices/index.json'
+    if (Test-Path -LiteralPath $indexPath -PathType Leaf) {
+        $index = Get-Content -LiteralPath $indexPath -Raw | ConvertFrom-Json
+        $candidateSlice = $index.slices | Where-Object { $_.integrationSliceId -eq $Slice }
+        if ($candidateSlice) { $sliceVectors[$Slice] = @($candidateSlice.vectorIds) }
+    }
+} else {
+    if ($actualManifestSha256 -ne $expectedManifestSha256) {
+        throw "Protocol manifest hash mismatch: expected $expectedManifestSha256, actual $actualManifestSha256"
+    }
+    if ($manifest.releaseVersion -ne '0.1.1' -or
+        $manifest.protocolVersion -ne 1 -or
+        $manifest.schemaBundleSha256 -ne $expectedSchemaBundleSha256 -or
+        $manifest.vectorsSha256 -ne $expectedVectorsSha256) {
+        throw 'Protocol manifest composite identity differs from protocol-v0.1.1.'
+    }
+    $protocolReleaseStatus = 'RELEASED'
+    $protocolTag = 'protocol-v0.1.1'
+    $protocolReleaseVersion = '0.1.1'
+    $protocolSchemaBundleSha256 = $expectedSchemaBundleSha256
+    $protocolVectorsSha256 = $expectedVectorsSha256
+    $protocolRepositoryCommit = $expectedProtocolCommit
 }
 $root = Split-Path -Parent $PSScriptRoot
 $dotnet = if ($env:WIRE_TO_GATE_DOTNET_EXE) { $env:WIRE_TO_GATE_DOTNET_EXE } else { 'dotnet' }
@@ -52,12 +104,13 @@ $result = [ordered]@{
     finishedAt = ([DateTimeOffset]::UtcNow).ToString('O')
     implementationRepository = '8005-agv-control-server'
     implementationCommit = (git -c safe.directory=$root -C $root rev-parse HEAD).Trim()
-    protocolReleaseVersion = '0.1.1'
-    protocolTag = 'protocol-v0.1.1'
-    protocolRepositoryCommit = $expectedProtocolCommit
+    protocolReleaseStatus = $protocolReleaseStatus
+    protocolReleaseVersion = $protocolReleaseVersion
+    protocolTag = $protocolTag
+    protocolRepositoryCommit = $protocolRepositoryCommit
     protocolManifestSha256 = $actualManifestSha256
-    protocolSchemaBundleSha256 = $expectedSchemaBundleSha256
-    protocolVectorsSha256 = $expectedVectorsSha256
+    protocolSchemaBundleSha256 = $protocolSchemaBundleSha256
+    protocolVectorsSha256 = $protocolVectorsSha256
     vectorIds = $sliceVectors[$Slice]
     testExitCode = $testExitCode
 }
