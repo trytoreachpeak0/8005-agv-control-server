@@ -12,7 +12,9 @@ own way:
   only** (changed 2026-09-04; they were read-only for agents before). The
   development work on both is now ours, but their working branches
   (`OnboardHmi_MVP` and `main`) are not: changes reach Kun Wang as a pull request
-  he decides on, and **we never merge it ourselves**.
+  he decides on, and **since 2026-09-08 we merge it ourselves once he agrees**
+  (before that date we never did). Direct pushes, force-pushes, tags and releases
+  on those branches stay forbidden.
 - `8005-agv-protocol` — writable, but every push there must be announced to Kun
   Wang in an issue that `@SocialKKKK`.
 
