@@ -21,7 +21,7 @@ name: l2
 #      these scenarios move onto the `golden-renderer` runner is now a scheduling and capacity
 #      decision, not a missing mechanism.
 #
-# The synthetic three need nothing from the two read-only peer repositories: Get-L2PeerPublish is
+# The synthetic ones need nothing from the two read-only peer repositories: Get-L2PeerPublish is
 # only called when a scenario's setup file says Onboard = 'Real'. So this workflow is independent
 # of the other side's progress.
 on:
@@ -43,7 +43,7 @@ jobs:
     # `headless` matters: win11-01 also hosts an interactive runner, and a job that only asked for
     # [self-hosted] could be taken by either. This one must NOT land on the golden-renderer runner.
     runs-on: [self-hosted, headless]
-    timeout-minutes: 20
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v7
@@ -51,30 +51,55 @@ jobs:
       # Every scenario runs even when an earlier one fails: one red scenario must not hide the
       # state of the others, which is the whole reason to have more than one.
       #
+      # `runs` is the batch-2 track-B exit discipline (specification 8.3): the batch's new
+      # scenarios must pass THREE CONSECUTIVE times, and each run keeps its own evidence directory.
+      # The reason is the same one the golden renderer gives: L2 spans processes, so one pass
+      # cannot tell "correct" from "the scheduler happened to line up this time". A scenario that
+      # predates this batch keeps its single run -- three-in-a-row is an exit criterion for the
+      # work being handed over, not a permanent tax on every scenario.
+      #
       # Exit code is the contract -- the guest is zh-CN and the runner prints 已通过! not Passed!,
       # so nothing here may match on English console text. Invoke-L2Scenario.ps1 exits 1 on FAIL.
       - name: Run synthetic L2 scenarios
         shell: pwsh
         run: |
           $scenarios = @(
-              'normal-load'
-              'session-established-while-moving'
-              'load-result-requires-recovery'
-              'load-command-never-answered'
+              @{ Name = 'normal-load';                 Runs = 1 }
+              @{ Name = 'session-established-while-moving'; Runs = 1 }
+              @{ Name = 'load-result-requires-recovery';    Runs = 1 }
+              @{ Name = 'load-command-never-answered';      Runs = 1 }
+              @{ Name = 'route-graph-engine';          Runs = 1 }
+              @{ Name = 'create-gate';                 Runs = 1 }
+              # FP-C13's negative evidence: the two REQ-0302 values unapproved, and nothing built.
+              @{ Name = 'create-gate-unapproved';      Runs = 1 }
+              @{ Name = 'three-synthetic-peers';       Runs = 1 }
+              # The batch-2 track-B exit, three consecutive runs each.
+              @{ Name = 'three-vehicle-exit';          Runs = 3 }
+              @{ Name = 'command-surface-order-hold';  Runs = 3 }
+              @{ Name = 'route-graph-staleness';       Runs = 3 }
           )
           $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $failed = @()
           foreach ($scenario in $scenarios) {
-              # -EvidenceRoot must not exist; the run id and attempt keep a re-run from colliding
-              # with the directory its predecessor wrote.
-              $evidence = Join-Path $evidenceRoot $scenario
-              Write-Host "::group::$scenario"
-              & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 -Scenario $scenario -EvidenceRoot $evidence
-              $code = $LASTEXITCODE
-              Write-Host '::endgroup::'
-              if ($code -ne 0) {
-                  $failed += $scenario
-                  Write-Host "::error title=L2 scenario failed::$scenario exited with $code"
+              for ($run = 1; $run -le $scenario.Runs; $run++) {
+                  $label = if ($scenario.Runs -eq 1) { $scenario.Name } else { "$($scenario.Name) ($run/$($scenario.Runs))" }
+                  # -EvidenceRoot must not exist; the run id, the attempt and the run number keep a
+                  # re-run from colliding with the directory its predecessor wrote, and keep the
+                  # three consecutive runs' evidence separate from each other.
+                  $evidence = Join-Path $evidenceRoot "$($scenario.Name)-$('{0:d2}' -f $run)"
+                  Write-Host "::group::$label"
+                  & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 `
+                      -Scenario $scenario.Name -EvidenceRoot $evidence -BatchId 'batch-2'
+                  $code = $LASTEXITCODE
+                  Write-Host '::endgroup::'
+                  if ($code -ne 0) {
+                      $failed += $label
+                      Write-Host "::error title=L2 scenario failed::$label exited with $code"
+                      # Stop this scenario's remaining runs but not the other scenarios': three
+                      # consecutive passes is the criterion, so once one run is red the rest of
+                      # that scenario's runs cannot establish it and only cost minutes.
+                      break
+                  }
               }
           }
           "L2_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
