@@ -116,3 +116,21 @@ grep 一上来就是三条假红。反过来，Facade 的调用形态是 `riotSe
 而 `session.` 这个前缀在 `src/` 下有六十多行与 RIoT 毫无关系。
 
 读编译产物的成员引用表就没有这两个问题：**编译器发出的成员引用是一次调用，注释不是。**
+
+## 干净 checkout 复验
+
+工作区根 `CLAUDE.md` 的规矩：改动会影响构建的文件后，用干净 checkout 验一次。
+本票加了一条 `.gitattributes` 的 `-text` 规则，而那正是「字节规则在拆分时丢失、
+导致摘要对不上」那次事故的形状。
+
+临时克隆到别处（`git clone -c core.longpaths=true`，仓库里有既存的超长证据路径），
+结果：
+
+```
+vendor/8005-agv-program/docs/riot-call-allowlist.md
+  dec0bc1046f3f7c969ca53bd332708fe4668ded5370aa308c584305222d7bcee
+
+Passed!  - Failed: 0, Passed: 7, Skipped: 0, Total: 7
+```
+
+哈希与钉在测试里的值逐字节一致，`git status` 干净——`-text` 规则在新 checkout 上生效。
