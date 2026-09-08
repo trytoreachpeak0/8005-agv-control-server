@@ -1,7 +1,9 @@
 # 缺陷：服务重启后会话落入 RecoveryRequired，车静止时永远不会自己出来
 
-Status: open
-Owner repository: `8005-agv-control-server`
+Status: open（根因已定位，修复未落地）
+Owner repository: **`8005-agv-onboard-hmi`** —— 现象在服务端的 `readiness` 上，根因在车载端的安全
+快照去重里，见下面的根因一节。本文档留在本仓，因为它是从服务端的观测查起的；真正动手要在
+`8005-agv-onboard-hmi` 的 `w2g/*` 分支并以 PR 交付。
 Found by: 真车实跑（`agv01`，2026-09-08 上午到中午连续五趟 WIRE_TO_GATE journey，真实
 Modbus IO 模块 `192.168.71.150:502`）。**这不是 L2 证据**——它需要一次真实的服务重启加一台真车，
 两者 L2 都不提供。
@@ -74,16 +76,67 @@ sessions: generation 97, readiness Ready, READY, updatedAt 04:55:56.5644505+00:0
 等下一单，没有人会去重启一个「看起来正常」的客户端——HMI 上没有报错，车也没有异常，只是
 再也接不到活。
 
-## 尚未查清的两点
+## 根因（2026-09-08 当天查到，位置在车载端）
 
-写下来是为了不让后来者以为这份文档已经定案：
+`DecideReadinessAsync` 的 `ready` 是七个条件的合取，而 `GetRecoveryReason` **按顺序**返回第一个
+不成立的那个。线上报的是列表中第六位的 `DEPARTURE_SAFETY_NOT_READY`，**这本身就证明前五项全部
+成立**——`CapabilityRevision`、`SafetyRevision`、`RecoveryReportId` 都不是 null，强制恢复代际匹配，
+没有待对账事实。握手是完整的，唯一不成立的是：
 
-1. **服务端为什么在握手当场判 `DEPARTURE_SAFETY_NOT_READY`。** 合理的猜测是服务刚启动几秒、
-   手上还没有车辆安全证据，于是保守判定——但没有读过那段代码，不作断言。若确实如此，问题就分成
-   两半：握手时的保守判定是对的，缺的是**之后的重新评估**。
-2. **第 3 次为什么没掉。** 同样是守护收尾，同样是 journey 已 `Completed`，会话却保持了
-   `Ready`。`updatedAt` 停在 12:55:56 未变，说明会话根本没有重建，可能那一次服务并未真正重启。
-   没有查证，但它说明这不是每次必现，而是**时序竞态**。
+```csharp
+bool departureUsable = row.DepartureSafe == true ||
+                       await IsUnsafetyExplainedByOwnCommandAsync(row, cancellationToken);
+```
+
+右半边要求存在 `StationOperationStatus.Prepared` 的操作，旅程跑完时不会有，恒为假。所以
+`departureUsable` 完全取决于 `row.DepartureSafe`，而它只有一个来源：车载端发来的
+`SafetyStateChanged` 里的 `safety.departureSafe`。
+
+**服务端这一侧没有可修之处。**把 readiness 重算挂到心跳上是无效的——`DepartureSafe` 是持久化的
+`false`，重算多少次都是同一个答案。必须让车载端重新上报。
+
+车载端不重报的原因在 `8005-agv-onboard-hmi` 的
+`src/SQCD.Agv.Wpf/WireToGateBusinessService.cs`：
+
+```csharp
+private string? _lastSafetySignature;                                    // 第 53 行
+...
+if (_pendingSafetyChange is null
+    && string.Equals(_lastSafetySignature, signature, StringComparison.Ordinal))
+{
+    return;                                                              // 第 707-711 行：签名没变就不发
+}
+```
+
+`_lastSafetySignature` 只出现四次：声明（53）、比较（708）、两处赋值（698、726）。
+**没有任何地方在会话换代时重置它。**它是进程内的去重状态，而会话不是——服务端重启后新会话从零
+开始、手上没有上一代的安全快照，车载端这边进程没重启、签名照旧，于是那份快照永远不会重发。
+
+这也解释了三次观测的差异：车在移动时安全签名本来就不同，停车后自然变化一次并触发重发（第 2 次
+自愈）；而车静止不动时签名恒定，永远不会跨过那道 `return`（第 1 次卡死）。
+
+**修复方向**：会话代际变化时把 `_lastSafetySignature` 置空，使下一次评估必定重发一份全量快照。
+这正是 ADR-cross-0022「连接时全量同步，变化时可靠增量」要求的语义——现行实现做到了后半句，
+漏了前半句在**重连**时同样适用。`WireToGateSessionSnapshot.SessionGeneration` 是 `long?`，
+在 `QueueSafetyStateChangeAsync` 取到 `_session.Current` 之后（第 694 行）比对并重置即可。
+
+**为什么本次没有直接改**：`8005-agv-onboard-hmi` 属于 Kun Wang，只能在 `w2g/*` 分支改并以 PR
+交付；而 2026-09-08 当天该仓工作树有十个文件的未提交改动（`w2g/multi-demand-worklist` 上的多单
+改造），其中就包括 `WireToGateBusinessService.cs`。在同一个文件上叠加会把两件事混成一团，因此
+只留方案不动代码。
+
+## 尚未查清的一点
+
+原先这里列了两点，**第一点已经查清，而且当时的猜测是错的**，留下经过：本文档第一版猜
+「服务刚启动几秒、手上还没有车辆安全证据，于是保守判定」。实际不是——握手是完整的，服务端拿到了
+安全快照（`SafetyRevision` 非 null 才会走到 `DEPARTURE_SAFETY_NOT_READY` 这一档），只是那份快照
+里的 `departureSafe` 是 `false`，而车载端因为进程内签名未变再也不重发。**问题不在服务端的判定，
+在车载端的去重。**见上面的根因一节。
+
+仍未查清的是：**第 3 次为什么没掉。** 同样是守护收尾、同样是 journey 已 `Completed`，会话却保持
+了 `Ready`。`updatedAt` 停在 12:55:56 未变，说明会话根本没有重建，可能那一次服务并未真正重启。
+没有查证，但它说明这不是每次必现，而是**时序竞态**——第 2 次自愈前那两分钟，车带着货被 block 在
+`AwaitingGateArrival`，同一个竞态在飞行途中同样会咬人。
 
 ## 复现
 
