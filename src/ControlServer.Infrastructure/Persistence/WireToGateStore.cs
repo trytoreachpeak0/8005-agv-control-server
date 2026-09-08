@@ -1053,6 +1053,69 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     }
 
     /// <summary>
+    /// The reason codes that permanently ban a transport demand from execution. A demand merely
+    /// vanishing from the MesIngest catalog (MES_DISAPPEARED, GONE) does not: it may legitimately
+    /// come back, and the ban exists for demands a human decided against. ADR-cross-0047, FR-004.
+    /// </summary>
+    private static readonly string[] SuppressingReasonCodes =
+    [
+        "CANCELLED_BY_OPERATOR",
+        "CANCELLED_BY_LOAD_COMPENSATION",
+        "CANCELLED_BY_STOP_COMPLETE",
+        "CANCELLED_BY_STATION_TIMEOUT",
+        "TERMINATED_BY_FAULT_CARGO_HANDOFF"
+    ];
+
+    public static bool IsSuppressingReasonCode(string reasonCode) =>
+        SuppressingReasonCodes.Contains(reasonCode, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Records the permanent ban that a cancellation raises, keyed on the demand's business
+    /// identity. Writing it is part of the same SaveChanges as the cancellation itself -- a
+    /// cancellation that persisted without its ban would let the very next catalog poll dispatch
+    /// the vehicle back to the stop the operator just refused.
+    /// </summary>
+    /// <remarks>
+    /// The first ban on a key wins and is never overwritten. A later cancellation of another
+    /// instance under the same key changes nothing: the ban is already absolute, and the original
+    /// reason and timestamp are the ones that explain it.
+    /// </remarks>
+    public async Task SuppressTransportDemandAsync(
+        string transportDemandKey,
+        string demandId,
+        string reasonCode,
+        DateTimeOffset suppressedAt,
+        CancellationToken cancellationToken)
+    {
+        if (!IsSuppressingReasonCode(reasonCode))
+        {
+            throw new BusinessIdentityConflictException(
+                $"Reason code '{reasonCode}' does not suppress a transport demand.");
+        }
+        if (await dbContext.TransportDemandSuppressions
+                .AnyAsync(row => row.TransportDemandKey == transportDemandKey, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return;
+        }
+
+        dbContext.TransportDemandSuppressions.Add(new TransportDemandSuppressionRow
+        {
+            TransportDemandKey = transportDemandKey,
+            DemandId = demandId,
+            ReasonCode = reasonCode,
+            SuppressedAt = suppressedAt
+        });
+    }
+
+    public async Task<HashSet<string>> ReadSuppressedTransportDemandKeysAsync(
+        CancellationToken cancellationToken) =>
+        (await dbContext.TransportDemandSuppressions
+            .Select(row => row.TransportDemandKey)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+        .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
     /// Ends a journey that never loaded anything: the operator cancelled at the pickup stop before
     /// any slot operation was commanded, or nobody entered a sublot inside the runtime's wait
     /// window. Both leave the vehicle physically untouched -- no slot was ever opened, so there is
@@ -1090,6 +1153,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
 
         demand.Status = DemandExecutionStatus.Cancelled;
+        await SuppressTransportDemandAsync(
+            demand.TransportDemandKey, demandId, reasonCode, cancelledAt, cancellationToken)
+            .ConfigureAwait(false);
         VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
             .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
         lease.ReleasedAt ??= cancelledAt;

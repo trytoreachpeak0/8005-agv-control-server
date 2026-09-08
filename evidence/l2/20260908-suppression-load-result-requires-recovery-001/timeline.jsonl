@@ -1,0 +1,40 @@
+{"at":"2026-09-08T02:13:25.3545294+00:00","note":"L2 run 20260908T021325323Z starting for scenario 'load-result-requires-recovery'."}
+{"at":"2026-09-08T02:13:25.3769034+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T02:13:28.1490000+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T02:13:28.2856313+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T02:13:29.9260467+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T02:13:31.0108183+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T02:13:31.6372204+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T02:13:31.6520178+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T02:13:31.6877467+00:00","note":"Environment is up; entering scenario 'load-result-requires-recovery'."}
+{"at":"2026-09-08T02:13:31.7592108+00:00","note":"Publishing demand 77f1daad89a746acb2c85d69dd089bd5 (sublot L2-SUBLOT-20260908T021325323Z)."}
+{"at":"2026-09-08T02:13:31.8276833+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-08T02:13:32.3770376+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T02:13:32.3959015+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-77f1daad-89a7-46ac-b2c8-5d69dd089bd5-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-08T02:13:32.3988842+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-08T02:13:32.4594465+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-08T02:13:32.4895310+00:00","criterion":"pending-operation","value":"(null)"}
+{"at":"2026-09-08T02:13:34.0961009+00:00","criterion":"pending-operation","value":"operation:7a2f7c7e-3072-ad50-8f7e-d074e825ce04"}
+{"at":"2026-09-08T02:13:34.1060094+00:00","note":"Operator timeout ran out on the peer; it reports an incomplete OperationResult (operation:7a2f7c7e-3072-ad50-8f7e-d074e825ce04)."}
+{"at":"2026-09-08T02:13:34.1238069+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-08T02:13:34.9081582+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-08T02:13:34.9203140+00:00","note":"The failed load left the unlock output unreset; the peer reports it."}
+{"at":"2026-09-08T02:13:34.9465603+00:00","criterion":"session-departure-safe","value":"0"}
+{"at":"2026-09-08T02:13:34.9589149+00:00","criterion":"session-readiness","value":"RecoveryRequired / DEPARTURE_SAFETY_NOT_READY"}
+{"at":"2026-09-08T02:13:34.9739263+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-08T02:13:36.0354420+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-08T02:13:36.8299180+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-08T02:13:37.8821739+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-08T02:13:38.9470937+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-08T02:13:38.9597382+00:00","note":"Vehicle is powered down for the repair, as it is on site."}
+{"at":"2026-09-08T02:13:38.9857703+00:00","note":"Stopping component 'fake-onboard'."}
+{"at":"2026-09-08T02:13:39.8219588+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-08T02:13:40.8701780+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-08T02:13:41.9054643+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-08T02:13:42.9657111+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-08T02:13:42.9673137+00:00","note":"Publishing a second demand d40b7e5d992f4eab8f96dfb83a98ca0d (sublot L2-SUBLOT-NEXT-20260908T021325323Z) while the vehicle is blocked."}
+{"at":"2026-09-08T02:13:44.0369101+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-08T02:13:44.8337567+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-08T02:13:45.8941715+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-08T02:13:46.9401283+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-08T02:13:46.9450840+00:00","note":"Scenario finished at Blocked; the recovery exit needs a real-onboard scenario."}

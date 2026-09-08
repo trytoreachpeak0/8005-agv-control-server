@@ -30,6 +30,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<JourneyBacklogRow> JourneyBacklog => Set<JourneyBacklogRow>();
     public DbSet<JourneyRuntimeRow> JourneyRuntimes => Set<JourneyRuntimeRow>();
     public DbSet<AutoChargingRunRow> AutoChargingRuns => Set<AutoChargingRunRow>();
+    public DbSet<TransportDemandSuppressionRow> TransportDemandSuppressions =>
+        Set<TransportDemandSuppressionRow>();
     public DbSet<AdmissionPolicyStateRow> AdmissionPolicyState => Set<AdmissionPolicyStateRow>();
     public DbSet<StationTaskTypeAdmissionRow> StationTaskTypeAdmissions => Set<StationTaskTypeAdmissionRow>();
     public DbSet<AdmissionPolicyAuditRow> AdmissionPolicyAudit => Set<AdmissionPolicyAuditRow>();
@@ -112,6 +114,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<JourneyBacklogRow>().HasIndex(row => row.TransportDemandKey);
         modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Stage).HasConversion<string>();
+        modelBuilder.Entity<TransportDemandSuppressionRow>().HasKey(row => row.TransportDemandKey);
         modelBuilder.Entity<AutoChargingRunRow>().HasKey(row => row.ChargingRunId);
         modelBuilder.Entity<AutoChargingRunRow>().HasIndex(row => row.UpperId).IsUnique();
         modelBuilder.Entity<AutoChargingRunRow>().Property(row => row.Stage).HasConversion<string>();
@@ -500,6 +503,28 @@ public sealed class JourneyRuntimeRow
     public string? BlockReasonCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// A permanent ban on executing a transport demand, keyed on the business identity rather than on
+/// the instance: MesIngest allocates a fresh DemandId when a demand disappears from its catalog and
+/// comes back, so cancelling one instance stops that instance and nothing else. Nobody writes back
+/// to MES, so the same SUBLOT keeps reappearing as a new candidate until somebody physically moves
+/// the product and scans it through -- and the vehicle would keep being dispatched to a stop that
+/// an operator already refused. ADR-cross-0047 and FR-004.
+/// </summary>
+/// <remarks>
+/// It never expires: not on time, polling, GONE, restart, or a new DemandId. There is deliberately
+/// no lifting entry point in this version. The cancelled instance keeps its own terminal state
+/// under its DemandId; this row is a separate, coarser fact.
+/// </remarks>
+public sealed class TransportDemandSuppressionRow
+{
+    public required string TransportDemandKey { get; set; }
+    /// <summary>The instance whose cancellation raised the ban, kept for audit.</summary>
+    public required string DemandId { get; set; }
+    public required string ReasonCode { get; set; }
+    public DateTimeOffset SuppressedAt { get; set; }
 }
 
 /// <summary>

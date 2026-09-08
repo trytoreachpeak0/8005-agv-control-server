@@ -1520,7 +1520,7 @@ public sealed class JourneyRuntimeWorkerTests
 
         runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
-        Assert.Equal("CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", runtime.BlockReasonCode);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
         Assert.NotNull((await fixture.Context.VehicleDispatchLeases.AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken)).ReleasedAt);
@@ -1763,6 +1763,94 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal("BATTERY_POLICY_NOT_SATISFIED", backlog.ReasonCode);
         Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
             .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ACancelledDemandStaysBarredWhenMesIngestReissuesItUnderANewDemandId()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+
+        TransportDemandSuppressionRow suppression = await fixture.Context.TransportDemandSuppressions
+            .AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("SUBLOT-001|WIRE_TO_GATE", suppression.TransportDemandKey);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", suppression.ReasonCode);
+        Assert.Equal("10000000-0000-4000-8000-000000000001", suppression.DemandId);
+
+        // The whole point of keying on the business identity: MesIngest allocates a fresh DemandId
+        // when a demand leaves its catalog and returns, and nothing writes back to MES, so the same
+        // SUBLOT keeps reappearing. Barring the instance would stop nothing.
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000009",
+            "SUBLOT-001",
+            createdAt: fixture.Clock.GetUtcNow().AddMinutes(-1)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.AsNoTracking()
+            .SingleAsync(row => row.DemandId == "10000000-0000-4000-8000-000000000009",
+                TestContext.Current.CancellationToken);
+        Assert.Equal("TRANSPORT_DEMAND_SUPPRESSED", backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.DemandId == "10000000-0000-4000-8000-000000000009")
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        // A different SUBLOT under the same work type is a different business key and is unaffected.
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000010",
+            "SUBLOT-002",
+            createdAt: fixture.Clock.GetUtcNow().AddMinutes(-1)));
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(
+            JourneyRuntimeStage.AwaitingPickupArrival,
+            (await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000010")).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task TheFirstSuppressionOfABusinessKeyIsTheOneThatStands()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.AdvanceToSublotWaitAsync("10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        WireToGateStore store = new(fixture.Context);
+        DateTimeOffset later = fixture.Clock.GetUtcNow().AddHours(1);
+        await store.SuppressTransportDemandAsync(
+            "SUBLOT-001|WIRE_TO_GATE",
+            "10000000-0000-4000-8000-000000000009",
+            "CANCELLED_BY_OPERATOR",
+            later,
+            TestContext.Current.CancellationToken);
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // The ban is already absolute; the reason and timestamp that explain it are the first ones.
+        TransportDemandSuppressionRow suppression = await fixture.Context.TransportDemandSuppressions
+            .AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", suppression.ReasonCode);
+        Assert.NotEqual(later, suppression.SuppressedAt);
+
+        // A reason that does not represent a human decision must not be able to raise one at all:
+        // a demand merely vanishing from the catalog may legitimately come back.
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(() =>
+            store.SuppressTransportDemandAsync(
+                "SUBLOT-777|WIRE_TO_GATE",
+                "10000000-0000-4000-8000-000000000011",
+                "MES_DISAPPEARED",
+                later,
+                TestContext.Current.CancellationToken));
     }
 
     private sealed class RuntimeFixture : IAsyncDisposable

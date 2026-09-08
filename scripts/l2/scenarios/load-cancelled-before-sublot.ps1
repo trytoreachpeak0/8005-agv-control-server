@@ -143,9 +143,9 @@ $stage = Wait-L2Condition -Description 'the journey was terminated by the cancel
 
 $runtime = Get-Runtime $firstId
 $assertions.Add(
-    'L2-CB-03', '旅程以 CANCELLED_BY_OPERATOR_BEFORE_LOAD 终结',
-    ($stage -eq 'Completed' -and [string]$runtime.BlockReasonCode -eq 'CANCELLED_BY_OPERATOR_BEFORE_LOAD'),
-    'Completed / CANCELLED_BY_OPERATOR_BEFORE_LOAD',
+    'L2-CB-03', '旅程以 CANCELLED_BY_OPERATOR 终结',
+    ($stage -eq 'Completed' -and [string]$runtime.BlockReasonCode -eq 'CANCELLED_BY_OPERATOR'),
+    'Completed / CANCELLED_BY_OPERATOR',
     "$stage / $($runtime.BlockReasonCode)")
 
 $demandRows = Invoke-L2Query -Connection $connection `
@@ -169,6 +169,20 @@ $assertions.Add(
     'L2-CB-06', '那条没人回答的条码录入请求被结算了',
     ($requestRows.Count -eq 1 -and -not (Test-L2Null $requestRows[0].AcknowledgedAt)),
     '已结算', $(if ($requestRows.Count -eq 1) { "AcknowledgedAt=$($requestRows[0].AcknowledgedAt)" } else { '(no outbox row)' }))
+
+# 取消必须同时留下一条按业务键的永久禁令。没有它，MesIngest 为同一个 SUBLOT 跨 GONE 再现分配
+# 一个新 DemandId 时，这一单会作为新实例重新进入候选，车会被再次派往操作员刚拒绝过的那个空站点。
+$suppression = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT TransportDemandKey, ReasonCode, DemandId FROM TransportDemandSuppressions"
+$assertions.Add(
+    'L2-CB-13', '按业务键写下了永久取消抑制',
+    ($suppression.Count -eq 1 -and
+        [string]$suppression[0].ReasonCode -eq 'CANCELLED_BY_OPERATOR' -and
+        [string]$suppression[0].DemandId -eq $firstId),
+    "1 条 / CANCELLED_BY_OPERATOR",
+    $(if ($suppression.Count -eq 1) {
+        "$($suppression.Count) 条 / $($suppression[0].ReasonCode) / key=$($suppression[0].TransportDemandKey)"
+    } else { "$($suppression.Count) 条" }))
 
 $operationRows = Invoke-L2Query -Connection $connection `
     -Sql "SELECT COUNT(*) AS N FROM StationOperations WHERE DemandId = '$firstId'"

@@ -1,0 +1,36 @@
+{"at":"2026-09-08T02:14:43.6471674+00:00","note":"L2 run 20260908T021443608Z starting for scenario 'sublot-wait-timeout'."}
+{"at":"2026-09-08T02:14:43.6632767+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T02:14:46.6356956+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T02:14:46.7484525+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T02:14:46.7678744+00:00","note":"Server settings from sublot-wait-timeout.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:00:10"}
+{"at":"2026-09-08T02:14:48.3884693+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T02:14:49.5012110+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T02:14:50.1431110+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T02:14:50.1590722+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T02:14:50.1958146+00:00","note":"Environment is up; entering scenario 'sublot-wait-timeout'."}
+{"at":"2026-09-08T02:14:50.2436636+00:00","note":"Synthetic peer stops answering sublot entry requests: nobody comes to scan."}
+{"at":"2026-09-08T02:14:50.2799080+00:00","note":"Publishing demand 48b78f6fde0f423fa32f00a4129e0f69 to the fake MesIngest catalog."}
+{"at":"2026-09-08T02:14:50.3504659+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-08T02:14:50.8865194+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T02:14:50.8945324+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-48b78f6f-de0f-423f-a32f-00a4129e0f69-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-08T02:14:50.9017806+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-08T02:14:51.7346201+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-08T02:14:51.7633072+00:00","criterion":"runtime-iterations","value":"3"}
+{"at":"2026-09-08T02:14:52.5503575+00:00","criterion":"runtime-iterations","value":"4"}
+{"at":"2026-09-08T02:14:53.3307633+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-08T02:14:54.3923899+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-08T02:14:55.4548622+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-08T02:14:55.4595864+00:00","note":"Waiting for the sublot wait window to expire (10 s, set by the sidecar)."}
+{"at":"2026-09-08T02:15:01.4466237+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-08T02:15:01.4594506+00:00","note":"Synthetic peer answers again; the next demand must run all the way through."}
+{"at":"2026-09-08T02:15:01.4745520+00:00","criterion":"second-journey-stage","value":"(null)"}
+{"at":"2026-09-08T02:15:02.5006227+00:00","criterion":"second-journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T02:15:02.5040943+00:00","criterion":"second-to-pickup-intent","value":"@{UpperId=W2G-a3ea4336-cf12-416d-9c9b-8f7172cf5e24-PICKUP-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-08T02:15:02.5144710+00:00","note":"Vehicle runs the second pickup leg."}
+{"at":"2026-09-08T02:15:03.8198137+00:00","criterion":"second-journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-08T02:15:04.5859083+00:00","criterion":"second-journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-08T02:15:05.3791183+00:00","criterion":"second-journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-08T02:15:05.3811235+00:00","note":"Vehicle drives to the gate and comes to rest."}
+{"at":"2026-09-08T02:15:06.9215465+00:00","criterion":"second-journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-08T02:15:07.4382793+00:00","criterion":"second-journey-stage","value":"Completed"}
+{"at":"2026-09-08T02:15:07.4444106+00:00","note":"Scenario finished."}

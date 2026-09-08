@@ -1582,6 +1582,27 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("TransportDemandCompletions");
                 });
 
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.TransportDemandSuppressionRow", b =>
+                {
+                    b.Property<string>("TransportDemandKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DemandId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("SuppressedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("TransportDemandKey");
+
+                    b.ToTable("TransportDemandSuppressions");
+                });
+
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.UnloadBatchRow", b =>
                 {
                     b.Property<string>("UnloadBatchId")

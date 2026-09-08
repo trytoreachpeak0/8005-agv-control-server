@@ -501,7 +501,7 @@ public sealed class OnboardRecoveryCoordinator(
                 workflow.Outcome = "CANCELLED_BEFORE_LOAD";
                 workflow.UpdatedAt = now;
                 await store.CancelDemandBeforeLoadAsync(
-                    demandId, "CANCELLED_BY_OPERATOR_BEFORE_LOAD", now, cancellationToken)
+                    demandId, "CANCELLED_BY_OPERATOR", now, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -841,16 +841,24 @@ public sealed class OnboardRecoveryCoordinator(
                 cancellationToken).ConfigureAwait(false);
             if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
         }
+        string terminalReasonCode = messageType == "FaultCargoRecoveryResult"
+            ? "TERMINATED_BY_FAULT_CARGO_HANDOFF"
+            : messageType == "LoadCompensationResult"
+                ? "CANCELLED_BY_LOAD_COMPENSATION"
+                : "CANCELLED_BY_OPERATOR";
+        // The ban travels with the cancellation, not with the journey: ADR-cross-0047 and FR-004
+        // require all three of these terminal reasons to bar the business key permanently. Without
+        // it the same SUBLOT returns as a new DemandId on a later catalog poll and the vehicle is
+        // dispatched back to a stop a human already settled.
+        await store.SuppressTransportDemandAsync(
+            demand.TransportDemandKey, demand.DemandId, terminalReasonCode, observedAt, cancellationToken)
+            .ConfigureAwait(false);
         JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
             row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
         if (runtime is not null)
         {
             runtime.Stage = JourneyRuntimeStage.Completed;
-            runtime.BlockReasonCode = messageType == "FaultCargoRecoveryResult"
-                ? "TERMINATED_BY_FAULT_CARGO_HANDOFF"
-                : messageType == "LoadCompensationResult"
-                    ? "CANCELLED_BY_LOAD_COMPENSATION"
-                    : "CANCELLED_BY_OPERATOR";
+            runtime.BlockReasonCode = terminalReasonCode;
             runtime.UpdatedAt = observedAt;
         }
     }

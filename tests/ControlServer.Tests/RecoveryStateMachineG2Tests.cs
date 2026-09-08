@@ -828,7 +828,7 @@ public sealed class RecoveryStateMachineG2Tests
             JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(
                 TestContext.Current.CancellationToken);
             Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
-            Assert.Equal("CANCELLED_BY_OPERATOR_BEFORE_LOAD", runtime.BlockReasonCode);
+            Assert.Equal("CANCELLED_BY_OPERATOR", runtime.BlockReasonCode);
             // The entry request is answered by the cancellation; unsettled it would replay into the
             // next session as a business id whose content changed and tear that session down.
             ProtocolOutboxRow entryRequest = await context.ProtocolOutbox.SingleAsync(
@@ -888,7 +888,7 @@ public sealed class RecoveryStateMachineG2Tests
         // here would drop it while a slot door is possibly still open, so the shortcut is refused
         // rather than quietly widened.
         await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => store.CancelDemandBeforeLoadAsync(
-            DemandId, "CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", Now, TestContext.Current.CancellationToken));
+            DemandId, "CANCELLED_BY_STATION_TIMEOUT", Now, TestContext.Current.CancellationToken));
 
         Assert.Equal(
             DemandExecutionStatus.Accepted,
@@ -909,23 +909,23 @@ public sealed class RecoveryStateMachineG2Tests
         WireToGateStore store = new(context);
 
         Assert.True(await store.CancelDemandBeforeLoadAsync(
-            DemandId, "CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", Now, TestContext.Current.CancellationToken));
+            DemandId, "CANCELLED_BY_STATION_TIMEOUT", Now, TestContext.Current.CancellationToken));
         // Second call: already cancelled, so it reports that it did nothing rather than terminating
         // twice. Both the timeout and an operator request can reach this, and they can race.
         Assert.False(await store.CancelDemandBeforeLoadAsync(
-            DemandId, "CANCELLED_BY_OPERATOR_BEFORE_LOAD", Now.AddMinutes(1),
+            DemandId, "CANCELLED_BY_OPERATOR", Now.AddMinutes(1),
             TestContext.Current.CancellationToken));
 
         JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(
             TestContext.Current.CancellationToken);
-        Assert.Equal("CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", runtime.BlockReasonCode);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
 
         AcceptedDemandRow demand = await context.AcceptedDemands.SingleAsync(
             TestContext.Current.CancellationToken);
         demand.Status = DemandExecutionStatus.Succeeded;
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
         await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => store.CancelDemandBeforeLoadAsync(
-            DemandId, "CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", Now, TestContext.Current.CancellationToken));
+            DemandId, "CANCELLED_BY_STATION_TIMEOUT", Now, TestContext.Current.CancellationToken));
     }
 
     private static OnboardMessageProcessor Processor(

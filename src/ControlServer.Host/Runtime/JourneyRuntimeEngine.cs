@@ -171,6 +171,8 @@ public sealed class JourneyRuntimeEngine(
                 .Select(row => row.DemandId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false))
             .ToHashSet(StringComparer.Ordinal);
+        HashSet<string> suppressedKeys = await store
+            .ReadSuppressedTransportDemandKeysAsync(cancellationToken).ConfigureAwait(false);
         List<EligibleCandidate> eligible = [];
         foreach (AcceptedDemandSnapshot candidate in snapshot.Items)
         {
@@ -185,6 +187,14 @@ public sealed class JourneyRuntimeEngine(
                 // route, package, box-count and vehicle reads the gates below perform would be
                 // spent on a decision that is already made.
                 reason = "DEMAND_ALREADY_ACCEPTED";
+            }
+            else if (suppressedKeys.Contains(candidate.TransportDemandKey))
+            {
+                // Keyed on the business identity, so it also catches the fresh DemandId MesIngest
+                // allocates when the same demand disappears from its catalog and returns -- which
+                // is the only way a cancelled demand can come back at all. It never expires and
+                // there is no lifting entry point in this version.
+                reason = "TRANSPORT_DEMAND_SUPPRESSED";
             }
             else if (!runtimeOptions.AllowedWorkTypes.Contains(candidate.WorkType, StringComparer.Ordinal) ||
                 !string.Equals(candidate.WorkType, "WIRE_TO_GATE", StringComparison.Ordinal))
@@ -1586,7 +1596,7 @@ public sealed class JourneyRuntimeEngine(
         }
 
         if (await store.CancelDemandBeforeLoadAsync(
-                runtime.DemandId, "CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", now, cancellationToken)
+                runtime.DemandId, "CANCELLED_BY_STATION_TIMEOUT", now, cancellationToken)
             .ConfigureAwait(false))
         {
             LogSublotWaitTimedOut(logger, runtime.DemandId, runtimeOptions.SublotWaitTimeout, null);
