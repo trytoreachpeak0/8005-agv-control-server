@@ -15,8 +15,7 @@ own way:
   he decides on, and **since 2026-09-08 we merge it ourselves once he agrees**
   (before that date we never did). Direct pushes, force-pushes, tags and releases
   on those branches stay forbidden.
-- `8005-agv-protocol` — writable, but every push there must be announced to Kun
-  Wang in an issue that `@SocialKKKK`.
+- `8005-agv-protocol` — writable, with no announcement duty since 2026-09-08.
 
 Reaching a machine, or routing a problem to a repository, never grants write
 access to it.
@@ -78,10 +77,14 @@ What an agent must follow:
   true, but since both are ours it now means two of our own workstreams, not two
   people. A red `ONBOARD_HMI_G2` is no longer someone else's blocker — it is work
   to pick up on a `w2g/*` branch.
-- **Moving that gate did not move the release signature.** The approval
-  attestation still needs two distinct product owners and `G1` really does check
-  `size===2`. Kun Wang still owns both peer repositories and co-maintains the
-  protocol, so he is still the second signature.
+- **Moving that gate did not move the release signature — but 2026-09-08 did.**
+  This bullet used to say the attestation needed two distinct product owners with
+  `G1` checking `size===2` for real, Kun Wang being the second. The user then took
+  over his project outright, which left a rule demanding a signature nobody could
+  give; the rule was changed rather than bypassed (`docs/release-governance.md`,
+  the attestation schema and `g1-validate.mjs` together, `size===2` → `size===1`),
+  and `protocol-v0.2.0` shipped under it. **One owner now — and "one owner" means
+  the user signs, never an agent. AI and CI still cannot approve.**
 - **Cross-repository feedback takes one of three routes.** A contract ambiguity
   or error goes to an issue in `8005-agv-protocol` carrying the `vectorId` that
   triggered it. A peer repository failing the contract goes to an issue in *that*
@@ -92,15 +95,15 @@ What an agent must follow:
   **A cross-repository claim must carry reproducible gate evidence; "it does not
   work on my side" is not a report.** Follow the shape already used in
   `docs/defects/`: a `Found by:` line linking the G3 evidence `SUMMARY.md`.
-- **`8005-agv-protocol` needs no advance approval** — Zhengyu Shao decides its
-  content alone — **but every push must be announced in an issue that
-  `@SocialKKKK`**, stating what changed, which `W2G-IS-*` slices it touches, and
-  which gate evidence is now void, in the same task as the push. (That third item
-  read "their `ONBOARD_HMI_G2` evidence" before 2026-09-04; the gate is ours now,
-  so the voided evidence is ours — **the duty to tell him is unchanged**, since
-  the protocol is still the contract his repositories are built against and our
-  pull requests land in his branches.) Tagging a release still needs the two-owner attestation; **AI and CI
-  cannot approve.**
+- **`8005-agv-protocol` needs no advance approval and no announcement** — Zhengyu
+  Shao decides its content alone. The announcement duty (an issue that
+  `@SocialKKKK` after every push) was dropped on 2026-09-08 when the user took
+  over his project: nobody else implements against this contract now, and there
+  is no evidence of his left to void. **Do not `@SocialKKKK` anything.** Still
+  state what changed, which `W2G-IS-*` slices it touches and which gate evidence
+  is now void — in the commit message, because that evidence is ours. Tagging a
+  release needs a one-owner attestation (two before 2026-09-08); **AI and CI
+  cannot approve**, and "one owner" means the user signs, never an agent.
 - **Batch protocol changes.** A patch release voids the affected G1/G2/G3
   evidence on both sides, so every small change costs the other side a full gate
   re-run.
