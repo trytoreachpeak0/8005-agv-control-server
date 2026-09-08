@@ -608,6 +608,18 @@ public sealed class JourneyRuntimeEngine(
                 {
                     Block(runtime, "LOAD_RESULT_REQUIRES_RECOVERY", now);
                 }
+                else if (load?.Status == StationOperationStatus.Failed)
+                {
+                    // ADR-cross-0058 decision 5. A determinate load failure neither blocks the
+                    // journey nor opens a recovery session: the vehicle reported exactly what the
+                    // slots look like -- known state, door locked, unlock output reset -- and the
+                    // answer was that nobody handed the cargo over. The journey waits here for
+                    // LoadTaskCancellation to settle the demand (ADR-cross-0015, ADR-cross-0046).
+                    // The wait is not open-ended, but closing the stop is ADR-cross-0055's
+                    // StationDepartureWaitTimeout, not this branch. Spelled out rather than left to
+                    // the else below, which means something else entirely: no result yet.
+                    return;
+                }
                 else if (load?.Status == StationOperationStatus.Committed)
                 {
                     await store.SettleAnsweredCommandAsync(

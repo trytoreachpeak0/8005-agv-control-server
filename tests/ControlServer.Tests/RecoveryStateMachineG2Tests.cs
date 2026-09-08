@@ -1312,16 +1312,24 @@ public sealed class RecoveryStateMachineG2Tests
         verifiedAt = Now
     };
 
+    /// <param name="determinate">
+    /// Which kind of failure this is, once ADR-cross-0058 decision 5 split the two. A determinate
+    /// failure names the physical state it ended in, so the server settles it as
+    /// StationOperationStatus.Failed and nobody is asked to recover anything. The default is the
+    /// other half -- a slot whose state the vehicle could not establish -- which is what still
+    /// needs a recovery handshake, and what every caller of this helper is testing.
+    /// </param>
     private static object OperationResultPayload(
         bool completed = true,
         int[]? slots = null,
-        string journalCheckpoint = "RESULT_RECORDED")
+        string journalCheckpoint = "RESULT_RECORDED",
+        bool determinate = false)
     {
         object[] slotResults = (slots ?? RecoverySlots).Select(slot => (object)new
         {
             slotNo = slot,
             outcome = completed ? "COMPLETED" : "FAILED",
-            finalPhysicalState = completed ? "OCCUPIED" : "EMPTY",
+            finalPhysicalState = completed ? "OCCUPIED" : determinate ? "EMPTY" : "UNKNOWN",
             lockState = "LOCKED",
             unlockOutputState = "RESET",
             reasonCodes = completed ? Array.Empty<string>() : FailedSlotReasonCodes

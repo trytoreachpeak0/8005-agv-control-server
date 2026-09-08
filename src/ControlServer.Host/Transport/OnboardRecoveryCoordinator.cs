@@ -154,13 +154,20 @@ public sealed class OnboardRecoveryCoordinator(
         if (workflow is null || disposition is OperationResultDisposition.Replay or OperationResultDisposition.HistoricalOnly)
             return;
 
-        workflow.State = disposition == OperationResultDisposition.Accepted
+        // ADR-cross-0058 decision 5: a determinate failure settles this workflow exactly as an
+        // accepted result does. What a recovery workflow exists to obtain is a trustworthy account
+        // of the physical world, and "known state, door locked, unlock output reset, nobody handed
+        // the cargo over" is one. The business outcome is a failure; the uncertainty that called for
+        // an administrator is gone, so the workflow is finished and the journey is unblocked.
+        bool settled = disposition is OperationResultDisposition.Accepted
+            or OperationResultDisposition.DeterminateFailure;
+        workflow.State = settled
             ? RecoveryWorkflowState.Reconciled
             : RecoveryWorkflowState.RecoveryRequired;
         workflow.UpdatedAt = timeProvider.GetUtcNow();
         JourneyRuntimeRow? runtime = await JourneyForDemandAsync(workflow.DemandId, cancellationToken)
             .ConfigureAwait(false);
-        if (runtime is not null && disposition == OperationResultDisposition.Accepted)
+        if (runtime is not null && settled)
         {
             StationOperationRow operation = await dbContext.StationOperations.SingleAsync(
                 row => row.SlotOperationAttemptId == slotOperationAttemptId,
@@ -176,7 +183,7 @@ public sealed class OnboardRecoveryCoordinator(
             ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
                 row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
                 cancellationToken).ConfigureAwait(false);
-            session.State = disposition == OperationResultDisposition.Accepted ? "CLOSED" : "EXECUTING";
+            session.State = settled ? "CLOSED" : "EXECUTING";
             session.Revision++;
             session.UpdatedAt = timeProvider.GetUtcNow();
             long sessionGeneration = await dbContext.SessionRecoveries.Where(row => row.AgvId == workflow.AgvId)

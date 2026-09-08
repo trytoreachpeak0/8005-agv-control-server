@@ -1752,16 +1752,42 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                                    item.State == expectedState && item.DoorLocked && item.UnlockOutputReset);
         if (!completedSafely)
         {
-            operation.Status = StationOperationStatus.RecoveryRequired;
-            AcceptedDemandRow? blockedDemand = await dbContext.AcceptedDemands
-                .SingleOrDefaultAsync(row => row.DemandId == result.DemandId, cancellationToken)
-                .ConfigureAwait(false);
-            if (blockedDemand is not null && blockedDemand.Status != DemandExecutionStatus.Succeeded)
+            // ADR-cross-0058 decision 5. Missing the target state is not the same as not knowing
+            // what happened. When every commanded slot came back with a known occupancy state, a
+            // locked door and a reset unlock output, the vehicle has given a complete account: the
+            // cargo simply was not handed over. Nothing is uncertain, so nothing needs an
+            // administrator -- routing this to recovery is exactly what ADR-cross-0040 forbids when
+            // it says software must not treat "nobody loaded it" as a sensor fault.
+            //
+            // Unload is deliberately excluded. ADR-cross-0015 gives it UnloadCompletionRequired with
+            // no cancellation branch, so an unload that misses its target keeps closing the loop
+            // until the slots are empty; it has no determinate-failure exit to take.
+            bool determinateFailure =
+                operation.OperationType == SlotOperationType.Load &&
+                result.OverallOutcome == "FAILED" &&
+                result.SlotEvidence.Count == expectedSlots.Length &&
+                actualSlots.SequenceEqual(expectedSlots) &&
+                result.SlotEvidence.All(item =>
+                    item.State != SlotBusinessState.Unknown && item.DoorLocked && item.UnlockOutputReset);
+            operation.Status = determinateFailure
+                ? StationOperationStatus.Failed
+                : StationOperationStatus.RecoveryRequired;
+            if (!determinateFailure)
             {
-                blockedDemand.Status = DemandExecutionStatus.RecoveryRequired;
+                AcceptedDemandRow? blockedDemand = await dbContext.AcceptedDemands
+                    .SingleOrDefaultAsync(row => row.DemandId == result.DemandId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (blockedDemand is not null && blockedDemand.Status != DemandExecutionStatus.Succeeded)
+                {
+                    blockedDemand.Status = DemandExecutionStatus.RecoveryRequired;
+                }
             }
+            // A determinately failed load leaves the demand Accepted on purpose: it is still a live
+            // demand, and LoadTaskCancellation (ADR-cross-0015, ADR-cross-0046) is what settles it.
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return OperationResultDisposition.RecoveryRequired;
+            return determinateFailure
+                ? OperationResultDisposition.DeterminateFailure
+                : OperationResultDisposition.RecoveryRequired;
         }
 
         operation.Status = StationOperationStatus.Committed;

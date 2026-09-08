@@ -904,6 +904,39 @@ public sealed class JourneyRuntimeWorkerTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ADeterminateLoadFailureDoesNotBlockTheJourney()
+    {
+        // The counterpart to the test above, and the whole point of ADR-cross-0058 decision 5.
+        // Same station timeout, same vehicle, one difference: this time the vehicle could read its
+        // slots and reported them -- empty, locked, unlock output reset. That is a complete account
+        // of a failure, so no administrator is needed and the journey is not held. It stays in
+        // AwaitingLoadResult, where LoadTaskCancellation settles the demand (ADR-cross-0015,
+        // ADR-cross-0046); what stops the vehicle occupying the station forever is
+        // ADR-cross-0055's StationDepartureWaitTimeout, not a block.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load),
+            SlotOperationType.Load,
+            determinate: true);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView settled = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, settled.Stage);
+        Assert.NotEqual("LOAD_RESULT_REQUIRES_RECOVERY", settled.BlockReasonCode);
+        Assert.Equal(
+            StationOperationStatus.Failed,
+            (await fixture.OperationAsync(SlotOperationType.Load)).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
     public async Task AResultThatTurnsTheSessionRecoveryRequiredStillBlocksTheJourneyForItsOwnReason()
     {
         // 147f02c made a refused result move the session to RecoveryRequired, so the vehicle would
@@ -3098,9 +3131,20 @@ public sealed class JourneyRuntimeWorkerTests
         /// the slots were never filled and the batch did not complete. Physical side effects are
         /// unproven from here on, which is what sends the operation to RecoveryRequired.
         /// </summary>
-        public async Task ApplyTimedOutResultAsync(StationOperationRow operation, SlotOperationType type)
+        /// <param name="determinate">
+        /// Which kind of failure this is, once ADR-cross-0058 decision 5 split the two. A
+        /// determinate failure names the state each slot ended in, so the server settles it as
+        /// StationOperationStatus.Failed and the journey is not blocked. The default is the other
+        /// half -- a slot whose physical state the vehicle could not establish -- which is what
+        /// blocks the journey until a human drives the recovery handshake.
+        /// </param>
+        public async Task ApplyTimedOutResultAsync(
+            StationOperationRow operation,
+            SlotOperationType type,
+            bool determinate = false)
         {
             int[] slots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
+            SlotBusinessState state = determinate ? SlotBusinessState.Empty : SlotBusinessState.Unknown;
             await new WireToGateStore(Context).ApplyOperationResultAsync(
                 new StationOperationResult(
                     Guid.NewGuid().ToString("D"),
@@ -3108,7 +3152,7 @@ public sealed class JourneyRuntimeWorkerTests
                     operation.DemandId,
                     type,
                     "FAILED",
-                    slots.Select(slot => new SlotPhysicalEvidence(slot, SlotBusinessState.Empty, true, true)).ToArray(),
+                    slots.Select(slot => new SlotPhysicalEvidence(slot, state, true, true)).ToArray(),
                     false,
                     Clock.GetUtcNow(),
                     new string('8', 64),

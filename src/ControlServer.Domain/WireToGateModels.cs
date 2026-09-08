@@ -53,6 +53,17 @@ public enum StationOperationStatus
     Prepared,
     Committed,
     Cancelled,
+    /// <summary>
+    /// The operation did not reach its target state, and the vehicle said so with complete,
+    /// unambiguous physical evidence: every commanded slot reported a known occupancy state,
+    /// a locked door and a reset unlock output. ADR-cross-0058 decision 5 settles that as a
+    /// determinate failure -- nothing is uncertain, so nothing needs an administrator.
+    /// <see cref="RecoveryRequired"/> is the opposite case: the server cannot tell what the
+    /// physical world looks like. Load ends through LoadTaskCancellation from here
+    /// (ADR-cross-0015, ADR-cross-0046); unload has no cancellation branch and never reaches
+    /// this state.
+    /// </summary>
+    Failed,
     RecoveryRequired
 }
 
@@ -305,6 +316,13 @@ public enum ConnectionRecoveryStatus
 public enum OperationResultDisposition
 {
     Accepted,
+    /// <summary>
+    /// The result was accepted as a complete account of a failure -- see
+    /// <see cref="StationOperationStatus.Failed"/>. It is not
+    /// <see cref="RecoveryRequired"/>: no recovery workflow opens and no administrator is
+    /// asked for anything.
+    /// </summary>
+    DeterminateFailure,
     RecoveryRequired,
     HistoricalOnly,
     Replay

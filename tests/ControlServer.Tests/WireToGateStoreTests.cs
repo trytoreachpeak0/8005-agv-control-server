@@ -234,6 +234,202 @@ public sealed class WireToGateStoreTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ALoadFailureWithCompleteEvidenceSettlesWithoutAskingForRecovery()
+    {
+        // ADR-cross-0058 decision 5. The operator never put the cargo in, the station deadline
+        // expired, and the vehicle closed the door and said so: slot empty, door locked, unlock
+        // output reset, overallOutcome FAILED. Nothing about that is uncertain, so it must not
+        // become a recovery session -- ADR-cross-0040 is explicit that software may not treat
+        // "nobody loaded it" as a sensor fault. The demand stays Accepted on purpose: it is
+        // LoadTaskCancellation that settles it (ADR-cross-0015, ADR-cross-0046), and the
+        // authorisation for that reads exactly this pair of states.
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                "D-001",
+                "SUBLOT-001|WIRE_TO_GATE",
+                7,
+                "history-1",
+                21,
+                fixture.Now),
+            new OrderIntent(
+                "LEG-001",
+                "D-001",
+                "W2G-D-001-PICKUP-1",
+                "TO_PICKUP",
+                "ST-PICKUP",
+                fixture.Now),
+            fixture.CancellationToken);
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-001",
+                "D-001",
+                "SUBLOT-001",
+                [1],
+                SlotOperationType.Load,
+                0,
+                "plan-hash",
+                fixture.Now),
+            "MSG-CMD-001",
+            "command-json",
+            fixture.CancellationToken);
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-001",
+                "ATTEMPT-001",
+                "D-001",
+                SlotOperationType.Load,
+                "FAILED",
+                [new SlotPhysicalEvidence(1, SlotBusinessState.Empty, true, true)],
+                false,
+                fixture.Now.AddSeconds(1),
+                "result-hash",
+                "wire-hash"),
+            "AGV-001",
+            0,
+            fixture.CancellationToken);
+
+        Assert.Equal(OperationResultDisposition.DeterminateFailure, disposition);
+        Assert.Equal(
+            StationOperationStatus.Failed,
+            (await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.Accepted,
+            (await fixture.Context.AcceptedDemands.SingleAsync(fixture.CancellationToken)).Status);
+        Assert.False((await fixture.Context.OperationResults.SingleAsync(fixture.CancellationToken)).HistoricalOnly);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AnUnloadThatMissedItsTargetStillNeedsRecoveryHoweverCompleteItsEvidenceIs()
+    {
+        // The same evidence shape that settles a load determinately does not settle an unload.
+        // ADR-cross-0015 gives unload UnloadCompletionRequired with no cancellation branch, so
+        // there is no determinate exit for it to take: a slot still holding cargo has to keep
+        // closing the loop until it is empty. ADR-cross-0058 decision 5 says so in as many words,
+        // and this is the assertion that keeps the load-side split from leaking across.
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                "D-001",
+                "SUBLOT-001|WIRE_TO_GATE",
+                7,
+                "history-1",
+                21,
+                fixture.Now),
+            new OrderIntent(
+                "LEG-001",
+                "D-001",
+                "W2G-D-001-PICKUP-1",
+                "TO_PICKUP",
+                "ST-PICKUP",
+                fixture.Now),
+            fixture.CancellationToken);
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-001",
+                "D-001",
+                "SUBLOT-001",
+                [1],
+                SlotOperationType.Unload,
+                0,
+                "plan-hash",
+                fixture.Now),
+            "MSG-CMD-001",
+            "command-json",
+            fixture.CancellationToken);
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-001",
+                "ATTEMPT-001",
+                "D-001",
+                SlotOperationType.Unload,
+                "FAILED",
+                [new SlotPhysicalEvidence(1, SlotBusinessState.Occupied, true, true)],
+                false,
+                fixture.Now.AddSeconds(1),
+                "result-hash",
+                "wire-hash"),
+            "AGV-001",
+            0,
+            fixture.CancellationToken);
+
+        Assert.Equal(OperationResultDisposition.RecoveryRequired, disposition);
+        Assert.Equal(
+            StationOperationStatus.RecoveryRequired,
+            (await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken)).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AFailedLoadWithOneUnknownSlotIsStillARecovery()
+    {
+        // The split is drawn at certainty, not at the word FAILED. One slot the vehicle could not
+        // read leaves the server unable to say what the physical world looks like, which is the
+        // whole and only reason a recovery handshake exists (ADR-cross-0040).
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                "D-001",
+                "SUBLOT-001|WIRE_TO_GATE",
+                7,
+                "history-1",
+                21,
+                fixture.Now),
+            new OrderIntent(
+                "LEG-001",
+                "D-001",
+                "W2G-D-001-PICKUP-1",
+                "TO_PICKUP",
+                "ST-PICKUP",
+                fixture.Now),
+            fixture.CancellationToken);
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-001",
+                "D-001",
+                "SUBLOT-001",
+                [1],
+                SlotOperationType.Load,
+                0,
+                "plan-hash",
+                fixture.Now),
+            "MSG-CMD-001",
+            "command-json",
+            fixture.CancellationToken);
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-001",
+                "ATTEMPT-001",
+                "D-001",
+                SlotOperationType.Load,
+                "FAILED",
+                [new SlotPhysicalEvidence(1, SlotBusinessState.Unknown, true, true)],
+                false,
+                fixture.Now.AddSeconds(1),
+                "result-hash",
+                "wire-hash"),
+            "AGV-001",
+            0,
+            fixture.CancellationToken);
+
+        Assert.Equal(OperationResultDisposition.RecoveryRequired, disposition);
+        Assert.Equal(
+            StationOperationStatus.RecoveryRequired,
+            (await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.RecoveryRequired,
+            (await fixture.Context.AcceptedDemands.SingleAsync(fixture.CancellationToken)).Status);
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-03")]
     public async Task GateMovementRequiresFreshSafeCheckAndStableIntentIdentity()
     {
