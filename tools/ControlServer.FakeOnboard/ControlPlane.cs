@@ -39,6 +39,18 @@ public sealed record AnswerCommand : CommandEnvelope
     public bool Completed { get; init; } = true;
 }
 
+/// <summary>
+/// Raises a load cancellation from the peer. <c>SlotOperationAttemptId</c> is null for the case
+/// this exists to drive: the stop has nothing to load and no slot operation was ever commanded.
+/// </summary>
+public sealed record CancelLoadCommand : CommandEnvelope
+{
+    public string? DemandId { get; init; }
+    public string? CancellationId { get; init; }
+    public string? SlotOperationAttemptId { get; init; }
+    public string? Reason { get; init; }
+}
+
 public static class ControlPlane
 {
     public static void MapControlPlane(this WebApplication app)
@@ -136,6 +148,36 @@ public static class ControlPlane
                     .ConfigureAwait(false);
             }
             return result;
+        });
+
+        control.MapPost("/cancel-load", async (CancelLoadCommand command, CancellationToken cancellationToken) =>
+        {
+            OnboardPeerSession? peer = holder.Peer;
+            if (peer is null)
+            {
+                return ControlPlaneConventions.Refused(engine, ReasonCodes.NotAllowedInState, command.CommandId);
+            }
+            if (string.IsNullOrWhiteSpace(command.DemandId))
+            {
+                return ControlPlaneConventions.Refused(engine, ReasonCodes.NotFound, command.CommandId);
+            }
+            string cancellationId = string.IsNullOrWhiteSpace(command.CancellationId)
+                ? Guid.NewGuid().ToString("D")
+                : command.CancellationId;
+            await peer.RequestLoadCancellationAsync(
+                cancellationId,
+                command.DemandId,
+                command.SlotOperationAttemptId,
+                string.IsNullOrWhiteSpace(command.Reason) ? "现场确认本站没有要装的货。" : command.Reason,
+                cancellationToken).ConfigureAwait(false);
+            // Raising a request is an outbound message, not a state edit a scenario races on, so it
+            // does not move the revision -- the same reasoning as /answer.
+            return Results.Json(ControlPlaneConventions.Envelope(engine, new
+            {
+                command.CommandId,
+                cancellationId,
+                command.DemandId
+            }));
         });
 
         control.MapPut("/answer/{key}", async (string key, AnswerCommand command, CancellationToken cancellationToken) =>

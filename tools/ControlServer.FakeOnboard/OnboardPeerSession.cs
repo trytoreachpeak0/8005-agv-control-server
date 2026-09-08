@@ -207,8 +207,15 @@ public sealed class OnboardPeerSession(
                     .ConfigureAwait(false);
                 return;
             case "SublotEntryRequested":
+                // Keyed on the demand, the way a slot operation is keyed on its attempt. A fixed
+                // key made the answer cache -- which exists so a replayed request gets the
+                // identical reply -- hand the second journey's entry request the first journey's
+                // SublotSubmitted, naming a demand the server had already completed. One session
+                // could therefore only ever load once, and the second journey sat in AwaitingSublot
+                // until the scenario timed out; L2 evidence 20260908-auto-charge-endurance-004.
                 await OnRequestAsync(
-                    "sublot", messageType, messageId, root, generation,
+                    "sublot:" + root.GetProperty("payload").GetProperty("demandId").GetString(),
+                    messageType, messageId, root, generation,
                     engine.Snapshot().State.Policy.Sublot,
                     (payload, gen) => SublotSubmitted(payload, gen),
                     cancellationToken).ConfigureAwait(false);
@@ -228,8 +235,14 @@ public sealed class OnboardPeerSession(
                     return;
                 }
             case "PreDepartureSafetyCheck":
+                // Keyed on the check id, for the same reason the sublot key is keyed on its demand:
+                // a fixed key replays the first journey's result to the second journey's check, and
+                // the server correctly refuses evidence that names another check. See the note
+                // above -- this half surfaced one run later, at AwaitingDepartureSafety.
                 await OnRequestAsync(
-                    "safety-check", messageType, messageId, root, generation,
+                    "safety-check:" +
+                        root.GetProperty("payload").GetProperty("preDepartureSafetyCheckId").GetString(),
+                    messageType, messageId, root, generation,
                     engine.Snapshot().State.Policy.SafetyCheck,
                     (payload, gen) => SafetyCheckResult(payload, gen, safe: true),
                     cancellationToken).ConfigureAwait(false);
@@ -419,6 +432,38 @@ public sealed class OnboardPeerSession(
     }
 
     /// <summary>Reports a new safety state, the way the real peer reports every change.</summary>
+    /// <summary>
+    /// Raises the cancellation an operator raises at a pickup stop that turns out to have nothing
+    /// to load. Unlike every other message this peer sends, it answers no request -- so it is
+    /// driven from the control plane rather than from the receive pump. The authorization comes
+    /// back as a message this peer has no obligation to act on; it lands in the wire log, and the
+    /// termination it triggers is read from the server's own tables.
+    /// </summary>
+    public async Task RequestLoadCancellationAsync(
+        string cancellationId,
+        string demandId,
+        string? slotOperationAttemptId,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        long generation = engine.Snapshot().State.SessionGeneration;
+        await SendAsync(
+            Envelope("LoadCancellationStartRequested", NewId(), null, generation, new
+            {
+                cancellationId,
+                demandId,
+                slotOperationAttemptId,
+                @operator = new
+                {
+                    operatorId = "FAKE-ONBOARD-OPERATOR",
+                    verificationMethod = "BADGE",
+                    verifiedAt = DateTimeOffset.UtcNow
+                },
+                reason
+            }),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task PublishSafetyStateChangedAsync(
         long safetyStateVersion,
         SafetySummary safety,

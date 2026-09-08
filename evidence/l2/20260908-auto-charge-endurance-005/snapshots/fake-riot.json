@@ -1,0 +1,123 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-d0227159",
+  "revision": 25,
+  "observedAt": "2026-09-08T02:27:57.1489248+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 84,
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 12,
+        "battery": 80,
+        "batteryState": "CHARGING",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-45721542-4971-4a4a-80bd-55b4ea130135-PICKUP-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      },
+      {
+        "id": 488002,
+        "orderId": "ORDER-000002",
+        "upperId": "W2G-45721542-4971-4a4a-80bd-55b4ea130135-GATE-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 210,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 210
+          }
+        ]
+      },
+      {
+        "id": 488003,
+        "orderId": "ORDER-000003",
+        "upperId": "W2G-CHARGE-0484312b-79ef-2d50-9112-3309214ad485-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 211,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 211
+          }
+        ]
+      },
+      {
+        "id": 488004,
+        "orderId": "ORDER-000004",
+        "upperId": "W2G-2d6f4ca4-d0b8-4f59-a964-a9aad237f213-PICKUP-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13"
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7"
+          },
+          {
+            "id": 210,
+            "name": "关卡"
+          },
+          {
+            "id": 211,
+            "name": "充电桩"
+          }
+        ]
+      }
+    ]
+  }
+}

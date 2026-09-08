@@ -1,0 +1,31 @@
+{"at":"2026-09-07T18:17:57.6052465+00:00","note":"L2 run 20260907T181757572Z starting for scenario 'auto-charge-endurance'."}
+{"at":"2026-09-07T18:17:57.6189264+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-07T18:18:00.4150421+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-07T18:18:00.5272373+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-07T18:18:00.5498416+00:00","note":"Server settings from auto-charge-endurance.setup.psd1: JourneyRuntime__autoChargingEnabled=true, JourneyRuntime__chargeResumeBatteryPercent=80, JourneyRuntime__chargerStationId=充电桩, JourneyRuntime__chargerStationRiotId=211, JourneyRuntime__chargeTriggerBatteryPercent=20"}
+{"at":"2026-09-07T18:18:02.1082603+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-07T18:18:03.2037826+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-07T18:18:03.8290190+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-07T18:18:03.8545845+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-07T18:18:03.9011480+00:00","note":"Environment is up; entering scenario 'auto-charge-endurance'."}
+{"at":"2026-09-07T18:18:03.9416885+00:00","note":"Adding charger station 211 (充电桩) to map 25."}
+{"at":"2026-09-07T18:18:04.0214097+00:00","note":"Publishing demand 892da97258224964a4931842809c8c8b (L2-SUBLOT-20260907T181757572Z-A)."}
+{"at":"2026-09-07T18:18:04.0826479+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-07T18:18:05.6660322+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-07T18:18:05.6845571+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-892da972-5822-4964-a493-1842809c8c8b-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-07T18:18:06.5298106+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-07T18:18:07.3240149+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-07T18:18:08.1135839+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-07T18:18:09.7038513+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-07T18:18:10.2332090+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-07T18:18:10.2446348+00:00","note":"Battery drops below the trigger level; the vehicle must take itself to the charger."}
+{"at":"2026-09-07T18:18:10.2605700+00:00","criterion":"charging-run","value":"(null)"}
+{"at":"2026-09-07T18:18:11.0433744+00:00","criterion":"charging-run","value":"@{ChargingRunId=e32c3b7a-d135-e15f-ba14-7356c1822a68; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=AwaitingChargerArrival; ChargerStationId=充电桩; ChargerStationRiotId=211; MovementLegId=860fc2ce-3fa1-4754-9392-ad47452566af; UpperId=W2G-CHARGE-e32c3b7a-d135-e15f-ba14-7356c1822a68-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-07 18:18:11.0036053+00:00; UpdatedAt=2026-09-07 18:18:11.0036053+00:00}"}
+{"at":"2026-09-07T18:18:11.0791544+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-07T18:18:12.1376925+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-07T18:18:13.2165955+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-07T18:18:14.2600127+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-07T18:18:15.0579402+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-07T18:18:15.0601039+00:00","note":"Vehicle arrives at the charger and starts drawing current."}
+{"at":"2026-09-07T18:18:15.0810831+00:00","criterion":"charging-run","value":"@{ChargingRunId=e32c3b7a-d135-e15f-ba14-7356c1822a68; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=AwaitingChargerArrival; ChargerStationId=充电桩; ChargerStationRiotId=211; MovementLegId=860fc2ce-3fa1-4754-9392-ad47452566af; UpperId=W2G-CHARGE-e32c3b7a-d135-e15f-ba14-7356c1822a68-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-07 18:18:11.0036053+00:00; UpdatedAt=2026-09-07 18:18:11.068169+00:00}"}
+{"at":"2026-09-07T18:19:45.3269801+00:00","note":"Run failed: Timed out after 90s waiting for: the charger arrival was trusted. Last observed: {\"ChargingRunId\":\"e32c3b7a-d135-e15f-ba14-7356c1822a68\",\"VehicleKey\":\"BROKERX-L2-0001\",\"AgvId\":\"AGV-L2-001\",\"Stage\":\"AwaitingChargerArrival\",\"ChargerStationId\":\"充电桩\",\"ChargerStationRiotId\":211,\"MovementLegId\":\"860fc2ce-3fa1-4754-9392-ad47452566af\",\"UpperId\":\"W2G-CHARGE-e32c3b7a-d135-e15f-ba14-7356c1822a68-1\",\"TriggeredAtBatteryPercent\":15,\"ReleasedAtBatteryPercent\":null,\"BlockReasonCode\":null,\"CreatedAt\":\"2026-09-07 18:18:11.0036053+00:00\",\"UpdatedAt\":\"2026-09-07 18:18:11.068169+00:00\"}"}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "scenario": "auto-charge-endurance",
+  "runId": "20260907T181505515Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 90s waiting for: demand L2-SUBLOT-20260907T181505515Z-A was accepted and dispatched to the pickup station. Last observed: (nothing)",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260907T181505515Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "2b62ebc8ca03a99ea7ac05b2b1ee7dcdaed07f03"
+  },
+  "assertions": [
+    {
+      "id": "L2-AC-01",
+      "description": "地图上有一个 211 号充电桩",
+      "outcome": "PASS",
+      "expected": "station 211",
+      "actual": "12,210,211"
+    }
+  ]
+}

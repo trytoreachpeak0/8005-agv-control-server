@@ -1,0 +1,41 @@
+# L2 场景证据：load-cancelled-before-sublot
+
+结论：**FAIL**
+
+## 身份
+
+| 项 | 值 |
+| --- | --- |
+| runId | `20260907T180942564Z` |
+| agvId | `AGV-L2-001` |
+| controlServerCommit | `2b62ebc8ca03a99ea7ac05b2b1ee7dcdaed07f03` |
+| rig | `SyntheticOnboard` |
+| stageRoot | `C:\Users\szy\AppData\Local\Temp\l2-20260907T180942564Z` |
+| vehicleKey | `BROKERX-L2-0001` |
+
+## 判据
+
+| 判据 | 结论 | 期望 | 实际 |
+| --- | --- | --- | --- |
+| 车到取货站后停在等条码录入这一步 | PASS | `AwaitingSublot` | `AwaitingSublot` |
+| 条码录入请求已发出且尚未被结算 | FAIL | `未结算` | `AcknowledgedAt=` |
+| 旅程以 CANCELLED_BY_OPERATOR_BEFORE_LOAD 终结 | PASS | `Completed / CANCELLED_BY_OPERATOR_BEFORE_LOAD` | `Completed / CANCELLED_BY_OPERATOR_BEFORE_LOAD` |
+| 需求终态为 Cancelled | PASS | `Cancelled` | `Cancelled` |
+| 车辆调度租约已释放 | PASS | `已释放` | `ReleasedAt=2026-09-07 18:09:56.9375858+00:00` |
+| 那条没人回答的条码录入请求被结算了 | PASS | `已结算` | `AcknowledgedAt=2026-09-07 18:09:56.9375858+00:00` |
+| 全程没有下发过任何仓位操作 | PASS | `0` | `0` |
+| 取消之后车立刻受理下一单 | PASS | `AwaitingPickupArrival` | `AwaitingPickupArrival` |
+| 第二单的候选判定是 ACCEPTED | PASS | `ACCEPTED` | `ACCEPTED` |
+| 被取消的需求不会被重新受理 | PASS | `DEMAND_ALREADY_ACCEPTED` | `DEMAND_ALREADY_ACCEPTED` |
+| 两单各自一趟，没有多出来的旅程 | PASS | `2` | `2` |
+| 全程只建了两条 RIoT 单，取消本身不派车 | PASS | `2` | `2` |
+
+## 目录内容
+
+- `assertions.json` —— 机器可读的判据结论
+- `timeline.jsonl` —— 一行一次判据翻转，只追加
+- `logs/` —— 每个组件的 stdout 与 stderr
+- `snapshots/` —— 收尾时各控制面与服务端数据库的快照
+
+L2 PASS 只证明服务端在假 RIoT、假 MesIngest 与合成车载端下的跨端时序，
+**不代表真实 RCS、真车、真实 IO 模块或接线合格**。

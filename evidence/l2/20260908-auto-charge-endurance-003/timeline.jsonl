@@ -1,0 +1,41 @@
+{"at":"2026-09-07T18:21:51.3021508+00:00","note":"L2 run 20260907T182151258Z starting for scenario 'auto-charge-endurance'."}
+{"at":"2026-09-07T18:21:51.3181553+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-07T18:21:54.2945696+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-07T18:21:54.4189969+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-07T18:21:54.4483139+00:00","note":"Server settings from auto-charge-endurance.setup.psd1: JourneyRuntime__autoChargingEnabled=true, JourneyRuntime__chargeResumeBatteryPercent=80, JourneyRuntime__chargerStationId=充电桩, JourneyRuntime__chargerStationRiotId=211, JourneyRuntime__chargeTriggerBatteryPercent=20"}
+{"at":"2026-09-07T18:21:56.3299071+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-07T18:21:57.4478774+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-07T18:21:58.0909245+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-07T18:21:58.1072380+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-07T18:21:58.1548986+00:00","note":"Environment is up; entering scenario 'auto-charge-endurance'."}
+{"at":"2026-09-07T18:21:58.1936476+00:00","note":"Adding charger station 211 (充电桩) to map 25."}
+{"at":"2026-09-07T18:21:58.2972205+00:00","note":"Publishing demand 6d3762c12efc406f916a9128e4f19953 (L2-SUBLOT-20260907T182151258Z-A)."}
+{"at":"2026-09-07T18:21:58.3699646+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-07T18:21:59.7071921+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-07T18:21:59.7186560+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6d3762c1-2efc-406f-916a-9128e4f19953-PICKUP-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-07T18:21:59.9759508+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6d3762c1-2efc-406f-916a-9128e4f19953-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-07T18:22:00.5539345+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-07T18:22:01.3478090+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-07T18:22:02.3784078+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-07T18:22:03.9666745+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-07T18:22:04.4833188+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-07T18:22:04.5002410+00:00","note":"Battery drops below the trigger level; the vehicle must take itself to the charger."}
+{"at":"2026-09-07T18:22:04.5121181+00:00","criterion":"charging-run","value":"(null)"}
+{"at":"2026-09-07T18:22:05.2949139+00:00","criterion":"charging-run","value":"@{ChargingRunId=797993c3-bbf2-a056-946f-c96dc3d96d74; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=AwaitingChargerArrival; ChargerStationId=充电桩; ChargerStationRiotId=211; MovementLegId=2aaa07fd-595e-cd55-8f39-58999b4e218f; UpperId=W2G-CHARGE-797993c3-bbf2-a056-946f-c96dc3d96d74-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-07 18:22:05.2574768+00:00; UpdatedAt=2026-09-07 18:22:05.2574768+00:00}"}
+{"at":"2026-09-07T18:22:05.3230094+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-07T18:22:06.3859402+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-07T18:22:07.4613950+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-07T18:22:08.2532029+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-07T18:22:09.3145799+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-07T18:22:09.3163467+00:00","note":"Vehicle arrives at the charger and starts drawing current."}
+{"at":"2026-09-07T18:22:09.3408373+00:00","criterion":"charging-run","value":"@{ChargingRunId=797993c3-bbf2-a056-946f-c96dc3d96d74; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=AwaitingChargerArrival; ChargerStationId=充电桩; ChargerStationRiotId=211; MovementLegId=2aaa07fd-595e-cd55-8f39-58999b4e218f; UpperId=W2G-CHARGE-797993c3-bbf2-a056-946f-c96dc3d96d74-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-07 18:22:05.2574768+00:00; UpdatedAt=2026-09-07 18:22:05.3282725+00:00}"}
+{"at":"2026-09-07T18:22:10.3920116+00:00","criterion":"charging-run","value":"@{ChargingRunId=797993c3-bbf2-a056-946f-c96dc3d96d74; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=Charging; ChargerStationId=充电桩; ChargerStationRiotId=211; MovementLegId=2aaa07fd-595e-cd55-8f39-58999b4e218f; UpperId=W2G-CHARGE-797993c3-bbf2-a056-946f-c96dc3d96d74-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-07 18:22:05.2574768+00:00; UpdatedAt=2026-09-07 18:22:10.2446536+00:00}"}
+{"at":"2026-09-07T18:22:10.3947853+00:00","note":"Battery passes the demand floor but not the resume level; the vehicle must stay put."}
+{"at":"2026-09-07T18:22:10.4156052+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-07T18:22:11.4730025+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-07T18:22:12.2672821+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-07T18:22:13.3281648+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-07T18:22:14.3887794+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-07T18:22:14.3952451+00:00","note":"Battery reaches the resume level; the vehicle stays plugged in but becomes available."}
+{"at":"2026-09-07T18:22:15.4570593+00:00","criterion":"charging-run","value":"@{ChargingRunId=797993c3-bbf2-a056-946f-c96dc3d96d74; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=Completed; ChargerStationId=充电桩; ChargerStationRiotId=211; MovementLegId=2aaa07fd-595e-cd55-8f39-58999b4e218f; UpperId=W2G-CHARGE-797993c3-bbf2-a056-946f-c96dc3d96d74-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=80; BlockReasonCode=; CreatedAt=2026-09-07 18:22:05.2574768+00:00; UpdatedAt=2026-09-07 18:22:15.2476726+00:00}"}
+{"at":"2026-09-07T18:22:15.4784339+00:00","note":"Run failed: The property 'vehicle' cannot be found on this object. Verify that the property exists."}

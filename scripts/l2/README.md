@@ -19,6 +19,9 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `normal-load` | 合成 | 全程顺利的基线，不注入任何故障 | `evidence/l2/20260903-normal-load-016` |
 | `session-established-while-moving` | 合成 | 会话在车辆运动中建立，随后停稳；到站也要按最新的安全状态判 | `evidence/l2/20260903-session-established-while-moving-006` |
 | `load-result-requires-recovery` | 合成 | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-006` |
+| `load-cancelled-before-sublot` | 合成 | 到站发现没货，操作员在扫码前取消，车接下一单 | `evidence/l2/20260908-load-cancelled-before-sublot-002` |
+| `sublot-wait-timeout` | 合成 | 到站没人扫码，等待窗口到期自己终结，下一单照常跑完 | `evidence/l2/20260908-sublot-wait-timeout-001` |
+| `auto-charge-endurance` | 合成 | 一趟串四幕：送完一单、低电自去充电、充满、再送一单 | `evidence/l2/20260908-auto-charge-endurance-007` |
 | `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-005` |
 | `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
 | `real-onboard-recovery-entry-missing` | **真的** | 装载失败后车上发起不了任何恢复：授权是齐的，入口是缺的 | **红的，而且红得对**，见下 |
@@ -73,6 +76,37 @@ resume 是设计不是缺陷。
 
 **新写的合成场景记得加进 `l2.yml` 的清单**——那是一份手写数组，不是扫目录得来的。扫目录会把真装置
 那几条也一起领进来，而它们在服务 runner 上跑不了。
+
+
+## 三条新场景踩出来的坑
+
+`load-cancelled-before-sublot`、`sublot-wait-timeout` 与 `auto-charge-endurance` 是 2026-09-08
+补的，对应「到站没货」的两条出口和自动充电。写它们的过程里翻出四个坑，三个在被测方，一个在
+判据本身，都值得记下来。
+
+1. **到站判定读时钟要在读观测之后。**`IsTrustedChargerArrivalAsync` 一开始拿的是调用 RIoT
+   之前算好的 `now`，而 RIoT 是在应答的那一刻盖 `observedAt`。于是「车不能报告未来」这条守卫
+   每一轮都命中，充电行程永远停在 `AwaitingChargerArrival`。红证据
+   `20260908-auto-charge-endurance-002`。`IsTrustedArrivalAsync` 一直是读完再取钟的，照抄就对。
+2. **改地图只能增，不能换。**准入策略把 `admissionPolicyVersion` 绑在按区号解析出的取货站点
+   集合上。场景一开始直接写了一张新站点表（少了 `11 = C15-13`），同一个版本号绑到不同内容，
+   `ApplyAdmissionPolicyAsync` 每轮抛 `BusinessIdentityConflictException`，运行时整个停摆——
+   而日志只说准入策略，不说地图。红证据 `20260908-auto-charge-endurance-001`。现在的写法是读
+   出现有站点再追加充电桩。
+3. **合成对端的应答缓存过去只能记住一份。**`SublotEntryRequested` 与 `PreDepartureSafetyCheck`
+   的缓存键写死成 `sublot` 和 `safety-check`。那个缓存存在的理由是「重放的请求要拿到一模一样
+   的回复」，可键不带业务身份时，第二趟旅程的请求会拿到第一趟的回复——服务端当然拒绝一份指名
+   另一个需求的证据。**一个会话因此只能装一次货**，第二趟卡在 `AwaitingSublot`（证据 004），
+   修了条码之后又卡在 `AwaitingDepartureSafety`（证据 005）。两个键现在都带上了业务 id，与
+   `operation:<attemptId>` 一致。**任何新的应答类型都照这个来。**
+4. **SQLite 的可空列读回来是 `[System.DBNull]`，不是 `$null`。**判据里写成一行内联的
+   `-and ... -or ...` 会被优先级拆错，跑出一条假红（`20260908-load-cancelled-before-sublot-001`）。
+   三条场景现在都用同一个 `Test-L2Null` 辅助函数。
+
+另外记一件不是坑、但会被误认成坑的事：**车在充电的那些轮次，`JourneyBacklog` 里什么都不会写。**
+充电占用整轮，候选评估根本不跑——车在恢复线以下，每个候选都会被电量政策拒掉，而做出那个判断
+要读 MesIngest、箱数与包装规格，全是远程调用。解释在 `AutoChargingRuns` 里：车正在充电，这就
+是原因。`auto-charge-endurance` 的 `L2-AC-10` 就是钉这一条的。
 
 ## 两套装置
 
@@ -170,6 +204,12 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   `SafetyStateSnapshot` 携带的安全摘要上。`session-established-while-moving` 靠它让会话在
   「车还在动」的状态下建立——`PUT /control/v1/safety` 只能报告一个**已经存在**的会话的变化，
   做不到这件事。与 `Onboard = 'Real'` 一起给会直接报错。
+- `ServerSettings` —— 直接落到 ControlServer 环境变量上的一组配置，键就是 `JourneyRuntime__*`
+  这类环境变量名。给的是那些「主语是运行时策略而不是对端行为」的场景用的：出厂五分钟的条码
+  等待窗口，或者一趟去充电桩的行程，在十几秒的运行里按出厂值根本穿不过去。
+  `sublot-wait-timeout` 用它把窗口压到十秒，`auto-charge-endurance` 用它打开自动充电并给出
+  充电桩身份，`load-cancelled-before-sublot` 反过来把窗口拉到十分钟——那条场景要证明终结来自
+  操作员那一次取消，而不是窗口自己到期。
 - `ClockSkewMs` —— 只对真装置有效。车辆安全投影改经 `tools/ControlServer.ClockSkewProxy` 转发，
   `observedAt` 往后推这么多毫秒，等价于车载端时钟慢了这么多。合成对端没有新鲜度判定，给它设这个
   键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。

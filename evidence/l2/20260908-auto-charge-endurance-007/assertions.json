@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "scenario": "auto-charge-endurance",
+  "runId": "20260907T182951006Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "controlServerCommit": "2b62ebc8ca03a99ea7ac05b2b1ee7dcdaed07f03",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260907T182951006Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-AC-01",
+      "description": "地图上有一个 211 号充电桩",
+      "outcome": "PASS",
+      "expected": "station 211",
+      "actual": "11,12,210,211"
+    },
+    {
+      "id": "L2-AC-02",
+      "description": "第一单在电量充足时正常走完",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-AC-03",
+      "description": "第一单终态为 Succeeded",
+      "outcome": "PASS",
+      "expected": "Succeeded",
+      "actual": "Succeeded"
+    },
+    {
+      "id": "L2-AC-04",
+      "description": "电量充足时不会没事跑去充电",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-AC-05",
+      "description": "低电触发一趟去充电桩的行程",
+      "outcome": "PASS",
+      "expected": "AwaitingChargerArrival / 211 / 15",
+      "actual": "AwaitingChargerArrival / 211 / 15"
+    },
+    {
+      "id": "L2-AC-06",
+      "description": "充电行程建出并确认了一条 TO_CHARGER 单",
+      "outcome": "PASS",
+      "expected": "CONFIRMED / 211",
+      "actual": "CONFIRMED / 211"
+    },
+    {
+      "id": "L2-AC-07",
+      "description": "充电不产生旅程，也不占用需求",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-AC-08",
+      "description": "去充电桩的路上不会重复派单",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-AC-09",
+      "description": "到桩并确认在充电",
+      "outcome": "PASS",
+      "expected": "Charging / 无阻塞原因",
+      "actual": "Charging / "
+    },
+    {
+      "id": "L2-AC-10",
+      "description": "充电占用的轮次不评估候选，解释在充电行程而不是 backlog 里",
+      "outcome": "PASS",
+      "expected": "(无 backlog 记录)",
+      "actual": "(无 backlog 记录)"
+    },
+    {
+      "id": "L2-AC-11",
+      "description": "充电未达恢复线时不受理新需求",
+      "outcome": "PASS",
+      "expected": "(无旅程)",
+      "actual": null
+    },
+    {
+      "id": "L2-AC-12",
+      "description": "充电行程未到恢复线时不结束",
+      "outcome": "PASS",
+      "expected": "Charging",
+      "actual": "Charging"
+    },
+    {
+      "id": "L2-AC-13",
+      "description": "充到恢复线后充电行程结束并记下释放电量",
+      "outcome": "PASS",
+      "expected": "Completed / 80",
+      "actual": "Completed / 80"
+    },
+    {
+      "id": "L2-AC-14",
+      "description": "车仍然停在桩上并且仍报 CHARGING",
+      "outcome": "PASS",
+      "expected": "CHARGING / 211",
+      "actual": "CHARGING / 211"
+    },
+    {
+      "id": "L2-AC-15",
+      "description": "达到恢复线后等着的那一单立刻被受理",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-AC-16",
+      "description": "充电之后整条受理链路完好，第二单走到 Succeeded",
+      "outcome": "PASS",
+      "expected": "Completed / Succeeded",
+      "actual": "Completed / Succeeded"
+    },
+    {
+      "id": "L2-AC-17",
+      "description": "全程只去了一趟充电桩",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-AC-18",
+      "description": "全程五条 RIoT 单：两单各两段，加一条去充电桩",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    }
+  ]
+}

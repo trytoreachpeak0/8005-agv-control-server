@@ -1,0 +1,25 @@
+{"at":"2026-09-07T18:10:40.9272018+00:00","note":"L2 run 20260907T181040890Z starting for scenario 'load-cancelled-before-sublot'."}
+{"at":"2026-09-07T18:10:40.9428286+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-07T18:10:44.5439189+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-07T18:10:44.7256945+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-07T18:10:44.7623237+00:00","note":"Server settings from load-cancelled-before-sublot.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:10:00"}
+{"at":"2026-09-07T18:10:46.4760300+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-07T18:10:47.5900672+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-07T18:10:48.2287890+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-07T18:10:48.2452358+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-07T18:10:48.2925778+00:00","note":"Environment is up; entering scenario 'load-cancelled-before-sublot'."}
+{"at":"2026-09-07T18:10:48.3474675+00:00","note":"Synthetic peer stops answering sublot entry requests: this stop has nothing to load."}
+{"at":"2026-09-07T18:10:48.3991609+00:00","note":"Publishing demand 21613d3e2f5548c4ace1ba1e884f3432 to the fake MesIngest catalog."}
+{"at":"2026-09-07T18:10:48.4811806+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-07T18:10:49.8186042+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-07T18:10:49.8312869+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-21613d3e-2f55-48c4-ace1-ba1e884f3432-PICKUP-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-07T18:10:50.0999576+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-21613d3e-2f55-48c4-ace1-ba1e884f3432-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-07T18:10:50.1016910+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-07T18:10:50.7077399+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-07T18:10:50.7345278+00:00","note":"Operator cancels the load before entering any sublot."}
+{"at":"2026-09-07T18:10:50.7497719+00:00","note":"Cancellation beca06e8-02a7-4ba4-b761-fad4b2ba5afb raised."}
+{"at":"2026-09-07T18:10:51.0191181+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-07T18:10:51.0345476+00:00","note":"Publishing a second demand 8ee6d9bc3d674072937fc44aa5d82890; the vehicle must take it rather than stand at the pickup stop."}
+{"at":"2026-09-07T18:10:51.0459184+00:00","criterion":"second-journey-stage","value":"(null)"}
+{"at":"2026-09-07T18:10:51.5782138+00:00","criterion":"second-journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-07T18:10:51.5917475+00:00","note":"Scenario finished."}

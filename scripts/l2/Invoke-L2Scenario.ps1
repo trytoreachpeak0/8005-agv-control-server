@@ -95,6 +95,11 @@ if ($null -ne $clockSkewMs -and -not $realOnboard) {
 # authentication rejection that looks like a protocol fault. Declared per scenario rather than for
 # every real-onboard run, so real-onboard-normal-load keeps running the configuration it went green
 # against.
+# Extra ControlServer settings for scenarios whose subject is a runtime policy rather than a
+# peer behaviour -- a five-minute sublot wait or a charging errand cannot be exercised in a
+# fifteen-second run at its shipped value. Declared in the sidecar for the same reason the rig is:
+# a forgotten command-line switch makes the scenario prove something else, quietly.
+$serverSettings = if ($setup.ContainsKey('ServerSettings')) { $setup.ServerSettings } else { @{} }
 $recoveryResume = ($setup.ContainsKey('RecoveryResume') -and $setup.RecoveryResume)
 if ($recoveryResume -and -not $realOnboard) {
     throw "RecoveryResume needs Onboard = 'Real': the synthetic peer never starts a recovery session."
@@ -284,6 +289,14 @@ try {
         'JourneyRuntime__gateStationId'                   = $gateStationId
         'JourneyRuntime__gateStationRiotId'               = [string]$gateStationRiotId
         'JourneyRuntime__admissionPolicyDeploymentId'     = "L2-$runId"
+    }
+    foreach ($key in ($serverSettings.Keys | Sort-Object)) {
+        $serverEnvironment[$key] = [string]$serverSettings[$key]
+    }
+    if ($serverSettings.Count -gt 0) {
+        $journal.Note("Server settings from $Scenario.setup.psd1: " +
+            (($serverSettings.GetEnumerator() | Sort-Object Key |
+                ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
     }
     if ($recoveryResume) {
         $serverEnvironment['Recovery__AuthenticationProofEnvironmentVariable'] = $recoveryProofVariable

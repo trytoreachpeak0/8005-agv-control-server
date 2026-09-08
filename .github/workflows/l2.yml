@@ -55,6 +55,9 @@ jobs:
               'session-established-while-moving'
               'load-result-requires-recovery'
               'load-command-never-answered'
+              'load-cancelled-before-sublot'
+              'sublot-wait-timeout'
+              'auto-charge-endurance'
           )
           $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $failed = @()
