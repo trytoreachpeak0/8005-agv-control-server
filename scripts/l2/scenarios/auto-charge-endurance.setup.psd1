@@ -3,7 +3,7 @@
     # 站点号与名字必须和场景脚本写进假 RIoT 地图的那一对一致——RequireFixedStation 两样都比。
     ServerSettings = @{
         'JourneyRuntime__autoChargingEnabled'         = 'true'
-        'JourneyRuntime__chargerStationId'            = '充电桩'
+        'JourneyRuntime__chargerStationId'            = '充电准备点1'
         'JourneyRuntime__chargerStationRiotId'        = '211'
         'JourneyRuntime__chargeTriggerBatteryPercent' = '20'
         'JourneyRuntime__chargeResumeBatteryPercent'  = '80'

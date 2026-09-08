@@ -1609,7 +1609,7 @@ public sealed class JourneyRuntimeWorkerTests
         AutoChargingRunRow run = await fixture.ChargingRunAsync();
         Assert.Equal(AutoChargingStage.AwaitingChargerArrival, run.Stage);
         Assert.Equal(211, run.ChargerStationRiotId);
-        Assert.Equal("充电桩", run.ChargerStationId);
+        Assert.Equal("充电准备点1", run.ChargerStationId);
         Assert.Equal(15, run.TriggeredAtBatteryPercent);
         Assert.Null(run.BlockReasonCode);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_CHARGER"));
@@ -1716,7 +1716,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Riot.SetMapStations(
             new RiotMapStation(12, "N1-1"),
             new RiotMapStation(210, "关卡"),
-            new RiotMapStation(211, "充电桩B"));
+            new RiotMapStation(211, "充电准备点1B"));
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -2151,13 +2151,13 @@ public sealed class JourneyRuntimeWorkerTests
         public void EnableAutoCharging()
         {
             Options.AutoChargingEnabled = true;
-            Options.ChargerStationId = "充电桩";
+            Options.ChargerStationId = "充电准备点1";
             Options.ChargerStationRiotId = 211;
             Riot.SetMapStations(
                 new RiotMapStation(12, "N1-1"),
                 new RiotMapStation(13, "N1-2_N1-3"),
                 new RiotMapStation(210, "关卡"),
-                new RiotMapStation(211, "充电桩"));
+                new RiotMapStation(211, "充电准备点1"));
         }
 
         /// <summary>
