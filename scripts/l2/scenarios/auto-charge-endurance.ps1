@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 
 <#
 一趟跑完整条链路的多幕场景：送完一单 → 电量掉到线下自己去充电 → 充满回来接下一单 → 再送完一单。
@@ -40,8 +40,7 @@ function Test-L2Null($value) {
 }
 
 function Get-Stage([string]$demandId) {
-    $rows = Invoke-L2Query -Connection $connection `
-        -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $demandId
     if ($rows.Count -eq 0) { return $null }
     return [string]$rows[0].Stage
 }

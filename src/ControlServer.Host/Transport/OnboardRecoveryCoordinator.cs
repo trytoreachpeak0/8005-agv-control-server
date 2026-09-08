@@ -158,10 +158,8 @@ public sealed class OnboardRecoveryCoordinator(
             ? RecoveryWorkflowState.Reconciled
             : RecoveryWorkflowState.RecoveryRequired;
         workflow.UpdatedAt = timeProvider.GetUtcNow();
-        JourneyRuntimeRow? runtime = workflow.DemandId is null
-            ? null
-            : await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-                row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? runtime = await JourneyForDemandAsync(workflow.DemandId, cancellationToken)
+            .ConfigureAwait(false);
         if (runtime is not null && disposition == OperationResultDisposition.Accepted)
         {
             StationOperationRow operation = await dbContext.StationOperations.SingleAsync(
@@ -831,9 +829,9 @@ public sealed class OnboardRecoveryCoordinator(
         if (demand.Status == DemandExecutionStatus.Succeeded)
             throw new BusinessIdentityConflictException("A completed demand cannot be replaced by recovery termination.");
         demand.Status = DemandExecutionStatus.Cancelled;
-        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases.SingleAsync(
-            row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
-        lease.ReleasedAt ??= observedAt;
+        bool journeyComplete = await store.SettleDemandInJourneyAsync(
+            workflow.DemandId, JourneyDemandState.Cancelled, observedAt, cancellationToken)
+            .ConfigureAwait(false);
         if (workflow.SlotOperationAttemptId is not null)
         {
             StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
@@ -853,11 +851,17 @@ public sealed class OnboardRecoveryCoordinator(
         await store.SuppressTransportDemandAsync(
             demand.TransportDemandKey, demand.DemandId, terminalReasonCode, observedAt, cancellationToken)
             .ConfigureAwait(false);
-        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-            row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? runtime = await JourneyForDemandAsync(workflow.DemandId, cancellationToken)
+            .ConfigureAwait(false);
         if (runtime is not null)
         {
-            runtime.Stage = JourneyRuntimeStage.Completed;
+            // Terminating one demand does not end a journey still carrying others: their cargo is
+            // aboard and their stops are ahead. The reason is recorded either way, so the block
+            // reason still names what happened here.
+            if (journeyComplete)
+            {
+                runtime.Stage = JourneyRuntimeStage.Completed;
+            }
             runtime.BlockReasonCode = terminalReasonCode;
             runtime.UpdatedAt = observedAt;
         }
@@ -874,14 +878,32 @@ public sealed class OnboardRecoveryCoordinator(
         if (demand is not null && demand.Status != DemandExecutionStatus.Succeeded &&
             demand.Status != DemandExecutionStatus.Cancelled)
             demand.Status = DemandExecutionStatus.RecoveryRequired;
-        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-            row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? runtime = await JourneyForDemandAsync(demandId, cancellationToken)
+            .ConfigureAwait(false);
         if (runtime is not null)
         {
             runtime.Stage = JourneyRuntimeStage.Blocked;
             runtime.BlockReasonCode = reason;
             runtime.UpdatedAt = timeProvider.GetUtcNow();
         }
+    }
+
+    /// <summary>
+    /// The journey a demand belongs to. A demand no longer keys a journey directly -- ADR-cross-0057
+    /// gave the journey its own identity and hung the demands off it -- so this hop through the
+    /// membership row is what "the journey of this demand" means now.
+    /// </summary>
+    private async Task<JourneyRuntimeRow?> JourneyForDemandAsync(
+        string? demandId,
+        CancellationToken cancellationToken)
+    {
+        if (demandId is null) return null;
+        JourneyDemandRow? membership = await dbContext.JourneyDemands.SingleOrDefaultAsync(
+            row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        return membership is null
+            ? null
+            : await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
+                row => row.JourneyId == membership.JourneyId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<RecoveryWorkflowRow> UpsertSimpleWorkflowAsync(
@@ -936,10 +958,13 @@ public sealed class OnboardRecoveryCoordinator(
         CancellationToken cancellationToken)
     {
         if (demandId is null) return null;
-        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-            row => row.DemandId == demandId && row.AgvId == agvId && row.Stage == JourneyRuntimeStage.Blocked,
-            cancellationToken).ConfigureAwait(false);
-        if (runtime is null) return "RECOVERY_DEMAND_NOT_BLOCKED";
+        JourneyRuntimeRow? runtime = await JourneyForDemandAsync(demandId, cancellationToken)
+            .ConfigureAwait(false);
+        if (runtime is null || runtime.AgvId != agvId ||
+            runtime.Stage != JourneyRuntimeStage.Blocked)
+        {
+            return "RECOVERY_DEMAND_NOT_BLOCKED";
+        }
         StationOperationRow? operation = await FindLatestOperationAsync(demandId, cancellationToken).ConfigureAwait(false);
         return operation is null || !slots.SequenceEqual(ParseSlots(operation.TargetSlotsJson))
             ? "RECOVERY_SCOPE_MISMATCH"

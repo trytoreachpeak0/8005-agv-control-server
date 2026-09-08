@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-cancelled-before-sublot",
+  "runId": "20260908T044615749Z",
+  "outcome": "FAIL",
+  "failureReason": "Exception calling \"ExecuteReader\" with \"0\" argument(s): \"SQLite Error 1: 'no such column: DemandId'.\"",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "bc145629ff8beafe5e09f65fef0c089815d2061a",
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260908T044615749Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-CB-01",
+      "description": "车到取货站后停在等条码录入这一步",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-CB-02",
+      "description": "条码录入请求已发出且尚未被结算",
+      "outcome": "PASS",
+      "expected": "未结算",
+      "actual": "AcknowledgedAt="
+    },
+    {
+      "id": "L2-CB-03",
+      "description": "旅程以 CANCELLED_BY_OPERATOR 终结",
+      "outcome": "PASS",
+      "expected": "Completed / CANCELLED_BY_OPERATOR",
+      "actual": "Completed / CANCELLED_BY_OPERATOR"
+    },
+    {
+      "id": "L2-CB-04",
+      "description": "需求终态为 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled",
+      "actual": "Cancelled"
+    }
+  ]
+}

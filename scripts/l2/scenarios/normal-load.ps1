@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 
 <#
 正常装载：一条需求从受理走到 journey 完成的全链路。
@@ -27,7 +27,7 @@ $demandId = $demandGuid.ToString('D')
 $sublot = "L2-SUBLOT-$($Context.RunId)"
 
 function Get-Runtime {
-    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $demandId
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }

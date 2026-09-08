@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
@@ -24,6 +24,7 @@ public sealed class RecoveryStateMachineG2Tests
     private static readonly DateTimeOffset Now = new(2026, 8, 26, 10, 0, 0, TimeSpan.Zero);
     private const string AgvId = "AGV-8005-01";
     private const string DemandId = "10000000-0000-4000-8000-000000000001";
+    private const string JourneyId = "j0000000-0000-4000-8000-000000000001";
     private const string AttemptId = "20000000-0000-4000-8000-000000000001";
     private const string EventId = "30000000-0000-4000-8000-000000000001";
     private const string RequestId = "40000000-0000-4000-8000-000000000001";
@@ -1027,17 +1028,19 @@ public sealed class RecoveryStateMachineG2Tests
         });
         context.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
         {
-            DemandId = DemandId,
+            JourneyId = JourneyId,
             VehicleKey = "VEHICLE-001",
             AcquiredAt = Now.AddMinutes(-8)
         });
         context.OrderIntents.AddRange(
             Intent("pickup-leg", "UPPER-PICKUP", "TO_PICKUP", 11),
             Intent("gate-leg", "UPPER-GATE", "TO_GATE", 22));
-        context.JourneyRuntimes.Add(Runtime(JourneyRuntimeStage.AwaitingSublot, blockReasonCode: null));
+        AddJourney(context, JourneyRuntimeStage.AwaitingSublot, blockReasonCode: null);
         context.ProtocolOutbox.Add(new ProtocolOutboxRow
         {
-            MessageId = "d0000000-0000-4000-8000-000000000004",
+            // Derived, not a literal: an entry request is identified by the stop and the round that
+            // asked, so the cancellation can only find this row if the id matches that derivation.
+            MessageId = WireToGateStore.SublotRequestId(JourneyId, 1, 1),
             MessageType = "SublotEntryRequested",
             PayloadJson = "{}",
             CreatedAt = Now.AddMinutes(-2)
@@ -1098,14 +1101,14 @@ public sealed class RecoveryStateMachineG2Tests
         });
         context.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
         {
-            DemandId = DemandId,
+            JourneyId = JourneyId,
             VehicleKey = "VEHICLE-001",
             AcquiredAt = Now.AddMinutes(-8)
         });
         context.OrderIntents.AddRange(
             Intent("pickup-leg", "UPPER-PICKUP", "TO_PICKUP", 11),
             Intent("gate-leg", "UPPER-GATE", "TO_GATE", 22));
-        context.JourneyRuntimes.Add(Runtime());
+        AddJourney(context);
         context.StationOperations.Add(new StationOperationRow
         {
             SlotOperationAttemptId = AttemptId,
@@ -1173,51 +1176,100 @@ public sealed class RecoveryStateMachineG2Tests
         OrderId = "ORDER-" + purpose
     };
 
-    private static JourneyRuntimeRow Runtime(
+    /// <summary>
+    /// One blocked journey in the degenerate single-demand shape: a pickup stop, a gate stop and one
+    /// demand loading at the pickup stop. ADR-cross-0057 split what used to be a single row, so
+    /// seeding a journey now means seeding three.
+    /// </summary>
+    private static void AddJourney(
+        ControlServerDbContext context,
         JourneyRuntimeStage stage = JourneyRuntimeStage.Blocked,
-        string? blockReasonCode = "LOAD_RESULT_REQUIRES_RECOVERY") => new()
+        string? blockReasonCode = "LOAD_RESULT_REQUIRES_RECOVERY")
     {
-        DemandId = DemandId,
-        Stage = stage,
-        AgvId = AgvId,
-        VehicleKey = "VEHICLE-001",
-        AgvLifecycleGeneration = 1,
-        MapId = 29,
-        MapIdentity = "MAP-29",
-        DispatchZone = "ZONE-01",
-        RouteEvidenceId = "ROUTE-01",
-        PickupStationId = "PICKUP",
-        PickupStationRiotId = 11,
-        GateStationId = "GATE",
-        GateStationRiotId = 22,
-        ExpectedBasketCount = 2,
-        TargetSlotsJson = "[1,2]",
-        OperationSessionId = "c0000000-0000-4000-8000-000000000001",
-        PickupMovementLegId = "pickup-leg",
-        PickupUpperId = "UPPER-PICKUP",
-        GateMovementLegId = "gate-leg",
-        GateUpperId = "UPPER-GATE",
-        DispatchGeneration = 1,
-        VehicleBusinessRevision = 1,
-        WorklistRevision = 1,
-        PlanRevision = 1,
-        VehicleBusinessMessageId = "d0000000-0000-4000-8000-000000000001",
-        WorklistMessageId = "d0000000-0000-4000-8000-000000000002",
-        PlanMessageId = "d0000000-0000-4000-8000-000000000003",
-        SublotRequestMessageId = "d0000000-0000-4000-8000-000000000004",
-        LoadCommandMessageId = "d0000000-0000-4000-8000-000000000005",
-        LoadSlotOperationAttemptId = AttemptId,
-        PreDepartureSafetyCheckMessageId = "d0000000-0000-4000-8000-000000000006",
-        PreDepartureSafetyCheckId = "d0000000-0000-4000-8000-000000000007",
-        GateVehicleBusinessMessageId = "d0000000-0000-4000-8000-000000000008",
-        GateWorklistMessageId = "d0000000-0000-4000-8000-000000000009",
-        GatePlanMessageId = "d0000000-0000-4000-8000-000000000010",
-        UnloadCommandMessageId = "d0000000-0000-4000-8000-000000000011",
-        UnloadSlotOperationAttemptId = "d0000000-0000-4000-8000-000000000012",
-        BlockReasonCode = blockReasonCode,
-        CreatedAt = Now.AddMinutes(-8),
-        UpdatedAt = Now
-    };
+        context.JourneyRuntimes.Add(new JourneyRuntimeRow
+        {
+            JourneyId = JourneyId,
+            Stage = stage,
+            AgvId = AgvId,
+            VehicleKey = "VEHICLE-001",
+            AgvLifecycleGeneration = 1,
+            MapId = 29,
+            MapIdentity = "MAP-29",
+            DispatchZone = "ZONE-01",
+            GateStationId = "GATE",
+            GateStationRiotId = 22,
+            OperationSessionId = "c0000000-0000-4000-8000-000000000001",
+            DispatchGeneration = 1,
+            CurrentStopSequence = 1,
+            VehicleBusinessRevision = 3,
+            WorklistRevision = 3,
+            PlanRevision = 3,
+            BlockReasonCode = blockReasonCode,
+            CreatedAt = Now.AddMinutes(-8),
+            UpdatedAt = Now
+        });
+        context.JourneyStops.AddRange(
+            new JourneyStopRow
+            {
+                JourneyId = JourneyId,
+                Sequence = 1,
+                Role = JourneyStopRole.Pickup,
+                StationId = "PICKUP",
+                StationRiotId = 11,
+                RouteEvidenceId = "ROUTE-01",
+                MovementLegId = "pickup-leg",
+                UpperId = "UPPER-PICKUP",
+                LegType = "TO_PICKUP",
+                State = JourneyStopState.Arrived,
+                VehicleBusinessRevision = 1,
+                WorklistRevision = 1,
+                PlanRevision = 1,
+                VehicleBusinessMessageId = "d0000000-0000-4000-8000-000000000001",
+                PlanMessageId = "d0000000-0000-4000-8000-000000000003",
+                PreDepartureSafetyCheckMessageId = "d0000000-0000-4000-8000-000000000006",
+                PreDepartureSafetyCheckId = "d0000000-0000-4000-8000-000000000007",
+                LoadRound = 1,
+                CreatedAt = Now.AddMinutes(-8),
+                UpdatedAt = Now
+            },
+            new JourneyStopRow
+            {
+                JourneyId = JourneyId,
+                Sequence = 9,
+                Role = JourneyStopRole.Gate,
+                StationId = "GATE",
+                StationRiotId = 22,
+                RouteEvidenceId = "ROUTE-01",
+                MovementLegId = "gate-leg",
+                UpperId = "UPPER-GATE",
+                LegType = "TO_GATE",
+                State = JourneyStopState.Planned,
+                VehicleBusinessRevision = 2,
+                WorklistRevision = 2,
+                PlanRevision = 2,
+                VehicleBusinessMessageId = "d0000000-0000-4000-8000-000000000008",
+                PlanMessageId = "d0000000-0000-4000-8000-000000000010",
+                PreDepartureSafetyCheckMessageId = "d0000000-0000-4000-8000-000000000013",
+                PreDepartureSafetyCheckId = "d0000000-0000-4000-8000-000000000014",
+                LoadRound = 0,
+                CreatedAt = Now.AddMinutes(-8),
+                UpdatedAt = Now
+            });
+        context.JourneyDemands.Add(new JourneyDemandRow
+        {
+            JourneyId = JourneyId,
+            DemandId = DemandId,
+            StopSequence = 1,
+            ExpectedBasketCount = 2,
+            TargetSlotsJson = "[1,2]",
+            LoadCommandMessageId = "d0000000-0000-4000-8000-000000000005",
+            LoadSlotOperationAttemptId = AttemptId,
+            UnloadCommandMessageId = "d0000000-0000-4000-8000-000000000011",
+            UnloadSlotOperationAttemptId = "d0000000-0000-4000-8000-000000000012",
+            State = JourneyDemandState.Planned,
+            CreatedAt = Now.AddMinutes(-8)
+        });
+    }
 
     private static string RecoverySessionRequest(string proof) => Envelope(
         "e0000000-0000-4000-8000-000000000001",

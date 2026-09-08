@@ -1,0 +1,25 @@
+{"at":"2026-09-08T04:46:25.2930929+00:00","note":"L2 run 20260908T044625258Z starting for scenario 'sublot-wait-timeout'."}
+{"at":"2026-09-08T04:46:25.3057096+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T04:46:28.9810596+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T04:46:29.1095661+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T04:46:29.1343411+00:00","note":"Server settings from sublot-wait-timeout.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:00:10"}
+{"at":"2026-09-08T04:46:30.8097361+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T04:46:31.9061724+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T04:46:32.5361822+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T04:46:32.5504428+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T04:46:32.5888279+00:00","note":"Environment is up; entering scenario 'sublot-wait-timeout'."}
+{"at":"2026-09-08T04:46:32.6562054+00:00","note":"Synthetic peer stops answering sublot entry requests: nobody comes to scan."}
+{"at":"2026-09-08T04:46:32.6941043+00:00","note":"Publishing demand 82a76be3cc7d4c9cbfe9036175ef51ce to the fake MesIngest catalog."}
+{"at":"2026-09-08T04:46:32.7627335+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-08T04:46:33.3163685+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T04:46:33.3250612+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-02f8a86b-594a-4056-a416-55962c8d09fa-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-08T04:46:33.3289012+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-08T04:46:34.1856695+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-08T04:46:34.2155182+00:00","criterion":"runtime-iterations","value":"3"}
+{"at":"2026-09-08T04:46:34.7506420+00:00","criterion":"runtime-iterations","value":"4"}
+{"at":"2026-09-08T04:46:35.8174857+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-08T04:46:36.8770837+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-08T04:46:37.9281548+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-08T04:46:37.9341924+00:00","note":"Waiting for the sublot wait window to expire (10 s, set by the sidecar)."}
+{"at":"2026-09-08T04:46:44.8337263+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-08T04:46:44.8486505+00:00","note":"Run failed: Exception calling \"ExecuteReader\" with \"0\" argument(s): \"SQLite Error 1: 'no such column: DemandId'.\""}

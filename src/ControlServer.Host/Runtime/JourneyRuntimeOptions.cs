@@ -58,6 +58,20 @@ public sealed class JourneyRuntimeOptions
     /// disables the timeout and leaves the operator's explicit cancellation as the only way out.
     /// </summary>
     public TimeSpan SublotWaitTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How long a journey may go on collecting cargo before it has to head for the gate, measured
+    /// from the moment its first LoadBatch closed safely. ADR-cross-0057 sets it at 30 minutes.
+    /// </summary>
+    /// <remarks>
+    /// It is a different deadline from <see cref="SublotWaitTimeout"/> and does not replace it:
+    /// that one answers "does this stop keep waiting for an operator" and ends the stop; this one
+    /// answers "does this vehicle keep taking cargo" and ends the whole loading phase. It is not
+    /// reset by a new stop or a new batch -- a vehicle that keeps being handed demands would
+    /// otherwise never leave. <see cref="TimeSpan.Zero"/> disables it, leaving "full" as the only
+    /// way the loading phase ends on its own.
+    /// </remarks>
+    public TimeSpan HoldingTimeout { get; set; } = TimeSpan.FromMinutes(30);
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];
@@ -97,6 +111,14 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.SublotWaitTimeout > TimeSpan.Zero && options.SublotWaitTimeout < TimeSpan.FromSeconds(5))
         {
             failures.Add("SublotWaitTimeout must be zero (disabled) or at least 5 s.");
+        }
+        // Same shape and the same reason: zero disables it, and the floor only catches a slipped
+        // decimal point. The shipped value is thirty minutes; the L2 scenario layer has to cross the
+        // window inside a run that lasts seconds.
+        if (options.HoldingTimeout < TimeSpan.Zero ||
+            options.HoldingTimeout > TimeSpan.Zero && options.HoldingTimeout < TimeSpan.FromSeconds(5))
+        {
+            failures.Add("HoldingTimeout must be zero (disabled) or at least 5 s.");
         }
         if (options.MaximumEvidenceAge <= TimeSpan.Zero) failures.Add("MaximumEvidenceAge must be positive.");
         if (options.DepartureSafetyResultWait <= TimeSpan.Zero ||

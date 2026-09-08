@@ -64,6 +64,21 @@ public sealed class JourneyRuntimeEngine(
             LogLevel.Information,
             new EventId(2108, nameof(LogSublotRejected)),
             "Entered sublot for demand {DemandId} was refused: {ReasonCode}.");
+    /// <summary>
+    /// Where the pickup stops sit in a journey's stop sequence, and where the gate sits.
+    /// </summary>
+    /// <remarks>
+    /// The gate keeps a fixed sequence above every pickup stop so that appending a pickup stop
+    /// never has to renumber it -- the sequence is half of the stop row's primary key, and moving it
+    /// would mean deleting and re-inserting the stop the vehicle is driving to. The protocol's plan
+    /// snapshot is numbered separately, contiguously, from the sorted order, so the wire never shows
+    /// the gap this leaves. Eight pickup stops is the vehicle's slot count: a demand occupies at
+    /// least one slot, so no journey can load at more stops than that.
+    /// </remarks>
+    private const int FirstStopSequence = 1;
+    private const int MaxPickupStops = 8;
+    private const int GateStopSequence = MaxPickupStops + 1;
+
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
@@ -117,7 +132,7 @@ public sealed class JourneyRuntimeEngine(
                               row.Status != DemandExecutionStatus.Cancelled)
                 .Select(row => row.DemandId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-            string[] runtimeDemandIds = await dbContext.JourneyRuntimes
+            string[] runtimeDemandIds = await dbContext.JourneyDemands
                 .Select(row => row.DemandId)
                 .ToArrayAsync(cancellationToken).ConfigureAwait(false);
             string[] orphaned = unresolvedDemandIds.Except(runtimeDemandIds, StringComparer.Ordinal).ToArray();
@@ -134,7 +149,7 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        await AdvanceAsync(active[0], cancellationToken).ConfigureAwait(false);
+        await AdvanceAsync(active[0], currentMap, gate, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task DiscoverAndAcceptAsync(
@@ -355,16 +370,17 @@ public sealed class JourneyRuntimeEngine(
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
         JourneyExecutionPlan plan = CreatePlan(selected, intakeAt);
+        JourneyStopPlan firstStop = plan.Stops.Single(stop => stop.Sequence == FirstStopSequence);
         OrderIntent pickup = new(
-            plan.PickupMovementLegId,
+            firstStop.MovementLegId,
             selected.Snapshot.DemandId,
-            plan.PickupUpperId,
+            firstStop.UpperId,
             "TO_PICKUP",
-            plan.PickupStationId,
+            firstStop.StationId,
             intakeAt,
             plan.VehicleKey,
             plan.MapId,
-            plan.PickupStationRiotId,
+            firstStop.StationRiotId,
             plan.AgvLifecycleGeneration,
             plan.DispatchGeneration);
         JourneyIntakeResult result = await intakeCoordinator.AcceptAndDispatchToPickupAsync(
@@ -395,7 +411,7 @@ public sealed class JourneyRuntimeEngine(
         if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
         {
             JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
-                .SingleAsync(row => row.DemandId == selected.Snapshot.DemandId, cancellationToken)
+                .SingleAsync(row => row.JourneyId == plan.JourneyId, cancellationToken)
                 .ConfigureAwait(false);
             runtime.BlockReasonCode = result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED";
             runtime.UpdatedAt = now;
@@ -403,9 +419,18 @@ public sealed class JourneyRuntimeEngine(
         }
     }
 
-    private async Task AdvanceAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    private async Task AdvanceAsync(
+        JourneyRuntimeRow runtime,
+        RiotMapStationCatalogSnapshot currentMap,
+        RiotMapStation gate,
+        CancellationToken cancellationToken)
     {
+        _ = currentMap;
+        _ = gate;
         DateTimeOffset now = timeProvider.GetUtcNow();
+        JourneyStopRow[] stops = await StopsAsync(runtime, cancellationToken).ConfigureAwait(false);
+        JourneyDemandRow[] demands = await DemandsAsync(runtime, cancellationToken).ConfigureAwait(false);
+        JourneyStopRow stop = stops.Single(row => row.Sequence == runtime.CurrentStopSequence);
         SessionRecoveryRow? session = await CurrentReadySessionAsync(runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (session is null)
@@ -419,7 +444,7 @@ public sealed class JourneyRuntimeEngine(
             // 20260904-recovery-entry-after-announce-001 finished on that deadlock, sitting at
             // AwaitingLoadResult / ONBOARD_SESSION_NOT_READY over a load result the database
             // already held.
-            if (await TryBlockOnRecordedRecoveryAsync(runtime, now, cancellationToken)
+            if (await TryBlockOnRecordedRecoveryAsync(runtime, demands, now, cancellationToken)
                 .ConfigureAwait(false))
             {
                 return;
@@ -442,30 +467,43 @@ public sealed class JourneyRuntimeEngine(
         await publisher.ReplayPendingForSessionAsync(
             runtime.AgvId,
             session.SessionGeneration,
-            RuntimeMessageIds(runtime),
+            RuntimeMessageIds(stops, demands),
             cancellationToken).ConfigureAwait(false);
 
         switch (runtime.Stage)
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, runtime.PickupUpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
+                        runtime, stop.UpperId, "PICKUP", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
-                if (!await IsTrustedArrivalAsync(runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false))
+                if (!await IsTrustedArrivalAsync(runtime, stop, session, cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
-                await PublishPickupStateAsync(runtime, session, cancellationToken).ConfigureAwait(false);
-                SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
+                stop.State = JourneyStopState.Arrived;
+                await PublishStopArrivalAsync(runtime, stops, stop, demands, session, cancellationToken)
+                    .ConfigureAwait(false);
+                SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now, stop);
                 break;
             case JourneyRuntimeStage.AwaitingSublot:
-                ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, session, cancellationToken)
-                    .ConfigureAwait(false);
-                if (sublot is null)
+                JourneyDemandRow[] pending = UncommandedAt(demands, stop);
+                if (pending.Length == 0)
                 {
-                    if (await TryTimeOutSublotWaitAsync(runtime, now, cancellationToken).ConfigureAwait(false))
+                    // Nothing left to load here. Whether that means the next pickup stop or the gate
+                    // is one decision, made in one place.
+                    await ConcludeLoadingStopAsync(
+                        runtime, stops, stop, demands, session, now, cancellationToken).ConfigureAwait(false);
+                    break;
+                }
+                SublotEntry? entry = await FindMatchingSublotAsync(
+                    runtime, stop, pending, session, cancellationToken).ConfigureAwait(false);
+                if (entry is null)
+                {
+                    if (await TryTimeOutSublotWaitAsync(
+                            runtime, stops, stop, demands, session, now, cancellationToken)
+                        .ConfigureAwait(false))
                     {
                         return;
                     }
@@ -476,13 +514,14 @@ public sealed class JourneyRuntimeEngine(
                     }
                     return;
                 }
+                (ProtocolInboxRow sublot, JourneyDemandRow entered) = entry;
                 // BR-013 第 2 节把这次重算的时机写死在「操作员输入 SUBLOT 后」：查 SUBLOT_BOX_COUNT
                 // 得到 MAX_BOX_COUNT，结合冻结的 PACKAGE 与已批准的花篮容量对照算出权威数量，算不
                 // 出就报错并停止，不分配仓位、不发送开锁指令。受理阶段那次预检拦不住这些——容量
                 // 对照表与 MES 的箱数都可能在派车之后变化，而受理时被拦下的需求压根不会进作业清
                 // 单，操作员看到的只会是对端本地那句「不在清单里」。
                 SublotRejection? rejection = await RevalidateEnteredSublotAsync(
-                    runtime, now, cancellationToken).ConfigureAwait(false);
+                    runtime, stop, entered, now, cancellationToken).ConfigureAwait(false);
                 if (rejection is not null)
                 {
                     await publisher.PublishSublotRejectedAsync(
@@ -493,25 +532,30 @@ public sealed class JourneyRuntimeEngine(
                         cancellationToken).ConfigureAwait(false);
                     // 这条提交判过了，别再判第二次——否则每一轮都要重跑一次远程查询。操作员重扫会
                     // 产生新的 SublotSubmitted，那条会被重新判。
-                    runtime.ConsumedSublotMessageId = sublot.MessageId;
+                    entered.ConsumedSublotMessageId = sublot.MessageId;
                     runtime.BlockReasonCode = rejection.ReasonCode;
                     runtime.UpdatedAt = now;
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    LogSublotRejected(logger, runtime.DemandId, rejection.ReasonCode, null);
+                    LogSublotRejected(logger, entered.DemandId, rejection.ReasonCode, null);
                     return;
                 }
-                await PublishLoadAsync(runtime, session, sublot.MessageId, cancellationToken).ConfigureAwait(false);
-                runtime.ConsumedSublotMessageId = sublot.MessageId;
+                await PublishLoadAsync(runtime, stop, entered, session, sublot.MessageId, cancellationToken)
+                    .ConfigureAwait(false);
+                entered.ConsumedSublotMessageId = sublot.MessageId;
+                entered.LoadCommandedAt = now;
                 // The submission is this command's answer. Leaving the command unsettled replayed it
                 // into every later session, where the peer refused it as a business id whose content
                 // had changed and tore the session down.
                 await store.SettleAnsweredCommandAsync(
-                    runtime.SublotRequestMessageId, now, cancellationToken).ConfigureAwait(false);
-                SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
+                    WireToGateStore.SublotRequestId(runtime.JourneyId, stop.Sequence, stop.LoadRound),
+                    now,
+                    cancellationToken).ConfigureAwait(false);
+                SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now, stop);
                 break;
             case JourneyRuntimeStage.AwaitingLoadResult:
+                JourneyDemandRow loading = LoadingAt(demands, stop);
                 StationOperationRow? load = await dbContext.StationOperations.SingleOrDefaultAsync(
-                    row => row.SlotOperationAttemptId == runtime.LoadSlotOperationAttemptId,
+                    row => row.SlotOperationAttemptId == loading.LoadSlotOperationAttemptId,
                     cancellationToken).ConfigureAwait(false);
                 if (load?.Status == StationOperationStatus.RecoveryRequired)
                 {
@@ -520,20 +564,26 @@ public sealed class JourneyRuntimeEngine(
                 else if (load?.Status == StationOperationStatus.Committed)
                 {
                     await store.SettleAnsweredCommandAsync(
-                        runtime.LoadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
-                    await publisher.PublishPreDepartureSafetyCheckAsync(
-                        runtime.PreDepartureSafetyCheckMessageId,
-                        runtime.AgvId,
-                        session.SessionGeneration,
-                        new PreDepartureSafetyCheckCommand(
-                            runtime.PreDepartureSafetyCheckId,
-                            runtime.DemandId,
-                            runtime.GateMovementLegId,
-                            session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
-                            runtime.GateStationId),
-                        cancellationToken).ConfigureAwait(false);
-                    SetStage(runtime, JourneyRuntimeStage.AwaitingDepartureSafety, now);
+                        loading.LoadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
+                    loading.State = JourneyDemandState.Loaded;
+                    loading.LoadedAt = now;
+                    // ADR-cross-0057: the holding clock starts at the first LoadBatch that closes
+                    // safely, and runs down once for the whole journey. It is not restarted by a
+                    // later batch or a later stop -- a vehicle that keeps being given new demands
+                    // would otherwise never leave for the gate.
+                    runtime.HoldingStartedAt ??= now;
+                    if (await TryContinueLoadingAtStopAsync(
+                            runtime, stop, demands, session, now, cancellationToken).ConfigureAwait(false))
+                    {
+                        break;
+                    }
+                    await ConcludeLoadingStopAsync(
+                        runtime, stops, stop, demands, session, now, cancellationToken).ConfigureAwait(false);
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    if (runtime.Stage != JourneyRuntimeStage.AwaitingDepartureSafety)
+                    {
+                        return;
+                    }
                     // The answer arrives in tens of milliseconds and is stamped with the peer's own
                     // short validity window. Returning here and reading it on the next poll spent
                     // that entire window waiting, so the evidence was always expired by the time it
@@ -546,8 +596,12 @@ public sealed class JourneyRuntimeEngine(
                 }
                 break;
             case JourneyRuntimeStage.AwaitingDepartureSafety:
+                JourneyStopRow departingFrom = stop;
+                JourneyStopRow target = stops.Single(row =>
+                    row.Sequence == (runtime.NextStopSequence ?? throw new InvalidDataException(
+                        "A journey awaiting departure safety must name the stop it is leaving for.")));
                 SafetyCheckObservation? safety = await AwaitSafeDepartureResultAsync(
-                    runtime, session, cancellationToken).ConfigureAwait(false);
+                    runtime, departingFrom, session, cancellationToken).ConfigureAwait(false);
                 now = timeProvider.GetUtcNow();
                 if (safety is null)
                 {
@@ -558,53 +612,97 @@ public sealed class JourneyRuntimeEngine(
                     }
                     return;
                 }
-                OrderIntent gateIntent = GateIntent(runtime, now);
+                OrderIntent departureIntent = StopIntent(
+                    runtime, target, demands.OrderBy(row => row.CreatedAt).First().DemandId, now);
                 await new WireToGateStore(dbContext).AuthorizeMovementAsync(
-                    gateIntent, safety, now, cancellationToken).ConfigureAwait(false);
+                    departureIntent, safety, now, cancellationToken).ConfigureAwait(false);
                 MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
-                    runtime.GateUpperId, cancellationToken).ConfigureAwait(false);
-                runtime.ConsumedSafetyResultMessageId = await FindSafetyResultMessageIdAsync(
-                    runtime.PreDepartureSafetyCheckId, cancellationToken).ConfigureAwait(false);
+                    target.UpperId, cancellationToken).ConfigureAwait(false);
+                departingFrom.ConsumedSafetyResultMessageId = await FindSafetyResultMessageIdAsync(
+                    departingFrom.PreDepartureSafetyCheckId, cancellationToken).ConfigureAwait(false);
                 await store.SettleAnsweredCommandAsync(
-                    runtime.PreDepartureSafetyCheckMessageId, now, cancellationToken).ConfigureAwait(false);
-                SetStage(runtime, JourneyRuntimeStage.AwaitingGateArrival, now);
+                    departingFrom.PreDepartureSafetyCheckMessageId, now, cancellationToken).ConfigureAwait(false);
+                departingFrom.State = JourneyStopState.Completed;
+                departingFrom.UpdatedAt = now;
+                runtime.CurrentStopSequence = target.Sequence;
+                runtime.NextStopSequence = null;
+                SetStage(
+                    runtime,
+                    target.Role == JourneyStopRole.Gate
+                        ? JourneyRuntimeStage.AwaitingGateArrival
+                        : JourneyRuntimeStage.AwaitingPickupArrival,
+                    now,
+                    target);
                 runtime.BlockReasonCode = dispatch.Outcome == MovementDispatchOutcome.Confirmed
                     ? null
                     : dispatch.Outcome.ToString();
                 break;
             case JourneyRuntimeStage.AwaitingGateArrival:
                 if (!await EnsureMovementConfirmedAsync(
-                        runtime, runtime.GateUpperId, "GATE", cancellationToken).ConfigureAwait(false))
+                        runtime, stop.UpperId, "GATE", cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
-                if (!await IsTrustedArrivalAsync(runtime, "TO_GATE", session, cancellationToken).ConfigureAwait(false))
+                if (!await IsTrustedArrivalAsync(runtime, stop, session, cancellationToken).ConfigureAwait(false))
                 {
                     return;
                 }
-                await PublishGateStateAndUnloadAsync(runtime, session, cancellationToken).ConfigureAwait(false);
-                SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now);
+                stop.State = JourneyStopState.Arrived;
+                await PublishGateStateAndUnloadAsync(
+                    runtime, stops, stop, demands, session, cancellationToken).ConfigureAwait(false);
+                SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now, stop);
                 break;
             case JourneyRuntimeStage.AwaitingUnloadResult:
-                StationOperationRow? unload = await dbContext.StationOperations.SingleOrDefaultAsync(
-                    row => row.SlotOperationAttemptId == runtime.UnloadSlotOperationAttemptId,
-                    cancellationToken).ConfigureAwait(false);
-                if (unload?.Status == StationOperationStatus.RecoveryRequired)
+                // The demand whose command went out and has not come off yet. Its state -- not the
+                // command flag -- is what moves: the message handler that accepts the peer's result
+                // settles the demand to Unloaded, so a null here means the batch closed.
+                JourneyDemandRow? unloading = demands.FirstOrDefault(row =>
+                    row.State == JourneyDemandState.Loaded && row.UnloadCommandedAt is not null);
+                if (unloading is not null)
                 {
-                    Block(runtime, "UNLOAD_RESULT_REQUIRES_RECOVERY", now);
-                }
-                else
-                {
+                    StationOperationRow? unload = await dbContext.StationOperations.SingleOrDefaultAsync(
+                        row => row.SlotOperationAttemptId == unloading.UnloadSlotOperationAttemptId,
+                        cancellationToken).ConfigureAwait(false);
+                    if (unload?.Status == StationOperationStatus.RecoveryRequired)
+                    {
+                        Block(runtime, "UNLOAD_RESULT_REQUIRES_RECOVERY", now);
+                        break;
+                    }
                     AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-                        row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+                        row => row.DemandId == unloading.DemandId, cancellationToken).ConfigureAwait(false);
                     if (unload?.Status != StationOperationStatus.Committed ||
                         demand.Status != DemandExecutionStatus.Succeeded)
                     {
                         return;
                     }
+                    // Committed and succeeded, but the demand row still says Loaded: the settlement
+                    // has not been applied yet, so there is nothing to conclude on this pass.
+                    return;
+                }
+
+                JourneyDemandRow? settled = demands.LastOrDefault(row =>
+                    row.State == JourneyDemandState.Unloaded && row.UnloadCommandedAt is not null);
+                if (settled is not null)
+                {
                     await store.SettleAnsweredCommandAsync(
-                        runtime.UnloadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
-                    SetStage(runtime, JourneyRuntimeStage.Completed, now);
+                        settled.UnloadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
+                }
+                // One demand's cargo comes off at a time: each batch is a slot door opening, and
+                // commanding every remaining demand at once would open several at once. The next one
+                // is commanded only after the previous batch has closed safely.
+                JourneyDemandRow? nextToUnload = demands.FirstOrDefault(row =>
+                    row.State == JourneyDemandState.Loaded);
+                if (nextToUnload is not null)
+                {
+                    nextToUnload.UnloadCommandedAt = now;
+                    await PublishUnloadAsync(runtime, stop, nextToUnload, session, cancellationToken)
+                        .ConfigureAwait(false);
+                    SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now, stop);
+                }
+                else
+                {
+                    stop.State = JourneyStopState.Completed;
+                    SetStage(runtime, JourneyRuntimeStage.Completed, now, stop);
                 }
                 break;
             case JourneyRuntimeStage.Blocked:
@@ -679,16 +777,18 @@ public sealed class JourneyRuntimeEngine(
 
     private async Task<bool> IsTrustedArrivalAsync(
         JourneyRuntimeRow runtime,
-        string purpose,
+        JourneyStopRow stop,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
+        // Keyed on the leg, not on the demand and purpose it used to be: a journey can visit several
+        // pickup stops, so "the TO_PICKUP intent of this demand" no longer names one row.
         OrderIntentRow intent = await dbContext.OrderIntents.SingleAsync(
-            row => row.DemandId == runtime.DemandId && row.Purpose == purpose,
+            row => row.MovementLegId == stop.MovementLegId,
             cancellationToken).ConfigureAwait(false);
         RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(intent.UpperId, cancellationToken)
             .ConfigureAwait(false);
-        int targetStation = purpose == "TO_PICKUP" ? runtime.PickupStationRiotId : runtime.GateStationRiotId;
+        int targetStation = stop.StationRiotId;
         bool exactOrder = order.Kind == RiotOrderObservationKind.Terminal &&
                           order.OrderState == 5 &&
                           !string.IsNullOrWhiteSpace(order.OrderId) &&
@@ -745,126 +845,193 @@ public sealed class JourneyRuntimeEngine(
         return false;
     }
 
-    private async Task PublishPickupStateAsync(
+    /// <summary>
+    /// Everything the vehicle is told on arriving at a pickup stop: its business state, the worklist
+    /// for this stop, the plan for the rest of the journey, and the first request to enter a sublot.
+    /// </summary>
+    private async Task PublishStopArrivalAsync(
         JourneyRuntimeRow runtime,
+        IReadOnlyList<JourneyStopRow> stops,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyDemandRow> demands,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        TakeStopRevisions(runtime, stop);
         await publisher.PublishVehicleBusinessStateAsync(
-            runtime.VehicleBusinessMessageId,
+            stop.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision, "READY", false, "SUFFICIENT", []),
-            cancellationToken).ConfigureAwait(false);
-        await publisher.PublishCurrentStopWorklistAsync(
-            runtime.WorklistMessageId,
-            runtime.AgvId,
-            session.SessionGeneration,
-            Worklist(runtime, demand, runtime.PickupStationId, "PICKUP", runtime.WorklistRevision),
+            new VehicleBusinessProjection(stop.VehicleBusinessRevision, "READY", false, "SUFFICIENT", []),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
-            runtime.PlanMessageId,
+            stop.PlanMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            PickupPlan(runtime),
+            Plan(runtime, stops, stop),
+            cancellationToken).ConfigureAwait(false);
+        await PublishLoadRoundAsync(runtime, stop, demands, session, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One round of loading at a stop: the worklist as it now stands, and the request to enter the
+    /// next sublot. A round ends when a load is commanded, so the next demand at the same stop is
+    /// asked for under a new revision -- which is also what expires the previous request at the
+    /// vehicle (<c>expiresOnRevisionChange</c>).
+    /// </summary>
+    private async Task PublishLoadRoundAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyDemandRow> demands,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        JourneyDemandRow[] pending = UncommandedAt(demands, stop);
+        if (pending.Length == 0)
+        {
+            return;
+        }
+
+        stop.LoadRound++;
+        if (stop.LoadRound > 1)
+        {
+            // The first round publishes at the revision the stop was given on arrival; every later
+            // one has to advance it, or the peer refuses a revision whose content changed.
+            stop.WorklistRevision = runtime.WorklistRevision++;
+        }
+        AcceptedDemandRow[] accepted = await AcceptedDemandsForAsync(demands, cancellationToken)
+            .ConfigureAwait(false);
+        await publisher.PublishCurrentStopWorklistAsync(
+            WireToGateStore.WorklistId(runtime.JourneyId, stop.Sequence, stop.LoadRound),
+            runtime.AgvId,
+            session.SessionGeneration,
+            Worklist(runtime, stop, demands, accepted),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishSublotEntryRequestAsync(
-            runtime.SublotRequestMessageId,
+            WireToGateStore.SublotRequestId(runtime.JourneyId, stop.Sequence, stop.LoadRound),
             runtime.AgvId,
             session.SessionGeneration,
             new SublotEntryRequest(
-                runtime.DemandId,
+                pending[0].DemandId,
                 runtime.OperationSessionId,
-                runtime.PickupStationId,
-                runtime.WorklistRevision,
-                // One entry while a journey carries one demand. The set is what FR-001 AC-3 scopes
-                // entry to -- the whole dispatch range -- so it widens on its own once a journey
-                // carries a stop sequence.
-                [demand.Sublot]),
+                stop.StationId,
+                stop.WorklistRevision,
+                // FR-001 AC-3 and BR-001 scope entry to the whole dispatch range, not to the demand
+                // the request happens to name: "允许 T 的目标站点与操作员当前物理站点不完全相同，
+                // 只要 T 在范围内". Every sublot this journey still has to load is offered, wherever
+                // its stop is; which one the operator scans decides which demand loads next.
+                LoadableSublots(demands, accepted)),
             cancellationToken).ConfigureAwait(false);
     }
 
     private async Task PublishLoadAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        JourneyDemandRow demand,
         SessionRecoveryRow session,
         string correlationId,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
-        int[] slots = JsonSerializer.Deserialize<int[]>(runtime.TargetSlotsJson) ?? [];
-        string hash = BusinessHash(runtime.DemandId, demand.Sublot, "LOAD", slots);
+        AcceptedDemandRow accepted = await dbContext.AcceptedDemands.SingleAsync(
+            row => row.DemandId == demand.DemandId, cancellationToken).ConfigureAwait(false);
+        int[] slots = JsonSerializer.Deserialize<int[]>(demand.TargetSlotsJson) ?? [];
+        string hash = BusinessHash(demand.DemandId, accepted.Sublot, "LOAD", slots);
         await publisher.PublishSlotOperationCommandAsync(
-            runtime.LoadCommandMessageId,
+            demand.LoadCommandMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new SlotOperationCommand(
                 correlationId,
-                runtime.DemandId,
-                demand.Sublot,
+                demand.DemandId,
+                accepted.Sublot,
                 runtime.OperationSessionId,
-                runtime.LoadSlotOperationAttemptId,
+                demand.LoadSlotOperationAttemptId,
                 SlotOperationType.Load,
                 slots,
                 session.ForcedRecoveryGeneration,
                 hash),
             cancellationToken,
-            runtime.PickupStationId,
-            demand.WorkType).ConfigureAwait(false);
+            stop.StationId,
+            accepted.WorkType).ConfigureAwait(false);
     }
 
     private async Task PublishGateStateAndUnloadAsync(
         JourneyRuntimeRow runtime,
+        IReadOnlyList<JourneyStopRow> stops,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyDemandRow> demands,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        TakeStopRevisions(runtime, stop);
+        stop.LoadRound = 1;
+        AcceptedDemandRow[] accepted = await AcceptedDemandsForAsync(demands, cancellationToken)
+            .ConfigureAwait(false);
         await publisher.PublishVehicleBusinessStateAsync(
-            runtime.GateVehicleBusinessMessageId,
+            stop.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision + 1, "READY", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(stop.VehicleBusinessRevision, "READY", false, "SUFFICIENT", []),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishCurrentStopWorklistAsync(
-            runtime.GateWorklistMessageId,
+            WireToGateStore.WorklistId(runtime.JourneyId, stop.Sequence, stop.LoadRound),
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.GateStationId, "GATE", runtime.WorklistRevision + 1),
+            Worklist(runtime, stop, demands, accepted),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
-            runtime.GatePlanMessageId,
+            stop.PlanMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            GatePlan(runtime),
+            Plan(runtime, stops, stop),
             cancellationToken).ConfigureAwait(false);
-        int[] slots = JsonSerializer.Deserialize<int[]>(runtime.TargetSlotsJson) ?? [];
+        JourneyDemandRow first = UnloadingAt(demands);
+        first.UnloadCommandedAt = timeProvider.GetUtcNow();
+        await PublishUnloadAsync(runtime, stop, first, session, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task PublishUnloadAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        JourneyDemandRow demand,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        _ = stop;
+        AcceptedDemandRow accepted = await dbContext.AcceptedDemands.SingleAsync(
+            row => row.DemandId == demand.DemandId, cancellationToken).ConfigureAwait(false);
+        int[] slots = JsonSerializer.Deserialize<int[]>(demand.TargetSlotsJson) ?? [];
         await publisher.PublishSlotOperationCommandAsync(
-            runtime.UnloadCommandMessageId,
+            demand.UnloadCommandMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new SlotOperationCommand(
                 null,
-                runtime.DemandId,
-                demand.Sublot,
+                demand.DemandId,
+                accepted.Sublot,
                 runtime.OperationSessionId,
-                runtime.UnloadSlotOperationAttemptId,
+                demand.UnloadSlotOperationAttemptId,
                 SlotOperationType.Unload,
                 slots,
                 session.ForcedRecoveryGeneration,
-                BusinessHash(runtime.DemandId, demand.Sublot, "UNLOAD", slots)),
+                BusinessHash(demand.DemandId, accepted.Sublot, "UNLOAD", slots)),
             cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<ProtocolInboxRow?> FindMatchingSublotAsync(
+    /// <summary>
+    /// The operator's entry, matched to the demand it names. The sublot decides which demand loads
+    /// next, so the match is against every demand still pending at this stop rather than against one
+    /// expected string -- BR-001 scopes entry to the dispatch range, not to a single task.
+    /// </summary>
+    private async Task<SublotEntry?> FindMatchingSublotAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyDemandRow> pending,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        AcceptedDemandRow[] accepted = await AcceptedDemandsForAsync(pending, cancellationToken)
+            .ConfigureAwait(false);
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SublotSubmitted")
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -876,28 +1043,37 @@ public sealed class JourneyRuntimeEngine(
             JsonElement payload = root.GetProperty("payload");
             // 判过一次的提交不再进入匹配：被拒的那条留在 inbox 里，否则每一轮都会重新触发一次
             // 远程重算，也会把同一条拒绝反复发给对端。
-            if (row.MessageId == runtime.ConsumedSublotMessageId)
+            if (pending.Any(demand => demand.ConsumedSublotMessageId == row.MessageId))
             {
                 continue;
             }
-            bool matches = RequiredString(root, "agvId") == runtime.AgvId &&
-                           root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                           RequiredString(payload, "demandId") == runtime.DemandId &&
-                           RequiredString(payload, "operationSessionId") == runtime.OperationSessionId &&
-                           RequiredString(payload, "stationId") == runtime.PickupStationId &&
-                           payload.GetProperty("worklistRevision").GetInt64() == runtime.WorklistRevision &&
-                           RequiredString(payload, "sublot") == demand.Sublot;
-            if (matches)
+            if (RequiredString(root, "agvId") != runtime.AgvId ||
+                root.GetProperty("sessionGeneration").GetInt64() != session.SessionGeneration ||
+                RequiredString(payload, "operationSessionId") != runtime.OperationSessionId ||
+                RequiredString(payload, "stationId") != stop.StationId ||
+                payload.GetProperty("worklistRevision").GetInt64() != stop.WorklistRevision)
             {
-                if (!await store.IsTaskTypeAllowedAsync(
-                        runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
-                {
-                    runtime.BlockReasonCode = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
-                    return null;
-                }
-                return row;
+                runtime.BlockReasonCode = "SUBLOT_SUBMISSION_MISMATCH";
+                continue;
             }
-            runtime.BlockReasonCode = "SUBLOT_SUBMISSION_MISMATCH";
+            string submittedSublot = RequiredString(payload, "sublot");
+            AcceptedDemandRow? demand = accepted.SingleOrDefault(item =>
+                string.Equals(item.Sublot, submittedSublot, StringComparison.Ordinal));
+            JourneyDemandRow? membership = demand is null
+                ? null
+                : pending.SingleOrDefault(item => item.DemandId == demand.DemandId);
+            if (demand is null || membership is null)
+            {
+                runtime.BlockReasonCode = "SUBLOT_SUBMISSION_MISMATCH";
+                continue;
+            }
+            if (!await store.IsTaskTypeAllowedAsync(
+                    stop.StationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
+            {
+                runtime.BlockReasonCode = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
+                return null;
+            }
+            return new SublotEntry(row, membership);
         }
         return null;
     }
@@ -927,22 +1103,24 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<SublotRejection?> RevalidateEnteredSublotAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        JourneyDemandRow entered,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+            row => row.DemandId == entered.DemandId, cancellationToken).ConfigureAwait(false);
 
         SublotRejection Refuse(string reasonCode, string fieldPath, string displayMessage) => new(
-            runtime.DemandId,
+            entered.DemandId,
             runtime.OperationSessionId,
-            runtime.WorklistRevision,
+            stop.WorklistRevision,
             reasonCode,
             fieldPath,
             displayMessage);
 
         if (!await store.IsTaskTypeAllowedAsync(
-                runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
+                stop.StationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
         {
             return Refuse(
                 "ACTION_NOT_ALLOWED_IN_STATE",
@@ -979,7 +1157,7 @@ public sealed class JourneyRuntimeEngine(
         catch (Exception error) when (
             error is HttpRequestException or InvalidDataException or JsonException)
         {
-            LogBoxCountFailed(logger, runtime.DemandId, error);
+            LogBoxCountFailed(logger, entered.DemandId, error);
             maxBoxCount = null;
         }
         if (maxBoxCount is null or <= 0)
@@ -991,12 +1169,12 @@ public sealed class JourneyRuntimeEngine(
         }
 
         int expected = checked((maxBoxCount.Value + capacity.Value - 1) / capacity.Value);
-        if (expected != runtime.ExpectedBasketCount)
+        if (expected != entered.ExpectedBasketCount)
         {
             return Refuse(
                 "EXPECTED_BASKET_COUNT_MISMATCH",
                 "payload.sublot",
-                $"子批 {demand.Sublot} 的花篮数量由 {runtime.ExpectedBasketCount} 变为 {expected}，" +
+                $"子批 {demand.Sublot} 的花篮数量由 {entered.ExpectedBasketCount} 变为 {expected}，" +
                 "与本次派车预留的仓位不符，不予开仓。");
         }
 
@@ -1005,6 +1183,7 @@ public sealed class JourneyRuntimeEngine(
 
     private async Task<SafetyCheckObservation?> AwaitSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
@@ -1016,7 +1195,7 @@ public sealed class JourneyRuntimeEngine(
         {
             runtime.BlockReasonCode = null;
             SafetyCheckObservation? safety = await FindSafeDepartureResultAsync(
-                runtime, session, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+                runtime, stop, session, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
             if (safety is not null || runtime.BlockReasonCode is not null || attempt >= attempts)
             {
                 return safety;
@@ -1027,6 +1206,7 @@ public sealed class JourneyRuntimeEngine(
 
     private async Task<SafetyCheckObservation?> FindSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
         SessionRecoveryRow session,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -1040,7 +1220,7 @@ public sealed class JourneyRuntimeEngine(
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
             JsonElement payload = root.GetProperty("payload");
-            if (RequiredString(payload, "preDepartureSafetyCheckId") != runtime.PreDepartureSafetyCheckId)
+            if (RequiredString(payload, "preDepartureSafetyCheckId") != stop.PreDepartureSafetyCheckId)
                 continue;
             JsonElement safety = payload.GetProperty("safety");
             DateTimeOffset observedAt = payload.GetProperty("observedAt").GetDateTimeOffset();
@@ -1053,8 +1233,8 @@ public sealed class JourneyRuntimeEngine(
             // above, and it is unique to this journey's leg, so the correlationId was only ever a
             // second name for a fact already proven.
             string correlationId = RequiredString(root, "correlationId");
-            bool valid = (correlationId == runtime.PreDepartureSafetyCheckMessageId ||
-                          correlationId == runtime.PreDepartureSafetyCheckId) &&
+            bool valid = (correlationId == stop.PreDepartureSafetyCheckMessageId ||
+                          correlationId == stop.PreDepartureSafetyCheckId) &&
                          RequiredString(root, "agvId") == runtime.AgvId &&
                          root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
                          RequiredString(payload, "outcome") == "SAFE" &&
@@ -1076,7 +1256,7 @@ public sealed class JourneyRuntimeEngine(
                 return null;
             }
             return new SafetyCheckObservation(
-                runtime.PreDepartureSafetyCheckId,
+                stop.PreDepartureSafetyCheckId,
                 safetyRevision,
                 true,
                 observedAt,
@@ -1590,104 +1770,189 @@ public sealed class JourneyRuntimeEngine(
                vehicle.ObservedAt <= now && now - vehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge;
     }
 
+    /// <summary>
+    /// The journey one selected candidate starts: its first pickup stop, and the gate stop it will
+    /// reach once loading ends. Further pickup stops are appended later, as further demands are
+    /// taken on, so the gate stop's sequence is not fixed here -- <see cref="GateStopSequence"/>
+    /// keeps it last.
+    /// </summary>
     private JourneyExecutionPlan CreatePlan(EligibleCandidate candidate, DateTimeOffset now)
     {
         string demandId = candidate.Snapshot.DemandId;
+        // The journey's identity is its own, not the demand's (ADR-cross-0057). It is still derived
+        // deterministically from the demand that started it, because intake must be replayable: a
+        // retried acceptance has to rebuild the same journey or the store refuses it.
+        string journeyId = StableGuid(demandId, $"journey-{runtimeOptions.DispatchGeneration}");
         return new JourneyExecutionPlan(
+            journeyId,
             runtimeOptions.AgvId,
             runtimeOptions.VehicleKey,
             runtimeOptions.AgvLifecycleGeneration,
             runtimeOptions.MapId,
             runtimeOptions.MapIdentity,
             candidate.Route.DispatchZone,
-            candidate.Route.RouteEvidenceId,
-            candidate.Route.PickupStationId,
-            candidate.Route.PickupStationRiotId,
             runtimeOptions.GateStationId,
             runtimeOptions.GateStationRiotId,
-            candidate.ExpectedBasketCount,
-            candidate.TargetSlots,
-            StableGuid(demandId, "operation-session"),
-            StableGuid(demandId, "pickup-leg"),
-            $"W2G-{demandId}-PICKUP-{runtimeOptions.DispatchGeneration}",
-            StableGuid(demandId, "gate-leg"),
-            $"W2G-{demandId}-GATE-{runtimeOptions.DispatchGeneration}",
+            StableGuid(journeyId, "operation-session"),
             runtimeOptions.DispatchGeneration,
+            [
+                StopPlan(
+                    journeyId,
+                    FirstStopSequence,
+                    JourneyStopRole.Pickup,
+                    candidate.Route.PickupStationId,
+                    candidate.Route.PickupStationRiotId,
+                    candidate.Route.RouteEvidenceId,
+                    "TO_PICKUP"),
+                StopPlan(
+                    journeyId,
+                    GateStopSequence,
+                    JourneyStopRole.Gate,
+                    runtimeOptions.GateStationId,
+                    runtimeOptions.GateStationRiotId,
+                    candidate.Route.RouteEvidenceId,
+                    "TO_GATE")
+            ],
+            [new JourneyDemandPlan(
+                demandId,
+                FirstStopSequence,
+                candidate.ExpectedBasketCount,
+                candidate.TargetSlots)],
             now);
     }
 
-    private static OrderIntent GateIntent(JourneyRuntimeRow runtime, DateTimeOffset now) => new(
-        runtime.GateMovementLegId,
-        runtime.DemandId,
-        runtime.GateUpperId,
-        "TO_GATE",
-        runtime.GateStationId,
+    private JourneyStopPlan StopPlan(
+        string journeyId,
+        int sequence,
+        string role,
+        string stationId,
+        int stationRiotId,
+        string routeEvidenceId,
+        string legType) => new(
+            sequence,
+            role,
+            stationId,
+            stationRiotId,
+            routeEvidenceId,
+            StableGuid(journeyId, $"stop-{sequence}-leg"),
+            $"W2G-{journeyId}-S{sequence}-{runtimeOptions.DispatchGeneration}",
+            legType);
+
+    /// <summary>
+    /// The intent for the leg that takes the vehicle to one stop. <c>DemandId</c> names the demand
+    /// that put the stop on the itinerary, for audit only: a leg belongs to the journey, and every
+    /// judgement about it -- arrival, reconciliation, authorization -- keys on the movement leg or
+    /// the upper id instead.
+    /// </summary>
+    private static OrderIntent StopIntent(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        string demandId,
+        DateTimeOffset now) => new(
+        stop.MovementLegId,
+        demandId,
+        stop.UpperId,
+        stop.LegType == "TO_GATE" ? "TO_GATE" : "TO_PICKUP",
+        stop.StationId,
         now,
         runtime.VehicleKey,
         runtime.MapId,
-        runtime.GateStationRiotId,
+        stop.StationRiotId,
         runtime.AgvLifecycleGeneration,
         runtime.DispatchGeneration);
 
     /// <summary>
-    /// The worklist for one stop. The revision is explicit because the gate stop is a different
-    /// worklist from the pickup stop -- different station, different role -- and the peer keys a
-    /// snapshot's identity on its type and revision. Publishing both at the same revision made the
-    /// peer reject the second as a revision whose content had changed, which was right of it: a
-    /// revision that does not advance is a promise that the content did not. The connection died on
-    /// that rejection, and the unload command queued behind it was never reached, so the gate stage
-    /// could not start. The sibling projections at this stop already advance the same way.
+    /// The worklist for one stop: the demands still to handle there, in the role this stop plays.
+    /// Every publication takes its own revision, because the peer keys a snapshot's identity on its
+    /// type and revision. Two stops -- or two rounds at one stop -- publishing at the same revision
+    /// made the peer reject the second as a revision whose content had changed, which was right of
+    /// it: a revision that does not advance is a promise that the content did not. The connection
+    /// died on that rejection, and the command queued behind it was never reached.
     /// </summary>
     private static CurrentStopWorklistProjection Worklist(
         JourneyRuntimeRow runtime,
-        AcceptedDemandRow demand,
-        string station,
-        string role,
-        long revision) => new(
-            station,
-            revision,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyDemandRow> demands,
+        IReadOnlyList<AcceptedDemandRow> accepted) => new(
+            stop.StationId,
+            stop.WorklistRevision,
             runtime.OperationSessionId,
-            [new CurrentStopWorklistItem(
-                demand.DemandId,
-                demand.TransportDemandKey,
-                demand.Sublot,
-                demand.WorkType,
-                role,
-                runtime.ExpectedBasketCount)]);
+            (stop.Role == JourneyStopRole.Gate
+                ? demands.Where(row => row.State == JourneyDemandState.Loaded)
+                : PendingAt(demands, stop))
+            .Select(row => new
+            {
+                Membership = row,
+                Demand = accepted.Single(item => item.DemandId == row.DemandId)
+            })
+            .Select(pair => new CurrentStopWorklistItem(
+                pair.Demand.DemandId,
+                pair.Demand.TransportDemandKey,
+                pair.Demand.Sublot,
+                pair.Demand.WorkType,
+                stop.Role,
+                pair.Membership.ExpectedBasketCount))
+            .ToArray());
 
-    private static UpcomingStopPlanProjection PickupPlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision,
-        runtime.DemandId,
-        [
-            new UpcomingMovementLeg(runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, runtime.MapIdentity, "ARRIVED"),
-            new UpcomingMovementLeg(runtime.GateMovementLegId, "TO_GATE", 2, runtime.GateStationId, runtime.MapIdentity, "PLANNED")
-        ]);
-
-    private static UpcomingStopPlanProjection GatePlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision + 1,
-        runtime.DemandId,
-        [
-            new UpcomingMovementLeg(runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, runtime.MapIdentity, "COMPLETED"),
-            new UpcomingMovementLeg(runtime.GateMovementLegId, "TO_GATE", 2, runtime.GateStationId, runtime.MapIdentity, "ARRIVED")
-        ]);
+    /// <summary>
+    /// The whole itinerary as the vehicle should see it, with the stop it is at marked ARRIVED.
+    /// </summary>
+    /// <remarks>
+    /// The wire sequence is the position in the sorted itinerary, not the stop's own sequence: the
+    /// gate keeps a fixed internal sequence above every pickup stop so appending one never renumbers
+    /// it, and that leaves a gap the protocol has no reason to see.
+    /// </remarks>
+    private static UpcomingStopPlanProjection Plan(
+        JourneyRuntimeRow runtime,
+        IReadOnlyList<JourneyStopRow> stops,
+        JourneyStopRow current) => new(
+            current.PlanRevision,
+            // Null because a journey's plan belongs to the journey, not to any one demand it
+            // carries. The field is nullable in the schema for exactly this.
+            null,
+            stops.OrderBy(row => row.Sequence)
+                .Select((row, index) => new UpcomingMovementLeg(
+                    row.MovementLegId,
+                    row.LegType,
+                    index + 1,
+                    row.StationId,
+                    runtime.MapIdentity,
+                    row.Sequence == current.Sequence ? JourneyStopState.Arrived : row.State))
+                .ToArray());
 
     private static string BusinessHash(string demandId, string sublot, string operation, IEnumerable<int> slots) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             $"{demandId}|{sublot}|{operation}|{string.Join(',', slots)}"))).ToLowerInvariant();
 
-    private static HashSet<string> RuntimeMessageIds(JourneyRuntimeRow runtime) =>
-    [
-        runtime.VehicleBusinessMessageId,
-        runtime.WorklistMessageId,
-        runtime.PlanMessageId,
-        runtime.SublotRequestMessageId,
-        runtime.LoadCommandMessageId,
-        runtime.PreDepartureSafetyCheckMessageId,
-        runtime.GateVehicleBusinessMessageId,
-        runtime.GateWorklistMessageId,
-        runtime.GatePlanMessageId,
-        runtime.UnloadCommandMessageId
-    ];
+    /// <summary>
+    /// Every outbound message this journey owns, so an unacknowledged one can be replayed into the
+    /// current session. The per-round worklist and entry request ids are recomputed from the round
+    /// counter rather than stored: they are deterministic, and a stop that asked three times has
+    /// three of each.
+    /// </summary>
+    private static HashSet<string> RuntimeMessageIds(
+        IReadOnlyList<JourneyStopRow> stops,
+        IReadOnlyList<JourneyDemandRow> demands)
+    {
+        HashSet<string> ids = new(StringComparer.Ordinal);
+        foreach (JourneyStopRow stop in stops)
+        {
+            ids.Add(stop.VehicleBusinessMessageId);
+            ids.Add(stop.PlanMessageId);
+            ids.Add(stop.PreDepartureSafetyCheckMessageId);
+            for (int round = 1; round <= stop.LoadRound; round++)
+            {
+                ids.Add(WireToGateStore.WorklistId(stop.JourneyId, stop.Sequence, round));
+                ids.Add(WireToGateStore.SublotRequestId(stop.JourneyId, stop.Sequence, round));
+            }
+        }
+        foreach (JourneyDemandRow demand in demands)
+        {
+            ids.Add(demand.LoadCommandMessageId);
+            ids.Add(demand.UnloadCommandMessageId);
+        }
+        return ids;
+    }
 
     private static string StableGuid(string demandId, string purpose)
     {
@@ -1712,33 +1977,64 @@ public sealed class JourneyRuntimeEngine(
     /// </summary>
     private async Task<bool> TryTimeOutSublotWaitAsync(
         JourneyRuntimeRow runtime,
+        IReadOnlyList<JourneyStopRow> stops,
+        JourneyStopRow stop,
+        JourneyDemandRow[] demands,
+        SessionRecoveryRow session,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         if (runtimeOptions.SublotWaitTimeout <= TimeSpan.Zero ||
-            runtime.SublotWaitStartedAt is not { } startedAt ||
+            stop.SublotWaitStartedAt is not { } startedAt ||
             now - startedAt < runtimeOptions.SublotWaitTimeout)
         {
             return false;
         }
 
-        if (await store.CancelDemandBeforeLoadAsync(
-                runtime.DemandId, "CANCELLED_BY_STATION_TIMEOUT", now, cancellationToken)
-            .ConfigureAwait(false))
+        // ADR-cross-0055 and FR-004 end the *stop*, which terminates every demand still waiting to
+        // be loaded there -- plural. A journey carrying demands it has already loaded is not ended
+        // by this: those are on board and still bound for the gate.
+        foreach (JourneyDemandRow pending in PendingAt(demands, stop))
         {
-            LogSublotWaitTimedOut(logger, runtime.DemandId, runtimeOptions.SublotWaitTimeout, null);
+            if (await store.CancelDemandBeforeLoadAsync(
+                    pending.DemandId, "CANCELLED_BY_STATION_TIMEOUT", now, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                LogSublotWaitTimedOut(logger, pending.DemandId, runtimeOptions.SublotWaitTimeout, null);
+            }
         }
+
+        JourneyDemandRow[] remaining = await DemandsAsync(runtime, cancellationToken).ConfigureAwait(false);
+        if (remaining.All(row =>
+                row.State is JourneyDemandState.Cancelled or JourneyDemandState.Unloaded))
+        {
+            return true;
+        }
+
+        // Something is still aboard, so the journey continues -- to the gate, or to a stop where it
+        // can still pick more up.
+        await ConcludeLoadingStopAsync(
+            runtime, stops, stop, remaining, session, now, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return true;
     }
 
-    private static void SetStage(JourneyRuntimeRow runtime, JourneyRuntimeStage stage, DateTimeOffset now)
+    private static void SetStage(
+        JourneyRuntimeRow runtime,
+        JourneyRuntimeStage stage,
+        DateTimeOffset now,
+        JourneyStopRow stop)
     {
         runtime.Stage = stage;
         runtime.BlockReasonCode = null;
         runtime.UpdatedAt = now;
+        stop.UpdatedAt = now;
         if (stage == JourneyRuntimeStage.AwaitingSublot)
         {
-            runtime.SublotWaitStartedAt ??= now;
+            // Per stop, and only the first time this stop starts waiting. ADR-cross-0055 recomputes
+            // the station wait after each LoadBatch closes, which is what the reset in
+            // TryContinueLoadingAtStopAsync does.
+            stop.SublotWaitStartedAt ??= now;
         }
     }
 
@@ -1751,15 +2047,23 @@ public sealed class JourneyRuntimeEngine(
     /// </summary>
     private async Task<bool> TryBlockOnRecordedRecoveryAsync(
         JourneyRuntimeRow runtime,
+        JourneyDemandRow[] demands,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         (string? attemptId, string reason) = runtime.Stage switch
         {
-            JourneyRuntimeStage.AwaitingLoadResult =>
-                (runtime.LoadSlotOperationAttemptId, "LOAD_RESULT_REQUIRES_RECOVERY"),
-            JourneyRuntimeStage.AwaitingUnloadResult =>
-                (runtime.UnloadSlotOperationAttemptId, "UNLOAD_RESULT_REQUIRES_RECOVERY"),
+            JourneyRuntimeStage.AwaitingLoadResult => (
+                demands.FirstOrDefault(row =>
+                    row.StopSequence == runtime.CurrentStopSequence &&
+                    row.State == JourneyDemandState.Planned &&
+                    row.LoadCommandedAt is not null)?.LoadSlotOperationAttemptId,
+                "LOAD_RESULT_REQUIRES_RECOVERY"),
+            JourneyRuntimeStage.AwaitingUnloadResult => (
+                demands.FirstOrDefault(row =>
+                    row.State == JourneyDemandState.Loaded &&
+                    row.UnloadCommandedAt is not null)?.UnloadSlotOperationAttemptId,
+                "UNLOAD_RESULT_REQUIRES_RECOVERY"),
             _ => (null, string.Empty)
         };
         if (attemptId is null)
@@ -1800,6 +2104,218 @@ public sealed class JourneyRuntimeEngine(
             return RequiredString(document.RootElement.GetProperty("payload"), "preDepartureSafetyCheckId") == checkId;
         })?.MessageId;
     }
+
+    private async Task<JourneyStopRow[]> StopsAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        JourneyStopRow[] rows = await dbContext.JourneyStops
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return rows.OrderBy(row => row.Sequence).ToArray();
+    }
+
+    /// <summary>
+    /// The journey's demands, oldest first. Ordered in memory: the SQLite provider translates an
+    /// <c>ORDER BY</c> on a <see cref="DateTimeOffset"/> only at query time and then throws.
+    /// </summary>
+    private async Task<JourneyDemandRow[]> DemandsAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        JourneyDemandRow[] rows = await dbContext.JourneyDemands
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return rows.OrderBy(row => row.CreatedAt).ThenBy(row => row.DemandId, StringComparer.Ordinal).ToArray();
+    }
+
+    /// <summary>Demands still waiting to be loaded at one stop, oldest first.</summary>
+    private static JourneyDemandRow[] PendingAt(
+        IReadOnlyList<JourneyDemandRow> demands,
+        JourneyStopRow stop) =>
+        demands.Where(row =>
+                row.StopSequence == stop.Sequence && row.State == JourneyDemandState.Planned)
+            .ToArray();
+
+    /// <summary>
+    /// Demands at this stop that nobody has been asked to load yet -- what the next entry request
+    /// offers, and what an entered sublot is matched against. The one already commanded is excluded:
+    /// its door may be open, and a second command for it would be a replay.
+    /// </summary>
+    private static JourneyDemandRow[] UncommandedAt(
+        IReadOnlyList<JourneyDemandRow> demands,
+        JourneyStopRow stop) =>
+        PendingAt(demands, stop).Where(row => row.LoadCommandedAt is null).ToArray();
+
+    /// <summary>
+    /// The demand whose load this stop is waiting on: the one whose command went out and whose batch
+    /// has not closed. It is not simply the first pending demand -- the operator decides which of
+    /// them loads next by what they scan.
+    /// </summary>
+    private static JourneyDemandRow LoadingAt(
+        IReadOnlyList<JourneyDemandRow> demands,
+        JourneyStopRow stop) =>
+        PendingAt(demands, stop).FirstOrDefault(row => row.LoadCommandedAt is not null)
+        ?? throw new InvalidDataException(
+            $"Stop {stop.Sequence} awaits a load result with no commanded load there.");
+
+    private static JourneyDemandRow UnloadingAt(IReadOnlyList<JourneyDemandRow> demands) =>
+        demands.FirstOrDefault(row => row.State == JourneyDemandState.Loaded)
+        ?? throw new InvalidDataException("A journey at the gate carries nothing to unload.");
+
+    private async Task<AcceptedDemandRow[]> AcceptedDemandsForAsync(
+        IReadOnlyList<JourneyDemandRow> demands,
+        CancellationToken cancellationToken)
+    {
+        string[] ids = demands.Select(row => row.DemandId).ToArray();
+        return await dbContext.AcceptedDemands
+            .Where(row => ids.Contains(row.DemandId))
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Every sublot the operator may enter right now: the whole dispatch range still to be loaded,
+    /// whichever stop each one belongs to. FR-001 AC-3 makes belonging to the range the criterion,
+    /// not proximity to the stop the vehicle is parked at.
+    /// </summary>
+    private static string[] LoadableSublots(
+        IReadOnlyList<JourneyDemandRow> demands,
+        IReadOnlyList<AcceptedDemandRow> accepted) =>
+        demands.Where(row => row.State == JourneyDemandState.Planned)
+            .Select(row => accepted.Single(item => item.DemandId == row.DemandId).Sublot)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>
+    /// Gives a stop the snapshot revisions it publishes at, taken from the journey's cursors, and
+    /// advances those. Already-numbered stops keep their revisions so that a republish stays
+    /// byte-identical -- the peer refuses a revision whose content changed, and a re-numbered
+    /// republish is exactly that.
+    /// </summary>
+    private static void TakeStopRevisions(JourneyRuntimeRow runtime, JourneyStopRow stop)
+    {
+        if (stop.PlanRevision != 0)
+        {
+            return;
+        }
+
+        stop.VehicleBusinessRevision = runtime.VehicleBusinessRevision++;
+        stop.WorklistRevision = runtime.WorklistRevision++;
+        stop.PlanRevision = runtime.PlanRevision++;
+    }
+
+    /// <summary>
+    /// Whether the vehicle keeps loading at this stop after a batch closed. It does when the stop
+    /// still has a demand pending and the loading phase has not ended -- and ending it is what
+    /// ADR-cross-0057 decides on "full or held too long, whichever comes first".
+    /// </summary>
+    private async Task<bool> TryContinueLoadingAtStopAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyDemandRow> demands,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (UncommandedAt(demands, stop).Length == 0 ||
+            CloseLoading(runtime, demands, now) is not null)
+        {
+            return false;
+        }
+
+        // ADR-cross-0055: the station wait is recomputed from each closed batch, so the operator gets
+        // the whole window again for the next demand at this stop.
+        stop.SublotWaitStartedAt = now;
+        await PublishLoadRoundAsync(runtime, stop, demands, session, cancellationToken)
+            .ConfigureAwait(false);
+        SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now, stop);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Why the loading phase should end now, or <c>null</c> when it should not.
+    /// </summary>
+    /// <remarks>
+    /// ADR-cross-0057: "full" is not every slot occupied but too few free to take the next candidate
+    /// whole -- a demand's baskets have to go on in one go to be worth loading -- and the holding
+    /// limit runs from the first batch that closed safely, once, for the journey. An empty vehicle
+    /// is never held too long: before cargo is aboard there is no holding risk, and a stop with
+    /// nothing to load is ADR-cross-0055's business.
+    /// </remarks>
+    private string? CloseLoading(
+        JourneyRuntimeRow runtime,
+        IReadOnlyList<JourneyDemandRow> demands,
+        DateTimeOffset now)
+    {
+        if (runtime.LoadingClosedReason is { } already)
+        {
+            return already;
+        }
+        if (runtimeOptions.HoldingTimeout > TimeSpan.Zero &&
+            runtime.HoldingStartedAt is { } holdingSince &&
+            now - holdingSince >= runtimeOptions.HoldingTimeout)
+        {
+            return "HOLDING_TIMEOUT";
+        }
+        return demands.Count(row => row.State != JourneyDemandState.Cancelled) >= MaxPickupStops
+            ? "VEHICLE_FULL"
+            : null;
+    }
+
+    /// <summary>
+    /// Ends the vehicle's business at a stop and sends it on: to the gate when loading is over, or
+    /// to the next stop that still has something to load. Either way the move needs a pre-departure
+    /// safety check, which is what proves every door this stop opened is shut again.
+    /// </summary>
+    private async Task ConcludeLoadingStopAsync(
+        JourneyRuntimeRow runtime,
+        IReadOnlyList<JourneyStopRow> stops,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyDemandRow> demands,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (CloseLoading(runtime, demands, now) is { } reason)
+        {
+            runtime.LoadingClosedReason ??= reason;
+        }
+        JourneyStopRow? nextPickup = runtime.LoadingClosedReason is null
+            ? stops.FirstOrDefault(row =>
+                row.Role == JourneyStopRole.Pickup &&
+                row.Sequence > stop.Sequence &&
+                UncommandedAt(demands, row).Length > 0)
+            : null;
+        JourneyStopRow target = nextPickup
+            ?? stops.Single(row => row.Role == JourneyStopRole.Gate);
+        if (target.Role == JourneyStopRole.Gate && !demands.Any(row =>
+                row.State is JourneyDemandState.Planned or JourneyDemandState.Loaded))
+        {
+            // Nothing aboard and nothing left to load: there is nothing for the gate to receive, so
+            // the journey ends here rather than driving an empty vehicle to it.
+            stop.State = JourneyStopState.Completed;
+            SetStage(runtime, JourneyRuntimeStage.Completed, now, stop);
+            return;
+        }
+
+        await publisher.PublishPreDepartureSafetyCheckAsync(
+            stop.PreDepartureSafetyCheckMessageId,
+            runtime.AgvId,
+            session.SessionGeneration,
+            new PreDepartureSafetyCheckCommand(
+                stop.PreDepartureSafetyCheckId,
+                demands.OrderBy(row => row.CreatedAt).First().DemandId,
+                target.MovementLegId,
+                session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
+                target.StationId),
+            cancellationToken).ConfigureAwait(false);
+        runtime.NextStopSequence = target.Sequence;
+        SetStage(runtime, JourneyRuntimeStage.AwaitingDepartureSafety, now, stop);
+    }
+
+    /// <summary>One operator entry, paired with the demand its sublot names.</summary>
+    private sealed record SublotEntry(ProtocolInboxRow Submission, JourneyDemandRow Demand);
 
     private sealed record EligibleCandidate(
         AcceptedDemandSnapshot Snapshot,

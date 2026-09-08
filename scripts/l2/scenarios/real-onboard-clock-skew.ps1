@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 
 <#
 车载端时钟偏差：方案第 4 节标 ★ 的三条里的第三条，也是拖得最久的那条。
@@ -51,7 +51,7 @@ function Get-BacklogReason {
 }
 
 function Get-Stage {
-    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $demandId
     if ($rows.Count -eq 0) { return $null }
     return [string]$rows[0].Stage
 }

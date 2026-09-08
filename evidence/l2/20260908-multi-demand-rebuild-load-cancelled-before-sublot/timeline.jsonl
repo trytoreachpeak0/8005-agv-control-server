@@ -1,0 +1,21 @@
+{"at":"2026-09-08T04:46:15.7834978+00:00","note":"L2 run 20260908T044615749Z starting for scenario 'load-cancelled-before-sublot'."}
+{"at":"2026-09-08T04:46:15.7984981+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T04:46:18.9561768+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T04:46:19.0683843+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T04:46:19.0905835+00:00","note":"Server settings from load-cancelled-before-sublot.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:10:00"}
+{"at":"2026-09-08T04:46:20.7586435+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T04:46:21.8475494+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T04:46:22.4779640+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T04:46:22.4931568+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T04:46:22.5290339+00:00","note":"Environment is up; entering scenario 'load-cancelled-before-sublot'."}
+{"at":"2026-09-08T04:46:22.5903189+00:00","note":"Synthetic peer stops answering sublot entry requests: this stop has nothing to load."}
+{"at":"2026-09-08T04:46:22.6271402+00:00","note":"Publishing demand 6c46a583b5d8400e8fcafe62f86395f6 to the fake MesIngest catalog."}
+{"at":"2026-09-08T04:46:22.6986470+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-08T04:46:23.2529679+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-08T04:46:23.2722313+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-7e4a9511-dde4-9e5f-a2e1-d5f5e148f44a-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-08T04:46:23.2845739+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-08T04:46:24.1377406+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-08T04:46:24.1592339+00:00","note":"Operator cancels the load before entering any sublot."}
+{"at":"2026-09-08T04:46:24.1789338+00:00","note":"Cancellation 55597d60-8ca1-4e1e-8fef-349ffe419fc1 raised."}
+{"at":"2026-09-08T04:46:24.4473175+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-08T04:46:24.4654473+00:00","note":"Run failed: Exception calling \"ExecuteReader\" with \"0\" argument(s): \"SQLite Error 1: 'no such column: DemandId'.\""}

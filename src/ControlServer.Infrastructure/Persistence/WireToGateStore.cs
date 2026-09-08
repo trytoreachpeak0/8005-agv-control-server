@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Security.Cryptography;
 using System.Text;
@@ -12,13 +12,6 @@ namespace ControlServer.Infrastructure.Persistence;
 
 public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourneyAcceptanceStore, IMovementIntentStore
 {
-    /// <summary>
-    /// A journey publishes its stored revision at the pickup stop and that value plus one at the
-    /// gate stop (JourneyRuntimeEngine publishes both stops), so the next journey on the same
-    /// vehicle has to start two above the stored one.
-    /// </summary>
-    private const long RevisionsPerJourney = 2;
-
     public async Task<long> GetNextSessionGenerationAsync(string agvId, CancellationToken cancellationToken)
     {
         long current = await dbContext.SessionRecoveries
@@ -159,10 +152,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         //
         // This can only move a session from Ready to RecoveryRequired, never the other way.
         bool operationNeedsRecovery = await dbContext.StationOperations
-            .Join(dbContext.JourneyRuntimes,
+            .Join(dbContext.JourneyDemands,
                 operation => operation.DemandId,
-                runtime => runtime.DemandId,
-                (operation, runtime) => new { operation, runtime })
+                demand => demand.DemandId,
+                (operation, demand) => new { operation, demand })
+            .Join(dbContext.JourneyRuntimes,
+                pair => pair.demand.JourneyId,
+                runtime => runtime.JourneyId,
+                (pair, runtime) => new { pair.operation, runtime })
             .AnyAsync(
                 pair => pair.runtime.AgvId == agvId &&
                         pair.operation.Status == StationOperationStatus.RecoveryRequired,
@@ -260,9 +257,15 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             if (journey is not null)
             {
                 JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes
-                    .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
+                    .SingleOrDefaultAsync(row => row.JourneyId == journey.JourneyId, cancellationToken)
                     .ConfigureAwait(false);
-                if (runtime is null || !Matches(runtime, journey))
+                JourneyStopRow[] stops = await dbContext.JourneyStops
+                    .Where(row => row.JourneyId == journey.JourneyId)
+                    .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+                JourneyDemandRow[] demands = await dbContext.JourneyDemands
+                    .Where(row => row.JourneyId == journey.JourneyId)
+                    .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+                if (runtime is null || !Matches(runtime, stops, demands, journey))
                 {
                     throw new BusinessIdentityConflictException(
                         "Accepted demand replay does not match its persisted journey runtime.");
@@ -281,7 +284,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         if (activeLease is not null)
         {
             throw new BusinessIdentityConflictException(
-                $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved demand '{activeLease.DemandId}'.");
+                $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved journey '{activeLease.JourneyId}'.");
         }
 
         dbContext.AcceptedDemands.Add(new AcceptedDemandRow
@@ -305,16 +308,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         });
         dbContext.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
         {
-            DemandId = snapshot.DemandId,
+            JourneyId = journey?.JourneyId ?? snapshot.DemandId,
             VehicleKey = orderIntent.VehicleKey,
             AcquiredAt = snapshot.AcceptedAt
         });
         dbContext.OrderIntents.Add(ToRow(orderIntent));
         if (journey is not null)
         {
-            JourneyRuntimeRow runtimeRow = ToRuntimeRow(snapshot.DemandId, journey);
+            JourneyRuntimeRow runtimeRow = ToRuntimeRow(journey);
             await SeedSnapshotRevisionsAsync(runtimeRow, cancellationToken).ConfigureAwait(false);
             dbContext.JourneyRuntimes.Add(runtimeRow);
+            dbContext.JourneyStops.AddRange(ToStopRows(runtimeRow, journey));
+            dbContext.JourneyDemands.AddRange(ToDemandRows(journey));
             JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
                 .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                 .ConfigureAwait(false);
@@ -1036,10 +1041,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         });
         dbContext.StopClosures.Add(new StopClosureRow { DemandId = demandId, CommittedAt = completedAt });
         demand.Status = DemandExecutionStatus.Succeeded;
-        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
-            .SingleAsync(row => row.DemandId == demandId, cancellationToken)
-            .ConfigureAwait(false);
-        lease.ReleasedAt ??= completedAt;
+        await SettleJourneyDemandAsync(
+            demandId, JourneyDemandState.Unloaded, completedAt, cancellationToken).ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = transportDemandKey,
@@ -1156,27 +1159,42 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         await SuppressTransportDemandAsync(
             demand.TransportDemandKey, demandId, reasonCode, cancelledAt, cancellationToken)
             .ConfigureAwait(false);
-        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
-            .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
-        lease.ReleasedAt ??= cancelledAt;
+        JourneySettlement settlement = await SettleJourneyDemandAsync(
+            demandId, JourneyDemandState.Cancelled, cancelledAt, cancellationToken).ConfigureAwait(false);
         JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes
-            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+            .SingleOrDefaultAsync(row => row.JourneyId == settlement.JourneyId, cancellationToken)
+            .ConfigureAwait(false);
         if (runtime is not null)
         {
-            runtime.Stage = JourneyRuntimeStage.Completed;
+            // The sublot entry request this demand was the subject of is still an unanswered
+            // command, and nobody is going to answer it. Leaving it unsettled replays it into every
+            // later session, where the peer refuses it as a business id whose content changed and
+            // tears the session down -- the same failure the load command was settled for. This is
+            // per stop and per round: the next demand at the same stop asks again under its own id.
+            JourneyStopRow? stop = settlement.StopSequence is { } sequence
+                ? await dbContext.JourneyStops.SingleOrDefaultAsync(
+                    row => row.JourneyId == settlement.JourneyId && row.Sequence == sequence,
+                    cancellationToken).ConfigureAwait(false)
+                : null;
+            if (stop is not null && stop.LoadRound > 0)
+            {
+                string requestMessageId = SublotRequestId(stop.JourneyId, stop.Sequence, stop.LoadRound);
+                ProtocolOutboxRow? sublotRequest = await dbContext.ProtocolOutbox.SingleOrDefaultAsync(
+                    row => row.MessageId == requestMessageId, cancellationToken).ConfigureAwait(false);
+                if (sublotRequest is not null)
+                {
+                    sublotRequest.AcknowledgedAt ??= cancelledAt;
+                }
+            }
+            // Cancelling one demand does not end a journey that is still carrying others: the
+            // vehicle has their cargo on board and their stops ahead of it. The runtime decides on
+            // its next poll whether to keep loading here, move on, or head for the gate.
+            if (settlement.JourneyComplete)
+            {
+                runtime.Stage = JourneyRuntimeStage.Completed;
+            }
             runtime.BlockReasonCode = reasonCode;
             runtime.UpdatedAt = cancelledAt;
-            // The sublot entry request is still an unanswered command, and this journey is never
-            // going to answer it. Leaving it unsettled replays it into every later session, where
-            // the peer refuses it as a business id whose content changed and tears the session
-            // down -- the same failure the load command was settled for.
-            ProtocolOutboxRow? sublotRequest = await dbContext.ProtocolOutbox.SingleOrDefaultAsync(
-                row => row.MessageId == runtime.SublotRequestMessageId, cancellationToken)
-                .ConfigureAwait(false);
-            if (sublotRequest is not null)
-            {
-                sublotRequest.AcknowledgedAt ??= cancelledAt;
-            }
         }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return true;
@@ -1675,10 +1693,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             CommittedAt = result.ObservedAt
         });
         demand.Status = DemandExecutionStatus.Succeeded;
-        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
-            .SingleAsync(row => row.DemandId == result.DemandId, cancellationToken)
+        await SettleJourneyDemandAsync(
+            result.DemandId, JourneyDemandState.Unloaded, result.ObservedAt, cancellationToken)
             .ConfigureAwait(false);
-        lease.ReleasedAt ??= result.ObservedAt;
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = demand.TransportDemandKey,
@@ -2012,26 +2029,48 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.DispatchGeneration == intent.DispatchGeneration &&
         row.CreatedAt == intent.CreatedAt;
 
-    private static bool Matches(JourneyRuntimeRow row, JourneyExecutionPlan journey) =>
+    /// <summary>
+    /// Whether a persisted journey is the same journey the caller is replaying. The stop and demand
+    /// rows are part of the comparison because that is where the route, the slot reservation and the
+    /// legs live now -- comparing the runtime row alone would accept a replay that plans a different
+    /// itinerary for the same vehicle.
+    /// </summary>
+    private static bool Matches(
+        JourneyRuntimeRow row,
+        IReadOnlyCollection<JourneyStopRow> stops,
+        IReadOnlyCollection<JourneyDemandRow> demands,
+        JourneyExecutionPlan journey) =>
+        row.JourneyId == journey.JourneyId &&
         row.AgvId == journey.AgvId &&
         row.VehicleKey == journey.VehicleKey &&
         row.AgvLifecycleGeneration == journey.AgvLifecycleGeneration &&
         row.MapId == journey.MapId &&
         row.MapIdentity == journey.MapIdentity &&
         row.DispatchZone == journey.DispatchZone &&
-        row.RouteEvidenceId == journey.RouteEvidenceId &&
-        row.PickupStationId == journey.PickupStationId &&
-        row.PickupStationRiotId == journey.PickupStationRiotId &&
         row.GateStationId == journey.GateStationId &&
         row.GateStationRiotId == journey.GateStationRiotId &&
-        row.ExpectedBasketCount == journey.ExpectedBasketCount &&
-        (JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? []).SequenceEqual(journey.TargetSlots) &&
         row.OperationSessionId == journey.OperationSessionId &&
-        row.PickupMovementLegId == journey.PickupMovementLegId &&
-        row.PickupUpperId == journey.PickupUpperId &&
-        row.GateMovementLegId == journey.GateMovementLegId &&
-        row.GateUpperId == journey.GateUpperId &&
-        row.DispatchGeneration == journey.DispatchGeneration;
+        row.DispatchGeneration == journey.DispatchGeneration &&
+        stops.Count == journey.Stops.Count &&
+        journey.Stops.All(plan => stops.Any(stop => Matches(stop, plan))) &&
+        demands.Count == journey.Demands.Count &&
+        journey.Demands.All(plan => demands.Any(demand => Matches(demand, plan)));
+
+    private static bool Matches(JourneyStopRow row, JourneyStopPlan plan) =>
+        row.Sequence == plan.Sequence &&
+        row.Role == plan.Role &&
+        row.StationId == plan.StationId &&
+        row.StationRiotId == plan.StationRiotId &&
+        row.RouteEvidenceId == plan.RouteEvidenceId &&
+        row.MovementLegId == plan.MovementLegId &&
+        row.UpperId == plan.UpperId &&
+        row.LegType == plan.LegType;
+
+    private static bool Matches(JourneyDemandRow row, JourneyDemandPlan plan) =>
+        row.DemandId == plan.DemandId &&
+        row.StopSequence == plan.StopSequence &&
+        row.ExpectedBasketCount == plan.ExpectedBasketCount &&
+        (JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? []).SequenceEqual(plan.TargetSlots);
 
     /// <summary>
     /// Carries every snapshot revision on from the highest this vehicle has already published.
@@ -2044,6 +2083,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// server. A runtime row is created per demand and started every counter at 1, so the second
     /// journey on a vehicle re-published a revision Onboard had already adopted and had it refused
     /// as SNAPSHOT_REVISION_REGRESSION -- which raises a protocol problem and tears the session down.
+    ///
+    /// The journey's own revision fields are cursors, not counters: every stop takes the next value
+    /// from them as it publishes, so the highest value already stored is the highest ever published
+    /// and one past it is the first that is safe. That is why nothing is reserved per journey any
+    /// more -- a journey whose stop sequence grows would outrun any fixed reservation.
     /// </remarks>
     private async Task SeedSnapshotRevisionsAsync(
         JourneyRuntimeRow runtime,
@@ -2065,57 +2109,168 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             return;
         }
 
-        runtime.VehicleBusinessRevision = highest.VehicleBusiness + RevisionsPerJourney;
-        runtime.WorklistRevision = highest.Worklist + RevisionsPerJourney;
-        runtime.PlanRevision = highest.Plan + RevisionsPerJourney;
+        runtime.VehicleBusinessRevision = highest.VehicleBusiness + 1;
+        runtime.WorklistRevision = highest.Worklist + 1;
+        runtime.PlanRevision = highest.Plan + 1;
     }
 
-    private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)
+    /// <summary>
+    /// Records that one demand has reached its terminal state inside its journey, and releases the
+    /// vehicle if that was the last one the journey was still carrying.
+    /// </summary>
+    /// <remarks>
+    /// The lease belongs to the journey, so finishing one demand releases nothing while its siblings
+    /// are still loaded or waiting to load -- the vehicle is physically carrying them. Both facts are
+    /// written here, in this order, because a caller that set the state itself and then asked whether
+    /// any sibling remains would query the database and read its own unsaved change as the old value.
+    /// A demand accepted without a journey holds the lease under its own id and settles alone.
+    /// </remarks>
+    /// <summary>
+    /// Records that one demand reached its terminal state inside its journey, releasing the vehicle
+    /// only if it was the last one the journey carried. Returns whether the journey is now finished,
+    /// which the caller needs because the state just written is not yet in the database.
+    /// </summary>
+    /// <remarks>
+    /// Exposed for the recovery coordinator, which terminates demands from the peer's side and has
+    /// to reach the same conclusion about the lease as the runtime does. It does not save: the
+    /// coordinator writes this inside a larger unit of work.
+    /// </remarks>
+    public async Task<bool> SettleDemandInJourneyAsync(
+        string demandId,
+        JourneyDemandState terminalState,
+        DateTimeOffset at,
+        CancellationToken cancellationToken) =>
+        (await SettleJourneyDemandAsync(demandId, terminalState, at, cancellationToken)
+            .ConfigureAwait(false)).JourneyComplete;
+
+    private async Task<JourneySettlement> SettleJourneyDemandAsync(
+        string demandId,
+        JourneyDemandState terminalState,
+        DateTimeOffset at,
+        CancellationToken cancellationToken)
     {
-        string Id(string purpose) => DeterministicGuid($"{demandId}|{purpose}");
-        return new JourneyRuntimeRow
+        JourneyDemandRow? membership = await dbContext.JourneyDemands
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        string journeyId = membership?.JourneyId ?? demandId;
+        if (membership is not null)
         {
-            DemandId = demandId,
-            Stage = JourneyRuntimeStage.AwaitingPickupArrival,
-            AgvId = journey.AgvId,
-            VehicleKey = journey.VehicleKey,
-            AgvLifecycleGeneration = journey.AgvLifecycleGeneration,
-            MapId = journey.MapId,
-            MapIdentity = journey.MapIdentity,
-            DispatchZone = journey.DispatchZone,
-            RouteEvidenceId = journey.RouteEvidenceId,
-            PickupStationId = journey.PickupStationId,
-            PickupStationRiotId = journey.PickupStationRiotId,
-            GateStationId = journey.GateStationId,
-            GateStationRiotId = journey.GateStationRiotId,
-            ExpectedBasketCount = journey.ExpectedBasketCount,
-            TargetSlotsJson = JsonSerializer.Serialize(journey.TargetSlots),
-            OperationSessionId = journey.OperationSessionId,
-            PickupMovementLegId = journey.PickupMovementLegId,
-            PickupUpperId = journey.PickupUpperId,
-            GateMovementLegId = journey.GateMovementLegId,
-            GateUpperId = journey.GateUpperId,
-            DispatchGeneration = journey.DispatchGeneration,
-            VehicleBusinessRevision = 1,
-            WorklistRevision = 1,
-            PlanRevision = 1,
-            VehicleBusinessMessageId = Id("pickup-vehicle-state"),
-            WorklistMessageId = Id("pickup-worklist"),
-            PlanMessageId = Id("pickup-plan"),
-            SublotRequestMessageId = Id("pickup-sublot-request"),
-            LoadCommandMessageId = Id("load-command"),
-            LoadSlotOperationAttemptId = Id("load-attempt"),
-            PreDepartureSafetyCheckMessageId = Id("gate-safety-request"),
-            PreDepartureSafetyCheckId = Id("gate-safety-check"),
-            GateVehicleBusinessMessageId = Id("gate-vehicle-state"),
-            GateWorklistMessageId = Id("gate-worklist"),
-            GatePlanMessageId = Id("gate-plan"),
-            UnloadCommandMessageId = Id("unload-command"),
-            UnloadSlotOperationAttemptId = Id("unload-attempt"),
-            CreatedAt = journey.CreatedAt,
-            UpdatedAt = journey.CreatedAt
-        };
+            membership.State = terminalState;
+            bool siblingsOpen = await dbContext.JourneyDemands.AnyAsync(
+                row => row.JourneyId == journeyId &&
+                       row.DemandId != demandId &&
+                       (row.State == JourneyDemandState.Planned || row.State == JourneyDemandState.Loaded),
+                cancellationToken).ConfigureAwait(false);
+            if (siblingsOpen)
+            {
+                return new JourneySettlement(journeyId, membership.StopSequence, false);
+            }
+        }
+
+        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
+            .SingleAsync(row => row.JourneyId == journeyId, cancellationToken).ConfigureAwait(false);
+        lease.ReleasedAt ??= at;
+        return new JourneySettlement(journeyId, membership?.StopSequence, true);
     }
+
+    /// <summary>
+    /// The outcome of settling one demand: which journey it belonged to, the stop it was loading at,
+    /// and whether that was the last demand the journey carried. Callers need the last flag because
+    /// the state they just wrote is not yet in the database, so asking again would read the old
+    /// value.
+    /// </summary>
+    private sealed record JourneySettlement(string JourneyId, int? StopSequence, bool JourneyComplete);
+
+    private static JourneyRuntimeRow ToRuntimeRow(JourneyExecutionPlan journey) => new()
+    {
+        JourneyId = journey.JourneyId,
+        Stage = JourneyRuntimeStage.AwaitingPickupArrival,
+        AgvId = journey.AgvId,
+        VehicleKey = journey.VehicleKey,
+        AgvLifecycleGeneration = journey.AgvLifecycleGeneration,
+        MapId = journey.MapId,
+        MapIdentity = journey.MapIdentity,
+        DispatchZone = journey.DispatchZone,
+        GateStationId = journey.GateStationId,
+        GateStationRiotId = journey.GateStationRiotId,
+        OperationSessionId = journey.OperationSessionId,
+        DispatchGeneration = journey.DispatchGeneration,
+        CurrentStopSequence = journey.Stops.Min(stop => stop.Sequence),
+        VehicleBusinessRevision = 1,
+        WorklistRevision = 1,
+        PlanRevision = 1,
+        CreatedAt = journey.CreatedAt,
+        UpdatedAt = journey.CreatedAt
+    };
+
+    private static IEnumerable<JourneyStopRow> ToStopRows(
+        JourneyRuntimeRow runtime,
+        JourneyExecutionPlan journey) =>
+        journey.Stops.Select(stop => new JourneyStopRow
+        {
+            JourneyId = journey.JourneyId,
+            Sequence = stop.Sequence,
+            Role = stop.Role,
+            StationId = stop.StationId,
+            StationRiotId = stop.StationRiotId,
+            RouteEvidenceId = stop.RouteEvidenceId,
+            MovementLegId = stop.MovementLegId,
+            UpperId = stop.UpperId,
+            LegType = stop.LegType,
+            State = JourneyStopState.Planned,
+            // Left at zero until the stop actually publishes. The journey's cursors are what say
+            // which revision is next, and a stop that is planned but never reached must not consume
+            // one -- Onboard would then see the next stop's revision jump, which is allowed, but the
+            // gap would be indistinguishable from a snapshot it missed.
+            VehicleBusinessRevision = 0,
+            WorklistRevision = 0,
+            PlanRevision = 0,
+            VehicleBusinessMessageId = StopId(journey.JourneyId, stop.Sequence, "vehicle-state"),
+            PlanMessageId = StopId(journey.JourneyId, stop.Sequence, "plan"),
+            PreDepartureSafetyCheckMessageId = StopId(journey.JourneyId, stop.Sequence, "safety-request"),
+            PreDepartureSafetyCheckId = StopId(journey.JourneyId, stop.Sequence, "safety-check"),
+            LoadRound = 0,
+            CreatedAt = runtime.CreatedAt,
+            UpdatedAt = runtime.CreatedAt
+        });
+
+    private static IEnumerable<JourneyDemandRow> ToDemandRows(JourneyExecutionPlan journey) =>
+        journey.Demands.Select(demand => new JourneyDemandRow
+        {
+            JourneyId = journey.JourneyId,
+            DemandId = demand.DemandId,
+            StopSequence = demand.StopSequence,
+            ExpectedBasketCount = demand.ExpectedBasketCount,
+            TargetSlotsJson = JsonSerializer.Serialize(demand.TargetSlots),
+            LoadCommandMessageId = JourneyDemandId(journey.JourneyId, demand.DemandId, "load-command"),
+            LoadSlotOperationAttemptId = JourneyDemandId(journey.JourneyId, demand.DemandId, "load-attempt"),
+            UnloadCommandMessageId = JourneyDemandId(journey.JourneyId, demand.DemandId, "unload-command"),
+            UnloadSlotOperationAttemptId = JourneyDemandId(journey.JourneyId, demand.DemandId, "unload-attempt"),
+            State = JourneyDemandState.Planned,
+            CreatedAt = journey.CreatedAt
+        });
+
+    /// <summary>
+    /// The deterministic message and attempt ids a stop or a demand owns. They are derived from the
+    /// journey's identity rather than a demand's so that two demands loaded at one stop, and one
+    /// demand's two stops, cannot collide.
+    /// </summary>
+    public static string StopId(string journeyId, int sequence, string purpose) =>
+        DeterministicGuid($"{journeyId}|stop-{sequence}|{purpose}");
+
+    public static string JourneyDemandId(string journeyId, string demandId, string purpose) =>
+        DeterministicGuid($"{journeyId}|demand-{demandId}|{purpose}");
+
+    /// <summary>
+    /// The ids of one load round at a stop: the worklist it publishes and the entry request that
+    /// goes with it. A stop asks once per demand it still has to load, and the peer expires a
+    /// request when the worklist revision changes, so the round is what keeps the second ask from
+    /// reusing the first one's ids.
+    /// </summary>
+    public static string WorklistId(string journeyId, int sequence, int round) =>
+        DeterministicGuid($"{journeyId}|stop-{sequence}|worklist-{round}");
+
+    public static string SublotRequestId(string journeyId, int sequence, int round) =>
+        DeterministicGuid($"{journeyId}|stop-{sequence}|sublot-request-{round}");
 
     private static string DeterministicGuid(string value)
     {

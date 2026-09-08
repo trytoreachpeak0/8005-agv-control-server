@@ -177,6 +177,13 @@ public enum DemandExecutionStatus
     RecoveryRequired
 }
 
+/// <summary>
+/// What the journey is waiting for. The names still say PICKUP and GATE because that is what the
+/// vehicle is driving to, but neither names a fixed leg any more: a journey visits a sequence of
+/// stops, and <see cref="JourneyStopRole"/> on the current stop decides which of the two applies.
+/// <see cref="AwaitingPickupArrival"/> is therefore reached once per pickup stop, not once per
+/// journey.
+/// </summary>
 public enum JourneyRuntimeStage
 {
     AwaitingPickupArrival,
@@ -187,6 +194,40 @@ public enum JourneyRuntimeStage
     AwaitingUnloadResult,
     Completed,
     Blocked
+}
+
+/// <summary>
+/// What a stop is for. Stored as text on the stop row rather than as an enum conversion because it
+/// is also the protocol's own <c>stopRole</c> value and travels onto the wire unchanged.
+/// </summary>
+public static class JourneyStopRole
+{
+    public const string Pickup = "PICKUP";
+    public const string Gate = "GATE";
+}
+
+/// <summary>
+/// What a stop's movement leg is doing. Mirrors the protocol's leg state enum, minus the two states
+/// the server never assigns.
+/// </summary>
+public static class JourneyStopState
+{
+    public const string Planned = "PLANNED";
+    public const string Arrived = "ARRIVED";
+    public const string Completed = "COMPLETED";
+}
+
+/// <summary>
+/// How far one demand has got inside its journey. A journey ends when every demand it carries is
+/// <see cref="Unloaded"/> or <see cref="Cancelled"/>; a demand that is <see cref="Loaded"/> is
+/// physically on the vehicle, which is what starts the holding clock.
+/// </summary>
+public enum JourneyDemandState
+{
+    Planned,
+    Loaded,
+    Unloaded,
+    Cancelled
 }
 
 /// <summary>
@@ -202,27 +243,56 @@ public enum AutoChargingStage
     Completed
 }
 
+/// <summary>
+/// One journey: the vehicle and map identity it is bound to, plus the stops it visits in order and
+/// the demands it carries. The identity is the journey's own, not a demand's -- ADR-cross-0057 --
+/// so a journey can carry several demands and visit several pickup stops before the gate.
+/// </summary>
+/// <remarks>
+/// This describes the journey at the moment it is created. The stop sequence grows afterwards, as
+/// further demands are picked up on the way, and the loading phase ends on whichever of "full" or
+/// "holding timeout" comes first; neither is expressible here.
+/// </remarks>
 public sealed record JourneyExecutionPlan(
+    string JourneyId,
     string AgvId,
     string VehicleKey,
     long AgvLifecycleGeneration,
     int MapId,
     string MapIdentity,
     string DispatchZone,
-    string RouteEvidenceId,
-    string PickupStationId,
-    int PickupStationRiotId,
     string GateStationId,
     int GateStationRiotId,
-    int ExpectedBasketCount,
-    IReadOnlyList<int> TargetSlots,
     string OperationSessionId,
-    string PickupMovementLegId,
-    string PickupUpperId,
-    string GateMovementLegId,
-    string GateUpperId,
     long DispatchGeneration,
+    IReadOnlyList<JourneyStopPlan> Stops,
+    IReadOnlyList<JourneyDemandPlan> Demands,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// One stop in a journey's sequence. <see cref="Role"/> says what happens there -- loading at a
+/// pickup stop, unloading at the gate -- and is what the stage handlers key on now that the two
+/// are no longer one hard-coded leg each.
+/// </summary>
+public sealed record JourneyStopPlan(
+    int Sequence,
+    string Role,
+    string StationId,
+    int StationRiotId,
+    string RouteEvidenceId,
+    string MovementLegId,
+    string UpperId,
+    string LegType);
+
+/// <summary>
+/// One demand carried by a journey, bound to the stop it is loaded at. The slot reservation is per
+/// demand because a demand has to fit its whole basket count in one go to be worth loading at all.
+/// </summary>
+public sealed record JourneyDemandPlan(
+    string DemandId,
+    int StopSequence,
+    int ExpectedBasketCount,
+    IReadOnlyList<int> TargetSlots);
 
 public enum ConnectionRecoveryStatus
 {

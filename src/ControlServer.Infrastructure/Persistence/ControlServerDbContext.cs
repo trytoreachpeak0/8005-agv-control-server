@@ -29,6 +29,8 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<RecoveryResultEvidenceRow> RecoveryResultEvidence => Set<RecoveryResultEvidenceRow>();
     public DbSet<JourneyBacklogRow> JourneyBacklog => Set<JourneyBacklogRow>();
     public DbSet<JourneyRuntimeRow> JourneyRuntimes => Set<JourneyRuntimeRow>();
+    public DbSet<JourneyStopRow> JourneyStops => Set<JourneyStopRow>();
+    public DbSet<JourneyDemandRow> JourneyDemands => Set<JourneyDemandRow>();
     public DbSet<AutoChargingRunRow> AutoChargingRuns => Set<AutoChargingRunRow>();
     public DbSet<TransportDemandSuppressionRow> TransportDemandSuppressions =>
         Set<TransportDemandSuppressionRow>();
@@ -44,7 +46,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<AcceptedDemandRow>().HasIndex(row => row.TransportDemandKey).IsUnique();
         modelBuilder.Entity<AcceptedDemandRow>().Property(row => row.Status).HasConversion<string>();
-        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasKey(row => row.DemandId);
+        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasKey(row => row.JourneyId);
         modelBuilder.Entity<VehicleDispatchLeaseRow>()
             .HasIndex(row => row.VehicleKey)
             .IsUnique()
@@ -112,8 +114,18 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<RecoveryResultEvidenceRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<JourneyBacklogRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<JourneyBacklogRow>().HasIndex(row => row.TransportDemandKey);
-        modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.DemandId);
+        modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.JourneyId);
         modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Stage).HasConversion<string>();
+        modelBuilder.Entity<JourneyStopRow>().HasKey(row => new { row.JourneyId, row.Sequence });
+        modelBuilder.Entity<JourneyStopRow>().HasIndex(row => row.UpperId).IsUnique();
+        modelBuilder.Entity<JourneyStopRow>().HasIndex(row => row.MovementLegId).IsUnique();
+        // A demand belongs to at most one journey, ever. The unique index says so rather than
+        // leaving it to the callers that look a demand's journey up.
+        modelBuilder.Entity<JourneyDemandRow>().HasKey(row => new { row.JourneyId, row.DemandId });
+        modelBuilder.Entity<JourneyDemandRow>().HasIndex(row => row.DemandId).IsUnique();
+        modelBuilder.Entity<JourneyDemandRow>().HasIndex(row => row.LoadSlotOperationAttemptId).IsUnique();
+        modelBuilder.Entity<JourneyDemandRow>().HasIndex(row => row.UnloadSlotOperationAttemptId).IsUnique();
+        modelBuilder.Entity<JourneyDemandRow>().Property(row => row.State).HasConversion<string>();
         modelBuilder.Entity<TransportDemandSuppressionRow>().HasKey(row => row.TransportDemandKey);
         modelBuilder.Entity<AutoChargingRunRow>().HasKey(row => row.ChargingRunId);
         modelBuilder.Entity<AutoChargingRunRow>().HasIndex(row => row.UpperId).IsUnique();
@@ -154,9 +166,19 @@ public sealed class AcceptedDemandRow
     public DemandExecutionStatus Status { get; set; }
 }
 
+/// <summary>
+/// The exclusive hold one journey has on one vehicle. It is keyed on the journey, not on a demand:
+/// a journey carrying several demands holds the vehicle once, and finishing one of those demands
+/// does not release it -- the vehicle is still carrying the others.
+/// </summary>
+/// <remarks>
+/// The path that accepts a demand without planning a journey has no journey identity to use, so it
+/// degenerates to the demand's own id. That is the same degenerate form the migration gives the
+/// single-demand journeys that predate ADR-cross-0057.
+/// </remarks>
 public sealed class VehicleDispatchLeaseRow
 {
-    public required string DemandId { get; set; }
+    public required string JourneyId { get; set; }
     public required string VehicleKey { get; set; }
     public DateTimeOffset AcquiredAt { get; set; }
     public DateTimeOffset? ReleasedAt { get; set; }
@@ -453,9 +475,16 @@ public sealed class JourneyBacklogRow
     public DateTimeOffset? AcceptedAt { get; set; }
 }
 
+/// <summary>
+/// One journey, keyed on its own identity rather than on a demand's. A journey carries a sequence
+/// of <see cref="JourneyStopRow"/> and, at those stops, several <see cref="JourneyDemandRow"/> --
+/// which is what ADR-cross-0057 restores after the MVP froze "one demand, two legs" into the
+/// schema. Everything that belongs to one stop or one demand now lives on those rows; what stays
+/// here is what the whole journey shares.
+/// </summary>
 public sealed class JourneyRuntimeRow
 {
-    public required string DemandId { get; set; }
+    public required string JourneyId { get; set; }
     public JourneyRuntimeStage Stage { get; set; }
     public required string AgvId { get; set; }
     public required string VehicleKey { get; set; }
@@ -463,46 +492,124 @@ public sealed class JourneyRuntimeRow
     public int MapId { get; set; }
     public required string MapIdentity { get; set; }
     public required string DispatchZone { get; set; }
-    public required string RouteEvidenceId { get; set; }
-    public required string PickupStationId { get; set; }
-    public int PickupStationRiotId { get; set; }
     public required string GateStationId { get; set; }
     public int GateStationRiotId { get; set; }
-    public int ExpectedBasketCount { get; set; }
-    public required string TargetSlotsJson { get; set; }
     public required string OperationSessionId { get; set; }
-    public required string PickupMovementLegId { get; set; }
-    public required string PickupUpperId { get; set; }
-    public required string GateMovementLegId { get; set; }
-    public required string GateUpperId { get; set; }
     public long DispatchGeneration { get; set; }
+    /// <summary>Which stop in the sequence the journey is at, or driving to.</summary>
+    public int CurrentStopSequence { get; set; }
+    /// <summary>
+    /// The stop the journey is leaving for, set while it waits for the pre-departure safety check
+    /// that authorizes the move. It stays separate from <see cref="CurrentStopSequence"/> because
+    /// the check belongs to the stop being left -- its check id is that stop's -- and moving the
+    /// cursor first would look the wrong id up.
+    /// </summary>
+    public int? NextStopSequence { get; set; }
+    /// <summary>
+    /// The highest snapshot revision this journey has published, per snapshot type. Onboard journals
+    /// the adopted revision keyed on the message type alone and refuses one that does not advance,
+    /// so these are cursors carried on from the vehicle's previous journey rather than counters that
+    /// restart. Every stop takes its own revision from here and advances it.
+    /// </summary>
+    public long VehicleBusinessRevision { get; set; }
+    public long WorklistRevision { get; set; }
+    public long PlanRevision { get; set; }
+    /// <summary>
+    /// When the first LoadBatch on this journey closed safely, which is when the holding clock
+    /// starts (ADR-cross-0057). Not acceptance and not first arrival: before cargo is physically on
+    /// the vehicle there is no holding risk, and a stop with nothing to load is
+    /// ADR-cross-0055's business, not this one's. Null while the vehicle is empty.
+    /// </summary>
+    public DateTimeOffset? HoldingStartedAt { get; set; }
+    /// <summary>
+    /// Set once the loading phase has ended -- full, or held too long -- so that no further demand
+    /// joins the journey even if the vehicle passes another eligible stop on the way to the gate.
+    /// </summary>
+    public string? LoadingClosedReason { get; set; }
+    public string? BlockReasonCode { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// One stop in a journey's sequence: where the vehicle goes, the movement leg that takes it there,
+/// and the snapshots published on arrival. Each stop publishes its own worklist, plan and vehicle
+/// state at its own revision -- the peer keys a snapshot's identity on type and revision, so two
+/// stops sharing one revision would be refused as a revision whose content changed.
+/// </summary>
+public sealed class JourneyStopRow
+{
+    public required string JourneyId { get; set; }
+    public int Sequence { get; set; }
+    public required string Role { get; set; }
+    public required string StationId { get; set; }
+    public int StationRiotId { get; set; }
+    public required string RouteEvidenceId { get; set; }
+    public required string MovementLegId { get; set; }
+    public required string UpperId { get; set; }
+    public required string LegType { get; set; }
+    public required string State { get; set; }
     public long VehicleBusinessRevision { get; set; }
     public long WorklistRevision { get; set; }
     public long PlanRevision { get; set; }
     public required string VehicleBusinessMessageId { get; set; }
-    public required string WorklistMessageId { get; set; }
     public required string PlanMessageId { get; set; }
-    public required string SublotRequestMessageId { get; set; }
-    public required string LoadCommandMessageId { get; set; }
-    public required string LoadSlotOperationAttemptId { get; set; }
     public required string PreDepartureSafetyCheckMessageId { get; set; }
     public required string PreDepartureSafetyCheckId { get; set; }
-    public required string GateVehicleBusinessMessageId { get; set; }
-    public required string GateWorklistMessageId { get; set; }
-    public required string GatePlanMessageId { get; set; }
-    public required string UnloadCommandMessageId { get; set; }
-    public required string UnloadSlotOperationAttemptId { get; set; }
-    public string? ConsumedSublotMessageId { get; set; }
+    /// <summary>
+    /// How many times this stop has published a worklist and asked the operator to enter a sublot.
+    /// One stop can serve several demands, and each load ends the request that produced it -- the
+    /// peer expires an entry request when the worklist revision changes -- so the next demand needs
+    /// a fresh worklist and a fresh request, each with its own messageId. The round is what makes
+    /// those ids deterministic, which is what lets an unacknowledged one be replayed.
+    /// </summary>
+    public int LoadRound { get; set; }
     public string? ConsumedSafetyResultMessageId { get; set; }
     /// <summary>
-    /// When the journey began waiting for an operator to enter a sublot at the pickup stop.
-    /// <see cref="UpdatedAt"/> cannot serve: a later poll rewriting the same block reason moves it,
-    /// which would restart the wait clock every iteration and make the timeout unreachable.
+    /// When this stop began waiting for an operator to enter a sublot. <see cref="UpdatedAt"/>
+    /// cannot serve: a later poll rewriting the same block reason moves it, which would restart the
+    /// wait clock every iteration and make the timeout unreachable. It is per stop because
+    /// ADR-cross-0055 recomputes the station wait after every LoadBatch closes, unlike the journey's
+    /// holding clock, which runs down once.
     /// </summary>
     public DateTimeOffset? SublotWaitStartedAt { get; set; }
-    public string? BlockReasonCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// One demand carried by a journey, bound to the stop it loads at. The slot reservation, the load
+/// and unload commands and the operator's entry all belong here rather than to the journey, which
+/// is the whole point of ADR-cross-0057: a journey carries several of these at once.
+/// </summary>
+public sealed class JourneyDemandRow
+{
+    public required string JourneyId { get; set; }
+    public required string DemandId { get; set; }
+    public int StopSequence { get; set; }
+    public int ExpectedBasketCount { get; set; }
+    public required string TargetSlotsJson { get; set; }
+    public required string LoadCommandMessageId { get; set; }
+    public required string LoadSlotOperationAttemptId { get; set; }
+    public required string UnloadCommandMessageId { get; set; }
+    public required string UnloadSlotOperationAttemptId { get; set; }
+    /// <summary>
+    /// The submission this demand has already judged. A refused entry stays in the inbox, so without
+    /// this every poll would re-run the remote recount and re-send the same refusal.
+    /// </summary>
+    public string? ConsumedSublotMessageId { get; set; }
+    /// <summary>
+    /// When each slot operation was commanded for this demand. They say which of a stop's demands
+    /// the runtime is currently waiting on, which <see cref="State"/> cannot: the operator decides
+    /// which pending demand loads next by what they scan, so it is not the first one; and the unload
+    /// result moves the state to <see cref="JourneyDemandState.Unloaded"/> from the message handler,
+    /// so by the time the runtime looks, the demand it was waiting on no longer stands out.
+    /// </summary>
+    public DateTimeOffset? LoadCommandedAt { get; set; }
+    public DateTimeOffset? UnloadCommandedAt { get; set; }
+    public JourneyDemandState State { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? LoadedAt { get; set; }
 }
 
 /// <summary>

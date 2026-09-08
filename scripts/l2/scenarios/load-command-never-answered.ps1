@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 
 <#
 装载指令根本不被应答：旅程停在 AwaitingLoadResult，而且**不进 Blocked**。
@@ -44,8 +44,7 @@ $sublot = "L2-SUBLOT-$($Context.RunId)"
 
 function Get-Runtime {
     # HasConversion<string>：这些列存的是枚举成员名，按序数读会抛异常。
-    $rows = Invoke-L2Query -Connection $connection `
-        -Sql "SELECT Stage, BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $demandId
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }

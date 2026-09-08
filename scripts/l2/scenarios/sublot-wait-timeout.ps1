@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 
 <#
 到站没人扫码：等待窗口到期，旅程自己终结，车去接下一单。
@@ -35,15 +35,13 @@ function Test-L2Null($value) {
 }
 
 function Get-Stage([string]$demandId) {
-    $rows = Invoke-L2Query -Connection $connection `
-        -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $demandId
     if ($rows.Count -eq 0) { return $null }
     return [string]$rows[0].Stage
 }
 
 function Get-Runtime([string]$demandId) {
-    $rows = Invoke-L2Query -Connection $connection `
-        -Sql "SELECT * FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $demandId
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }
@@ -155,7 +153,8 @@ $assertions.Add(
     'Cancelled', $(if ($demandRows.Count -eq 1) { [string]$demandRows[0].Status } else { '(no demand row)' }))
 
 $leaseRows = Invoke-L2Query -Connection $connection `
-    -Sql "SELECT ReleasedAt FROM VehicleDispatchLeases WHERE DemandId = '$firstId'"
+    -Sql "SELECT ReleasedAt FROM VehicleDispatchLeases WHERE JourneyId = (
+        SELECT JourneyId FROM JourneyDemands WHERE DemandId = '$firstId')"
 $assertions.Add(
     'L2-TO-07', '车辆调度租约已释放',
     ($leaseRows.Count -eq 1 -and -not (Test-L2Null $leaseRows[0].ReleasedAt)),

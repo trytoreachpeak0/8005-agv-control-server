@@ -1,4 +1,4 @@
-using ControlServer.Domain;
+﻿using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -130,7 +130,7 @@ public sealed class DemandAcceptanceAtomicityTests
         VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
             .AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
-        Assert.Equal("D-001", lease.DemandId);
+        Assert.Equal("D-001", lease.JourneyId);
         Assert.Equal("AGV-8005-01", lease.VehicleKey);
         Assert.Null(lease.ReleasedAt);
     }

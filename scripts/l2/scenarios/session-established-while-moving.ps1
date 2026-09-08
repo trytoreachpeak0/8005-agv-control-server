@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 
 <#
 车辆运动中建立会话，随后停稳。
@@ -42,7 +42,7 @@ $sublot = "L2-SUBLOT-$($Context.RunId)"
 
 function Get-Stage {
     # HasConversion<string>: the column holds the member name, and reading it as an ordinal throws.
-    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $demandId
     if ($rows.Count -eq 0) { return $null }
     return [string]$rows[0].Stage
 }

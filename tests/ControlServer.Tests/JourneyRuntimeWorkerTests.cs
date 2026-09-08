@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -36,7 +36,7 @@ public sealed class JourneyRuntimeWorkerTests
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, runtime.Stage);
         Assert.Equal(2, runtime.ExpectedBasketCount);
         Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_PICKUP"));
@@ -209,7 +209,7 @@ public sealed class JourneyRuntimeWorkerTests
         await fixture.RecreateEngineAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        JourneyRuntimeRow accepted = await fixture.RuntimeAsync(next.DemandId);
+        SingleDemandJourneyView accepted = await fixture.RuntimeAsync(next.DemandId);
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, accepted.Stage);
         Assert.Equal("ACCEPTED", (await fixture.BacklogAsync(next.DemandId)).ReasonCode);
         Assert.Equal(
@@ -283,7 +283,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.BoxCounts.Set("SUBLOT-002", 4);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        JourneyRuntimeRow second = await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002");
+        SingleDemandJourneyView second = await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002");
         fixture.Riot.SetSuccessfulArrival("TO_PICKUP", second.PickupUpperId, second.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = second.PickupStationRiotId };
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -450,7 +450,7 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         await IterateAsync();
-        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
         fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
         await IterateAsync();
@@ -533,7 +533,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
-        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        SingleDemandJourneyView runtime = await fixture.AdvanceToDepartureSafetyAsync();
 
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
         string[] stillPending = await fixture.Context.ProtocolOutbox
@@ -562,7 +562,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
-        JourneyRuntimeRow runtime = await fixture.RunToCompletionAsync();
+        SingleDemandJourneyView runtime = await fixture.RunToCompletionAsync();
 
         Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
         string[] stillPending = await fixture.PendingOutboxMessageIdsAsync();
@@ -622,7 +622,7 @@ public sealed class JourneyRuntimeWorkerTests
                 root.GetProperty("payload").GetProperty("preDepartureSafetyCheckId").GetString());
         };
 
-        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        SingleDemandJourneyView runtime = await fixture.AdvanceToDepartureSafetyAsync();
 
         Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, runtime.Stage);
         Assert.Null(runtime.BlockReasonCode);
@@ -766,7 +766,7 @@ public sealed class JourneyRuntimeWorkerTests
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         AcceptedDemandRow accepted = await fixture.DemandRowAsync();
-        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
         OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(
             row => row.Purpose == "TO_PICKUP",
             TestContext.Current.CancellationToken);
@@ -852,7 +852,7 @@ public sealed class JourneyRuntimeWorkerTests
             Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
         fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
         await fixture.AddSafetyStateChangedAsync(8, departureSafe: true, vehicleStopped: false);
@@ -889,14 +889,14 @@ public sealed class JourneyRuntimeWorkerTests
             await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        JourneyRuntimeRow blocked = await fixture.RuntimeAsync();
+        SingleDemandJourneyView blocked = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.Blocked, blocked.Stage);
         Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", blocked.BlockReasonCode);
 
         await fixture.DropOnboardSessionAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        JourneyRuntimeRow afterDrop = await fixture.RuntimeAsync();
+        SingleDemandJourneyView afterDrop = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.Blocked, afterDrop.Stage);
         Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", afterDrop.BlockReasonCode);
     }
@@ -935,7 +935,7 @@ public sealed class JourneyRuntimeWorkerTests
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        JourneyRuntimeRow blocked = await fixture.RuntimeAsync();
+        SingleDemandJourneyView blocked = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.Blocked, blocked.Stage);
         Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", blocked.BlockReasonCode);
     }
@@ -1111,7 +1111,7 @@ public sealed class JourneyRuntimeWorkerTests
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
         OrderIntentRow pickup = await fixture.Context.OrderIntents.SingleAsync(
             row => row.Purpose == "TO_PICKUP", TestContext.Current.CancellationToken);
         Assert.Equal(expectedStationName, runtime.PickupStationId);
@@ -1336,10 +1336,10 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.BoxCounts.Set("SUBLOT-001", 4);
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        SingleDemandJourneyView before = await fixture.RuntimeAsync();
         await fixture.RecreateEngineAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        SingleDemandJourneyView after = await fixture.RuntimeAsync();
 
         Assert.Equal(before.DemandId, after.DemandId);
         Assert.Equal(before.PickupMovementLegId, after.PickupMovementLegId);
@@ -1362,14 +1362,14 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Riot.LoseNextCreateResponse = true;
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-        JourneyRuntimeRow before = await fixture.RuntimeAsync();
+        SingleDemandJourneyView before = await fixture.RuntimeAsync();
         Assert.Equal("RESULT_UNKNOWN", (await fixture.Context.OrderIntents.SingleAsync(
             TestContext.Current.CancellationToken)).Status);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
 
         await fixture.RecreateEngineAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-        JourneyRuntimeRow after = await fixture.RuntimeAsync();
+        SingleDemandJourneyView after = await fixture.RuntimeAsync();
         OrderIntentRow reconciled = await fixture.Context.OrderIntents.SingleAsync(
             TestContext.Current.CancellationToken);
 
@@ -1424,7 +1424,7 @@ public sealed class JourneyRuntimeWorkerTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-        JourneyRuntimeRow initialRuntime = await fixture.RuntimeAsync();
+        SingleDemandJourneyView initialRuntime = await fixture.RuntimeAsync();
         fixture.Riot.SetSuccessfulArrival("TO_PICKUP", initialRuntime.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = initialRuntime.PickupStationRiotId };
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -1461,7 +1461,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 4);
-        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        SingleDemandJourneyView runtime = await fixture.AdvanceToDepartureSafetyAsync();
         await fixture.AddInboxAsync(
             Guid.NewGuid().ToString("D"),
             "PreDepartureSafetyCheckResult",
@@ -1499,7 +1499,7 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task APickupStopWithNothingToLoadEndsTheDemandWhenTheSublotWaitExpiresAndFreesTheVehicle()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
         Assert.Equal(Now, runtime.SublotWaitStartedAt);
@@ -1547,7 +1547,7 @@ public sealed class JourneyRuntimeWorkerTests
             .SingleAsync(row => row.DemandId == "10000000-0000-4000-8000-000000000002",
                 TestContext.Current.CancellationToken);
         Assert.Equal("ACCEPTED", nextBacklog.ReasonCode);
-        JourneyRuntimeRow second = await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002");
+        SingleDemandJourneyView second = await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002");
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, second.Stage);
     }
 
@@ -1556,7 +1556,7 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task TheSublotWaitTimeoutStopsApplyingOnceTheLoadIsUnderway()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
         await fixture.SubmitSublotAsync(runtime, "SUBLOT-001");
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -1579,7 +1579,7 @@ public sealed class JourneyRuntimeWorkerTests
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Options.SublotWaitTimeout = TimeSpan.Zero;
-        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
 
@@ -1655,7 +1655,7 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(80, run.ReleasedAtBatteryPercent);
         // The vehicle stays plugged in and keeps reporting CHARGING; the resume level is what ends
         // the refusal, so the waiting demand is taken in this very iteration.
-        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        SingleDemandJourneyView journey = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, journey.Stage);
         Assert.Equal("CHARGING", fixture.Riot.Vehicle.BatteryState);
     }
@@ -1732,7 +1732,7 @@ public sealed class JourneyRuntimeWorkerTests
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.EnableAutoCharging();
-        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
 
@@ -1770,7 +1770,7 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task ACancelledDemandStaysBarredWhenMesIngestReissuesItUnderANewDemandId()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
 
@@ -1800,7 +1800,7 @@ public sealed class JourneyRuntimeWorkerTests
             .SingleAsync(row => row.DemandId == "10000000-0000-4000-8000-000000000009",
                 TestContext.Current.CancellationToken);
         Assert.Equal("TRANSPORT_DEMAND_SUPPRESSED", backlog.ReasonCode);
-        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+        Assert.Empty(await fixture.Context.JourneyDemands.AsNoTracking()
             .Where(row => row.DemandId == "10000000-0000-4000-8000-000000000009")
             .ToArrayAsync(TestContext.Current.CancellationToken));
         // A different SUBLOT under the same work type is a different business key and is unaffected.
@@ -1858,7 +1858,7 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task ASublotWhosePackageLostItsCapacityIsRefusedWithTheRealReasonAndOpensNoSlot()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
 
         // The capacity table is a server-side rule table an operator maintains, and it can change
@@ -1914,7 +1914,7 @@ public sealed class JourneyRuntimeWorkerTests
     public async Task ASublotWhoseBoxCountGrewSinceDispatchIsRefusedRatherThanLoadedIntoTooFewSlots()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
-        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
         Assert.Equal(2, runtime.ExpectedBasketCount);
 
@@ -2064,14 +2064,14 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         /// <summary>Carries the journey to the point where the load command is outstanding.</summary>
-        public async Task<JourneyRuntimeRow> AdvanceToLoadResultAsync()
+        public async Task<SingleDemandJourneyView> AdvanceToLoadResultAsync()
         {
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-            JourneyRuntimeRow pickupRuntime = await RuntimeAsync();
+            SingleDemandJourneyView pickupRuntime = await RuntimeAsync();
             Riot.SetSuccessfulArrival("TO_PICKUP", pickupRuntime.PickupStationRiotId);
             Riot.Vehicle = Riot.Vehicle with { CurrentStationId = pickupRuntime.PickupStationRiotId };
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-            JourneyRuntimeRow runtime = await RuntimeAsync();
+            SingleDemandJourneyView runtime = await RuntimeAsync();
             await AddInboxAsync(
                 Guid.NewGuid().ToString("D"),
                 "SublotSubmitted",
@@ -2094,7 +2094,7 @@ public sealed class JourneyRuntimeWorkerTests
             return await RuntimeAsync();
         }
 
-        public async Task<JourneyRuntimeRow> AdvanceToDepartureSafetyAsync()
+        public async Task<SingleDemandJourneyView> AdvanceToDepartureSafetyAsync()
         {
             await AdvanceToLoadResultAsync();
             StationOperationRow load = await OperationAsync(SlotOperationType.Load);
@@ -2104,9 +2104,9 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         /// <summary>Carries the journey on to the gate, where the unload command is issued.</summary>
-        public async Task<JourneyRuntimeRow> RunToGateUnloadAsync()
+        public async Task<SingleDemandJourneyView> RunToGateUnloadAsync()
         {
-            JourneyRuntimeRow runtime = await AdvanceToDepartureSafetyAsync();
+            SingleDemandJourneyView runtime = await AdvanceToDepartureSafetyAsync();
             await AddInboxAsync(
                 Guid.NewGuid().ToString("D"),
                 "PreDepartureSafetyCheckResult",
@@ -2136,7 +2136,7 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         /// <summary>Carries the journey through the unload result to atomic completion.</summary>
-        public async Task<JourneyRuntimeRow> RunToCompletionAsync()
+        public async Task<SingleDemandJourneyView> RunToCompletionAsync()
         {
             await RunToGateUnloadAsync();
             StationOperationRow unload = await OperationAsync(SlotOperationType.Unload);
@@ -2305,19 +2305,19 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         /// <summary>Carries the journey to the pickup stop, waiting for an operator to enter a sublot.</summary>
-        public async Task<JourneyRuntimeRow> AdvanceToSublotWaitAsync(string demandId, string sublot)
+        public async Task<SingleDemandJourneyView> AdvanceToSublotWaitAsync(string demandId, string sublot)
         {
             Catalog.Set(Demand(demandId, sublot, createdAt: Clock.GetUtcNow().AddMinutes(-10)));
             BoxCounts.Set(sublot, 7);
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
-            JourneyRuntimeRow pickup = await RuntimeAsync(demandId);
+            SingleDemandJourneyView pickup = await RuntimeAsync(demandId);
             Riot.SetSuccessfulArrival("TO_PICKUP", pickup.PickupUpperId, pickup.PickupStationRiotId);
             Riot.Vehicle = Riot.Vehicle with { CurrentStationId = pickup.PickupStationRiotId };
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             return await RuntimeAsync(demandId);
         }
 
-        public async Task SubmitSublotAsync(JourneyRuntimeRow runtime, string sublot) =>
+        public async Task SubmitSublotAsync(SingleDemandJourneyView runtime, string sublot) =>
             await AddInboxAsync(
                 Guid.NewGuid().ToString("D"),
                 "SublotSubmitted",
@@ -2419,13 +2419,35 @@ public sealed class JourneyRuntimeWorkerTests
             .AsNoTracking()
             .SingleAsync(TestContext.Current.CancellationToken);
 
-        public Task<JourneyRuntimeRow> RuntimeAsync() => Context.JourneyRuntimes
-            .AsNoTracking()
-            .SingleAsync(TestContext.Current.CancellationToken);
+        public async Task<SingleDemandJourneyView> RuntimeAsync()
+        {
+            JourneyRuntimeRow runtime = await Context.JourneyRuntimes
+                .AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken);
+            return await ViewAsync(runtime);
+        }
 
-        public Task<JourneyRuntimeRow> RuntimeAsync(string demandId) => Context.JourneyRuntimes
-            .AsNoTracking()
-            .SingleAsync(row => row.DemandId == demandId, TestContext.Current.CancellationToken);
+        public async Task<SingleDemandJourneyView> RuntimeAsync(string demandId)
+        {
+            JourneyDemandRow membership = await Context.JourneyDemands
+                .AsNoTracking()
+                .SingleAsync(row => row.DemandId == demandId, TestContext.Current.CancellationToken);
+            JourneyRuntimeRow runtime = await Context.JourneyRuntimes
+                .AsNoTracking()
+                .SingleAsync(row => row.JourneyId == membership.JourneyId, TestContext.Current.CancellationToken);
+            return await ViewAsync(runtime);
+        }
+
+        private async Task<SingleDemandJourneyView> ViewAsync(JourneyRuntimeRow runtime) => new(
+            runtime,
+            await Context.JourneyStops
+                .AsNoTracking()
+                .Where(row => row.JourneyId == runtime.JourneyId)
+                .ToArrayAsync(TestContext.Current.CancellationToken),
+            await Context.JourneyDemands
+                .AsNoTracking()
+                .Where(row => row.JourneyId == runtime.JourneyId)
+                .ToArrayAsync(TestContext.Current.CancellationToken));
 
         public Task<AcceptedDemandRow> DemandRowAsync() => Context.AcceptedDemands
             .AsNoTracking()
@@ -2465,7 +2487,7 @@ public sealed class JourneyRuntimeWorkerTests
             object payload,
             string? correlationId = null)
         {
-            JourneyRuntimeRow runtime = await RuntimeAsync();
+            SingleDemandJourneyView runtime = await RuntimeAsync();
             string json = JsonSerializer.Serialize(new
             {
                 protocolVersion = 1,
@@ -2793,6 +2815,7 @@ public sealed class JourneyRuntimeWorkerTests
         private readonly JourneyRuntimeOptions _options;
         private readonly FixedTimeProvider _clock;
         private readonly Dictionary<string, int> _creates = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _upperIds = new(StringComparer.Ordinal);
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
         private RiotMapStation[] _mapStations =
         [
@@ -2846,6 +2869,15 @@ public sealed class JourneyRuntimeWorkerTests
             SetSuccessfulArrival(purpose, UpperId(purpose), stationId);
 
         /// <summary>
+        /// The upperId of the last order created for a purpose. It used to be a literal built from
+        /// the demand id; since ADR-cross-0057 an upperId names the journey and the stop, so the
+        /// only way to know it is to have seen the order go out.
+        /// </summary>
+        private string UpperId(string purpose) => _upperIds.TryGetValue(purpose, out string? upperId)
+            ? upperId
+            : throw new InvalidOperationException($"No order has been created for '{purpose}' yet.");
+
+        /// <summary>
         /// Takes the upperId from the runtime row, which is the only way to reach a journey whose
         /// demand is not the one <see cref="UpperId"/> hardcodes.
         /// </summary>
@@ -2880,6 +2912,7 @@ public sealed class JourneyRuntimeWorkerTests
         {
             _ = cancellationToken;
             _creates[intent.Purpose] = CreateCount(intent.Purpose) + 1;
+            _upperIds[intent.Purpose] = intent.UpperId;
             RiotOrderObservation active = new(
                 intent.UpperId,
                 RiotOrderObservationKind.Active,
@@ -2898,12 +2931,6 @@ public sealed class JourneyRuntimeWorkerTests
             return Task.FromResult(active);
         }
 
-        private static string UpperId(string purpose) => purpose switch
-        {
-            "TO_PICKUP" => "W2G-10000000-0000-4000-8000-000000000001-PICKUP-1",
-            "TO_GATE" => "W2G-10000000-0000-4000-8000-000000000001-GATE-1",
-            _ => throw new ArgumentOutOfRangeException(nameof(purpose))
-        };
     }
 
     private sealed class RecordingPeer : IOnboardPeer

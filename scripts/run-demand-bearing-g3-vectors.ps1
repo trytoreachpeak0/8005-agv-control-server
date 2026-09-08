@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory)]
     [string]$StageRoot,
@@ -276,8 +276,8 @@ function Read-ControlDatabase {
             -Sql 'SELECT DemandId, TransportDemandKey, DemandRevision, Status FROM AcceptedDemands ORDER BY DemandId' `
             -Columns @('demandId', 'transportDemandKey', 'demandRevision', 'status')
         vehicleLeaseRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-            -Sql 'SELECT DemandId, VehicleKey, AcquiredAt, ReleasedAt FROM VehicleDispatchLeases ORDER BY DemandId' `
-            -Columns @('demandId', 'vehicleKey', 'acquiredAt', 'releasedAt')
+            -Sql 'SELECT JourneyId, VehicleKey, AcquiredAt, ReleasedAt FROM VehicleDispatchLeases ORDER BY JourneyId' `
+            -Columns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt')
         auditRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath -Sql @'
 SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
        HttpStatusCode, BusinessCode, ResultPresent, ReturnedOrderId
@@ -600,7 +600,7 @@ $demandSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
 $vehicleLeaseSurvivesRestartPass = $null -ne $afterProbe -and $null -ne $final -and
     [long]$afterProbe.counts['VehicleDispatchLeases'] -eq [long]$final.counts['VehicleDispatchLeases'] -and
     (Test-RowsPreserved -Before $afterProbe.vehicleLeaseRows -After $final.vehicleLeaseRows `
-        -IdentityColumns @('demandId', 'vehicleKey', 'acquiredAt', 'releasedAt'))
+        -IdentityColumns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt'))
 
 # The restarted host has to be serving that same store, not a fresh one: a new session on the old
 # file continues the generation sequence instead of restarting it at 1.

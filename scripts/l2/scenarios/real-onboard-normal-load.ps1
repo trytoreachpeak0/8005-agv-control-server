@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 
 <#
 真车载端的正常装载：与 `normal-load` 同一条业务链路，但车载端是出厂的那个 WPF，IO 是真 Modbus。
@@ -34,7 +34,7 @@ $demandId = $demandGuid.ToString('D')
 $sublot = "L2-SUBLOT-$($Context.RunId)"
 
 function Get-Stage {
-    $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $demandId
     if ($rows.Count -eq 0) { return $null }
     return [string]$rows[0].Stage
 }

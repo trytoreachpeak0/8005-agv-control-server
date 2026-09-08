@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "scenario": "sublot-wait-timeout",
+  "runId": "20260908T044625258Z",
+  "outcome": "FAIL",
+  "failureReason": "Exception calling \"ExecuteReader\" with \"0\" argument(s): \"SQLite Error 1: 'no such column: DemandId'.\"",
+  "identity": {
+    "controlServerCommit": "bc145629ff8beafe5e09f65fef0c089815d2061a",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260908T044625258Z",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-TO-01",
+      "description": "车到取货站后停在等条码录入这一步",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-TO-02",
+      "description": "等待起点被单独记下来，不是复用 UpdatedAt",
+      "outcome": "PASS",
+      "expected": "有值",
+      "actual": "SublotWaitStartedAt=2026-09-08 04:46:33.7264361+00:00"
+    },
+    {
+      "id": "L2-TO-03",
+      "description": "窗口未到期时旅程原地不动",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-TO-04",
+      "description": "窗口未到期时需求仍是 Accepted",
+      "outcome": "PASS",
+      "expected": "Accepted",
+      "actual": "Accepted"
+    },
+    {
+      "id": "L2-TO-05",
+      "description": "旅程以 CANCELLED_BY_STATION_TIMEOUT 终结",
+      "outcome": "PASS",
+      "expected": "Completed / CANCELLED_BY_STATION_TIMEOUT",
+      "actual": "Completed / CANCELLED_BY_STATION_TIMEOUT"
+    },
+    {
+      "id": "L2-TO-06",
+      "description": "需求终态为 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled",
+      "actual": "Cancelled"
+    }
+  ]
+}

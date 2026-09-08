@@ -732,7 +732,85 @@ function Write-L2Evidence {
         [Text.UTF8Encoding]::new($false))
 }
 
+function Get-L2DeterministicId {
+    <#
+    .SYNOPSIS
+    服务端派生消息 id 的同一个算法，用来在判据里算出它该有的值。
+    .DESCRIPTION
+    与 `WireToGateStore.DeterministicGuid` 逐字节一致：SHA-256 取前 16 字节，写入 UUID 版本位 5
+    与 variant 位。**判据宁可自己算，也不要把 id 写成字面量**——写死的字面量在 id 派生方式改变
+    时不会报错，只会静静匹配不到。
+    #>
+    param([Parameter(Mandatory)][string]$Value)
+
+    $bytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($Value))
+    $guidBytes = [byte[]]$bytes[0..15]
+    $guidBytes[6] = [byte](($guidBytes[6] -band 0x0f) -bor 0x50)
+    $guidBytes[8] = [byte](($guidBytes[8] -band 0x3f) -bor 0x80)
+    return [guid]::new($guidBytes).ToString('D')
+}
+
+function Get-L2Journey {
+    <#
+    .SYNOPSIS
+    一个需求所属旅程的扁平视图，列名沿用 ADR-cross-0057 之前那一行的叫法。
+    .DESCRIPTION
+    旅程现在有自己的主键，停靠与需求各自成表（`JourneyRuntimes` / `JourneyStops` /
+    `JourneyDemands`）。这个函数把三张表 join 回一行，并补上按停靠与轮次派生的
+    `WorklistMessageId` 与 `SublotRequestMessageId`，于是既有判据不必改写。
+
+    **只对「一个需求、一个取货停靠」的旅程成立。**一趟多单的场景要自己读那三张表——那正是它要
+    断言的东西，用这个视图会把它压平成看不出区别。
+    #>
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId
+    )
+
+    $rows = Invoke-L2Query -Connection $Connection -Sql @"
+SELECT
+    r.JourneyId, r.Stage, r.AgvId, r.VehicleKey, r.AgvLifecycleGeneration, r.MapId, r.MapIdentity,
+    r.DispatchZone, r.GateStationId, r.GateStationRiotId, r.OperationSessionId,
+    r.DispatchGeneration, r.CurrentStopSequence, r.NextStopSequence, r.HoldingStartedAt,
+    r.LoadingClosedReason, r.BlockReasonCode, r.CreatedAt, r.UpdatedAt,
+    d.DemandId, d.ExpectedBasketCount, d.TargetSlotsJson, d.LoadCommandMessageId,
+    d.LoadSlotOperationAttemptId, d.UnloadCommandMessageId, d.UnloadSlotOperationAttemptId,
+    d.ConsumedSublotMessageId, d.LoadCommandedAt, d.UnloadCommandedAt, d.State AS DemandState,
+    p.Sequence AS PickupSequence, p.State AS PickupState, p.StationId AS PickupStationId,
+    p.StationRiotId AS PickupStationRiotId, p.RouteEvidenceId,
+    p.MovementLegId AS PickupMovementLegId, p.UpperId AS PickupUpperId,
+    p.PreDepartureSafetyCheckMessageId, p.PreDepartureSafetyCheckId, p.SublotWaitStartedAt,
+    p.ConsumedSafetyResultMessageId, p.WorklistRevision, p.PlanRevision,
+    p.VehicleBusinessRevision, p.VehicleBusinessMessageId, p.PlanMessageId,
+    p.LoadRound AS PickupLoadRound,
+    g.Sequence AS GateSequence, g.State AS GateState, g.MovementLegId AS GateMovementLegId,
+    g.UpperId AS GateUpperId, g.VehicleBusinessMessageId AS GateVehicleBusinessMessageId,
+    g.PlanMessageId AS GatePlanMessageId, g.LoadRound AS GateLoadRound
+FROM JourneyDemands d
+JOIN JourneyRuntimes r ON r.JourneyId = d.JourneyId
+JOIN JourneyStops p ON p.JourneyId = d.JourneyId AND p.Role = 'PICKUP'
+JOIN JourneyStops g ON g.JourneyId = d.JourneyId AND g.Role = 'GATE'
+WHERE d.DemandId = '$DemandId'
+"@
+    if ($rows.Count -eq 0) {
+        return , @()
+    }
+
+    foreach ($row in $rows) {
+        $round = if ($row.PickupLoadRound -gt 0) { $row.PickupLoadRound } else { 1 }
+        $row | Add-Member -NotePropertyName 'WorklistMessageId' -NotePropertyValue (
+            Get-L2DeterministicId -Value "$($row.JourneyId)|stop-$($row.PickupSequence)|worklist-$round")
+        $row | Add-Member -NotePropertyName 'SublotRequestMessageId' -NotePropertyValue (
+            Get-L2DeterministicId -Value "$($row.JourneyId)|stop-$($row.PickupSequence)|sublot-request-$round")
+        $gateRound = if ($row.GateLoadRound -gt 0) { $row.GateLoadRound } else { 1 }
+        $row | Add-Member -NotePropertyName 'GateWorklistMessageId' -NotePropertyValue (
+            Get-L2DeterministicId -Value "$($row.JourneyId)|stop-$($row.GateSequence)|worklist-$gateRound")
+    }
+    return , $rows
+}
+
 Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Assert-L2ComponentAlive,
     Wait-L2Iterations, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
-    Write-L2Evidence, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver
+    Write-L2Evidence, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver,
+    Get-L2Journey, Get-L2DeterministicId

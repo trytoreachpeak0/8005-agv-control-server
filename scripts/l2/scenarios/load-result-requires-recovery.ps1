@@ -1,4 +1,4 @@
-#Requires -Version 7
+﻿#Requires -Version 7
 
 <#
 超时不放货：装载跑掉车载端自己的操作员超时，旅程停摆，整台车停摆。
@@ -53,8 +53,7 @@ $nextSublot = "L2-SUBLOT-NEXT-$($Context.RunId)"
 
 function Get-Runtime([string]$id) {
     # HasConversion<string>：这些列存的是枚举成员名，按序数读会抛异常。
-    $rows = Invoke-L2Query -Connection $connection `
-        -Sql "SELECT Stage, BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$id'"
+    $rows = Get-L2Journey -Connection $connection -DemandId $id
     if ($rows.Count -eq 0) { return $null }
     return $rows[0]
 }

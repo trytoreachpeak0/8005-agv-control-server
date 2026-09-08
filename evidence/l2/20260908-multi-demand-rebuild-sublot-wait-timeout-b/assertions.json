@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "scenario": "sublot-wait-timeout",
+  "runId": "20260908T044926274Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "bc145629ff8beafe5e09f65fef0c089815d2061a",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260908T044926274Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-TO-01",
+      "description": "车到取货站后停在等条码录入这一步",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-TO-02",
+      "description": "等待起点被单独记下来，不是复用 UpdatedAt",
+      "outcome": "PASS",
+      "expected": "有值",
+      "actual": "SublotWaitStartedAt=2026-09-08 04:49:34.218768+00:00"
+    },
+    {
+      "id": "L2-TO-03",
+      "description": "窗口未到期时旅程原地不动",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-TO-04",
+      "description": "窗口未到期时需求仍是 Accepted",
+      "outcome": "PASS",
+      "expected": "Accepted",
+      "actual": "Accepted"
+    },
+    {
+      "id": "L2-TO-05",
+      "description": "旅程以 CANCELLED_BY_STATION_TIMEOUT 终结",
+      "outcome": "PASS",
+      "expected": "Completed / CANCELLED_BY_STATION_TIMEOUT",
+      "actual": "Completed / CANCELLED_BY_STATION_TIMEOUT"
+    },
+    {
+      "id": "L2-TO-06",
+      "description": "需求终态为 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled",
+      "actual": "Cancelled"
+    },
+    {
+      "id": "L2-TO-07",
+      "description": "车辆调度租约已释放",
+      "outcome": "PASS",
+      "expected": "已释放",
+      "actual": "ReleasedAt=2026-09-08 04:49:45.2098857+00:00"
+    },
+    {
+      "id": "L2-TO-08",
+      "description": "那条没人回答的条码录入请求被结算了",
+      "outcome": "PASS",
+      "expected": "已结算",
+      "actual": "AcknowledgedAt=2026-09-08 04:49:45.2098857+00:00"
+    },
+    {
+      "id": "L2-TO-14",
+      "description": "按业务键写下了永久取消抑制",
+      "outcome": "PASS",
+      "expected": "1 条 / CANCELLED_BY_STATION_TIMEOUT",
+      "actual": "1 条 / CANCELLED_BY_STATION_TIMEOUT / key=L2-SUBLOT-20260908T044926274Z-A|WIRE_TO_GATE"
+    },
+    {
+      "id": "L2-TO-09",
+      "description": "超时不下发也不残留任何仓位操作",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-TO-10",
+      "description": "超时不开任何恢复流程",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-TO-11",
+      "description": "下一单照常装载并发往关卡",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-TO-12",
+      "description": "一次超时之后，下一单仍能走到 Succeeded",
+      "outcome": "PASS",
+      "expected": "Completed / Succeeded",
+      "actual": "Completed / Succeeded"
+    },
+    {
+      "id": "L2-TO-13",
+      "description": "全程三条 RIoT 单：超时那单只到取货口，第二单跑完两段",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    }
+  ]
+}
