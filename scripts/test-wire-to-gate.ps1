@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory)][string]$ProtocolManifest,
     [Parameter(Mandatory)][string]$Output,
     # Runs the gate against a protocol candidate that has not been released yet. The four hashes
-    # below are pinned to protocol-v0.1.1 on purpose: without that pin anyone could hand this script
+    # below are pinned to protocol-v0.2.0 on purpose: without that pin anyone could hand this script
     # a locally edited manifest and get a green G2 out of it. That protection is exactly what has to
     # stay, so this switch does not weaken it -- it takes a different path that reads the identity
     # out of the supplied manifest and stamps the evidence UNRELEASED_CANDIDATE, so a run against an
@@ -20,14 +20,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $ProtocolManifest -PathType Leaf)) { throw "Protocol manifest not found: $ProtocolManifest" }
-$expectedProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279'
-$expectedManifestSha256 = 'a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f'
-$expectedSchemaBundleSha256 = 'e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c'
-$expectedVectorsSha256 = 'fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e'
+$expectedProtocolCommit = 'dff1686751d1d05c4c06b19ac024b41e84bb8078'
+$expectedManifestSha256 = '31bb730565f21b8011b88d447b5b81fc4be28ba34b2fdfb3592bd7586f0a59d6'
+$expectedSchemaBundleSha256 = 'bc069d6ab5db55c658d67c2457fcb12812582a94febaa5d2d2a9921aaaca5616'
+$expectedVectorsSha256 = 'bd272b63a1d0663d61c4a38d6e8633d7e7d4f7b561a7915c3df51c7a93bd4576'
 $sliceVectors = @{
     'W2G-IS-00' = @('CV-SESSION-RECOVERY-HAPPY', 'CV-SESSION-RECONNECT-DURING-RECOVERY', 'CV-SNAPSHOT-REPLACE-AND-ACK', 'CV-SNAPSHOT-SAME-REVISION-CONFLICT')
     'W2G-IS-01' = @('CV-DEMAND-ACCEPT-TO-PICKUP')
-    'W2G-IS-02' = @('CV-PICKUP-SUBLOT-LOAD', 'CV-LOAD-CORRECTION', 'CV-LOAD-CANCELLATION-ALL-EMPTY')
+    'W2G-IS-02' = @('CV-PICKUP-SUBLOT-LOAD', 'CV-LOAD-CORRECTION', 'CV-LOAD-CANCELLATION-ALL-EMPTY', 'CV-LOAD-CANCELLATION-BEFORE-LOAD')
     'W2G-IS-03' = @('CV-PREDEPARTURE-SAFETY-EXPIRES', 'CV-OPERATION-RESULT-UNKNOWN-RECONCILE')
     'W2G-IS-04' = @('CV-GATE-UNLOAD-ALL-EMPTY')
     'W2G-IS-05' = @('CV-CONNECTION-LOSS-SAFE-FINISH', 'CV-SESSION-RECONNECT-DURING-RECOVERY')
@@ -60,7 +60,7 @@ if ($UnreleasedCandidate) {
         (git -c safe.directory=$protocolRoot -C $protocolRoot rev-parse HEAD 2>$null).Trim()
     } catch { $null }
     if (-not $protocolRepositoryCommit) { $protocolRepositoryCommit = '(unknown)' }
-    # The released slice-to-vector table below is frozen at v0.1.1 and a candidate may have moved
+    # The released slice-to-vector table below is frozen at v0.2.0 and a candidate may have moved
     # it, so read the candidate's own index instead of reporting a stale vector list.
     $indexPath = Join-Path $protocolRoot 'integration-slices/index.json'
     if (Test-Path -LiteralPath $indexPath -PathType Leaf) {
@@ -72,15 +72,15 @@ if ($UnreleasedCandidate) {
     if ($actualManifestSha256 -ne $expectedManifestSha256) {
         throw "Protocol manifest hash mismatch: expected $expectedManifestSha256, actual $actualManifestSha256"
     }
-    if ($manifest.releaseVersion -ne '0.1.1' -or
-        $manifest.protocolVersion -ne 1 -or
+    if ($manifest.releaseVersion -ne '0.2.0' -or
+        $manifest.protocolVersion -ne 2 -or
         $manifest.schemaBundleSha256 -ne $expectedSchemaBundleSha256 -or
         $manifest.vectorsSha256 -ne $expectedVectorsSha256) {
-        throw 'Protocol manifest composite identity differs from protocol-v0.1.1.'
+        throw 'Protocol manifest composite identity differs from protocol-v0.2.0.'
     }
     $protocolReleaseStatus = 'RELEASED'
-    $protocolTag = 'protocol-v0.1.1'
-    $protocolReleaseVersion = '0.1.1'
+    $protocolTag = 'protocol-v0.2.0'
+    $protocolReleaseVersion = '0.2.0'
     $protocolSchemaBundleSha256 = $expectedSchemaBundleSha256
     $protocolVectorsSha256 = $expectedVectorsSha256
     $protocolRepositoryCommit = $expectedProtocolCommit
