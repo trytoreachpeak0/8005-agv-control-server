@@ -1,0 +1,21 @@
+{"at":"2026-09-08T08:49:17.4259286+00:00","note":"L2 run 20260908T084917377Z starting for scenario 'command-surface-order-hold'."}
+{"at":"2026-09-08T08:49:17.4397893+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-08T08:49:20.6269693+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-08T08:49:20.7536649+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-08T08:49:20.7680129+00:00","note":"Fleet of 3: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002, AGV-L2-003/BROKERX-L2-0003"}
+{"at":"2026-09-08T08:49:22.7813175+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-08T08:49:24.4268736+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-08T08:49:24.4549150+00:00","note":"Protocol release identity: protocol-v0.1.1 (protocolVersion 1, APPROVED_RELEASE)."}
+{"at":"2026-09-08T08:49:25.1243458+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-08T08:49:26.3975029+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-08T08:49:26.4326035+00:00","note":"Environment is up; entering scenario 'command-surface-order-hold'."}
+{"at":"2026-09-08T08:49:26.4735963+00:00","note":"Publishing demand 36f377931fb347a6a3cfafb32ea3a923."}
+{"at":"2026-09-08T08:49:26.5239834+00:00","note":"Publishing demand 47d1e9780d3448729c70b688e644c332."}
+{"at":"2026-09-08T08:49:26.5324520+00:00","note":"Publishing demand 31775ed3dbb54ed7bb91d39d0c15545d."}
+{"at":"2026-09-08T08:49:26.5788807+00:00","criterion":"journeys-dispatched","value":"0"}
+{"at":"2026-09-08T08:49:27.6452115+00:00","criterion":"journeys-dispatched","value":"1"}
+{"at":"2026-09-08T08:49:27.8990413+00:00","criterion":"journeys-dispatched","value":"2"}
+{"at":"2026-09-08T08:49:28.1657985+00:00","criterion":"journeys-dispatched","value":"3"}
+{"at":"2026-09-08T08:49:28.1979072+00:00","criterion":"faulted-intent","value":"(null)"}
+{"at":"2026-09-08T08:50:58.3146685+00:00","note":"Run failed: Timed out after 90s waiting for: the TO_PICKUP intent for AGV-L2-002 was confirmed. Last observed: (nothing)"}
+{"at":"2026-09-08T08:50:58.3188242+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\Desktop\\8005-fp\\8005-agv-control-server\\scripts\\l2\\L2.psm1: line 90\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-fp\\8005-agv-control-server\\scripts\\l2\\scenarios\\command-surface-order-hold.ps1: line 82\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-fp\\8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 672"}

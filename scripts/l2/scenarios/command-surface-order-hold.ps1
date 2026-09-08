@@ -43,7 +43,12 @@ FROM JourneyRuntimes ORDER BY AgvId
 }
 
 function Get-JourneyOf([string]$agvId) {
-    return Get-Journeys | Where-Object { [string]$_.AgvId -eq $agvId } | Select-Object -First 1
+    # 先赋值再过滤，不要写成 `Get-Journeys | Where-Object ...`。`Invoke-L2Query` 用 `return , $rows`
+    # 保住整张结果集，而这个包装**穿得过一层 return**：管道里拿到的是一个元素、那个元素是整张
+    # 结果集，`$_.AgvId` 于是成员展开成三个值拼成一行，一条也匹配不上。赋值给变量会展开外面那
+    # 层，再管道就正常了。这条第一次跑就撞上，症状是「三趟 journey 都在库里，却一趟都找不到」。
+    $rows = Get-Journeys
+    return $rows | Where-Object { [string]$_.AgvId -eq $agvId } | Select-Object -First 1
 }
 
 function Get-HoldAttempts {
