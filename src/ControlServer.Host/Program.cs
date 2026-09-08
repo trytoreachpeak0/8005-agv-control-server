@@ -13,6 +13,7 @@ using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.RouteGraph;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Commands;
+using ControlServer.Host.Runtime.Faults;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
@@ -65,6 +66,16 @@ builder.Services.AddScoped<IRiotOrderCommandAuditStore, RiotOrderCommandAuditSto
 builder.Services.AddScoped<IVehicleFaultStore, VehicleFaultStore>();
 builder.Services.AddScoped<RiotOrderCommandService>();
 builder.Services.AddScoped<EmergencyStopSupervisor>();
+// FP-C11's other half: REQ-0232's two-level fault model. The motion ledger is a singleton because
+// REQ-0247's consecutive samples have to survive between evaluations, and it is deliberately not
+// persisted -- a stop proof assembled across a restart would be a claim about a vehicle nobody was
+// watching across it.
+builder.Services.AddOptions<VehicleFaultOptions>()
+    .Bind(builder.Configuration.GetSection(VehicleFaultOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<VehicleFaultOptions>, VehicleFaultOptionsValidator>();
+builder.Services.AddSingleton<VehicleMotionLedger>();
+builder.Services.AddScoped<VehicleFaultCoordinator>();
 builder.Services.AddScoped<IPackageCapacityStore, PackageCapacityStore>();
 builder.Services.AddScoped<PackageCapacityImportService>();
 builder.Services.AddOptions<OnboardTransportOptions>()

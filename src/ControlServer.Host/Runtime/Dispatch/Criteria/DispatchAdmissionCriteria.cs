@@ -32,6 +32,7 @@ public static class DispatchAdmissionCriteria
         MapStationResolver stationResolver,
         IPackageCapacityStore packageCapacityStore,
         WireToGateStore store,
+        IVehicleFaultStore faultStore,
         ISublotBoxCountReader boxCountReader,
         ILogger<SlotCapacityCriterion> slotCapacityLogger,
         RouteGraphAccess? routeGraph = null,
@@ -41,6 +42,9 @@ public static class DispatchAdmissionCriteria
         List<IDispatchAdmissionCriterion> criteria =
         [
             new AlreadyAcceptedCriterion(),
+            // Required rather than optional, unlike the three appended below: a safety block a
+            // caller may leave out is a safety block that will be left out.
+            new VehicleFaultBlockCriterion(faultStore, options),
             new WorkTypeScopeCriterion(options),
             new RequiredMesFactsCriterion(),
             new AreaScopeCriterion(),
@@ -82,6 +86,7 @@ public static class DispatchAdmissionCriteria
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<IDispatchAdmissionCriterion, AlreadyAcceptedCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, VehicleFaultBlockCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, WorkTypeScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, RequiredMesFactsCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, AreaScopeCriterion>();

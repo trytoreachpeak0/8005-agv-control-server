@@ -17,9 +17,31 @@ namespace ControlServer.Infrastructure.Adapters;
 /// owns only ControlServer observation semantics.
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
-    IRiotVehicleSafetyFacts
+    IRiotVehicleSafetyFacts, IVehicleMotionFacts
 {
     private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
+
+    /// <summary>
+    /// The <c>movementState</c> values this server is prepared to read as "not moving".
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A closed list, and short on purpose. Seven values have been observed in the behaviour lab —
+    /// <c>MT_RUNNING</c>, <c>MT_FINISHED</c>, <c>MT_NA</c>, <c>MT_PAUSED</c>,
+    /// <c>MT_WAIT_FOR_CHECKPOINT</c>, <c>MT_WAIT_FOR_START</c> and <c>MT_IN_CANCEL</c> — and only
+    /// the two here are a positive statement that motion has stopped. <c>MT_NA</c> is an absence.
+    /// The other three describe a vehicle in the middle of something: waiting at a checkpoint,
+    /// waiting to start, cancelling. None of them rules out a vehicle that is still rolling, and
+    /// REQ-0247 needs a fact that does.
+    /// </para>
+    /// <para>
+    /// <b>Adding a value here weakens a safety proof.</b> Anything not on this list reads as
+    /// <see cref="VehicleMotionReading.Unknown"/>, which blocks the stop proof rather than granting
+    /// it, so an incomplete list costs an unnecessary escalation — the direction REQ-0246 asks to
+    /// err in.
+    /// </para>
+    /// </remarks>
+    private static readonly string[] NotMovingStates = ["MT_FINISHED", "MT_PAUSED"];
 
     /// <summary>Placeholder RIoT reports in executeVehicleKey before a vehicle is bound.</summary>
     private const string UnassignedVehicleKeyPlaceholder = "--";
@@ -285,6 +307,91 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         {
             return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
         }
+    }
+
+    /// <summary>
+    /// One motion-and-position sample for REQ-0247's combined stop proof.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two reads because RIoT publishes the two halves separately: <c>getVehicleInfo</c> carries
+    /// <c>movementState</c> and the speed, the vehicle card carries the Map and the station. Both
+    /// are already on the allowlist and already called from this adapter.
+    /// </para>
+    /// <para>
+    /// <b>The sample is stamped after both reads, not between them.</b> Two calls take time, and a
+    /// vehicle can move across them; timestamping at the end means the freshness check treats the
+    /// sample as no newer than its oldest half. Every failure produces an
+    /// <see cref="VehicleMotionReading.Unknown"/> sample rather than an exception, because
+    /// "RIoT could not be asked" is a fact the stop proof has to weigh, not an error the caller
+    /// should have to catch.
+    /// </para>
+    /// </remarks>
+    public async Task<VehicleMotionSample> SampleMotionAsync(
+        string deviceKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
+        try
+        {
+            VehicleExecutionFacts execution = await riotSession.Tasks.GetVehicleExecutionFactsAsync(
+                deviceKey, cancellationToken).ConfigureAwait(false);
+            VehicleCard card = await riotSession.Tasks.GetVehicleCardAsync(
+                deviceKey, cancellationToken).ConfigureAwait(false);
+
+            return new VehicleMotionSample(
+                deviceKey,
+                ReadMotion(execution.MovementState, execution.Speed),
+                execution.MovementState,
+                execution.Speed,
+                card.CurrentMap,
+                card.CurrentPosition,
+                timeProvider.GetUtcNow());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return new VehicleMotionSample(
+                deviceKey,
+                VehicleMotionReading.Unknown,
+                MovementState: null,
+                Speed: null,
+                CurrentMap: null,
+                CurrentStationId: null,
+                timeProvider.GetUtcNow());
+        }
+    }
+
+    /// <summary>
+    /// What one <c>movementState</c> and speed say about motion.
+    /// </summary>
+    /// <remarks>
+    /// Moving wins over the state list: a non-zero speed is motion whatever the state field says,
+    /// and a speed RIoT did not report cannot be part of a proof that the vehicle is still.
+    /// </remarks>
+    public static VehicleMotionReading ReadMotion(string? movementState, double? speed)
+    {
+        if (speed is not null && speed != 0)
+        {
+            return VehicleMotionReading.Moving;
+        }
+
+        if (string.Equals(movementState, "MT_RUNNING", StringComparison.Ordinal))
+        {
+            return VehicleMotionReading.Moving;
+        }
+
+        if (speed is null || movementState is null)
+        {
+            return VehicleMotionReading.Unknown;
+        }
+
+        return NotMovingStates.Contains(movementState, StringComparer.Ordinal)
+            ? VehicleMotionReading.NotMoving
+            : VehicleMotionReading.Unknown;
     }
 
     private static RiotOrderObservation ToObservation(

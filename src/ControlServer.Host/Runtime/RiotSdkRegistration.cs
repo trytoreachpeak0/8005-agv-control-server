@@ -59,6 +59,10 @@ internal static class RiotSdkRegistration
             services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<IRiotVehicleSafetyFacts>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
+        // On the movement gateway rather than on a new adapter, because the two calls a motion
+        // sample needs -- getVehicleInfo and the vehicle card -- are both ones it already makes.
+        services.AddScoped<IVehicleMotionFacts>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<HttpRiotOrderCommandGateway>();
         services.AddScoped<IRiotOrderCommandGateway>(services =>
             services.GetRequiredService<HttpRiotOrderCommandGateway>());

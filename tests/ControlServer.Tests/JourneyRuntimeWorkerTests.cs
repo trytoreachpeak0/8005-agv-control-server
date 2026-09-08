@@ -2180,6 +2180,7 @@ public sealed class JourneyRuntimeWorkerTests
                     new MapStationResolver(),
                     new PackageCapacityStore(Context),
                     store,
+                    new VehicleFaultStore(Context),
                     BoxCounts,
                     NullLogger<SlotCapacityCriterion>.Instance,
                     routeGraph: null,
