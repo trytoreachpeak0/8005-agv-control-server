@@ -1494,6 +1494,277 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task APickupStopWithNothingToLoadEndsTheDemandWhenTheSublotWaitExpiresAndFreesTheVehicle()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal(Now, runtime.SublotWaitStartedAt);
+
+        // One minute short of the window: the stop is still open, and an operator walking back to
+        // the vehicle must not find the demand gone.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(4));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(
+            DemandExecutionStatus.Accepted,
+            (await fixture.DemandRowAsync()).Status);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(2));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        Assert.Equal("CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", runtime.BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+        Assert.NotNull((await fixture.Context.VehicleDispatchLeases.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken)).ReleasedAt);
+        // Nothing was ever commanded to a slot, which is what lets the server end this alone.
+        Assert.Empty(await fixture.Context.StationOperations.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        // The entry request is answered by the cancellation. Left unsettled it would replay into
+        // the next session as a business id whose content changed and tear that session down.
+        ProtocolOutboxRow request = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageType == "SublotEntryRequested", TestContext.Current.CancellationToken);
+        Assert.NotNull(request.AcknowledgedAt);
+
+        // The point of ending it: the vehicle takes the next demand rather than holding the stop.
+        AcceptedDemandSnapshot next = fixture.Demand(
+            "10000000-0000-4000-8000-000000000002",
+            "SUBLOT-002",
+            createdAt: fixture.Clock.GetUtcNow().AddMinutes(-1));
+        fixture.Catalog.Set(next);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow nextBacklog = await fixture.Context.JourneyBacklog.AsNoTracking()
+            .SingleAsync(row => row.DemandId == "10000000-0000-4000-8000-000000000002",
+                TestContext.Current.CancellationToken);
+        Assert.Equal("ACCEPTED", nextBacklog.ReasonCode);
+        JourneyRuntimeRow second = await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002");
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, second.Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task TheSublotWaitTimeoutStopsApplyingOnceTheLoadIsUnderway()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        await fixture.SubmitSublotAsync(runtime, "SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+
+        // Far past the window. A slot operation is outstanding, and only the peer can settle the
+        // physical state it left behind -- timing out here would drop the demand mid-load.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(30));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ASublotWaitTimeoutOfZeroLeavesTheStopOpenIndefinitely()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.SublotWaitTimeout = TimeSpan.Zero;
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+
+        fixture.Clock.Advance(TimeSpan.FromHours(4));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ALowVehicleDrivesItselfToTheChargerAndBecomesAvailableAgainAtTheResumeLevel()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
+        // A demand is waiting the whole time. It must not be accepted while the vehicle is on its
+        // way to the pad, and it must be accepted once the run releases the vehicle.
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        AutoChargingRunRow run = await fixture.ChargingRunAsync();
+        Assert.Equal(AutoChargingStage.AwaitingChargerArrival, run.Stage);
+        Assert.Equal(211, run.ChargerStationRiotId);
+        Assert.Equal("充电桩", run.ChargerStationId);
+        Assert.Equal(15, run.TriggeredAtBatteryPercent);
+        Assert.Null(run.BlockReasonCode);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_CHARGER"));
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_CHARGER"));
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        // A second iteration on the way there must not raise a second order -- a duplicate here is
+        // a duplicate real dispatch.
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_CHARGER"));
+        Assert.Equal(AutoChargingStage.AwaitingChargerArrival, (await fixture.ChargingRunAsync()).Stage);
+
+        fixture.Riot.SetSuccessfulArrival("TO_CHARGER", run.UpperId, run.ChargerStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            CurrentStationId = run.ChargerStationRiotId,
+            BatteryState = "CHARGING",
+            BatteryPercent = 22
+        };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        run = await fixture.ChargingRunAsync();
+        Assert.Equal(AutoChargingStage.Charging, run.Stage);
+        Assert.Null(run.BlockReasonCode);
+
+        // Above the demand floor but below the resume level: still charging, still not available.
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 55 };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(AutoChargingStage.Charging, (await fixture.ChargingRunAsync()).Stage);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 80 };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        run = await fixture.ChargingRunAsync();
+        Assert.Equal(AutoChargingStage.Completed, run.Stage);
+        Assert.Equal(80, run.ReleasedAtBatteryPercent);
+        // The vehicle stays plugged in and keeps reporting CHARGING; the resume level is what ends
+        // the refusal, so the waiting demand is taken in this very iteration.
+        JourneyRuntimeRow journey = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, journey.Stage);
+        Assert.Equal("CHARGING", fixture.Riot.Vehicle.BatteryState);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AVehicleStandingOnTheChargerWithoutDrawingCurrentIsNamedRatherThanWaitedOut()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        AutoChargingRunRow run = await fixture.ChargingRunAsync();
+
+        fixture.Riot.SetSuccessfulArrival("TO_CHARGER", run.UpperId, run.ChargerStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = run.ChargerStationRiotId };
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(AutoChargingStage.Charging, (await fixture.ChargingRunAsync()).Stage);
+
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        run = await fixture.ChargingRunAsync();
+        Assert.Equal(AutoChargingStage.Charging, run.Stage);
+        Assert.Equal("CHARGER_NOT_ENGAGED", run.BlockReasonCode);
+        Assert.Null(run.ReleasedAtBatteryPercent);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AVehicleAlreadyOnTheChargerIsNotDispatchedToTheStationItIsStandingOn()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            BatteryPercent = 15,
+            BatteryState = "CHARGING",
+            CurrentStationId = 211
+        };
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_CHARGER"));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AChargerMissingFromTheLiveMapStartsNoRunAndDispatchesNothing()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        // Same identity, wrong name: RequireFixedStation demands an exact pair, and a charger this
+        // server cannot name exactly is not one it may drive to.
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(211, "充电桩B"));
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_CHARGER"));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task NoChargingRunStartsWhileAJourneyStillHoldsTheVehicle()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ChargingBelowTheResumeLevelKeepsRefusingDemandsWithAutoChargingOff()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 95, BatteryState = "CHARGING" };
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // Without the errand nothing ever drives the vehicle off the pad, so the old blanket
+        // refusal is the safe reading: a charging vehicle is not available at any level.
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("BATTERY_POLICY_NOT_SATISFIED", backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
     private sealed class RuntimeFixture : IAsyncDisposable
     {
         private RuntimeFixture(
@@ -1839,6 +2110,92 @@ public sealed class JourneyRuntimeWorkerTests
             row.RequestJson = root.ToJsonString(SerializerOptions);
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
+
+        /// <summary>Carries the journey to the pickup stop, waiting for an operator to enter a sublot.</summary>
+        public async Task<JourneyRuntimeRow> AdvanceToSublotWaitAsync(string demandId, string sublot)
+        {
+            Catalog.Set(Demand(demandId, sublot, createdAt: Clock.GetUtcNow().AddMinutes(-10)));
+            BoxCounts.Set(sublot, 7);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            JourneyRuntimeRow pickup = await RuntimeAsync(demandId);
+            Riot.SetSuccessfulArrival("TO_PICKUP", pickup.PickupUpperId, pickup.PickupStationRiotId);
+            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = pickup.PickupStationRiotId };
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            return await RuntimeAsync(demandId);
+        }
+
+        public async Task SubmitSublotAsync(JourneyRuntimeRow runtime, string sublot) =>
+            await AddInboxAsync(
+                Guid.NewGuid().ToString("D"),
+                "SublotSubmitted",
+                new
+                {
+                    demandId = runtime.DemandId,
+                    operationSessionId = runtime.OperationSessionId,
+                    stationId = runtime.PickupStationId,
+                    worklistRevision = runtime.WorklistRevision,
+                    sublot,
+                    entryMethod = "SCANNER",
+                    @operator = new
+                    {
+                        operatorId = "OP-001",
+                        verificationMethod = "BADGE",
+                        verifiedAt = Clock.GetUtcNow()
+                    }
+                });
+
+        /// <summary>
+        /// Turns the charging errand on and puts a charger on the live map. The station name is
+        /// load bearing: RequireFixedStation matches identity and name exactly.
+        /// </summary>
+        public void EnableAutoCharging()
+        {
+            Options.AutoChargingEnabled = true;
+            Options.ChargerStationId = "充电桩";
+            Options.ChargerStationRiotId = 211;
+            Riot.SetMapStations(
+                new RiotMapStation(12, "N1-1"),
+                new RiotMapStation(13, "N1-2_N1-3"),
+                new RiotMapStation(210, "关卡"),
+                new RiotMapStation(211, "充电桩"));
+        }
+
+        /// <summary>
+        /// One inbound message from the current session, stamped now. Session liveness is bounded
+        /// by MaximumEvidenceAge against the last thing the peer said, so a test that advances the
+        /// clock past that window has to keep the peer talking -- in the field the heartbeat does
+        /// exactly this. Without it the runtime reads ONBOARD_FACTS_NOT_READY, which is a dead
+        /// peer, not the condition under test.
+        /// </summary>
+        public async Task HeartbeatAsync()
+        {
+            long generation = (await Context.SessionRecoveries.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).SessionGeneration;
+            string messageId = Guid.NewGuid().ToString("D");
+            DateTimeOffset now = Clock.GetUtcNow();
+            Context.ProtocolInbox.Add(new ProtocolInboxRow
+            {
+                MessageId = messageId,
+                MessageType = "Heartbeat",
+                RequestJson = JsonSerializer.Serialize(new
+                {
+                    messageType = "Heartbeat",
+                    messageId,
+                    agvId = Options.AgvId,
+                    sessionGeneration = generation,
+                    sentAt = now,
+                    payload = new { observedAt = now }
+                }, SerializerOptions),
+                ContentHash = new string('f', 64),
+                FirstResponseJson = "{}",
+                ReceivedAt = now
+            });
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        public Task<AutoChargingRunRow> ChargingRunAsync() => Context.AutoChargingRuns
+            .AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
 
         public Task<JourneyRuntimeRow> RuntimeAsync() => Context.JourneyRuntimes
             .AsNoTracking()

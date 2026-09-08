@@ -29,6 +29,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<RecoveryResultEvidenceRow> RecoveryResultEvidence => Set<RecoveryResultEvidenceRow>();
     public DbSet<JourneyBacklogRow> JourneyBacklog => Set<JourneyBacklogRow>();
     public DbSet<JourneyRuntimeRow> JourneyRuntimes => Set<JourneyRuntimeRow>();
+    public DbSet<AutoChargingRunRow> AutoChargingRuns => Set<AutoChargingRunRow>();
     public DbSet<AdmissionPolicyStateRow> AdmissionPolicyState => Set<AdmissionPolicyStateRow>();
     public DbSet<StationTaskTypeAdmissionRow> StationTaskTypeAdmissions => Set<StationTaskTypeAdmissionRow>();
     public DbSet<AdmissionPolicyAuditRow> AdmissionPolicyAudit => Set<AdmissionPolicyAuditRow>();
@@ -111,6 +112,9 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<JourneyBacklogRow>().HasIndex(row => row.TransportDemandKey);
         modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Stage).HasConversion<string>();
+        modelBuilder.Entity<AutoChargingRunRow>().HasKey(row => row.ChargingRunId);
+        modelBuilder.Entity<AutoChargingRunRow>().HasIndex(row => row.UpperId).IsUnique();
+        modelBuilder.Entity<AutoChargingRunRow>().Property(row => row.Stage).HasConversion<string>();
         modelBuilder.Entity<AdmissionPolicyStateRow>().HasKey(row => row.Id);
         modelBuilder.Entity<AdmissionPolicyStateRow>().Property(row => row.Id).ValueGeneratedNever();
         modelBuilder.Entity<StationTaskTypeAdmissionRow>().HasKey(row => new { row.StationId, row.TaskType });
@@ -487,6 +491,35 @@ public sealed class JourneyRuntimeRow
     public required string UnloadSlotOperationAttemptId { get; set; }
     public string? ConsumedSublotMessageId { get; set; }
     public string? ConsumedSafetyResultMessageId { get; set; }
+    /// <summary>
+    /// When the journey began waiting for an operator to enter a sublot at the pickup stop.
+    /// <see cref="UpdatedAt"/> cannot serve: a later poll rewriting the same block reason moves it,
+    /// which would restart the wait clock every iteration and make the timeout unreachable.
+    /// </summary>
+    public DateTimeOffset? SublotWaitStartedAt { get; set; }
+    public string? BlockReasonCode { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// One trip to the charger. The vehicle is left standing on the pad when the run completes rather
+/// than being driven off to an idle spot: the charger doubles as the parking place, and the next
+/// demand moves it. That is why <see cref="ReleasedAtBatteryPercent"/> records the level the run
+/// stopped holding the vehicle at, which is not the level it eventually reaches.
+/// </summary>
+public sealed class AutoChargingRunRow
+{
+    public required string ChargingRunId { get; set; }
+    public required string VehicleKey { get; set; }
+    public required string AgvId { get; set; }
+    public AutoChargingStage Stage { get; set; }
+    public required string ChargerStationId { get; set; }
+    public int ChargerStationRiotId { get; set; }
+    public required string MovementLegId { get; set; }
+    public required string UpperId { get; set; }
+    public int TriggeredAtBatteryPercent { get; set; }
+    public int? ReleasedAtBatteryPercent { get; set; }
     public string? BlockReasonCode { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

@@ -3,6 +3,7 @@ using System;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ControlServer.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ControlServerDbContext))]
-    partial class ControlServerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907174639_SublotWaitTimeoutAndBeforeLoadCancellation")]
+    partial class SublotWaitTimeoutAndBeforeLoadCancellation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
@@ -161,61 +164,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("AdmissionPolicyState");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AutoChargingRunRow", b =>
-                {
-                    b.Property<string>("ChargingRunId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AgvId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("BlockReasonCode")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ChargerStationId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("ChargerStationRiotId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("MovementLegId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("ReleasedAtBatteryPercent")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Stage")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("TriggeredAtBatteryPercent")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UpperId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("VehicleKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("ChargingRunId");
-
-                    b.HasIndex("UpperId")
-                        .IsUnique();
-
-                    b.ToTable("AutoChargingRuns");
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.ConnectionRecoveryRow", b =>

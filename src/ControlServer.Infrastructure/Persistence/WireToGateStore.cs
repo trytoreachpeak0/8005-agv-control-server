@@ -968,6 +968,37 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Records the movement intent for a leg the vehicle drives with nothing aboard -- today only
+    /// the run to the charger. Unlike <see cref="AuthorizeMovementAsync"/> it carries no
+    /// pre-departure safety observation, and that is the point: the observation exists to prove
+    /// every slot door closed and latched after a load, and no door was opened here. The caller's
+    /// own admission facts gate this leg, exactly as they gate the TO_PICKUP leg, which is
+    /// recorded through demand acceptance without a safety observation for the same reason.
+    /// </summary>
+    public async Task CreateUnladenMovementIntentAsync(
+        OrderIntent intent,
+        CancellationToken cancellationToken)
+    {
+        OrderIntentRow? existing = await dbContext.OrderIntents
+            .SingleOrDefaultAsync(
+                row => row.MovementLegId == intent.MovementLegId || row.UpperId == intent.UpperId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is not null)
+        {
+            if (!Matches(existing, intent))
+            {
+                throw new BusinessIdentityConflictException(
+                    "Movement identity is already bound to different intent content.");
+            }
+            return;
+        }
+
+        dbContext.OrderIntents.Add(ToRow(intent));
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task CompleteDemandAfterUnloadAsync(
         string unloadBatchId, string demandId, string transportDemandKey, long demandRevision,
         IReadOnlyCollection<SlotPhysicalEvidence> evidence, string completionEvidence,
@@ -1019,6 +1050,70 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         });
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ends a journey that never loaded anything: the operator cancelled at the pickup stop before
+    /// any slot operation was commanded, or nobody entered a sublot inside the runtime's wait
+    /// window. Both leave the vehicle physically untouched -- no slot was ever opened, so there is
+    /// no emptiness for the peer to prove -- which is why this path settles without a peer result.
+    /// A cancellation raised *after* a slot operation is commanded keeps its five-step handshake
+    /// and terminates through OnboardRecoveryCoordinator instead.
+    /// </summary>
+    /// <returns><c>true</c> when this call performed the termination; <c>false</c> when the demand
+    /// was already cancelled, so a replayed operator request terminates exactly once.</returns>
+    public async Task<bool> CancelDemandBeforeLoadAsync(
+        string demandId,
+        string reasonCode,
+        DateTimeOffset cancelledAt,
+        CancellationToken cancellationToken)
+    {
+        AcceptedDemandRow demand = await dbContext.AcceptedDemands
+            .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        if (demand.Status == DemandExecutionStatus.Succeeded)
+        {
+            throw new BusinessIdentityConflictException(
+                "A completed demand cannot be cancelled as if nothing had been loaded.");
+        }
+        if (demand.Status == DemandExecutionStatus.Cancelled)
+        {
+            return false;
+        }
+        // The whole point of this path is that no slot was touched. A commanded operation -- even
+        // one that failed -- carries physical state that only the peer can settle, so terminating
+        // it here would drop the demand while a door is possibly still open.
+        if (await dbContext.StationOperations
+                .AnyAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false))
+        {
+            throw new BusinessIdentityConflictException(
+                "A demand with a commanded slot operation cannot be cancelled before load.");
+        }
+
+        demand.Status = DemandExecutionStatus.Cancelled;
+        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
+            .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        lease.ReleasedAt ??= cancelledAt;
+        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        if (runtime is not null)
+        {
+            runtime.Stage = JourneyRuntimeStage.Completed;
+            runtime.BlockReasonCode = reasonCode;
+            runtime.UpdatedAt = cancelledAt;
+            // The sublot entry request is still an unanswered command, and this journey is never
+            // going to answer it. Leaving it unsettled replays it into every later session, where
+            // the peer refuses it as a business id whose content changed and tears the session
+            // down -- the same failure the load command was settled for.
+            ProtocolOutboxRow? sublotRequest = await dbContext.ProtocolOutbox.SingleOrDefaultAsync(
+                row => row.MessageId == runtime.SublotRequestMessageId, cancellationToken)
+                .ConfigureAwait(false);
+            if (sublotRequest is not null)
+            {
+                sublotRequest.AcknowledgedAt ??= cancelledAt;
+            }
+        }
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     public async Task RecordConnectionLossAsync(

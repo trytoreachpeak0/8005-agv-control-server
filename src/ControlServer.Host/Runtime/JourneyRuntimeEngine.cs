@@ -39,6 +39,26 @@ public sealed class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2103, nameof(LogMapStationCatalogFailed)),
         "RIoT Map station catalog failed closed; no new journey action was taken.");
+    private static readonly Action<ILogger, string, TimeSpan, Exception?> LogSublotWaitTimedOut =
+        LoggerMessage.Define<string, TimeSpan>(
+            LogLevel.Information,
+            new EventId(2104, nameof(LogSublotWaitTimedOut)),
+            "Demand {DemandId} was cancelled: no sublot was entered within {SublotWaitTimeout}.");
+    private static readonly Action<ILogger, string, int, string, Exception?> LogAutoChargingStarted =
+        LoggerMessage.Define<string, int, string>(
+            LogLevel.Information,
+            new EventId(2105, nameof(LogAutoChargingStarted)),
+            "Charging run {ChargingRunId} dispatched at {BatteryPercent}% to station {ChargerStationId}.");
+    private static readonly Action<ILogger, string, int, Exception?> LogAutoChargingCompleted =
+        LoggerMessage.Define<string, int>(
+            LogLevel.Information,
+            new EventId(2106, nameof(LogAutoChargingCompleted)),
+            "Charging run {ChargingRunId} released the vehicle at {BatteryPercent}%.");
+    private static readonly Action<ILogger, string, Exception?> LogChargerStationUnresolved =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2107, nameof(LogChargerStationUnresolved)),
+            "Charger station could not be resolved on the current map ({ReasonCode}); no charging run was started.");
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
@@ -100,6 +120,10 @@ public sealed class JourneyRuntimeEngine(
             {
                 throw new BusinessIdentityConflictException(
                     $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
+            }
+            if (await AdvanceAutoChargingAsync(currentMap, cancellationToken).ConfigureAwait(false))
+            {
+                return;
             }
             await DiscoverAndAcceptAsync(currentMap, gate, cancellationToken).ConfigureAwait(false);
             return;
@@ -426,6 +450,10 @@ public sealed class JourneyRuntimeEngine(
                     .ConfigureAwait(false);
                 if (sublot is null)
                 {
+                    if (await TryTimeOutSublotWaitAsync(runtime, now, cancellationToken).ConfigureAwait(false))
+                    {
+                        return;
+                    }
                     if (runtime.BlockReasonCode is not null)
                     {
                         runtime.UpdatedAt = now;
@@ -575,8 +603,16 @@ public sealed class JourneyRuntimeEngine(
             return "RIOT_VEHICLE_FACT_STALE";
         if (vehicle.BatteryPercent is null || string.IsNullOrWhiteSpace(vehicle.BatteryState))
             return "BATTERY_FACT_UNKNOWN";
-        if (string.Equals(vehicle.BatteryState, "CHARGING", StringComparison.Ordinal) ||
-            vehicle.BatteryPercent < runtimeOptions.MinimumBatteryPercent)
+        if (vehicle.BatteryPercent < runtimeOptions.MinimumBatteryPercent)
+            return "BATTERY_POLICY_NOT_SATISFIED";
+        // A vehicle parked on the charger reports CHARGING for as long as it stays plugged in, and
+        // the charging errand deliberately leaves it there -- the pad is also where it waits. So
+        // refusing every charging vehicle, which cost nothing while nothing ever drove one to the
+        // pad, would now strand it there permanently. What the policy protects is a part-charged
+        // vehicle being pulled off too early, and that ends at the resume level.
+        if (string.Equals(vehicle.BatteryState, "CHARGING", StringComparison.Ordinal) &&
+            (!runtimeOptions.AutoChargingEnabled ||
+             vehicle.BatteryPercent < runtimeOptions.ChargeResumeBatteryPercent))
             return "BATTERY_POLICY_NOT_SATISFIED";
         if (vehicle.Speed is null || vehicle.Speed != 0) return "RIOT_VEHICLE_NOT_STOPPED";
         if (vehicle.LockStatus is null || vehicle.LockStatus != 0 || !string.IsNullOrWhiteSpace(vehicle.OrderTaskId))
@@ -1177,6 +1213,246 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Advances the vehicle's charging errand, and reports whether it owns this iteration.
+    /// Returning <c>true</c> keeps discovery from running: while the vehicle is driving to the pad
+    /// or still below its resume level, every candidate would be refused for battery anyway, and
+    /// the reads that decision costs are all remote.
+    /// </summary>
+    /// <remarks>
+    /// Only ever called with no unresolved journey, so the errand and a demand can never hold the
+    /// vehicle at the same time. The vehicle is left standing on the pad when the run completes:
+    /// the next demand moves it, and driving it to a separate idle spot would be one more
+    /// unattended movement bought for nothing.
+    /// </remarks>
+    private async Task<bool> AdvanceAutoChargingAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        CancellationToken cancellationToken)
+    {
+        if (!runtimeOptions.AutoChargingEnabled)
+        {
+            return false;
+        }
+
+        // Ordered in memory, not in SQL: SQLite cannot ORDER BY a DateTimeOffset, and the provider
+        // says so by throwing at query translation rather than at startup. The set is at most a
+        // handful of rows for one vehicle, so the read costs nothing.
+        AutoChargingRunRow? run = (await dbContext.AutoChargingRuns
+                .Where(row => row.VehicleKey == runtimeOptions.VehicleKey &&
+                              row.Stage != AutoChargingStage.Completed)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+            .OrderBy(row => row.CreatedAt)
+            .FirstOrDefault();
+        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
+            runtimeOptions.VehicleKey, cancellationToken).ConfigureAwait(false);
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        if (run is null)
+        {
+            return await TryStartAutoChargingAsync(currentMap, vehicle, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        switch (run.Stage)
+        {
+            case AutoChargingStage.AwaitingChargerArrival:
+                MovementDispatchResult dispatch = await movementDispatch
+                    .ReconcileOrCreateAsync(run.UpperId, cancellationToken).ConfigureAwait(false);
+                if (dispatch.Outcome != MovementDispatchOutcome.Confirmed)
+                {
+                    run.BlockReasonCode = $"CHARGER_{dispatch.Outcome}";
+                    run.UpdatedAt = now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return true;
+                }
+                if (!await IsTrustedChargerArrivalAsync(run, cancellationToken).ConfigureAwait(false))
+                {
+                    return true;
+                }
+                run.Stage = AutoChargingStage.Charging;
+                run.BlockReasonCode = null;
+                run.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return true;
+            case AutoChargingStage.Charging:
+                if (vehicle.BatteryPercent is not { } percent)
+                {
+                    run.BlockReasonCode = "BATTERY_FACT_UNKNOWN";
+                    run.UpdatedAt = now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return true;
+                }
+                if (percent >= runtimeOptions.ChargeResumeBatteryPercent)
+                {
+                    run.Stage = AutoChargingStage.Completed;
+                    run.ReleasedAtBatteryPercent = percent;
+                    run.BlockReasonCode = null;
+                    run.UpdatedAt = now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    LogAutoChargingCompleted(logger, run.ChargingRunId, percent, null);
+                    // The vehicle is available again from this instant, so this iteration hands off
+                    // to discovery instead of costing a whole poll interval.
+                    return false;
+                }
+                // Standing on the pad without drawing current is the one failure this errand cannot
+                // fix by waiting: it means the vehicle never engaged. Naming it is all the runtime
+                // can do -- the repair is physical.
+                string? notEngaged = string.Equals(vehicle.BatteryState, "CHARGING", StringComparison.Ordinal)
+                    ? null
+                    : "CHARGER_NOT_ENGAGED";
+                if (run.BlockReasonCode != notEngaged)
+                {
+                    run.BlockReasonCode = notEngaged;
+                    run.UpdatedAt = now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                }
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private async Task<bool> TryStartAutoChargingAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        RiotVehicleObservation vehicle,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (vehicle.BatteryPercent is not { } percent ||
+            percent >= runtimeOptions.ChargeTriggerBatteryPercent ||
+            string.Equals(vehicle.BatteryState, "CHARGING", StringComparison.Ordinal))
+        {
+            // Already charging means somebody parked it on the pad by hand. Dispatching it to the
+            // station it is standing on would add a movement order for no movement.
+            return false;
+        }
+        // Every fact ValidateDynamicFacts checks about the vehicle itself holds here too, minus the
+        // battery policy this errand exists to repair: an errand is still an unattended movement.
+        if (!vehicle.Connected || !vehicle.Enabled ||
+            !string.Equals(vehicle.ProcState, "IDLE", StringComparison.Ordinal) ||
+            !string.Equals(vehicle.VehicleKey, runtimeOptions.VehicleKey, StringComparison.Ordinal) ||
+            !string.Equals(vehicle.CurrentMap, runtimeOptions.MapIdentity, StringComparison.Ordinal) ||
+            vehicle.ObservedAt > now || now - vehicle.ObservedAt > runtimeOptions.MaximumEvidenceAge ||
+            vehicle.Speed is null || vehicle.Speed != 0 ||
+            vehicle.LockStatus is null || vehicle.LockStatus != 0 ||
+            !string.IsNullOrWhiteSpace(vehicle.OrderTaskId))
+        {
+            return false;
+        }
+        OnboardFacts? onboard = await ReadOnboardFactsAsync(cancellationToken).ConfigureAwait(false);
+        if (onboard is null || !onboard.DepartureSafe || !onboard.VehicleStopped ||
+            !onboard.AllTargetSlotsLocked || !onboard.AllUnlockOutputsReset || onboard.UnknownPresent)
+        {
+            return false;
+        }
+        if (await dbContext.VehicleDispatchLeases.AnyAsync(
+                row => row.VehicleKey == runtimeOptions.VehicleKey && row.ReleasedAt == null,
+                cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        RiotMapStation charger;
+        try
+        {
+            charger = stationResolver.RequireFixedStation(
+                currentMap, runtimeOptions.ChargerStationRiotId, runtimeOptions.ChargerStationId);
+        }
+        catch (StationResolutionException error)
+        {
+            LogChargerStationUnresolved(logger, error.ReasonCode, error);
+            return false;
+        }
+
+        // The run id is derived rather than random so that a crash between writing the run and
+        // dispatching the order cannot leave two runs racing for one vehicle: the same trigger
+        // rebuilds the same identity, and both the run row and the order intent refuse a duplicate.
+        string chargingRunId = StableGuid(
+            $"{runtimeOptions.VehicleKey}|{runtimeOptions.DispatchGeneration}|{now:O}", "charging-run");
+        dbContext.AutoChargingRuns.Add(new AutoChargingRunRow
+        {
+            ChargingRunId = chargingRunId,
+            VehicleKey = runtimeOptions.VehicleKey,
+            AgvId = runtimeOptions.AgvId,
+            Stage = AutoChargingStage.AwaitingChargerArrival,
+            ChargerStationId = charger.StationName,
+            ChargerStationRiotId = charger.StationId,
+            MovementLegId = StableGuid(chargingRunId, "charger-leg"),
+            UpperId = $"W2G-CHARGE-{chargingRunId}-{runtimeOptions.DispatchGeneration}",
+            TriggeredAtBatteryPercent = percent,
+            CreatedAt = now,
+            UpdatedAt = now
+        });
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        AutoChargingRunRow run = await dbContext.AutoChargingRuns
+            .SingleAsync(row => row.ChargingRunId == chargingRunId, cancellationToken).ConfigureAwait(false);
+        await store.CreateUnladenMovementIntentAsync(
+            new OrderIntent(
+                run.MovementLegId,
+                // The intent table keys movements by demand, and this leg has no demand. A derived
+                // marker keeps it out of every per-demand query rather than borrowing the id of a
+                // demand that is not being served.
+                $"CHARGE-{chargingRunId}",
+                run.UpperId,
+                "TO_CHARGER",
+                run.ChargerStationId,
+                now,
+                runtimeOptions.VehicleKey,
+                runtimeOptions.MapId,
+                run.ChargerStationRiotId,
+                runtimeOptions.AgvLifecycleGeneration,
+                runtimeOptions.DispatchGeneration),
+            cancellationToken).ConfigureAwait(false);
+        MovementDispatchResult dispatch = await movementDispatch
+            .ReconcileOrCreateAsync(run.UpperId, cancellationToken).ConfigureAwait(false);
+        run.BlockReasonCode = dispatch.Outcome == MovementDispatchOutcome.Confirmed
+            ? null
+            : $"CHARGER_{dispatch.Outcome}";
+        run.UpdatedAt = timeProvider.GetUtcNow();
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        LogAutoChargingStarted(logger, chargingRunId, percent, run.ChargerStationId, null);
+        return true;
+    }
+
+    /// <summary>
+    /// The arrival test for a leg with nothing aboard. It asks the same of RIoT as
+    /// <see cref="IsTrustedArrivalAsync"/> -- this exact order, terminal and successful, and the
+    /// vehicle standing at the target station with no order in hand -- and nothing of the onboard
+    /// slots, which no part of this errand touched.
+    /// </summary>
+    private async Task<bool> IsTrustedChargerArrivalAsync(
+        AutoChargingRunRow run,
+        CancellationToken cancellationToken)
+    {
+        OrderIntentRow intent = await dbContext.OrderIntents.SingleAsync(
+            row => row.UpperId == run.UpperId, cancellationToken).ConfigureAwait(false);
+        RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(run.UpperId, cancellationToken)
+            .ConfigureAwait(false);
+        if (order.Kind != RiotOrderObservationKind.Terminal || order.OrderState != 5 ||
+            string.IsNullOrWhiteSpace(order.OrderId) || order.OrderId != intent.OrderId ||
+            order.VehicleKey != run.VehicleKey || order.MapId != runtimeOptions.MapId ||
+            order.DestinationStationId != run.ChargerStationRiotId)
+        {
+            return false;
+        }
+        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
+            run.VehicleKey, cancellationToken).ConfigureAwait(false);
+        // Read the clock after the observation, never before. RIoT stamps observedAt as it answers,
+        // so a "now" taken before the call is older than the reading it is about to judge, and the
+        // ObservedAt > now guard -- which exists to reject a vehicle reporting from the future --
+        // fires on every single poll instead. The charger arrival was never trusted and the run sat
+        // in AwaitingChargerArrival forever; L2 evidence 20260908-auto-charge-endurance-002.
+        // IsTrustedArrivalAsync takes its clock in this order for the same reason.
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        return vehicle.Connected && vehicle.Enabled &&
+               vehicle.ProcState == "IDLE" &&
+               vehicle.CurrentMap == runtimeOptions.MapIdentity &&
+               vehicle.CurrentStationId == run.ChargerStationRiotId &&
+               vehicle.Speed == 0 &&
+               vehicle.LockStatus == 0 &&
+               string.IsNullOrWhiteSpace(vehicle.OrderTaskId) &&
+               vehicle.ObservedAt <= now && now - vehicle.ObservedAt <= runtimeOptions.MaximumEvidenceAge;
+    }
+
     private JourneyExecutionPlan CreatePlan(EligibleCandidate candidate, DateTimeOffset now)
     {
         string demandId = candidate.Snapshot.DemandId;
@@ -1289,11 +1565,44 @@ public sealed class JourneyRuntimeEngine(
         element.GetProperty(propertyName).GetString()
         ?? throw new InvalidDataException($"Protocol field '{propertyName}' is required.");
 
+    /// <summary>
+    /// Ends the demand when nobody entered a sublot inside the wait window. A pickup stop can
+    /// legitimately have nothing to load, and the journey had no way to say so: it held the vehicle
+    /// and the station until an operator drove a recovery by hand. The runtime may end it alone
+    /// precisely because no slot operation was ever commanded -- there is no physical state that
+    /// only the peer could settle -- and the vehicle is free for the next demand on the next
+    /// discovery pass.
+    /// </summary>
+    private async Task<bool> TryTimeOutSublotWaitAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (runtimeOptions.SublotWaitTimeout <= TimeSpan.Zero ||
+            runtime.SublotWaitStartedAt is not { } startedAt ||
+            now - startedAt < runtimeOptions.SublotWaitTimeout)
+        {
+            return false;
+        }
+
+        if (await store.CancelDemandBeforeLoadAsync(
+                runtime.DemandId, "CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", now, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            LogSublotWaitTimedOut(logger, runtime.DemandId, runtimeOptions.SublotWaitTimeout, null);
+        }
+        return true;
+    }
+
     private static void SetStage(JourneyRuntimeRow runtime, JourneyRuntimeStage stage, DateTimeOffset now)
     {
         runtime.Stage = stage;
         runtime.BlockReasonCode = null;
         runtime.UpdatedAt = now;
+        if (stage == JourneyRuntimeStage.AwaitingSublot)
+        {
+            runtime.SublotWaitStartedAt ??= now;
+        }
     }
 
     /// <summary>

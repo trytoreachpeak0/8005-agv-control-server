@@ -469,16 +469,41 @@ public sealed class OnboardRecoveryCoordinator(
         StationOperationRow? operation = attemptId is null ? null : await dbContext.StationOperations
             .SingleOrDefaultAsync(row => row.SlotOperationAttemptId == attemptId, cancellationToken)
             .ConfigureAwait(false);
-        bool authorized = demand is not null && demand.Status == DemandExecutionStatus.Accepted &&
+        // A request this server has already authorised must be answered the same way for as long
+        // as the peer keeps asking. Re-deciding from the demand status cannot do that on the
+        // before-load path below, which cancels the demand as part of authorising it: the first
+        // reply says AUTHORIZED, and every replay would then read Cancelled and say REJECTED.
+        RecoveryWorkflowRow? priorAuthorization = await dbContext.RecoveryWorkflows.SingleOrDefaultAsync(
+            row => row.WorkflowId == cancellationId && row.WorkflowType == "LOAD_CANCELLATION",
+            cancellationToken).ConfigureAwait(false);
+        bool authorized = priorAuthorization is not null ||
+                          demand is not null && demand.Status == DemandExecutionStatus.Accepted &&
                           (operation is null || operation.DemandId == demandId &&
                            operation.OperationType == SlotOperationType.Load &&
                            operation.Status != StationOperationStatus.RecoveryRequired);
-        int[] slots = operation is null ? [] : ParseSlots(operation.TargetSlotsJson);
+        int[] slots = priorAuthorization is not null
+            ? ParseSlots(priorAuthorization.SlotsJson)
+            : operation is null ? [] : ParseSlots(operation.TargetSlotsJson);
         if (authorized)
         {
-            await UpsertSimpleWorkflowAsync(
+            RecoveryWorkflowRow workflow = await UpsertSimpleWorkflowAsync(
                 cancellationId, "LOAD_CANCELLATION", root, contentHash, demandId, attemptId, slots,
                 cancellationToken).ConfigureAwait(false);
+            // Cancelling at the pickup stop before any slot operation was commanded leaves nothing
+            // to clear: no door was opened, so the peer has no emptiness to prove and sends no
+            // LoadCancellationResult. Its schema could not carry one anyway -- slotResults is
+            // minItems 1. The authorisation is therefore the whole handshake, and the termination
+            // belongs here rather than in ApplyCurrentResultAsync.
+            if (attemptId is null && workflow.State != RecoveryWorkflowState.Reconciled)
+            {
+                DateTimeOffset now = timeProvider.GetUtcNow();
+                workflow.State = RecoveryWorkflowState.Reconciled;
+                workflow.Outcome = "CANCELLED_BEFORE_LOAD";
+                workflow.UpdatedAt = now;
+                await store.CancelDemandBeforeLoadAsync(
+                    demandId, "CANCELLED_BY_OPERATOR_BEFORE_LOAD", now, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         return Response(root, "LoadCancellationAuthorization", new
         {

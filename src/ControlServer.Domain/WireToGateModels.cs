@@ -171,6 +171,19 @@ public enum JourneyRuntimeStage
     Blocked
 }
 
+/// <summary>
+/// The vehicle's own errand between demands: drive to the charger, charge, and stand there until
+/// something else needs the vehicle. It is deliberately not a <see cref="JourneyRuntimeStage"/>.
+/// A journey carries a demand, a worklist and slot operations, and this carries none of the three
+/// -- folding it in would make every stage handler answer "which kind of run is this" first.
+/// </summary>
+public enum AutoChargingStage
+{
+    AwaitingChargerArrival,
+    Charging,
+    Completed
+}
+
 public sealed record JourneyExecutionPlan(
     string AgvId,
     string VehicleKey,

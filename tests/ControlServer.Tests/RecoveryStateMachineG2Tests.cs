@@ -776,6 +776,158 @@ public sealed class RecoveryStateMachineG2Tests
         Assert.Equal(handoffId, fault.RootElement.GetProperty("payload").GetProperty("handoffId").GetString());
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ACancellationRaisedBeforeAnySlotOperationEndsTheDemandAsItIsAuthorised()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_BEFORE_LOAD";
+        Environment.SetEnvironmentVariable(proofVariable, "before-load-proof-not-a-production-secret");
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedPickupStopAwaitingSublotAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState();
+            state.Readiness = SessionReadiness.Ready;
+
+            string request = Envelope(
+                "e0000000-0000-4000-8000-000000000010",
+                "LoadCancellationStartRequested",
+                new
+                {
+                    cancellationId = "a0000000-0000-4000-8000-000000000010",
+                    demandId = DemandId,
+                    slotOperationAttemptId = (string?)null,
+                    @operator = Operator(),
+                    reason = "站点没有要装的货。"
+                });
+            string response = await processor.ProcessAsync(
+                request, state, TestContext.Current.CancellationToken);
+
+            using (JsonDocument document = JsonDocument.Parse(response))
+            {
+                JsonElement payload = document.RootElement.GetProperty("payload");
+                Assert.Equal("LoadCancellationAuthorization",
+                    document.RootElement.GetProperty("messageType").GetString());
+                Assert.Equal("AUTHORIZED", payload.GetProperty("decision").GetString());
+                // No slot was ever commanded, so there is nothing for the peer to clear and no
+                // LoadCancellationResult to come back -- its slotResults is minItems 1.
+                Assert.Empty(payload.GetProperty("slots").EnumerateArray());
+                Assert.Equal(JsonValueKind.Null, payload.GetProperty("problem").ValueKind);
+            }
+
+            AcceptedDemandRow demand = await context.AcceptedDemands.SingleAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(DemandExecutionStatus.Cancelled, demand.Status);
+            VehicleDispatchLeaseRow lease = await context.VehicleDispatchLeases.SingleAsync(
+                TestContext.Current.CancellationToken);
+            Assert.NotNull(lease.ReleasedAt);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+            Assert.Equal("CANCELLED_BY_OPERATOR_BEFORE_LOAD", runtime.BlockReasonCode);
+            // The entry request is answered by the cancellation; unsettled it would replay into the
+            // next session as a business id whose content changed and tear that session down.
+            ProtocolOutboxRow entryRequest = await context.ProtocolOutbox.SingleAsync(
+                row => row.MessageType == "SublotEntryRequested", TestContext.Current.CancellationToken);
+            Assert.NotNull(entryRequest.AcknowledgedAt);
+            RecoveryWorkflowRow workflow = await context.RecoveryWorkflows.SingleAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(RecoveryWorkflowState.Reconciled, workflow.State);
+            Assert.Equal("CANCELLED_BEFORE_LOAD", workflow.Outcome);
+            Assert.Empty(await context.StationOperations.ToArrayAsync(TestContext.Current.CancellationToken));
+
+            // The peer keeps asking until it sees an answer, and the answer cannot change. Deciding
+            // afresh from the demand status would now read Cancelled and refuse the very
+            // cancellation that produced it.
+            DateTimeOffset releasedAt = lease.ReleasedAt!.Value;
+            string replay = await processor.ProcessAsync(
+                request, state, TestContext.Current.CancellationToken);
+            using (JsonDocument document = JsonDocument.Parse(replay))
+            {
+                Assert.Equal("AUTHORIZED",
+                    document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
+            }
+            Assert.Equal(releasedAt, (await context.VehicleDispatchLeases.SingleAsync(
+                TestContext.Current.CancellationToken)).ReleasedAt);
+            Assert.Single(await context.RecoveryWorkflows.ToArrayAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task CancellingBeforeLoadRefusesADemandWhoseSlotOperationWasAlreadyCommanded()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedPickupStopAwaitingSublotAsync(context);
+        context.StationOperations.Add(new StationOperationRow
+        {
+            SlotOperationAttemptId = AttemptId,
+            DemandId = DemandId,
+            SublotId = "SUBLOT-001",
+            TargetSlotsJson = "[1,2]",
+            OperationType = SlotOperationType.Load,
+            ForcedRecoveryGeneration = 0,
+            ContentHash = new string('a', 64),
+            Status = StationOperationStatus.Committed,
+            CreatedAt = Now.AddMinutes(-1)
+        });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+
+        // A commanded operation carries physical state only the peer can settle. Ending the demand
+        // here would drop it while a slot door is possibly still open, so the shortcut is refused
+        // rather than quietly widened.
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => store.CancelDemandBeforeLoadAsync(
+            DemandId, "CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", Now, TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            DemandExecutionStatus.Accepted,
+            (await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(
+            JourneyRuntimeStage.AwaitingSublot,
+            (await context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken)).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task CancellingBeforeLoadIsIdempotentAndRefusesToUndoACompletedDemand()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedPickupStopAwaitingSublotAsync(context);
+        WireToGateStore store = new(context);
+
+        Assert.True(await store.CancelDemandBeforeLoadAsync(
+            DemandId, "CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", Now, TestContext.Current.CancellationToken));
+        // Second call: already cancelled, so it reports that it did nothing rather than terminating
+        // twice. Both the timeout and an operator request can reach this, and they can race.
+        Assert.False(await store.CancelDemandBeforeLoadAsync(
+            DemandId, "CANCELLED_BY_OPERATOR_BEFORE_LOAD", Now.AddMinutes(1),
+            TestContext.Current.CancellationToken));
+
+        JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", runtime.BlockReasonCode);
+
+        AcceptedDemandRow demand = await context.AcceptedDemands.SingleAsync(
+            TestContext.Current.CancellationToken);
+        demand.Status = DemandExecutionStatus.Succeeded;
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => store.CancelDemandBeforeLoadAsync(
+            DemandId, "CANCELLED_BY_SUBLOT_WAIT_TIMEOUT", Now, TestContext.Current.CancellationToken));
+    }
+
     private static OnboardMessageProcessor Processor(
         ControlServerDbContext context,
         IOnboardPeer peer,
@@ -846,6 +998,81 @@ public sealed class RecoveryStateMachineG2Tests
     /// server computes the session as Ready even while it holds an operation in RecoveryRequired.
     /// Observed in `evidence/l2/20260904-real-onboard-resume-after-repair-f0465d9-001`.
     /// </summary>
+    /// <summary>
+    /// The vehicle standing at the pickup stop with the entry request outstanding: demand accepted,
+    /// lease held, no slot operation commanded, session Ready. This is the state an operator is in
+    /// when the stop turns out to have nothing to load, and it is the one state the blocked-journey
+    /// seed cannot express -- there, a load has already failed.
+    /// </summary>
+    private static async Task SeedPickupStopAwaitingSublotAsync(ControlServerDbContext context)
+    {
+        context.AcceptedDemands.Add(new AcceptedDemandRow
+        {
+            DemandId = DemandId,
+            SeriesId = "SERIES-001",
+            TransportDemandKey = "SUBLOT-001|WIRE_TO_GATE",
+            WorkType = "WIRE_TO_GATE",
+            Sublot = "SUBLOT-001",
+            Generation = 1,
+            DemandRevision = 1,
+            HistoryEpoch = "history-1",
+            CatalogRevision = 1,
+            CreatedAt = Now.AddMinutes(-10),
+            ValueObservedAt = Now.AddMinutes(-9),
+            ValuePollTraceId = "TRACE-001",
+            ValueProjectionCommitId = "COMMIT-001",
+            LiveMesFieldsJson = "{}",
+            AcceptedAt = Now.AddMinutes(-8),
+            Status = DemandExecutionStatus.Accepted
+        });
+        context.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
+        {
+            DemandId = DemandId,
+            VehicleKey = "VEHICLE-001",
+            AcquiredAt = Now.AddMinutes(-8)
+        });
+        context.OrderIntents.AddRange(
+            Intent("pickup-leg", "UPPER-PICKUP", "TO_PICKUP", 11),
+            Intent("gate-leg", "UPPER-GATE", "TO_GATE", 22));
+        context.JourneyRuntimes.Add(Runtime(JourneyRuntimeStage.AwaitingSublot, blockReasonCode: null));
+        context.ProtocolOutbox.Add(new ProtocolOutboxRow
+        {
+            MessageId = "d0000000-0000-4000-8000-000000000004",
+            MessageType = "SublotEntryRequested",
+            PayloadJson = "{}",
+            CreatedAt = Now.AddMinutes(-2)
+        });
+        context.SessionRecoveries.Add(new SessionRecoveryRow
+        {
+            AgvId = AgvId,
+            SessionGeneration = 3,
+            ProtocolCommit = ProtocolCandidateIdentity.RepositoryCommit,
+            ManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+            ProfileId = ProtocolCandidateIdentity.ProfileId,
+            ProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+            CapabilityRevision = 5,
+            SafetyRevision = 7,
+            DepartureSafe = true,
+            RecoveryReportId = "b0000000-0000-4000-8000-000000000001",
+            ForcedRecoveryGeneration = 0,
+            ReportedForcedRecoveryGeneration = 0,
+            PendingAttemptIdsJson = "[]",
+            PendingResultIdsJson = "[]",
+            ProvenRecoveryCheckpoint = "NONE",
+            ActiveUnlockSlotsJson = "[]",
+            Readiness = SessionReadiness.Ready,
+            ReasonCode = "READY",
+            UpdatedAt = Now
+        });
+        context.VehicleRecoveryGenerations.Add(new VehicleRecoveryGenerationRow
+        {
+            AgvId = AgvId,
+            ForcedRecoveryGeneration = 0,
+            UpdatedAt = Now
+        });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
     private static async Task SeedBlockedJourneyAsync(
         ControlServerDbContext context,
         bool productionShapedSession = false)
@@ -946,10 +1173,12 @@ public sealed class RecoveryStateMachineG2Tests
         OrderId = "ORDER-" + purpose
     };
 
-    private static JourneyRuntimeRow Runtime() => new()
+    private static JourneyRuntimeRow Runtime(
+        JourneyRuntimeStage stage = JourneyRuntimeStage.Blocked,
+        string? blockReasonCode = "LOAD_RESULT_REQUIRES_RECOVERY") => new()
     {
         DemandId = DemandId,
-        Stage = JourneyRuntimeStage.Blocked,
+        Stage = stage,
         AgvId = AgvId,
         VehicleKey = "VEHICLE-001",
         AgvLifecycleGeneration = 1,
@@ -985,7 +1214,7 @@ public sealed class RecoveryStateMachineG2Tests
         GatePlanMessageId = "d0000000-0000-4000-8000-000000000010",
         UnloadCommandMessageId = "d0000000-0000-4000-8000-000000000011",
         UnloadSlotOperationAttemptId = "d0000000-0000-4000-8000-000000000012",
-        BlockReasonCode = "LOAD_RESULT_REQUIRES_RECOVERY",
+        BlockReasonCode = blockReasonCode,
         CreatedAt = Now.AddMinutes(-8),
         UpdatedAt = Now
     };

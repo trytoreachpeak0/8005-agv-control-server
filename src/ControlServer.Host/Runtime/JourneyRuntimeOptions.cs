@@ -18,6 +18,30 @@ public sealed class JourneyRuntimeOptions
     public string DispatchZone { get; set; } = string.Empty;
     public long DispatchGeneration { get; set; }
     public int MinimumBatteryPercent { get; set; } = 30;
+
+    /// <summary>
+    /// Whether the runtime drives the vehicle to the charger by itself when it runs low between
+    /// demands. Off by default: it needs the charger's exact station identity on the live map, and
+    /// a deployment that has not supplied one must not start moving the vehicle on its own.
+    /// </summary>
+    public bool AutoChargingEnabled { get; set; }
+    public string ChargerStationId { get; set; } = string.Empty;
+    public int ChargerStationRiotId { get; set; }
+
+    /// <summary>
+    /// Below this the runtime sends the vehicle to charge. It sits below
+    /// <see cref="MinimumBatteryPercent"/> on purpose -- a vehicle that is merely too low to accept
+    /// a demand is not yet worth a trip to the pad, and the gap keeps it from oscillating between
+    /// "just able to work" and "off to charge".
+    /// </summary>
+    public int ChargeTriggerBatteryPercent { get; set; } = 20;
+
+    /// <summary>
+    /// The level at which a charging vehicle becomes available for demands again. The vehicle stays
+    /// physically on the charger and keeps reporting CHARGING, so this level -- not the charging
+    /// state -- is what ends the refusal in ValidateDynamicFacts.
+    /// </summary>
+    public int ChargeResumeBatteryPercent { get; set; } = 80;
     public TimeSpan MaximumEvidenceAge { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
@@ -27,6 +51,13 @@ public sealed class JourneyRuntimeOptions
     /// answers in tens of milliseconds; this only has to cover that.
     /// </summary>
     public TimeSpan DepartureSafetyResultWait { get; set; } = TimeSpan.FromMilliseconds(1500);
+    /// <summary>
+    /// How long the pickup stop waits for an operator to enter a sublot before the runtime ends the
+    /// demand on its own. A stop can legitimately have nothing to load, and without this the
+    /// journey holds the vehicle and the pickup station forever. <see cref="TimeSpan.Zero"/>
+    /// disables the timeout and leaves the operator's explicit cancellation as the only way out.
+    /// </summary>
+    public TimeSpan SublotWaitTimeout { get; set; } = TimeSpan.FromMinutes(5);
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];
@@ -58,6 +89,15 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             failures.Add("SublotBoxCountPath must be a same-origin absolute path.");
         }
         if (options.PollInterval < TimeSpan.FromMilliseconds(100)) failures.Add("PollInterval must be at least 100 ms.");
+        // Zero disables it. The floor only catches a slipped decimal point -- a value that cancels
+        // demands out from under an operator still walking to the vehicle is a configuration
+        // review's job, not a validator's, and the shipped value is five minutes. It is this low
+        // because the L2 scenario layer has to cross the window inside a run that lasts seconds.
+        if (options.SublotWaitTimeout < TimeSpan.Zero ||
+            options.SublotWaitTimeout > TimeSpan.Zero && options.SublotWaitTimeout < TimeSpan.FromSeconds(5))
+        {
+            failures.Add("SublotWaitTimeout must be zero (disabled) or at least 5 s.");
+        }
         if (options.MaximumEvidenceAge <= TimeSpan.Zero) failures.Add("MaximumEvidenceAge must be positive.");
         if (options.DepartureSafetyResultWait <= TimeSpan.Zero ||
             options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))
@@ -69,6 +109,22 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         if (options.GateStationRiotId <= 0) failures.Add("GateStationRiotId must be positive.");
         if (options.DispatchGeneration <= 0) failures.Add("DispatchGeneration must be positive.");
         if (options.MinimumBatteryPercent is < 1 or > 100) failures.Add("MinimumBatteryPercent must be in 1..100.");
+        if (options.AutoChargingEnabled)
+        {
+            RequireText(options.ChargerStationId, nameof(options.ChargerStationId), failures);
+            if (options.ChargerStationRiotId <= 0) failures.Add("ChargerStationRiotId must be positive.");
+            if (options.ChargeTriggerBatteryPercent is < 1 or > 100)
+                failures.Add("ChargeTriggerBatteryPercent must be in 1..100.");
+            if (options.ChargeResumeBatteryPercent is < 1 or > 100)
+                failures.Add("ChargeResumeBatteryPercent must be in 1..100.");
+            // Resuming at or below the trigger would send the vehicle back to the charger the moment
+            // it was released, and resuming below the demand floor would release it into a state
+            // where every candidate is refused for battery anyway.
+            if (options.ChargeResumeBatteryPercent <= options.ChargeTriggerBatteryPercent)
+                failures.Add("ChargeResumeBatteryPercent must exceed ChargeTriggerBatteryPercent.");
+            if (options.ChargeResumeBatteryPercent < options.MinimumBatteryPercent)
+                failures.Add("ChargeResumeBatteryPercent must be at least MinimumBatteryPercent.");
+        }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);
         if (!options.AllowedWorkTypes.Contains("WIRE_TO_GATE", StringComparer.Ordinal))
