@@ -3,6 +3,7 @@ using System;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace ControlServer.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ControlServerDbContext))]
-    partial class ControlServerDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260909124757_Batch3GovernanceAndSlotConfiguration")]
+    partial class Batch3GovernanceAndSlotConfiguration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
@@ -504,75 +507,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("ConnectionRecoveries");
                 });
 
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.CreateGateAuditRow", b =>
-                {
-                    b.Property<string>("GateAuditId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AgvId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ConflictDetail")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DemandId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("EvaluatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("GraphReachable")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("GraphTraversalCostMm")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long?>("RiotRouteCostMm")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("TargetStationId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("TransportDemandKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Verdict")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("GateAuditId");
-
-                    b.HasIndex("DemandId", "EvaluatedAt");
-
-                    b.ToTable("CreateGateAudit");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.DispatchZoneVehicleRow", b =>
-                {
-                    b.Property<string>("Zone")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AgvId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ConfigurationVersion")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Zone", "AgvId");
-
-                    b.ToTable("DispatchZoneVehicles");
-                });
-
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.ExceptionRecoverySessionRow", b =>
                 {
                     b.Property<string>("ExceptionRecoverySessionId")
@@ -691,85 +625,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("ExperimentalRiotCreateAuthorizations");
                 });
 
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.FaultedVehicleCargoRow", b =>
-                {
-                    b.Property<string>("CargoBindingId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AgvId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("BoundAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("DemandId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("FaultGeneration")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("LoadingWitnessed")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("MovementLegId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("ReleasedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReleasedReason")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TransportDemandKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("CargoBindingId");
-
-                    b.HasIndex("DemandId");
-
-                    b.HasIndex("AgvId", "FaultGeneration")
-                        .IsUnique()
-                        .HasFilter("ReleasedAt IS NULL");
-
-                    b.ToTable("FaultedVehicleCargo");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.FrozenDemandStationRow", b =>
-                {
-                    b.Property<string>("DemandId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Role")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("CatalogRevision")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("FrozenAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StationId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("StationName")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TransportDemandKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("DemandId", "Role");
-
-                    b.HasIndex("TransportDemandKey");
-
-                    b.ToTable("FrozenDemandStations");
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.GovernedConfigurationSnapshotRow", b =>
                 {
                     b.Property<string>("SnapshotId")
@@ -895,9 +750,76 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("JourneyBacklog");
                 });
 
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.JourneyDemandRow", b =>
+                {
+                    b.Property<string>("JourneyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DemandId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConsumedSublotMessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ExpectedBasketCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LoadCommandMessageId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LoadCommandedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LoadSlotOperationAttemptId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LoadedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("StopSequence")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TargetSlotsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UnloadCommandMessageId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("UnloadCommandedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UnloadSlotOperationAttemptId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("JourneyId", "DemandId");
+
+                    b.HasIndex("DemandId")
+                        .IsUnique();
+
+                    b.HasIndex("LoadSlotOperationAttemptId")
+                        .IsUnique();
+
+                    b.HasIndex("UnloadSlotOperationAttemptId")
+                        .IsUnique();
+
+                    b.ToTable("JourneyDemands");
+                });
+
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.JourneyRuntimeRow", b =>
                 {
-                    b.Property<string>("DemandId")
+                    b.Property<string>("JourneyId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("AgvId")
@@ -910,30 +832,16 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<string>("BlockReasonCode")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("ConsumedSafetyResultMessageId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ConsumedSublotMessageId")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("CurrentStopSequence")
+                        .HasColumnType("INTEGER");
 
                     b.Property<long>("DispatchGeneration")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("DispatchZone")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("ExpectedBasketCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("GateMovementLegId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("GatePlanMessageId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -944,24 +852,10 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<int>("GateStationRiotId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("GateUpperId")
-                        .IsRequired()
+                    b.Property<DateTimeOffset?>("HoldingStartedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("GateVehicleBusinessMessageId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("GateWorklistMessageId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LoadCommandMessageId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LoadSlotOperationAttemptId")
-                        .IsRequired()
+                    b.Property<string>("LoadingClosedReason")
                         .HasColumnType("TEXT");
 
                     b.Property<int>("MapId")
@@ -971,22 +865,60 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("NextStopSequence")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("OperationSessionId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("PickupMovementLegId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PickupStationId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("PickupStationRiotId")
+                    b.Property<long>("PlanRevision")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("PickupUpperId")
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("VehicleBusinessRevision")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("VehicleKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("WorklistRevision")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("JourneyId");
+
+                    b.ToTable("JourneyRuntimes");
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.JourneyStopRow", b =>
+                {
+                    b.Property<string>("JourneyId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConsumedSafetyResultMessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LegType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LoadRound")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("MovementLegId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -1005,31 +937,33 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("RouteEvidenceId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Stage")
+                    b.Property<string>("State")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("SublotRequestMessageId")
+                    b.Property<string>("StationId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("TargetSlotsJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
+                    b.Property<int>("StationRiotId")
+                        .HasColumnType("INTEGER");
 
-                    b.Property<string>("UnloadCommandMessageId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UnloadSlotOperationAttemptId")
-                        .IsRequired()
+                    b.Property<DateTimeOffset?>("SublotWaitStartedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpperId")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("VehicleBusinessMessageId")
@@ -1039,117 +973,18 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<long>("VehicleBusinessRevision")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("VehicleKey")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("WorklistMessageId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<long>("WorklistRevision")
                         .HasColumnType("INTEGER");
 
-                    b.HasKey("DemandId");
+                    b.HasKey("JourneyId", "Sequence");
 
-                    b.ToTable("JourneyRuntimes");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.ManualChargingReturnToServiceRow", b =>
-                {
-                    b.Property<string>("RequestId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AdministratorId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AdministratorRole")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AgvId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("DecidedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<double?>("ObservedBatteryPercent")
-                        .HasColumnType("REAL");
-
-                    b.Property<string>("Outcome")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProblemDisplayMessage")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProblemFieldPath")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProblemReasonCode")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestContentHash")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestMessageId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("SessionGeneration")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("VehicleBusinessStateRevision")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("RequestId");
-
-                    b.HasIndex("RequestMessageId")
+                    b.HasIndex("MovementLegId")
                         .IsUnique();
 
-                    b.ToTable("ManualChargingReturnToServiceRequests");
-                });
+                    b.HasIndex("UpperId")
+                        .IsUnique();
 
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.MapStationCatalogStateRow", b =>
-                {
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("ApprovedMaxUnconfirmedSeconds")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("ApprovedSyncPeriodSeconds")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("CatalogRevision")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("LastAttemptAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("LastCompleteConfirmationAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastFailureReason")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("State")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("MapId");
-
-                    b.ToTable("MapStationCatalogStates");
+                    b.ToTable("JourneyStops");
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.MissingPackageRow", b =>
@@ -1335,12 +1170,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("VehicleOccupancyClaimedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("VehicleOccupancyReleasedAt")
-                        .HasColumnType("TEXT");
-
                     b.HasKey("MovementLegId");
 
                     b.HasIndex("CreateAttemptId")
@@ -1353,10 +1182,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("UpperId")
                         .IsUnique();
-
-                    b.HasIndex("VehicleKey")
-                        .IsUnique()
-                        .HasFilter("VehicleOccupancyClaimedAt IS NOT NULL AND VehicleOccupancyReleasedAt IS NULL");
 
                     b.ToTable("OrderIntents");
                 });
@@ -1964,252 +1789,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("RiotDispatchAuditEvents");
                 });
 
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.RiotOrderCommandAuditRow", b =>
-                {
-                    b.Property<string>("CommandAuditId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("AgvId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("AttemptNumber")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("CommandType")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("FaultGeneration")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("IssuedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Outcome")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ReceiptJson")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("ReconciledAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RequestSemanticSha256")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetOrderId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TargetUpperId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("CommandAuditId");
-
-                    b.HasIndex("AgvId", "IssuedAt");
-
-                    b.HasIndex("CommandType", "TargetUpperId", "AttemptNumber")
-                        .IsUnique();
-
-                    b.ToTable("RiotOrderCommandAudit");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.RouteGraphEdgeGroupRow", b =>
-                {
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("GroupName")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("EdgeId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("GroupType")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("ObservedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("MapId", "GroupName", "EdgeId");
-
-                    b.ToTable("RouteGraphEdgeGroups");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.RouteGraphEdgeRow", b =>
-                {
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EdgeId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<double>("CostMm")
-                        .HasColumnType("REAL");
-
-                    b.Property<long>("DesignRevision")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Direction")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EndNode")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EndX")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EndY")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("IsBackEdge")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StartNode")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StartX")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StartY")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("MapId", "EdgeId");
-
-                    b.HasIndex("MapId", "EndNode");
-
-                    b.HasIndex("MapId", "StartNode");
-
-                    b.ToTable("RouteGraphEdges");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.RouteGraphRemovedEdgeRow", b =>
-                {
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EdgeId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("ObservedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("MapId", "EdgeId");
-
-                    b.ToTable("RouteGraphRemovedEdges");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.RouteGraphRemovedStationRow", b =>
-                {
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StationId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("ObservedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("MapId", "StationId");
-
-                    b.ToTable("RouteGraphRemovedStations");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.RouteGraphSnapshotRow", b =>
-                {
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("DesignEdgeCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("DesignRefreshedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("DesignRevision")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("DesignSourceGmtUpdate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("DesignStationCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("DynamicRouteCostObservedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("DynamicRouteCostPresent")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("EdgeGroupFingerprint")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("EdgeGroupRefreshedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("RuntimeRefreshedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("RuntimeRemovedEdgeCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("RuntimeRemovedStationCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("StaleReason")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("StaleSince")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("MapId");
-
-                    b.ToTable("RouteGraphSnapshots");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.RouteGraphStationRow", b =>
-                {
-                    b.Property<int>("MapId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("StationId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("DesignRevision")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("EdgeId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<double>("PosX")
-                        .HasColumnType("REAL");
-
-                    b.Property<double>("PosY")
-                        .HasColumnType("REAL");
-
-                    b.Property<double>("ResolutionResidualMm")
-                        .HasColumnType("REAL");
-
-                    b.Property<int>("ResolvedNode")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("MapId", "StationId");
-
-                    b.HasIndex("MapId", "ResolvedNode");
-
-                    b.ToTable("RouteGraphStations");
-                });
-
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SessionRecoveryRow", b =>
                 {
                     b.Property<string>("AgvId")
@@ -2687,6 +2266,27 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("TransportDemandCompletions");
                 });
 
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.TransportDemandSuppressionRow", b =>
+                {
+                    b.Property<string>("TransportDemandKey")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DemandId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("SuppressedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("TransportDemandKey");
+
+                    b.ToTable("TransportDemandSuppressions");
+                });
+
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.UnloadBatchRow", b =>
                 {
                     b.Property<string>("UnloadBatchId")
@@ -2708,29 +2308,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("UnloadBatches");
                 });
 
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.VehicleDispatchBudgetRow", b =>
-                {
-                    b.Property<string>("AgvId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ConfigurationVersion")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("RoundTimeoutMilliseconds")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("AgvId");
-
-                    b.ToTable("VehicleDispatchBudgets");
-                });
-
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.VehicleDispatchLeaseRow", b =>
                 {
-                    b.Property<string>("DemandId")
+                    b.Property<string>("JourneyId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("AcquiredAt")
@@ -2743,59 +2323,13 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.HasKey("DemandId");
+                    b.HasKey("JourneyId");
 
                     b.HasIndex("VehicleKey")
                         .IsUnique()
                         .HasFilter("ReleasedAt IS NULL");
 
                     b.ToTable("VehicleDispatchLeases");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.VehicleFaultStateRow", b =>
-                {
-                    b.Property<string>("AgvId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("ClearedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ClearedReason")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("EnteredAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("EscalatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("EvidenceCode")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("EvidenceOnAutoConfirmWhitelist")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("FaultGeneration")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("LastEvaluatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Level")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("StopProven")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("StopProvenAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("AgvId");
-
-                    b.ToTable("VehicleFaultStates");
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.VehicleRecoveryGenerationRow", b =>
@@ -2812,29 +2346,6 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasKey("AgvId");
 
                     b.ToTable("VehicleRecoveryGenerations");
-                });
-
-            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.VehicleTaskTypeAdmissionRow", b =>
-                {
-                    b.Property<string>("AgvId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TaskType")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("Allowed")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ConfigurationVersion")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("AgvId", "TaskType");
-
-                    b.ToTable("VehicleTaskTypeAdmissions");
                 });
 #pragma warning restore 612, 618
         }

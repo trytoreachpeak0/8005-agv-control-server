@@ -5,6 +5,7 @@ using ControlServer.Domain;
 using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
 using ControlServer.Host.Transport;
+using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -133,6 +134,8 @@ builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>(
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
     }
 });
+// 批次 3 的治理机制：版本化快照、两条不可改写审计流，以及吃它们的那几个 store。
+builder.Services.AddGovernance(builder.Configuration);
 
 WebApplication app = builder.Build();
 app.UseSerilogRequestLogging();

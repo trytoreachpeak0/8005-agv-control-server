@@ -56,6 +56,15 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<FrozenDemandStationRow> FrozenDemandStations => Set<FrozenDemandStationRow>();
     public DbSet<CreateGateAuditRow> CreateGateAudit => Set<CreateGateAuditRow>();
 
+    /// <summary>
+    /// How long audit records are protected from deletion. Defaults to the REQ-0271 floor of 180
+    /// days; the host binds the configured value over it. Changing it never permits an update.
+    /// </summary>
+    public AuditRetentionPolicy AuditRetention { get; set; } = AuditRetentionPolicy.Default;
+
+    /// <summary>The clock the retention check reads.</summary>
+    public TimeProvider AuditClock { get; set; } = TimeProvider.System;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
@@ -152,6 +161,23 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         // 下——加一张表是加一个文件，不是在这里再加一段。上面那些手写配置是 v2 线既有的，两种写法
         // 并存：程序集扫描只会捡到 Configurations/ 里的那些，不会碰上面任何一行。
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ControlServerDbContext).Assembly);
+    }
+
+    // Audit immutability lives here rather than in the stores that write audit, so that it is a
+    // property of the context every caller already goes through instead of a rule each new caller
+    // has to remember.
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 }
 
