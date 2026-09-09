@@ -636,6 +636,12 @@ public sealed class JourneyRuntimeEngine(
                     // The wait is not open-ended, but closing the stop is ADR-cross-0055's
                     // StationDepartureWaitTimeout, not this branch. Spelled out rather than left to
                     // the else below, which means something else entirely: no result yet.
+                    //
+                    // A determinate failure arrives with every door shut, so whatever alarm the open
+                    // door raised while the vehicle was still prompting is over -- withdraw it here,
+                    // or the stop reads STATION_TIMEOUT_DOOR_NOT_CLOSED against eight locked doors.
+                    await ReconcileStationTimeoutDoorNotClosedAsync(
+                        runtime, stop, session, now, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 else if (load?.Status == StationOperationStatus.Committed)
@@ -676,6 +682,17 @@ public sealed class JourneyRuntimeEngine(
                 }
                 else
                 {
+                    // No result yet. ADR-cross-0058 decision 4's other half belongs here: the
+                    // deadline has passed and a slot door is still open, so the stop cannot close
+                    // and nothing about the vehicle says why it is standing there. The vehicle
+                    // settles this itself once the door is shut -- it drives the slot to a
+                    // determinate failure past the deadline -- but while the door stays open there
+                    // is no such moment, and decision 4 wants the vehicle visibly waiting under an
+                    // alarm rather than silently stuck. TryTimeOutSublotWaitAsync raises the same
+                    // code for the same reason, but it only ever runs in AwaitingSublot, where by
+                    // construction no slot operation is underway.
+                    await ReconcileStationTimeoutDoorNotClosedAsync(
+                        runtime, stop, session, now, cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 break;
@@ -2179,6 +2196,47 @@ public sealed class JourneyRuntimeEngine(
     /// <see cref="JourneyRuntimeStage.AwaitingSublot"/> and settles as soon as the door is shut.
     /// </summary>
     private const string StationTimeoutDoorNotClosedReason = "STATION_TIMEOUT_DOOR_NOT_CLOSED";
+
+    /// <summary>
+    /// Raises <see cref="StationTimeoutDoorNotClosedReason"/> while the stop is past its departure
+    /// deadline with a slot door still open, and withdraws it once that stops being true. It is the
+    /// <see cref="JourneyRuntimeStage.AwaitingLoadResult"/> half of ADR-cross-0058 decision 4;
+    /// <see cref="TryTimeOutSublotWaitAsync"/> is the <see cref="JourneyRuntimeStage.AwaitingSublot"/>
+    /// half, and the two stages are mutually exclusive -- a slot operation is only ever underway in
+    /// this one.
+    /// </summary>
+    /// <remarks>
+    /// Writes on the edge only: this runs every poll interval. The withdrawal is equally narrow --
+    /// it clears the field only when this method is what put that code there, so a block reason
+    /// written by anything else survives untouched.
+    /// </remarks>
+    private async Task ReconcileStationTimeoutDoorNotClosedAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        string? reason =
+            StationDepartureDeadline(stop) is { } deadline &&
+            now >= deadline &&
+            DoorLeftOpen(session)
+                ? StationTimeoutDoorNotClosedReason
+                : null;
+        if (reason == runtime.BlockReasonCode ||
+            (reason is null && runtime.BlockReasonCode != StationTimeoutDoorNotClosedReason))
+        {
+            return;
+        }
+
+        if (reason is not null)
+        {
+            LogStationTimeoutDoorNotClosed(logger, stop.StationId, runtimeOptions.SublotWaitTimeout, null);
+        }
+        runtime.BlockReasonCode = reason;
+        runtime.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Whether the vehicle is currently reporting a slot door that is not closed. The source is the

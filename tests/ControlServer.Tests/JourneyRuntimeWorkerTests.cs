@@ -1751,6 +1751,75 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AnExpiredDeadlineRaisesTheDoorAlarmWhileALoadIsStillUnderway()
+    {
+        // ADR-cross-0058 decision 4's other half. The alarm branch lived only in
+        // TryTimeOutSublotWaitAsync, which never runs in AwaitingLoadResult -- and a slot operation
+        // is only ever underway in AwaitingLoadResult. So the one stage where a door can actually
+        // stand open past the deadline was the one stage that never said so, and the journey sat
+        // there with nothing naming why.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        SingleDemandJourneyView runtime = await fixture.AdvanceToLoadResultAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+
+        await fixture.ReportDoorLeftOpenAsync();
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // Inside the window an open door is not an alarm, it is a load in progress.
+        Assert.Null((await fixture.RuntimeAsync()).BlockReasonCode);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", runtime.BlockReasonCode);
+        // An alarm, not a block. Nothing here needs an administrator -- it needs someone to close
+        // a door -- and the demand stays live while that happens.
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task TheDoorAlarmIsWithdrawnOnceTheDoorIsShutAgain()
+    {
+        // The alarm names a condition, not an event: once the door is shut the vehicle can settle
+        // the slot itself -- past the deadline it drives it to a determinate failure -- and a stop
+        // still reading STATION_TIMEOUT_DOOR_NOT_CLOSED against eight locked doors would send
+        // someone looking for a door that is already closed.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ReportDoorLeftOpenAsync();
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", (await fixture.RuntimeAsync()).BlockReasonCode);
+
+        await fixture.ReportDoorClosedAsync();
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        Assert.Null(runtime.BlockReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
     public async Task ASublotWaitTimeoutOfZeroLeavesTheStopOpenIndefinitely()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
