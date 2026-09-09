@@ -27,7 +27,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `load-command-never-answered` | 合成 | 装载指令石沉大海，服务端重发而不改口 | `evidence/l2/20260908-regression-load-command-never-answered-001` |
 | `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-005` |
 | `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
-| `real-onboard-recovery-entry-missing` | **真的** | 装载失败后车上发起不了任何恢复：授权是齐的，入口是缺的 | **已被 ADR-cross-0058 决策 1 作废**，见下 |
+| `real-onboard-recovery-entry-on-unknown` | **真的** | 锁反馈失效报出一份真的 `UNKNOWN`：旅程停摆，而车上打得开恢复入口 | `evidence/l2/20260910-real-onboard-recovery-entry-on-unknown-001` |
 | `real-onboard-load-door-closed-empty` | **真的** | 装货时关门不放料：反复重开、不判失败、不进恢复；提示节拍到期只再提示不重复脉冲 | `evidence/l2/20260909-real-onboard-load-door-closed-empty-002` |
 | `real-onboard-unload-not-emptied` | **真的** | 卸货时关门不取货：一直闭环到取空，没有取消分支 | `evidence/l2/20260909-real-onboard-unload-not-emptied-001` |
 | `real-onboard-station-timeout-door-open` | **真的** | 站点期限到期而仓门未闭：告警并持续等待，闭合后按决策 5 结算 | `evidence/l2/20260909-real-onboard-station-timeout-door-open-004` |
@@ -50,28 +50,39 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 `load-result-requires-recovery` **到 Blocked 为止，不跑到「恢复并继续」**：出口是五步恢复握手，
 而合成对端不发起它。给它编出那五条出站消息只会让这条场景变绿而证不出任何新东西。
 
-> **下面这三段描述的是 2026-09-09 之前的它。**ADR-cross-0058 决策 1 落地后，它制造失败的手法
-> ——关门但不放货——已经不再产出任何结果，整条场景卡在 `AwaitingLoadResult`（见第 11 条与
-> `evidence/l2/20260909-recovery-entry-missing-after-target-state-loop-001`）。**在重新指向一个
-> 真的 UNKNOWN 之前，它不再是一份有效证据。**保留原文，因为它记的那个入口缺口本身没有被修掉。
+`real-onboard-recovery-entry-on-unknown` 补的是那半条的**入口**：一份真的 `UNKNOWN` 报上去、旅程
+停摆之后，车上的人有没有出路。**它 2026-09-10 改了名，因为它证的事情反过来了**——原名
+`real-onboard-recovery-entry-missing`，最后一条判据长期是红的、而且红得对：停摆之后车载端 HMI 上的
+恢复入口从来不出现，任何恢复动作都发起不了。
 
-`real-onboard-recovery-entry-missing` 补的是那半条的**入口**，**它当时是红的，而且红得对**。前四条
-判据全过——真车载端确实报回不完美的装载结果，服务端确实判 `RecoveryRequired` 并停摆，失败结果确实
-作为该 attempt 唯一一份存活结果落库。第五条过不去：**停摆之后，车载端 HMI 上的恢复入口从来不出现**，
-所以任何恢复动作都发起不了。
+**那个缺口 2026-09-04 就补上了，六天没人看见。**服务端 `8c6d400`（fix(session): 会话不再在有操作
+待恢复时报 READY）给 `GetRecoveryReason` 加了 `OPERATION_RECOVERY_REQUIRED`，
+`docs/defects/20260904-recovery-required-never-reaches-session-state.md` 里也写着「入口开了」——
+但**这条 L2 在那之后一次都没有在能跑通的状态下跑过**：ADR-cross-0058 决策 1 落地后它的旧向量
+（关门但不放货）不再产出任何结果，整条场景卡在 `AwaitingLoadResult`，见第 11 条与
+`evidence/l2/20260909-recovery-entry-missing-after-target-state-loop-001`。换完向量第一次跑，六条
+判据全绿。**教训是第 15 条**：一条不再是有效证据的场景，同时也不再是有效的缺陷记录。
 
-**这条场景 2026-09-04 改过向量，原来测的是 `RESUME_AFTER_REPAIR`，那是错的。**它制造的状态是「装载
+**它现在的向量是「锁反馈失效」，不是「人没放料」。**等车载端自己发出 `WAITING_OPERATOR` 之后，用
+`lock-feedback-override FIXED_1` 把那一仓的锁反馈 DI 钉死在「已锁」：门是真开着的，车辆读到的却是
+一个稳定的**相反态**，按决策 1 重打一次开锁脉冲，而这一次它再也等不到「未锁」——`UnlockFeedbackTimeout`
+(3 s) 到期抛 `TimeoutException`，走进执行器那个
+`catch (IOException or TimeoutException or InvalidDataException)` 分支。**决策 1 之后那里是
+`overallOutcome = UNKNOWN` 唯一的产地**，对应决策 2 三件事里的「锁闭反馈无效」。
+整趟 41 秒，注入到停摆之间 4.9 秒；旧向量光是等操作员超时就要 120 秒。
+
+**这条场景有意不去点那个恢复按钮。**按下去之后是五步恢复握手加一次真 Modbus 再闭环，那是另一条
+判据链；混进来只会让这一条同时说两件事，而其中一件失败时说不清是哪一件。
+
+**它 2026-09-04 还改过一次向量，原来测的是 `RESUME_AFTER_REPAIR`，那是错的。**它制造的状态是「装载
 跑完、门关着锁上了、仓位仍是空的」，对应 `COMPENSATE_LOAD_ALL_EMPTY`；而 `RESUME_AFTER_REPAIR` 要的
 是「跑到一半没出结果、车辆还握着物理断点」。车辆记录结果时会把 attempt 与 `OperationContext` 一并
 清空，也会拒绝 checkpoint 为 `ResultRecorded` 的恢复命令——**两端独立地做了同一判断**，服务端拒绝
-resume 是设计不是缺陷。
-
-**服务端没有洞。**同一状态下 `COMPENSATE_LOAD_ALL_EMPTY` 是被授权的，有 L1 为证：
-`RecoveryStateMachineG2Tests.AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized`。缺的是
-**入口**：车载端按「会话进入 `RecoveryRequired`」显示恢复入口，而 `DecideReadinessAsync` 不看
-`StationOperationStatus.RecoveryRequired`，于是会话停在 `Ready`。完整复盘（含三轮归因里错的那两轮）
-在 `docs/defects/20260904-recovery-required-never-reaches-session-state.md`。红证据：
-`evidence/l2/20260904-real-onboard-resume-after-repair-f0465d9-001`（改名前的最后一次运行）。
+resume 是设计不是缺陷。同一状态下 `COMPENSATE_LOAD_ALL_EMPTY` 是被授权的，有 L1 为证：
+`RecoveryStateMachineG2Tests.AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized`。
+完整复盘（含四轮归因里错的那三轮）在
+`docs/defects/20260904-recovery-required-never-reaches-session-state.md`。红证据：
+`evidence/l2/20260904-real-onboard-resume-after-repair-f0465d9-001`（第一次改名前的最后一次运行）。
 
 ## CI 只跑合成场景
 
@@ -302,8 +313,8 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     UI Automation 未必找得到——驱动会在一个跟真实原因毫不相干的地方超时。跑的时候窗口会抢一次
     焦点，之后不会再抢——驱动不注入按键，见「加一个场景」那一节。要让它进 CI，得有一个交互式桌面
     会话，那是落地顺序第 7 步。
-11. **~~让真车载端报一份失败结果，要等满它自己的 120 秒操作员超时。~~ 这条 2026-09-09 起不成立了，
-    留在这里是因为它解释了 `real-onboard-recovery-entry-missing` 为什么现在跑不通。**
+11. **~~让真车载端报一份失败结果，要等满它自己的 120 秒操作员超时。~~ 这条 2026-09-09 起不成立，
+    2026-09-10 已经换掉，留在这里是因为它解释了那次改向量。**
     原文：`real-onboard-recovery-entry-missing` 等到 `WAITING_OPERATOR` 之后关门但不放货，车载端
     等满 `workflow.operationTimeoutMs`(120 s) 才发结果，`overallOutcome` 是 `UNKNOWN`，服务端据此
     判 `RecoveryRequired`。
@@ -311,9 +322,12 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     *相反态*，车载端重新打一次开锁脉冲并再提示一次，**不再产出任何结果**。实测复跑
     `evidence/l2/20260909-recovery-entry-missing-after-target-state-loop-001`：旅程 240 秒里一直
     停在 `AwaitingLoadResult`，一条判据都没走到。
-    **那条场景要重新指向一个真的 UNKNOWN**——决策 2 留给人工恢复的是「仓位状态未知、锁闭反馈无效、
-    开锁输出无法确认复位」，模拟器的 `light-curtain-override` 与 `faults/modbus` 才是它的入口，
-    关门不放货已经不是了。在改好之前不要把它算进任何一批证据。
+    **现在那条场景叫 `real-onboard-recovery-entry-on-unknown`，用的是「锁闭反馈无效」**——
+    `lock-feedback-override FIXED_1`，见上面它自己那一节。这里当初写的三个候选入口
+    （`light-curtain-override` 与 `faults/modbus`）**有一个是错的**：`light-curtain-override` 的
+    `FIXED_0`/`FIXED_1` 都只是把光幕钉成一个**已知**值，而 `LockerSnapshot.IsKnown` 要的是三个
+    raw 位都非 null，所以它产不出 `UNKNOWN`。`faults/modbus` 能产，代价是整条 IO 连接断掉、
+    八个仓位一起未知，那是另一件事。
 12. **模态对话框要按 `AutomationId` 找按钮，不要按标题。**`OnWireToGateRecoveryClick` 会弹一个
     `MessageBox` 要现场确认，它是同进程的另一个顶层窗口，得从 `RootElement` 找而不是从主窗口找——
     主窗口这时正停在模态循环里，什么都不答。按钮用 `AutomationId` 认：`MessageBox` 的按钮沿用
@@ -340,6 +354,13 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     间歇性读到 `AwaitingSublot`（run 34362936547、34359517708），而同一次运行里紧接着的
     `L2-LN-02` 读到的就是 `AwaitingLoadResult`。**假红比真红贵**：这条场景钉的正是
     「服务端重放未结命令而不改口」，它每红一次都要人去判一次是不是真坏了。
+
+15. **一条不再是有效证据的场景，同时也不再是有效的缺陷记录。**
+    `real-onboard-recovery-entry-missing` 的最后一条判据从 2026-09-04 起红得对，服务端同一天
+    `8c6d400` 就把它修好了，而这条 L2 因为决策 1 打断了它的向量，**六天里没有任何一次跑到过那条
+    判据**。README 与它自己的文件头在这六天里一直写着「那个缺口本身没有被修掉」——那句话在写下的
+    第二天就过期了，只是没有任何东西会去推翻它。**场景一旦停跑，它讲的故事就开始腐坏**；重新指向
+    之后第一件事是把它当成一份未知结论去读，而不是去确认已经写好的结论。
 
 ## ADR-cross-0058 的三条操作员不作为场景
 

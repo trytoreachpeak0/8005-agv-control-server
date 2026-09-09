@@ -52,6 +52,14 @@ Peers: `OnboardHmi_MVP@f0465d9ad9f84607e3db972f1c6cb0ead910ab3d`、`slots-simula
 `COMPENSATE_LOAD_ALL_EMPTY` 的状态；`RESUME_AFTER_REPAIR` 要的是「跑到一半没出结果」，那对应的是
 第 4 节恢复表里的「装载中途车载端重启」。
 
+> **2026-09-10 补记：那条场景又改了一次向量，也又改了一次名，现在是
+> `real-onboard-recovery-entry-on-unknown`。**原因是 ADR-cross-0058 决策 1 让「关门不放货」不再产出
+> 任何结果，它的旧向量整个失效；新向量是 `lock-feedback-override FIXED_1`（决策 2 三件事里的「锁闭
+> 反馈无效」）。**换完向量第一次跑，入口那条判据就是绿的**——也就是说本文记的这个缺陷从
+> `8c6d400` 起就好了，而没有任何一次运行看见过，因为这条场景在那之后一直跑不通。
+> 绿证据 `evidence/l2/20260910-real-onboard-recovery-entry-on-unknown-001`，
+> 快照里 `Readiness=RecoveryRequired` / `ReasonCode=OPERATION_RECOVERY_REQUIRED`。
+
 ## 也不是什么（这一段是第二次更正）
 
 **车载端没有静默丢弃会话中途的 `SessionReadiness`。**分派一直都在——
