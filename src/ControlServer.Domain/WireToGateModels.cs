@@ -112,10 +112,19 @@ public sealed record CurrentStopWorklistItem(
     string StopRole,
     int ExpectedBasketCount);
 
+/// <summary>
+/// The worklist for one stop. <see cref="StationDepartureDeadlineAt"/> is the moment the server
+/// stops waiting for an operator here (ADR-cross-0055, carried by the runtime's
+/// <c>SublotWaitTimeout</c>); ADR-cross-0058 decision 3 makes the server its sole owner and leaves
+/// the vehicle only to display it. It is null where no such wait exists -- the gate stop, a
+/// pure-unload stop, and a runtime that has the wait disabled -- which the vehicle must render as
+/// "no countdown" rather than as zero.
+/// </summary>
 public sealed record CurrentStopWorklistProjection(
     string StationId,
     long Revision,
     string? OperationSessionId,
+    DateTimeOffset? StationDepartureDeadlineAt,
     IReadOnlyList<CurrentStopWorklistItem> Items);
 
 public sealed record UpcomingMovementLeg(

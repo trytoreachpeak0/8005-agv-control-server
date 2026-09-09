@@ -322,6 +322,8 @@ public sealed class OnboardJourneyPublisher(
             throw new InvalidDataException("Recovery administrator role is not allowed by the protocol.");
         ValidateUuid(projection.EventId, nameof(projection.EventId));
         if (projection.DemandId is not null) ValidateUuid(projection.DemandId, nameof(projection.DemandId));
+        if (projection.SlotOperationAttemptId is not null)
+            ValidateUuid(projection.SlotOperationAttemptId, nameof(projection.SlotOperationAttemptId));
         ValidateSlots(projection.Slots);
         return QueueEnvelopeAsync(
             "ExceptionRecoverySessionSnapshot", messageId, null, agvId, sessionGeneration,
@@ -334,6 +336,7 @@ public sealed class OnboardJourneyPublisher(
                 projection.AdministratorRole,
                 projection.EventId,
                 projection.DemandId,
+                projection.SlotOperationAttemptId,
                 projection.Slots,
                 projection.SelectedAction,
                 projection.AllowedActions,
@@ -482,6 +485,7 @@ public sealed class OnboardJourneyPublisher(
                 projection.StationId,
                 worklistRevision = projection.Revision,
                 projection.OperationSessionId,
+                projection.StationDepartureDeadlineAt,
                 items = projection.Items.Select(item => new
                 {
                     item.DemandId,

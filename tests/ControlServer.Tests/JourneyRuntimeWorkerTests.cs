@@ -241,20 +241,38 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await fixture.RunToGateUnloadAsync();
 
-        (string StationId, long Revision)[] worklists = fixture.Peer.Lines
-            .Select(line => JsonDocument.Parse(System.Text.Encoding.UTF8.GetString(line)))
-            .Where(document => document.RootElement.GetProperty("messageType").GetString()
-                == "CurrentStopWorklistSnapshot")
-            .Select(document => document.RootElement.GetProperty("payload"))
-            .Select(payload => (
-                payload.GetProperty("stationId").GetString()!,
-                payload.GetProperty("worklistRevision").GetInt64()))
-            .Distinct()
-            .ToArray();
+        (string StationId, long Revision, string Role, DateTimeOffset? Deadline, DateTimeOffset SentAt)[] worklists =
+            fixture.Peer.Lines
+                .Select(line => JsonDocument.Parse(System.Text.Encoding.UTF8.GetString(line)))
+                .Where(document => document.RootElement.GetProperty("messageType").GetString()
+                    == "CurrentStopWorklistSnapshot")
+                .Select(document => (Root: document.RootElement, Payload: document.RootElement.GetProperty("payload")))
+                .Select(message => (
+                    message.Payload.GetProperty("stationId").GetString()!,
+                    message.Payload.GetProperty("worklistRevision").GetInt64(),
+                    message.Payload.GetProperty("items").EnumerateArray().First()
+                        .GetProperty("stopRole").GetString()!,
+                    message.Payload.GetProperty("stationDepartureDeadlineAt") is { ValueKind: JsonValueKind.Null }
+                        ? (DateTimeOffset?)null
+                        : message.Payload.GetProperty("stationDepartureDeadlineAt").GetDateTimeOffset(),
+                    message.Root.GetProperty("sentAt").GetDateTimeOffset()))
+                .Distinct()
+                .ToArray();
 
         Assert.Equal(2, worklists.Length);
         Assert.Equal(2, worklists.Select(item => item.StationId).Distinct().Count());
         Assert.Equal(2, worklists.Select(item => item.Revision).Distinct().Count());
+
+        // ADR-cross-0058 decision 3: the station departure deadline is the server's, and the
+        // worklist is where the vehicle reads it. It exists only where an operator is waited for --
+        // the pickup stop has one and it is still ahead of the message carrying it, the gate stop
+        // has none at all (ADR-cross-0015: unloading has no operator wait to bound), and null there
+        // is the value that tells the vehicle to show no countdown rather than an expired one.
+        (string StationId, long Revision, string Role, DateTimeOffset? Deadline, DateTimeOffset SentAt) pickup =
+            worklists.Single(item => item.Role == "PICKUP");
+        Assert.NotNull(pickup.Deadline);
+        Assert.True(pickup.Deadline > pickup.SentAt);
+        Assert.Null(worklists.Single(item => item.Role == "GATE").Deadline);
     }
 
     [Fact]

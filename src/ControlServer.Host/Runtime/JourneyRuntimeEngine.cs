@@ -534,7 +534,7 @@ public sealed class JourneyRuntimeEngine(
                 (stops, demands, stop) = await FillJourneyAsync(
                     runtime, stops, stop, demands, currentMap, gate, now, cancellationToken)
                     .ConfigureAwait(false);
-                await PublishStopArrivalAsync(runtime, stops, stop, demands, session, cancellationToken)
+                await PublishStopArrivalAsync(runtime, stops, stop, demands, session, now, cancellationToken)
                     .ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now, stop);
                 break;
@@ -939,6 +939,7 @@ public sealed class JourneyRuntimeEngine(
         JourneyStopRow stop,
         IReadOnlyList<JourneyDemandRow> demands,
         SessionRecoveryRow session,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         TakeStopRevisions(runtime, stop);
@@ -954,7 +955,8 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             Plan(runtime, stops, stop, demands),
             cancellationToken).ConfigureAwait(false);
-        await PublishLoadRoundAsync(runtime, stop, demands, session, cancellationToken).ConfigureAwait(false);
+        await PublishLoadRoundAsync(runtime, stop, demands, session, now, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -968,6 +970,7 @@ public sealed class JourneyRuntimeEngine(
         JourneyStopRow stop,
         IReadOnlyList<JourneyDemandRow> demands,
         SessionRecoveryRow session,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         JourneyDemandRow[] pending = UncommandedAt(demands, stop);
@@ -977,6 +980,12 @@ public sealed class JourneyRuntimeEngine(
         }
 
         stop.LoadRound++;
+        // The station wait has to have started before the worklist that carries its deadline goes
+        // out, or the vehicle's first snapshot of this stop would carry a null countdown that fills
+        // in one iteration later. On arrival this line is what starts it -- SetStage only seeds the
+        // same field after PublishStopArrivalAsync returns -- and every later round runs after
+        // TryContinueLoadingAtStopAsync has already reset it, where ??= correctly changes nothing.
+        stop.SublotWaitStartedAt ??= now;
         if (stop.LoadRound > 1)
         {
             // The first round publishes at the revision the stop was given on arrival; every later
@@ -989,7 +998,7 @@ public sealed class JourneyRuntimeEngine(
             WireToGateStore.WorklistId(runtime.JourneyId, stop.Sequence, stop.LoadRound),
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, stop, demands, accepted),
+            Worklist(runtime, stop, demands, accepted, StationDepartureDeadline(stop)),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishSublotEntryRequestAsync(
             WireToGateStore.SublotRequestId(runtime.JourneyId, stop.Sequence, stop.LoadRound),
@@ -1061,7 +1070,11 @@ public sealed class JourneyRuntimeEngine(
             WireToGateStore.WorklistId(runtime.JourneyId, stop.Sequence, stop.LoadRound),
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, stop, demands, accepted),
+            // The gate stop never waits for a sublot, so it has no station departure deadline;
+            // ADR-cross-0058 decision 3 wants that expressed as "no countdown", not as an expired
+            // one. ADR-cross-0015 is the reason it can never grow one: unloading has no cancel
+            // branch and therefore no operator wait to bound.
+            Worklist(runtime, stop, demands, accepted, null),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             stop.PlanMessageId,
@@ -1968,10 +1981,12 @@ public sealed class JourneyRuntimeEngine(
         JourneyRuntimeRow runtime,
         JourneyStopRow stop,
         IReadOnlyList<JourneyDemandRow> demands,
-        IReadOnlyList<AcceptedDemandRow> accepted) => new(
+        IReadOnlyList<AcceptedDemandRow> accepted,
+        DateTimeOffset? stationDepartureDeadlineAt) => new(
             stop.StationId,
             stop.WorklistRevision,
             runtime.OperationSessionId,
+            stationDepartureDeadlineAt,
             (stop.Role == JourneyStopRole.Gate
                 ? demands.Where(row => row.State == JourneyDemandState.Loaded)
                 : PendingAt(demands, stop))
@@ -1988,6 +2003,18 @@ public sealed class JourneyRuntimeEngine(
                 stop.Role,
                 pair.Membership.ExpectedBasketCount))
             .ToArray());
+
+    /// <summary>
+    /// When the server stops waiting for an operator at this stop, or null when there is no such
+    /// wait to express. Same two conditions <see cref="TryTimeOutSublotWaitAsync"/> enforces, read
+    /// the same way round: a disabled timeout and a stop that has not started waiting both mean the
+    /// vehicle has nothing to count down, and publishing a deadline the runtime will never act on
+    /// would be a countdown that expires into silence.
+    /// </summary>
+    private DateTimeOffset? StationDepartureDeadline(JourneyStopRow stop) =>
+        runtimeOptions.SublotWaitTimeout <= TimeSpan.Zero || stop.SublotWaitStartedAt is not { } startedAt
+            ? null
+            : startedAt + runtimeOptions.SublotWaitTimeout;
 
     /// <summary>
     /// The whole itinerary as the vehicle should see it, with the stop it is at marked ARRIVED.
@@ -2389,7 +2416,7 @@ public sealed class JourneyRuntimeEngine(
         // ADR-cross-0055: the station wait is recomputed from each closed batch, so the operator gets
         // the whole window again for the next demand at this stop.
         stop.SublotWaitStartedAt = now;
-        await PublishLoadRoundAsync(runtime, stop, demands, session, cancellationToken)
+        await PublishLoadRoundAsync(runtime, stop, demands, session, now, cancellationToken)
             .ConfigureAwait(false);
         SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now, stop);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

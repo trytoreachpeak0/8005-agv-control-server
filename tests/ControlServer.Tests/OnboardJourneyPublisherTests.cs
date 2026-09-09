@@ -109,6 +109,7 @@ public sealed class OnboardJourneyPublisherTests
         OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, clock);
         const string demandId = "00000000-0000-4000-8000-000000000321";
         const string operationSessionId = "00000000-0000-4000-8000-000000000322";
+        DateTimeOffset deadline = new(2026, 9, 9, 6, 30, 0, TimeSpan.Zero);
 
         await publisher.PublishVehicleBusinessStateAsync(
             "00000000-0000-4000-8000-000000000323",
@@ -124,6 +125,7 @@ public sealed class OnboardJourneyPublisherTests
                 "PICKUP-01",
                 5,
                 operationSessionId,
+                deadline,
                 [new CurrentStopWorklistItem(
                     demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)]),
             TestContext.Current.CancellationToken);
@@ -163,6 +165,17 @@ public sealed class OnboardJourneyPublisherTests
             Assert.Equal(expected[index].Revision,
                 root.GetProperty("payload").GetProperty(expected[index].RevisionName).GetInt64());
             Assert.Equal(9, root.GetProperty("sessionGeneration").GetInt64());
+        }
+        // ADR-cross-0058 decision 3 makes the server the sole owner of the station departure
+        // deadline and the vehicle a display for it, so the worklist that carries it has to put it
+        // on the wire -- protocol-v0.3.0 has it required, and a snapshot without it is a message
+        // the peer is entitled to refuse.
+        using (JsonDocument worklist = JsonDocument.Parse(peer.Lines[1]))
+        {
+            Assert.Equal(
+                deadline,
+                worklist.RootElement.GetProperty("payload")
+                    .GetProperty("stationDepartureDeadlineAt").GetDateTimeOffset());
         }
     }
 

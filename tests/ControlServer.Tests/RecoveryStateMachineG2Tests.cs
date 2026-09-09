@@ -398,6 +398,28 @@ public sealed class RecoveryStateMachineG2Tests
                 RecoverySessionRequest(proof), state, TestContext.Current.CancellationToken);
             await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
             Assert.Equal("ExceptionRecoverySessionOpened", MessageType(opened));
+            // Control-server issue #5: the vehicle reached this state by believing the load
+            // succeeded, which cleared its own copy of the attempt identity. Every recovery request
+            // it must send from here -- LoadCompensationRequested below all of them -- has
+            // slotOperationAttemptId as a required field, so unless the server names the attempt it
+            // is recovering, the exchange cannot continue past this message.
+            using (JsonDocument openedSession = JsonDocument.Parse(opened))
+            {
+                Assert.Equal(
+                    AttemptId,
+                    openedSession.RootElement.GetProperty("payload")
+                        .GetProperty("slotOperationAttemptId").GetString());
+            }
+            ProtocolOutboxRow snapshot = await context.ProtocolOutbox.SingleAsync(
+                row => row.MessageType == "ExceptionRecoverySessionSnapshot" && row.FencedAt == null,
+                TestContext.Current.CancellationToken);
+            using (JsonDocument projected = JsonDocument.Parse(snapshot.PayloadJson))
+            {
+                Assert.Equal(
+                    AttemptId,
+                    projected.RootElement.GetProperty("payload")
+                        .GetProperty("slotOperationAttemptId").GetString());
+            }
 
             // RESUME_AFTER_REPAIR is refused here, and that is the design rather than a defect: it
             // resumes an operation that stalled at a physical breakpoint the vehicle still holds.
@@ -434,6 +456,10 @@ public sealed class RecoveryStateMachineG2Tests
                 Assert.Equal(
                     "COMPENSATE_LOAD_ALL_EMPTY",
                     accepted.RootElement.GetProperty("payload").GetProperty("acceptedAction").GetString());
+                Assert.Equal(
+                    AttemptId,
+                    accepted.RootElement.GetProperty("payload")
+                        .GetProperty("slotOperationAttemptId").GetString());
             }
         }
         finally

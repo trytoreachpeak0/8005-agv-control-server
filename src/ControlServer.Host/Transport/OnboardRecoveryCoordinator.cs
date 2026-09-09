@@ -270,7 +270,9 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (replay.RequestContentHash != businessHash || replay.AgvId != agvId)
                 throw new ProtocolContentConflictException("Recovery requestId was replayed with different content.");
-            return OpenedResponse(root, replay);
+            StationOperationRow? replayed = await FindScopedOperationAsync(replay, cancellationToken)
+                .ConfigureAwait(false);
+            return OpenedResponse(root, replay, replayed?.SlotOperationAttemptId);
         }
         ExceptionRecoverySessionRow? active = await dbContext.ExceptionRecoverySessions
             .SingleOrDefaultAsync(row => row.AgvId == agvId && row.State != "CLOSED", cancellationToken)
@@ -317,11 +319,13 @@ public sealed class OnboardRecoveryCoordinator(
             UpdatedAt = now
         };
         dbContext.ExceptionRecoverySessions.Add(row);
+        StationOperationRow? scoped = await FindScopedOperationAsync(row, cancellationToken)
+            .ConfigureAwait(false);
         await QueueSessionSnapshotAsync(row, generation, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _ = contentHash;
         _ = messageId;
-        return OpenedResponse(root, row);
+        return OpenedResponse(root, row, scoped?.SlotOperationAttemptId);
     }
 
     private async Task<string> SubmitActionAsync(
@@ -347,7 +351,9 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (replay.RequestContentHash != businessHash || replay.WorkflowType != action)
                 throw new ProtocolContentConflictException("RecoveryActionId was replayed with different content.");
-            return AcceptedAction(root, session, actionId, action);
+            // The workflow's own copy, not a fresh lookup: a replayed acceptance has to answer with
+            // what was accepted, and the station operation could have moved on since.
+            return AcceptedAction(root, session, actionId, action, replay.SlotOperationAttemptId);
         }
 
         StationOperationRow? operation = await FindScopedOperationAsync(session, cancellationToken).ConfigureAwait(false);
@@ -395,7 +401,7 @@ public sealed class OnboardRecoveryCoordinator(
             session, root.GetProperty("sessionGeneration").GetInt64(), cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _ = contentHash;
-        return AcceptedAction(root, session, actionId, action);
+        return AcceptedAction(root, session, actionId, action, workflow.SlotOperationAttemptId);
     }
 
     private async Task<string> RecordHardwareRecoveryAsync(
@@ -740,6 +746,7 @@ public sealed class OnboardRecoveryCoordinator(
                 session.AdministratorRole,
                 session.EventId,
                 session.DemandId,
+                operation?.SlotOperationAttemptId,
                 ParseSlots(session.SlotsJson),
                 session.SelectedAction,
                 allowedActions,
@@ -1088,7 +1095,18 @@ public sealed class OnboardRecoveryCoordinator(
             .Select(row => (long?)row.ForcedRecoveryGeneration)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? 0;
 
-    private string OpenedResponse(JsonElement request, ExceptionRecoverySessionRow session) =>
+    /// <summary>
+    /// The vehicle cannot name the attempt it is recovering: the load it believes succeeded cleared
+    /// its own copy of that identity (control-server issue #5), and every recovery request it has to
+    /// send afterwards -- LoadCompensationRequested above all -- carries slotOperationAttemptId as a
+    /// required field. The server has always known the value; from protocol-v0.3.0 it says so, in
+    /// this response and in the two below it. Null where the session is not scoped to a demand, or
+    /// where no station operation was ever commanded for it.
+    /// </summary>
+    private string OpenedResponse(
+        JsonElement request,
+        ExceptionRecoverySessionRow session,
+        string? slotOperationAttemptId) =>
         Response(request, "ExceptionRecoverySessionOpened", new
         {
             requestId = session.RequestId,
@@ -1096,6 +1114,7 @@ public sealed class OnboardRecoveryCoordinator(
             openedAt = session.OpenedAt,
             eventId = session.EventId,
             demandId = session.DemandId,
+            slotOperationAttemptId,
             slots = ParseSlots(session.SlotsJson),
             recoverySessionRevision = session.Revision
         });
@@ -1104,12 +1123,14 @@ public sealed class OnboardRecoveryCoordinator(
         JsonElement request,
         ExceptionRecoverySessionRow session,
         string actionId,
-        string action) =>
+        string action,
+        string? slotOperationAttemptId) =>
         Response(request, "RecoveryActionAccepted", new
         {
             recoveryActionId = actionId,
             exceptionRecoverySessionId = session.ExceptionRecoverySessionId,
             acceptedAction = action,
+            slotOperationAttemptId,
             recoverySessionRevision = session.Revision,
             acceptedAt = session.UpdatedAt
         });
