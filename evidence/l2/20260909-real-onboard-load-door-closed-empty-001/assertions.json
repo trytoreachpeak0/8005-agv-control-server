@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-load-door-closed-empty",
+  "runId": "20260909T094024133Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 60s waiting for: the onboard re-pulsed the unlock for round 2. Last observed: 2",
+  "identity": {
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260909T094024133Z",
+    "onboardHmiCommit": "98df671c846c7c572fd40d38fe16e5e084686603",
+    "controlServerCommit": "0f6b42458ab55cde4c9123ad344ddc86c3fe5774",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-DC-01",
+      "description": "车载端说在等操作员时，它要开的那个仓门确实开着、货位是空的",
+      "outcome": "PASS",
+      "expected": "OPEN/EMPTY/0/0",
+      "actual": "OPEN/EMPTY/0/0"
+    },
+    {
+      "id": "L2-DC-02",
+      "description": "第 1 轮：操作员关门但没放料，仓位读数是明确的相反态而不是 UNKNOWN",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-DC-04",
+      "description": "第 1 轮：车载端自动重新开锁并再次提示，没有把「人没放料」判成失败",
+      "outcome": "PASS",
+      "expected": "UNLOCKING > 1",
+      "actual": 2
+    },
+    {
+      "id": "L2-DC-06",
+      "description": "第 1 轮：重开脉冲真的走到了 IO——门又弹开了，不只是发了条消息",
+      "outcome": "PASS",
+      "expected": "OPEN",
+      "actual": "OPEN"
+    },
+    {
+      "id": "L2-DC-03",
+      "description": "第 2 轮：操作员关门但没放料，仓位读数是明确的相反态而不是 UNKNOWN",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    }
+  ]
+}

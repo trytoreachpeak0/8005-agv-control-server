@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-unload-not-emptied",
+  "runId": "20260909T094718965Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "onboardHmiCommit": "98df671c846c7c572fd40d38fe16e5e084686603",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260909T094718965Z",
+    "controlServerCommit": "0f6b42458ab55cde4c9123ad344ddc86c3fe5774",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-UE-01",
+      "description": "装货一次到位，卸货那半边是从一个干净的起点开始的",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-UE-02",
+      "description": "关卡卸的是装货时用的那个仓位",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-UE-03",
+      "description": "第 1 轮：门关了货还在，仓位读数是明确的相反态而不是 UNKNOWN",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-UE-04",
+      "description": "第 1 轮：车载端自动重新开锁并再次提示，继续闭环而不是判失败",
+      "outcome": "PASS",
+      "expected": "UNLOCKING > 1",
+      "actual": 2
+    },
+    {
+      "id": "L2-UE-05",
+      "description": "第 1 轮：重开脉冲真的走到了 IO——门又弹开、开锁输出复位、车载端重新等操作员",
+      "outcome": "PASS",
+      "expected": "OPEN / WAITING_OPERATOR > 1",
+      "actual": "OPEN / 2"
+    },
+    {
+      "id": "L2-UE-06",
+      "description": "第 2 轮：门关了货还在，仓位读数是明确的相反态而不是 UNKNOWN",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-UE-07",
+      "description": "第 2 轮：车载端自动重新开锁并再次提示，继续闭环而不是判失败",
+      "outcome": "PASS",
+      "expected": "UNLOCKING > 2",
+      "actual": 3
+    },
+    {
+      "id": "L2-UE-08",
+      "description": "第 2 轮：重开脉冲真的走到了 IO——门又弹开、开锁输出复位、车载端重新等操作员",
+      "outcome": "PASS",
+      "expected": "OPEN / WAITING_OPERATOR > 2",
+      "actual": "OPEN / 3"
+    },
+    {
+      "id": "L2-UE-09",
+      "description": "重开 2 轮之后卸货操作仍在进行：既没有确定失败，也没有进恢复",
+      "outcome": "PASS",
+      "expected": "Prepared",
+      "actual": "Prepared"
+    },
+    {
+      "id": "L2-UE-10",
+      "description": "一份卸货 OperationResult 都没发过——UnloadCompletionRequired 没有中途结算这回事",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-UE-11",
+      "description": "旅程原地等在卸货结果上，没有被任何取消分支带走",
+      "outcome": "PASS",
+      "expected": "AwaitingUnloadResult",
+      "actual": "AwaitingUnloadResult"
+    },
+    {
+      "id": "L2-UE-12",
+      "description": "需求没有被取消也没有被判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "Accepted",
+      "actual": "Accepted"
+    },
+    {
+      "id": "L2-UE-13",
+      "description": "会话全程停在 Ready：开着的仓门由本服务端自己下的命令解释",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready / READY"
+    },
+    {
+      "id": "L2-UE-14",
+      "description": "HMI 上没有出现恢复入口",
+      "outcome": "PASS",
+      "expected": false,
+      "actual": false
+    },
+    {
+      "id": "L2-UE-15",
+      "description": "唯一的终结方式是取空：取走之后仓位回到空、门关、锁上",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-UE-16",
+      "description": "journey 走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-UE-17",
+      "description": "全程只有一个卸货 attempt，最终 Committed——重开不新建操作",
+      "outcome": "PASS",
+      "expected": "Committed / 766ba730-78c3-3156-80eb-88e3d6a325f5",
+      "actual": "Committed / 766ba730-78c3-3156-80eb-88e3d6a325f5"
+    },
+    {
+      "id": "L2-UE-18",
+      "description": "需求终态为 Succeeded",
+      "outcome": "PASS",
+      "expected": "Succeeded",
+      "actual": "Succeeded"
+    }
+  ]
+}

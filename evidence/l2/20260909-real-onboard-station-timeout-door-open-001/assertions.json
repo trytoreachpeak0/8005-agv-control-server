@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-station-timeout-door-open",
+  "runId": "20260909T094805807Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260909T094805807Z",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "0f6b42458ab55cde4c9123ad344ddc86c3fe5774",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "onboardHmiCommit": "98df671c846c7c572fd40d38fe16e5e084686603"
+  },
+  "assertions": [
+    {
+      "id": "L2-DT-01",
+      "description": "车到取货站后停在等条码录入这一步",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-DT-02",
+      "description": "站点期限的起点已经种下",
+      "outcome": "PASS",
+      "expected": "有值",
+      "actual": "SublotWaitStartedAt=2026-09-09 09:48:23.8093882+00:00"
+    },
+    {
+      "id": "L2-DT-03",
+      "description": "8 号仓的锁反馈读数是 0——这就是一扇没关实的门在 IO 上的样子",
+      "outcome": "PASS",
+      "expected": "0",
+      "actual": "0"
+    },
+    {
+      "id": "L2-DT-04",
+      "description": "服务端的安全投影里出现了 LOCK_NOT_CLOSED——决策 4 的判据来源是这一个字段",
+      "outcome": "PASS",
+      "expected": "含 LOCK_NOT_CLOSED",
+      "actual": "[\"LOCK_NOT_CLOSED\"]"
+    },
+    {
+      "id": "L2-DT-05",
+      "description": "门开着时会话仍然 Ready——否则运行时停在就绪门上，期限那一段根本不会被执行",
+      "outcome": "FAIL",
+      "expected": "Ready",
+      "actual": "RecoveryRequired / DEPARTURE_SAFETY_NOT_READY"
+    },
+    {
+      "id": "L2-DT-06",
+      "description": "期限到期挂上 STATION_TIMEOUT_DOOR_NOT_CLOSED 告警",
+      "outcome": "FAIL",
+      "expected": "STATION_TIMEOUT_DOOR_NOT_CLOSED",
+      "actual": "ONBOARD_SESSION_NOT_READY"
+    },
+    {
+      "id": "L2-DT-07",
+      "description": "停靠没有被关闭，旅程仍停在 AwaitingSublot 而不是 Blocked",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-DT-08",
+      "description": "需求没有被 CANCELLED_BY_STATION_TIMEOUT 终结——门还开着，本站不许结算",
+      "outcome": "PASS",
+      "expected": "Accepted",
+      "actual": "Accepted"
+    },
+    {
+      "id": "L2-DT-09",
+      "description": "又转了六轮仍然在等，等待没有自己退化成结束",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot / Accepted",
+      "actual": "AwaitingSublot / Accepted"
+    },
+    {
+      "id": "L2-DT-10",
+      "description": "8 号仓的锁反馈回到 1",
+      "outcome": "PASS",
+      "expected": "1",
+      "actual": "1"
+    },
+    {
+      "id": "L2-DT-11",
+      "description": "门一闭合，下一轮立刻按当时的真实读数结算本站",
+      "outcome": "PASS",
+      "expected": "Completed / CANCELLED_BY_STATION_TIMEOUT",
+      "actual": "Completed / CANCELLED_BY_STATION_TIMEOUT"
+    },
+    {
+      "id": "L2-DT-12",
+      "description": "需求终态为 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled",
+      "actual": "Cancelled"
+    }
+  ]
+}
