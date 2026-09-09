@@ -191,10 +191,10 @@ public sealed class GovernedActivationStore(
             SlotModelVersionId = slotModelVersionId,
             ConfigurationVersion = newVersion,
             Fingerprint = activated.ContentSha256,
-            Kind = "ROLLBACK",
+            Kind = SlotConfigurationActivationKind.Rollback,
             RolledBackToVersion = toVersion,
-            State = "PENDING_RESULT",
-            RecoveryRole = "SLOT_CONFIGURATION",
+            State = SlotConfigurationActivationState.PendingResult,
+            RecoveryRole = SlotConfigurationActivationDelivery.RecoveryRole,
             IssuedAt = effectiveFrom,
             SnapshotId = activated.SnapshotId
         };

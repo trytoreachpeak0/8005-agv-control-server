@@ -87,7 +87,7 @@ public sealed class SlotConfigurationActivationCoordinator(
             SlotModelVersionId = slotModelVersionId,
             ConfigurationVersion = version,
             Fingerprint = snapshot.ContentSha256,
-            Kind = "ACTIVATION",
+            Kind = SlotConfigurationActivationKind.Activation,
             State = SlotConfigurationActivationState.PendingResult,
             RecoveryRole = SlotConfigurationActivationDelivery.RecoveryRole,
             IssuedAt = occurredAt,

@@ -42,6 +42,19 @@ public static class SlotConfigurationActivationState
     public const string Failed = "FAILED";
 }
 
+/// <summary>
+/// 一条激活记录记的是哪一种动作。
+/// </summary>
+/// <remarks>
+/// 回滚也是一次激活——它选一个旧的不可变版本内容在当下重新激活，所以它和普通激活共用同一张表、
+/// 同一个待补报态、同一个恢复角色，只在这里分开。
+/// </remarks>
+public static class SlotConfigurationActivationKind
+{
+    public const string Activation = "ACTIVATION";
+    public const string Rollback = "ROLLBACK";
+}
+
 /// <summary>车载端补上来的一次激活结果。</summary>
 public sealed record ActivationResultReport(
     string ActivationId,
