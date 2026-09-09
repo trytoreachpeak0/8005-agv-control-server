@@ -1,0 +1,71 @@
+[13:00:01 INF] Executed DbCommand (10ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[13:00:01 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[13:00:01 INF] Applying migration '20260903110052_ResumeReplacementOperationResult'.
+[13:00:01 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+DROP INDEX "IX_OperationResults_SlotOperationAttemptId_ForcedRecoveryGeneration";
+[13:00:01 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "OperationResults" ADD "SupersededByResultId" TEXT NULL;
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_OperationResults_SlotOperationAttemptId_ForcedRecoveryGeneration" ON "OperationResults" ("SlotOperationAttemptId", "ForcedRecoveryGeneration") WHERE SupersededByResultId IS NULL;
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260903110052_ResumeReplacementOperationResult', '8.0.30');
+[13:00:01 INF] Applying migration '20260907174639_SublotWaitTimeoutAndBeforeLoadCancellation'.
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+ALTER TABLE "JourneyRuntimes" ADD "SublotWaitStartedAt" TEXT NULL;
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260907174639_SublotWaitTimeoutAndBeforeLoadCancellation', '8.0.30');
+[13:00:01 INF] Applying migration '20260907175328_AutoChargingRuns'.
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "AutoChargingRuns" (
+    "ChargingRunId" TEXT NOT NULL CONSTRAINT "PK_AutoChargingRuns" PRIMARY KEY,
+    "VehicleKey" TEXT NOT NULL,
+    "AgvId" TEXT NOT NULL,
+    "Stage" TEXT NOT NULL,
+    "ChargerStationId" TEXT NOT NULL,
+    "ChargerStationRiotId" INTEGER NOT NULL,
+    "MovementLegId" TEXT NOT NULL,
+    "UpperId" TEXT NOT NULL,
+    "TriggeredAtBatteryPercent" INTEGER NOT NULL,
+    "ReleasedAtBatteryPercent" INTEGER NULL,
+    "BlockReasonCode" TEXT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "UpdatedAt" TEXT NOT NULL
+);
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE UNIQUE INDEX "IX_AutoChargingRuns_UpperId" ON "AutoChargingRuns" ("UpperId");
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260907175328_AutoChargingRuns', '8.0.30');
+[13:00:01 INF] Applying migration '20260908020947_TransportDemandSuppression'.
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "TransportDemandSuppressions" (
+    "TransportDemandKey" TEXT NOT NULL CONSTRAINT "PK_TransportDemandSuppressions" PRIMARY KEY,
+    "DemandId" TEXT NOT NULL,
+    "ReasonCode" TEXT NOT NULL,
+    "SuppressedAt" TEXT NOT NULL
+);
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+VALUES ('20260908020947_TransportDemandSuppression', '8.0.30');
+[13:00:01 INF] Applying migration '20260908042817_MultiDemandJourneyStopSequence'.
+[13:00:01 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+CREATE TABLE "__W2GJourneyMigrationGuard" (
+    "Finding" TEXT NOT NULL
+        CONSTRAINT "SettleEveryJourneyBeforeMigratingToProtocol_0_2_0"
+        CHECK ("Finding" = 'NO_JOURNEY_IN_FLIGHT')
+);
+[13:00:01 ERR] Failed executing DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+INSERT INTO "__W2GJourneyMigrationGuard" ("Finding")
+SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM "JourneyRuntimes" WHERE "Stage" <> 'Completed')
+    THEN 'JOURNEY_IN_FLIGHT'
+    ELSE 'NO_JOURNEY_IN_FLIGHT'
+END;
