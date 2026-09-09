@@ -29,6 +29,9 @@ public sealed class RecoveryStateMachineG2Tests
     private const string RequestId = "40000000-0000-4000-8000-000000000001";
     private const string ActionId = "50000000-0000-4000-8000-000000000001";
     private const string OperatorId = "maintenance-001";
+    // 取消面不开异常恢复会话，走不到 RecoveryProofAccepted；这个名字只是为了让 Processor
+    // 拿到一个确定不会命中的变量名，而不是让某个别处设过的环境变量意外生效。
+    private const string CancellationProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_CANCELLATION";
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-05")]
@@ -688,6 +691,100 @@ public sealed class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// CV-LOAD-CANCELLATION-ALL-EMPTY 对服务端要两件事，此前只证了一件。
+    /// FailedCompensationResultIsDurableReplayableAndNeverReleasesDemandOrVehicle 走的是 REJECTED
+    /// 分支——补偿还没收敛时取消必须被拒——那证的是 AUTHORIZE_CANCELLATION_EXPLICITLY。
+    /// 另一件 RECONCILE_EMPTY_FINAL_STATE 是：取消被批准之后，只有每个仓位都证到 EMPTY 才收敛
+    /// 需求、释放租约、收尾旅程。两段共用同一次授权，差别只在一个仓位的 finalPhysicalState，
+    /// 所以第二段同时是第一段的 vacuity proof：EMPTY 换成 OCCUPIED，收敛就不发生。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    public async Task AuthorizedLoadCancellationReconcilesOnlyWhenEverySlotIsProvenEmpty()
+    {
+        const string cancellationId = "b1000000-0000-4000-8000-000000000001";
+        const string resultMessageId = "b1000000-0000-4000-8000-000000000002";
+
+        await using (SqliteConnection provenEmpty = new("Data Source=:memory:"))
+        {
+            await provenEmpty.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(provenEmpty);
+            await SeedCancellableLoadAsync(context);
+            OnboardMessageProcessor processor = Processor(
+                context, new RecordingPeer(context), CancellationProofVariable);
+            OnboardConnectionState state = CurrentState();
+
+            string authorization = await processor.ProcessAsync(
+                CancellationRequest(cancellationId), state, TestContext.Current.CancellationToken);
+            using (JsonDocument document = JsonDocument.Parse(authorization))
+            {
+                Assert.Equal("LoadCancellationAuthorization",
+                    document.RootElement.GetProperty("messageType").GetString());
+                Assert.Equal("AUTHORIZED", document.RootElement.GetProperty("payload")
+                    .GetProperty("decision").GetString());
+            }
+            Assert.Equal(RecoveryWorkflowState.AwaitingResult, (await context.RecoveryWorkflows.SingleAsync(
+                TestContext.Current.CancellationToken)).State);
+
+            string ack = await processor.ProcessAsync(
+                CancellationResult(cancellationId, resultMessageId, "EMPTY"),
+                state,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.SingleAsync(
+                TestContext.Current.CancellationToken)).State);
+            Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(
+                TestContext.Current.CancellationToken)).ReleasedAt);
+            Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+            Assert.Equal("CANCELLED_BY_OPERATOR", runtime.BlockReasonCode);
+        }
+
+        await using (SqliteConnection oneSlotStillOccupied = new("Data Source=:memory:"))
+        {
+            await oneSlotStillOccupied.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(oneSlotStillOccupied);
+            await SeedCancellableLoadAsync(context);
+            OnboardMessageProcessor processor = Processor(
+                context, new RecordingPeer(context), CancellationProofVariable);
+            OnboardConnectionState state = CurrentState();
+
+            await processor.ProcessAsync(
+                CancellationRequest(cancellationId), state, TestContext.Current.CancellationToken);
+            string ack = await processor.ProcessAsync(
+                CancellationResult(cancellationId, resultMessageId, "OCCUPIED"),
+                state,
+                TestContext.Current.CancellationToken);
+
+            // 报文照样落库并被确认——不收敛不等于不记录，否则车载端会一直重发。
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Single(await context.RecoveryResultEvidence.ToArrayAsync(
+                TestContext.Current.CancellationToken));
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows.SingleAsync(
+                TestContext.Current.CancellationToken)).State);
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+            Assert.Null((await context.VehicleDispatchLeases.SingleAsync(
+                TestContext.Current.CancellationToken)).ReleasedAt);
+            Assert.Equal(StationOperationStatus.Prepared, (await context.StationOperations.SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(
+                TestContext.Current.CancellationToken);
+            Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
+            Assert.Equal("LoadCancellationResult_NOT_RECONCILED", runtime.BlockReasonCode);
+            Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(
+                TestContext.Current.CancellationToken));
+        }
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-06")]
     [Trait("IntegrationSlice", "FP-IS-07")]
@@ -1048,6 +1145,65 @@ public sealed class RecoveryStateMachineG2Tests
         operatorId = OperatorId,
         verificationMethod = "BADGE",
         verifiedAt = Now
+    };
+
+    /// <summary>
+    /// 取消面的起点不是恢复态。SeedBlockedJourneyAsync 造的是「装载失败、等恢复」，
+    /// AuthorizeLoadCancellationAsync 在那个状态下必然 REJECTED——那正是既有那条测试证的一半。
+    /// 要证另一半就得先站到它批准得下去的状态：需求仍被接受、仓位操作还没进恢复。
+    /// </summary>
+    private static async Task SeedCancellableLoadAsync(ControlServerDbContext context)
+    {
+        await SeedBlockedJourneyAsync(context);
+        (await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken)).Status =
+            DemandExecutionStatus.Accepted;
+        (await context.StationOperations.SingleAsync(TestContext.Current.CancellationToken)).Status =
+            StationOperationStatus.Prepared;
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static string CancellationRequest(string cancellationId) => Envelope(
+        "b1000000-0000-4000-8000-000000000010",
+        "LoadCancellationStartRequested",
+        new
+        {
+            cancellationId,
+            demandId = DemandId,
+            slotOperationAttemptId = AttemptId,
+            @operator = Operator(),
+            reason = "Operator cancelled the load before any basket entered."
+        });
+
+    private static string CancellationResult(
+        string cancellationId,
+        string messageId,
+        string secondSlotFinalPhysicalState) => Envelope(
+        messageId,
+        "LoadCancellationResult",
+        new
+        {
+            cancellationId,
+            demandId = DemandId,
+            slotOperationAttemptId = AttemptId,
+            overallOutcome = "ALL_EMPTY",
+            slotResults = new[]
+            {
+                CancellationSlotResult(1, "EMPTY"),
+                CancellationSlotResult(2, secondSlotFinalPhysicalState)
+            },
+            observedAt = Now.AddSeconds(4)
+        });
+
+    // overallOutcome 说 ALL_EMPTY 而某个仓位仍报 OCCUPIED，正是 unknown-as-success 那类
+    // forbiddenSideEffect 要挡住的形状：判据看的是逐仓位的 finalPhysicalState，不是那句总结。
+    private static object CancellationSlotResult(int slotNo, string finalPhysicalState) => new
+    {
+        slotNo,
+        outcome = "COMPLETED",
+        finalPhysicalState,
+        lockState = "LOCKED",
+        unlockOutputState = "RESET",
+        reasonCodes = Array.Empty<string>()
     };
 
     private static object OperationResultPayload(
