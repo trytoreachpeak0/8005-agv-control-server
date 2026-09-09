@@ -4,6 +4,12 @@ param(
     [string]$StageRoot,
     [Parameter(Mandatory)]
     [string]$EvidenceRoot,
+    # Selects what this run CERTIFIES, not what it runs. A G3 run is one end-to-end scenario against
+    # real peers, not a filterable set of tests, so -Slice narrows the evidence written and never the
+    # scenario driven: with it, one gate-result.json for that slice; without it, one for each slice
+    # this runner claims. Naming a slice this runner does not claim is refused before anything is
+    # created -- see scripts/g3-slice-evidence.ps1 for the claim table and the 2026-09-09 ruling.
+    [ValidatePattern('^FP-IS-(0[0-9]|1[0-5])$')][string]$Slice,
     [string]$ControlServerRepository = (Split-Path -Parent $PSScriptRoot),
     [string]$OnboardRepository = 'https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git',
     [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git',
@@ -100,6 +106,12 @@ foreach ($value in @($ControlServerCommit, $OnboardCommit, $SimulatorCommit, $Pr
 $harnessCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Unable to read the harness commit from $ControlServerRepository" }
 $harnessWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
+
+$G3RunKind = 'STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT'
+. (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+# Before the clones and the builds, not after: naming a slice this runner cannot certify should cost
+# a message, not an hour of cloning and publishing four repositories.
+if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
 
 if (Test-Path -LiteralPath $StageRoot) {
     throw "StageRoot must not already exist: $StageRoot"
@@ -2901,6 +2913,79 @@ foreach ($file in @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File)) {
     }
 }
 
+$assertionReport = [ordered]@{
+    identityRejections = if ($probePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    sameConnectionSameMessageIdSameContent = if ($probePass -and $probeResult.duplicate.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    sameMessageIdDifferentContentStableConflict = if ($probePass -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    recoveryStateReportFirstAckDropReplay = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    recoveryStateReportFirstAckDropReplayOverPlaintext = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    businessMessageSameMessageIdSameContentReplay = if ($businessDuplicatePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    businessMessageSameMessageIdDifferentContentStableConflict = if ($businessConflictPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    businessMessageAckDropInSessionReplay = if ($businessAckDropPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    businessMessageDelayedDeliveryAccepted = if ($businessDelayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    businessMessageReorderedDeliveryAccepted = if ($businessReorderPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    recoverySessionAuthorisationBoundary = if ($recoveryAuthorisationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    recoveryActionsRefusedWithoutPersistedOperation = if ($recoveryActionBoundaryPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    hardwareRecoveryRecordScopeEnforced = if ($recoveryHardwareRecordPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    recoveryCommandSurvivesMidFlightDisconnect = if ($recoveryDisconnectPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    noMovementOrExternalSideEffects = if ($noMovementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    secretScan = if ($secretLeakFiles.Count -eq 0) { 'PASS' } else { 'FAIL' }
+}
+
+# The vendored slice index is what the gate result cites, and this runner is the only one of the
+# three that also clones the protocol. Assert the two are the same bytes rather than trusting the
+# manifest file table alone: a gate result that names a slice family should be able to say it read
+# the protocol's own copy of it.
+$sliceIndexPath = Join-Path $ControlServerRepository 'vendor\8005-agv-protocol\integration-slices\index.json'
+$clonedSliceIndex = Join-Path $protocolSource 'integration-slices\index.json'
+if (Test-Path -LiteralPath $clonedSliceIndex -PathType Leaf) {
+    $vendoredHash = (Get-FileHash -LiteralPath $sliceIndexPath -Algorithm SHA256).Hash
+    $clonedHash = (Get-FileHash -LiteralPath $clonedSliceIndex -Algorithm SHA256).Hash
+    if ($vendoredHash -ne $clonedHash) {
+        throw ("The vendored slice index differs from the protocol clone at ${ProtocolCommit}: " +
+               "vendored $vendoredHash, cloned $clonedHash.")
+    }
+}
+
+$gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
+    -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
+        runId = $runId
+        startedAt = $runStartedAt.ToString('O')
+        commits = [ordered]@{
+            controlServer = $ControlServerCommit
+            onboardEvidenceBinding = $OnboardCommit
+            slotsSimulator = $SimulatorCommit
+            protocol = $ProtocolCommit
+            harness = $harnessCommit
+            harnessWorktreeCleanAtStart = $harnessWorktreeClean
+        }
+        protocolReleaseVersion = $expectedProtocol.releaseVersion
+        protocolTag = $protocolTag
+        protocolProfileId = $expectedProtocol.profileId
+        protocolVersion = $expectedProtocol.protocolVersion
+        protocolApprovalStatus = $expectedProtocol.approvalStatus
+        protocolRepositoryCommit = $ProtocolCommit
+        protocolManifestSha256 = $manifestSha256
+        protocolSchemaBundleSha256 = $schemaBundleSha256
+        protocolVectorsSha256 = $vectorsSha256
+        sliceIndexPath = $sliceIndexPath
+        sliceIndexSource = 'vendor/8005-agv-protocol/integration-slices/index.json'
+    }
+
+# The secret scan above ran before these files existed. They carry only derived identity, status and
+# assertion names, so this throws rather than recording a leak: a value that reached them is already
+# sealed into evidence, and the run must not finish claiming it scanned clean.
+foreach ($gateResultPath in $gateResultPaths) {
+    $gateResultText = Get-Content -Raw -LiteralPath $gateResultPath
+    if ($gateResultText.Contains($credential, [StringComparison]::Ordinal) -or
+        $gateResultText.Contains($recoveryProof, [StringComparison]::Ordinal)) {
+        throw "A gate result carries a run secret: $gateResultPath"
+    }
+}
+
 $artifactFiles = @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File |
     Where-Object Name -NE 'run-result.json' |
     Sort-Object FullName |
@@ -2919,16 +3004,10 @@ $result = [ordered]@{
     startedAtUtc = $runStartedAt
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
-    classification = [ordered]@{
-        stagedSlice = $status
-        formalSlicePass = $false
-        officialSlices = @(
-            [ordered]@{ integrationSliceId = 'FP-IS-00'; status = 'INCONCLUSIVE' },
-            [ordered]@{ integrationSliceId = 'FP-IS-06'; status = 'INCONCLUSIVE' }
-        )
-        fullG3 = 'INCONCLUSIVE'
-        releaseCandidate = 'INCONCLUSIVE'
-    }
+    classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
+        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+    gateResults = @($gateResultPaths | ForEach-Object {
+        [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
     commits = [ordered]@{
         controlServer = $ControlServerCommit
         onboardEvidenceBinding = $OnboardCommit
@@ -2953,27 +3032,7 @@ $result = [ordered]@{
     configurationSha256 = Get-Sha256Text $configurationJson
     configuration = $configuration
     commands = @($commands)
-    assertions = [ordered]@{
-        identityRejections = if ($probePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        sameConnectionSameMessageIdSameContent = if ($probePass -and $probeResult.duplicate.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        sameMessageIdDifferentContentStableConflict = if ($probePass -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        recoveryStateReportFirstAckDropReplay = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        recoveryStateReportFirstAckDropReplayOverPlaintext = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        businessMessageSameMessageIdSameContentReplay = if ($businessDuplicatePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        businessMessageSameMessageIdDifferentContentStableConflict = if ($businessConflictPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        businessMessageAckDropInSessionReplay = if ($businessAckDropPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        businessMessageDelayedDeliveryAccepted = if ($businessDelayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        businessMessageReorderedDeliveryAccepted = if ($businessReorderPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        recoverySessionAuthorisationBoundary = if ($recoveryAuthorisationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        recoveryActionsRefusedWithoutPersistedOperation = if ($recoveryActionBoundaryPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        hardwareRecoveryRecordScopeEnforced = if ($recoveryHardwareRecordPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        recoveryCommandSurvivesMidFlightDisconnect = if ($recoveryDisconnectPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        noMovementOrExternalSideEffects = if ($noMovementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-        secretScan = if ($secretLeakFiles.Count -eq 0) { 'PASS' } else { 'FAIL' }
-    }
+    assertions = $assertionReport
     probe = $probeResult
     businessProbe = $businessProbeResult
     recoveryProbe = $recoveryProbeResult

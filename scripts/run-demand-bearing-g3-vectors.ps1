@@ -8,6 +8,12 @@ param(
     # this runner restores. Nothing here writes to it; the copy in StageRoot is what the server opens.
     [Parameter(Mandatory)]
     [string]$FieldRunRoot,
+    # Selects what this run CERTIFIES, not what it runs. A G3 run is one end-to-end scenario against
+    # real peers, not a filterable set of tests, so -Slice narrows the evidence written and never the
+    # scenario driven: with it, one gate-result.json for that slice; without it, one for each slice
+    # this runner claims. Naming a slice this runner does not claim is refused before anything is
+    # created -- see scripts/g3-slice-evidence.ps1 for the claim table and the 2026-09-09 ruling.
+    [ValidatePattern('^FP-IS-(0[0-9]|1[0-5])$')][string]$Slice,
     [string]$ControlServerRepository = (Split-Path -Parent $PSScriptRoot),
     # Both the peer commit binding and the synthetic-peer harness are owned by the staged G3 runner and
     # read back from it rather than restated here, so the two runners can never drift apart.
@@ -86,6 +92,12 @@ $commitBindingFunctionSha256 =
 $runnerCommit = (& git -C $ControlServerRepository rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "Unable to read the runner commit from $ControlServerRepository" }
 $runnerWorktreeClean = @(& git -C $ControlServerRepository status --porcelain).Count -eq 0
+
+$G3RunKind = 'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT'
+. (Join-Path $PSScriptRoot 'g3-slice-evidence.ps1')
+# Before the clones and the builds, not after: naming a slice this runner cannot certify
+# should cost a message, not an hour of cloning and publishing.
+if (-not [string]::IsNullOrEmpty($Slice)) { Assert-G3SliceIsClaimedBy -RunKind $G3RunKind -Slice $Slice }
 
 if (Test-Path -LiteralPath $StageRoot) { throw "StageRoot must not already exist: $StageRoot" }
 if (Test-Path -LiteralPath $EvidenceRoot) { throw "EvidenceRoot must not already exist: $EvidenceRoot" }
@@ -705,6 +717,44 @@ $status = if ($null -ne $runError) {
     'DEMAND_BEARING_SLICE_FAIL'
 }
 
+$gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $EvidenceRoot `
+    -AssertionReport $assertionReport -Slice $Slice -RunnerErrored:($null -ne $runError) -Context @{
+        runId = $runId
+        startedAt = $runStartedAt.ToString('O')
+        commits = [ordered]@{
+            controlServer = $ControlServerCommit
+            onboardHmi = $OnboardCommit
+            slotsSimulator = $SimulatorCommit
+            protocol = $ProtocolCommit
+            runner = $runnerCommit
+            runnerWorktreeCleanAtStart = $runnerWorktreeClean
+        }
+        # Read back from the server this run actually talked to rather than restated from a constant:
+        # this runner clones no protocol repository, so the identity it can honestly cite is the one
+        # the running host reported. Null when the run never got a version, which is the same case
+        # that grades every slice INCONCLUSIVE.
+        protocolReleaseVersion = $version.releaseVersion
+        protocolTag = $version.protocolTag
+        protocolProfileId = $version.profileId
+        protocolVersion = $version.protocolVersion
+        protocolApprovalStatus = $version.approvalStatus
+        protocolRepositoryCommit = $ProtocolCommit
+        protocolManifestSha256 = $version.manifestSha256
+        protocolSchemaBundleSha256 = $version.schemaBundleSha256
+        protocolVectorsSha256 = $version.vectorsSha256
+        sliceIndexPath = (Join-Path $ControlServerRepository 'vendor\8005-agv-protocol\integration-slices\index.json')
+        sliceIndexSource = 'vendor/8005-agv-protocol/integration-slices/index.json'
+    }
+
+# The secret scan above ran before these files existed. They carry only derived identity, status and
+# assertion names, so this throws rather than recording a leak: a value that reached them is already
+# sealed into evidence, and the run must not finish claiming it scanned clean.
+foreach ($gateResultPath in $gateResultPaths) {
+    if ((Get-Content -Raw -LiteralPath $gateResultPath).Contains($credential, [StringComparison]::Ordinal)) {
+        throw "A gate result carries a run secret: $gateResultPath"
+    }
+}
+
 $artifactFiles = @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File |
     Where-Object { $_.Name -ne 'run-result.json' } |
     Sort-Object FullName |
@@ -723,16 +773,10 @@ $result = [ordered]@{
     startedAtUtc = $runStartedAt
     completedAtUtc = [DateTimeOffset]::UtcNow
     status = $status
-    classification = [ordered]@{
-        vectorSlice = $status
-        formalSlicePass = $false
-        officialSlices = @(
-            [ordered]@{ integrationSliceId = 'FP-IS-04'; status = 'INCONCLUSIVE' },
-            [ordered]@{ integrationSliceId = 'FP-IS-05'; status = 'INCONCLUSIVE' }
-        )
-        fullG3 = 'INCONCLUSIVE'
-        releaseCandidate = 'INCONCLUSIVE'
-    }
+    classification = (New-G3Classification -RunKind $G3RunKind -RunStatus $status `
+        -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
+    gateResults = @($gateResultPaths | ForEach-Object {
+        [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
     commits = [ordered]@{
         controlServer = $ControlServerCommit
         onboardHmi = $OnboardCommit
