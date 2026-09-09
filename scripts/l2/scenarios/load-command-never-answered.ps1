@@ -139,7 +139,13 @@ $operationKey = Wait-L2Condition -Description 'the load command reached the peer
     -Probe { Get-PendingOperationKey } -Until { param($v) $null -ne $v }
 $journal.Note("Load command $operationKey reached the peer, which will never answer it.")
 
-$stage = Get-Stage
+# 命令到了对端不等于阶段已经推到 `AwaitingLoadResult`：下发与推阶段不是同一次写入。
+# 这一条原本直读，在 self-hosted runner 上间歇性读到 `AwaitingSublot` 而红
+# （run 34362936547、34359517708），而同一次运行里紧接着的 `L2-LN-02` 读到的就是
+# `AwaitingLoadResult`——读得太早，不是产品坏了。README 第 14 条的纪律在这里同样适用。
+$stage = Wait-L2Condition -Description 'the journey moved on to waiting for the load result' `
+    -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 60 `
+    -Probe { Get-Stage } -Until { param($v) $v -eq 'AwaitingLoadResult' }
 $assertions.Add(
     'L2-LN-01', '装载指令已下发，旅程在等结果',
     ($stage -eq 'AwaitingLoadResult'), 'AwaitingLoadResult', $stage)

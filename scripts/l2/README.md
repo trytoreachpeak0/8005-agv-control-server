@@ -335,6 +335,11 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     `AwaitingGateArrival`，说明它只是还没轮到。**跨两次写入的判据一律用 `Wait-L2Condition` 等，
     不要读完一个就顺手读下一个**，这与 `L2-CB-12` 那条「转阶段与订单落到假 RIoT 不同时」是同一
     种错误，只是这次两边都在服务端自己的库里，看着更像可以一起读。
+    **第三例是 `load-command-never-answered` 的 `L2-LN-01`**（`8005-agv-program#30`）：它等到命令
+    到了对端就直读 `Stage`，而下发与推阶段同样不是同一次写入，在 self-hosted runner 上
+    间歇性读到 `AwaitingSublot`（run 34362936547、34359517708），而同一次运行里紧接着的
+    `L2-LN-02` 读到的就是 `AwaitingLoadResult`。**假红比真红贵**：这条场景钉的正是
+    「服务端重放未结命令而不改口」，它每红一次都要人去判一次是不是真坏了。
 
 ## ADR-cross-0058 的三条操作员不作为场景
 
