@@ -695,7 +695,16 @@ function Write-L2Evidence {
     $lines.Add('| --- | --- |')
     $lines.Add("| runId | ``$RunId`` |")
     foreach ($key in ($Identity.Keys | Sort-Object)) {
-        $lines.Add("| $key | ``$($Identity[$key])`` |")
+        $value = $Identity[$key]
+        if ($value -is [System.Collections.IDictionary]) {
+            # A nested block (the protocol release triple) gets one row per field. Rendered whole it
+            # would print the dictionary's type name, which reads like a filled-in value and is not.
+            foreach ($inner in $value.Keys) {
+                $lines.Add("| $key.$inner | ``$($value[$inner])`` |")
+            }
+        } else {
+            $lines.Add("| $key | ``$value`` |")
+        }
     }
     $lines.Add('')
     $lines.Add('## 判据')

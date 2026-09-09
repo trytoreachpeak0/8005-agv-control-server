@@ -52,7 +52,12 @@ param(
     # default, which is how the workspace lays them out.
     [string]$OnboardRepository,
     [string]$SimulatorRepository,
-    [string]$PeerCacheRoot = (Join-Path $env:LOCALAPPDATA '8005-l2-peers')
+    [string]$PeerCacheRoot = (Join-Path $env:LOCALAPPDATA '8005-l2-peers'),
+
+    # Which batch's exit evidence this run belongs to. It goes into assertions.json so a directory
+    # full of evidence can answer "which batch was this for" without anyone reading the dates.
+    # Change it when the batch changes -- this default is the only place it is written down.
+    [string]$BatchId = 'BATCH-3'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -555,12 +560,25 @@ try {
 
     Stop-L2Process -Handles $handles
 
+    # The protocol release this run was built against, read from the Host's own appsettings rather
+    # than restated here: a second copy of the triple is a second thing to keep in step, and these
+    # two had already drifted a whole release apart once. Evidence carrying the triple can be
+    # invalidated by a protocol release the same way G2 evidence is.
+    $protocolCandidate = (Get-Content -LiteralPath (Join-Path $Repository 'src/ControlServer.Host/appsettings.json') -Raw |
+        ConvertFrom-Json -AsHashtable).ProtocolCandidate
+
     $identity = @{
         controlServerCommit = (& git -C $Repository rev-parse HEAD 2>$null)
         agvId               = $agvId
         vehicleKey          = $vehicleKey
         stageRoot           = $stageRoot
         rig                 = if ($realOnboard) { 'RealOnboard' } else { 'SyntheticOnboard' }
+        batchId             = $BatchId
+        protocolReleaseIdentity = [ordered]@{
+            tag              = $protocolCandidate.tag
+            repositoryCommit = $protocolCandidate.repositoryCommit
+            manifestSha256   = $protocolCandidate.manifestSha256
+        }
     }
     if ($null -ne $clockSkewMs) { $identity['clockSkewMs'] = $clockSkewMs }
     if ($onboardPublish) { $identity['onboardHmiCommit'] = $onboardPublish.Commit }
