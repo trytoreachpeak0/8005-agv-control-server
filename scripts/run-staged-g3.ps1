@@ -8,10 +8,10 @@ param(
     [string]$OnboardRepository = 'https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git',
     [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git',
     [string]$ProtocolRepository = 'https://github.com/trytoreachpeak0/8005-agv-protocol.git',
-    [string]$ControlServerCommit = '4746ed27bfe0606238910bf31b493be2770395f7',
-    [string]$OnboardCommit = 'f0465d9ad9f84607e3db972f1c6cb0ead910ab3d',
+    [string]$ControlServerCommit = '8b554bea6a2f8ea3d647695625f3de0d81dac016',
+    [string]$OnboardCommit = '77d5833b32976665ec05a7cb3a9e7a973db887fd',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '1531489e42e328f28bfe0c51ed3f8c56e5ce0279'
+    [string]$ProtocolCommit = '345c53c58517968192c87c3e7777ed08ddb48726'
 )
 
 $ErrorActionPreference = 'Stop'
