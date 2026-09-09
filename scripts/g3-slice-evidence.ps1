@@ -296,9 +296,10 @@ function New-G3Classification {
 }
 
 # One file per slice, mirroring the two G2 harnesses: ticket 17 counts files, and both G2 gates
-# already write one per slice. schemaVersion 1.2.0 -- additive over the 1.1.0 both G2 harnesses
-# emit, so a 1.1.0 reader still parses it, but a reader that cannot tell the shapes apart cannot
-# tell a graded G3 result from an ungraded G2 one either.
+# already write one per slice. schemaVersion 1.3.0 -- 1.2.0 was additive over the 1.1.0 both G2
+# harnesses emit, and 1.3.0 is additive again (ticket 24's optional fieldStoreProvenance), so a
+# 1.1.0 reader still parses it, but a reader that cannot tell the shapes apart cannot tell a graded
+# G3 result from an ungraded G2 one either.
 function Write-G3GateResult {
     param(
         [Parameter(Mandatory)][string]$RunKind,
@@ -320,7 +321,7 @@ function Write-G3GateResult {
     $counting = Get-G3AssuranceLevelsThatCountAsSlicePass
 
     $result = [ordered]@{
-        schemaVersion = '1.2.0'
+        schemaVersion = '1.3.0'
         gate = 'G3'
         runKind = $RunKind
         runId = $Context['runId']
@@ -344,10 +345,29 @@ function Write-G3GateResult {
         integrationSliceIndexSha256 = (Get-FileHash -LiteralPath $Context['sliceIndexPath'] -Algorithm SHA256).Hash.ToLowerInvariant()
         integrationSliceIndexSource = $Context['sliceIndexSource']
         vectorIds = @($entry.vectorIds)
-        # The attribution this whole file exists to write down: which named assertions of this run
-        # are the evidence for this slice, and what each of them said.
-        assertionIds = $sliceReport
     }
+
+    # Recorded facts that are deliberately NOT assertions. Ticket 24 split the restored field store's
+    # own protocolCommit out of the demand-bearing runner's identity assertion: it reports the history
+    # of the field run the store came from, which no v2-identity run can match, so asserting it kept
+    # six meaningful identity checks permanently red behind one name. Only the runner that restores a
+    # store passes this; the others would carry an empty section, which reads as a measurement that
+    # went missing rather than one that does not apply.
+    if ($Context.ContainsKey('fieldStoreProvenance')) {
+        $provenance = $Context['fieldStoreProvenance']
+        # Same rule as the identity fields below: a section that is written at all has to carry a
+        # value. Empty here means the store was never read, which is a run problem and must not go
+        # out looking like a complete result.
+        if ($null -eq $provenance['protocolCommit'] -or "$($provenance['protocolCommit'])".Length -eq 0) {
+            throw ("The gate result for $Slice carries a fieldStoreProvenance with no protocolCommit. " +
+                   'The restored store was not read, so the run writes nothing rather than a blank field.')
+        }
+        $result['fieldStoreProvenance'] = $provenance
+    }
+
+    # The attribution this whole file exists to write down: which named assertions of this run
+    # are the evidence for this slice, and what each of them said.
+    $result['assertionIds'] = $sliceReport
 
     # Every identity field has to have a value. Measured on 2026-09-09 before this check existed:
     # the two runners that read their identity back from the running host asked it for

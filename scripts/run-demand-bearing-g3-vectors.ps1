@@ -623,13 +623,41 @@ $restartedHostServesTheSameStorePass = $null -ne $handshakeResult -and $null -ne
     [long]$handshakeResult.sessionGeneration -eq
         [long]$afterProbe.sessionRecoveryRows[0]['sessionGeneration'] + 1
 
+# The identity this run can actually be held to: the protocol the running host reports, the build
+# under test, and the fact that the restored store was read at all.
+#
+# The store's own recorded protocolCommit used to be a seventh conjunct here, and it is not one any
+# more (ticket 24, on the user's ruling of 2026-09-09). It asks what protocol the field run of
+# 2026-08-29 was speaking -- protocol-v0.1.1 -- which no v2-identity run can ever satisfy, short of
+# re-collecting a field run under v2. Leaving it inside the conjunction made the whole assertion
+# permanently red, and a permanently red assertion cannot report the six checks that are still
+# meaningful: an exemption written against the assertion's NAME would have swallowed them.
+# So it is recorded below instead of asserted, and the exemption is written against that one fact.
 $protocolBindingPass = $null -ne $version -and
     $version.protocolCommit -eq $ProtocolCommit -and
     $version.protocolTag -eq 'protocol-v1.0.0' -and
     $null -ne $probeResult -and
     [string]$probeResult.serverBuildCommit -eq $ControlServerCommit -and
-    $null -ne $baseline -and
-    [string]$baseline.sessionRecoveryRows[0]['protocolCommit'] -eq $ProtocolCommit
+    $null -ne $baseline
+
+# Recorded, not asserted. matchesBoundProtocolCommit is written exactly as measured -- false is the
+# expected value today, and it is stated rather than omitted: an exemption means this fact does not
+# decide the slice, not that the evidence stops saying it.
+$fieldStoreProtocolCommit = if ($null -ne $baseline) {
+    [string]$baseline.sessionRecoveryRows[0]['protocolCommit']
+} else {
+    $null
+}
+$fieldStoreProvenanceRecord = [ordered]@{
+    protocolCommit = $fieldStoreProtocolCommit
+    matchesBoundProtocolCommit = ($null -ne $fieldStoreProtocolCommit) -and
+        ($fieldStoreProtocolCommit -eq $ProtocolCommit)
+    exemption = 'TICKET_17_KNOWN_EXEMPTION_FIELD_STORE_HISTORY'
+    note = 'The restored store is real state written by the authorised field run of 2026-08-29, ' +
+           'which spoke protocol-v0.1.1. Its recorded protocolCommit is that history, not a ' +
+           'statement about the build under test, so it is recorded and not asserted. Ruled a ' +
+           'known exemption by the user on 2026-09-09; scope is this fact alone.'
+}
 
 $configuration = [ordered]@{
     loopbackOnly = $true
@@ -744,6 +772,10 @@ $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $Eviden
         protocolVectorsSha256 = $version.vectorsSha256
         sliceIndexPath = (Join-Path $ControlServerRepository 'vendor\8005-agv-protocol\integration-slices\index.json')
         sliceIndexSource = 'vendor/8005-agv-protocol/integration-slices/index.json'
+        # Only this runner restores a field store, so only this runner's gate results carry the
+        # section. The other two would carry a permanently empty one, which reads as a missing
+        # measurement rather than an inapplicable one.
+        fieldStoreProvenance = $fieldStoreProvenanceRecord
     }
 
 # The secret scan above ran before these files existed. They carry only derived identity, status and
@@ -777,6 +809,9 @@ $result = [ordered]@{
         -AssertionReport $assertionReport -RunnerErrored:($null -ne $runError))
     gateResults = @($gateResultPaths | ForEach-Object {
         [IO.Path]::GetRelativePath($EvidenceRoot, $_).Replace('\', '/') })
+    # Same record the per-slice gate results carry, at run level so a reader of this file alone can
+    # see which field run's history the store carries without opening a slice directory.
+    fieldStoreProvenance = $fieldStoreProvenanceRecord
     commits = [ordered]@{
         controlServer = $ControlServerCommit
         onboardHmi = $OnboardCommit
