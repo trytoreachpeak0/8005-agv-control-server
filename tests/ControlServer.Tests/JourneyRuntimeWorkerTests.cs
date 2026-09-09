@@ -1641,6 +1641,76 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AnExpiredStationDeadlineDoesNotCloseTheStopWhileASlotDoorIsStillOpen()
+    {
+        // ADR-cross-0058 decision 4, the square the baseline never covered. StopClosureCommit
+        // presumes the vehicle can then leave, and ADR-cross-0011/0012 forbid moving with an open
+        // slot door -- so closing the stop here would produce a journey that is finished on paper
+        // and immobile in fact. The deadline instead raises an alarm and keeps waiting.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        Assert.Equal(Now, runtime.SublotWaitStartedAt);
+
+        // The operator opened a slot, wandered off, and never pushed the door shut.
+        await fixture.ReportDoorLeftOpenAsync();
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // Past the deadline, and deliberately still here: an alarm on an open stop, not a block.
+        // Nothing about this needs an administrator -- it needs someone to close a door.
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", runtime.BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+
+        // Waiting does not decay into closing, however long it lasts.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(20));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+
+        // Door shut: the next pass settles against the reading of that moment, exactly as the ADR
+        // says -- "闭合后立即按当时的真实 IO 读数结算".
+        await fixture.ReportDoorClosedAsync();
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AnExpiredStationDeadlineDoesNotCloseTheStopOnAnUnreadableSafetyPicture()
+    {
+        // The same guard, drawn at certainty rather than at the door: ADR-cross-0055 lists
+        // "状态未知或断联" alongside an active slot operation as things that block the countdown
+        // from closing the stop. A server that cannot read the physical world must not act on it.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.AdvanceToSublotWaitAsync("10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.SingleAsync(
+            TestContext.Current.CancellationToken);
+        session.SafetyUnknownPresent = true;
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", runtime.BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
     public async Task TheSublotWaitTimeoutStopsApplyingOnceTheLoadIsUnderway()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -2765,6 +2835,32 @@ public sealed class JourneyRuntimeWorkerTests
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// Puts the safety projection into the shape the vehicle reports while a slot door is still
+        /// open: <c>LOCK_NOT_CLOSED</c>, nothing unknown. This is the field ADR-cross-0058 decision 4
+        /// reads to decide whether an expired stop may be closed.
+        /// </summary>
+        public async Task ReportDoorLeftOpenAsync()
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.SafetyReasonCodesJson = "[\"LOCK_NOT_CLOSED\"]";
+            session.SafetyUnknownPresent = false;
+            session.UpdatedAt = Clock.GetUtcNow();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>The operator finally pushed the door shut; the projection carries no reasons.</summary>
+        public async Task ReportDoorClosedAsync()
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.SafetyReasonCodesJson = "[]";
+            session.SafetyUnknownPresent = false;
+            session.UpdatedAt = Clock.GetUtcNow();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
         public async Task SetOnboardUnknownAsync()
         {
             ProtocolInboxRow row = await Context.ProtocolInbox.SingleAsync(
@@ -3285,6 +3381,12 @@ public sealed class JourneyRuntimeWorkerTests
                 SafetyRevision = 7,
                 SafetyHash = new string('2', 64),
                 DepartureSafe = true,
+                // Matches the SafetyStateSnapshot this fixture puts in the inbox alongside it
+                // (unknownPresent false, no reason codes). ApplySafetySnapshotAsync fills these two
+                // on the real handshake path, and a session cannot reach Ready without going
+                // through it -- leaving them null here modelled a session that cannot exist.
+                SafetyUnknownPresent = false,
+                SafetyReasonCodesJson = "[]",
                 RecoveryReportId = Guid.NewGuid().ToString("D"),
                 Readiness = SessionReadiness.Ready,
                 ReasonCode = "READY",

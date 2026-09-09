@@ -39,6 +39,13 @@ public sealed class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2103, nameof(LogMapStationCatalogFailed)),
         "RIoT Map station catalog failed closed; no new journey action was taken.");
+    private static readonly Action<ILogger, string, TimeSpan, Exception?> LogStationTimeoutDoorNotClosed =
+        LoggerMessage.Define<string, TimeSpan>(
+            LogLevel.Warning,
+            new EventId(2109, nameof(LogStationTimeoutDoorNotClosed)),
+            "Station {StationId} passed its {SublotWaitTimeout} departure deadline with a slot door " +
+            "still open. The stop is NOT closed: the vehicle cannot depart with an open door, so it " +
+            "keeps waiting for the door to be closed by hand.");
     private static readonly Action<ILogger, string, TimeSpan, Exception?> LogSublotWaitTimedOut =
         LoggerMessage.Define<string, TimeSpan>(
             LogLevel.Information,
@@ -2085,6 +2092,32 @@ public sealed class JourneyRuntimeEngine(
             return false;
         }
 
+        // ADR-cross-0058 decision 4, the one square the baseline never covered. StopClosureCommit
+        // presumes the vehicle can then leave, and ADR-cross-0011/0012 forbid moving with a slot
+        // door open -- so a deadline that expires against an open door must not close the stop. It
+        // raises an alarm and keeps waiting; when the door is finally shut, the next pass settles
+        // against the IO reading of that moment.
+        //
+        // This square cannot be automated away: ModbusTcpIoModuleClient has no close or lock
+        // output at all (0x05 drives only PulseUnlockAsync), so the door is shut by hand. What the
+        // software can do is downgrade the human's job from "log in as MAINTENANCE_ADMINISTRATOR
+        // and drive a recovery handshake" to "push the door shut".
+        if (DoorLeftOpen(session))
+        {
+            // Only on the edge: this runs every poll interval while the door stays open.
+            if (runtime.BlockReasonCode != StationTimeoutDoorNotClosedReason)
+            {
+                runtime.BlockReasonCode = StationTimeoutDoorNotClosedReason;
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                LogStationTimeoutDoorNotClosed(logger, stop.StationId, runtimeOptions.SublotWaitTimeout, null);
+            }
+            // Handled: the stop stays open and the journey stays in AwaitingSublot. The stage is
+            // deliberately not Blocked -- nothing here needs an administrator, and ADR-cross-0058
+            // decision 4 wants the vehicle visibly waiting, not parked in a recovery state.
+            return true;
+        }
+
         // ADR-cross-0055 and FR-004 end the *stop*, which terminates every demand still waiting to
         // be loaded there -- plural. A journey carrying demands it has already loaded is not ended
         // by this: those are on board and still bound for the gate.
@@ -2111,6 +2144,34 @@ public sealed class JourneyRuntimeEngine(
             runtime, stops, stop, remaining, session, now, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return true;
+    }
+
+    /// <summary>
+    /// The reason code a stop carries while it is past its departure deadline but cannot be closed
+    /// because a slot door is still open. It is an alarm, not a block: the journey stays in
+    /// <see cref="JourneyRuntimeStage.AwaitingSublot"/> and settles as soon as the door is shut.
+    /// </summary>
+    private const string StationTimeoutDoorNotClosedReason = "STATION_TIMEOUT_DOOR_NOT_CLOSED";
+
+    /// <summary>
+    /// Whether the vehicle is currently reporting a slot door that is not closed. The source is the
+    /// safety projection the peer already pushes -- <c>LOCK_NOT_CLOSED</c> is the code it reports
+    /// for exactly this, and <see cref="WireToGateStore"/> already treats it as one of the two
+    /// operation-induced unsafety reasons. An unknown safety picture counts as "not closed": the
+    /// server must not close a stop against evidence it cannot read.
+    /// </summary>
+    private static bool DoorLeftOpen(SessionRecoveryRow session)
+    {
+        if (session.SafetyUnknownPresent != false)
+        {
+            return true;
+        }
+        if (session.SafetyReasonCodesJson is null)
+        {
+            return false;
+        }
+        string[] reasonCodes = JsonSerializer.Deserialize<string[]>(session.SafetyReasonCodesJson) ?? [];
+        return reasonCodes.Contains("LOCK_NOT_CLOSED", StringComparer.Ordinal);
     }
 
     private static void SetStage(
