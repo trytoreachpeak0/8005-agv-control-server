@@ -148,6 +148,10 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<MissingPackageRow>().HasKey(row => row.Package);
 
         Batch2CapabilityModel.Configure(modelBuilder);
+        // 批次 3 的表全部走每实体一个 IEntityTypeConfiguration<T>，放在 Persistence/Configurations
+        // 下——加一张表是加一个文件，不是在这里再加一段。上面那些手写配置是 v2 线既有的，两种写法
+        // 并存：程序集扫描只会捡到 Configurations/ 里的那些，不会碰上面任何一行。
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ControlServerDbContext).Assembly);
     }
 }
 
