@@ -7,7 +7,9 @@
 了自己的 workflow.operationTimeoutMs（120 s），**上报了一份不完美的 OperationResult**，服务端
 ApplyOperationResultAsync 判 RecoveryRequired，journey 进 Blocked / LOAD_RESULT_REQUIRES_RECOVERY。
 
-所以这里用 Manual 策略加一次 completed=false 的应答，**不是 Silent**。Silent 复现的是另一件事：
+所以这里用 Manual 策略加一次 completed=false、**且仓位状态 UNKNOWN** 的应答，**不是 Silent**。
+UNKNOWN 那一半同样是前提：ADR-cross-0058 决策 5 之后，仓位状态明确的装载失败结算为确定失败而不再
+进恢复，只有说不清发生了什么的结果才走这条路。Silent 复现的是另一件事：
 车载端根本不应答，StationOperations 停在 Prepared，AdvanceAsync 的 AwaitingLoadResult 分支走
 else { return; }，旅程停在 AwaitingLoadResult 而**不会进 Blocked**。那也是一条值得有的场景，但它
 不是这一条。
@@ -138,8 +140,16 @@ $assertions.Add(
     'L2-LR-01', '装载指令已下发，旅程在等结果',
     ($stage -eq 'AwaitingLoadResult'), 'AwaitingLoadResult', $stage)
 
-$journal.Note("Operator timeout ran out on the peer; it reports an incomplete OperationResult ($operationKey).")
-$null = $onboard.Command('Put', "answer/$operationKey", @{ completed = $false })
+# determinate = $false 是这条场景的**前提**，不是可调参数。ADR-cross-0058 决策 5 之后，判定的分界
+# 线画在确定性上而不在 FAILED 这个词上：仓位状态明确、门已锁、开锁输出已复位的装载失败结算为
+# StationOperationStatus.Failed，原地等 LoadTaskCancellation，**不 Block**。那正是这条场景验不到的
+# 东西。要 RecoveryRequired 就得有一份真正说不清的结果，所以仓位报 UNKNOWN。
+#
+# 决策 5 落地时（`5f8f5a7d`）这条场景没跟着换载体，于是它连挂了五次 CI：合成对端当时只会发
+# EMPTY + LOCKED + RESET，那在旧语义下是唯一的失败形状、在新语义下成了确定失败，旅程不再 Block，
+# 场景等 Blocked 等到 120 秒超时。同一次改动里那六条 L1 测试是换了载体的，这一层漏了。
+$journal.Note("Operator timeout ran out on the peer; it reports an OperationResult it cannot account for ($operationKey).")
+$null = $onboard.Command('Put', "answer/$operationKey", @{ completed = $false; determinate = $false })
 
 # --- 3. 服务端判 RecoveryRequired，旅程停摆 ---------------------------------------------------------
 

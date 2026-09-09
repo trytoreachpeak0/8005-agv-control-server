@@ -8,7 +8,7 @@
 
 | | 车载端做了什么 | 服务端看到 | 结果 |
 | --- | --- | --- | --- |
-| `load-result-requires-recovery` | 跑掉自己的操作员超时，上报一份不完美的 `OperationResult` | 一份 `completed=false` 的结果 | 操作判 `RecoveryRequired`，旅程进 `Blocked / LOAD_RESULT_REQUIRES_RECOVERY` |
+| `load-result-requires-recovery` | 跑掉自己的操作员超时，上报一份**说不清仓位状态**的 `OperationResult` | 一份 `completed=false` 且仓位 `UNKNOWN` 的结果 | 操作判 `RecoveryRequired`，旅程进 `Blocked / LOAD_RESULT_REQUIRES_RECOVERY` |
 | **本场景** | 什么都不发 | 什么都没有 | 操作停在 `Prepared`，旅程停在 `AwaitingLoadResult`，**不进 `Blocked`** |
 
 差别落在 `JourneyRuntimeEngine` 的 `AwaitingLoadResult` 分支上（`JourneyRuntimeEngine.cs:430`）：它

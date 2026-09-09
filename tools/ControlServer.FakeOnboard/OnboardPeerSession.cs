@@ -347,15 +347,22 @@ public sealed class OnboardPeerSession(
     /// OnboardMessageProcessor recomputes it. The server rejects the message outright when the two
     /// differ, so this hash is part of the contract rather than a checksum.
     /// </summary>
-    public object OperationResult(JsonElement commandPayload, long generation, bool completed)
+    public object OperationResult(
+        JsonElement commandPayload, long generation, bool completed, bool determinate = false)
     {
         string operationType = commandPayload.GetProperty("operationType").GetString() ?? "LOAD";
         string finalState = operationType == "LOAD" ? "OCCUPIED" : "EMPTY";
+        // A failed slot reports EMPTY only when the caller asks for a determinate failure. Under
+        // ADR-cross-0058 decision 5 that shape -- known state, locked door, reset output -- settles
+        // as StationOperationStatus.Failed and never reaches the recovery handshake, so it is the
+        // wrong thing to send when a scenario is exercising recovery. UNKNOWN is what "the vehicle
+        // cannot say what happened" looks like on the wire, and that is what still needs a person.
+        string failedState = determinate ? "EMPTY" : "UNKNOWN";
         SlotResult[] slotResults = commandPayload.GetProperty("slots").EnumerateArray()
             .Select(slot => new SlotResult(
                 slot.GetInt32(),
                 completed ? "COMPLETED" : "FAILED",
-                completed ? finalState : "EMPTY",
+                completed ? finalState : failedState,
                 "LOCKED",
                 "RESET",
                 completed ? [] : FailedSlotReasonCodes))

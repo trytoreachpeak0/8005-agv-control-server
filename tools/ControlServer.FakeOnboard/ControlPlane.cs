@@ -37,6 +37,22 @@ public sealed record AnswerCommand : CommandEnvelope
 {
     /// <summary>Completed for a working operation, or a safe pre-departure answer.</summary>
     public bool Completed { get; init; } = true;
+
+    /// <summary>
+    /// Only read when <see cref="Completed"/> is false, and it decides which kind of failure this
+    /// is. ADR-cross-0058 decision 5 draws the line at certainty rather than at the word FAILED: a
+    /// load whose every commanded slot came back with a known occupancy state, a locked door and a
+    /// reset unlock output settles as a determinate failure, while an UNKNOWN slot still needs the
+    /// recovery handshake.
+    ///
+    /// The default is false -- uncertain -- because that is what a scenario asking for a failed
+    /// result almost always means, and because the alternative default silently retired
+    /// load-result-requires-recovery when decision 5 shipped: its answer was EMPTY + LOCKED + RESET,
+    /// which had been the only shape of failure and became the determinate one, so the journey
+    /// stopped blocking and the scenario timed out waiting for a Blocked it could no longer reach.
+    /// Set it true to exercise decision 5 deliberately.
+    /// </summary>
+    public bool Determinate { get; init; }
 }
 
 /// <summary>
@@ -197,7 +213,7 @@ public static class ControlPlane
             object answer = request.MessageType switch
             {
                 "SublotEntryRequested" => peer.SublotSubmitted(payload.RootElement, generation),
-                "SlotOperationCommand" => peer.OperationResult(payload.RootElement, generation, command.Completed),
+                "SlotOperationCommand" => peer.OperationResult(payload.RootElement, generation, command.Completed, command.Determinate),
                 "PreDepartureSafetyCheck" => peer.SafetyCheckResult(payload.RootElement, generation, command.Completed),
                 _ => throw new InvalidOperationException("Unanswerable request type: " + request.MessageType)
             };
