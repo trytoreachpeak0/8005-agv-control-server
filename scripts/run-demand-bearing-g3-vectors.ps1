@@ -269,6 +269,24 @@ function Read-ControlDatabase {
             -Sql "SELECT COUNT(*) FROM $table"
     }
 
+    # VehicleDispatchLeases' key column was renamed DemandId -> JourneyId by
+    # 20260908042817_MultiDemandJourneyStopSequence. This runner restores the store of an authorised
+    # FIELD RUN, and such a store is older than the current schema by definition -- so the baseline
+    # probe reads the old name while the post-restart probes read the new one, and one function has
+    # to serve both. Detect it rather than pinning either: pinning JourneyId made every field run
+    # taken before 2026-09-08 fail with "no such column: JourneyId", and pinning DemandId would just
+    # move the failure to the other end. Whichever name is present, it is reported as journeyId.
+    $leaseKeyColumn = @(
+        Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'PRAGMA table_info(VehicleDispatchLeases)' `
+            -Columns @('cid', 'name', 'type', 'notnull', 'dflt', 'pk') |
+            ForEach-Object { [string]$_['name'] } |
+            Where-Object { $_ -in @('JourneyId', 'DemandId') })
+    if ($leaseKeyColumn.Count -ne 1) {
+        throw ("VehicleDispatchLeases must carry exactly one of JourneyId/DemandId, found: " +
+            ($leaseKeyColumn -join ', '))
+    }
+
     return [ordered]@{
         file = Get-FileFingerprint -Path $controlDatabasePath
         counts = $counts
@@ -276,7 +294,7 @@ function Read-ControlDatabase {
             -Sql 'SELECT DemandId, TransportDemandKey, DemandRevision, Status FROM AcceptedDemands ORDER BY DemandId' `
             -Columns @('demandId', 'transportDemandKey', 'demandRevision', 'status')
         vehicleLeaseRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-            -Sql 'SELECT JourneyId, VehicleKey, AcquiredAt, ReleasedAt FROM VehicleDispatchLeases ORDER BY JourneyId' `
+            -Sql "SELECT $leaseKeyColumn, VehicleKey, AcquiredAt, ReleasedAt FROM VehicleDispatchLeases ORDER BY $leaseKeyColumn" `
             -Columns @('journeyId', 'vehicleKey', 'acquiredAt', 'releasedAt')
         auditRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath -Sql @'
 SELECT UpperId, DispatchGeneration, Sequence, Phase, Outcome, EligibilityBasis,
