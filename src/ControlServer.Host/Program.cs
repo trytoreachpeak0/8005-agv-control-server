@@ -27,6 +27,7 @@ if (PackageCapacityImportCommand.IsRequested(args))
 
 app.MapControlServerDiagnostics();
 app.MapRuntimeQueries();
+app.MapDashboardQueries();
 app.MapOnboardSafetyProjection();
 
 await app.RunAsync();
