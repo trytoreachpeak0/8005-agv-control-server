@@ -63,6 +63,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
+        PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
@@ -71,6 +72,7 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         CancellationToken cancellationToken = default)
     {
         AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
+        PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 }
