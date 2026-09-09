@@ -487,7 +487,7 @@ try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
         -Commit $ControlServerCommit | Out-Null
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
-        -Commit $OnboardCommit -RemoteRef 'origin/OnboardHmi_MVP' | Out-Null
+        -Commit $OnboardCommit -RemoteRef 'origin/w2g/fp-v2-impl' | Out-Null
     New-ExactClone -Name 'slots-simulator' -Repository $SimulatorRepository -Destination $simulatorSource `
         -Commit $SimulatorCommit -RemoteRef 'origin/main' | Out-Null
 

@@ -12,15 +12,17 @@ param(
     # already says to move them before a G3 run; since the v2 identity switch there is a second
     # reason, and it is sharper.
     #
-    # $ProtocolCommit moved to the v2 candidate. The other three still name pre-v2 builds, and no
-    # v2 build of the onboard HMI or the simulator exists yet -- that is ticket 15. A run left on
-    # these defaults therefore starts a server that says protocol-v0.1.1 against a synthetic peer
-    # that says protocol-v1.0.0, and the handshake is refused with a full expected identity. It
-    # fails loudly rather than certifying anything, which is the behaviour the exact-identity rule
-    # exists to produce -- but it is a wasted staged run, so move all four together when ticket 15
-    # lands.
-    [string]$ControlServerCommit = '4746ed27bfe0606238910bf31b493be2770395f7',
-    [string]$OnboardCommit = 'f0465d9ad9f84607e3db972f1c6cb0ead910ab3d',
+    # 2026-09-09, ticket 17: all four now name the v2 line, so a run on these defaults no longer
+    # starts a server that says protocol-v0.1.1 against a peer that says protocol-v1.0.0.
+    #   $ControlServerCommit -> fp/v2-impl (cloned from the local working copy, not from GitHub,
+    #     so this one does not need to be pushed and carries no -RemoteRef assertion).
+    #   $OnboardCommit -> w2g/fp-v2-impl, pushed 2026-09-09; the -RemoteRef below asserts the
+    #     remote tip still equals it. NOT OnboardHmi_MVP -- that branch is pinned to the released
+    #     protocol-v0.3.0 and is a different protocol from this line.
+    #   $SimulatorCommit unchanged: slots-simulator references no protocol identity at all.
+    #   $ProtocolCommit unchanged: the v2 candidate, already on origin/fp/v2-candidate.
+    [string]$ControlServerCommit = 'e3ea250d6eb4c0f3f11814c938da531b1657edb7',
+    [string]$OnboardCommit = '153b70594f75ce945e717afd80be9f6279423080',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = 'f6ee75defe6e2d18f63f4082bee445dbb678ab1b'
 )
@@ -2161,6 +2163,7 @@ $recoveryFaultObservation = $null
 $runtimeObservation = $null
 $runError = $null
 $protocolG1Status = 'NOT_RUN'
+$protocolTagExists = $false
 $version = $null
 $simulatorHealth = $null
 $proxyTranscript = Join-Path $EvidenceRoot 'fault-proxy-events.ndjson'
@@ -2176,15 +2179,27 @@ try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
         -Commit $ControlServerCommit
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
-        -Commit $OnboardCommit -RemoteRef 'origin/OnboardHmi_MVP'
+        -Commit $OnboardCommit -RemoteRef 'origin/w2g/fp-v2-impl'
     New-ExactClone -Name 'slots-simulator' -Repository $SimulatorRepository -Destination $simulatorSource `
         -Commit $SimulatorCommit -RemoteRef 'origin/main'
     New-ExactClone -Name 'protocol' -Repository $ProtocolRepository -Destination $protocolSource `
         -Commit $ProtocolCommit
 
-    $tagCommit = (& git -C $protocolSource rev-parse "refs/tags/$protocolTag^{}").Trim()
-    if ($tagCommit -ne $ProtocolCommit) {
-        throw "$protocolTag resolves to $tagCommit, expected $ProtocolCommit"
+    # Bind the candidate commit, not the tag. protocol-v1.0.0 has not been cut -- spec 6.6 wants two
+    # product owners' attestation plus an annotated tag, and neither has happened, so the protocol
+    # repository still carries only v0.1.0/v0.1.1/v0.2.0/v0.3.0. Asserting the tag resolves is how
+    # this runner used to establish protocol identity; on the v2 line that assertion throws before
+    # the run starts. Ticket 15 made exactly this change on the onboard side (run-w2g-g2.ps1:370).
+    #
+    # Not a weakening: the identity that matters is the manifest/schema/vector digests, and G1 below
+    # refuses unless its output carries $manifestSha256. The tag only ever named that commit. What
+    # stays enforced is that if the tag DOES exist it must point at the candidate -- a tag pointing
+    # somewhere else means someone cut a release from other content, and that must not run silently.
+    $tagCommit = (& git -C $protocolSource rev-list -n 1 "$protocolTag^{commit}" 2>$null)
+    $tagCommit = if ($null -eq $tagCommit) { '' } else { ([string]$tagCommit).Trim() }
+    $protocolTagExists = -not [string]::IsNullOrWhiteSpace($tagCommit)
+    if ($protocolTagExists -and $tagCommit -ne $ProtocolCommit) {
+        throw "$protocolTag exists but resolves to $tagCommit, not the candidate $ProtocolCommit"
     }
     # The exact clone carries no node_modules, and G1 validates against ajv, so restore first.
     Invoke-LoggedCommand -Name 'protocol-install' -WorkingDirectory $protocolSource -FilePath $pnpmFilePath `
@@ -2914,6 +2929,11 @@ $result = [ordered]@{
     }
     protocol = [ordered]@{
         tag = $protocolTag
+        # False on the v2 line: the tag is named by the candidate identity but has not been cut.
+        # Recorded rather than assumed, so a reader can tell "no tag yet" from "tag verified".
+        tagExists = $protocolTagExists
+        candidateCommit = $ProtocolCommit
+        approvalStatus = $expectedProtocol.approvalStatus
         commit = $ProtocolCommit
         manifestSha256 = $manifestSha256
         schemaBundleSha256 = $schemaBundleSha256
