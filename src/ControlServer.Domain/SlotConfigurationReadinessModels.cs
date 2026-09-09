@@ -95,3 +95,39 @@ public sealed class SampledVerificationRejectedException : InvalidOperationExcep
     {
     }
 }
+
+/// <summary>
+/// 仓位配置就绪门禁此刻处在哪一档。
+/// </summary>
+/// <remarks>
+/// <para>
+/// **顺序纪律的落点。**W1 现场窗口先逐台核对、后启用门禁：反过来会让三台现有车同时失去业务就绪，
+/// 而那种排法没有任何需求依据——REQ-0259 只规定「未达 readiness 不得业务就绪」，没规定门禁必须
+/// 先于核对上线。所以默认是 <see cref="Off"/>，由现场在第一台车核对通过之后切到
+/// <see cref="Enforcing"/>。
+/// </para>
+/// <para>
+/// **这个枚举现在只表达档位，它自己不拦车。**把 readiness 接进投运判定属于投运流程；在那条接线
+/// 存在之前，说「门禁已经在拦车」是不成立的。W1 的证据记录的是这一刻的时点与审计，不是拦车效果。
+/// </para>
+/// </remarks>
+public enum SlotConfigurationGateMode
+{
+    /// <summary>门禁尚未上线。默认档。</summary>
+    Off,
+
+    /// <summary>门禁已上线：未达 readiness 的车不得取得业务就绪。</summary>
+    Enforcing
+}
+
+/// <summary>
+/// 门禁档位在组合根里的形态。
+/// </summary>
+/// <remarks>
+/// 包一层是因为枚举进不了容器，但顺手解决了另一件事：注入点写的是这个类型，将来投运流程接线时
+/// 注入它即可，不必再去找配置键。启动时解析一次，拼错的档位名在那一刻就抛出来。
+/// </remarks>
+public sealed record SlotConfigurationGateSwitch(SlotConfigurationGateMode Mode)
+{
+    public bool IsEnforcing => Mode == SlotConfigurationGateMode.Enforcing;
+}
