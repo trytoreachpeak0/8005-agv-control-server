@@ -1,0 +1,39 @@
+{"at":"2026-09-09T14:51:07.4240422+00:00","note":"L2 run 20260909T145107373Z starting for scenario 'load-cancelled-in-flight'."}
+{"at":"2026-09-09T14:51:07.4629325+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-09T14:51:27.0368023+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-09T14:51:27.2361233+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-09T14:51:30.6670761+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-09T14:51:32.7936864+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-09T14:51:34.8236854+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-09T14:51:36.2115530+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-09T14:51:36.4831035+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-09T14:51:36.5056477+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-09T14:51:36.5761876+00:00","note":"Environment is up; entering scenario 'load-cancelled-in-flight'."}
+{"at":"2026-09-09T14:51:36.6852027+00:00","note":"Synthetic peer holds load results open: the door is open and nothing has been placed yet."}
+{"at":"2026-09-09T14:51:36.9429759+00:00","note":"Publishing two demands (L2-SUBLOT-A-20260909T145107373Z, L2-SUBLOT-B-20260909T145107373Z) at one pickup station."}
+{"at":"2026-09-09T14:51:37.2779974+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-09T14:51:38.6248771+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-09T14:51:38.6375357+00:00","criterion":"to-pickup-intent","value":"CREATE_ATTEMPTED"}
+{"at":"2026-09-09T14:51:38.9014361+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-09T14:51:38.9049708+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-09T14:51:39.0119821+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-09T14:51:40.3905395+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-09T14:51:41.2084071+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-09T14:51:41.3552571+00:00","criterion":"commanded-load","value":"@{SlotOperationAttemptId=aba68a8b-c038-f654-8d35-171536e6ee09; DemandId=17bcd042-b56d-4c5e-97f3-c4d1f9b0988a; Status=Prepared; TargetSlotsJson=[1]}"}
+{"at":"2026-09-09T14:51:41.3899612+00:00","note":"Cancelling demand 17bcd042-b56d-4c5e-97f3-c4d1f9b0988a, slot operation attempt aba68a8b-c038-f654-8d35-171536e6ee09."}
+{"at":"2026-09-09T14:51:41.4097419+00:00","note":"Operator cancels the load that is already in flight."}
+{"at":"2026-09-09T14:51:42.4056595+00:00","note":"Cancellation 4bce9862-df5b-411e-921b-035f00753bdc raised."}
+{"at":"2026-09-09T14:51:42.4495710+00:00","criterion":"cancellation-workflow","value":"(null)"}
+{"at":"2026-09-09T14:51:42.7715006+00:00","criterion":"cancellation-workflow","value":"@{State=AwaitingResult; Outcome=; SlotOperationAttemptId=aba68a8b-c038-f654-8d35-171536e6ee09}"}
+{"at":"2026-09-09T14:51:43.0874767+00:00","criterion":"cancellation-workflow","value":"@{State=Reconciled; Outcome=ALL_EMPTY; SlotOperationAttemptId=aba68a8b-c038-f654-8d35-171536e6ee09}"}
+{"at":"2026-09-09T14:51:43.1231008+00:00","criterion":"load-command-settled","value":"2026-09-09 14:51:42.5680548+00:00"}
+{"at":"2026-09-09T14:51:43.9452000+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-09T14:51:43.9598272+00:00","note":"Synthetic peer answers load results again; the operator loads the remaining demand."}
+{"at":"2026-09-09T14:51:44.0125509+00:00","criterion":"committed-loads","value":"0"}
+{"at":"2026-09-09T14:51:44.8224933+00:00","criterion":"committed-loads","value":"1"}
+{"at":"2026-09-09T14:51:44.8339059+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-09T14:51:45.6429109+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-09T14:51:45.9087162+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-09T14:51:45.9256635+00:00","criterion":"riot-order-count","value":"2"}
+{"at":"2026-09-09T14:51:45.9327269+00:00","note":"Fake RIoT holds 2 order(s) at the end of the scenario."}
+{"at":"2026-09-09T14:51:45.9571378+00:00","note":"Scenario finished."}

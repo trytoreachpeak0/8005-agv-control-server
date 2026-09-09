@@ -1,0 +1,37 @@
+{"at":"2026-09-09T14:54:20.9003898+00:00","note":"L2 run 20260909T145420835Z starting for scenario 'load-cancelled-in-flight'."}
+{"at":"2026-09-09T14:54:20.9426384+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-09T14:54:25.0089293+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-09T14:54:25.1943317+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-09T14:54:27.8036266+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-09T14:54:29.4464123+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-09T14:54:30.1523305+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-09T14:54:30.4482524+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-09T14:54:30.4726515+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-09T14:54:30.5287964+00:00","note":"Environment is up; entering scenario 'load-cancelled-in-flight'."}
+{"at":"2026-09-09T14:54:30.5620779+00:00","note":"Synthetic peer holds load results open: the door is open and nothing has been placed yet."}
+{"at":"2026-09-09T14:54:30.6107630+00:00","note":"Publishing two demands (L2-SUBLOT-A-20260909T145420835Z, L2-SUBLOT-B-20260909T145420835Z) at one pickup station."}
+{"at":"2026-09-09T14:54:30.7011738+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-09T14:54:31.7742167+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-09T14:54:31.7813849+00:00","criterion":"to-pickup-intent","value":"CREATE_ATTEMPTED"}
+{"at":"2026-09-09T14:54:32.0596664+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-09T14:54:32.0627696+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-09T14:54:32.1402693+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-09T14:54:33.4819310+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-09T14:54:34.2724627+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-09T14:54:34.2895792+00:00","criterion":"commanded-load","value":"@{SlotOperationAttemptId=9ff21dd3-1beb-545c-abf6-caf8645708c1; DemandId=aaa7ec1f-7068-469d-9e35-31f3165c93d6; Status=Prepared; TargetSlotsJson=[1]}"}
+{"at":"2026-09-09T14:54:34.2972619+00:00","note":"Cancelling demand aaa7ec1f-7068-469d-9e35-31f3165c93d6, slot operation attempt 9ff21dd3-1beb-545c-abf6-caf8645708c1."}
+{"at":"2026-09-09T14:54:34.3100771+00:00","note":"Operator cancels the load that is already in flight."}
+{"at":"2026-09-09T14:54:34.3301809+00:00","note":"Cancellation 22b2712d-69a3-406a-97fb-ee7cc2beff91 raised."}
+{"at":"2026-09-09T14:54:34.3333066+00:00","criterion":"cancellation-workflow","value":"(null)"}
+{"at":"2026-09-09T14:54:34.5963425+00:00","criterion":"cancellation-workflow","value":"@{State=Reconciled; Outcome=ALL_EMPTY; SlotOperationAttemptId=9ff21dd3-1beb-545c-abf6-caf8645708c1}"}
+{"at":"2026-09-09T14:54:34.6094899+00:00","criterion":"load-command-settled","value":"2026-09-09 14:54:34.4126797+00:00"}
+{"at":"2026-09-09T14:54:35.3986407+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-09T14:54:35.4105380+00:00","note":"Synthetic peer answers load results again; the operator loads the remaining demand."}
+{"at":"2026-09-09T14:54:35.4349157+00:00","criterion":"committed-loads","value":"0"}
+{"at":"2026-09-09T14:54:36.2170390+00:00","criterion":"committed-loads","value":"1"}
+{"at":"2026-09-09T14:54:36.2241003+00:00","criterion":"remaining-demand-state","value":"Planned"}
+{"at":"2026-09-09T14:54:37.2837021+00:00","criterion":"remaining-demand-state","value":"Loaded"}
+{"at":"2026-09-09T14:54:37.2875739+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-09T14:54:37.3076852+00:00","criterion":"riot-order-count","value":"2"}
+{"at":"2026-09-09T14:54:37.3115060+00:00","note":"Fake RIoT holds 2 order(s) at the end of the scenario."}
+{"at":"2026-09-09T14:54:37.3250669+00:00","note":"Scenario finished."}

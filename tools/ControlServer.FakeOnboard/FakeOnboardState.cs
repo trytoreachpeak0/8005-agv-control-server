@@ -38,6 +38,14 @@ public sealed record FakeOnboardPolicy
     public AnswerMode LoadResult { get; init; } = AnswerMode.Auto;
     public AnswerMode UnloadResult { get; init; } = AnswerMode.Auto;
     public AnswerMode SafetyCheck { get; init; } = AnswerMode.Auto;
+
+    /// <summary>
+    /// How the peer proves emptiness after the server authorizes an in-flight cancellation. Unlike
+    /// the other four this answers no request from the server -- the authorization is a reply to
+    /// something this peer asked for -- but it carries the same obligation: until the result
+    /// arrives the workflow is unreconciled and the demand is not terminated.
+    /// </summary>
+    public AnswerMode CancellationResult { get; init; } = AnswerMode.Auto;
 }
 
 public sealed record FakeOnboardState

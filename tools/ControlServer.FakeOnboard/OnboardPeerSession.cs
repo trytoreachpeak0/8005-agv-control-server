@@ -247,6 +247,10 @@ public sealed class OnboardPeerSession(
                     (payload, gen) => SafetyCheckResult(payload, gen, safe: true),
                     cancellationToken).ConfigureAwait(false);
                 return;
+            case "LoadCancellationAuthorization":
+                await OnCancellationAuthorizedAsync(root, messageId, generation, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
             default:
                 // HeartbeatAck, DurableAck, SessionReadiness and the recovery commands carry no
                 // obligation for this peer. They are already on the wire log.
@@ -473,6 +477,65 @@ public sealed class OnboardPeerSession(
             }),
             cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Proves the slots came back empty after the server authorizes a cancellation raised while a
+    /// slot operation was in flight. Nothing here is owed when the cancellation carried no attempt
+    /// id: no door was ever opened, so there is no emptiness to prove, and the authorization is the
+    /// whole handshake (OnboardRecoveryCoordinator terminates the demand there instead).
+    /// </summary>
+    private async Task OnCancellationAuthorizedAsync(
+        JsonElement root,
+        string messageId,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        JsonElement payload = root.GetProperty("payload");
+        if (payload.GetProperty("decision").GetString() != "AUTHORIZED") return;
+        if (payload.GetProperty("slotOperationAttemptId").ValueKind == JsonValueKind.Null) return;
+        // Keyed on the cancellation rather than on the attempt: the server keys its workflow that
+        // way, and a replayed authorization must get back the identical result. A second
+        // LoadCancellationResult under one workflow carrying a fresh messageId is refused as
+        // "already has a different first durable result" and tears the session down.
+        await OnRequestAsync(
+            "cancellation:" + payload.GetProperty("cancellationId").GetString(),
+            "LoadCancellationAuthorization",
+            messageId,
+            root,
+            generation,
+            engine.Snapshot().State.Policy.CancellationResult,
+            LoadCancellationResult,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds the emptiness proof from the authorization's own slot list. Reading the slots back
+    /// from the message the server just sent is what makes this survive the server changing its
+    /// mind about which slots the cancellation covers: HasExactSafeSlotResult compares the result
+    /// against the workflow's stored slots and refuses anything that is not exactly that set.
+    /// Unlike an OperationResult this message carries no content hash -- its schema has no field
+    /// for one, and the server hashes the whole envelope itself.
+    /// </summary>
+    public object LoadCancellationResult(JsonElement authorizationPayload, long generation) =>
+        Envelope("LoadCancellationResult", NewId(), null, generation, new
+        {
+            cancellationId = authorizationPayload.GetProperty("cancellationId").GetString(),
+            demandId = authorizationPayload.GetProperty("demandId").GetString(),
+            slotOperationAttemptId = authorizationPayload.GetProperty("slotOperationAttemptId").GetString(),
+            overallOutcome = "ALL_EMPTY",
+            slotResults = authorizationPayload.GetProperty("slots").EnumerateArray()
+                .Select(slot => new
+                {
+                    slotNo = slot.GetInt32(),
+                    outcome = "COMPLETED",
+                    finalPhysicalState = "EMPTY",
+                    lockState = "LOCKED",
+                    unlockOutputState = "RESET",
+                    reasonCodes = Array.Empty<string>()
+                })
+                .ToArray(),
+            observedAt = DateTimeOffset.UtcNow
+        });
 
     public async Task PublishSafetyStateChangedAsync(
         long safetyStateVersion,

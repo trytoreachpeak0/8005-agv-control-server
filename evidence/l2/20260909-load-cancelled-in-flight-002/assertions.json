@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-cancelled-in-flight",
+  "runId": "20260909T145250708Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "42a85f0853ac2e190ff705dc14be4c8ee90e72fe",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260909T145250708Z",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-CI-01",
+      "description": "第一条需求的装货命令已下发，停靠在等结果",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult",
+      "actual": "AwaitingLoadResult"
+    },
+    {
+      "id": "L2-CI-02",
+      "description": "取消之前，那条装货命令确实还挂着没结算",
+      "outcome": "PASS",
+      "expected": "未结算",
+      "actual": "AcknowledgedAt="
+    },
+    {
+      "id": "L2-CI-03",
+      "description": "取消工作流凭空仓证明结清，且钉的是在途那个 attempt",
+      "outcome": "PASS",
+      "expected": "Reconciled / 63b07acf-09c1-b559-b12c-c9e10ff846dc",
+      "actual": "Reconciled / 63b07acf-09c1-b559-b12c-c9e10ff846dc"
+    },
+    {
+      "id": "L2-CI-04",
+      "description": "在途的那次仓位操作终态是 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled",
+      "actual": "Cancelled"
+    },
+    {
+      "id": "L2-CI-05",
+      "description": "被取消的需求终态是 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled",
+      "actual": "Cancelled"
+    },
+    {
+      "id": "L2-CI-06",
+      "description": "按业务键写下了永久取消抑制",
+      "outcome": "PASS",
+      "expected": "1 条 / CANCELLED_BY_OPERATOR",
+      "actual": "1 条 / CANCELLED_BY_OPERATOR"
+    },
+    {
+      "id": "L2-CI-07",
+      "description": "那条永远等不到结果的装货命令被取消结算掉了",
+      "outcome": "PASS",
+      "expected": "已结算",
+      "actual": "2026-09-09 14:53:09.803286+00:00"
+    },
+    {
+      "id": "L2-CI-08",
+      "description": "取消终结的是这一单不是这个停靠：旅程回到 AwaitingSublot",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-CI-09",
+      "description": "跑起来的旅程不带阻塞理由",
+      "outcome": "PASS",
+      "expected": "(空)",
+      "actual": ""
+    },
+    {
+      "id": "L2-CI-10",
+      "description": "取消之后剩下那条需求照常完成装载闭环",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-CI-11",
+      "description": "剩下那条需求在旅程里的状态是 Loaded",
+      "outcome": "PASS",
+      "expected": "Loaded",
+      "actual": "Loaded"
+    },
+    {
+      "id": "L2-CI-12",
+      "description": "装完之后这趟车照常开去关卡",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-CI-13",
+      "description": "全程只建了两条 RIoT 单，取消本身不派车",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    }
+  ]
+}

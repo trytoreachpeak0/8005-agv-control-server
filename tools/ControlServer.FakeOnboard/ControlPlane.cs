@@ -14,6 +14,8 @@ public sealed record PolicyCommand : CommandEnvelope
     public AnswerMode? UnloadResult { get; init; }
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public AnswerMode? SafetyCheck { get; init; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public AnswerMode? CancellationResult { get; init; }
 }
 
 /// <summary>
@@ -121,7 +123,8 @@ public static class ControlPlane
                     Sublot = command.Sublot ?? state.Policy.Sublot,
                     LoadResult = command.LoadResult ?? state.Policy.LoadResult,
                     UnloadResult = command.UnloadResult ?? state.Policy.UnloadResult,
-                    SafetyCheck = command.SafetyCheck ?? state.Policy.SafetyCheck
+                    SafetyCheck = command.SafetyCheck ?? state.Policy.SafetyCheck,
+                    CancellationResult = command.CancellationResult ?? state.Policy.CancellationResult
                 };
                 return policy == state.Policy ? null : state with { Policy = policy };
             }));
@@ -215,6 +218,7 @@ public static class ControlPlane
                 "SublotEntryRequested" => peer.SublotSubmitted(payload.RootElement, generation),
                 "SlotOperationCommand" => peer.OperationResult(payload.RootElement, generation, command.Completed, command.Determinate),
                 "PreDepartureSafetyCheck" => peer.SafetyCheckResult(payload.RootElement, generation, command.Completed),
+                "LoadCancellationAuthorization" => peer.LoadCancellationResult(payload.RootElement, generation),
                 _ => throw new InvalidOperationException("Unanswerable request type: " + request.MessageType)
             };
             await peer.AnswerAsync(key, answer, cancellationToken).ConfigureAwait(false);

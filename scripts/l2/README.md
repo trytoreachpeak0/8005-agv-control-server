@@ -20,6 +20,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `session-established-while-moving` | 合成 | 会话在车辆运动中建立，随后停稳；到站也要按最新的安全状态判 | `evidence/l2/20260903-session-established-while-moving-006` |
 | `load-result-requires-recovery` | 合成 | 装载跑掉操作员超时，旅程与整台车正确停摆 | `evidence/l2/20260903-load-result-requires-recovery-006` |
 | `load-cancelled-before-sublot` | 合成 | 到站发现没货，操作员在扫码前取消，车接下一单 | `evidence/l2/20260908-load-cancelled-before-sublot-002` |
+| `load-cancelled-in-flight` | 合成 | 装货命令已下发、门已开着时取消：这一单终结，这个停靠不终结 | `evidence/l2/20260909-load-cancelled-in-flight-002` |
 | `sublot-wait-timeout` | 合成 | 到站没人扫码，等待窗口到期自己终结，下一单照常跑完 | `evidence/l2/20260908-sublot-wait-timeout-001` |
 | `auto-charge-endurance` | 合成 | 一趟串四幕：送完一单、低电自去充电、充满、再送一单 | `evidence/l2/20260908-auto-charge-endurance-007` |
 | `multi-demand-one-stop` | 合成 | 一个停靠上多张单，作业清单是复数的 | `evidence/l2/20260908-multi-demand-one-stop-001` |
@@ -31,11 +32,12 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-unload-not-emptied` | **真的** | 卸货时关门不取货：一直闭环到取空，没有取消分支 | `evidence/l2/20260909-real-onboard-unload-not-emptied-001` |
 | `real-onboard-station-timeout-door-open` | **真的** | 站点期限到期而仓门未闭：告警并持续等待，闭合后按决策 5 结算 | `evidence/l2/20260909-real-onboard-station-timeout-door-open-004` |
 
-编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。七个是**红的**，各自的原因见文末：
+编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。八个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
-`-004`（第 9 条）、`real-onboard-load-door-closed-empty-001`（第 13 条），以及
-`real-onboard-station-timeout-door-open` 的 `-001`/`-002`/`-003`（最后一节）。**后四个都红在场景
-自己身上，不是产品**——`-001` 那一条连诊断都跟着错了一半。
+`-004`（第 9 条）、`real-onboard-load-door-closed-empty-001`（第 13 条）、
+`load-cancelled-in-flight-001`（第 14 条），以及
+`real-onboard-station-timeout-door-open` 的 `-001`/`-002`/`-003`（最后一节）。**后五个都红在场景
+自己身上，不是产品**——`real-onboard-station-timeout-door-open-001` 那一条连诊断都跟着错了一半。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
 `VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
@@ -326,6 +328,13 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     `WaitForLockerAsync` 里，第 3 次 `UNLOCKING` 永远不来。
     **`WAITING_OPERATOR` 才是可等的判据**：它在锁反馈稳定 `feedbackStableMs` 且开锁输出确认复位
     之后才发得出来，所以它同时回答「这一轮走完了没有」和「现在关门算不算数」。
+14. **仓位操作转 `Committed` 与需求在旅程里转 `Loaded` 不是同一次写入。**前者由消息处理器在收下
+    结果时就写，后者要等引擎的下一轮收尾。`load-cancelled-in-flight` 首跑等到 `Committed` 就直接
+    读 `JourneyDemands.State`，读到 `Planned`，红证据
+    `evidence/l2/20260909-load-cancelled-in-flight-001`——而同一次运行里随后的判据等到了
+    `AwaitingGateArrival`，说明它只是还没轮到。**跨两次写入的判据一律用 `Wait-L2Condition` 等，
+    不要读完一个就顺手读下一个**，这与 `L2-CB-12` 那条「转阶段与订单落到假 RIoT 不同时」是同一
+    种错误，只是这次两边都在服务端自己的库里，看着更像可以一起读。
 
 ## ADR-cross-0058 的三条操作员不作为场景
 
