@@ -618,6 +618,34 @@ public sealed class JourneyRuntimeEngine(
                 SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now, stop);
                 break;
             case JourneyRuntimeStage.AwaitingLoadResult:
+                if (TerminatedCommandedAt(demands, stop) is not null &&
+                    PendingAt(demands, stop).All(row => row.LoadCommandedAt is null))
+                {
+                    // The demand this stop commanded ended on a terminal path of its own -- an
+                    // operator cancellation, a compensation, a fault-cargo handoff -- while the
+                    // journey still carries others. That is this batch closing the other way round,
+                    // not a broken invariant, and what follows is the same question a completed
+                    // batch asks: another round here, the next stop, or the gate. So the stop
+                    // finishes through exactly the path a completed batch takes. Nothing was loaded,
+                    // so the holding clock is not started here and no command is answered: the
+                    // coordinator settled both when it accepted the terminal result.
+                    (stops, demands, stop) = await FillJourneyAsync(
+                        runtime, stops, stop, demands, currentMap, gate, now, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (await TryContinueLoadingAtStopAsync(
+                            runtime, stop, demands, session, now, cancellationToken).ConfigureAwait(false))
+                    {
+                        break;
+                    }
+                    await ConcludeLoadingStopAsync(
+                        runtime, stops, stop, demands, session, now, cancellationToken).ConfigureAwait(false);
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    if (runtime.Stage != JourneyRuntimeStage.AwaitingDepartureSafety)
+                    {
+                        return;
+                    }
+                    goto case JourneyRuntimeStage.AwaitingDepartureSafety;
+                }
                 JourneyDemandRow loading = LoadingAt(demands, stop);
                 StationOperationRow? load = await dbContext.StationOperations.SingleOrDefaultAsync(
                     row => row.SlotOperationAttemptId == loading.LoadSlotOperationAttemptId,
@@ -2386,6 +2414,21 @@ public sealed class JourneyRuntimeEngine(
         IReadOnlyList<JourneyDemandRow> demands,
         JourneyStopRow stop) =>
         PendingAt(demands, stop).Where(row => row.LoadCommandedAt is null).ToArray();
+
+    /// <summary>
+    /// The demand this stop commanded a load for and which then ended terminally without a load
+    /// result -- cancelled by the operator, compensated, or handed off as fault cargo. It is what
+    /// tells "the batch closed the other way round" from the broken invariant
+    /// <see cref="LoadingAt"/> reports, and it is only ever visible while the journey still carries
+    /// other demands: settling the last one moves the journey straight to Completed.
+    /// </summary>
+    private static JourneyDemandRow? TerminatedCommandedAt(
+        IReadOnlyList<JourneyDemandRow> demands,
+        JourneyStopRow stop) =>
+        demands.FirstOrDefault(row =>
+            row.StopSequence == stop.Sequence &&
+            row.LoadCommandedAt is not null &&
+            row.State == JourneyDemandState.Cancelled);
 
     /// <summary>
     /// The demand whose load this stop is waiting on: the one whose command went out and whose batch

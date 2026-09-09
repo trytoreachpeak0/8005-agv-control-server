@@ -8,6 +8,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -2460,6 +2461,126 @@ public sealed class JourneyRuntimeWorkerTests
             .ToArrayAsync(TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// Cancelling the load in flight ends that demand, not the stop: the operator is still standing
+    /// there with the rest of the worklist. The batch closed the other way round, so the stop picks
+    /// up exactly where a completed batch leaves it -- a fresh round, and the whole station wait
+    /// again for the next sublot.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task CancellingTheLoadInFlightLeavesTheStopFreeToLoadItsRemainingDemands()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10)),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        // Both demands belong to the same station, so this is one stop with two of them on it.
+        Assert.Single(await fixture.StopRowsAsync(), row => row.Role == JourneyStopRole.Pickup);
+
+        await fixture.ScanSublotAsync("SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.JourneyRowAsync()).Stage);
+
+        await fixture.CancelCommandedLoadAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // The journey is back where a closed batch would have left it, waiting on the next sublot.
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, journey.Stage);
+        Assert.Equal(["SUBLOT-002"], await fixture.SublotEntryRequestSublotsAsync());
+        // And it carries no block reason: CANCELLED_BY_OPERATOR left standing on a journey that is
+        // running again reads as "this journey was cancelled". What was cancelled is recorded on the
+        // demand, its recovery workflow and the transport-demand suppression, none of which this
+        // field holds.
+        Assert.Null(journey.BlockReasonCode);
+
+        // The LoadBatch command the cancellation answered is settled, the same way a LoadResult
+        // settles it. Left pending it would be replayed into every later session under a new
+        // session generation, which the peer refuses as a business id whose content changed.
+        JourneyDemandRow cancelled = (await fixture.DemandRowsAsync())
+            .Single(row => row.DemandId == "10000000-0000-4000-8000-000000000001");
+        Assert.DoesNotContain(
+            cancelled.LoadCommandMessageId, await fixture.PendingOutboxMessageIdsAsync());
+
+        // And the second demand still loads normally.
+        await fixture.LoadSublotAsync("SUBLOT-002");
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.JourneyRowAsync()).Stage);
+        JourneyDemandRow[] demands = await fixture.DemandRowsAsync();
+        Assert.Equal(
+            JourneyDemandState.Cancelled,
+            demands.Single(row => row.DemandId == "10000000-0000-4000-8000-000000000001").State);
+        Assert.Equal(
+            JourneyDemandState.Loaded,
+            demands.Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002").State);
+    }
+
+    /// <summary>
+    /// The same cancellation at a stop with nothing else to load ends the stop instead of asking
+    /// for another sublot -- and the cargo already aboard from an earlier stop still reaches the
+    /// gate. Which of the two happens is <c>TryContinueLoadingAtStopAsync</c>'s existing judgement,
+    /// not a second rule written for cancellation.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task CancellingTheOnlyLoadAtAStopEndsTheStopAndTheCargoAboardStillReachesTheGate()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+
+        await fixture.ScanSublotAsync("SUBLOT-002");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.JourneyRowAsync()).Stage);
+
+        await fixture.CancelCommandedLoadAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // Nothing left to load anywhere, so the stop ends and the vehicle heads for the gate with
+        // the one demand it is already carrying.
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        Assert.Equal("NO_FURTHER_CARGO", journey.LoadingClosedReason);
+        Assert.Equal(9, journey.NextStopSequence);
+
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Equal(
+            DemandExecutionStatus.Succeeded,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(
+                row => row.DemandId == "10000000-0000-4000-8000-000000000001",
+                TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.Cancelled,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(
+                row => row.DemandId == "10000000-0000-4000-8000-000000000002",
+                TestContext.Current.CancellationToken)).Status);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     public async Task ACancelledDemandStaysBarredWhenMesIngestReissuesItUnderANewDemandId()
@@ -3484,6 +3605,90 @@ public sealed class JourneyRuntimeWorkerTests
                 0,
                 TestContext.Current.CancellationToken);
         }
+
+        /// <summary>
+        /// Cancels the load this stop has already commanded, through the peer's own two-message
+        /// handshake rather than by writing the terminal state directly: the authorisation first,
+        /// then the result proving every slot came back empty. Writing it directly would skip
+        /// OnboardRecoveryCoordinator, which is where the stage is left behind.
+        /// </summary>
+        public async Task CancelCommandedLoadAsync()
+        {
+            JourneyDemandRow loading = (await DemandRowsAsync())
+                .Single(row => row.State == JourneyDemandState.Planned && row.LoadCommandedAt is not null);
+            StationOperationRow operation = await OperationForAsync(loading.LoadSlotOperationAttemptId);
+            int[] slots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
+            string cancellationId = Guid.NewGuid().ToString("D");
+            object @operator = new
+            {
+                operatorId = "OP-001",
+                verificationMethod = "BADGE",
+                verifiedAt = Clock.GetUtcNow()
+            };
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                Context, new WireToGateStore(Context), Clock, new ConfigurationBuilder().Build());
+            OnboardConnectionState state = new()
+            {
+                AgvId = Options.AgvId,
+                SessionGeneration = 1,
+                CapabilityRevision = 1,
+                SafetyRevision = 7,
+                Readiness = SessionReadiness.Ready
+            };
+            await processor.ProcessAsync(
+                PeerEnvelope(
+                    "LoadCancellationStartRequested",
+                    new
+                    {
+                        cancellationId,
+                        demandId = loading.DemandId,
+                        slotOperationAttemptId = loading.LoadSlotOperationAttemptId,
+                        @operator,
+                        reason = "The operator called the load off."
+                    }),
+                state,
+                TestContext.Current.CancellationToken);
+            await processor.ProcessAsync(
+                PeerEnvelope(
+                    "LoadCancellationResult",
+                    new
+                    {
+                        cancellationId,
+                        demandId = loading.DemandId,
+                        slotOperationAttemptId = loading.LoadSlotOperationAttemptId,
+                        overallOutcome = "ALL_EMPTY",
+                        slotResults = slots.Select(slot => new
+                        {
+                            slotNo = slot,
+                            outcome = "COMPLETED",
+                            finalPhysicalState = "EMPTY",
+                            lockState = "LOCKED",
+                            unlockOutputState = "RESET",
+                            reasonCodes = Array.Empty<string>()
+                        }).ToArray(),
+                        observedAt = Clock.GetUtcNow()
+                    }),
+                state,
+                TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
+        private string PeerEnvelope(string messageType, object payload) => JsonSerializer.Serialize(
+            new
+            {
+                protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+                profileId = ProtocolCandidateIdentity.ProfileId,
+                protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
+                protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+                messageType,
+                messageId = Guid.NewGuid().ToString("D"),
+                correlationId = (string?)null,
+                agvId = Options.AgvId,
+                sessionGeneration = 1,
+                sentAt = Clock.GetUtcNow(),
+                payload = JsonSerializer.SerializeToElement(payload, SerializerOptions)
+            },
+            SerializerOptions);
 
         /// <summary>
         /// Drops the peer the way powering the vehicle down for a repair does: the session row

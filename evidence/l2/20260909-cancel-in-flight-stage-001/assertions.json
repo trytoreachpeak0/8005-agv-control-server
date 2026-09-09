@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "scenario": "multi-demand-one-stop",
+  "runId": "20260909T141720873Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260909T141720873Z",
+    "controlServerCommit": "67043ad0c717dbfbcc53ceb3dea8fdf2152f190b",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-MD-01",
+      "description": "受理后建出 TO_PICKUP 单并确认",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-MD-02",
+      "description": "两条需求共用一趟旅程（而不是各起一趟）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-MD-03",
+      "description": "同一个停靠上完成两次装载闭环",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "id": "L2-MD-04",
+      "description": "两条需求都挂在这趟旅程的同一个停靠上",
+      "outcome": "PASS",
+      "expected": "2 demands / 1 stop",
+      "actual": "2 demands / 1 stops"
+    },
+    {
+      "id": "L2-MD-05",
+      "description": "两条需求预留的仓位互不重叠",
+      "outcome": "PASS",
+      "expected": "2 distinct",
+      "actual": "2 distinct of 2"
+    },
+    {
+      "id": "L2-MD-06",
+      "description": "装货阶段结束时记下了理由",
+      "outcome": "PASS",
+      "expected": "a reason",
+      "actual": "NO_FURTHER_CARGO"
+    },
+    {
+      "id": "L2-MD-07",
+      "description": "持货钟在第一批装载闭环后开始走",
+      "outcome": "PASS",
+      "expected": "a timestamp",
+      "actual": "2026-09-09 14:17:36.4377984+00:00"
+    },
+    {
+      "id": "L2-MD-08",
+      "description": "journey 走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-MD-09",
+      "description": "两条需求各自卸载一次，都提交",
+      "outcome": "PASS",
+      "expected": "2 committed",
+      "actual": "2 committed of 2"
+    },
+    {
+      "id": "L2-MD-10",
+      "description": "两条需求终态都是 Succeeded",
+      "outcome": "PASS",
+      "expected": "2 Succeeded",
+      "actual": "2 Succeeded of 2"
+    },
+    {
+      "id": "L2-MD-11",
+      "description": "两条需求只占用一份车辆租约，收尾时释放",
+      "outcome": "PASS",
+      "expected": "1 released lease",
+      "actual": "1 released of 1"
+    },
+    {
+      "id": "L2-MD-12",
+      "description": "两条需求全程只建两条 RIoT 单",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    }
+  ]
+}

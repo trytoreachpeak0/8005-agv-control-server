@@ -879,6 +879,17 @@ public sealed class OnboardRecoveryCoordinator(
             runtime.BlockReasonCode = terminalReasonCode;
             runtime.UpdatedAt = observedAt;
         }
+        // The LoadBatch command this result terminates will never receive a LoadResult, and only a
+        // closed batch settles it. Left unsettled it is replayed into every later session carrying a
+        // new session generation, which the peer refuses as a business id whose content changed --
+        // the same failure CancelDemandBeforeLoadAsync settles the sublot entry request for.
+        JourneyDemandRow? membership = await dbContext.JourneyDemands.SingleOrDefaultAsync(
+            row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
+        if (membership is not null)
+        {
+            await store.SettleAnsweredCommandAsync(
+                membership.LoadCommandMessageId, observedAt, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task KeepDemandAndJourneyBlockedAsync(
