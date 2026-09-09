@@ -212,6 +212,7 @@ if (app.Configuration.GetValue<bool>("OnboardSafetyProjection:enabled"))
 {
     app.MapOnboardVehicleSafety();
 }
+app.MapDashboardQueries();
 
 await app.RunAsync();
 
