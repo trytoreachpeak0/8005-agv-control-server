@@ -232,6 +232,15 @@ $assertions.Add(
     2, [int]$runtimeCount[0].N)
 
 # 第一单一条 TO_PICKUP，第二单一条 TO_PICKUP。取消不派车，也不去关卡。
+#
+# 要等，不能直接读。L2-CB-08 等到的是第二趟旅程转 AwaitingPickupArrival，而**转阶段与订单落到
+# 假 RIoT 不是同一时刻**——直接读快照在本机稳过、在 CI 上读到 1 条。2026-09-09 实测：本地八条
+# 场景全绿，同一个 commit 在 runner 上这一条 FAIL，期望 2 实际 1，另外 12 条断言全 PASS。
+# 用 -ge 2 等待、再按 -eq 2 断言：慢了会等到，多了仍然会被抓住。
+$riotOrderCount = Wait-L2Condition -Description 'both TO_PICKUP orders reached the fake RIoT' `
+    -Journal $journal -Criterion 'riot-order-count' -TimeoutSeconds 30 `
+    -Probe { @($riot.Snapshot().body.orders).Count } -Until { param($v) $v -ge 2 }
+$journal.Note("Fake RIoT holds $riotOrderCount order(s) at the end of the scenario.")
 $riotOrders = @($riot.Snapshot().body.orders)
 $assertions.Add(
     'L2-CB-12', '全程只建了两条 RIoT 单，取消本身不派车',
