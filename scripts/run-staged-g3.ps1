@@ -46,10 +46,10 @@ if ($null -ne $pnpmCommand) {
     $pnpmPrefixArguments = @($bundledPnpm)
 }
 
-$protocolTag = 'protocol-v0.1.1'
-$manifestSha256 = 'a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f'
-$schemaBundleSha256 = 'e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c'
-$vectorsSha256 = 'fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e'
+$protocolTag = 'protocol-v0.3.0'
+$manifestSha256 = 'b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138'
+$schemaBundleSha256 = '68bfd531c4b9c08bc80f6d9c5a67264891efa200acdb154eb18e1d083bf4ed98'
+$vectorsSha256 = 'bd272b63a1d0663d61c4a38d6e8633d7e7d4f7b561a7915c3df51c7a93bd4576'
 $controlPort = 58205
 $healthPort = 58207
 $proxyPort = 58215
@@ -1904,9 +1904,9 @@ public static class StagedG3TlsHarness
         {
             ["repository"] = "8005-agv-protocol",
             ["releaseVersion"] = release,
-            ["tag"] = "protocol-v0.1.1",
+            ["tag"] = "protocol-v0.3.0",
             ["commit"] = Protocol.Commit,
-            ["protocolVersion"] = 1,
+            ["protocolVersion"] = 3,
             ["profileId"] = Protocol.Profile,
             ["manifestSha256"] = manifest,
             ["schemaBundleSha256"] = Protocol.Schema,
@@ -1953,7 +1953,7 @@ public static class StagedG3TlsHarness
         long? generation,
         object payload) => JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            ["protocolVersion"] = 1,
+            ["protocolVersion"] = 3,
             ["profileId"] = Protocol.Profile,
             ["protocolReleaseVersion"] = release,
             ["protocolReleaseManifestSha256"] = manifest,
@@ -2011,12 +2011,12 @@ public static class StagedG3TlsHarness
 
     private static class Protocol
     {
-        public const string Release = "0.1.1";
+        public const string Release = "0.3.0";
         public const string Profile = "WIRE_TO_GATE_MVP";
-        public const string Commit = "1531489e42e328f28bfe0c51ed3f8c56e5ce0279";
-        public const string Manifest = "a467c0c4b03cbf54fae985ceade256ff13225581babad7f46d90449b7f16389f";
-        public const string Schema = "e04296e9bcf48c341bc91fef5731f6f465a5ecdbb9adedc17f3bac58e193d30c";
-        public const string Vectors = "fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e";
+        public const string Commit = "345c53c58517968192c87c3e7777ed08ddb48726";
+        public const string Manifest = "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138";
+        public const string Schema = "68bfd531c4b9c08bc80f6d9c5a67264891efa200acdb154eb18e1d083bf4ed98";
+        public const string Vectors = "bd272b63a1d0663d61c4a38d6e8633d7e7d4f7b561a7915c3df51c7a93bd4576";
     }
 
     private sealed class Connection : IAsyncDisposable
@@ -2084,6 +2084,37 @@ public static class StagedG3TlsHarness
     }
 }
 '@
+
+# The synthetic peer's protocol identity lives in the C# above, and @'...'@ does not interpolate, so
+# that block is a second copy of what this runner binds. The cost of the two drifting apart was paid
+# on 2026-09-09: the four commit bindings moved to protocol-v0.3.0 while the C# still announced
+# protocol-v0.1.1, and New-ExactClone only threw "protocol-v0.1.1 resolves to 1531489e..." after all
+# four repositories had been cloned. Read it back instead, so a mismatch fails before the clones and
+# names which entry is wrong.
+$harnessProtocolExpectations = [ordered]@{
+    'Protocol.Release'  = @{ Pattern = 'public const string Release\s*=\s*"([^"]+)"'; Expected = $protocolTag -replace '^protocol-v', '' }
+    'Protocol.Commit'   = @{ Pattern = 'public const string Commit\s*=\s*"([^"]+)"';  Expected = $ProtocolCommit }
+    'Protocol.Manifest' = @{ Pattern = 'public const string Manifest\s*=\s*"([^"]+)"'; Expected = $manifestSha256 }
+    'Protocol.Schema'   = @{ Pattern = 'public const string Schema\s*=\s*"([^"]+)"';   Expected = $schemaBundleSha256 }
+    'Protocol.Vectors'  = @{ Pattern = 'public const string Vectors\s*=\s*"([^"]+)"';  Expected = $vectorsSha256 }
+    'SessionHello.tag'  = @{ Pattern = '\["tag"\]\s*=\s*"([^"]+)"';                  Expected = $protocolTag }
+}
+foreach ($name in $harnessProtocolExpectations.Keys) {
+    $rule = $harnessProtocolExpectations[$name]
+    $found = [regex]::Match($harnessSource, $rule.Pattern)
+    if (-not $found.Success) {
+        throw "Cannot read $name back from the embedded synthetic peer: the guard has gone blind, fix its pattern rather than deleting it."
+    }
+    if ($found.Groups[1].Value -ne $rule.Expected) {
+        throw "Synthetic peer $name is '$($found.Groups[1].Value)' but this runner binds '$($rule.Expected)'. Both live in this file; change them together."
+    }
+}
+$harnessProtocolVersions = [regex]::Matches($harnessSource, '\["protocolVersion"\]\s*=\s*(\d+)') |
+    ForEach-Object { [int]$_.Groups[1].Value } |
+    Sort-Object -Unique
+if (@($harnessProtocolVersions).Count -ne 1 -or $harnessProtocolVersions[0] -ne 3) {
+    throw "Synthetic peer protocolVersion is $($harnessProtocolVersions -join ', '); protocol-v0.3.0 is protocolVersion 3."
+}
 
 Add-Type -TypeDefinition $harnessSource -Language CSharp
 

@@ -613,7 +613,7 @@ $restartedHostServesTheSameStorePass = $null -ne $handshakeResult -and $null -ne
 
 $protocolBindingPass = $null -ne $version -and
     $version.protocolCommit -eq $ProtocolCommit -and
-    $version.protocolTag -eq 'protocol-v0.1.1' -and
+    $version.protocolTag -eq 'protocol-v0.3.0' -and
     $null -ne $probeResult -and
     [string]$probeResult.serverBuildCommit -eq $ControlServerCommit -and
     $null -ne $baseline -and
