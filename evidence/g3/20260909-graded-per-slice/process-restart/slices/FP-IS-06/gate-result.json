@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.3.0",
+  "gate": "G3",
+  "runKind": "STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT",
+  "runId": "20260909T102015738Z",
+  "integrationSliceId": "FP-IS-06",
+  "status": "PASS",
+  "assuranceLevel": "STAGED_REBUILD",
+  "formalSlicePass": true,
+  "startedAt": "2026-09-09T10:20:15.7381123+00:00",
+  "finishedAt": "2026-09-09T10:22:37.5299077+00:00",
+  "implementationRepository": "8005-agv-control-server",
+  "commits": {
+    "controlServer": "b46b0727de5aad74e9ffd56709219dd76e75e0b2",
+    "onboardHmi": "153b70594f75ce945e717afd80be9f6279423080",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "runner": "947b07a5871e501047a2accf3ecd52bc8677fe8a",
+    "runnerWorktreeCleanAtStart": false
+  },
+  "protocolReleaseVersion": "1.0.0",
+  "protocolTag": "protocol-v1.0.0",
+  "protocolProfileId": "AGV_FULL_PRODUCT",
+  "protocolVersion": 2,
+  "protocolApprovalStatus": "SUPERSEDING_CANDIDATE",
+  "protocolRepositoryCommit": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+  "protocolManifestSha256": "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788",
+  "protocolSchemaBundleSha256": "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b",
+  "protocolVectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+  "integrationSliceIndexSha256": "71e0a63d49d1973653e1f70addc19c334faff5e53e8597733c1423a7307bd82f",
+  "integrationSliceIndexSource": "vendor/8005-agv-protocol/integration-slices/index.json",
+  "vectorIds": [
+    "CV-RELIABLE-RETRY-SAME-CONTENT",
+    "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
+    "CV-REQUEST-FIRST-RESULT-REPLAY"
+  ],
+  "assertionIds": {
+    "controlDatabaseFileReusedAcrossServerRestart": "PASS",
+    "controlInboxRowsSurviveServerRestart": "PASS",
+    "onboardOutboxRowsSurviveOnboardRestart": "PASS",
+    "commitBindingSharedWithMainRunner": "PASS",
+    "runningControlServerReportsBoundBuildCommit": "PASS",
+    "runningOnboardReportsBoundBuildCommit": "PASS",
+    "protocolIdentityBoundToRelease": "PASS",
+    "noPeerExitedUnexpectedly": "PASS",
+    "onboardHostProcessReplacedOnlyInPhaseTwo": "PASS",
+    "controlServerHostProcessReplacedOnlyInPhaseThree": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "secretScan": "PASS"
+  }
+}
