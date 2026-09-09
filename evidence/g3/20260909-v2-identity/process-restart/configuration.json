@@ -1,0 +1,33 @@
+{
+  "loopbackOnly": true,
+  "tls": false,
+  "temporaryTrustRootInstalled": false,
+  "unattended": true,
+  "commitBinding": {
+    "source": "scripts/run-staged-g3.ps1",
+    "sourceSha256": "c1b0b571ca61c335c44a65bf69740322f5f17b58b110c55ee79f0720f756e623",
+    "readFrom": "param-block-defaults",
+    "controlServer": "e3ea250d6eb4c0f3f11814c938da531b1657edb7",
+    "onboardHmi": "153b70594f75ce945e717afd80be9f6279423080",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b"
+  },
+  "ports": {
+    "controlPlaintext": 58105,
+    "controlHealth": 58107,
+    "simulatorModbus": 1502,
+    "simulatorHttp": 58006
+  },
+  "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+  "onboardConfigSha256": "f7664924cd10f93b06ce2411bfff27a7621c43568635fce67f84c6fbd5261315",
+  "stableWindowSamplesPerPhase": 12,
+  "journeyRuntimeEnabled": false,
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "movementCommandSent": false,
+  "vehicleSafetyEligibilityFabricated": false,
+  "vectorsNotReachableWithoutAnAcceptedDemand": [
+    "demandReusedAcrossRestart",
+    "vehicleDispatchLeaseReusedAcrossRestart"
+  ]
+}
