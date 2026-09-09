@@ -11,6 +11,7 @@ builder.Services.AddOnboardTransport(builder.Configuration);
 builder.Services.AddMesIngestIntegration();
 builder.Services.AddRiotIntegration(builder.Configuration);
 builder.Services.AddOnboardSafetyProjection(builder.Configuration);
+builder.Services.AddGovernance(builder.Configuration);
 
 WebApplication app = builder.Build();
 app.UseControlServerHost();
