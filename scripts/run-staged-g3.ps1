@@ -68,7 +68,7 @@ if ($null -ne $pnpmCommand) {
 # a gate ends up certifying a protocol nobody is running. ProtocolIdentityArchitectureTests keeps the
 # settings mirror equal to the constants; this reads the mirror.
 $expectedProtocol = (Get-Content -Raw -LiteralPath (
-    Join-Path (Split-Path -Parent $PSScriptRoot) 'src\ControlServer.Hostppsettings.json') |
+    Join-Path (Split-Path -Parent $PSScriptRoot) 'src\ControlServer.Host\appsettings.json') |
     ConvertFrom-Json).ProtocolCandidate
 if ($null -eq $expectedProtocol) { throw 'appsettings.json carries no ProtocolCandidate identity.' }
 $protocolTag = $expectedProtocol.tag
