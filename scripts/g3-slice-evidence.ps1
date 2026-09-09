@@ -349,6 +349,21 @@ function Write-G3GateResult {
         assertionIds = $sliceReport
     }
 
+    # Every identity field has to have a value. Measured on 2026-09-09 before this check existed:
+    # the two runners that read their identity back from the running host asked it for
+    # $version.releaseVersion, which the host names protocolReleaseVersion, and a gate result went
+    # out with a null release version beside eight correct fields. A gate result is read to decide
+    # what a run certified; a null there reads as "not applicable" rather than "we asked wrong".
+    foreach ($required in @('protocolReleaseVersion', 'protocolTag', 'protocolProfileId',
+                            'protocolVersion', 'protocolApprovalStatus', 'protocolRepositoryCommit',
+                            'protocolManifestSha256', 'protocolSchemaBundleSha256',
+                            'protocolVectorsSha256')) {
+        if ($null -eq $result[$required] -or "$($result[$required])".Length -eq 0) {
+            throw ("The gate result for $Slice has no $required. The run cannot say what protocol " +
+                   'identity it certified, so it writes nothing rather than a blank field.')
+        }
+    }
+
     $directory = Join-Path (Join-Path $EvidenceRoot 'slices') $Slice
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
     $path = Join-Path $directory 'gate-result.json'

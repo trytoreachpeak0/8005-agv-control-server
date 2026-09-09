@@ -897,7 +897,7 @@ $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $Eviden
         # this runner clones no protocol repository, so the identity it can honestly cite is the one
         # the running host reported. Null when the run never got a version, which is the same case
         # that grades every slice INCONCLUSIVE.
-        protocolReleaseVersion = $version.releaseVersion
+        protocolReleaseVersion = $version.protocolReleaseVersion
         protocolTag = $version.protocolTag
         protocolProfileId = $version.profileId
         protocolVersion = $version.protocolVersion
