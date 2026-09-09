@@ -46,6 +46,7 @@ public sealed class WireToGateStoreTests
         // had just asked for, and the journey could never leave the load stage.
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
         await ReachReadyAsync(fixture);
+        await AttachJourneyAsync(fixture, "AGV-001", "D-401");
         await fixture.Store.PrepareSlotOperationAsync(
             new StationOperationPlan(
                 "ATTEMPT-401", "D-401", "SUBLOT-401", [1], SlotOperationType.Load, 0, "plan-hash", fixture.Now),
@@ -69,6 +70,7 @@ public sealed class WireToGateStoreTests
     {
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
         await ReachReadyAsync(fixture);
+        await AttachJourneyAsync(fixture, "AGV-001", "D-402");
         await fixture.Store.PrepareSlotOperationAsync(
             new StationOperationPlan(
                 "ATTEMPT-402", "D-402", "SUBLOT-402", [1], SlotOperationType.Load, 0, "plan-hash", fixture.Now),
@@ -123,6 +125,71 @@ public sealed class WireToGateStoreTests
 
         Assert.Equal(SessionReadiness.RecoveryRequired, decision.Readiness);
         Assert.Equal("DEPARTURE_SAFETY_NOT_READY", decision.ReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    public async Task AnotherVehiclesSlotOperationDoesNotExplainThisVehiclesOpenDoor()
+    {
+        // The exemption probe was fleet-wide: any Prepared station operation anywhere granted it.
+        // With one vehicle that reads the same as "our own operation"; with three it hands an idle
+        // car standing with a door ajar the readiness of a car that is mid-load somewhere else.
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await ReachReadyAsync(fixture);
+        await AttachJourneyAsync(fixture, "AGV-002", "D-403");
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-403", "D-403", "SUBLOT-403", [1], SlotOperationType.Load, 0, "plan-hash", fixture.Now),
+            "MSG-CMD-403",
+            "command-json",
+            fixture.CancellationToken);
+
+        await fixture.Store.ApplySafetySnapshotAsync(
+            "AGV-001", 1, 16, false, "neighbour-hash", fixture.CancellationToken,
+            ["LOCK_NOT_CLOSED"], unknownPresent: false);
+        SessionReadinessDecision decision = await fixture.Store.DecideReadinessAsync(
+            "AGV-001", 1, fixture.CancellationToken);
+
+        Assert.Equal(SessionReadiness.RecoveryRequired, decision.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", decision.ReasonCode);
+    }
+
+    /// <summary>
+    /// The journey rows a station operation hangs off. The exemption reaches a vehicle through
+    /// StationOperations -> JourneyDemands -> JourneyRuntimes, so an operation with no journey
+    /// behind it belongs to nobody.
+    /// </summary>
+    private static async Task AttachJourneyAsync(StoreFixture fixture, string agvId, string demandId)
+    {
+        string journeyId = $"JOURNEY-{demandId}";
+        fixture.Context.JourneyRuntimes.Add(new JourneyRuntimeRow
+        {
+            JourneyId = journeyId,
+            Stage = JourneyRuntimeStage.AwaitingLoadResult,
+            AgvId = agvId,
+            VehicleKey = $"KEY-{agvId}",
+            MapIdentity = "MAP-1",
+            DispatchZone = "ZONE-1",
+            GateStationId = "GATE-1",
+            OperationSessionId = $"SESSION-{demandId}",
+            CurrentStopSequence = 1,
+            CreatedAt = fixture.Now,
+            UpdatedAt = fixture.Now
+        });
+        fixture.Context.JourneyDemands.Add(new JourneyDemandRow
+        {
+            JourneyId = journeyId,
+            DemandId = demandId,
+            StopSequence = 1,
+            TargetSlotsJson = "[1]",
+            LoadCommandMessageId = $"MSG-LOAD-{demandId}",
+            LoadSlotOperationAttemptId = $"ATTEMPT-LOAD-{demandId}",
+            UnloadCommandMessageId = $"MSG-UNLOAD-{demandId}",
+            UnloadSlotOperationAttemptId = $"ATTEMPT-UNLOAD-{demandId}",
+            State = JourneyDemandState.Planned,
+            CreatedAt = fixture.Now
+        });
+        await fixture.Context.SaveChangesAsync(fixture.CancellationToken);
     }
 
     private static async Task ReachReadyAsync(StoreFixture fixture)

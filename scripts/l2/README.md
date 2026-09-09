@@ -29,12 +29,13 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-recovery-entry-missing` | **真的** | 装载失败后车上发起不了任何恢复：授权是齐的，入口是缺的 | **已被 ADR-cross-0058 决策 1 作废**，见下 |
 | `real-onboard-load-door-closed-empty` | **真的** | 装货时关门不放料：反复重开、不判失败、不进恢复；提示节拍到期只再提示不重复脉冲 | `evidence/l2/20260909-real-onboard-load-door-closed-empty-002` |
 | `real-onboard-unload-not-emptied` | **真的** | 卸货时关门不取货：一直闭环到取空，没有取消分支 | `evidence/l2/20260909-real-onboard-unload-not-emptied-001` |
-| `real-onboard-station-timeout-door-open` | **真的** | 站点期限到期而仓门未闭：告警并持续等待 | **红的，而且红得对**，见下 |
+| `real-onboard-station-timeout-door-open` | **真的** | 站点期限到期而仓门未闭：告警并持续等待，闭合后按决策 5 结算 | `evidence/l2/20260909-real-onboard-station-timeout-door-open-004` |
 
-编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。四个是**红的**，各自的原因见文末：
+编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。七个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
-`-004`（第 9 条），以及 `real-onboard-load-door-closed-empty-001`（第 13 条——那一条红在场景
-自己身上，不是产品）。
+`-004`（第 9 条）、`real-onboard-load-door-closed-empty-001`（第 13 条），以及
+`real-onboard-station-timeout-door-open` 的 `-001`/`-002`/`-003`（最后一节）。**后四个都红在场景
+自己身上，不是产品**——`-001` 那一条连诊断都跟着错了一半。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
 `VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
@@ -345,37 +346,51 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   装货有「确定失败」这条出口（服务端 `ApplyOperationResultAsync` 的 `determinateFailure` 只对
   Load 成立），卸货没有。所以它的核心判据是否定的——两轮之后既不 `Committed` 也不 `Failed`
   也不 `RecoveryRequired`，需求也没被取消，唯一的终结方式是货真的被取走。
-- **`real-onboard-station-timeout-door-open`** 验决策 4，**它是红的，而且红得对**，见下一节。
+- **`real-onboard-station-timeout-door-open`** 验决策 4——期限到期而仓门未闭时不结束本站，转告警
+  并持续等待——外加它闭合之后按决策 5 结算的那一段。**它钉的格子是 `AwaitingLoadResult`，不是
+  `AwaitingSublot`**，那是这条场景 2026-09-09 重写时校正的东西，见下一节。
 
-**决策 5 那一格没有对应场景，因为它在真装置上没有生产者。**ADR 要求「期限到期时门已闭、开锁输出
-已复位、仓位状态明确，车载端报 `overallOutcome: FAILED`」，服务端那一半在 `5f8f5a7` 已经落地
-（`StationOperationStatus.Failed` + `OperationResultDisposition.DeterminateFailure`）。可车载端
-唯一发 `FAILED` 的地方是 `CreateRejectedResult`（前置校验拒绝），它把所有仓位填成
+**决策 5 那一格现在有生产者了，就在上面那条场景的尾巴里。**这段话一度写着「它在真装置上没有
+生产者」：车载端唯一发 `FAILED` 的地方是 `CreateRejectedResult`，它把所有仓位填成
 `NOT_STARTED` + `UNKNOWN`，而服务端的 `determinateFailure` 要求每个仓位
-`State != Unknown && DoorLocked && UnlockOutputReset` —— 两者不可能同时成立，
-**`StationOperationStatus.Failed` 因此到不了**。决策 1 之后目标态闭环没有期限也没有上限，唯一
-能中止它的是关进程，而服务端没有任何一条消息能中止一次在途的仓位操作
-（[`8005-agv-program#24`](https://github.com/trytoreachpeak0/8005-agv-program/issues/24)）。
-那一票定了以后再补这条场景。
+`State != Unknown && DoorLocked && UnlockOutputReset`，两者不可能同时成立。
+[`8005-agv-program#24`](https://github.com/trytoreachpeak0/8005-agv-program/issues/24) 补上了那条
+路——车载端在**相反态**（门已闭、货没动）过期后结算 `FAILED`——
+`20260909-real-onboard-station-timeout-door-open-004` 是它第一次在真装置上被观测到
+（`StationOperations.Status = Failed`，不是 `RecoveryRequired`）。
 
-## `real-onboard-station-timeout-door-open` 为什么红
+## `real-onboard-station-timeout-door-open` 钉的是哪一格，以及它两次红在自己身上
 
-ADR-cross-0058 决策 4 要求：站点期限到期而仓门未闭时不结束本站，挂
-`STATION_TIMEOUT_DOOR_NOT_CLOSED` 告警并持续等待，stage 仍是 `AwaitingSublot`。
+**决策 4 有两格，这条场景 2026-09-09 重写过一次，就是为了换到对的那一格。**
 
-实跑结果是**要的结果成立了，机制不是它写的那条**：本站确实没关闭、需求确实没取消、门一闭合就按
-当时的读数结算——但那些是**就绪门**的副作用。决策 4 那段代码一次都没被执行到，因为
-`AdvanceAsync` 的第一件事是 `CurrentReadySessionAsync`，而门开着时会话是
-`RecoveryRequired / DEPARTURE_SAFETY_NOT_READY`：让它保持 `Ready` 的那条豁免
-（`IsUnsafetyExplainedByOwnCommandAsync`）要求存在一个 `Prepared` 的 station operation，
-而 `AwaitingSublot` 的定义就是一个命令都还没发。旅程上挂的是 `ONBOARD_SESSION_NOT_READY`。
+初版把它摆在 `AwaitingSublot`——操作员既没扫码、又用 `lock-feedback-override` 把 8 号仓的锁反馈
+钉成 0 制造一扇虚掩的门。跑出来是红的（`-001`），当时的诊断是「决策 4 的分支在真装置上到不了」。
+**那个诊断只对一半**：
 
-L1 的两条测试能到那个分支，是因为夹具 `ReportDoorLeftOpenAsync` 直接写 `SessionRecoveryRow` 的
-安全字段而不重算 readiness。**分支本身是对的，到不了的是那个状态。**完整复盘在
-`docs/defects/20260909-station-timeout-door-not-closed-branch-unreachable.md`，红证据
-`evidence/l2/20260909-real-onboard-station-timeout-door-open-001`。
+- ADR-cross-0058 的 Consequences 点名的是 **`AwaitingLoadResult`**（原文：「服务端改动落在 ……
+  `JourneyRuntimeEngine` 的 `AwaitingLoadResult`」）。那一格实测可达，告警照挂——分水岭是
+  `IsUnsafetyExplainedByOwnCommandAsync` 那条豁免要求存在 `Prepared` 的 station operation，
+  而在途仓位操作只存在于那一格。
+- `AwaitingSublot` 那一格**本来就不该挂这个告警**：该阶段的定义是本站一条仓位命令都没发过，
+  此时读到一扇开着的门意味着没有任何我方命令能解释它，会话降级成
+  `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY` 是正确行为，旅程停在就绪门上记
+  `ONBOARD_SESSION_NOT_READY`。
 
-这条场景**用 `lock-feedback-override` 把某个仓位的锁反馈钉成 0** 来制造「一扇没关实的门」，
-而不是去开锁——模拟器不提供开锁接口，那条边界是它刻意设的，保证开锁只能由车载端写 Modbus DO
-触发。钉的仓位刻意选 8 号：业务分配从 1 号开始，这一趟不会命令到它，所以门开着这件事只可能
-来自本场景的注入。
+判定本身现在由三条 L1 测试钉住（两格各一条，外加一条「豁免不跨车」），所以这条 L2 不重复钉判定，
+只钉真装置才能证的东西。完整复盘在
+`docs/defects/20260909-station-timeout-door-not-closed-branch-unreachable.md`。
+
+**门是怎么开着的：不用注入。**换格之后不需要 `lock-feedback-override` 了——操作员扫完 SUBLOT，
+车载端为这次装载打开锁脉冲，门弹开，人走了，这就是那一格的现场原样。
+
+重写之后又红了两次，两次都红在场景自己身上，值得记：
+
+1. **`-002`：只关了一次门。**期限过了并不等于立刻判死——决策 1 的目标态闭环先赢一轮：读到相反态
+   车载端先重新开锁并提示，那是过期之后留给人的最后一次机会，要**再**读到一次相反态才结算。
+   实测门 20:57:56.173 关到位，20:57:56.539 就重新打了脉冲，门又弹开——而脚本在等告警撤销，
+   可门开着告警本来就不该撤销。产品是对的，判据错了。现在关两次门。
+2. **`-003`：用 `$null` 表达「告警已撤销」。**`Wait-L2Condition` 在 `Probe` 返回 `$null` 时
+   **根本不评估 `Until`**（`L2.psm1` 的 `if ($null -ne $last -and (& $Until $last))`），于是等到
+   超时，报错还写成 `Last observed: (nothing)`——看着像没读到，其实是读到了想要的那个空。
+   **等一个值消失，探针要返回哨兵字符串。**
+

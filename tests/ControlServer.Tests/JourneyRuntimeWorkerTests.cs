@@ -1790,6 +1790,71 @@ public sealed class JourneyRuntimeWorkerTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AnOpenDoorNoCommandOfOursExplainsLeavesTheSessionUnusable()
+    {
+        // Which of decision 4's two squares is reachable is decided outside AdvanceAsync entirely,
+        // by whether DecideReadinessAsync can explain the open door -- so it has to be measured
+        // through that path, not by writing the safety fields the fixture way.
+        //
+        // AwaitingSublot is the square where nothing explains it: the stage is defined by having
+        // commanded no slot operation at all, so a door reading open here was opened by nobody this
+        // server can name. That is departure safety the vehicle cannot vouch for, and the session
+        // is correctly unusable -- the journey stops at the readiness gate and says so. Decision 4's
+        // alarm does not belong here and never fires here; it belongs to the other square.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+
+        SessionReadinessDecision decision = await fixture.ReportDoorLeftOpenThroughRealPathAsync();
+        Assert.Equal(SessionReadiness.RecoveryRequired, decision.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", decision.ReasonCode);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", runtime.BlockReasonCode);
+        // The bottom line holds by a different route than the ADR drew: the gate stops the runtime
+        // before anything can close a stop against an open door.
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ADoorOurOwnLoadHoldsOpenKeepsTheSessionReadyAndReachesTheAlarm()
+    {
+        // The other square, measured the same way. A load is underway, so the operation that
+        // unlocked the slot is Prepared, IsUnsafetyExplainedByOwnCommandAsync grants the exemption,
+        // and the session stays Ready -- which is what lets AdvanceAsync run far enough to raise
+        // decision 4's alarm. This is the square ADR-cross-0058 names in its consequences.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+
+        SessionReadinessDecision decision = await fixture.ReportDoorLeftOpenThroughRealPathAsync();
+        Assert.Equal(SessionReadiness.Ready, decision.Readiness);
+        Assert.Equal("READY", decision.ReasonCode);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        SingleDemandJourneyView runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        Assert.Equal("STATION_TIMEOUT_DOOR_NOT_CLOSED", runtime.BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
     public async Task TheDoorAlarmIsWithdrawnOnceTheDoorIsShutAgain()
     {
         // The alarm names a condition, not an event: once the door is shut the vehicle can settle
@@ -2935,6 +3000,26 @@ public sealed class JourneyRuntimeWorkerTests
             session.SafetyUnknownPresent = false;
             session.UpdatedAt = Clock.GetUtcNow();
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// The same open door as <see cref="ReportDoorLeftOpenAsync"/>, but reported the way the
+        /// vehicle actually reports it: ApplySafetySnapshotAsync followed by DecideReadinessAsync,
+        /// so readiness is recomputed rather than left at whatever the fixture built. Writing the
+        /// row directly is what let both halves of ADR-cross-0058 decision 4 pass L1 while one of
+        /// them could not be reached at all.
+        /// </summary>
+        public async Task<SessionReadinessDecision> ReportDoorLeftOpenThroughRealPathAsync()
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            long revision = (session.SafetyRevision ?? 0) + 1;
+            WireToGateStore store = new(Context);
+            await store.ApplySafetySnapshotAsync(
+                Options.AgvId, session.SessionGeneration, revision, false, new string('a', 64),
+                TestContext.Current.CancellationToken, ["LOCK_NOT_CLOSED"], unknownPresent: false);
+            return await store.DecideReadinessAsync(
+                Options.AgvId, session.SessionGeneration, TestContext.Current.CancellationToken);
         }
 
         /// <summary>The operator finally pushed the door shut; the projection carries no reasons.</summary>

@@ -1,0 +1,61 @@
+{"at":"2026-09-09T13:02:34.8984404+00:00","note":"L2 run 20260909T130234852Z starting for scenario 'real-onboard-station-timeout-door-open'."}
+{"at":"2026-09-09T13:02:34.9171770+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-09T13:02:40.3838430+00:00","note":"Reusing cached onboard-hmi publish for 3d8206fc9fc4ce02b58e78a205d9563be68c6b0e."}
+{"at":"2026-09-09T13:02:40.4768316+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-09T13:02:40.4819345+00:00","note":"Peers: onboard-hmi@3d8206fc9fc4ce02b58e78a205d9563be68c6b0e, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-09T13:02:41.4171127+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-09T13:02:41.5476159+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-09T13:02:43.3268979+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-09T13:02:43.3571089+00:00","note":"Server settings from real-onboard-station-timeout-door-open.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:01:00"}
+{"at":"2026-09-09T13:02:45.7483345+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-09T13:02:47.3621157+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-09T13:02:49.7390771+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-09T13:02:49.7621820+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-09T13:02:49.8692326+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-09T13:02:50.1572372+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-09T13:02:50.2379199+00:00","note":"Environment is up; entering scenario 'real-onboard-station-timeout-door-open'."}
+{"at":"2026-09-09T13:02:50.3264681+00:00","note":"Publishing demand 9210b0b6fe9349a4a4b8050703ecdb90 (sublot L2-SUBLOT-20260909T130234852Z) to the fake MesIngest catalog."}
+{"at":"2026-09-09T13:02:50.4736339+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-09T13:02:51.5872157+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-09T13:02:51.5967968+00:00","criterion":"to-pickup-intent","value":"PENDING_RECONCILIATION"}
+{"at":"2026-09-09T13:02:51.8685395+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-09T13:02:51.8701293+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-09T13:02:51.9489207+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-09T13:02:53.2997274+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-09T13:02:53.3504231+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-09T13:02:53.3538303+00:00","note":"Typing sublot L2-SUBLOT-20260909T130234852Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-09T13:02:53.4368641+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-09T13:02:53.4767389+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-09T13:02:53.4814234+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-09T13:02:54.0102938+00:00","criterion":"load-attempt","value":"b1079d2c-4d0c-f151-a9a2-aee3f6d39215"}
+{"at":"2026-09-09T13:02:54.0226347+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-09T13:02:54.0431942+00:00","criterion":"load-unlocking","value":"(null)"}
+{"at":"2026-09-09T13:02:54.3118574+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=b1079d2c-4d0c-f151-a9a2-aee3f6d39215; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/09/2026 21:02:54}"}
+{"at":"2026-09-09T13:02:54.3224874+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-09T13:02:55.1107207+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-09T13:02:55.1781445+00:00","criterion":"safety-lock-not-closed","value":"[\"LOCK_NOT_CLOSED\"]"}
+{"at":"2026-09-09T13:02:55.1899680+00:00","note":"Waiting for the one-minute station deadline to expire against the open door."}
+{"at":"2026-09-09T13:02:55.2020963+00:00","criterion":"station-timeout-alarm","value":"(null)"}
+{"at":"2026-09-09T13:03:52.9115766+00:00","criterion":"station-timeout-alarm","value":"STATION_TIMEOUT_DOOR_NOT_CLOSED"}
+{"at":"2026-09-09T13:03:52.9308053+00:00","criterion":"runtime-iterations","value":"67"}
+{"at":"2026-09-09T13:03:53.9890316+00:00","criterion":"runtime-iterations","value":"68"}
+{"at":"2026-09-09T13:03:55.0413254+00:00","criterion":"runtime-iterations","value":"69"}
+{"at":"2026-09-09T13:03:56.0883803+00:00","criterion":"runtime-iterations","value":"70"}
+{"at":"2026-09-09T13:03:56.8682116+00:00","criterion":"runtime-iterations","value":"71"}
+{"at":"2026-09-09T13:03:57.9143125+00:00","criterion":"runtime-iterations","value":"72"}
+{"at":"2026-09-09T13:03:58.9630038+00:00","criterion":"runtime-iterations","value":"73"}
+{"at":"2026-09-09T13:03:58.9780905+00:00","note":"Round 1: operator pushes slot 1 shut without putting anything in it."}
+{"at":"2026-09-09T13:03:59.0154394+00:00","criterion":"door-closed-empty-1","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-09T13:03:59.2862278+00:00","criterion":"door-closed-empty-1","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-09T13:03:59.3071650+00:00","criterion":"grace-reopen","value":"1"}
+{"at":"2026-09-09T13:03:59.8439114+00:00","criterion":"grace-reopen","value":"2"}
+{"at":"2026-09-09T13:03:59.8471497+00:00","criterion":"grace-waiting-operator","value":"1"}
+{"at":"2026-09-09T13:04:00.6442502+00:00","criterion":"grace-waiting-operator","value":"2"}
+{"at":"2026-09-09T13:04:00.6529256+00:00","note":"Round 2: operator pushes slot 1 shut without putting anything in it."}
+{"at":"2026-09-09T13:04:00.6696686+00:00","criterion":"door-closed-empty-2","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-09T13:04:00.9384102+00:00","criterion":"door-closed-empty-2","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-09T13:04:00.9577545+00:00","criterion":"determinate-failure","value":"Prepared"}
+{"at":"2026-09-09T13:04:01.5048498+00:00","criterion":"determinate-failure","value":"Failed"}
+{"at":"2026-09-09T13:04:01.5086866+00:00","criterion":"alarm-withdrawn","value":"STATION_TIMEOUT_DOOR_NOT_CLOSED"}
+{"at":"2026-09-09T13:04:02.0465940+00:00","criterion":"alarm-withdrawn","value":"(null)"}
+{"at":"2026-09-09T13:06:01.6580051+00:00","note":"Run failed: Timed out after 120s waiting for: the door alarm was withdrawn once the load settled. Last observed: (nothing)"}

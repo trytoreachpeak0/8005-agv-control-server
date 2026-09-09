@@ -2538,8 +2538,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// </summary>
     /// <remarks>
     /// The relaxation is deliberately narrow. It applies only while this server has an authorized
-    /// operation in flight, only when every reported reason is one that operation explains, and
-    /// never when any evidence was unknown. It changes session readiness alone -- departure itself
+    /// operation in flight <em>on this vehicle</em>, only when every reported reason is one that
+    /// operation explains, and never when any evidence was unknown. It changes session readiness alone -- departure itself
     /// is still authorized from a separate, freshness-bounded PreDepartureSafetyCheckResult in
     /// AuthorizeMovementAsync, which this does not touch.
     /// </remarks>
@@ -2564,8 +2564,25 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             return false;
         }
+        // Scoped to this vehicle, by the same join DecideReadinessAsync already takes for
+        // operationNeedsRecovery. The probe used to ask whether *any* station operation anywhere was
+        // Prepared, so one vehicle mid-load handed every other vehicle an exemption it had not
+        // earned: an idle car standing with a door ajar would read Ready for as long as any car in
+        // the fleet held a slot open. A single-vehicle deployment can never show that; the fleet is
+        // three.
         return await dbContext.StationOperations
-            .AnyAsync(item => item.Status == StationOperationStatus.Prepared, cancellationToken)
+            .Join(dbContext.JourneyDemands,
+                operation => operation.DemandId,
+                demand => demand.DemandId,
+                (operation, demand) => new { operation, demand })
+            .Join(dbContext.JourneyRuntimes,
+                pair => pair.demand.JourneyId,
+                runtime => runtime.JourneyId,
+                (pair, runtime) => new { pair.operation, runtime })
+            .AnyAsync(
+                pair => pair.runtime.AgvId == row.AgvId &&
+                        pair.operation.Status == StationOperationStatus.Prepared,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
