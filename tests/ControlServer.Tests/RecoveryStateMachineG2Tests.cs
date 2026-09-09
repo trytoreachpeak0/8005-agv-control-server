@@ -757,8 +757,15 @@ public sealed class RecoveryStateMachineG2Tests
                 context, new RecordingPeer(context), CancellationProofVariable);
             OnboardConnectionState state = CurrentState();
 
-            await processor.ProcessAsync(
+            // 这一段也断言授权确实是 AUTHORIZED，而不是靠上一段。否则授权面一旦回退成
+            // REJECTED，下面那些「没有发生」的断言就是在一个根本没建起来的工作流上做的。
+            string authorization = await processor.ProcessAsync(
                 CancellationRequest(cancellationId), state, TestContext.Current.CancellationToken);
+            using (JsonDocument document = JsonDocument.Parse(authorization))
+            {
+                Assert.Equal("AUTHORIZED", document.RootElement.GetProperty("payload")
+                    .GetProperty("decision").GetString());
+            }
             string ack = await processor.ProcessAsync(
                 CancellationResult(cancellationId, resultMessageId, "OCCUPIED"),
                 state,

@@ -23,10 +23,10 @@
 
 ## 结论
 
-| 项 | 结果 |
-| --- | --- |
-| 全量测试（`ControlServer.Tests`） | `587 passed / 0 failed / 0 skipped`，Debug 与 Release 各一遍 |
-| `FP-IS-02` 的 `CONTROL_SERVER_G2` | `gate-result.json` `PASS`，`testExitCode` 0 |
+| 项 | 结果 | 本目录能否自证 |
+| --- | --- | --- |
+| 全量测试（`ControlServer.Tests`） | `587 passed / 0 failed / 0 skipped`，Debug 与 Release 各一遍 | ❌ **无产物**，是转述；本目录的 `.trx` 只含本片的 18 条 |
+| `FP-IS-02` 的 `CONTROL_SERVER_G2` | `gate-result.json` `PASS`，`testExitCode` 0 | ✅ |
 | `selectedTestCount` | **18**（上一轮 17，新增的正是补上的那一条） |
 | 绑定 | `3f626476ec6cb0eb309719c7edc71a18ff55bd31` ＋ `protocol-v1.0.0@f6ee75defe6e2d18f63f4082bee445dbb678ab1b` |
 

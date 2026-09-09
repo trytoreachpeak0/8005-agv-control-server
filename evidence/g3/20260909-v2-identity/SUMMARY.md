@@ -25,7 +25,8 @@
 | harness／runner | `c6cc965615b4155f8357276dc27a11b4b0bb15a9` | 跑这三次的脚本自身 |
 
 **harness 比被测的 ControlServer 新两个提交**，那两个只动 `scripts/`（`git diff --stat
-e3ea250 1987b73` 两个文件全在 `scripts/` 下），服务端内容逐字节相同。这正是
+e3ea250..c6cc965` 是 `run-staged-g3.ps1` 与 `run-staged-g3-restart.ps1` 两个文件，
+全在 `scripts/` 下），服务端内容逐字节相同。这正是
 `harnessCommit`／`runnerCommit` 与 `controlServer` 分开记的原因。
 
 `runnerWorktreeCleanAtStart` 在后两次是 `false`：第一个 runner 的证据目录此刻还是未跟踪
@@ -49,10 +50,12 @@ tag 若存在却指向别处仍然抛。
 ## `run-demand-bearing-g3-vectors.ps1` 为什么失败
 
 唯一失败的断言是 `protocolAndBuildIdentityBoundToTheSharedBinding`
-（`run-demand-bearing-g3-vectors.ps1:614`）。它是六个合取项，其中五个通过：
+（`run-demand-bearing-g3-vectors.ps1:614-620`）。它是**七个**合取项，其中六个通过——
+三个是 `$null -ne …` 的存在性检查，另四个是实质比较：
 
 | 合取项 | 实际 | 结论 |
 | --- | --- | --- |
+| `$null -ne $version`／`$probeResult`／`$baseline` | 三者都非空 | ✅ ×3 |
 | `$version.protocolCommit -eq $ProtocolCommit` | `f6ee75de…` | ✅ |
 | `$version.protocolTag -eq 'protocol-v1.0.0'` | `protocol-v1.0.0` | ✅ |
 | `$probeResult.serverBuildCommit -eq $ControlServerCommit` | `e3ea250d…` | ✅ |
@@ -98,8 +101,15 @@ staged G3 绑 commit、从 exact clone 重新 publish、不碰任何候选产物
 
 ## 同一轮的其他层
 
-| 层 | 结果 |
-| --- | --- |
-| `ControlServer.Tests` | `587 passed / 0 failed / 0 skipped`，Debug 与 Release 各一遍 |
-| 车载端 `SQCD.Agv.UnitTests` ＋ `SQCD.Agv.WireToGateG2Tests` | `164 + 42 passed / 0 failed / 0 skipped` |
-| 协议 G1 | `PASS`，`failures: []` |
+⚠️ **下面前两行没有本目录里的产物支撑**——那两次全量运行是在本机跑的，`.trx` 与控制台输出
+都没有落进这个证据目录。**它们是转述，不是本目录能自证的事实**；要核就得重跑。
+第三行不同：`logs/protocol-g1.log` 就在本目录里。
+
+| 层 | 结果 | 本目录能否自证 |
+| --- | --- | --- |
+| `ControlServer.Tests` | `587 passed / 0 failed / 0 skipped`，Debug 与 Release 各一遍 | ❌ 无产物 |
+| 车载端 `SQCD.Agv.UnitTests` ＋ `SQCD.Agv.WireToGateG2Tests` | `164 + 42 passed / 0 failed / 0 skipped` | ❌ 无产物 |
+| 协议 G1 | `PASS`，`failures: []` | ✅ `*/logs/protocol-g1.log` |
+
+（车载端 `evidence/g2/…` 里那些 `dotnet-test-release.log` **不能**用来核这一行：
+它们是按切片过滤的运行，条数是 11/5/5/9/2/5/8/19，不是全量的 164 + 42。）

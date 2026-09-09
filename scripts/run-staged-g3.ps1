@@ -2195,11 +2195,21 @@ try {
     # refuses unless its output carries $manifestSha256. The tag only ever named that commit. What
     # stays enforced is that if the tag DOES exist it must point at the candidate -- a tag pointing
     # somewhere else means someone cut a release from other content, and that must not run silently.
-    $tagCommit = (& git -C $protocolSource rev-list -n 1 "$protocolTag^{commit}" 2>$null)
-    $tagCommit = if ($null -eq $tagCommit) { '' } else { ([string]$tagCommit).Trim() }
-    $protocolTagExists = -not [string]::IsNullOrWhiteSpace($tagCommit)
-    if ($protocolTagExists -and $tagCommit -ne $ProtocolCommit) {
-        throw "$protocolTag exists but resolves to $tagCommit, not the candidate $ProtocolCommit"
+    # Three states, kept apart on purpose: tag absent, tag verified, git itself failed. A single
+    # `rev-list ... 2>$null` collapses the third into the first and records tagExists=false, which
+    # reads as "checked, none" -- the one shape that must not be silent, because the assertion this
+    # replaces used to throw. And `rev-list "$tag^{commit}"` is not namespaced: measured 2026-09-09,
+    # a *branch* named protocol-v1.0.0 satisfies it while `git tag --list` returns nothing, so that
+    # form would report tagExists=true for a branch. Ask the tag namespace explicitly.
+    $listedTags = @(& git -C $protocolSource tag --list $protocolTag)
+    if ($LASTEXITCODE -ne 0) { throw "Unable to enumerate protocol tags in $protocolSource" }
+    $protocolTagExists = $listedTags.Count -gt 0
+    if ($protocolTagExists) {
+        $tagCommit = (& git -C $protocolSource rev-list -n 1 "refs/tags/$protocolTag^{commit}").Trim()
+        if ($LASTEXITCODE -ne 0) { throw "Unable to resolve refs/tags/$protocolTag in $protocolSource" }
+        if ($tagCommit -ne $ProtocolCommit) {
+            throw "$protocolTag exists but resolves to $tagCommit, not the candidate $ProtocolCommit"
+        }
     }
     # The exact clone carries no node_modules, and G1 validates against ajv, so restore first.
     Invoke-LoggedCommand -Name 'protocol-install' -WorkingDirectory $protocolSource -FilePath $pnpmFilePath `
