@@ -532,6 +532,13 @@ public sealed class JourneyRuntimeEngine(
                 SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now, stop);
                 break;
             case JourneyRuntimeStage.AwaitingSublot:
+                // Refills the station departure deadline after a disconnect voided it
+                // (ADR-cross-0055). SetStage only seeds it on the way into this stage, and a
+                // reconnect does not re-enter the stage -- the journey was already here. Reaching
+                // this line means the session is Ready again, so the handshake and the projection
+                // reconciliation the ADR requires are behind us.
+                bool deadlineRefilled = stop.SublotWaitStartedAt is null;
+                stop.SublotWaitStartedAt ??= now;
                 JourneyDemandRow[] pending = UncommandedAt(demands, stop);
                 // Waiting for an operator is where the holding limit actually bites: the vehicle
                 // stands loaded while nobody scans. Nothing is commanded in this stage, so leaving
@@ -554,7 +561,11 @@ public sealed class JourneyRuntimeEngine(
                     {
                         return;
                     }
-                    if (runtime.BlockReasonCode is not null)
+                    // This is the stage's quiet exit -- nobody scanned yet -- and it is the one
+                    // path that reaches a return without saving. A deadline just refilled above
+                    // would be lost here and refilled again on every later pass, which is the same
+                    // as never expiring.
+                    if (runtime.BlockReasonCode is not null || deadlineRefilled)
                     {
                         runtime.UpdatedAt = now;
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

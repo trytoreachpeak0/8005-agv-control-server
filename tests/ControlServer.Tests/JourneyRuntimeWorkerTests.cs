@@ -1586,6 +1586,61 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    public async Task ADisconnectVoidsTheStationDeadlineAndTheClockRefillsAfterTheHandshake()
+    {
+        // ADR-cross-0055: "倒计时期间断联使本轮截止时间失效，恢复握手和投影对账完成后重新计满."
+        // The counterpart to the timeout test above. Same window, same stop -- the difference is
+        // that the vehicle was gone for longer than the window. A wall clock that kept running
+        // while nobody could scan would cancel the demand on the first pass after the vehicle came
+        // back, and the operator would find it gone without ever having had the chance to load it.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal(Now, runtime.SublotWaitStartedAt);
+
+        // Offline for nine minutes -- comfortably past the five-minute window -- and back with a
+        // new session generation. This is the real reconnect path, not a poke at the session row:
+        // BeginSessionRecoveryAsync is what the peer's SessionHello reaches.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(9));
+        await new WireToGateStore(fixture.Context).BeginSessionRecoveryAsync(
+            new SessionIdentity(
+                fixture.Options.AgvId,
+                2,
+                ProtocolCandidateIdentity.RepositoryCommit,
+                ProtocolCandidateIdentity.ManifestSha256,
+                ProtocolCandidateIdentity.ProfileId,
+                ProtocolCandidateIdentity.ProtocolVersion),
+            TestContext.Current.CancellationToken);
+
+        // The generation change alone voids the round. Nothing has refilled it yet, because the
+        // handshake is not finished -- readiness is back at HANDSHAKE_INCOMPLETE.
+        Assert.Null((await fixture.RuntimeAsync()).SublotWaitStartedAt);
+
+        // Handshake and projection reconciliation complete: capability and safety are back and the
+        // session is Ready again.
+        await fixture.AdvanceSessionAsync(2);
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // Refilled from now, not resumed from nine minutes ago -- so the demand survives and the
+        // operator gets the whole window.
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal(Now.AddMinutes(9), runtime.SublotWaitStartedAt);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+
+        // And the refilled window still expires on its own: this is a reset, not a reprieve.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
     public async Task TheSublotWaitTimeoutStopsApplyingOnceTheLoadIsUnderway()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();

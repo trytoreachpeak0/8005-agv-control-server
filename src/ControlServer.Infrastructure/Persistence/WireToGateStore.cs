@@ -66,6 +66,31 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.Readiness = SessionReadiness.RecoveryRequired;
         row.ReasonCode = "HANDSHAKE_INCOMPLETE";
         row.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // ADR-cross-0055: a disconnect voids this round's station departure deadline, and the
+        // clock is refilled once the recovery handshake and the projection reconciliation are
+        // done. It belongs with the facts above for the same reason they are cleared -- a wall
+        // clock that kept running while the vehicle was gone is not a fact about this session.
+        // Left running, a vehicle offline for longer than the window came back and was timed out
+        // on its first pass, cancelling demands nobody ever had the chance to load.
+        //
+        // Only the deadline is dropped, not the stop: refilling it is the AwaitingSublot branch's
+        // job, and that branch runs behind the readiness gate -- which is exactly "after the
+        // handshake and the reconciliation".
+        JourneyRuntimeRow[] active = await dbContext.JourneyRuntimes
+            .Where(item => item.AgvId == identity.AgvId && item.Stage != JourneyRuntimeStage.Completed)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (JourneyRuntimeRow journey in active)
+        {
+            JourneyStopRow? current = await dbContext.JourneyStops.SingleOrDefaultAsync(
+                item => item.JourneyId == journey.JourneyId && item.Sequence == journey.CurrentStopSequence,
+                cancellationToken).ConfigureAwait(false);
+            if (current is not null)
+            {
+                current.SublotWaitStartedAt = null;
+            }
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
