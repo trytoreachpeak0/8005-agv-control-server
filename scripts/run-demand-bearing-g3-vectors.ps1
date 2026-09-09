@@ -276,12 +276,14 @@ function Read-ControlDatabase {
     # to serve both. Detect it rather than pinning either: pinning JourneyId made every field run
     # taken before 2026-09-08 fail with "no such column: JourneyId", and pinning DemandId would just
     # move the failure to the other end. Whichever name is present, it is reported as journeyId.
-    $leaseKeyColumn = @(
-        Invoke-SqliteRows -DatabasePath $controlDatabasePath `
-            -Sql 'PRAGMA table_info(VehicleDispatchLeases)' `
-            -Columns @('cid', 'name', 'type', 'notnull', 'dflt', 'pk') |
-            ForEach-Object { [string]$_['name'] } |
-            Where-Object { $_ -in @('JourneyId', 'DemandId') })
+    # Bind the result first: Invoke-SqliteRows returns ,$rows so that a single row survives, which
+    # also means piping the call directly hands the pipeline the array itself rather than its rows.
+    $leaseColumns = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+        -Sql 'PRAGMA table_info(VehicleDispatchLeases)' `
+        -Columns @('cid', 'name', 'type', 'notnull', 'dflt', 'pk')
+    $leaseKeyColumn = @($leaseColumns |
+        ForEach-Object { [string]$_['name'] } |
+        Where-Object { $_ -in @('JourneyId', 'DemandId') })
     if ($leaseKeyColumn.Count -ne 1) {
         throw ("VehicleDispatchLeases must carry exactly one of JourneyId/DemandId, found: " +
             ($leaseKeyColumn -join ', '))
