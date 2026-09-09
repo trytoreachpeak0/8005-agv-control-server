@@ -165,8 +165,25 @@ Passed!  - Failed:     0, Passed:   420, Skipped:     0, Total:   420, Duration:
 （「下发→断线→重连→补报」与「车载产快照→服务端消费→看板可见」），两条都要真实的 v2 消息面，
 所以两票都停在业务语义与单元测试，L2 那一条挂着。**这不是漏做，是纪律 6 那条边。**
 
-`real-onboard` 真装置的三连跑归本票排队，尚未开跑——它独占桌面、要弹两个 WPF 窗口、并要求两个 peer
-仓的工作树干净，属于要先与你确认的开销。
+### `real-onboard` 真装置三连跑：三次全 PASS
+
+`real-onboard-normal-load` 连续三次，证据三个独立目录，无覆盖：
+
+| 目录 | 结论 | 判据数 |
+| --- | --- | --- |
+| `evidence/l2/20260909-batch3-exit-real-onboard-normal-load-001` | PASS | 12 |
+| `evidence/l2/20260909-batch3-exit-real-onboard-normal-load-002` | PASS | 12 |
+| `evidence/l2/20260909-batch3-exit-real-onboard-normal-load-003` | PASS | 12 |
+
+三次的 peer 都是 `8005-agv-onboard-hmi` `3d8206f`（`OnboardHmi_MVP`）与 `slots-simulator` `fb5f7c5`
+（`main`），协议 `protocol-v0.3.0`，`batchId` `BATCH-3`。
+
+**这三份证明的是什么：批次 3 的服务端改动在真装置下没有回归。**它们不是 `FP-IS-14`／`FP-IS-15` 的
+门禁证据，也不能替代那四道门禁——真装置跑的车载端是 `OnboardHmi_MVP`，**不含 #27／#28**（那两个分支
+按你的决定暂不合入），协议也还是 v0.3.0。
+
+**这个先后是有意的**：先在 v0.3.0 下拿到一条真装置基线，等协议换代之后再红，就能把「批次 3 的问题」
+与「换代的问题」分开；反过来先换代再跑，红了分不清是谁的。
 
 ## 三、门禁：`FP-IS-14`／`FP-IS-15` 还不存在
 
