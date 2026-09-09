@@ -27,6 +27,7 @@ internal static class GovernanceModule
         services.AddScoped<IGovernanceAuditWriter>(sp => sp.GetRequiredService<GovernanceStore>());
         services.AddScoped<IGovernedConfigurationReader>(sp => sp.GetRequiredService<GovernanceStore>());
         services.AddScoped<GovernedConfigurationPublisher>();
+        services.AddScoped<AgvRestorationStore>();
         return services;
     }
 
