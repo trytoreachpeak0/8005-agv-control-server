@@ -141,6 +141,37 @@ public static class SlotConfigurationActivationEndpoints
                     activation.CommandMessageId,
                     session.SessionGeneration));
         }
+        catch (IOException error)
+        {
+            // 车此刻不在线。命令已经落库并进了发件箱，车回来时按 SLOT_CONFIGURATION 补发——那正是
+            // PENDING_RESULT_REPLAY 准备好要处理的情况，所以这是一次被受理的下发，不是一次失败。
+            //
+            // 这里原来让异常冒泡成 500，并且留下一行看起来没人管的 PENDING_RESULT。2026-09-10 的 G3
+            // 撞上过：evidence/g3/20260910-fp-is-14-fingerprint-mismatch-corrected。落库那一半从来
+            // 就是对的，错的只是把它报成服务器错误。
+            // Ordered in memory, not in SQL: the SQLite provider refuses DateTimeOffset in ORDER BY,
+            // and this is the one path that only ever runs against a real vehicle being offline.
+            List<SlotConfigurationActivationRow> pending = await dbContext
+                .Set<SlotConfigurationActivationRow>().AsNoTracking()
+                .Where(row => row.AgvId == request.AgvId &&
+                              row.State == SlotConfigurationActivationState.PendingResult)
+                .ToListAsync(cancellationToken).ConfigureAwait(false);
+            SlotConfigurationActivationRow queued = pending.MaxBy(row => row.IssuedAt)
+                ?? throw new InvalidOperationException(
+                    "The activation was not persisted before the send failed.", error);
+            return TypedResults.Accepted(
+                $"/api/governance/v1/slot-configuration-activations/{queued.ActivationId}",
+                new SlotConfigurationActivationAcceptedResponse(
+                    queued.ActivationId,
+                    queued.AgvId,
+                    queued.SlotModelVersionId,
+                    queued.ConfigurationVersion,
+                    queued.Fingerprint,
+                    queued.State.ToString(),
+                    queued.RecoveryRole,
+                    queued.CommandMessageId,
+                    session.SessionGeneration));
+        }
         catch (ActivationTargetIncompleteException error)
         {
             // 目标那一版没发布，或者它的 IO 绑定不齐。这是治理状态的问题，不是请求写错了。

@@ -150,6 +150,39 @@ public sealed class SlotConfigurationActivationEndpointsTests
             body.Fingerprint);
     }
 
+    /// <summary>
+    /// 车此刻不在线：命令已经落库进发件箱，回 202 而不是 500。
+    /// </summary>
+    /// <remarks>
+    /// 车回来时按 <c>SLOT_CONFIGURATION</c> 补发，那正是 <c>PENDING_RESULT_REPLAY</c> 要处理的情况，
+    /// 所以这是一次被受理的下发。2026-09-10 的 G3 撞上过它被报成 500：
+    /// <c>evidence/g3/20260910-fp-is-14-fingerprint-mismatch-corrected</c>。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
+    [Trait("ProtocolVector", "CV-SLOT-CONFIGURATION-ACTIVATION")]
+    public async Task AnActivationForAnOfflineVehicleIsAcceptedAndLeftForReplayNotReportedAsAServerError()
+    {
+        await using EndpointFixture fixture = await EndpointFixture.CreateAsync(peer: new OfflinePeer());
+        string variable = "CONTROL_SERVER_TEST_" + Guid.NewGuid().ToString("N");
+        using EnvironmentVariableScope credential = new(variable, "governance-credential");
+
+        var result = await fixture.PostAsync(
+            variable, "Bearer governance-credential", fixture.ValidRequest());
+
+        Accepted<SlotConfigurationActivationAcceptedResponse> accepted =
+            Assert.IsType<Accepted<SlotConfigurationActivationAcceptedResponse>>(result.Result);
+        SlotConfigurationActivationAcceptedResponse body =
+            Assert.IsType<SlotConfigurationActivationAcceptedResponse>(accepted.Value);
+        SlotConfigurationActivationRow stored = Assert.Single(await fixture.ActivationsAsync());
+        Assert.Equal(stored.ActivationId, body.ActivationId);
+        Assert.Equal(SlotConfigurationActivationState.PendingResult, stored.State);
+        // The command is in the outbox under the id the replay will reuse -- that is what makes 202
+        // honest rather than a way of hiding the failed send.
+        Assert.False(string.IsNullOrWhiteSpace(stored.CommandMessageId));
+        Assert.Equal(stored.CommandMessageId, body.CommandMessageId);
+    }
+
     private sealed class EndpointFixture : IAsyncDisposable
     {
         public const long SessionGeneration = 4;
@@ -174,7 +207,7 @@ public sealed class SlotConfigurationActivationEndpointsTests
 
         public string SlotModelVersionId { get; }
 
-        public static async Task<EndpointFixture> CreateAsync(bool withSession = true)
+        public static async Task<EndpointFixture> CreateAsync(bool withSession = true, IOnboardPeer? peer = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -189,7 +222,7 @@ public sealed class SlotConfigurationActivationEndpointsTests
             GovernedConfigurationPublisher governedPublisher = new(governance, governance);
             WireToGateStore store = new(context);
             TimeProvider time = new FixedTimeProvider();
-            OnboardJourneyPublisher publisher = new(store, new SilentPeer(), time);
+            OnboardJourneyPublisher publisher = new(store, peer ?? new SilentPeer(), time);
             SlotConfigurationAuthorityStore authority = new(context, governedPublisher);
 
             string model = (await authority.EnsureApprovedHardwareFactsAsync(
@@ -277,6 +310,17 @@ public sealed class SlotConfigurationActivationEndpointsTests
             _ = ndjsonLine;
             _ = cancellationToken;
             return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>What OnboardPeer does when no recovered session exists for the vehicle.</summary>
+    private sealed class OfflinePeer : IOnboardPeer
+    {
+        public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
+        {
+            _ = ndjsonLine;
+            _ = cancellationToken;
+            throw new IOException("No recovered Onboard peer is connected for 'AGV-001'.");
         }
     }
 

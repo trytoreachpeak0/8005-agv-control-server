@@ -186,44 +186,27 @@ public sealed partial class OnboardMessageProcessor(
             case "CapabilitySnapshot":
                 {
                     long revision = payload.GetProperty("capabilityVersion").GetInt64();
+                    string reportedFingerprint = RequiredString(
+                        payload, SlotConfigurationActivationDelivery.CapabilityFingerprintField);
                     // 协议 v2 在 CapabilitySnapshot 上加了 activeSlotConfigurationFingerprint：车报的
-                    // 是它此刻装着哪一版仓位配置。对不上就**不采纳这份快照**——采纳车报的等于服务端
-                    // 放弃自己的权威，照旧采纳服务端的等于假装没看见；两条都不做，拒收并回一条稳定
-                    // 错误码。能力修订号因此没被采纳，DecideReadinessAsync 那句
-                    // `row.CapabilityRevision is not null` 就不成立，这台车取不到业务就绪。
-                    SlotConfigurationFingerprintVerdict verdict =
-                        await activationDispatcher.ReconcileReportedFingerprintAsync(
-                            agvId,
-                            RequiredString(payload, SlotConfigurationActivationDelivery.CapabilityFingerprintField),
-                            timeProvider.GetUtcNow(),
-                            cancellationToken).ConfigureAwait(false);
-                    if (!verdict.Agrees)
-                    {
-                        return SerializeEnvelope(
-                            "ProtocolProblem",
-                            messageId,
-                            agvId,
-                            generation,
-                            new
-                            {
-                                rejectedMessageId = messageId,
-                                rejectedMessageType = messageType,
-                                problem = new
-                                {
-                                    reasonCode = SlotConfigurationFingerprintVerdict.MismatchCode,
-                                    fieldPath = SlotConfigurationFingerprintVerdict.MismatchFieldPath,
-                                    displayMessage =
-                                        "The vehicle reports an active slot configuration this server did not "
-                                        + "activate. Re-run an activation rather than reconciling either side "
-                                        + "to the other."
-                                },
-                                expectedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-                                expectedProfileId = ProtocolCandidateIdentity.ProfileId,
-                                expectedProtocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256
-                            });
-                    }
+                    // 是它此刻装着哪一版仓位配置。核验照做、不一致照样写治理审计，**但结论不再是拒收**。
+                    //
+                    // 2026-09-10 改的。原来不一致就回 ProtocolProblem、会话不建立，理由是 fail-closed；
+                    // G3 跑出来的后果是一台被动过配置的车永远上不了线——而唯一能把它改回来的手段，
+                    // 下发一次激活，要走会话。不一致本身堵死了修复不一致的那条路，人必须到车前。
+                    // 证据在 evidence/g3/20260910-fp-is-14-fingerprint-mismatch。
+                    //
+                    // 现在会话照建，车报的那份指纹存进会话行，由 DecideReadinessAsync 与服务端认定的
+                    // 那一版比对：不一致的车拿不到业务就绪、不会被派活，但连接在，激活下得去。
+                    // fail-closed 的实质保住了，关掉的只是「连都不让连」那一层。
+                    await activationDispatcher.ReconcileReportedFingerprintAsync(
+                        agvId,
+                        reportedFingerprint,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
                     await store.ApplyCapabilitySnapshotAsync(
-                        agvId, generation, revision, contentHash, cancellationToken).ConfigureAwait(false);
+                        agvId, generation, revision, contentHash, reportedFingerprint,
+                        cancellationToken).ConfigureAwait(false);
                     state.CapabilityRevision = revision;
                     return SnapshotAck(messageId, agvId, generation, "CAPABILITY", revision, contentHash);
                 }

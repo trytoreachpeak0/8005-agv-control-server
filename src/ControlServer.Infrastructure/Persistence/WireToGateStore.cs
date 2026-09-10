@@ -78,6 +78,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
 
     public async Task ApplyCapabilitySnapshotAsync(
         string agvId, long sessionGeneration, long revision, string contentHash,
+        string? reportedSlotConfigurationFingerprint,
         CancellationToken cancellationToken)
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
@@ -85,6 +86,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         ApplyRevision(row.CapabilityRevision, row.CapabilityHash, revision, contentHash, "capability");
         row.CapabilityRevision = revision;
         row.CapabilityHash = contentHash;
+        row.ReportedSlotConfigurationFingerprint = reportedSlotConfigurationFingerprint;
         row.Readiness = SessionReadiness.RecoveryRequired;
         row.ReasonCode = "HANDSHAKE_INCOMPLETE";
         row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -167,14 +169,39 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 pair => pair.runtime.AgvId == agvId &&
                         pair.operation.Status == StationOperationStatus.RecoveryRequired,
                 cancellationToken).ConfigureAwait(false);
-        bool ready = row.CapabilityRevision is not null && row.SafetyRevision is not null &&
+        // REQ-0316. The vehicle reported which slot configuration it is carrying; this server knows
+        // which one it activated. Disagreement means nobody can say what the eight slots on that
+        // vehicle will actually do, so it must not be given work -- but it stays connected, because
+        // the only way to correct the disagreement is to send it an activation, and that needs the
+        // session. Refusing the session instead (which this server did until 2026-09-10) left such a
+        // vehicle permanently unreachable; see evidence/g3/20260910-fp-is-14-fingerprint-mismatch.
+        //
+        // A vehicle this server has never activated reports a fingerprint with nothing to compare
+        // against, and that is not a disagreement: ReconcileReportedFingerprintAsync treats it as the
+        // restoration-candidate question instead.
+        ActiveSlotConfigurationRow? activeSlotConfiguration = await dbContext
+            .Set<ActiveSlotConfigurationRow>().AsNoTracking()
+            .FirstOrDefaultAsync(active => active.AgvId == agvId, cancellationToken)
+            .ConfigureAwait(false);
+        bool slotConfigurationAgrees = activeSlotConfiguration is null ||
+            string.Equals(
+                activeSlotConfiguration.Fingerprint,
+                row.ReportedSlotConfigurationFingerprint,
+                StringComparison.Ordinal);
+        bool ready = slotConfigurationAgrees &&
+                     row.CapabilityRevision is not null && row.SafetyRevision is not null &&
                      row.RecoveryReportId is not null && departureUsable && noPendingFacts &&
                      !operationNeedsRecovery &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
         row.ReasonCode = ready
             ? "READY"
-            : GetRecoveryReason(row, noPendingFacts, departureUsable, operationNeedsRecovery);
+            : slotConfigurationAgrees
+                ? GetRecoveryReason(row, noPendingFacts, departureUsable, operationNeedsRecovery)
+                // Named first when it applies: every other reason here is about this session's own
+                // progress, and an operator who reads one of those would go looking in the wrong
+                // place for a vehicle whose configuration is simply not the approved one.
+                : SlotConfigurationFingerprintVerdict.MismatchCode;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new SessionReadinessDecision(row.Readiness, row.ReasonCode);

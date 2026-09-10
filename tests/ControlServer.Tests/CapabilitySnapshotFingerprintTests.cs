@@ -71,34 +71,52 @@ public sealed class CapabilitySnapshotFingerprintTests
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-14")]
     [Trait("ProtocolVector", "CV-SLOT-CONFIGURATION-ACTIVATION")]
-    public async Task AReportedFingerprintThatDisagreesIsRefusedWithTheStableCodeAndLeavesTheVehicleUnready()
+    public async Task AReportedFingerprintThatDisagreesLeavesTheVehicleUnreadyButStillReachable()
     {
         await using WireFixture fixture = await WireFixture.CreateAsync();
         await fixture.HandshakeAsync();
         ActiveSlotConfigurationRow active = await fixture.ActivateAsync();
+        string disagreeing = new('b', 64);
 
         string response = await fixture.SendCapabilityAsync(
-            "00000000-0000-4000-8000-000000000211", 3, new string('b', 64));
+            "00000000-0000-4000-8000-000000000211", 3, disagreeing);
 
+        // **会话继续。**2026-09-10 之前这里回的是 ProtocolProblem、会话不建立；G3 跑出来的后果是一台
+        // 被动过配置的车永远上不了线，而唯一能把它改回来的手段要走会话。
         using JsonDocument document = JsonDocument.Parse(response);
-        Assert.Equal("ProtocolProblem", document.RootElement.GetProperty("messageType").GetString());
-        JsonElement problem = document.RootElement.GetProperty("payload").GetProperty("problem");
-        Assert.Equal("SLOT_CONFIGURATION_FINGERPRINT_MISMATCH", problem.GetProperty("reasonCode").GetString());
-        Assert.Equal(
-            "payload.activeSlotConfigurationFingerprint",
-            problem.GetProperty("fieldPath").GetString());
-        // 稳定错误码来自协议那本封闭注册表，不是这里编的一个字符串。
-        Assert.True(ProtocolErrorCodes.Contains(problem.GetProperty("reasonCode").GetString()!));
+        Assert.Equal("SnapshotAppliedAck", document.RootElement.GetProperty("messageType").GetString());
 
+        // 车报的那一份如实记下来，不是丢掉也不是当成服务端自己的判断。
         SessionRecoveryRow session = await fixture.Context.SessionRecoveries.AsNoTracking()
             .SingleAsync(row => row.AgvId == AgvId, TestContext.Current.CancellationToken);
-        Assert.Null(session.CapabilityRevision);
-        Assert.NotEqual(SessionReadiness.Ready, session.Readiness);
+        Assert.Equal(disagreeing, session.ReportedSlotConfigurationFingerprint);
 
-        // 服务端认定的那一版一个字段都没动：拒收不是「以车上的为准」。
+        // 就绪判定是拒绝发生的地方，而且这个原因排在其它原因之前——其它每一条都是关于这次会话自身
+        // 的进展，运维读到那些会去错的地方找。
+        WireToGateStore store = new(fixture.Context);
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(
+            AgvId, session.SessionGeneration, TestContext.Current.CancellationToken);
+        Assert.NotEqual(SessionReadiness.Ready, decision.Readiness);
+        Assert.Equal(SlotConfigurationFingerprintVerdict.MismatchCode, decision.ReasonCode);
+        // 稳定错误码来自协议那本封闭注册表，不是这里编的一个字符串。
+        Assert.True(ProtocolErrorCodes.Contains(decision.ReasonCode));
+
+        // 服务端认定的那一版一个字段都没动：不就绪不是「以车上的为准」。
         ActiveSlotConfigurationRow unchanged = await fixture.Context.Set<ActiveSlotConfigurationRow>()
             .AsNoTracking().SingleAsync(TestContext.Current.CancellationToken);
         Assert.Equal(active.Fingerprint, unchanged.Fingerprint);
+
+        // **而这才是这次改动的理由**：不一致的车仍然收得到激活命令，也就是仍然有救。
+        fixture.Context.ChangeTracker.Clear();
+        SlotConfigurationActivationRow reissued = await fixture.Dispatcher.IssueAsync(
+            AgvId,
+            active.SlotModelVersionId,
+            session.SessionGeneration,
+            new ProtocolOperatorContext("op-7788", ProtocolOperatorContext.Badge, Now),
+            Now.AddMinutes(2),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(SlotConfigurationActivationState.PendingResult, reissued.State);
+        Assert.False(string.IsNullOrWhiteSpace(reissued.CommandMessageId));
     }
 
     /// <summary>

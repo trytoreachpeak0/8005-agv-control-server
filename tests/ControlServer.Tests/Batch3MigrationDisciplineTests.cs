@@ -35,7 +35,8 @@ public sealed class Batch3MigrationDisciplineTests
     /// </remarks>
     private static readonly string[] MigrationsAfterBatch3 =
     [
-        "20260910031132_AlarmSnapshotSessionGeneration"
+        "20260910031132_AlarmSnapshotSessionGeneration",
+        "20260910063725_ReportedSlotConfigurationFingerprint"
     ];
 
     private static readonly string[] Batch3Tables =
