@@ -97,11 +97,28 @@ $dotnet = if ($env:WIRE_TO_GATE_DOTNET_EXE) { $env:WIRE_TO_GATE_DOTNET_EXE } els
 if ($env:WIRE_TO_GATE_DOTNET_EXE -and -not (Test-Path -LiteralPath $dotnet -PathType Leaf)) {
     throw "WIRE_TO_GATE_DOTNET_EXE not found: $dotnet"
 }
+# Anchored to the caller's location now, because the test run below changes directory and a relative
+# --results-directory would follow it into the repository.
+$Output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 if (Test-Path -LiteralPath $Output) { throw "Output directory already exists: $Output" }
-New-Item -ItemType Directory -Path $Output | Out-Null
-$startedAt = [DateTimeOffset]::UtcNow
-& $dotnet test (Join-Path $root 'tests\ControlServer.Tests\ControlServer.Tests.csproj') -c Release --filter "IntegrationSlice=$Slice" --logger "trx;LogFileName=control-$Slice.trx" --results-directory $Output
-$testExitCode = $LASTEXITCODE
+# Run from inside the repository. `dotnet` looks for global.json from the current directory, not from
+# the project path it is handed -- an explicit dotnet.exe included -- so a gate started from outside
+# the clone would test with the newest installed SDK and still write a PASS. The SDK is resolved
+# before the output directory exists, so a missing pinned SDK leaves no half-made evidence behind,
+# and it goes into gate-result.json so the evidence says which toolchain it measured.
+Push-Location -LiteralPath $root
+try {
+    $dotnetSdkVersion = & $dotnet --version 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "dotnet could not resolve the SDK pinned by $(Join-Path $root 'global.json'): $dotnetSdkVersion" }
+    $dotnetSdkVersion = "$dotnetSdkVersion".Trim()
+    New-Item -ItemType Directory -Path $Output | Out-Null
+    $startedAt = [DateTimeOffset]::UtcNow
+    & $dotnet test (Join-Path $root 'tests\ControlServer.Tests\ControlServer.Tests.csproj') -c Release --filter "IntegrationSlice=$Slice" --logger "trx;LogFileName=control-$Slice.trx" --results-directory $Output
+    $testExitCode = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+}
 $result = [ordered]@{
     schemaVersion = '1.0.0'
     gate = $Gate
@@ -111,6 +128,7 @@ $result = [ordered]@{
     finishedAt = ([DateTimeOffset]::UtcNow).ToString('O')
     implementationRepository = '8005-agv-control-server'
     implementationCommit = (git -c safe.directory=$root -C $root rev-parse HEAD).Trim()
+    dotnetSdkVersion = $dotnetSdkVersion
     protocolReleaseStatus = $protocolReleaseStatus
     protocolReleaseVersion = $protocolReleaseVersion
     protocolTag = $protocolTag
