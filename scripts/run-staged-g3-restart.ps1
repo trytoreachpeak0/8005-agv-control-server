@@ -676,22 +676,41 @@ try {
     Start-Sleep -Seconds 2
     $journalBeforeOnboardRestart = Read-OnboardJournal
 
-    # FP-IS-14's refusal path, and the restart is what makes it reachable: the vehicle reads its slot
-    # IO configuration at startup, so this is the only moment in any runner where what the vehicle
-    # holds can change while the server's approved version stays put. 500 -> 600 ms on the pulse
-    # reset is a single field, which is the point: the fingerprint covers all six, and one differing
-    # field must be enough. This is the real scenario -- somebody adjusted a parameter on the vehicle.
-    $tamperedSettings = Get-Content -LiteralPath $onboardConfig -Raw | ConvertFrom-Json
-    foreach ($slot in $tamperedSettings.ioModule.slots) {
-        if ($slot.PSObject.Properties.Name -contains 'pulseResetMilliseconds') {
-            $slot.pulseResetMilliseconds = 600
-        }
-        else {
-            $slot | Add-Member -NotePropertyName 'pulseResetMilliseconds' -NotePropertyValue 600
-        }
+    # FP-IS-14's refusal path, and the restart is what makes it reachable: the vehicle reads its
+    # active slot configuration at startup, so this is the only moment in any runner where what the
+    # vehicle holds can change while the server's approved version stays put.
+    #
+    # The file to touch is the ACTIVE CONFIGURATION DOCUMENT, not appsettings.json. A run on
+    # 2026-09-10 tampered with appsettings and both activations were accepted -- evidence kept at
+    # evidence/g3/20260910-fp-is-14-fingerprint-mismatch. appsettings' ioModule.slots only seeds this
+    # document the first time it does not exist; once an activation has written it, a restarted
+    # vehicle reads the document and never looks at appsettings again. That is correct behaviour --
+    # which version a vehicle carries is the active configuration store's to say, not a config file
+    # edit's -- and it is exactly why the document is the honest place to simulate a tampered vehicle.
+    #
+    # Only Slots is changed, never the Fingerprint the document also carries: ActiveSlotConfiguration
+    # computes that property from Slots on read, so leaving a now-wrong digest in the file is both
+    # what real tampering looks like and a check that the vehicle does not trust it.
+    #
+    # 500 -> 600 ms on the pulse reset is a single field, which is the point: the fingerprint covers
+    # all six, and one differing field has to be enough.
+    $activeConfigurationDocument = Join-Path $onboardPublish 'active-slot-configuration.json'
+    if (-not (Test-Path -LiteralPath $activeConfigurationDocument -PathType Leaf)) {
+        throw "The onboard active slot configuration document is missing: $activeConfigurationDocument"
     }
-    $tamperedSettings | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $onboardConfig -Encoding utf8NoBOM
-    $onboardConfigSha256AfterTamper = (Get-FileHash -LiteralPath $onboardConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+    $onboardDocumentSha256BeforeTamper =
+        (Get-FileHash -LiteralPath $activeConfigurationDocument -Algorithm SHA256).Hash.ToLowerInvariant()
+    $tamperedDocument = Get-Content -LiteralPath $activeConfigurationDocument -Raw | ConvertFrom-Json
+    foreach ($slot in $tamperedDocument.Configuration.Slots) {
+        $slot.PulseResetMilliseconds = 600
+    }
+    $tamperedDocument | ConvertTo-Json -Depth 30 |
+        Set-Content -LiteralPath $activeConfigurationDocument -Encoding utf8NoBOM
+    $onboardDocumentSha256AfterTamper =
+        (Get-FileHash -LiteralPath $activeConfigurationDocument -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($onboardDocumentSha256AfterTamper -eq $onboardDocumentSha256BeforeTamper) {
+        throw 'The active slot configuration document is unchanged after the tamper step.'
+    }
 
     $onboard = Start-OnboardHmi -Ordinal 2
     $phase2Session = Wait-SessionGeneration -GreaterThan $phase1.sessionGeneration
@@ -980,7 +999,8 @@ $configuration = [ordered]@{
     }
     agvId = $agvId
     onboardConfigSha256 = if ($null -ne $onboardConfigSha256) { $onboardConfigSha256 } else { $null }
-    onboardConfigSha256AfterTamper = if ($null -ne $onboardConfigSha256AfterTamper) { $onboardConfigSha256AfterTamper } else { $null }
+    onboardActiveConfigurationSha256BeforeTamper = if ($null -ne $onboardDocumentSha256BeforeTamper) { $onboardDocumentSha256BeforeTamper } else { $null }
+    onboardActiveConfigurationSha256AfterTamper = if ($null -ne $onboardDocumentSha256AfterTamper) { $onboardDocumentSha256AfterTamper } else { $null }
     slotConfigurationActivations = [ordered]@{
         whileMatching = $activationWhileMatching
         afterTamper = $activationAfterTamper
