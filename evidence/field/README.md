@@ -1,6 +1,16 @@
 # 现场窗口证据
 
-现场窗口（`W1` 车辆资格、`W2` 多车与等待点、`W3` 自动充电）的证据放这里，一次窗口一个目录：
+现场窗口的证据放这里，一次窗口一个目录。**窗口号分属两条互不相干的线，别混**：
+
+| 线 | 窗口号 | 内容 | 采集脚本 |
+| --- | --- | --- | --- |
+| 仓位配置就绪 | `W1` 车辆资格、`W2` 多车与等待点、`W3` 自动充电 | 三台车逐仓 IO 核对、门禁逐台启用 | `scripts/field/Invoke-W1FieldWindow.ps1` |
+| 装卸站收敛语义（ADR-cross-0058） | `FW-SC1` 三个操作员不作为场景、`FW-SC2` 完整闭环一趟 | 开门不放料 / 仓门已闭超时 / 仓门未闭超时 | `scripts/field/Invoke-SlotConvergenceFieldWindow.ps1` |
+
+**`W1` 与 `FW-SC1` 都读作「窗口一」，但不是一回事**——前者是车辆资格，后者是装卸站语义。目录描述里写清
+楚是哪一条线。
+
+目录形状两条线一致：
 
 ```
 evidence/field/<日期>-<窗口号>-<描述>/
@@ -25,6 +35,21 @@ evidence/field/<日期>-<窗口号>-<描述>/
 2. **红的证据不允许被绿的重跑覆盖。**
 3. 跑失败时 stage root 不删。
 4. **证据目录只增不改。**要纠正就写一个新目录，并在新的 `SUMMARY.md` 里指向被纠正的那一份。
+
+## checkpoint：装卸站收敛那条线多一层
+
+`FW-SC*` 的证据目录**在窗口进行中就开始写**，一次 `-Checkpoint` 一个 `snapshots/<序号>-<label>/`，
+最后一次 `-Finalize` 才算判据、写 `SUMMARY.md`。这不是为了方便，是因为有些判据事后读不出来：
+「站点期限到期后再等 20 分钟依然不结束」说的是一个会被结算本身覆盖掉的时刻，关门那一下就没了。
+
+于是纪律第 1 条在这条线上的说法是：**第一次 `-Checkpoint` 时 `-EvidenceRoot` 必须不存在，之后必须存在**。
+只增不改照旧——checkpoint 不改写更早的 checkpoint，`-Finalize` 拒绝覆盖已有的 `assertions.json`。
+
+## 完整数据库不进这里
+
+`FW-SC*` 读的是 factory01 上的**生产库**，里面装着与本窗口无关的旅程，而 `evidence/` 进 git。
+所以证据目录里只有本窗口那几个 demand 的行；完整库落在仓库之外的 `~\w2g-stage\field\<窗口>-<runId>\`，
+`SUMMARY.md` 里留 runId 作指针。`run-demand-bearing-g3-vectors.ps1` 的 `-FieldRunRoot` 要的就是那个形状。
 
 ## 照片
 

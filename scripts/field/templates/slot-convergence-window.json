@@ -1,0 +1,56 @@
+{
+  "windowId": "FW-SC1",
+  "date": "2026-09-10",
+  "site": "老厂",
+  "observers": ["张三"],
+  "agvId": "老厂前线新多仓位1",
+  "ioModule": "192.168.71.150:502",
+  "recoveryWindowOpen": true,
+  "photoPointers": [
+    "field-photos/20260910-FW-SC1/00-window-board.jpg"
+  ],
+  "scenarios": [
+    {
+      "id": "A",
+      "name": "开门不放料：自动重发开锁脉冲，不判失败、不进恢复、不设次数上限",
+      "demandId": "填这一趟的 demandId，从服务端 AcceptedDemands 或 HMI 上抄",
+      "slotNo": 1,
+      "observedRounds": "现场数到的 UNLOCKING 轮次，例如 1→2→3→4",
+      "observedRecoveryEntryVisible": false,
+      "note": "晾满一个 OperationTimeout（现场配置 120 s）之后 WAITING_OPERATOR 继续加而 UNLOCKING 停住",
+      "photoPointers": [
+        "field-photos/20260910-FW-SC1/A-01-door-open-empty.jpg",
+        "field-photos/20260910-FW-SC1/A-02-hmi-waiting-operator.jpg"
+      ]
+    },
+    {
+      "id": "B",
+      "name": "仓门已闭超时：确定失败结算，不进恢复，需求保持 Accepted",
+      "demandId": "填这一趟的 demandId",
+      "slotNo": 1,
+      "observedSlotReading": "现场 IO 实物读数，例如 CLOSED/EMPTY/锁反馈=1/开锁输出=0",
+      "note": "期限过了不等于判死——决策 1 会先赢一轮，门关到位约 370 ms 后车载端会重新开锁，要再读到一次相反态才结算。别在第一次期限到点时就下结论。",
+      "photoPointers": [
+        "field-photos/20260910-FW-SC1/B-01-door-closed-empty.jpg",
+        "field-photos/20260910-FW-SC1/B-02-hmi-failed.jpg"
+      ]
+    },
+    {
+      "id": "C",
+      "name": "仓门未闭超时：告警 STATION_TIMEOUT_DOOR_NOT_CLOSED，不结束本站",
+      "demandId": "填这一趟的 demandId",
+      "slotNo": 1,
+      "deadlineAt": "2026-09-10T14:00:00+08:00",
+      "stillWaitingObservedAt": "2026-09-10T14:22:00+08:00",
+      "deadlineCheckpoint": "c-deadline-reached",
+      "stillWaitingCheckpoint": "c-plus-20min",
+      "observedSlotReading": "现场 IO 实物读数，例如 OPEN/EMPTY/锁反馈=0/开锁输出=0",
+      "note": "stage 停在 AwaitingLoadResult 不是 Blocked；关门后的下一轮立即按当时的真实 IO 读数结算。deadlineAt 与 stillWaitingObservedAt 之间必须 >= 20 分钟，两个 checkpoint 的名字要与实际敲的 -Checkpoint 一致。",
+      "photoPointers": [
+        "field-photos/20260910-FW-SC1/C-01-door-open-at-deadline.jpg",
+        "field-photos/20260910-FW-SC1/C-02-hmi-alarm.jpg",
+        "field-photos/20260910-FW-SC1/C-03-after-close.jpg"
+      ]
+    }
+  ]
+}
