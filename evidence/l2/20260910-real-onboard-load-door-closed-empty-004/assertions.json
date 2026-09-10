@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-load-door-closed-empty",
+  "runId": "20260910T121128203Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "56a06efae1622c0ba1b7ee491aca64b0d4e193ad",
+    "vehicleKey": "BROKERX-L2-0001",
+    "onboardHmiCommit": "3cf26651111220cec67a370ac5b9f81bc21bd697",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T121128203Z",
+    "agvId": "AGV-L2-001",
+    "rig": "RealOnboard",
+    "batchId": "BATCH-3",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-DC-01",
+      "description": "车载端说在等操作员时，它要开的那个仓门确实开着、货位是空的",
+      "outcome": "PASS",
+      "expected": "OPEN/EMPTY/0/0",
+      "actual": "OPEN/EMPTY/0/0"
+    },
+    {
+      "id": "L2-DC-02",
+      "description": "第 1 轮：操作员关门但没放料，仓位读数是明确的相反态而不是 UNKNOWN",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-DC-03",
+      "description": "第 1 轮：车载端自动重新开锁并再次提示，没有把「人没放料」判成失败",
+      "outcome": "PASS",
+      "expected": "UNLOCKING > 1",
+      "actual": 2
+    },
+    {
+      "id": "L2-DC-04",
+      "description": "第 1 轮：重开脉冲真的走到了 IO——门又弹开、开锁输出复位、车载端重新等操作员",
+      "outcome": "PASS",
+      "expected": "OPEN / WAITING_OPERATOR > 1",
+      "actual": "OPEN / 2"
+    },
+    {
+      "id": "L2-DC-05",
+      "description": "第 2 轮：操作员关门但没放料，仓位读数是明确的相反态而不是 UNKNOWN",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-DC-06",
+      "description": "第 2 轮：车载端自动重新开锁并再次提示，没有把「人没放料」判成失败",
+      "outcome": "PASS",
+      "expected": "UNLOCKING > 2",
+      "actual": 3
+    },
+    {
+      "id": "L2-DC-07",
+      "description": "第 2 轮：重开脉冲真的走到了 IO——门又弹开、开锁输出复位、车载端重新等操作员",
+      "outcome": "PASS",
+      "expected": "OPEN / WAITING_OPERATOR > 2",
+      "actual": "OPEN / 3"
+    },
+    {
+      "id": "L2-DC-08",
+      "description": "重开 2 轮之后装载操作仍在进行，没有进人工恢复",
+      "outcome": "PASS",
+      "expected": "Prepared",
+      "actual": "Prepared"
+    },
+    {
+      "id": "L2-DC-09",
+      "description": "一份 OperationResult 都没发过——操作还没结束，无所谓成败",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-DC-10",
+      "description": "会话全程停在 Ready：开着的仓门由本服务端自己下的命令解释，不是会话故障",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready / READY"
+    },
+    {
+      "id": "L2-DC-11",
+      "description": "HMI 上没有出现恢复入口——操作员迟疑不需要管理员凭据",
+      "outcome": "PASS",
+      "expected": false,
+      "actual": false
+    },
+    {
+      "id": "L2-DC-12",
+      "description": "门一直开着时提示节拍到期又提示了一次，操作没有因此结束",
+      "outcome": "PASS",
+      "expected": "WAITING_OPERATOR > 3",
+      "actual": 4
+    },
+    {
+      "id": "L2-DC-13",
+      "description": "那一次提示没有跟着一次重复脉冲：门本来就开着，再开一次没有意义",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-DC-14",
+      "description": "等满一个 OperationTimeout 之后仍然没有结果、没有恢复——它不再是判死依据",
+      "outcome": "PASS",
+      "expected": "Prepared / 0 result",
+      "actual": "Prepared / 0 result"
+    },
+    {
+      "id": "L2-DC-15",
+      "description": "最后一轮走通真 Modbus 闭环：放料、关门、锁反馈回到 1、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-DC-16",
+      "description": "前两幕没有把这次装载弄坏，它照常提交并进入去关卡那一段",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-DC-17",
+      "description": "全程只有一个 attempt，最终 Committed——重开不新建操作",
+      "outcome": "PASS",
+      "expected": "Committed / 37d78b0f-9de1-b75d-be50-ab884c3ea010",
+      "actual": "Committed / 37d78b0f-9de1-b75d-be50-ab884c3ea010"
+    },
+    {
+      "id": "L2-DC-18",
+      "description": "整趟只发了一份 OperationResult，就是最后成功的那一份",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-DC-19",
+      "description": "需求从头到尾没有被判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "Accepted",
+      "actual": "Accepted"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 61 lines, 61 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 16350 ms."
+    }
+  ]
+}
