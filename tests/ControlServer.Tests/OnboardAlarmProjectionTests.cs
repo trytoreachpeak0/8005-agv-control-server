@@ -35,12 +35,14 @@ public sealed class OnboardAlarmProjectionTests
 
         await fixture.Store.RecordSnapshotAsync(
             Snapshot("AGV-01", 1, Alarm("ONBOARD_RULE_GATEWAY_DISCONNECTED"), Alarm("ONBOARD_FLEET_CLOCK_SKEW")),
+            sessionGeneration: 1,
             Now,
             TestContext.Current.CancellationToken);
 
         // 后一份只带一条：前一份里多出来的那条不会被「保留」，整体取代就是整体取代。
         await fixture.Store.RecordSnapshotAsync(
             Snapshot("AGV-01", 2, Alarm("ONBOARD_FLEET_CLOCK_SKEW")),
+            sessionGeneration: 1,
             Now.AddMinutes(1),
             TestContext.Current.CancellationToken);
 
@@ -52,6 +54,7 @@ public sealed class OnboardAlarmProjectionTests
         // 序号倒退的快照被忽略：收下它等于让看板倒着走。
         await fixture.Store.RecordSnapshotAsync(
             Snapshot("AGV-01", 1, Alarm("ONBOARD_RULE_GATEWAY_DISCONNECTED")),
+            sessionGeneration: 1,
             Now.AddMinutes(2),
             TestContext.Current.CancellationToken);
         fixture.Context.ChangeTracker.Clear();
@@ -69,6 +72,7 @@ public sealed class OnboardAlarmProjectionTests
         await fixture.MarkSessionReadyAsync("AGV-01");
         await fixture.Store.RecordSnapshotAsync(
             Snapshot("AGV-01", 1, Alarm("ONBOARD_FLEET_CLOCK_SKEW")),
+            sessionGeneration: 1,
             Now,
             TestContext.Current.CancellationToken);
 
@@ -110,6 +114,7 @@ public sealed class OnboardAlarmProjectionTests
                 Alarm("ONBOARD_SLOT_LOCK_FEEDBACK_LOST", OnboardAlarmScope.CurrentOperation),
                 Alarm("ONBOARD_FLEET_CLOCK_SKEW", OnboardAlarmScope.Fleet)
             ]),
+            sessionGeneration: 1,
             Now,
             TestContext.Current.CancellationToken);
 
@@ -219,10 +224,12 @@ public sealed class OnboardAlarmProjectionTests
         await fixture.MarkSessionReadyAsync("AGV-02");
         await fixture.Store.RecordSnapshotAsync(
             Snapshot("AGV-01", 1, Alarm("ONBOARD_FLEET_CLOCK_SKEW")),
+            sessionGeneration: 1,
             Now,
             TestContext.Current.CancellationToken);
         await fixture.Store.RecordSnapshotAsync(
             Snapshot("AGV-03", 1, Alarm("ONBOARD_RULE_GATEWAY_DISCONNECTED")),
+            sessionGeneration: 1,
             Now,
             TestContext.Current.CancellationToken);
 

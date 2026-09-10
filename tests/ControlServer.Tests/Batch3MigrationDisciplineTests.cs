@@ -15,11 +15,28 @@ namespace ControlServer.Tests;
 /// <c>ControlServerDbContextModelSnapshot.cs</c> is a single file EF rewrites in full, so two
 /// tickets each adding a migration is a hard conflict -- and resolving such a conflict wrongly drops
 /// tables silently rather than failing. This test is the guard: it names the migration batch 3 is
-/// allowed to have, and it fails the moment a second one appears.
+/// allowed to have, and it fails the moment a second one appears. What comes <i>after</i> batch 3 is
+/// named too, in <see cref="MigrationsAfterBatch3"/>, so a migration nobody wrote down still fails.
 /// </remarks>
 public sealed class Batch3MigrationDisciplineTests
 {
     private const string Batch3Migration = "20260909124757_Batch3GovernanceAndSlotConfiguration";
+
+    /// <summary>
+    /// 批次 3 那一个迁移之后允许存在的迁移，按名字点出来。
+    /// </summary>
+    /// <remarks>
+    /// 原来的断言是「批次 3 的迁移是最后一个」。那句话在批次 3 自己那十三票之内是对的，但它顺带断言了
+    /// 「此后永远不许有迁移」——那从来不是这条纪律要守的东西，而且协议 v2 消息面落到这条线上时就成了
+    /// 假的：告警快照的采纳判据要按 <c>(会话代, 序号)</c> 比，会话代得有一列。
+    ///
+    /// 改成点名：批次 3 仍然只有一个迁移，且它之后只有这里列出的那些。比原来更紧——原来只说它在最后，
+    /// 现在说清它之后允许有谁。
+    /// </remarks>
+    private static readonly string[] MigrationsAfterBatch3 =
+    [
+        "20260910031132_AlarmSnapshotSessionGeneration"
+    ];
 
     private static readonly string[] Batch3Tables =
     [
@@ -47,8 +64,10 @@ public sealed class Batch3MigrationDisciplineTests
         await using MigrationFixture fixture = await MigrationFixture.CreateAsync();
         string[] migrations = [.. fixture.Context.Database.GetMigrations()];
 
-        Assert.Equal(Batch3Migration, migrations[^1]);
         Assert.Single(migrations, name => name.Contains("Batch3", StringComparison.Ordinal));
+        Assert.Equal(
+            [Batch3Migration, .. MigrationsAfterBatch3],
+            migrations[^(1 + MigrationsAfterBatch3.Length)..]);
     }
 
     [Fact]

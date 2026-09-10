@@ -111,6 +111,49 @@ public sealed class OnboardAlarmSnapshotWireTests
     }
 
     /// <summary>
+    /// 车重启后序号从 1 重来，那份快照仍然被采纳。
+    /// </summary>
+    /// <remarks>
+    /// 车载端的告警板序号活在进程里，重启就归零。只按序号采纳的话，重启后那台车的快照全被当成「比库里
+    /// 更旧」而静默忽略，看板停在重启前那一批——正是 REQ-0269 禁止的不确定新旧的旧值。车重启必然换一代
+    /// 会话，所以采纳判据是 <c>(会话代, 序号)</c> 这一对。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    [Trait("ProtocolVector", "CV-ONBOARD-ALARM-SNAPSHOT")]
+    public async Task ASnapshotFromANewerSessionIsAdoptedEvenThoughItsRevisionWentBackToOne()
+    {
+        await using WireFixture fixture = await WireFixture.CreateAsync();
+        await fixture.HandshakeAsync();
+        await fixture.SendAsync(
+            "00000000-0000-4000-8000-000000000301",
+            Snapshot(9, Alarm("ONBOARD_RULE_GATEWAY_DISCONNECTED", "FLEET", null)));
+
+        // 车重启：新一代会话，告警板从 1 重新开始。
+        await fixture.HandshakeAsync("00000000-0000-4000-8000-000000000002");
+        await fixture.SendAsync(
+            "00000000-0000-4000-8000-000000000302",
+            Snapshot(1, Alarm("ONBOARD_FLEET_CLOCK_SKEW", "FLEET", null)));
+
+        OnboardAlarmSnapshotRow adopted = await fixture.Context.Set<OnboardAlarmSnapshotRow>().AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, adopted.SnapshotSequence);
+        Assert.Contains("ONBOARD_FLEET_CLOCK_SKEW", adopted.AlarmsJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("ONBOARD_RULE_GATEWAY_DISCONNECTED", adopted.AlarmsJson, StringComparison.Ordinal);
+
+        // 同一代之内序号不前进照旧忽略——补上会话代不是把那条规则拿掉。
+        await fixture.SendAsync(
+            "00000000-0000-4000-8000-000000000303",
+            Snapshot(1, Alarm("ONBOARD_RULE_GATEWAY_DISCONNECTED", "FLEET", null)));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.DoesNotContain(
+            "ONBOARD_RULE_GATEWAY_DISCONNECTED",
+            (await fixture.Context.Set<OnboardAlarmSnapshotRow>().AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).AlarmsJson,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// <c>subjectType</c> 决定告警归哪一侧，认不出来的归看板。
     /// </summary>
     /// <remarks>
@@ -236,11 +279,15 @@ public sealed class OnboardAlarmSnapshotWireTests
             return new WireFixture(connection, context);
         }
 
-        public async Task HandshakeAsync() =>
+        /// <summary>
+        /// 每次握手要用不同的 messageId：收件箱按 messageId 去重，复用同一个会原样回放上一次的
+        /// SessionAccepted，会话代根本不推进。
+        /// </summary>
+        public async Task HandshakeAsync(string messageId = "00000000-0000-4000-8000-000000000001") =>
             await Processor.ProcessAsync(
                 Envelope(
                     "SessionHello",
-                    "00000000-0000-4000-8000-000000000001",
+                    messageId,
                     null,
                     new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = Credential }),
                 State,

@@ -245,6 +245,7 @@ public sealed partial class OnboardMessageProcessor(
                     long revision = OnboardAlarmSnapshotWire.Revision(payload);
                     await alarmStore.RecordSnapshotAsync(
                         OnboardAlarmSnapshotWire.Read(agvId, payload),
+                        generation,
                         timeProvider.GetUtcNow(),
                         cancellationToken).ConfigureAwait(false);
                     return SnapshotAck(messageId, agvId, generation, "ONBOARD_ALARM", revision, contentHash);

@@ -39,19 +39,29 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context)
     /// 收下一份快照。同一台车的后一份整体取代前一份。
     /// </summary>
     /// <remarks>
-    /// 序号回退的快照被忽略：那是一份比库里更旧的东西，收下它等于让看板倒着走。
+    /// <para>
+    /// 采纳判据是 <c>(会话代, 序号)</c> 这一对，按字典序比：新会话的快照无条件采纳，同一代之内序号
+    /// 不前进才忽略——那是一份比库里更旧的东西，收下它等于让看板倒着走。
+    /// </para>
+    /// <para>
+    /// **只按序号比是不够的。**车载端的告警板序号活在进程里，车一重启就从 1 重新开始；只按序号采纳
+    /// 的话，重启后那台车的快照全被静默忽略，看板停在重启前那一批，而那正是 REQ-0269 禁止的不确定
+    /// 新旧的旧值。车重启必然换一代会话，所以会话代把这个洞补上。
+    /// </para>
     /// </remarks>
     public async Task RecordSnapshotAsync(
         OnboardAlarmSnapshotView snapshot,
+        long sessionGeneration,
         DateTimeOffset receivedAt,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentException.ThrowIfNullOrWhiteSpace(snapshot.AgvId);
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
 
         OnboardAlarmSnapshotRow? existing = await _context.Set<OnboardAlarmSnapshotRow>()
             .FirstOrDefaultAsync(row => row.AgvId == snapshot.AgvId, cancellationToken);
-        if (existing is not null && existing.SnapshotSequence >= snapshot.SnapshotSequence)
+        if (existing is not null && !Advances(existing, sessionGeneration, snapshot.SnapshotSequence))
         {
             return;
         }
@@ -62,6 +72,7 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context)
             _context.Set<OnboardAlarmSnapshotRow>().Add(new OnboardAlarmSnapshotRow
             {
                 AgvId = snapshot.AgvId,
+                SessionGeneration = sessionGeneration,
                 SnapshotSequence = snapshot.SnapshotSequence,
                 CapturedAt = snapshot.CapturedAt,
                 ReceivedAt = receivedAt,
@@ -70,7 +81,8 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context)
         }
         else
         {
-            // 整体取代：这三个字段一起换成新快照的，不合并、不保留上一份里多出来的那几条。
+            // 整体取代：这几个字段一起换成新快照的，不合并、不保留上一份里多出来的那几条。
+            existing.SessionGeneration = sessionGeneration;
             existing.SnapshotSequence = snapshot.SnapshotSequence;
             existing.CapturedAt = snapshot.CapturedAt;
             existing.ReceivedAt = receivedAt;
@@ -78,6 +90,13 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context)
         }
         await _context.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// 这一份是不是比库里那一份更新——<c>(会话代, 序号)</c> 按字典序比。
+    /// </summary>
+    private static bool Advances(OnboardAlarmSnapshotRow existing, long sessionGeneration, long sequence) =>
+        sessionGeneration > existing.SessionGeneration
+        || (sessionGeneration == existing.SessionGeneration && sequence > existing.SnapshotSequence);
 
     /// <summary>
     /// 看板这一轮该显示什么：每台车要么是当下进看板的告警，要么是拿不到它的原因。
