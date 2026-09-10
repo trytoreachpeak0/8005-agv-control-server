@@ -25,12 +25,28 @@ if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[0-9a-f]{40}$') {
     throw 'Unable to resolve the source commit.'
 }
 
-& $dotnet restore $project --locked-mode --runtime $RuntimeIdentifier
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# Run from inside the repository. `dotnet` looks for global.json from the current directory, not from
+# the project path it is handed -- an explicit dotnet.exe included -- so a caller standing outside the
+# clone would publish a deployable package from the newest installed SDK. The SDK goes into the
+# manifest so the package says which toolchain built it.
+Push-Location -LiteralPath $root
+try {
+    $dotnetSdkVersion = & $dotnet --version 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "dotnet could not resolve the SDK pinned by $(Join-Path $root 'global.json'): $dotnetSdkVersion" }
+    $dotnetSdkVersion = "$dotnetSdkVersion".Trim()
 
-& $dotnet publish $project --configuration Release --runtime $RuntimeIdentifier `
-    --self-contained true --no-restore --output $resolvedOutput
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & $dotnet restore $project --locked-mode --runtime $RuntimeIdentifier
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) {
+        & $dotnet publish $project --configuration Release --runtime $RuntimeIdentifier `
+            --self-contained true --no-restore --output $resolvedOutput
+        $exitCode = $LASTEXITCODE
+    }
+}
+finally {
+    Pop-Location
+}
+if ($exitCode -ne 0) { exit $exitCode }
 
 $files = Get-ChildItem -LiteralPath $resolvedOutput -File -Recurse |
     Sort-Object FullName |
@@ -46,6 +62,7 @@ $manifest = [ordered]@{
     schemaVersion = 1
     product = '8005 AGV ControlServer'
     sourceCommit = $sourceCommit
+    dotnetSdkVersion = $dotnetSdkVersion
     runtimeIdentifier = $RuntimeIdentifier
     selfContained = $true
     createdAt = [DateTimeOffset]::UtcNow.ToString('O')
@@ -59,5 +76,6 @@ $manifestPath = Join-Path $resolvedOutput 'deployment-manifest.json'
 
 Write-Output "Published ControlServer package: $resolvedOutput"
 Write-Output "Source commit: $sourceCommit"
+Write-Output "dotnet SDK: $dotnetSdkVersion"
 Write-Output "Manifest SHA-256: $((Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant())"
 

@@ -108,12 +108,28 @@ function Invoke-FieldOps {
 
 # The tool is built from this repository so that the evidence names the commit it ran from. A field
 # machine with no SDK passes -FieldOpsExecutable instead.
+#
+# The build runs from inside the repository. `dotnet` looks for global.json from the current
+# directory, not from the project path it is handed, so a caller standing elsewhere would build with
+# the newest installed SDK instead of the pinned one. The SDK it resolved goes into the identity.
+$fieldOpsSdkVersion = $null
 if ($FieldOpsExecutable) {
     $script:fieldOps = $FieldOpsExecutable
 } else {
+    $Repository = (Resolve-Path -LiteralPath $Repository).Path
     $project = Join-Path $Repository 'tools/ControlServer.FieldOps/ControlServer.FieldOps.csproj'
-    & dotnet build $project -c Release --nologo -v q | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Failed to build ControlServer.FieldOps.' }
+    Push-Location -LiteralPath $Repository
+    try {
+        $fieldOpsSdkVersion = & dotnet --version 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "dotnet could not resolve the SDK pinned by $(Join-Path $Repository 'global.json'): $fieldOpsSdkVersion" }
+        $fieldOpsSdkVersion = "$fieldOpsSdkVersion".Trim()
+        & dotnet build $project -c Release --nologo -v q | Out-Null
+        $buildExit = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    if ($buildExit -ne 0) { throw 'Failed to build ControlServer.FieldOps.' }
     $script:fieldOps = Join-Path $Repository 'tools/ControlServer.FieldOps/bin/Release/net8.0/win-x64/ControlServer.FieldOps.exe'
 }
 if (-not (Test-Path -LiteralPath $script:fieldOps -PathType Leaf)) {
@@ -129,6 +145,8 @@ $identity = [ordered]@{
     observers           = $windowRecord.observers
     database            = (Resolve-Path -LiteralPath $Database).Path
     controlServerCommit = $commit
+    # Null when -FieldOpsExecutable supplied a prebuilt tool; this script did not build it.
+    fieldOpsSdkVersion  = $fieldOpsSdkVersion
     protocolReleaseIdentity = [ordered]@{
         tag              = 'protocol-v0.3.0'
         repositoryCommit = '345c53c58517968192c87c3e7777ed08ddb48726'
