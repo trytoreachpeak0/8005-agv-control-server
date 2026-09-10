@@ -1,0 +1,24 @@
+{"at":"2026-09-10T08:46:45.0756160+00:00","note":"L2 run 20260910T084645010Z starting for scenario 'slot-configuration-activation-replay'."}
+{"at":"2026-09-10T08:46:45.1045727+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T08:46:54.3340219+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T08:46:54.5678608+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T08:46:56.9561581+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T08:46:58.6586852+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T08:46:58.7065511+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-09-10T08:46:59.4249172+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-10T08:46:59.7170565+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-10T08:46:59.7365642+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T08:46:59.7830055+00:00","note":"Environment is up; entering scenario 'slot-configuration-activation-replay'."}
+{"at":"2026-09-10T08:46:59.8378402+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T084645010Z\\controlserver.db"}
+{"at":"2026-09-10T08:47:02.0594092+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T084645010Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-10T08:47:03.6808107+00:00","note":"Activation 4b154664-9d22-471f-a263-54fdbdc626c8 issued: PENDING_RESULT, command b1c96061-b3e4-41b6-ad66-0f30f7916537."}
+{"at":"2026-09-10T08:47:03.6950537+00:00","criterion":"activation-command-held","value":"1"}
+{"at":"2026-09-10T08:47:03.7371104+00:00","note":"Vehicle concluded the activation locally and dropped the link before reporting it."}
+{"at":"2026-09-10T08:47:03.7810426+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-10T08:47:04.3053843+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-10T08:47:05.3583180+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-10T08:47:06.4118904+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-10T08:47:06.5100021+00:00","criterion":"activation-activated","value":"PENDING_RESULT"}
+{"at":"2026-09-10T08:47:06.7653294+00:00","criterion":"activation-activated","value":"ACTIVATED"}
+{"at":"2026-09-10T08:47:06.7953684+00:00","note":"FieldOps: export-audit --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T084645010Z\\controlserver.db --stream business --format csv --output C:\\Users\\szy\\8005-b3\\fp-b3\\evidence\\l2\\20260910-batch3-slot-configuration-activation-replay-002\\snapshots\\audit-business-export.csv"}
+{"at":"2026-09-10T08:47:08.1602752+00:00","note":"下发 → 断线 → 重连 → 补报走通；服务端断线期间不猜，补发同一行，只收敛一次。"}
