@@ -30,7 +30,13 @@ param(
     [string]$ControlServerCommit = 'b46b0727de5aad74e9ffd56709219dd76e75e0b2',
     [string]$OnboardCommit = '153b70594f75ce945e717afd80be9f6279423080',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = 'f6ee75defe6e2d18f63f4082bee445dbb678ab1b'
+    [string]$ProtocolCommit = 'f6ee75defe6e2d18f63f4082bee445dbb678ab1b',
+    # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
+    # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
+    # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
+    # still name that commit as a branch tip, so evidence cannot bind a commit that exists only as a
+    # detached object somebody handed the runner.
+    [string]$OnboardRemoteRef = 'origin/w2g/fp-v2-impl'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1929,6 +1935,12 @@ public static class StagedG3TlsHarness
                 if (payload.ValueKind == JsonValueKind.Object &&
                     payload.TryGetProperty("acceptedMessageId", out JsonElement acceptedId))
                     value["acceptedMessageId"] = acceptedId.GetString();
+                // SnapshotAppliedAck names what it applied with snapshotKind, not acceptedMessageType,
+                // so without this a snapshot ack is indistinguishable from any other ack in the
+                // transcript. FP-IS-15 needs to tell an ONBOARD_ALARM ack from a SAFETY_STATE one.
+                if (payload.ValueKind == JsonValueKind.Object &&
+                    payload.TryGetProperty("snapshotKind", out JsonElement snapshotKind))
+                    value["snapshotKind"] = snapshotKind.GetString();
             }
         }
         catch (JsonException error) { value["parseErrorSha256"] = Sha256(error.Message); }
@@ -2191,7 +2203,7 @@ try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
         -Commit $ControlServerCommit
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
-        -Commit $OnboardCommit -RemoteRef 'origin/w2g/fp-v2-impl'
+        -Commit $OnboardCommit -RemoteRef $OnboardRemoteRef
     New-ExactClone -Name 'slots-simulator' -Repository $SimulatorRepository -Destination $simulatorSource `
         -Commit $SimulatorCommit -RemoteRef 'origin/main'
     New-ExactClone -Name 'protocol' -Repository $ProtocolRepository -Destination $protocolSource `
@@ -2620,6 +2632,28 @@ if (Test-Path -LiteralPath $databasePath) {
             }
         }
         finally { $reader.Dispose(); $command.Dispose() }
+        # FP-IS-15. The projection is one row per vehicle by design, so what this reads is the row that
+        # survived, not a history: (sessionGeneration, snapshotSequence) says which snapshot won.
+        # Reading AlarmsJson's length rather than its text keeps the evidence bounded while still
+        # distinguishing "a snapshot arrived" from "an empty one did".
+        $alarmSnapshotRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT AgvId, SessionGeneration, SnapshotSequence, LENGTH(AlarmsJson), AlarmsJson FROM OnboardAlarmSnapshots ORDER BY AgvId"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $alarmsJson = $reader.GetString(4)
+                $alarmCount = try { @([Text.Json.JsonDocument]::Parse($alarmsJson).RootElement.EnumerateArray()).Count } catch { -1 }
+                $alarmSnapshotRows += [ordered]@{
+                    agvId = $reader.GetString(0)
+                    sessionGeneration = $reader.GetInt64(1)
+                    snapshotSequence = $reader.GetInt64(2)
+                    alarmsJsonLength = $reader.GetInt64(3)
+                    alarmCount = $alarmCount
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
         $recoveryWorkflowRows = @()
         $command = $connection.CreateCommand()
         $command.CommandText = "SELECT WorkflowId, WorkflowType, State, ForcedRecoveryGeneration, CommandMessageId, ResultMessageId, DemandId, SlotOperationAttemptId FROM RecoveryWorkflows ORDER BY CreatedAt"
@@ -2691,6 +2725,8 @@ if (Test-Path -LiteralPath $databasePath) {
         $databaseObservation = [ordered]@{
             recoveryStateReportInboxRows = $recoveryRows
             businessMessageInboxRows = $businessRows
+            onboardAlarmSnapshotRows = $alarmSnapshotRows
+            activeSlotConfigurationCount = [long](Invoke-Scalar 'SELECT COUNT(*) FROM ActiveSlotConfigurations')
             currentSessionGeneration = [long](Invoke-Scalar "SELECT SessionGeneration FROM SessionRecoveries WHERE AgvId = '$agvId'")
             currentSessionReadiness = [string](Invoke-Scalar "SELECT Readiness FROM SessionRecoveries WHERE AgvId = '$agvId'")
             currentSessionReasonCode = [string](Invoke-Scalar "SELECT ReasonCode FROM SessionRecoveries WHERE AgvId = '$agvId'")
@@ -2709,6 +2745,56 @@ if (Test-Path -LiteralPath $databasePath) {
     }
     finally { $connection.Dispose() }
 }
+
+# FP-IS-15. The onboard alarm board publishes a snapshot as part of every handshake, so a run that
+# reconnects produces one per connection without the runner having to drive anything. What is being
+# read here is whether the projection tracked them: the server keeps one row per vehicle, and the
+# question REQ-0269 asks is which snapshot that row ended up holding.
+$alarmEvents = Read-Ndjson $proxyTranscript
+$alarmSnapshotsSent = @($alarmEvents | Where-Object {
+    $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
+    $_.messageType -eq 'OnboardAlarmSnapshot'
+})
+$alarmSnapshotAcks = @($alarmEvents | Where-Object {
+    $_.event -eq 'message' -and $_.direction -eq 'server-to-client' -and
+    $_.messageType -eq 'SnapshotAppliedAck' -and $_.snapshotKind -eq 'ONBOARD_ALARM'
+})
+$alarmProjectionRows = @()
+if ($null -ne $databaseObservation) {
+    $alarmProjectionRows = @($databaseObservation.onboardAlarmSnapshotRows |
+        Where-Object { $_.agvId -ceq $agvId })
+}
+$alarmSnapshotGenerations = @($alarmSnapshotsSent.sessionGeneration | Sort-Object -Unique)
+$alarmObservation = [ordered]@{
+    snapshotsSent = $alarmSnapshotsSent.Count
+    snapshotConnectionIds = @($alarmSnapshotsSent.connectionId | Sort-Object -Unique)
+    snapshotSessionGenerations = $alarmSnapshotGenerations
+    snapshotMessageIds = @($alarmSnapshotsSent.messageId | Sort-Object -Unique)
+    appliedAcks = $alarmSnapshotAcks.Count
+    projectionRowsForThisVehicle = $alarmProjectionRows.Count
+    projectionSessionGeneration = if ($alarmProjectionRows.Count -eq 1) { $alarmProjectionRows[0].sessionGeneration } else { $null }
+    projectionSnapshotSequence = if ($alarmProjectionRows.Count -eq 1) { $alarmProjectionRows[0].snapshotSequence } else { $null }
+    projectionAlarmCount = if ($alarmProjectionRows.Count -eq 1) { $alarmProjectionRows[0].alarmCount } else { $null }
+}
+[IO.File]::WriteAllText(
+    (Join-Path $EvidenceRoot 'onboard-alarm-snapshot-observation.json'),
+    ($alarmObservation | ConvertTo-Json -Depth 10),
+    [Text.UTF8Encoding]::new($false))
+
+# Every connection carries one, and this run reconnects: fewer than two, or all of them on a single
+# connection, means the handshake stopped publishing it rather than that the projection is right.
+$alarmSentPass = $alarmSnapshotsSent.Count -ge 2 -and
+    $alarmObservation.snapshotConnectionIds.Count -ge 2
+# Acked one for one. A snapshot the server never applied cannot be evidence that it projected it.
+$alarmAckPass = $alarmSnapshotAcks.Count -eq $alarmSnapshotsSent.Count -and $alarmSnapshotAcks.Count -ge 2
+# One row per vehicle is the design, not an accident of this run: a second row would mean the
+# projection is accumulating history and the dashboard has no single current alarm set to read.
+$alarmSingletonPass = $alarmProjectionRows.Count -eq 1
+# The row has to hold the LATEST session's snapshot. Holding an earlier generation's is exactly the
+# stale value REQ-0269 forbids -- and is what a sequence-only adoption rule produces.
+$alarmLatestGenerationPass = $alarmSingletonPass -and
+    $alarmSnapshotGenerations.Count -ge 2 -and
+    $alarmObservation.projectionSessionGeneration -eq ($alarmSnapshotGenerations | Measure-Object -Maximum).Maximum
 
 $replayPass = $null -ne $runtimeObservation -and
     $runtimeObservation.droppedAckCount -eq 1 -and
@@ -2931,6 +3017,10 @@ $assertionReport = [ordered]@{
     forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmSnapshotPublishedOnEveryConnection = if ($alarmSentPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmSnapshotAppliedAckOnEverySnapshot = if ($alarmAckPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmProjectionIsASingletonPerVehicle = if ($alarmSingletonPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmProjectionHoldsTheLatestSessionGeneration = if ($alarmLatestGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     noMovementOrExternalSideEffects = if ($noMovementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     secretScan = if ($secretLeakFiles.Count -eq 0) { 'PASS' } else { 'FAIL' }
 }
