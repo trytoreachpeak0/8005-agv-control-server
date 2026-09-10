@@ -25,8 +25,13 @@ namespace ControlServer.Infrastructure.Persistence;
 /// </para>
 /// <para>本类不新增任何表。</para>
 /// </remarks>
-public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context)
+public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context, TimeProvider? timeProvider = null)
 {
+    /// <summary>
+    /// 多久听不到这一代会话的任何入站消息就算失联。ADR-cross-0027：心跳两秒一次，六秒存活超时。
+    /// </summary>
+    public static readonly TimeSpan LinkLivenessTimeout = TimeSpan.FromSeconds(6);
+
     private static readonly JsonSerializerOptions AlarmJson = new()
     {
         Converters = { new JsonStringEnumConverter() }
@@ -34,6 +39,8 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context)
 
     private readonly ControlServerDbContext _context =
         context ?? throw new ArgumentNullException(nameof(context));
+
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     /// <summary>
     /// 收下一份快照。同一台车的后一份整体取代前一份。
@@ -103,17 +110,14 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context)
     /// </summary>
     /// <remarks>
     /// 失联的车显示「失联」，不显示它失联前的最后一批告警——REQ-0269 的失联直述在这里就是这一句。
-    /// 判定失联用服务端自己手上的会话事实，不问车。
+    /// 判定失联用服务端自己手上的会话事实，不问车，见 <see cref="LinkedVehiclesAsync"/>。
     /// </remarks>
     public async Task<IReadOnlyList<VehicleAlarmProjection>> ReadDashboardProjectionAsync(
         CancellationToken cancellationToken)
     {
         OnboardAlarmSnapshotRow[] snapshots = await _context.Set<OnboardAlarmSnapshotRow>().AsNoTracking()
             .ToArrayAsync(cancellationToken);
-        HashSet<string> linked = [.. await _context.SessionRecoveries.AsNoTracking()
-            .Where(row => row.Readiness == SessionReadiness.Ready)
-            .Select(row => row.AgvId)
-            .ToArrayAsync(cancellationToken)];
+        HashSet<string> linked = await LinkedVehiclesAsync(cancellationToken);
 
         List<VehicleAlarmProjection> projections = [];
         foreach (string agvId in snapshots.Select(row => row.AgvId).Union(linked).Order(StringComparer.Ordinal))
@@ -144,5 +148,64 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context)
                 null));
         }
         return projections;
+    }
+
+    /// <summary>
+    /// 此刻算在线的车：会话行是 Ready，**并且**服务端在 <see cref="LinkLivenessTimeout"/> 之内收到过这一代
+    /// 会话的任何入站消息。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// **只看 Ready 是不够的。**车断线时服务端只把连接从 <c>OnboardPeer</c> 上摘掉，落库的会话行原样留着
+    /// Ready——恢复握手靠的正是这一行，断线不改它是对的。但这意味着一台死掉的车在库里一直是 Ready，只看这一列
+    /// 的看板会一直显示它失联前的最后一批告警，那正是 REQ-0269 禁止的东西。L2 场景
+    /// <c>onboard-alarm-snapshot-dashboard</c> 第一次跑就撞上了，见
+    /// <c>docs/defects/20260910-dashboard-kept-showing-a-dead-vehicles-last-alarms.md</c>。
+    /// </para>
+    /// <para>
+    /// 与 <c>JourneyRuntimeEngine</c> 派车前的存活判定是同一条规则：取服务端收件时间而不取载荷时间，一个停走
+    /// 或配错的车载时钟不能让死会话看起来活着；任何入站消息都算；收件时间晚于此刻的不算；只认会话行上那一代，
+    /// 上一代最后那条心跳再新也不替这一代说话。
+    /// </para>
+    /// <para>
+    /// 代价与引擎那一处相同：agvId 与会话代只在信封 JSON 里，所以要扫一遍收件箱。只有在存活窗口之内的行才被
+    /// 解析。
+    /// </para>
+    /// </remarks>
+    private async Task<HashSet<string>> LinkedVehiclesAsync(CancellationToken cancellationToken)
+    {
+        Dictionary<string, long> readyGenerations = await _context.SessionRecoveries.AsNoTracking()
+            .Where(row => row.Readiness == SessionReadiness.Ready)
+            .ToDictionaryAsync(
+                row => row.AgvId, row => row.SessionGeneration, StringComparer.Ordinal, cancellationToken);
+        HashSet<string> linked = new(StringComparer.Ordinal);
+        if (readyGenerations.Count == 0)
+        {
+            return linked;
+        }
+
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        ProtocolInboxRow[] inbound = await _context.ProtocolInbox.AsNoTracking()
+            .ToArrayAsync(cancellationToken);
+        foreach (ProtocolInboxRow row in inbound)
+        {
+            if (row.ReceivedAt > now || now - row.ReceivedAt > LinkLivenessTimeout)
+            {
+                continue;
+            }
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+            JsonElement root = document.RootElement;
+            if (root.TryGetProperty("agvId", out JsonElement agv) &&
+                agv.ValueKind == JsonValueKind.String &&
+                agv.GetString() is { } agvId &&
+                readyGenerations.TryGetValue(agvId, out long generation) &&
+                root.TryGetProperty("sessionGeneration", out JsonElement sessionGeneration) &&
+                sessionGeneration.ValueKind == JsonValueKind.Number &&
+                sessionGeneration.GetInt64() == generation)
+            {
+                linked.Add(agvId);
+            }
+        }
+        return linked;
     }
 }

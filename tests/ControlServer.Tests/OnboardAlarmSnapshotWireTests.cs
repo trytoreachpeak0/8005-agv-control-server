@@ -178,7 +178,8 @@ public sealed class OnboardAlarmSnapshotWireTests
                 Alarm("ONBOARD_OPERATION_STALLED", "SLOT_OPERATION", "00000000-0000-4000-8000-0000000000c9"),
                 Alarm("ONBOARD_SOMETHING_THE_SERVER_HAS_NEVER_HEARD_OF", "TAROT_CARD", "THE-TOWER")));
 
-        OnboardAlarmProjectionStore store = new(fixture.Context);
+        // 与处理器同一个时钟：看板判在线看的是服务端收件时间，两个时钟对不上就会把刚发来消息的车判成失联。
+        OnboardAlarmProjectionStore store = new(fixture.Context, new FixedTimeProvider());
         VehicleAlarmProjection projection = Assert.Single(
             await store.ReadDashboardProjectionAsync(TestContext.Current.CancellationToken));
 

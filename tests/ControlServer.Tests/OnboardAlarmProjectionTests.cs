@@ -215,6 +215,52 @@ public sealed class OnboardAlarmProjectionTests
         }
     }
 
+    /// <summary>
+    /// 车断线时服务端不改落库的会话行，它留着 Ready。看板要从「多久没听到这一代会话」看出失联，不能只看那一列。
+    /// </summary>
+    /// <remarks>
+    /// 上面那条用删掉会话行来模拟失联，而产品从来不这么做——L2 第一次跑，看板在车断线六十秒后仍显示它失联前
+    /// 的告警。这一条造的是真实的形状：行还在、还是 Ready，只是这一代会话安静了。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task AReadyRowWhoseSessionHasGoneQuietShowsTheReasonRatherThanItsLastKnownAlarms()
+    {
+        await using AlarmFixture fixture = await AlarmFixture.CreateAsync();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        await fixture.MarkSessionReadyAsync("AGV-01", lastHeardAt: now.AddSeconds(-1));
+        await fixture.MarkSessionReadyAsync(
+            "AGV-02", lastHeardAt: now - OnboardAlarmProjectionStore.LinkLivenessTimeout - TimeSpan.FromSeconds(1));
+        // 最后一条消息很新，但它属于上一代会话：车换了一代，旧一代的心跳不替新一代说话。
+        await fixture.MarkSessionReadyAsync("AGV-03", lastHeardAt: now.AddSeconds(-1), heardGeneration: 0);
+        foreach (string agvId in new[] { "AGV-01", "AGV-02", "AGV-03" })
+        {
+            await fixture.Store.RecordSnapshotAsync(
+                Snapshot(agvId, 1, Alarm("ONBOARD_FLEET_CLOCK_SKEW")),
+                sessionGeneration: 1,
+                Now,
+                TestContext.Current.CancellationToken);
+        }
+
+        IReadOnlyList<VehicleAlarmProjection> projections =
+            await fixture.Store.ReadDashboardProjectionAsync(TestContext.Current.CancellationToken);
+
+        VehicleAlarmProjection heard = projections.Single(row => row.AgvId == "AGV-01");
+        Assert.True(heard.IsAvailable);
+        Assert.Equal(["ONBOARD_FLEET_CLOCK_SKEW"], heard.Alarms.Select(alarm => alarm.AlarmCode));
+        foreach (string quietAgvId in new[] { "AGV-02", "AGV-03" })
+        {
+            VehicleAlarmProjection quiet = projections.Single(row => row.AgvId == quietAgvId);
+            Assert.False(quiet.IsAvailable);
+            Assert.Equal(VehicleAlarmProjection.LinkDownReason, quiet.UnavailableReason);
+            Assert.Empty(quiet.Alarms);
+        }
+        // 会话行一个字没改：这条判定只读，恢复握手要用的那一行不因为看板的判定而变。
+        Assert.All(
+            await fixture.Context.SessionRecoveries.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken),
+            row => Assert.Equal(SessionReadiness.Ready, row.Readiness));
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-15")]
     public async Task TheEndpointServesRealRowsAndTheCardRendersThemIncludingTheLostContactReason()
@@ -306,8 +352,28 @@ public sealed class OnboardAlarmProjectionTests
             return new AlarmFixture(connection, context, new OnboardAlarmProjectionStore(context));
         }
 
-        public async Task MarkSessionReadyAsync(string agvId)
+        /// <summary>
+        /// 一行 Ready 的会话，加上服务端收到的这一代会话的一条入站消息——看板判在线要两样都有。
+        /// </summary>
+        public async Task MarkSessionReadyAsync(
+            string agvId,
+            DateTimeOffset? lastHeardAt = null,
+            long heardGeneration = 1)
         {
+            Context.ProtocolInbox.Add(new ProtocolInboxRow
+            {
+                MessageId = Guid.NewGuid().ToString("D"),
+                MessageType = "Heartbeat",
+                RequestJson = JsonSerializer.Serialize(new
+                {
+                    messageType = "Heartbeat",
+                    agvId,
+                    sessionGeneration = heardGeneration
+                }),
+                ContentHash = new string('0', 64),
+                FirstResponseJson = "{}",
+                ReceivedAt = lastHeardAt ?? DateTimeOffset.UtcNow
+            });
             Context.SessionRecoveries.Add(new SessionRecoveryRow
             {
                 AgvId = agvId,
