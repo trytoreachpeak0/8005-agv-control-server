@@ -20,12 +20,24 @@ param(
     [string]$OnboardBranch = 'OnboardHmi_MVP',
     [ValidateSet('win-x64')]
     [string]$RuntimeIdentifier = 'win-x64',
-    [string]$OnboardSdkVersion = '8.0.424'
+    # Written into an onboard clone that carries no global.json of its own. Empty means this
+    # repository's pin; see below.
+    [string]$OnboardSdkVersion
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$dotnet = if ($env:WIRE_TO_GATE_DOTNET_EXE) { $env:WIRE_TO_GATE_DOTNET_EXE } else { 'dotnet' }
+# A full path, because the dotnet calls below each change directory first and a relative
+# WIRE_TO_GATE_DOTNET_EXE would resolve against whichever directory that is.
+$dotnet = if ($env:WIRE_TO_GATE_DOTNET_EXE) { (Resolve-Path -LiteralPath $env:WIRE_TO_GATE_DOTNET_EXE).Path } else { 'dotnet' }
+# The onboard pin follows this repository's global.json instead of a literal. The literal was left at
+# 8.0.424 when the ADR-cross-0056 baseline moved to 8.0.425, by which time Windows Update had removed
+# 8.0.424 from the build machines. Following global.json also rebuilds an older ControlServer commit
+# with both halves on the SDK that commit was pinned to.
+if (-not $OnboardSdkVersion) {
+    $OnboardSdkVersion = [string](Get-Content -Raw -LiteralPath (Join-Path $root 'global.json') | ConvertFrom-Json).sdk.version
+    if (-not $OnboardSdkVersion) { throw "$(Join-Path $root 'global.json') pins no sdk.version to hand to the onboard clone." }
+}
 $resolvedOutput = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputRoot)
 $runId = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 
@@ -45,6 +57,23 @@ function Invoke-Native([string]$Executable, [string[]]$Arguments, [string]$Failu
         throw "$FailureMessage (exit $LASTEXITCODE): $($output | Select-Object -Last 20 | Join-String -Separator '; ')"
     }
     return $output
+}
+
+# `dotnet` finds global.json by walking up from the current directory, not from the project or solution
+# path it is handed -- an explicit WIRE_TO_GATE_DOTNET_EXE included. Started from anywhere else (the
+# workspace root, a CI job's default directory) it silently publishes and lists packages with the newest
+# SDK installed. So every dotnet call runs from the root of the repository whose global.json it must
+# honour: this repository for ControlServer, the throwaway clone for OnboardHmi.
+function Invoke-NativeIn([string]$Directory, [string]$Executable, [string[]]$Arguments, [string]$FailureMessage) {
+    Push-Location -LiteralPath $Directory
+    try { return Invoke-Native $Executable $Arguments $FailureMessage }
+    finally { Pop-Location }
+}
+
+function Get-DotnetSdkVersion([string]$Directory) {
+    $output = @(Invoke-NativeIn $Directory $dotnet @('--version') `
+        "dotnet could not resolve the SDK pinned by $(Join-Path $Directory 'global.json')")
+    return ($output | Select-Object -Last 1).Trim()
 }
 
 function Get-BuildWarningCount([string[]]$Output) {
@@ -88,22 +117,26 @@ function Get-PackageLicense([string]$Id, [string]$Version) {
     $record.nuspecFound = $true
     [xml]$nuspec = Get-Content -Raw -LiteralPath $nuspecPath
     $metadata = $nuspec.package.metadata
-    $record.projectUrl = [string]$metadata.projectUrl
-    $record.authors = [string]$metadata.authors
+    # Every metadata element is read by XPath, never as an adapted property: under Set-StrictMode a
+    # missing adapted property throws instead of reading as empty, and riot.sdk.* ship neither a
+    # projectUrl nor any license -- the very packages the allowlist exists for.
+    $record.projectUrl = [string]$metadata.SelectSingleNode('*[local-name()="projectUrl"]')?.InnerText
+    $record.authors = [string]$metadata.SelectSingleNode('*[local-name()="authors"]')?.InnerText
     $licenseNode = $metadata.SelectSingleNode('*[local-name()="license"]')
+    $licenseUrl = [string]$metadata.SelectSingleNode('*[local-name()="licenseUrl"]')?.InnerText
     if ($licenseNode) {
         $record.licenseKind = [string]$licenseNode.GetAttribute('type')
         $record.license = [string]$licenseNode.InnerText
     }
-    elseif (-not [string]::IsNullOrWhiteSpace([string]$metadata.licenseUrl)) {
+    elseif (-not [string]::IsNullOrWhiteSpace($licenseUrl)) {
         $record.licenseKind = 'url'
-        $record.license = [string]$metadata.licenseUrl
+        $record.license = $licenseUrl
     }
     return $record
 }
 
-function Get-DependencyInventory([string]$ProjectOrSolution, [string]$Label) {
-    $listOutput = @(Invoke-Native $dotnet @('list', $ProjectOrSolution, 'package', '--include-transitive', '--format', 'json') `
+function Get-DependencyInventory([string]$ProjectOrSolution, [string]$Label, [string]$RepositoryRoot) {
+    $listOutput = @(Invoke-NativeIn $RepositoryRoot $dotnet @('list', $ProjectOrSolution, 'package', '--include-transitive', '--format', 'json') `
         "Unable to list packages for $Label")
     $document = ($listOutput -join "`n") | ConvertFrom-Json
     $packages = @{}
@@ -238,6 +271,8 @@ if ($controlServerStatus.Count -gt 0) {
 }
 $controlServerCommit = @(Invoke-Native 'git' @('-C', $root, 'rev-parse', 'HEAD') 'Unable to resolve the ControlServer commit')[0].Trim()
 $controlServerBranch = @(Invoke-Native 'git' @('-C', $root, 'rev-parse', '--abbrev-ref', 'HEAD') 'Unable to resolve the ControlServer branch')[0].Trim()
+# Before the output directory exists, so a missing pinned SDK leaves nothing half-made behind.
+$controlServerSdk = Get-DotnetSdkVersion $root
 
 New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
 $controlServerPackage = Join-Path $resolvedOutput 'controlserver'
@@ -282,8 +317,9 @@ if ($onboardSdkPinned) {
         ($globalJson | ConvertTo-Json -Depth 4),
         [Text.UTF8Encoding]::new($false))
 }
+$onboardSdk = Get-DotnetSdkVersion $onboardSource
 $onboardProject = Join-Path $onboardSource 'src\SQCD.Agv.Wpf\SQCD.Agv.Wpf.csproj'
-$onboardOutput = @(Invoke-Native $dotnet @(
+$onboardOutput = @(Invoke-NativeIn $onboardSource $dotnet @(
     'publish', $onboardProject, '--configuration', 'Release',
     '--runtime', $RuntimeIdentifier, '--self-contained', 'true',
     '--output', $onboardPackage) 'OnboardHmi publish failed')
@@ -338,8 +374,8 @@ if (-not (Test-Path -LiteralPath $releaseDocument -PathType Leaf)) {
 Copy-Item -LiteralPath $releaseDocument -Destination (Join-Path $resolvedOutput 'RELEASE-CANDIDATE.md') -Force
 
 # --- Inventories ------------------------------------------------------------
-$controlServerDependencies = Get-DependencyInventory (Join-Path $root 'src\ControlServer.Host\ControlServer.Host.csproj') 'controlserver'
-$onboardDependencies = Get-DependencyInventory $onboardProject 'onboard-hmi'
+$controlServerDependencies = Get-DependencyInventory (Join-Path $root 'src\ControlServer.Host\ControlServer.Host.csproj') 'controlserver' $root
+$onboardDependencies = Get-DependencyInventory $onboardProject 'onboard-hmi' $onboardSource
 [IO.File]::WriteAllText(
     (Join-Path $inventoryDirectory 'dependencies-controlserver.json'),
     ($controlServerDependencies | ConvertTo-Json -Depth 6),
@@ -390,6 +426,7 @@ $releaseManifest = [ordered]@{
             branch = $controlServerBranch
             commit = $controlServerCommit
             worktreeCleanAtStart = $true
+            sdkVersion = $controlServerSdk
             selfContained = $true
             buildWarnings = $controlServerWarnings
             relativePath = 'controlserver'
@@ -404,7 +441,9 @@ $releaseManifest = [ordered]@{
             agentWriteAccess = 'read-only'
             builtFromThrowawayClone = $true
             sdkPinnedByReleaseScript = $onboardSdkPinned
-            sdkVersion = $OnboardSdkVersion
+            # What dotnet resolved inside the clone, not the pin this script would have written: until
+            # 2026-09-10 this recorded $OnboardSdkVersion even when the clone's own global.json decided.
+            sdkVersion = $onboardSdk
             selfContained = $true
             buildWarnings = $onboardWarnings
             relativePath = 'onboard-hmi'
@@ -467,6 +506,7 @@ $sumsPath = Join-Path $resolvedOutput 'SHA256SUMS.txt'
 Write-Output "Release candidate: $resolvedOutput"
 Write-Output "ControlServer commit: $controlServerCommit"
 Write-Output "OnboardHmi commit: $onboardResolved"
+Write-Output "dotnet SDK: ControlServer $controlServerSdk; OnboardHmi $onboardSdk"
 Write-Output "Protocol: $($protocol.tag) $($protocol.repositoryCommit)"
 Write-Output "Release manifest SHA-256: $((Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant())"
 Write-Output "SHA256SUMS SHA-256: $((Get-FileHash -LiteralPath $sumsPath -Algorithm SHA256).Hash.ToLowerInvariant())"

@@ -1338,6 +1338,69 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         return true;
     }
 
+    /// <summary>
+    /// Ends a demand whose load the vehicle settled as a determinate failure (ADR-cross-0058
+    /// decision 5): every target slot read back known, locked and with its unlock output reset, and
+    /// nothing was handed over. It is the one commanded operation that needs no peer handshake to
+    /// terminate -- the failure result already is the account of the slots that a cancellation would
+    /// otherwise have to prove.
+    /// </summary>
+    /// <remarks>
+    /// 8005-agv-program#39. The demand used to be left Accepted for LoadTaskCancellation to settle,
+    /// and nothing ever raised one: the onboard offers no cancellation for an attempt whose result is
+    /// recorded, and <see cref="CancelDemandBeforeLoadAsync"/> refuses any demand with a commanded
+    /// operation. The journey sat in AwaitingLoadResult for good. The runtime's stage is not touched
+    /// here: the runtime closes the batch through the same path as every other terminal end, which is
+    /// what decides between another round, the next stop and the gate.
+    /// </remarks>
+    /// <returns><c>true</c> when this call performed the termination; <c>false</c> when the demand
+    /// was already cancelled.</returns>
+    public async Task<bool> CancelDemandAfterDeterminateLoadFailureAsync(
+        string demandId,
+        string reasonCode,
+        DateTimeOffset cancelledAt,
+        CancellationToken cancellationToken)
+    {
+        AcceptedDemandRow demand = await dbContext.AcceptedDemands
+            .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        if (demand.Status == DemandExecutionStatus.Cancelled)
+        {
+            return false;
+        }
+        if (demand.Status == DemandExecutionStatus.Succeeded)
+        {
+            throw new BusinessIdentityConflictException(
+                "A completed demand cannot be cancelled after a failed load.");
+        }
+        JourneyDemandRow membership = await dbContext.JourneyDemands
+            .SingleAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
+            row => row.SlotOperationAttemptId == membership.LoadSlotOperationAttemptId,
+            cancellationToken).ConfigureAwait(false);
+        // Only a determinate failure ends here. Anything else still carries physical state the peer
+        // has to settle -- an UNKNOWN slot, a door that may be open -- and terminating it would drop
+        // the demand behind that state.
+        if (operation is not { OperationType: SlotOperationType.Load, Status: StationOperationStatus.Failed })
+        {
+            throw new BusinessIdentityConflictException(
+                "Only a load settled as a determinate failure can be cancelled without a peer handshake.");
+        }
+
+        demand.Status = DemandExecutionStatus.Cancelled;
+        await SuppressTransportDemandAsync(
+            demand.TransportDemandKey, demandId, reasonCode, cancelledAt, cancellationToken)
+            .ConfigureAwait(false);
+        await SettleJourneyDemandAsync(demandId, JourneyDemandState.Cancelled, cancelledAt, cancellationToken)
+            .ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // The load command this failure answered is never followed by a successful result, and only
+        // a closed batch settles it. Left pending it is replayed into every later session under a new
+        // generation, which the peer refuses as a business id whose content changed.
+        await SettleAnsweredCommandAsync(membership.LoadCommandMessageId, cancelledAt, cancellationToken)
+            .ConfigureAwait(false);
+        return true;
+    }
+
     public async Task RecordConnectionLossAsync(
         string agvId, long sessionGeneration, IReadOnlyCollection<int> activeUnlockSet,
         DateTimeOffset observedAt, CancellationToken cancellationToken)

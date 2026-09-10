@@ -101,11 +101,19 @@ Invoke-Git @('-C', $mirror, 'checkout', '--quiet', '--detach', $commit) 'Control
 
 $out = Join-Path $Root ('wire-to-gate-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 Write-Host "==> assembling release candidate into $out"
-& (Join-Path $mirror 'scripts/New-WireToGateReleaseCandidate.ps1') `
+# In a process of its own, as release.yml's pwsh step runs it. Called with `&` it inherited this
+# script's Set-StrictMode, which it is neither written for nor run under in CI, and strict mode throws
+# on reads it relies on coming back empty: the nuspecs of riot.sdk.* carry no projectUrl, and
+# `dotnet list package --format json` omits topLevelPackages for a project that has none, which
+# SQCD.Agv.Wpf is. A standby path that fails where CI passes is not a standby path.
+& pwsh -NoProfile -File (Join-Path $mirror 'scripts/New-WireToGateReleaseCandidate.ps1') `
     -OutputRoot $out `
     -OnboardCommit $OnboardCommit `
     -OnboardBranch $OnboardBranch `
     -OnboardRepositoryUrl $OnboardRepo
+if ($LASTEXITCODE -ne 0) {
+    throw "New-WireToGateReleaseCandidate.ps1 failed (exit $LASTEXITCODE); its own error is printed above."
+}
 
 # Same layout and the same name shape as the Archive package step of release.yml,
 # so a locally built package and a downloaded one are interchangeable downstream.

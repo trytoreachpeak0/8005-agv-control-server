@@ -76,8 +76,13 @@ jobs:
           fetch-depth: 0
           path: onboard-mirror
 
+      # From inside the ControlServer checkout. dotnet resolves global.json from
+      # the current directory, and the job's default directory is the workspace
+      # root, which has none -- run there, this prints whichever SDK is newest
+      # on the runner, not the one the release is pinned to and built with.
       - name: dotnet --info
         shell: pwsh
+        working-directory: control-server
         run: dotnet --info
 
       # The release script builds both halves, derives the joint release

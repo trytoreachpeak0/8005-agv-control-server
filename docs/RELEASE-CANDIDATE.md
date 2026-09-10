@@ -19,7 +19,7 @@
 构建机：
 
 - Windows x64；
-- .NET SDK `8.0.424`（ControlServer 的 `global.json` 强制此版本，`rollForward: disable`）。
+- .NET SDK `8.0.425`（ControlServer 的 `global.json` 强制此版本，`rollForward: disable`）。
   若未加入 `PATH`，把 `WIRE_TO_GATE_DOTNET_EXE` 指向该版本的 `dotnet.exe`；
 - PowerShell 7（`pwsh`）；
 - `git`，且能匿名或经认证读取上面三个仓库。
@@ -49,8 +49,12 @@
    `deployment-manifest.json`；
 3. 把车载端仓库**克隆到 `<OutputRoot>-onboard-src`** 后按指定 commit 构建。车载端仓库对 agent
    只读，脚本因此从不写入已有的车载端工作区；
-4. 车载端仓库没有 `global.json`，脚本在一次性克隆中写入 `8.0.424` 的固定值，并在 manifest 里以
-   `sdkPinnedByReleaseScript` 记录这一事实；
+4. 每次 `dotnet` 调用都在拥有对应 `global.json` 的目录里执行：服务端在 ControlServer 仓根，车载端在
+   一次性克隆里。`dotnet` 从**当前目录**往上找 `global.json`，不从传给它的项目路径找，所以从别处调用
+   本脚本曾会静默用上机器上最新的 SDK。车载端 commit 若不自带 `global.json`（历次 RC 绑定过的
+   `238b46e`、`304e6ad` 都没有），脚本在克隆中写入与 ControlServer `global.json` 相同的版本，并以
+   `sdkPinnedByReleaseScript` 记录；两端实际解析到的 SDK 分别记在 manifest 的
+   `components.controlServer.sdkVersion` 与 `components.onboardHmi.sdkVersion`；
 5. 两端任一构建出现警告即失败退出（车载端 `TreatWarningsAsErrors=true`）；
 6. 从服务端包的 `appsettings.json` **读回**协议身份，并要求 `approvalStatus` 为
    `APPROVED_RELEASE`；
@@ -470,7 +474,7 @@ sink——服务模式下控制台输出无处可去，**因此不要绕过安�
 **发布包里只有可运行的二进制，不含测试宿主。** 要跑核心场景，需要另外克隆源码仓库；下面的入口
 不依赖本机已有的任何工作副本。
 
-单元与集成测试（ControlServer 仓，需要 SDK `8.0.424`）：
+单元与集成测试（ControlServer 仓，需要 SDK `8.0.425`，在仓根执行）：
 
 ```powershell
 dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
