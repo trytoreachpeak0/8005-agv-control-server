@@ -1,0 +1,41 @@
+{"at":"2026-09-10T08:20:08.0077880+00:00","note":"L2 run 20260910T082007963Z starting for scenario 'real-onboard-multi-demand-stop-plan'."}
+{"at":"2026-09-10T08:20:08.0333183+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T08:20:08.2021988+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T08:20:11.2318663+00:00","note":"Reusing cached onboard-hmi publish for 588819d6c62e7b386c25fa5aa24a5264a55a33cf."}
+{"at":"2026-09-10T08:20:11.3731938+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T08:20:11.3812116+00:00","note":"Peers: onboard-hmi@588819d6c62e7b386c25fa5aa24a5264a55a33cf, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T08:20:11.4163761+00:00","note":"Extra map stations from real-onboard-multi-demand-stop-plan.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2"}
+{"at":"2026-09-10T08:20:12.3442805+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T08:20:12.4970016+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T08:20:14.4058246+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-10T08:20:16.6949188+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T08:20:18.3118361+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T08:20:20.7363882+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-10T08:20:20.7541661+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-10T08:20:20.8363304+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-10T08:20:21.1169842+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T08:20:21.1809937+00:00","note":"Environment is up; entering scenario 'real-onboard-multi-demand-stop-plan'."}
+{"at":"2026-09-10T08:20:21.2392939+00:00","note":"Publishing demand L2-MDS-N1-3-20260910T082007963Z in area N1-3."}
+{"at":"2026-09-10T08:20:21.2989361+00:00","note":"Publishing demand L2-MDS-N2-6-20260910T082007963Z in area N2-6."}
+{"at":"2026-09-10T08:20:21.3133079+00:00","note":"Publishing demand L2-MDS-N3-4-20260910T082007963Z in area N3-4."}
+{"at":"2026-09-10T08:20:21.3197139+00:00","note":"Publishing demand L2-MDS-N4-2-20260910T082007963Z in area N4-2."}
+{"at":"2026-09-10T08:20:21.3697555+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T08:20:22.7007101+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T08:20:22.7190469+00:00","criterion":"stop-1-order","value":"W2G-48743531-2d0a-115a-b5e3-305e660fa245-S1-1"}
+{"at":"2026-09-10T08:20:22.7253359+00:00","note":"Vehicle drives to stop 1 (RIoT station 12)."}
+{"at":"2026-09-10T08:20:22.8457823+00:00","criterion":"journey-stops","value":"2"}
+{"at":"2026-09-10T08:20:24.1665153+00:00","criterion":"journey-stops","value":"5"}
+{"at":"2026-09-10T08:20:24.2026783+00:00","criterion":"stop-plan-legs","value":"0"}
+{"at":"2026-09-10T08:20:24.4766911+00:00","criterion":"stop-plan-legs","value":"5"}
+{"at":"2026-09-10T08:20:24.4907341+00:00","note":"=== Stop 1 : N1-3_N1-7, slots 1,2 ==="}
+{"at":"2026-09-10T08:20:24.5899169+00:00","criterion":"stop-1-can-submit","value":"True"}
+{"at":"2026-09-10T08:20:24.6058801+00:00","note":"Typing L2-MDS-N1-3-20260910T082007963Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-10T08:20:24.8009669+00:00","criterion":"stop-1-submit-ready","value":"True"}
+{"at":"2026-09-10T08:20:24.9656628+00:00","criterion":"stop-1-slot-1-open","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-10T08:20:26.2850795+00:00","criterion":"stop-1-slot-1-open","value":"OPEN/EMPTY/0/1"}
+{"at":"2026-09-10T08:20:26.8107290+00:00","criterion":"stop-1-slot-1-open","value":"OPEN/EMPTY/0/0"}
+{"at":"2026-09-10T08:20:26.8117278+00:00","note":"Operator puts cargo in slot 1 and closes the door."}
+{"at":"2026-09-10T08:20:26.8757592+00:00","criterion":"stop-1-slot-1-loaded","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-10T08:20:27.1526995+00:00","criterion":"stop-1-slot-1-loaded","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-10T08:20:27.1602834+00:00","criterion":"stop-1-slot-2-open","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-10T08:22:27.2954386+00:00","note":"Run failed: Timed out after 120s waiting for: slot 2 is open and waiting for cargo. Last observed: \"CLOSED/EMPTY/1/0\""}

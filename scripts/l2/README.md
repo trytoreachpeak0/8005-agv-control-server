@@ -24,6 +24,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `sublot-wait-timeout` | 合成 | 到站没人扫码，等待窗口到期自己终结，下一单照常跑完 | `evidence/l2/20260908-sublot-wait-timeout-001` |
 | `auto-charge-endurance` | 合成 | 一趟串四幕：送完一单、低电自去充电、充满、再送一单 | `evidence/l2/20260908-auto-charge-endurance-007` |
 | `multi-demand-one-stop` | 合成 | 一个停靠上多张单，作业清单是复数的 | `evidence/l2/20260908-multi-demand-one-stop-001` |
+| `multi-demand-four-stops` | 合成 | 四张单落在四个不同站点：到第一站后吸收成一趟，行程带发五条腿，四站依次装完去关卡 | `evidence/l2/20260910-multi-demand-four-stops-009` |
 | `load-command-never-answered` | 合成 | 装载指令石沉大海，服务端重发而不改口 | `evidence/l2/20260908-regression-load-command-never-answered-001` |
 | `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-005` |
 | `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
@@ -89,7 +90,7 @@ resume 是设计不是缺陷。同一状态下 `COMPENSATE_LOAD_ALL_EMPTY` 是�
 
 ## CI 只跑合成场景
 
-`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。现在是八条，
+`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。现在是十条，
 证据当作 artifact 传上去（失败时也传——失败那次的证据才是唯一说明原因的东西）。
 
 **真装置那三条刻意不进 CI，两个各自独立的原因：**
@@ -402,6 +403,19 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     另一头还有两道硬前置，一起记着：`ValidateInitialSnapshot` 要求每个目标仓
     **已锁且开锁输出已复位**，否则当场判 `LOCK_NOT_CLOSED` 返回 `FAILED`——**车辆不会去驱动
     一扇已经开着的门**，所以「关门」是补偿的入场券，不是布景。
+
+17. **`dotnet` 按当前目录找 `global.json`，不按传给它的 `.sln` 路径找。**2026-09-10 从工作区根
+    用绝对路径调这个脚本，两次都红在构建上：`multi-demand-four-stops-007` 报
+    `error CA1859: Change type of parameter 'stops' ...`，`-008` 报
+    `C:\Program Files\dotnet\sdk\10.0.302\...\Microsoft.NET.Sdk.Analyzers.targets(43,5): error MSB4184`。
+    工作区根没有 `global.json`，于是落到机器上最新的 SDK 10.0.302，而本仓
+    `TreatWarningsAsErrors` 加 `AnalysisLevel=latest-recommended` 让新 SDK 的分析器直接判死。同一
+    个 commit 进仓目录构建是 0 警告——**像偶发，其实取决于调用者站在哪里**。现在构建与 peer 发布都
+    先 `Push-Location` 进各自的仓（或克隆），并把实际解析到的 SDK 版本记进 timeline。
+    **历史证据不受影响**：文档里的调用写法 `pwsh .\scripts\l2\Invoke-L2Scenario.ps1` 本身就要求站
+    在仓里；而且 SDK 10 下 ControlServer 构建必然失败，所以凡是构建成功的那次运行，同一进程里
+    发布的 peer 用的也是 8.0.425。同一个坑还在 `scripts/build.ps1`、`test-wire-to-gate.ps1`、
+    `Publish-ControlServer.ps1` 与 `field/Invoke-W1FieldWindow.ps1` 里，不在本目录，另行处理。
 
 ## ADR-cross-0058 的三条操作员不作为场景
 

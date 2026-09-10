@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-multi-demand-stop-plan",
+  "runId": "20260910T081500971Z",
+  "outcome": "FAIL",
+  "failureReason": "The property 'Count' cannot be found on this object. Verify that the property exists.",
+  "identity": {
+    "rig": "RealOnboard",
+    "controlServerCommit": "bc63153a7b746816904bc9e744b426901a70f712",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T081500971Z",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "BATCH-3",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "onboardHmiCommit": "588819d6c62e7b386c25fa5aa24a5264a55a33cf",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-MDS-01",
+      "description": "四条需求凑成一趟旅程，四个取货停靠加一个关卡",
+      "outcome": "PASS",
+      "expected": "4 PICKUP + 1 GATE",
+      "actual": "4 PICKUP + 1 GATE"
+    },
+    {
+      "id": "L2-MDS-02",
+      "description": "是一趟旅程，不是四趟",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-MDS-03",
+      "description": "服务端按契约发出五条腿的行程带（四个取货加一个关卡）",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    }
+  ]
+}
