@@ -14,7 +14,6 @@ public sealed class OnboardRecoveryCoordinator(
     TimeProvider timeProvider,
     IConfiguration configuration)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] RecoveryRequestTypes =
     [
         "ExceptionRecoverySessionRequested",
@@ -1161,20 +1160,14 @@ public sealed class OnboardRecoveryCoordinator(
         });
 
     private string Response(JsonElement request, string messageType, object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        ProtocolEnvelope.Serialize(
             messageType,
-            messageId = Guid.NewGuid().ToString("D"),
-            correlationId = RequiredString(request, "messageId"),
-            agvId = RequiredString(request, "agvId"),
-            sessionGeneration = request.GetProperty("sessionGeneration").GetInt64(),
-            sentAt = timeProvider.GetUtcNow(),
-            payload
-        }, SerializerOptions);
+            Guid.NewGuid().ToString("D"),
+            RequiredString(request, "messageId"),
+            RequiredString(request, "agvId"),
+            request.GetProperty("sessionGeneration").GetInt64(),
+            timeProvider.GetUtcNow(),
+            payload);
 
     private string DurableAck(
         string acceptedMessageType,
@@ -1182,26 +1175,21 @@ public sealed class OnboardRecoveryCoordinator(
         string agvId,
         long generation,
         string contentHash) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-            messageType = "DurableAck",
-            messageId = Guid.NewGuid().ToString("D"),
-            correlationId = acceptedMessageId,
+        ProtocolEnvelope.Serialize(
+            "DurableAck",
+            Guid.NewGuid().ToString("D"),
+            acceptedMessageId,
             agvId,
-            sessionGeneration = generation,
-            sentAt = timeProvider.GetUtcNow(),
-            payload = new
+            generation,
+            // Read before durablyAcceptedAt, as it was when both sat in one object initializer.
+            timeProvider.GetUtcNow(),
+            new
             {
                 acceptedMessageId,
                 acceptedMessageType,
                 acceptedContentSha256 = contentHash,
                 durablyAcceptedAt = timeProvider.GetUtcNow()
-            }
-        }, SerializerOptions);
+            });
 
     private static object Problem(string reasonCode, string fieldPath, string displayMessage) => new
     {

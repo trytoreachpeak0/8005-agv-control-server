@@ -1,0 +1,38 @@
+{"at":"2026-09-10T07:07:56.1825415+00:00","note":"L2 run 20260910T070756132Z starting for scenario 'load-cancelled-in-flight'."}
+{"at":"2026-09-10T07:07:56.2431397+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T07:08:00.0429341+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T07:08:00.2056502+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T07:08:02.7437837+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T07:08:04.3870729+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T07:08:05.1526862+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-10T07:08:05.4405592+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-10T07:08:05.4673201+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T07:08:05.5142279+00:00","note":"Environment is up; entering scenario 'load-cancelled-in-flight'."}
+{"at":"2026-09-10T07:08:05.5661006+00:00","note":"Synthetic peer holds load results open: the door is open and nothing has been placed yet."}
+{"at":"2026-09-10T07:08:05.6176739+00:00","note":"Publishing two demands (L2-SUBLOT-A-20260910T070756132Z, L2-SUBLOT-B-20260910T070756132Z) at one pickup station."}
+{"at":"2026-09-10T07:08:05.7166110+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T07:08:06.7854335+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T07:08:06.8044567+00:00","criterion":"to-pickup-intent","value":"CREATE_ATTEMPTED"}
+{"at":"2026-09-10T07:08:07.0600692+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-10T07:08:07.0635475+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-10T07:08:07.1365879+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-10T07:08:08.4581330+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T07:08:09.2450465+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T07:08:09.2802706+00:00","criterion":"commanded-load","value":"@{SlotOperationAttemptId=854f6510-04f9-a856-aef3-15f085dd76c0; DemandId=676e86b0-a492-401c-bc68-56540d24062d; Status=Prepared; TargetSlotsJson=[1]}"}
+{"at":"2026-09-10T07:08:09.2861821+00:00","note":"Cancelling demand 676e86b0-a492-401c-bc68-56540d24062d, slot operation attempt 854f6510-04f9-a856-aef3-15f085dd76c0."}
+{"at":"2026-09-10T07:08:09.3084025+00:00","note":"Operator cancels the load that is already in flight."}
+{"at":"2026-09-10T07:08:09.3370661+00:00","note":"Cancellation 88adea31-7e73-4aa7-8212-dc2bee01f5d3 raised."}
+{"at":"2026-09-10T07:08:09.3562791+00:00","criterion":"cancellation-workflow","value":"(null)"}
+{"at":"2026-09-10T07:08:09.6130221+00:00","criterion":"cancellation-workflow","value":"@{State=Reconciled; Outcome=ALL_EMPTY; SlotOperationAttemptId=854f6510-04f9-a856-aef3-15f085dd76c0}"}
+{"at":"2026-09-10T07:08:09.6544578+00:00","criterion":"load-command-settled","value":"2026-09-10 07:08:09.4342508+00:00"}
+{"at":"2026-09-10T07:08:10.4605891+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T07:08:10.4727749+00:00","note":"Synthetic peer answers load results again; the operator loads the remaining demand."}
+{"at":"2026-09-10T07:08:10.4954954+00:00","criterion":"committed-loads","value":"0"}
+{"at":"2026-09-10T07:08:11.5874154+00:00","criterion":"committed-loads","value":"1"}
+{"at":"2026-09-10T07:08:11.6111787+00:00","criterion":"remaining-demand-state","value":"Planned"}
+{"at":"2026-09-10T07:08:12.1423203+00:00","criterion":"remaining-demand-state","value":"Loaded"}
+{"at":"2026-09-10T07:08:12.1476837+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-10T07:08:12.4211321+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T07:08:12.4322772+00:00","criterion":"riot-order-count","value":"2"}
+{"at":"2026-09-10T07:08:12.4403507+00:00","note":"Fake RIoT holds 2 order(s) at the end of the scenario."}
+{"at":"2026-09-10T07:08:12.4562588+00:00","note":"Scenario finished."}

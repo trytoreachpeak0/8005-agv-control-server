@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-cancelled-before-sublot",
+  "runId": "20260910T070741074Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T070741074Z",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "controlServerCommit": "b5a5e0ebb77a54f6cec727ddd90418c2425119fe",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-CB-01",
+      "description": "车到取货站后停在等条码录入这一步",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-CB-02",
+      "description": "条码录入请求已发出且尚未被结算",
+      "outcome": "PASS",
+      "expected": "未结算",
+      "actual": "AcknowledgedAt="
+    },
+    {
+      "id": "L2-CB-03",
+      "description": "旅程以 CANCELLED_BY_OPERATOR 终结",
+      "outcome": "PASS",
+      "expected": "Completed / CANCELLED_BY_OPERATOR",
+      "actual": "Completed / CANCELLED_BY_OPERATOR"
+    },
+    {
+      "id": "L2-CB-04",
+      "description": "需求终态为 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled",
+      "actual": "Cancelled"
+    },
+    {
+      "id": "L2-CB-05",
+      "description": "车辆调度租约已释放",
+      "outcome": "PASS",
+      "expected": "已释放",
+      "actual": "ReleasedAt=2026-09-10 07:07:54.4949956+00:00"
+    },
+    {
+      "id": "L2-CB-06",
+      "description": "那条没人回答的条码录入请求被结算了",
+      "outcome": "PASS",
+      "expected": "已结算",
+      "actual": "AcknowledgedAt=2026-09-10 07:07:54.4949956+00:00"
+    },
+    {
+      "id": "L2-CB-13",
+      "description": "按业务键写下了永久取消抑制",
+      "outcome": "PASS",
+      "expected": "1 条 / CANCELLED_BY_OPERATOR",
+      "actual": "1 条 / CANCELLED_BY_OPERATOR / key=L2-SUBLOT-20260910T070741074Z-A|WIRE_TO_GATE"
+    },
+    {
+      "id": "L2-CB-07",
+      "description": "全程没有下发过任何仓位操作",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CB-08",
+      "description": "取消之后车立刻受理下一单",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-CB-09",
+      "description": "第二单的候选判定是 ACCEPTED",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    },
+    {
+      "id": "L2-CB-10",
+      "description": "被取消的需求不会被重新受理",
+      "outcome": "PASS",
+      "expected": "DEMAND_ALREADY_ACCEPTED",
+      "actual": "DEMAND_ALREADY_ACCEPTED"
+    },
+    {
+      "id": "L2-CB-11",
+      "description": "两单各自一趟，没有多出来的旅程",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    },
+    {
+      "id": "L2-CB-12",
+      "description": "全程只建了两条 RIoT 单，取消本身不派车",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    }
+  ]
+}

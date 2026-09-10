@@ -12,7 +12,7 @@ public sealed class OnboardJourneyPublisher(
     IOnboardPeer peer,
     TimeProvider timeProvider)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
     private static readonly string[] SublotEntryMethods = ["SCANNER", "KEYBOARD"];
     private static readonly string[] LoadCorrectionSequence = ["EMPTY", "OCCUPIED"];
 
@@ -638,20 +638,14 @@ public sealed class OnboardJourneyPublisher(
         long sessionGeneration,
         DateTimeOffset sentAt,
         object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        ProtocolEnvelope.Serialize(
             messageType,
             messageId,
             correlationId,
             agvId,
             sessionGeneration,
             sentAt,
-            payload = JsonSerializer.SerializeToElement(payload, SerializerOptions)
-        }, SerializerOptions);
+            JsonSerializer.SerializeToElement(payload, SerializerOptions));
 
     private async Task PublishSlotOperationEnvelopeAsync(
         string messageType,
