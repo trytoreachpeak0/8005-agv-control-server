@@ -11,6 +11,7 @@ public sealed partial class OnboardMessageProcessor(
     WireToGateStore store,
     OnboardRecoveryCoordinator recoveryCoordinator,
     OnboardAlarmProjectionStore alarmStore,
+    SlotConfigurationActivationDispatcher activationDispatcher,
     TimeProvider timeProvider,
     IConfiguration configuration,
     ILogger<OnboardMessageProcessor> logger)
@@ -193,6 +194,16 @@ public sealed partial class OnboardMessageProcessor(
             // 协议 v2 消息 9。SNAPSHOT，不是 RELIABLE，也不是事件流：后一份整体取代前一份，所以
             // 断线重连之后不需要知道漏了什么。#16 的 RecordSnapshotAsync 已经处理了「序号回退的
             // 快照忽略掉」，这里不再判一次。
+            // 协议 v2 消息 8。RELIABLE 而不是 RESPONSE：REQ-0264 的「不能猜测成功」正是
+            // PENDING_RESULT_REPLAY 存在的理由，用 RESPONSE 就没有补报语义，断线即丢。补报的幂等
+            // 在 #15 的 RecordResultAsync 里——同一次激活报两次，第二次原样返回已收敛的那一行。
+            case "SlotConfigurationActivationResult":
+                {
+                    await activationDispatcher.RecordResultAsync(
+                        SlotConfigurationActivationWire.Result(payload),
+                        cancellationToken).ConfigureAwait(false);
+                    return DurableAck(messageType, messageId, agvId, generation, contentHash);
+                }
             case "OnboardAlarmSnapshot":
                 {
                     long revision = OnboardAlarmSnapshotWire.Revision(payload);

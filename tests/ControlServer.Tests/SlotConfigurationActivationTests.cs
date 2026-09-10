@@ -10,15 +10,17 @@ namespace ControlServer.Tests;
 /// 整车仓位配置的原子激活下发与结果补报，服务端半边（REQ-0264、REQ-0265、REQ-0316）。
 /// </summary>
 /// <remarks>
-/// 这里固化的是业务语义。协议 v2 消息 7／8 与 <c>CapabilitySnapshot</c> 的
-/// <c>activeSlotConfigurationFingerprint</c> 字段属批次 2 轨 A，尚未落地——所以本文件不碰传输，也
-/// 不碰序列化。轨 A 到位后传输层调的就是这几个方法。
+/// 这里固化的是业务语义，本文件不碰传输也不碰序列化。#15 落地时协议 v2 消息 7／8 还没做，所以它
+/// 一条切片 trait 都没有；线上那一半接好之后，传输层调的就是这几个方法，它们站在
+/// <c>SlotConfigurationActivationCommand</c>／<c>Result</c> 背后，归 <c>FP-IS-14</c>。线上那一半
+/// 自己的证据在 <c>SlotConfigurationActivationWireTests</c>。
 /// </remarks>
 public sealed class SlotConfigurationActivationTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 9, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
     public async Task AnActivationGoesOutReliableUnderTheSlotConfigurationRecoveryRoleAndWaitsForItsResult()
     {
         await using ActivationFixture fixture = await ActivationFixture.CreateAsync();
@@ -46,6 +48,7 @@ public sealed class SlotConfigurationActivationTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
     public async Task WhileTheResultIsOutstandingTheServerGuessesNeitherSuccessNorFailure()
     {
         await using ActivationFixture fixture = await ActivationFixture.CreateAsync();
@@ -83,6 +86,7 @@ public sealed class SlotConfigurationActivationTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
     public async Task AReplayedResultConvergesTheSameActivationInsteadOfProducingASecondOne()
     {
         await using ActivationFixture fixture = await ActivationFixture.CreateAsync();
@@ -109,6 +113,7 @@ public sealed class SlotConfigurationActivationTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
     public async Task AConfigurationWithAnUnboundSlotCannotBeIssuedAtAll()
     {
         await using ActivationFixture fixture = await ActivationFixture.CreateAsync();
@@ -134,6 +139,7 @@ public sealed class SlotConfigurationActivationTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
     public async Task TheFingerprintDecidesWhetherTheArchivedConfigurationIsStillARestorationCandidate()
     {
         await using ActivationFixture fixture = await ActivationFixture.CreateAsync();
@@ -173,6 +179,7 @@ public sealed class SlotConfigurationActivationTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
     public void NoSecondHumanApprovalStandsBetweenTheDecisionAndTheActivation()
     {
         // REQ-0265：一次激活动作已经包含重新投运意图。发起激活就是那次决定本身，不再回头要一次确认

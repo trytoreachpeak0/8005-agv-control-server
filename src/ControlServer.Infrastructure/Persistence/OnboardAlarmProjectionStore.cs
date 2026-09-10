@@ -14,8 +14,10 @@ namespace ControlServer.Infrastructure.Persistence;
 /// 断线期间漏了什么，因为这一份就是当下的全部事实。
 /// </para>
 /// <para>
-/// **本类不实现协议 v2 的传输与序列化。**消息 9 <c>OnboardAlarmSnapshot</c> 的收发属批次 2 轨 A，
-/// 尚未落地；这里固化的是收到之后怎么存、怎么投影。
+/// **本类不实现协议 v2 的传输与序列化。**这里固化的是收到之后怎么存、怎么投影。消息 9
+/// <c>OnboardAlarmSnapshot</c> 的收发在 <c>ControlServer.Host.Transport</c> 下的
+/// <c>OnboardAlarmSnapshotWire</c> 与 <c>OnboardMessageProcessor</c>，它调用的是下面的
+/// <see cref="RecordSnapshotAsync"/>，「序号回退的快照忽略掉」不在那边再判一次。
 /// </para>
 /// <para>
 /// 告警码在这里始终是字符串，一次都不经过 <c>ErrorCode</c>：告警是开放集合，把它塞进封闭 enum 等于

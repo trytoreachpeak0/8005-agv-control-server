@@ -95,6 +95,7 @@ builder.Services.AddSingleton<IValidateOptions<OnboardTransportOptions>, Onboard
 builder.Services.AddScoped<OnboardMessageProcessor>();
 builder.Services.AddScoped<OnboardJourneyPublisher>();
 builder.Services.AddScoped<OnboardRecoveryCoordinator>();
+builder.Services.AddScoped<SlotConfigurationActivationDispatcher>();
 builder.Services.AddSingleton<OnboardPeer>();
 builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();

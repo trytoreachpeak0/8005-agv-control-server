@@ -8,7 +8,8 @@ namespace ControlServer.Domain;
 /// <c>PENDING_RESULT_REPLAY</c> 存在的理由：用 RESPONSE 就没有补报语义，断线即丢，服务端除了猜
 /// 没有别的可做。<see cref="RecoveryRole"/> 是新增的 <c>SLOT_CONFIGURATION</c>。
 ///
-/// 这里只有约定，没有传输：消息 7／8 的序列化与收发属批次 2 轨 A，本票停在业务语义。
+/// 这里只有约定，没有传输：消息 7／8 的序列化与收发在
+/// <c>ControlServer.Host.Transport.SlotConfigurationActivationWire</c>。
 /// </remarks>
 public static class SlotConfigurationActivationDelivery
 {
@@ -18,13 +19,13 @@ public static class SlotConfigurationActivationDelivery
     /// <summary>恢复角色。重连补报时按它找回未结的激活。</summary>
     public const string RecoveryRole = "SLOT_CONFIGURATION";
 
-    /// <summary>协议 v2 消息 7。轨 A 落地前，这里只是一个名字。</summary>
+    /// <summary>协议 v2 消息 7。</summary>
     public const string CommandMessageType = "SlotConfigurationActivationCommand";
 
     /// <summary>协议 v2 消息 8。</summary>
     public const string ResultMessageType = "SlotConfigurationActivationResult";
 
-    /// <summary><c>CapabilitySnapshot</c> 上新增的指纹字段名。</summary>
+    /// <summary><c>CapabilitySnapshot</c> 上的指纹字段名。</summary>
     public const string CapabilityFingerprintField = "activeSlotConfigurationFingerprint";
 }
 

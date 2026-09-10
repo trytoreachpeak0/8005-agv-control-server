@@ -242,5 +242,13 @@ public sealed class GovernedActivationStore(
         return versions.Length == 0 ? 1 : versions.Max() + 1;
     }
 
-    private static string NewId() => Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+    /// <summary>
+    /// 激活 id 用协议的 <c>Id</c> 形状（<c>D</c>），不是批次 3 其余 id 的 <c>N</c>。
+    /// </summary>
+    /// <remarks>
+    /// 它是批次 3 唯一一个要上线的 id：manifest 把 <c>activationId</c> 定为消息 7／8 的
+    /// <c>businessDedupKey</c>，schema 把它定为 <c>Id</c>（<c>format: uuid</c>）。让库里存的和线上
+    /// 走的是同一个字符串，而不是在传输层来回换一次形状——一个身份两种写法，迟早有人只查得到一种。
+    /// </remarks>
+    private static string NewId() => Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
 }

@@ -81,7 +81,6 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["RollbackAndImpactPreviewTests"] = "batch 3 rollback and impact preview; a rollback is a new activation of an existing frozen version, server-internal",
             ["RouteGraphDispatchTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["RouteGraphEngineTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
-            ["SlotConfigurationActivationTests"] = "batch 3 FP-IS-14 server half; SlotConfigurationActivationCommand and SlotConfigurationActivationResult are still pinned in MessagesWithoutAnImplementation on this line, so nothing here stands behind a wire message yet",
             ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",
             ["SlotConfigurationGateModeTests"] = "readiness gate mode validation; no wire message",
             ["SlotConfigurationReadinessGateTests"] = "batch 3 per-vehicle IO integrity gate; a server-side readiness predicate, no wire message",

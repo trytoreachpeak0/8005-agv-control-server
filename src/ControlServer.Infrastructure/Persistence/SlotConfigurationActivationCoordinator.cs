@@ -11,9 +11,10 @@ namespace ControlServer.Infrastructure.Persistence;
 /// </summary>
 /// <remarks>
 /// <para>
-/// **本类不实现协议 v2 的传输与序列化。**消息 7／8 与 <c>CapabilitySnapshot</c> 的指纹字段属批次 2
-/// 轨 A，尚未落地。这里固化的是业务语义：原子性、待补报态、补报收敛、指纹比对规则。轨 A 到位后，
-/// 传输层调用的就是这几个方法，语义不需要再议一遍。
+/// **本类不实现协议 v2 的传输与序列化。**这里固化的是业务语义：原子性、待补报态、补报收敛、指纹
+/// 比对规则。线上那一半在 <c>ControlServer.Host.Transport</c> 下的
+/// <c>SlotConfigurationActivationDispatcher</c> 与 <c>SlotConfigurationActivationWire</c>——它调用
+/// 的正是下面这几个方法，语义不在那边再议一遍。
 /// </para>
 /// <para>
 /// **结果没回来时服务端在等，不在猜。**<see cref="SlotConfigurationActivationState.PendingResult"/>
@@ -292,5 +293,13 @@ public sealed class SlotConfigurationActivationCoordinator(
         return versions.Length == 0 ? 1 : versions.Max() + 1;
     }
 
-    private static string NewId() => Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+    /// <summary>
+    /// 激活 id 用协议的 <c>Id</c> 形状（<c>D</c>），不是批次 3 其余 id 的 <c>N</c>。
+    /// </summary>
+    /// <remarks>
+    /// 它是批次 3 唯一一个要上线的 id：manifest 把 <c>activationId</c> 定为消息 7／8 的
+    /// <c>businessDedupKey</c>，schema 把它定为 <c>Id</c>（<c>format: uuid</c>）。让库里存的和线上
+    /// 走的是同一个字符串，而不是在传输层来回换一次形状——一个身份两种写法，迟早有人只查得到一种。
+    /// </remarks>
+    private static string NewId() => Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
 }
