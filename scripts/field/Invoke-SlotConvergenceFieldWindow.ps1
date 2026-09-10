@@ -136,6 +136,39 @@ if ($Finalize) {
     }
 }
 
+function Get-RemoteJson {
+    param([string]$Alias, [string]$Path)
+
+    # Single-line only. A multi-line block piped to `pwsh -Command -` over SSH silently does not run
+    # -- exit code 0, no output, no error -- which reads exactly like "checked, found nothing".
+    $raw = & ssh $Alias "pwsh -NoProfile -Command `"Get-Content -Raw -LiteralPath '$Path'`"" 2>$null
+    if (-not $raw) { return $null }
+    try { return ($raw | ConvertFrom-Json -AsHashtable) } catch { return $null }
+}
+
+$manifestPath = 'D:\zhengyushao\ControlServer\release-manifest.json'
+
+# A window is one package. Appending to a directory whose last checkpoint was taken against another
+# package silently merges two windows: 20260910-FW-SC1-operator-inaction holds five frames from the
+# afternoon run (package 20260910T022619Z, a session stuck outside Ready), it is not finalised, and the
+# commands on 8005-agv-program#19 name exactly that path -- so a re-run pasted from there would judge
+# SC1-W-03 red on frames it never took. Checked before anything is created or copied.
+if (-not $DatabaseSnapshot -and (Test-Path -LiteralPath $snapshotRoot -PathType Container)) {
+    $lastFrame = Get-ChildItem -LiteralPath $snapshotRoot -Directory | Sort-Object Name | Select-Object -Last 1
+    $lastIdentityPath = $lastFrame ? (Join-Path $lastFrame.FullName 'identity.json') : $null
+    $lastRunId = ($lastIdentityPath -and (Test-Path -LiteralPath $lastIdentityPath -PathType Leaf)) `
+        ? [string](Get-Content -LiteralPath $lastIdentityPath -Raw | ConvertFrom-Json).packageRunId : $null
+    if ($lastRunId) {
+        $liveRunId = [string](Get-RemoteJson -Alias $ServerHost -Path $manifestPath)?.runId
+        if (-not $liveRunId) {
+            throw "Cannot read the live package's runId from ${ServerHost}:$manifestPath, so whether $EvidenceRoot belongs to this package is unknown. Refusing to append."
+        }
+        if ($liveRunId -ne $lastRunId) {
+            throw "$EvidenceRoot was recorded against package $lastRunId, but ${ServerHost} now runs package $liveRunId. That is a different window -- start a new evidence directory and name this one in its SUMMARY.md."
+        }
+    }
+}
+
 New-Item -ItemType Directory -Path $snapshotRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
 
@@ -236,16 +269,6 @@ Add-TimelineEvent -Kind 'checkpoint-started' -Data @{
 
 # --- the two ends' identity ---------------------------------------------------------------------
 
-function Get-RemoteJson {
-    param([string]$Alias, [string]$Path)
-
-    # Single-line only. A multi-line block piped to `pwsh -Command -` over SSH silently does not run
-    # -- exit code 0, no output, no error -- which reads exactly like "checked, found nothing".
-    $raw = & ssh $Alias "pwsh -NoProfile -Command `"Get-Content -Raw -LiteralPath '$Path'`"" 2>$null
-    if (-not $raw) { return $null }
-    try { return ($raw | ConvertFrom-Json -AsHashtable) } catch { return $null }
-}
-
 $identity = [ordered]@{
     runId    = $runId
     windowId = $windowId
@@ -263,7 +286,7 @@ if (-not $DatabaseSnapshot) {
     # there is no manifest on the vehicle to read, and asking for one finds nothing. The full
     # manifest is written out whole (it inventories every file's SHA-256) but only the three
     # identities go into identity.json: a summary nobody can read is a summary nobody checks.
-    $manifest = Get-RemoteJson -Alias $ServerHost -Path 'D:\zhengyushao\ControlServer\release-manifest.json'
+    $manifest = Get-RemoteJson -Alias $ServerHost -Path $manifestPath
     if ($manifest) {
         Write-Json -Path (Join-Path $checkpointDirectory 'release-manifest.json') -Value $manifest
         $identity['packageRunId'] = $manifest.runId
