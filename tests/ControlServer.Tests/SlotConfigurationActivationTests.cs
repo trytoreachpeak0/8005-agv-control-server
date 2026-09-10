@@ -53,6 +53,48 @@ public sealed class SlotConfigurationActivationTests
         Assert.Equal(activation.SnapshotId, issued.SnapshotId);
     }
 
+    /// <summary>
+    /// 规范化摘要钉在一个固定值上，两个仓各钉一份同样的。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 消息 7 不带配置内容，激活是一次核验：服务端发它批准的那一版的指纹，车算自己手上那份的指纹，
+    /// 相等才切换。两端的实现互相看不见——控制服务端在
+    /// <see cref="SlotConfigurationFingerprint"/>，车载端在
+    /// <c>SQCD.Agv.Core.ActiveSlotConfiguration.ComputeFingerprint</c>——所以「两边算法一致」这句话
+    /// 在任何一个仓里都不可能靠对比来证。
+    /// </para>
+    /// <para>
+    /// 固定值是唯一能证的形式：同一批输入，同一个字面量，两个仓各断言一次。哪一边改了规范化形式，
+    /// 那一边当场变红，而不是等到现场那台车拒收激活的时候才发现。车载端那一份在
+    /// <c>SlotConfigurationActivationTests.TheFingerprintMatchesTheValueTheControlServerComputes</c>。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
+    public void TheCanonicalFingerprintOfTheSharedExampleIsTheValueTheOnboardSideAlsoComputes()
+    {
+        SlotIoBindingSpecification[] bindings =
+        [
+            .. Enumerable.Range(1, 8).Select(number => new SlotIoBindingSpecification(
+                number,
+                FormattableString.Invariant($"DO{number}"),
+                FormattableString.Invariant($"DI{number}"),
+                FormattableString.Invariant($"DI{number + 8}"),
+                "ACTIVE_HIGH",
+                500))
+        ];
+
+        Assert.Equal(
+            "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+            SlotConfigurationFingerprint.Compute(bindings));
+
+        // 顺序无关：摘要按仓号升序规范化，输入顺序不该影响结果。
+        Assert.Equal(
+            SlotConfigurationFingerprint.Compute(bindings),
+            SlotConfigurationFingerprint.Compute([.. bindings.Reverse()]));
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-14")]
     public async Task WhileTheResultIsOutstandingTheServerGuessesNeitherSuccessNorFailure()
