@@ -137,6 +137,7 @@ function Get-G3RunnerClaim {
                     'onboardAlarmSnapshotPublishedOnTheFullHandshake',
                     'onboardAlarmSnapshotAppliedAckOnEverySnapshot',
                     'onboardAlarmSnapshotNotRepublishedOnRecoveryResume',
+                    'onboardAlarmProjectionKeptOnlyTheLatestOfSeveralSnapshots',
                     'onboardAlarmProjectionIsASingletonPerVehicle',
                     'onboardAlarmProjectionCarriesTheGenerationItArrivedIn')
             }
