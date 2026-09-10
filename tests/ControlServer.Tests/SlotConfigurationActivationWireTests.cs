@@ -317,7 +317,8 @@ public sealed class SlotConfigurationActivationWireTests
             SlotConfigurationActivationDispatcher dispatcher = new(
                 context,
                 new SlotConfigurationActivationCoordinator(context, governedPublisher, governance),
-                publisher);
+                publisher,
+                governance);
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {

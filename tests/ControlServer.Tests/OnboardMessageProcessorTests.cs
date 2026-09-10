@@ -136,7 +136,7 @@ public sealed class OnboardMessageProcessorTests
                 "CapabilitySnapshot",
                 "00000000-0000-4000-8000-000000000011",
                 state.SessionGeneration,
-                new { capabilityVersion = 1 });
+                new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('0', 64) });
 
             string capabilityResponse = await processor.ProcessAsync(
                 snapshot, state, TestContext.Current.CancellationToken);
@@ -226,7 +226,7 @@ public sealed class OnboardMessageProcessorTests
             long generation = state.SessionGeneration!.Value;
             await processor.ProcessAsync(
                 Envelope("CapabilitySnapshot", "00000000-0000-4000-8000-000000000002", generation,
-                    new { capabilityVersion = 1 }),
+                    new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('0', 64) }),
                 state, TestContext.Current.CancellationToken);
             await processor.ProcessAsync(
                 Envelope("SafetyStateSnapshot", "00000000-0000-4000-8000-000000000003", generation,
@@ -300,7 +300,7 @@ public sealed class OnboardMessageProcessorTests
                     "CapabilitySnapshot",
                     "00000000-0000-4000-8000-000000000025",
                     firstGeneration,
-                    new { capabilityVersion = 1 }),
+                    new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('0', 64) }),
                 firstState,
                 TestContext.Current.CancellationToken);
             await processor.ProcessAsync(
@@ -1073,7 +1073,7 @@ public sealed class OnboardMessageProcessorTests
         long generation = state.SessionGeneration!.Value;
         await processor.ProcessAsync(
             Envelope("CapabilitySnapshot", Guid.NewGuid().ToString("D"), generation,
-                new { capabilityVersion = 1 }),
+                new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('0', 64) }),
             state,
             cancellationToken);
         await processor.ProcessAsync(

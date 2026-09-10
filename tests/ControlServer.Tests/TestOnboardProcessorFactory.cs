@@ -25,7 +25,8 @@ internal static class TestOnboardProcessorFactory
             context,
             new SlotConfigurationActivationCoordinator(
                 context, new GovernedConfigurationPublisher(governance, governance), governance),
-            publisher);
+            publisher,
+            governance);
         OnboardRecoveryCoordinator coordinator = new(
             context, store, publisher, activationDispatcher, timeProvider, configuration);
         return new OnboardMessageProcessor(

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +30,8 @@ namespace ControlServer.Host.Transport;
 public sealed class SlotConfigurationActivationDispatcher(
     ControlServerDbContext context,
     SlotConfigurationActivationCoordinator coordinator,
-    OnboardJourneyPublisher publisher)
+    OnboardJourneyPublisher publisher,
+    IGovernanceAuditWriter auditWriter)
 {
     private readonly ControlServerDbContext _context =
         context ?? throw new ArgumentNullException(nameof(context));
@@ -36,6 +39,8 @@ public sealed class SlotConfigurationActivationDispatcher(
         coordinator ?? throw new ArgumentNullException(nameof(coordinator));
     private readonly OnboardJourneyPublisher _publisher =
         publisher ?? throw new ArgumentNullException(nameof(publisher));
+    private readonly IGovernanceAuditWriter _auditWriter =
+        auditWriter ?? throw new ArgumentNullException(nameof(auditWriter));
 
     /// <summary>下发一次激活：落库、排队、上线。</summary>
     public async Task<SlotConfigurationActivationRow> IssueAsync(
@@ -93,6 +98,69 @@ public sealed class SlotConfigurationActivationDispatcher(
         IReadOnlyList<SlotConfigurationActivationRow> pending = await _coordinator
             .ListPendingResultReplayAsync(agvId, cancellationToken).ConfigureAwait(false);
         return [.. pending.Select(row => row.CommandMessageId).OfType<string>()];
+    }
+
+    /// <summary>
+    /// 车在 <c>CapabilitySnapshot</c> 里报的 <c>activeSlotConfigurationFingerprint</c> 与服务端认定的
+    /// 那一版核对一次（REQ-0316、<c>VERIFY_FINGERPRINT_BEFORE_ACTIVATION</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 每一份能力快照到达时都核，不是发起激活时才核。发起激活时才核，中间那段时间里服务端相信的东西
+    /// 就没有任何东西在担保；每份快照都核，则「服务端认定的那一版」这个事实是被持续对照过的，发起激活
+    /// 时读它才站得住——这也是服务端不为「车说它装着什么」另存一份副本的原因：那份副本一旦与这里的
+    /// 判定分家，就会有人去信副本。
+    /// </para>
+    /// <para>
+    /// 不一致要留痕，而且要留在不可改写的那条流上：一次「车与服务端对不上」是治理事件，不是一行日志。
+    /// </para>
+    /// </remarks>
+    public async Task<SlotConfigurationFingerprintVerdict> ReconcileReportedFingerprintAsync(
+        string agvId,
+        string reportedFingerprint,
+        DateTimeOffset observedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reportedFingerprint);
+
+        ActiveSlotConfigurationRow? active = await _context.Set<ActiveSlotConfigurationRow>().AsNoTracking()
+            .FirstOrDefaultAsync(row => row.AgvId == agvId, cancellationToken).ConfigureAwait(false);
+
+        if (active is null)
+        {
+            // 服务端手上没有生效版本：这台车要么从没激活过，要么刚被恢复回来。没有可比对的对象，所以
+            // 这一份指纹要回答的是另一个问题——归档前那份配置还能不能当恢复候选。
+            RecoveryCandidateVerdict candidate = await _coordinator
+                .EvaluateRecoveryCandidateAsync(agvId, reportedFingerprint, cancellationToken)
+                .ConfigureAwait(false);
+            return new SlotConfigurationFingerprintVerdict(
+                agvId, Agrees: true, ExpectedFingerprint: null, reportedFingerprint, candidate);
+        }
+
+        bool agrees = string.Equals(active.Fingerprint, reportedFingerprint, StringComparison.Ordinal);
+        if (!agrees)
+        {
+            await _auditWriter.WriteBusinessAsync(
+                new GovernanceAuditEntry(
+                    "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH_OBSERVED",
+                    GovernedObjectKind.ActiveSlotConfiguration,
+                    agvId,
+                    active.ConfigurationVersion,
+                    GovernanceActionOutcome.Failed,
+                    JsonSerializer.Serialize(new
+                    {
+                        reasonCode = SlotConfigurationFingerprintVerdict.MismatchCode,
+                        expectedFingerprint = active.Fingerprint,
+                        reportedFingerprint,
+                        activationId = active.ActivationId
+                    }),
+                    active.SnapshotId),
+                observedAt,
+                cancellationToken).ConfigureAwait(false);
+        }
+        return new SlotConfigurationFingerprintVerdict(
+            agvId, agrees, active.Fingerprint, reportedFingerprint, RestorationCandidate: null);
     }
 
     /// <summary>收下一份结果，交给协调器收敛。</summary>

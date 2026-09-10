@@ -2340,6 +2340,7 @@ public sealed class JourneyRuntimeWorkerTests
                 observedAt = Now,
                 slotModelVersion = "SLOT-MODEL-1",
                 activeSlotConfigurationVersion = "SLOT-CONFIG-1",
+                activeSlotConfigurationFingerprint = new string('0', 64),
                 slotStates = Enumerable.Range(1, 8).Select(slot => new
                 {
                     slotNo = slot,

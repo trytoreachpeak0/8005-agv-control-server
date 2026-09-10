@@ -25,6 +25,10 @@ public sealed class OnboardPeerSession(
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
+
+    /// <summary>这个假车固定装着同一版配置，所以它报的指纹是一个常量。</summary>
+    private const string FakeActiveSlotConfigurationFingerprint =
+        "0000000000000000000000000000000000000000000000000000000000000000";
     private readonly SemaphoreSlim writeGate = new(1, 1);
     private readonly System.Collections.Concurrent.ConcurrentQueue<WireEvent> wire = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> answered =
@@ -89,7 +93,10 @@ public sealed class OnboardPeerSession(
             capabilityVersion = 1,
             observedAt = DateTimeOffset.UtcNow,
             slotModelVersion = "fake-slot-model-v1",
+            // 协议 v2 在 CapabilitySnapshot 上要求这一项：车报它此刻装着哪一版仓位配置。这个假车从不
+            // 换配置，所以它每次报同一个值——服务端手上没有生效版本时不比对，有的时候比对不上会拒收。
             activeSlotConfigurationVersion = "fake-slot-config-v1",
+            activeSlotConfigurationFingerprint = FakeActiveSlotConfigurationFingerprint,
             slotStates = SlotStates(),
             supportsBatchUnlock = false,
             onboardJournalFormatVersion = 1

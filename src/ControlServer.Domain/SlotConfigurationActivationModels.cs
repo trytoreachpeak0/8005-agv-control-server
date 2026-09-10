@@ -64,6 +64,37 @@ public sealed record ActivationResultReport(
     DateTimeOffset ReportedAt);
 
 /// <summary>
+/// 车报上来的生效配置指纹与服务端认定的那一版是否一致。
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>不一致时服务端不采纳那份能力快照。</b>它不是「以谁为准」的问题——服务端认定这台车装着 A，
+/// 车说自己装着 B，那么这台车此刻装着什么，双方都不知道。采纳 B 等于服务端放弃自己的权威，采纳 A
+/// 等于假装没看见。两条都不做：拒收那一份快照并回一条稳定错误码
+/// <c>SLOT_CONFIGURATION_FINGERPRINT_MISMATCH</c>，能力修订号因此没被采纳，这台车在
+/// <c>DecideReadinessAsync</c> 里就取不到业务就绪——修正的路是重新走一次激活。
+/// </para>
+/// <para>
+/// 服务端手上还没有任何生效版本时（这台车从没激活过，或者刚被恢复回来）没有可比对的对象，
+/// <see cref="Agrees"/> 为真，此时看的是 <see cref="RestorationCandidate"/>：那份指纹能不能让归档前
+/// 的配置成为恢复候选（REQ-0316）。
+/// </para>
+/// </remarks>
+public sealed record SlotConfigurationFingerprintVerdict(
+    string AgvId,
+    bool Agrees,
+    string? ExpectedFingerprint,
+    string ReportedFingerprint,
+    RecoveryCandidateVerdict? RestorationCandidate)
+{
+    /// <summary>协议冻结的稳定错误码，也是 <c>CV-SLOT-CONFIGURATION-ACTIVATION</c> 指定的那一个。</summary>
+    public const string MismatchCode = "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH";
+
+    /// <summary>不一致时指向线上那个字段本身，好让对端知道是哪一项对不上。</summary>
+    public const string MismatchFieldPath = "payload.activeSlotConfigurationFingerprint";
+}
+
+/// <summary>
 /// 归档前配置能不能作为这次重连的恢复候选（REQ-0316）。
 /// </summary>
 /// <remarks>
