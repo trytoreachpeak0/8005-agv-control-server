@@ -2702,6 +2702,12 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(
             runtime.WorklistRevision,
             document.RootElement.GetProperty("payload").GetProperty("currentWorklistRevision").GetInt64());
+        // A RESPONSE correlated to the submission it refuses. With a null correlationId the vehicle
+        // throws CORRELATION_INVALID and the operator sees nothing (8005-agv-control-server#20);
+        // this test read only the payload, which is how that shipped.
+        ProtocolInboxRow submitted = await fixture.Context.ProtocolInbox.AsNoTracking()
+            .SingleAsync(row => row.MessageType == "SublotSubmitted", TestContext.Current.CancellationToken);
+        Assert.Equal(submitted.MessageId, document.RootElement.GetProperty("correlationId").GetString());
 
         // Judged once, not once per poll: the refused submission stays in the inbox, and re-judging
         // it would re-run the remote box-count read on every iteration.
