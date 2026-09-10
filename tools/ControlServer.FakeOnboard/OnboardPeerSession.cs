@@ -26,9 +26,6 @@ public sealed class OnboardPeerSession(
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
 
-    /// <summary>这个假车固定装着同一版配置，所以它报的指纹是一个常量。</summary>
-    private const string FakeActiveSlotConfigurationFingerprint =
-        "0000000000000000000000000000000000000000000000000000000000000000";
     private readonly SemaphoreSlim writeGate = new(1, 1);
     private readonly System.Collections.Concurrent.ConcurrentQueue<WireEvent> wire = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> answered =
@@ -38,9 +35,14 @@ public sealed class OnboardPeerSession(
     private Task? pump;
     private Task? heartbeat;
     private CancellationTokenSource? lifetime;
+    private CancellationToken hostStopping;
+
+    /// <summary>Whether a socket to ControlServer is open, whatever the handshake got to.</summary>
+    public bool IsConnected => client is not null;
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        hostStopping = cancellationToken;
         lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         client = new TcpClient();
         await client.ConnectAsync(options.Host, options.Port, lifetime.Token).ConfigureAwait(false);
@@ -93,10 +95,11 @@ public sealed class OnboardPeerSession(
             capabilityVersion = 1,
             observedAt = DateTimeOffset.UtcNow,
             slotModelVersion = "fake-slot-model-v1",
-            // 协议 v2 在 CapabilitySnapshot 上要求这一项：车报它此刻装着哪一版仓位配置。这个假车从不
-            // 换配置，所以它每次报同一个值——服务端手上没有生效版本时不比对，有的时候比对不上会拒收。
-            activeSlotConfigurationVersion = "fake-slot-config-v1",
-            activeSlotConfigurationFingerprint = FakeActiveSlotConfigurationFingerprint,
+            // 协议 v2 在 CapabilitySnapshot 上要求这一项：车报它此刻装着哪一版仓位配置。这个假车没有 IO
+            // 可算摘要，所以它采纳每一次被它接受的激活的目标——激活之后重连，报的就是那一版，服务端比对
+            // 得上。「两端算出同一个摘要」是 G3 对真车载端的断言，不是这个假车能证的。
+            activeSlotConfigurationVersion = state.ActiveSlotConfigurationVersion,
+            activeSlotConfigurationFingerprint = state.ActiveSlotConfigurationFingerprint,
             slotStates = SlotStates(),
             supportsBatchUnlock = false,
             onboardJournalFormatVersion = 1
@@ -110,6 +113,11 @@ public sealed class OnboardPeerSession(
             safety = SafetyBody(state.Safety),
             slotStates = SlotStates()
         }), cancellationToken).ConfigureAwait(false);
+        await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
+
+        // 协议 v2 消息 9，与真车载端同一个位置：完整握手里报一份当下的全量告警，空的也报——空快照说的是
+        // 「此刻没有告警」，与服务端看板上的「尚未收到该车快照」是两件事。
+        await SendAlarmSnapshotAsync(engine.Snapshot().State, generation, cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
 
         await SendAsync(Envelope("RecoveryStateReport", NewId(), null, generation, new
@@ -234,6 +242,10 @@ public sealed class OnboardPeerSession(
                         cancellationToken).ConfigureAwait(false);
                     return;
                 }
+            case "SlotConfigurationActivationCommand":
+                await OnActivationCommandAsync(root, messageId, generation, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
             case "PreDepartureSafetyCheck":
                 await OnRequestAsync(
                     "safety-check", messageType, messageId, root, generation,
@@ -425,6 +437,215 @@ public sealed class OnboardPeerSession(
             });
     }
 
+    /// <summary>The key a scenario names an open activation by in /answer.</summary>
+    public static string ActivationKey(string activationId) => "activation:" + activationId;
+
+    /// <summary>
+    /// 协议 v2 消息 7。已经有结论的激活原样再报一次结论，不重新激活；没有结论的按策略挂起或应答。
+    /// </summary>
+    /// <remarks>
+    /// 真车载端的补报就是这个形状：结果与生效配置原子落盘，服务端重连后按 <c>SLOT_CONFIGURATION</c> 这个
+    /// 恢复角色重发同一条命令，车认出这个 <c>activationId</c> 已经有结果，原样返回。所以
+    /// 「下发 → 断线 → 重连 → 补报」在这里不需要任何专门的补报队列。
+    /// </remarks>
+    private async Task OnActivationCommandAsync(
+        JsonElement root,
+        string messageId,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        JsonElement payload = root.GetProperty("payload");
+        string activationId = payload.GetProperty("activationId").GetString()
+            ?? throw new InvalidDataException("SlotConfigurationActivationCommand activationId must be a string.");
+        FakeOnboardState state = engine.Mutate(current =>
+        {
+            FakeOnboardState next = current with
+            {
+                ActivationCommandMessageIds = [.. current.ActivationCommandMessageIds, messageId]
+            };
+            return (next, next);
+        });
+
+        if (state.ActivationOutcomes.TryGetValue(activationId, out FakeActivationOutcome? settled))
+        {
+            await SendActivationResultAsync(settled, generation, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        PendingRequest request = new(
+            "SlotConfigurationActivationCommand", messageId, ActivationKey(activationId),
+            payload.GetRawText(), DateTimeOffset.UtcNow);
+        engine.Mutate<object?>(current => (current with
+        {
+            Pending = new Dictionary<string, PendingRequest>(current.Pending, StringComparer.Ordinal)
+            {
+                [request.Key] = request
+            }
+        }, null));
+        if (state.Policy.SlotConfigurationActivation == AnswerMode.Auto)
+        {
+            await AnswerActivationAsync(request.Key, activated: true, deliver: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 给一条挂着的激活下结论：采纳目标或按指纹不符拒绝，然后报结果——或者先不报。
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="deliver"/> 为假，是「车已经换好配置、结果还没送出去线就断了」：结论落在本机，结果
+    /// 等服务端重连后重发命令时才报。这正是 <c>PENDING_RESULT_REPLAY</c> 要兜住的那个窗口。
+    /// </remarks>
+    public async Task AnswerActivationAsync(
+        string key,
+        bool activated,
+        bool deliver,
+        CancellationToken cancellationToken)
+    {
+        PendingRequest request = Pending(key)
+            ?? throw new InvalidOperationException("No activation is open under " + key + ".");
+        using JsonDocument document = JsonDocument.Parse(request.PayloadJson);
+        JsonElement payload = document.RootElement;
+        string activationId = payload.GetProperty("activationId").GetString()!;
+        string targetVersion = payload.GetProperty("targetSlotConfigurationVersion").GetString()!;
+        string targetFingerprint = payload.GetProperty("targetSlotConfigurationFingerprint").GetString()!;
+
+        FakeActivationOutcome outcome = engine.Mutate(state =>
+        {
+            FakeActivationOutcome concluded = activated
+                ? new FakeActivationOutcome(
+                    activationId, "ACTIVATED", null, targetVersion, targetFingerprint, DateTimeOffset.UtcNow)
+                : new FakeActivationOutcome(
+                    activationId, "REJECTED", "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH",
+                    state.ActiveSlotConfigurationVersion, state.ActiveSlotConfigurationFingerprint,
+                    DateTimeOffset.UtcNow);
+            Dictionary<string, PendingRequest> pending = new(state.Pending, StringComparer.Ordinal);
+            pending.Remove(key);
+            return (state with
+            {
+                Pending = pending,
+                ActivationOutcomes = new Dictionary<string, FakeActivationOutcome>(
+                    state.ActivationOutcomes, StringComparer.Ordinal)
+                {
+                    [activationId] = concluded
+                },
+                ActiveSlotConfigurationVersion = concluded.ActiveSlotConfigurationVersion,
+                ActiveSlotConfigurationFingerprint = concluded.ActiveSlotConfigurationFingerprint
+            }, concluded);
+        });
+
+        if (deliver)
+        {
+            await SendActivationResultAsync(outcome, engine.Snapshot().State.SessionGeneration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 协议 v2 消息 8。每次发都是新的 messageId 与当前会话代，内容是那一份结论——与真车载端补报时一致。
+    /// </summary>
+    private async Task SendActivationResultAsync(
+        FakeActivationOutcome outcome,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        await SendAsync(Envelope("SlotConfigurationActivationResult", NewId(), null, generation, new
+        {
+            activationId = outcome.ActivationId,
+            outcome = outcome.Outcome,
+            problem = outcome.ReasonCode is null
+                ? null
+                : (object)new
+                {
+                    reasonCode = outcome.ReasonCode,
+                    fieldPath = "payload.targetSlotConfigurationFingerprint",
+                    displayMessage = (string?)null
+                },
+            activeSlotConfigurationVersion = outcome.ActiveSlotConfigurationVersion,
+            activeSlotConfigurationFingerprint = outcome.ActiveSlotConfigurationFingerprint,
+            verifiedAt = outcome.VerifiedAt
+        }), cancellationToken).ConfigureAwait(false);
+        engine.Mutate<object?>(state => (state with { ActivationResultsSent = state.ActivationResultsSent + 1 }, null));
+    }
+
+    /// <summary>协议 v2 消息 9：把当下的全量告警报上去。</summary>
+    public Task PublishAlarmsAsync(CancellationToken cancellationToken)
+    {
+        FakeOnboardState state = engine.Snapshot().State;
+        return SendAlarmSnapshotAsync(state, state.SessionGeneration, cancellationToken);
+    }
+
+    private Task SendAlarmSnapshotAsync(FakeOnboardState state, long generation, CancellationToken cancellationToken) =>
+        SendAsync(Envelope("OnboardAlarmSnapshot", NewId(), null, generation, new
+        {
+            alarmSnapshotRevision = state.AlarmSnapshotRevision,
+            observedAt = DateTimeOffset.UtcNow,
+            alarms = state.Alarms.Select(alarm => new
+            {
+                alarmId = alarm.AlarmId,
+                code = alarm.Code,
+                severity = alarm.Severity,
+                raisedAt = alarm.RaisedAt,
+                subjectType = alarm.SubjectType,
+                subjectId = alarm.SubjectId,
+                displayMessage = alarm.DisplayMessage
+            }).ToArray()
+        }), cancellationToken);
+
+    /// <summary>
+    /// 把这条会话断掉，不自己重连——场景用它造出「车掉线」，读完服务端在掉线期间的状态再调
+    /// <see cref="ReconnectAsync"/>。
+    /// </summary>
+    public async Task DisconnectAsync()
+    {
+        CancellationTokenSource? current = lifetime;
+        if (current is null)
+        {
+            return;
+        }
+        await current.CancelAsync().ConfigureAwait(false);
+        // Closing the socket is what the server observes; cancelling first keeps the pump from
+        // reading that close as a fault.
+        client?.Dispose();
+        foreach (Task? task in new[] { pump, heartbeat })
+        {
+            if (task is null) continue;
+            try
+            {
+                await task.ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is OperationCanceledException or IOException or ObjectDisposedException)
+            {
+                // Expected while tearing a live session down.
+            }
+        }
+        if (writer is not null)
+        {
+            try
+            {
+                await writer.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception error) when (error is IOException or ObjectDisposedException)
+            {
+                // The socket is already gone; there is nothing left to flush into.
+            }
+        }
+        writer = null;
+        client = null;
+        pump = null;
+        heartbeat = null;
+        lifetime = null;
+        current.Dispose();
+        engine.Mutate<object?>(state => (state with
+        {
+            Readiness = "DISCONNECTED",
+            ReadinessReasonCode = "DISCONNECTED_BY_SCENARIO"
+        }, null));
+    }
+
+    /// <summary>新开一条连接、走一遍完整握手。会话代由服务端给，必然比上一代大。</summary>
+    public Task ReconnectAsync() => StartAsync(hostStopping);
+
     /// <summary>Reports a new safety state, the way the real peer reports every change.</summary>
     public async Task PublishSafetyStateChangedAsync(
         long safetyStateVersion,
@@ -484,7 +705,9 @@ public sealed class OnboardPeerSession(
         await writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await writer!.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
+            StreamWriter current = writer
+                ?? throw new IOException("No session to ControlServer is open; the scenario disconnected it.");
+            await current.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
