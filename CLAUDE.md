@@ -136,9 +136,19 @@ dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
 ```
 
 Historically 243–249 passed / 0 skipped. Build with the .NET SDK pinned in
-`global.json` (`8.0.424`); when it is not on `PATH`, point
+`global.json` (`8.0.425`); when it is not on `PATH`, point
 `WIRE_TO_GATE_DOTNET_EXE` at that version's `dotnet.exe` and run
 `.\scripts\build.ps1`.
+
+**Run every `dotnet` command from the repository root.** `dotnet` resolves
+`global.json` by walking up from the current working directory, not from the
+project or solution path it is handed — an explicit `WIRE_TO_GATE_DOTNET_EXE`
+included. Anywhere else it silently falls through to the newest SDK installed:
+from `C:\Users\szy\Desktop\8005-workspace` the control host builds with
+`10.0.302`, which either fails this repository's analyzers or, worse, succeeds
+with an unpinned toolchain. `scripts/build.ps1` and `scripts/test-wire-to-gate.ps1`
+change into the repository root themselves; a `dotnet` you type does not.
+`dotnet --version` where you stand is the check.
 
 Test authorization is scoped to the current task. A request to inspect, tidy,
 commit, or push an already-dirty worktree does **not** authorize a test run. Run
@@ -227,7 +237,7 @@ This repository is pinned to the workspace-wide .NET toolchain. The authority is
 
 | Item | Pinned value | Enforced by |
 | --- | --- | --- |
-| SDK | 8.0.424, `rollForward: disable` | `global.json` |
+| SDK | 8.0.425, `rollForward: disable` | `global.json` |
 | Target framework | `net8.0` | `Directory.Build.props` |
 | Test stack | xunit.v3 3.2.2, Microsoft.NET.Test.Sdk 18.8.1, xunit.runner.visualstudio 3.1.5 | `Directory.Packages.props` |
 | Banned packages | xunit v2, NUnit, MSTest, coverlet.collector | `Directory.Build.targets` |
