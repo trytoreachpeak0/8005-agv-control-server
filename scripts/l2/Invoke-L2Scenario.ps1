@@ -105,6 +105,17 @@ if ($null -ne $clockSkewMs -and -not $realOnboard) {
 # fifteen-second run at its shipped value. Declared in the sidecar for the same reason the rig is:
 # a forgotten command-line switch makes the scenario prove something else, quietly.
 $serverSettings = if ($setup.ContainsKey('ServerSettings')) { $setup.ServerSettings } else { @{} }
+# Extra RIoT map stations, keyed by station id. The seed ships one usable pickup station
+# (12 = N1-3_N1-7), which is all a single-stop journey needs; a multi-stop one needs a station per
+# pickup, and each has to be there before the server starts.
+#
+# It cannot be injected at scenario time. The admission policy binds its version to the content it
+# first saw, so changing the map afterwards makes every tick throw
+# `Admission policy version is already bound to different content or deployment identity` -- and
+# that throw happens before the demand loop, so nothing is written to the backlog and no reason code
+# appears anywhere. The symptom is an engine that polls forever and accepts nothing, with a clean
+# log. Two hours went into that once.
+$extraStations = if ($setup.ContainsKey('ExtraStations')) { $setup.ExtraStations } else { @{} }
 $recoveryResume = ($setup.ContainsKey('RecoveryResume') -and $setup.RecoveryResume)
 if ($recoveryResume -and -not $realOnboard) {
     throw "RecoveryResume needs Onboard = 'Real': the synthetic peer never starts a recovery session."
@@ -195,15 +206,25 @@ try {
 
     # 1. The doubles first. Both are pure loopback services with no dependency on the server, and
     #    starting them first means the server never meets a dead port during its first poll.
+    # Seed stations are additive: the configuration binder merges these onto FakeRiotSeed.Stations,
+    # so the shipped 210/12/11 stay and a scenario only names what it adds.
+    $riotArguments = @(
+        "--FakeRiot:port=$FakeRiotPort",
+        "--FakeRiot:instanceId=l2-riot",
+        "--FakeRiot:Seed:vehicleKey=$vehicleKey",
+        "--FakeRiot:Seed:mapIdentity=$mapIdentity",
+        "--FakeRiot:Seed:mapId=$mapId",
+        "--FakeRiot:Seed:startStationId=$gateStationRiotId")
+    foreach ($stationId in ($extraStations.Keys | Sort-Object)) {
+        $riotArguments += "--FakeRiot:Seed:Stations:$stationId=$($extraStations[$stationId])"
+    }
+    if ($extraStations.Count) {
+        $journal.Note("Extra map stations from $Scenario.setup.psd1: " +
+            (($extraStations.Keys | Sort-Object | ForEach-Object { "$_=$($extraStations[$_])" }) -join ', '))
+    }
     $riotHandle = Start-L2Process -Name 'fake-riot' `
         -FilePath (Join-Path $riotDirectory 'ControlServer.FakeRiot.exe') `
-        -ArgumentList @(
-            "--FakeRiot:port=$FakeRiotPort",
-            "--FakeRiot:instanceId=l2-riot",
-            "--FakeRiot:Seed:vehicleKey=$vehicleKey",
-            "--FakeRiot:Seed:mapIdentity=$mapIdentity",
-            "--FakeRiot:Seed:mapId=$mapId",
-            "--FakeRiot:Seed:startStationId=$gateStationRiotId") `
+        -ArgumentList $riotArguments `
         -WorkingDirectory $riotDirectory -LogRoot $logRoot |
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 1 -PassThru }
     $handles += $riotHandle
