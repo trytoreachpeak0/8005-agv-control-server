@@ -11,6 +11,15 @@ public static class ProtocolEnvelope
 {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// Sees every line built here, plus the one kind of line rewritten after it left here
+    /// (OnboardJourneyPublisher.ReplayPendingForSessionAsync). Only the test host sets it:
+    /// ControlServer.Tests checks what it collects against the protocol's JSON Schema (#33). Product
+    /// code never assigns it, so in production this costs a null check -- what a vehicle-facing server
+    /// should do with a line that breaks the contract has no good answer on the wire (#27, point 4).
+    /// </summary>
+    public static Action<string, string>? OutboundObserver { get; set; }
+
     /// <remarks>
     /// The payload is serialized exactly as passed. A caller whose line the peer must reproduce byte
     /// for byte materialises it to a JsonElement first (OnboardJourneyPublisher.SerializeWire says
@@ -26,8 +35,9 @@ public static class ProtocolEnvelope
         string agvId,
         long? sessionGeneration,
         DateTimeOffset sentAt,
-        object payload) =>
-        JsonSerializer.Serialize(new
+        object payload)
+    {
+        string line = JsonSerializer.Serialize(new
         {
             protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
             profileId = ProtocolCandidateIdentity.ProfileId,
@@ -41,4 +51,7 @@ public static class ProtocolEnvelope
             sentAt,
             payload
         }, SerializerOptions);
+        OutboundObserver?.Invoke(messageType, line);
+        return line;
+    }
 }

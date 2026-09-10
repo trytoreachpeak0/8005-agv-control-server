@@ -52,6 +52,9 @@ public sealed class OnboardJourneyPublisher(
             envelope["sessionGeneration"] = sessionGeneration;
             envelope["sentAt"] = sentAt;
             string wire = envelope.ToJsonString(SerializerOptions);
+            // The only outbound bytes not produced by ProtocolEnvelope.Serialize. A line re-sent
+            // unchanged above is the one Serialize built when it was first queued.
+            ProtocolEnvelope.OutboundObserver?.Invoke(row.MessageType, wire);
             ProtocolOutboxRow current = await store.QueueOutboundEnvelopeAsync(
                 row.MessageId,
                 row.MessageType,
@@ -145,14 +148,22 @@ public sealed class OnboardJourneyPublisher(
     /// the PACKAGE has no approved basket capacity. BR-013 requires the refusal to be explicit and
     /// to stop the load without allocating slots or unlocking anything.
     /// </summary>
+    /// <remarks>
+    /// It is a RESPONSE whose correlation rule is REQUIRED_ORIGINAL_MESSAGE_ID, so
+    /// <paramref name="submittedMessageId"/> is the SublotSubmitted being refused. It used to be sent
+    /// with a null correlationId, which the vehicle rejects as CORRELATION_INVALID: not one refusal
+    /// had ever reached an operator, and the unit tests only read the payload.
+    /// </remarks>
     public Task PublishSublotRejectedAsync(
         string messageId,
+        string submittedMessageId,
         string agvId,
         long sessionGeneration,
         SublotRejection rejection,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(rejection);
+        ValidateUuid(submittedMessageId, nameof(submittedMessageId));
         ValidateUuid(rejection.DemandId, nameof(rejection.DemandId));
         ValidateUuid(rejection.OperationSessionId, nameof(rejection.OperationSessionId));
         ArgumentException.ThrowIfNullOrWhiteSpace(rejection.ReasonCode);
@@ -162,7 +173,7 @@ public sealed class OnboardJourneyPublisher(
         return PublishEnvelopeAsync(
             "SublotRejected",
             messageId,
-            correlationId: null,
+            correlationId: submittedMessageId,
             agvId,
             sessionGeneration,
             new

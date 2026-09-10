@@ -591,6 +591,7 @@ public sealed class JourneyRuntimeEngine(
                 {
                     await publisher.PublishSublotRejectedAsync(
                         StableGuid(sublot.MessageId, "sublot-rejected"),
+                        sublot.MessageId,
                         runtime.AgvId,
                         session.SessionGeneration,
                         rejection,

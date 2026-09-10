@@ -1,0 +1,91 @@
+{
+  "protocolTag": "protocol-v0.3.0",
+  "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138",
+  "schemaBundleSha256": "68bfd531c4b9c08bc80f6d9c5a67264891efa200acdb154eb18e1d083bf4ed98",
+  "validator": "Corvus.Json.Validator 4.6.7",
+  "linesChecked": 173,
+  "distinctLinesChecked": 47,
+  "testAuthoredLinesSkipped": 0,
+  "linesInViolation": 5,
+  "linesInKnownViolation": 0,
+  "origins": {
+    "product": {
+      "directions": [
+        "C_TO_O",
+        "BIDIRECTIONAL"
+      ],
+      "observed": {
+        "CurrentStopWorklistSnapshot": 31,
+        "DurableAck": 4,
+        "PreDepartureSafetyCheck": 15,
+        "SessionAccepted": 5,
+        "SessionReadiness": 4,
+        "SlotOperationCommand": 30,
+        "SnapshotAppliedAck": 6,
+        "SublotEntryRequested": 16,
+        "UpcomingStopPlanSnapshot": 31,
+        "VehicleBusinessStateSnapshot": 31
+      },
+      "notObserved": [
+        "CapabilitySnapshotRequested",
+        "ExceptionRecoverySessionOpened",
+        "ExceptionRecoverySessionRejected",
+        "ExceptionRecoverySessionSnapshot",
+        "FaultCargoRecoveryCommand",
+        "ForcedMechanicalRecoveryCommand",
+        "HardwareRecoveryRecordResult",
+        "HeartbeatAck",
+        "LoadCancellationAuthorization",
+        "LoadCompensationCommand",
+        "LoadCompensationRejected",
+        "LoadCorrectionCommand",
+        "LoadCorrectionRejected",
+        "ManualChargingReturnToServiceResult",
+        "ProtocolProblem",
+        "RecoveryActionAccepted",
+        "RecoveryActionRejected",
+        "SafetyStateSnapshotRequested",
+        "SessionRejected",
+        "SlotOperationResumeCommand",
+        "SublotRejected"
+      ],
+      "outsideDirection": []
+    },
+    "syntheticPeer": {
+      "directions": [
+        "O_TO_C",
+        "BIDIRECTIONAL"
+      ],
+      "observed": {},
+      "notObserved": [
+        "CapabilitySnapshot",
+        "DurableAck",
+        "ExceptionRecoverySessionRequested",
+        "FaultCargoRecoveryResult",
+        "ForcedMechanicalRecoveryResult",
+        "HardwareRecoveryRecordSubmitted",
+        "Heartbeat",
+        "LoadCancellationResult",
+        "LoadCancellationStartRequested",
+        "LoadCompensationRequested",
+        "LoadCompensationResult",
+        "LoadCorrectionRequested",
+        "LoadCorrectionResult",
+        "ManualChargingReturnToServiceRequested",
+        "OperationProgress",
+        "OperationResult",
+        "PreDepartureSafetyCheckResult",
+        "ProtocolProblem",
+        "RecoveryActionSubmitted",
+        "RecoveryStateReport",
+        "SafetyStateChanged",
+        "SafetyStateSnapshot",
+        "SessionHello",
+        "SlotOperationCommandRejected",
+        "SnapshotAppliedAck",
+        "SublotSubmitted"
+      ],
+      "outsideDirection": []
+    }
+  }
+}

@@ -101,6 +101,11 @@ if ($env:WIRE_TO_GATE_DOTNET_EXE -and -not (Test-Path -LiteralPath $dotnet -Path
 # --results-directory would follow it into the repository.
 $Output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 if (Test-Path -LiteralPath $Output) { throw "Output directory already exists: $Output" }
+# Every line the slice's tests send is validated against the protocol JSON Schema when the test run
+# ends (tests/ControlServer.Tests/OutboundSchemaConformance.cs). A violation makes dotnet test exit
+# non-zero even though its console summary still says "Failed: 0"; schema-coverage.json and, on
+# failure, schema-violations.json land here next to the TRX.
+$env:WIRE_TO_GATE_SCHEMA_REPORT_DIR = $Output
 # Run from inside the repository. `dotnet` looks for global.json from the current directory, not from
 # the project path it is handed -- an explicit dotnet.exe included -- so a gate started from outside
 # the clone would test with the newest installed SDK and still write a PASS. The SDK is resolved
@@ -118,7 +123,10 @@ try {
 }
 finally {
     Pop-Location
+    Remove-Item Env:WIRE_TO_GATE_SCHEMA_REPORT_DIR -ErrorAction SilentlyContinue
 }
+$schemaCoveragePath = Join-Path $Output 'schema-coverage.json'
+$schemaCoverage = if (Test-Path -LiteralPath $schemaCoveragePath) { Get-Content -LiteralPath $schemaCoveragePath -Raw | ConvertFrom-Json } else { $null }
 $result = [ordered]@{
     schemaVersion = '1.0.0'
     gate = $Gate
@@ -138,6 +146,13 @@ $result = [ordered]@{
     protocolVectorsSha256 = $protocolVectorsSha256
     vectorIds = $sliceVectors[$Slice]
     testExitCode = $testExitCode
+    schemaConformance = if ($schemaCoverage) {
+        [ordered]@{
+            linesChecked = $schemaCoverage.linesChecked
+            linesInViolation = $schemaCoverage.linesInViolation
+            coverage = 'schema-coverage.json'
+        }
+    } else { $null }
 }
 $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Output 'gate-result.json') -Encoding utf8NoBOM
 exit $testExitCode
