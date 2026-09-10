@@ -85,6 +85,19 @@ $ControlServerCommit = $commitBinding['ControlServerCommit']
 $OnboardCommit = $commitBinding['OnboardCommit']
 $SimulatorCommit = $commitBinding['SimulatorCommit']
 $ProtocolCommit = $commitBinding['ProtocolCommit']
+# The ref whose tip -OnboardCommit must equal, read from the same param block and for the same
+# reason: the branch carrying a line's onboard half moves with the line, and a second copy of its
+# name here is how this runner would go on asserting against a branch the main runner has left.
+$onboardRemoteRefCandidates = @(
+    ([System.Management.Automation.Language.Parser]::ParseFile(
+        $CommitBindingSource, [ref]$null, [ref]$null)).ParamBlock.Parameters |
+    Where-Object { $_.Name.VariablePath.UserPath -eq 'OnboardRemoteRef' })
+if ($onboardRemoteRefCandidates.Count -ne 1 -or
+    $onboardRemoteRefCandidates[0].DefaultValue -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) {
+    throw "Expected exactly one `$OnboardRemoteRef parameter defaulting to a literal string in $CommitBindingSource."
+}
+$OnboardRemoteRef = $onboardRemoteRefCandidates[0].DefaultValue.Value
+
 $commitBindingSourceSha256 =
     (Get-FileHash -LiteralPath $CommitBindingSource -Algorithm SHA256).Hash.ToLowerInvariant()
 
@@ -506,7 +519,7 @@ try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
         -Commit $ControlServerCommit | Out-Null
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
-        -Commit $OnboardCommit -RemoteRef 'origin/w2g/fp-v2-impl' | Out-Null
+        -Commit $OnboardCommit -RemoteRef $OnboardRemoteRef | Out-Null
     New-ExactClone -Name 'slots-simulator' -Repository $SimulatorRepository -Destination $simulatorSource `
         -Commit $SimulatorCommit -RemoteRef 'origin/main' | Out-Null
 

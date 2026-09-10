@@ -27,8 +27,8 @@ param(
     #     protocol-v0.3.0 and is a different protocol from this line.
     #   $SimulatorCommit unchanged: slots-simulator references no protocol identity at all.
     #   $ProtocolCommit unchanged: the v2 candidate, already on origin/fp/v2-candidate.
-    [string]$ControlServerCommit = 'b46b0727de5aad74e9ffd56709219dd76e75e0b2',
-    [string]$OnboardCommit = '153b70594f75ce945e717afd80be9f6279423080',
+    [string]$ControlServerCommit = 'b6064690799aaf374d00f1bbde43228d8c3c60bd',
+    [string]$OnboardCommit = 'afba86e07116192bde386937c559cc7a70a00a7f',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = 'f6ee75defe6e2d18f63f4082bee445dbb678ab1b',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
@@ -36,7 +36,7 @@ param(
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
     # still name that commit as a branch tip, so evidence cannot bind a commit that exists only as a
     # detached object somebody handed the runner.
-    [string]$OnboardRemoteRef = 'origin/w2g/fp-v2-impl'
+    [string]$OnboardRemoteRef = 'origin/w2g/b3-on-v2'
 )
 
 $ErrorActionPreference = 'Stop'
