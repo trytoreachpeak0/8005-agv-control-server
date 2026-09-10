@@ -166,11 +166,25 @@ try {
 
     # Build once, run the built output. `dotnet run` would rebuild under the scenario and put a
     # compiler on the critical path of a timing test.
+    #
+    # Build from inside the repository. `dotnet` looks for global.json from the current directory,
+    # not from the solution path it is handed, so a run started from the workspace root found no
+    # global.json, rolled up to the newest installed SDK (10.0.302) and failed on that SDK's
+    # analyzers -- CA1859 once, MSB4184 the next time -- while the same commit built clean from
+    # inside the clone. The SDK actually used goes into the timeline so the evidence says which.
     $journal.Note('Building ControlServer and the test doubles.')
     $buildLog = Join-Path $logRoot 'build.log'
-    & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
-        Tee-Object -FilePath $buildLog | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Build failed; see $buildLog" }
+    Push-Location -LiteralPath $Repository
+    try {
+        $journal.Note("dotnet SDK resolved for the build: $((& dotnet --version).Trim())")
+        & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
+            Tee-Object -FilePath $buildLog | Out-Null
+        $buildExit = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    if ($buildExit -ne 0) { throw "Build failed; see $buildLog" }
 
     # The two peers come from repositories this workspace may not write to, so they are published
     # out of throwaway clones and cached by commit. First run of a given commit pays for a build;

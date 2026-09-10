@@ -357,9 +357,22 @@ function Get-L2PeerPublish {
     & git -C $clone checkout --quiet --detach $commit *>&1 | Tee-Object -FilePath $log -Append | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not check out $commit in the $Name clone; see $log" }
 
-    & dotnet publish (Join-Path $clone $ProjectPath) -c Release -o $publish --nologo *>&1 |
-        Tee-Object -FilePath $log -Append | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Publishing $Name failed; see $log" }
+    # From inside the clone, so the peer's own global.json picks the SDK. `dotnet` resolves
+    # global.json from the current directory, not from the project path, and a caller standing in
+    # the workspace root would otherwise publish the peer with whatever SDK is newest.
+    Push-Location -LiteralPath $clone
+    try {
+        $sdk = (& dotnet --version).Trim()
+        if ($Journal) { $Journal.Note("dotnet SDK resolved for $Name publish: $sdk") }
+        "dotnet SDK: $sdk" | Tee-Object -FilePath $log -Append | Out-Null
+        & dotnet publish (Join-Path $clone $ProjectPath) -c Release -o $publish --nologo *>&1 |
+            Tee-Object -FilePath $log -Append | Out-Null
+        $publishExit = $LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+    if ($publishExit -ne 0) { throw "Publishing $Name failed; see $log" }
 
     Set-Content -LiteralPath $stamp -Value $commit -Encoding utf8NoBOM
     return [pscustomobject]@{ Name = $Name; Commit = $commit; Path = $publish; FromCache = $false }

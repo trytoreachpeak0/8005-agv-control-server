@@ -1,0 +1,34 @@
+  Determining projects to restore...
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.ClockSkewProxy\ControlServer.ClockSkewProxy.csproj (in 879 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FakeRiot\ControlServer.FakeRiot.csproj (in 875 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.TestDoubles\ControlServer.TestDoubles.csproj (in 864 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Domain\ControlServer.Domain.csproj (in 861 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Dashboard\ControlServer.Dashboard.csproj (in 859 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Application\ControlServer.Application.csproj (in 878 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FakeOnboard\ControlServer.FakeOnboard.csproj (in 902 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.Conformance\ControlServer.Conformance.csproj (in 25 ms).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FakeMesIngest\ControlServer.FakeMesIngest.csproj (in 1.15 sec).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FieldOps\ControlServer.FieldOps.csproj (in 1.15 sec).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj (in 1.16 sec).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Host\ControlServer.Host.csproj (in 1.27 sec).
+  Restored C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\ControlServer.Tests.csproj (in 1.32 sec).
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FakeRiot\RiotDataPlane.cs(186,36): error CA1859: Change type of parameter 'missions' from 'System.Collections.Generic.IReadOnlyList<ControlServer.FakeRiot.FakeMission>' to 'ControlServer.FakeRiot.FakeMission[]' for improved performance (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1859) [C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FakeRiot\ControlServer.FakeRiot.csproj]
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Conformance -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.Conformance\bin\Release\net8.0\win-x64\ControlServer.Conformance.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs(2204,45): error CA1859: Change type of parameter 'stops' from 'System.Collections.Generic.IReadOnlyCollection<ControlServer.Infrastructure.Persistence.JourneyStopRow>' to 'ControlServer.Infrastructure.Persistence.JourneyStopRow[]' for improved performance (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1859) [C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj]
+C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs(2205,47): error CA1859: Change type of parameter 'demands' from 'System.Collections.Generic.IReadOnlyCollection<ControlServer.Infrastructure.Persistence.JourneyDemandRow>' to 'ControlServer.Infrastructure.Persistence.JourneyDemandRow[]' for improved performance (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1859) [C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj]
+
+Build FAILED.
+
+C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FakeRiot\RiotDataPlane.cs(186,36): error CA1859: Change type of parameter 'missions' from 'System.Collections.Generic.IReadOnlyList<ControlServer.FakeRiot.FakeMission>' to 'ControlServer.FakeRiot.FakeMission[]' for improved performance (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1859) [C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tools\ControlServer.FakeRiot\ControlServer.FakeRiot.csproj]
+C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs(2204,45): error CA1859: Change type of parameter 'stops' from 'System.Collections.Generic.IReadOnlyCollection<ControlServer.Infrastructure.Persistence.JourneyStopRow>' to 'ControlServer.Infrastructure.Persistence.JourneyStopRow[]' for improved performance (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1859) [C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj]
+C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs(2205,47): error CA1859: Change type of parameter 'demands' from 'System.Collections.Generic.IReadOnlyCollection<ControlServer.Infrastructure.Persistence.JourneyDemandRow>' to 'ControlServer.Infrastructure.Persistence.JourneyDemandRow[]' for improved performance (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca1859) [C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj]
+    0 Warning(s)
+    3 Error(s)
+
+Time Elapsed 00:00:24.51
