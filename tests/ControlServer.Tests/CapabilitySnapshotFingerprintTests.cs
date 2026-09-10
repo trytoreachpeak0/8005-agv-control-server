@@ -100,6 +100,12 @@ public sealed class CapabilitySnapshotFingerprintTests
         Assert.Equal(SlotConfigurationFingerprintVerdict.MismatchCode, decision.ReasonCode);
         // 稳定错误码来自协议那本封闭注册表，不是这里编的一个字符串。
         Assert.True(ProtocolErrorCodes.Contains(decision.ReasonCode));
+        // 而且它得真能被发出去。就绪结果发给车之前要经过 ToSessionReadinessReasonCode；2026-09-10 那张
+        // 映射表里没有这个码，服务端在序列化 SessionReadiness 时抛异常断连，车陷入重连循环——上一版
+        // 这条测试只断言了码在注册表里，没走这一步，是 G3 抓到的。
+        Assert.Equal(
+            SlotConfigurationFingerprintVerdict.MismatchCode,
+            ProtocolErrorCodes.ToSessionReadinessReasonCode(decision.ReasonCode));
 
         // 服务端认定的那一版一个字段都没动：不就绪不是「以车上的为准」。
         ActiveSlotConfigurationRow unchanged = await fixture.Context.Set<ActiveSlotConfigurationRow>()

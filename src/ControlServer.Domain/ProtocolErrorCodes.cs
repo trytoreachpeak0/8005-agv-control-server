@@ -114,6 +114,13 @@ public static class ProtocolErrorCodes
         // Exact protocol counterparts.
         "DEPARTURE_SAFETY_NOT_READY" => "DEPARTURE_UNSAFE",
         "FORCED_RECOVERY_GENERATION_MISMATCH" => "FORCED_RECOVERY_GENERATION_STALE",
+        // REQ-0316. Already a protocol ErrorCode, so it goes on the wire as itself -- and it has to go
+        // as itself, not collapse onto SESSION_RECOVERY_REQUIRED: the vehicle's operator needs to know
+        // the fix is an activation, not a recovery session. Added 2026-09-10 when a fingerprint
+        // disagreement stopped refusing the session and became a readiness reason instead; without
+        // this arm the server threw while serialising SessionReadiness and dropped the connection,
+        // which is how G3 found it (evidence/g3/20260910-fp-is-14-fingerprint-mismatch-unready).
+        SlotConfigurationFingerprintVerdict.MismatchCode => SlotConfigurationFingerprintVerdict.MismatchCode,
 
         // The handshake has not delivered a snapshot the server needs. The protocol's gap codes are
         // the closest true statement: the server does not have the revision it requires.
