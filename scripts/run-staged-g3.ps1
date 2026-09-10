@@ -2486,6 +2486,13 @@ try {
     # SAME digest from their own copies, with their own code, in separate processes. Pinned literals
     # in each repository's unit tests can only say neither drifted from a written-down value; this
     # says they agree.
+    #
+    # And the command is dropped in flight on purpose. REQ-0264 is why messages 7/8 are RELIABLE and
+    # not REQUEST/RESPONSE: a vehicle that never received the command must not leave the server
+    # believing anything, and a reconnect has to re-deliver the SAME line rather than mint a second
+    # activation. The drop-and-close fault fires once, so the first delivery dies with its connection
+    # and the SLOT_CONFIGURATION recovery role has to carry the rest.
+    [StagedG3TlsHarness]::AddFault('server-to-client', 'SlotConfigurationActivationCommand', $null, 'drop-and-close', 0)
     $activationIssuedAt = [DateTimeOffset]::UtcNow
     $activationResponse = $null
     $activationIssueError = $null
@@ -2518,7 +2525,13 @@ try {
             $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
             $_.messageType -eq 'SlotConfigurationActivationResult'
         })
-        if ($activationResults.Count -ge 1) { break }
+        $activationCommandAttempts = @($activationEvents | Where-Object {
+            $_.event -eq 'message' -and $_.direction -eq 'server-to-client' -and
+            $_.messageType -eq 'SlotConfigurationActivationCommand'
+        })
+        # Two deliveries and one result: the dropped one, the replay after the reconnect, and the
+        # vehicle's answer to the replay.
+        if ($activationResults.Count -ge 1 -and $activationCommandAttempts.Count -ge 2) { break }
         Start-Sleep -Milliseconds 250
     } while ([DateTimeOffset]::UtcNow -lt $activationDeadline)
     # The result is RELIABLE, so the server acks it durably; give that ack a moment to land before
@@ -2931,6 +2944,8 @@ $activationObservation = [ordered]@{
     issuedRecoveryRole = if ($null -ne $activationResponse) { $activationResponse.recoveryRole } else { $null }
     slotModelVersionId = $slotModelVersionId
     commandsSent = $activationCommandsSent.Count
+    commandConnectionIds = @($activationCommandsSent.connectionId | Sort-Object -Unique)
+    commandPayloadSha256 = @($activationCommandsSent.payloadSha256 | Sort-Object -Unique)
     commandMessageIds = @($activationCommandsSent.messageId | Sort-Object -Unique)
     resultsReported = $activationResultsReported.Count
     activationRows = $activationDbRows
@@ -2941,16 +2956,30 @@ $activationObservation = [ordered]@{
     ($activationObservation | ConvertTo-Json -Depth 10),
     [Text.UTF8Encoding]::new($false))
 
-# Exactly one command for exactly one issue. Two would mean the reconnect replayed a settled
-# activation, which is the SLOT_CONFIGURATION recovery role over-firing.
-$activationCommandPass = $activationCommandsSent.Count -eq 1
+# One issue, one messageId -- however many times it went out. A second id would mean the replay
+# minted a new command, and then the vehicle would be looking at two activations for one decision.
+$activationCommandIds = @($activationCommandsSent.messageId | Sort-Object -Unique)
+$activationCommandPass = $activationCommandIds.Count -eq 1
+# The first delivery was dropped with its connection, so a second one has to exist, on a later
+# connection, byte-for-byte identical. That is what PENDING_RESULT_REPLAY means: re-deliver the same
+# line, not re-decide. REQ-0264 -- a vehicle that never got the command must leave the server
+# believing nothing at all.
+$activationPayloadHashes = @($activationCommandsSent.payloadSha256 | Sort-Object -Unique)
+$activationCommandConnections = @($activationCommandsSent.connectionId | Sort-Object -Unique)
+$activationReplayPass = $activationCommandsSent.Count -ge 2 -and
+    $activationCommandPass -and
+    $activationPayloadHashes.Count -eq 1 -and
+    $activationCommandConnections.Count -ge 2
 # durableBeforeSend, read off the two artefacts rather than trusted: the row that names this command
 # was already in the database, and it names the very messageId that went out.
 $activationDurablePass = $activationCommandPass -and
     $activationDbRows.Count -eq 1 -and
-    $activationDbRows[0].commandMessageId -eq $activationCommandsSent[0].messageId
-# The vehicle answered. REQ-0264: no result, no conclusion -- never an assumed success.
-$activationResultPass = $activationResultsReported.Count -ge 1
+    $activationDbRows[0].commandMessageId -eq $activationCommandIds[0]
+# The vehicle answered, once. REQ-0264: no result, no conclusion -- never an assumed success. And a
+# re-delivered command must not produce a second answer to the same question.
+$activationResultPass = $activationResultsReported.Count -ge 1 -and
+    $activationDbRows.Count -eq 1 -and
+    $activationDbRows[0].state -eq 'ACTIVATED'
 # THE assertion this slice exists for. ActiveSlotConfigurations is written in exactly one place --
 # where an activation converges on a reported success -- and the vehicle only reports success when
 # the fingerprint IT computed over the configuration IT holds equals the one the command carried.
@@ -3208,7 +3237,8 @@ $assertionReport = [ordered]@{
     forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    slotConfigurationActivationCommandSentOnceOverTheSession = if ($activationCommandPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    slotConfigurationActivationCarriesOneMessageIdOnly = if ($activationCommandPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    slotConfigurationActivationReplayedByteForByteAfterAMidFlightDrop = if ($activationReplayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     slotConfigurationActivationPersistedBeforeItWasSent = if ($activationDurablePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     slotConfigurationActivationResultReportedByTheVehicle = if ($activationResultPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     bothEndsComputedTheSameSlotConfigurationFingerprint = if ($fingerprintAgreementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }

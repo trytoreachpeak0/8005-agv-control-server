@@ -114,7 +114,8 @@ function Get-G3RunnerClaim {
                 # means two implementations, in two processes, produced the same digest from their own
                 # copies -- which the pinned literal in each repository's unit tests cannot say.
                 'FP-IS-14' = @(
-                    'slotConfigurationActivationCommandSentOnceOverTheSession',
+                    'slotConfigurationActivationCarriesOneMessageIdOnly',
+                    'slotConfigurationActivationReplayedByteForByteAfterAMidFlightDrop',
                     'slotConfigurationActivationPersistedBeforeItWasSent',
                     'slotConfigurationActivationResultReportedByTheVehicle',
                     'bothEndsComputedTheSameSlotConfigurationFingerprint')
