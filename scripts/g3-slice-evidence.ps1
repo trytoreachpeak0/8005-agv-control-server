@@ -151,6 +151,15 @@ function Get-G3RunnerClaim {
                     'controlDatabaseFileReusedAcrossServerRestart',
                     'controlInboxRowsSurviveServerRestart',
                     'onboardOutboxRowsSurviveOnboardRestart')
+                # FP-IS-15's other half, which only this runner can reach. The staged runner proves
+                # the projection holds the generation its snapshot arrived in; this one restarts the
+                # onboard PROCESS, so the vehicle comes back with an alarm board counting from 1
+                # again. Reading generation 2 in the projection after that is the proof that adoption
+                # is keyed on (generation, sequence) and not on sequence alone -- a sequence-only rule
+                # would have ignored the post-restart snapshot, since 1 does not advance past 1.
+                'FP-IS-15' = @(
+                    'onboardAlarmProjectionAdoptedTheRestartedVehiclesSnapshot',
+                    'onboardAlarmProjectionNeverRegressedToAnEarlierGeneration')
             }
         }
         'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT' = [ordered]@{

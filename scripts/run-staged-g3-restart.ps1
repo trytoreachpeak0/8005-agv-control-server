@@ -423,6 +423,13 @@ function Read-ControlDatabase {
         connectionRecoveryRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
             -Sql 'SELECT AgvId, SessionGeneration, Status, ResumeAuthorized FROM ConnectionRecoveries ORDER BY AgvId' `
             -Columns @('agvId', 'sessionGeneration', 'status', 'resumeAuthorized')
+        # FP-IS-15's other half. One row per vehicle, and what matters is which snapshot it holds:
+        # a restarted vehicle's alarm board starts counting from 1 again, so a sequence-only
+        # adoption rule would ignore everything it publishes after a restart and leave this row on
+        # the pre-restart generation forever -- REQ-0269's forbidden stale value.
+        onboardAlarmSnapshotRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'SELECT AgvId, SessionGeneration, SnapshotSequence FROM OnboardAlarmSnapshots ORDER BY AgvId' `
+            -Columns @('agvId', 'sessionGeneration', 'snapshotSequence')
         sideEffectCounts = $sideEffectCounts
     }
 }
@@ -707,6 +714,32 @@ $onboardRestartPass = $null -ne $phase1 -and $null -ne $phase2 -and
 $controlRestartPass = $null -ne $phase2 -and $null -ne $phase3 -and
     $phase3.sessionGeneration -eq $phase2.sessionGeneration + 1
 
+# FP-IS-15's other half, and the only runner that can reach it. $controlDatabaseBeforeServerRestart
+# is read with the server stopped between phase 2 and phase 3, so it is exactly the state AFTER the
+# onboard process restarted: the vehicle came back with a fresh alarm board whose sequence starts at
+# 1 again, republished its snapshot on a full handshake, and the projection had to decide.
+#
+# Reading generation 2 there IS the proof. A sequence-only adoption rule cannot produce it: phase 1's
+# row also carries sequence 1, and 1 does not advance past 1, so that rule would have ignored the
+# post-restart snapshot and left this row on generation 1 -- the stale set REQ-0269 forbids.
+$alarmRestartRows = @()
+if ($null -ne $controlDatabaseBeforeServerRestart) {
+    $alarmRestartRows = @($controlDatabaseBeforeServerRestart.onboardAlarmSnapshotRows)
+}
+$alarmAfterRunRows = @()
+if ($null -ne $controlDatabaseAfterRun) {
+    $alarmAfterRunRows = @($controlDatabaseAfterRun.onboardAlarmSnapshotRows)
+}
+$alarmRestartAdoptionPass = $null -ne $phase2 -and
+    $alarmRestartRows.Count -eq 1 -and
+    [long]$alarmRestartRows[0]['sessionGeneration'] -eq $phase2.sessionGeneration
+# And it must never go backwards afterwards. One row per vehicle throughout, generation only ever
+# forward: a projection that regresses is a dashboard showing an alarm set the vehicle has moved on
+# from, which is the same defect wearing a different hat.
+$alarmNoRegressionPass = $alarmRestartAdoptionPass -and
+    $alarmAfterRunRows.Count -eq 1 -and
+    [long]$alarmAfterRunRows[0]['sessionGeneration'] -ge [long]$alarmRestartRows[0]['sessionGeneration']
+
 $stableWindowPass = @($phases).Count -eq 3
 foreach ($phase in $phases) {
     $samples = @($phase.stableWindow)
@@ -864,6 +897,8 @@ $assertions = [ordered]@{
     onboardOutboxRowsSurviveOnboardRestart = $onboardOutboxDurabilityPass
     recoveryReportIdentityAgreesAcrossPeers = $crossPeerIdentityPass
     sessionRecoveryRowStaysASingletonPerAgv = $sessionRowSingletonPass
+    onboardAlarmProjectionAdoptedTheRestartedVehiclesSnapshot = $alarmRestartAdoptionPass
+    onboardAlarmProjectionNeverRegressedToAnEarlierGeneration = $alarmNoRegressionPass
     noMovementOrExternalSideEffects = $noMovementPass
     secretScan = $secretLeakFiles.Count -eq 0
 }

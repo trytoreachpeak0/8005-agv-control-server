@@ -123,6 +123,10 @@ builder.Services.AddOptions<OnboardSafetyProjectionOptions>()
     .Bind(builder.Configuration.GetSection(OnboardSafetyProjectionOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<OnboardSafetyProjectionOptions>, OnboardSafetyProjectionOptionsValidator>();
+builder.Services.AddOptions<SlotConfigurationActivationOptions>()
+    .Bind(builder.Configuration.GetSection(SlotConfigurationActivationOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<SlotConfigurationActivationOptions>, SlotConfigurationActivationOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>((services, client) =>
 {
@@ -212,6 +216,11 @@ app.MapGet("/api/runtime/catalog-availability", async (
 if (app.Configuration.GetValue<bool>("OnboardSafetyProjection:enabled"))
 {
     app.MapOnboardVehicleSafety();
+}
+// 默认不挂。这个入口发出去的是让车换掉自己仓位 IO 绑定的那条命令，装好就开着等于把它挂在网上。
+if (app.Configuration.GetValue<bool>("SlotConfigurationActivation:enabled"))
+{
+    app.MapSlotConfigurationActivation();
 }
 app.MapDashboardQueries();
 
