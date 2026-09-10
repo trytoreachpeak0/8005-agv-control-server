@@ -13,9 +13,10 @@ using Corvus.Json.Validator;
 //
 //   ControlServer.SchemaConformance --lines <ndjson> --report <directory>
 //
-// Each input line is {"messageType","origin","site","line"}: origin is product, synthetic-peer or
-// test, site names the sending method. Writes schema-coverage.json always and schema-violations.json
-// when anything failed. Exit 0 = every line conforms, 1 = violations, 2 = the vendored contract does
+// Each input line is {"messageType","origin","site","line"}: origin is product, synthetic-peer,
+// real-onboard or test, site names the sending method. real-onboard lines come from the L2 runner,
+// which reads what a deployed onboard package sent out of ProtocolInbox.RequestJson (#35). Writes
+// schema-coverage.json always and schema-violations.json when anything failed. Exit 0 = every line conforms, 1 = violations, 2 = the vendored contract does
 // not match ProtocolCandidateIdentity or the input is unusable.
 //
 // It runs as its own process on purpose. Corvus.Json.Validator 4.6.7 is the version the protocol
@@ -164,7 +165,8 @@ File.WriteAllText(
         origins = new
         {
             product = Coverage("product", "C_TO_O", "BIDIRECTIONAL"),
-            syntheticPeer = Coverage("synthetic-peer", "O_TO_C", "BIDIRECTIONAL")
+            syntheticPeer = Coverage("synthetic-peer", "O_TO_C", "BIDIRECTIONAL"),
+            realOnboard = Coverage("real-onboard", "O_TO_C", "BIDIRECTIONAL")
         }
     }, reportOptions) + "\n");
 

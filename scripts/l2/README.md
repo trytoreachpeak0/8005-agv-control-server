@@ -36,13 +36,14 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-multi-demand-stop-plan` | **真的** | 四停靠旅程：车辆侧收下五条腿的行程带（#37 的回归守卫），四站在真 Modbus 上依次装完 | `evidence/l2/20260910-real-onboard-multi-demand-stop-plan-007` |
 | `real-onboard-multi-demand-operator-inaction` | **真的** | 四停靠旅程里的三种操作员不作为：关门不放料、门开着过期、两次关门判确定失败——然后旅程自己离开那一站，后两站照常装完 | `evidence/l2/20260910-real-onboard-multi-demand-operator-inaction-003` |
 
-编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十一个是**红的**，各自的原因见文末：
+编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
 `-004`（第 9 条）、`real-onboard-load-door-closed-empty-001`（第 13 条）、
 `load-cancelled-in-flight-001`（第 14 条），以及
 `real-onboard-station-timeout-door-open` 的 `-001`/`-002`/`-003`（最后一节），以及
 `real-onboard-recovery-compensate-load` 的 `-001`（第 12 条）/`-002`（第 16 条）/`-004`（第 14
-条的第四例）。**除头两条之外全都红在场景或驱动自己身上，不是产品**——`real-onboard-station-timeout-door-open-001` 那一条连诊断都跟着错了一半。
+条的第四例），以及 `schema-conformance-normal-load-001`（合成对端的 `Heartbeat` 违反 schema，见
+「车载端报文的 schema 校验」一节）。**除头两条之外全都红在场景、驱动或替身自己身上，不是产品**——`real-onboard-station-timeout-door-open-001` 那一条连诊断都跟着错了一半。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
 `VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
@@ -206,7 +207,12 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 | `assertions.json` | 机器可读的判据结论 |
 | `timeline.jsonl` | 一行一次判据翻转，只追加 |
 | `logs/` | 每个组件的 stdout、stderr，以及构建日志 |
-| `snapshots/` | 收尾时各控制面与六张关键表的快照 |
+| `snapshots/` | 收尾时各控制面与十一张表的快照，含 `ProtocolInbox` / `ProtocolOutbox` 两张协议表 |
+| `schema-conformance/` | 车载端报文逐条过 protocol JSON Schema 的结果：`schema-coverage.json`（按产地记哪几种报文、各几条）、`schema-conformance.txt`，有违约时还有 `schema-violations.json` |
+
+两张协议表是 2026-09-10 加进快照的（`8005-agv-program#35`）：PASS 会把 stage 库连同它们一起删掉，
+此前绿跑之后一条报文都不剩。快照走 `ConvertTo-Json`，`RequestJson` / `PayloadJson` 被转义成 JSON
+字符串——能还原，但不能直接 grep。
 
 时间线的形状抄自 `remote-ops/status/Get-WireToGateStatus.ps1`——2026-09-03 定位缺陷时，就是靠
 它把「12:56:49 STOPPED → 12:57:15 UNKNOWN」精确卡到秒。
@@ -418,6 +424,40 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     在仓里；而且 SDK 10 下 ControlServer 构建必然失败，所以凡是构建成功的那次运行，同一进程里
     发布的 peer 用的也是 8.0.425。同一个坑也在 `scripts/build.ps1`、`test-wire-to-gate.ps1`、
     `Publish-ControlServer.ps1` 与 `field/Invoke-W1FieldWindow.ps1` 里，已由 `fcfb1ad`（PR #21）一并修掉。
+
+18. **`ProtocolInbox` 里全过 schema，不等于车载端没发过坏报文。**每条场景收尾都判一条
+    `L2-SC-01`（见下一节），真装置下它读的就是这张表——而这张表**只有服务端处理成功的行**。
+    身份不对、世代过期、类型不支持、服务端自己的校验不过，这些行一个字都不落库，异常一路传到
+    `OnboardTcpServer` 把连接掐掉。所以「库里全绿」只能说「服务端收下的那些都合法」。另外两件事
+    同样别从这张表里推：它按 `MessageId` 最后写入者赢（`RecoveryStateReport` 等价重放会就地覆盖），
+    所以行数不是发送次数；`SessionHello` 与 `ExceptionRecoverySessionRequested` 存的是凭据脱敏成
+    `"[REDACTED]"` 之后重序列化的行，schema 只要求非空字符串所以照样能验，但**拿它们核
+    `ContentHash` 必然对不上**，那个哈希取自原始行。
+
+## 车载端报文的 schema 校验：`L2-SC-01`
+
+每条场景收尾时，不论场景本身红绿，都把**车载端那一侧发出的每一行**交给
+`tools/ControlServer.SchemaConformance` 逐条对 protocol JSON Schema 校验（`8005-agv-program#35`）。
+校验器、vendor 的 schema 与已登记违约表（`tests/ControlServer.Tests/schema-known-violations.json`）
+都与 `dotnet test` 里那道校验是同一份。**红了判死**：退出码非 0 或一行都没验到，场景就是 FAIL。
+
+两套装置的来源不一样，因为能看见的东西不一样：
+
+| 装置 | 验的是 | 从哪来 |
+| --- | --- | --- |
+| 合成 | 合成对端发出的每一行 | `ControlServer.FakeOnboard` 带 `--FakeOnboard:SchemaRecordPath` 启动，每发一行就记一条，带发送方法名 |
+| 真的 | 真部署车载端包写进 `ProtocolInbox.RequestJson` 的每一行 | 收尾时从服务端库导出，`site` 记成 `ProtocolInbox[<MessageId>]` |
+
+**为什么这两处要在 L2 验，而不是 G2**：合成对端的报文在 `dotnet test` 里一条都不产生（测试项目不
+引用它）；真车载端的车载端 G2 验的是 test build 里的咽喉，与真部署包之间隔着一次打包和一次部署，
+那段缝只有这里看得见。**服务端出站不在这里验**：`ProtocolOutbox.PayloadJson` 与 G2 在
+`ProtocolEnvelope` 上验的是同一批字节，重放改写那一行也经过同一个钩子。
+
+**首跑就抓到一条**：合成对端的 `Heartbeat` 一直多带一个 `observedAt`，0.3.0 的 schema 不允许
+（`additionalProperties: false`），服务端从来不读它。红证据
+`evidence/l2/20260910-schema-conformance-normal-load-001`，十条判据只红了这一条。
+
+**代价**：每种报文的 schema 首次编译约 1.25 秒，一条场景十来种报文，约多 15–20 秒。
 
 ## ADR-cross-0058 的三条操作员不作为场景
 

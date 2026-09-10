@@ -166,7 +166,8 @@ tests only when the current task changed product code, tests, or build inputs,
 or when the user asks for validation. Never infer it from `git status`.
 
 Between the suite and the gates sits the **L2 scenario runner**, which is cheap (about 14
-seconds), unattended and safe to run on your own initiative:
+seconds of scenario plus 15–20 seconds of schema compilation), unattended and safe to run on your own
+initiative:
 
 ```powershell
 pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\evidence\l2\<new dir>
@@ -178,6 +179,11 @@ drives one scenario, asserts against the server's own database and writes eviden
 change touches the journey runtime's cross-end timing, which the unit suite covers only from
 inside one process. `-EvidenceRoot` must be a new directory. See `scripts/l2/README.md`; a PASS
 there proves nothing about real hardware.
+
+Every run also judges `L2-SC-01`: each line the onboard side sent -- the synthetic peer's own record,
+or the real onboard's rows in `ProtocolInbox` -- against the protocol JSON Schema, with the same
+validator and known-violation list as the unit suite. That is the only place either is ever checked,
+so a red `L2-SC-01` is a peer sending a line the contract forbids, not a flaky scenario.
 
 A scenario whose sibling `scenarios/<name>.setup.psd1` says `Onboard = 'Real'` runs a second rig
 instead: the shipped onboard WPF from `8005-agv-onboard-hmi` driven through UI Automation, plus

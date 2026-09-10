@@ -23,6 +23,12 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 已经存在的会话的变化，而 2026-09-03 现场那个缺陷的形状恰恰是会话建立那一刻快照就已经记着
 `vehicleStopped=false`。
 
+给了 `--FakeOnboard:SchemaRecordPath=<文件>` 时，它每发一行协议报文就往那个文件追加一条
+`{"messageType","origin":"synthetic-peer","site","line"}`，L2 编排器收尾时交给
+`tools/ControlServer.SchemaConformance` 逐条对 protocol JSON Schema 校验。**合成对端的报文只在
+L2 里被校验**：`tests/ControlServer.Tests` 不引用这个项目，`dotnet test` 与 G2 一条它的报文都不会
+产生。替身发错报文的代价是服务端对着一份假契约开发、而门禁照样全绿（`8005-agv-program#33`/`#35`）。
+
 **它不是真车载端，也永远不会是。**没有 IO、没有 journal、没有操作员。它有的是服务端状态机所依赖
 的那部分协议行为——这正好够让一个场景真正关于服务端。真车载端要等落地顺序第 5 步的 UIA 驱动。
 

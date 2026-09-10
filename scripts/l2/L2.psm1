@@ -691,6 +691,102 @@ function Invoke-L2Query {
     return , $rows
 }
 
+# --- protocol schema conformance ----------------------------------------------------------------
+
+<#
+Writes what the onboard sent, as the server stored it -- ProtocolInbox.RequestJson, one record per
+row -- in the input shape of tools/ControlServer.SchemaConformance, and returns how many rows there
+were. This is the one place the lines of a deployed onboard package can be seen: the onboard's own
+G2 checks a test build, and a package and a deployment sit between the two (#35).
+
+Three things the result is not, and a green run must not be read as any of them:
+
+  Not everything the onboard sent. A line the server refused -- failed validation, wrong identity,
+  stale generation, unsupported type -- is never written, and the exception closes the connection
+  (OnboardTcpServer). "Every stored line conforms" is not "no bad line was ever sent".
+
+  Not a count of sends. The table is keyed by MessageId and an equivalent replay overwrites its row
+  in place (RecoveryStateReport), so the number of records is not the number of lines on the wire.
+
+  Not the original bytes for two types. SessionHello and ExceptionRecoverySessionRequested are
+  stored re-serialized with the proof replaced by "[REDACTED]" (OnboardMessageProcessor). The schema
+  asks only for a non-empty string there, so both still validate; ContentHash was taken from the
+  original line and will not match them.
+
+The site names the row, so a violation points at a MessageId rather than at the table.
+#>
+function Export-L2InboundProtocolLines {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Origin
+    )
+
+    $rows = Invoke-L2Query -Connection $Connection `
+        -Sql 'SELECT MessageId, MessageType, RequestJson FROM ProtocolInbox ORDER BY ReceivedAt, MessageId'
+    $records = foreach ($row in $rows) {
+        [ordered]@{
+            messageType = $row.MessageType
+            origin      = $Origin
+            site        = "ProtocolInbox[$($row.MessageId)]"
+            line        = $row.RequestJson
+        } | ConvertTo-Json -Compress -Depth 3
+    }
+    [IO.File]::WriteAllLines($Path, [string[]]@($records), [Text.UTF8Encoding]::new($false))
+    return $rows.Count
+}
+
+<#
+Checks protocol lines against the pinned release's JSON Schemas with the validator, vendored schemas
+and known-violation list the unit suite already uses (tests/ControlServer.Tests/OutboundSchemaConformance.cs),
+and returns what it found. The report lands in $ReportDirectory: schema-conformance.txt always,
+schema-coverage.json unless the vendored contract itself is wrong, schema-violations.json when
+anything failed.
+
+The validator is its own process for the reason its project file gives. Its exit code is the verdict
+-- 0 conforms, 1 an unfiled violation, 2 the vendored contract does not match the pinned identity --
+but a zero is only a pass when lines were actually checked. A peer that never got a line in would
+otherwise read as a conforming one, and that is a check scoring "saw nothing" as "fine".
+#>
+function Invoke-L2SchemaConformance {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$LinesPath,
+        [Parameter(Mandatory)][string]$ReportDirectory
+    )
+
+    $validator = Join-Path $Repository `
+        'tools/ControlServer.SchemaConformance/bin/Release/net8.0/win-x64/ControlServer.SchemaConformance.exe'
+    if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) {
+        throw "The schema validator is not built: $validator"
+    }
+    if (-not (Test-Path -LiteralPath $LinesPath -PathType Leaf)) {
+        throw "No protocol lines were recorded: $LinesPath does not exist."
+    }
+    $null = New-Item -ItemType Directory -Path $ReportDirectory -Force
+    $known = Join-Path $Repository 'tests/ControlServer.Tests/schema-known-violations.json'
+
+    $output = @(& $validator --lines $LinesPath --report $ReportDirectory --known $known 2>&1 |
+        ForEach-Object { "$_" })
+    $exitCode = $LASTEXITCODE
+    [IO.File]::WriteAllLines(
+        (Join-Path $ReportDirectory 'schema-conformance.txt'), [string[]]$output, [Text.UTF8Encoding]::new($false))
+
+    $coveragePath = Join-Path $ReportDirectory 'schema-coverage.json'
+    $coverage = if (Test-Path -LiteralPath $coveragePath) {
+        Get-Content -LiteralPath $coveragePath -Raw | ConvertFrom-Json -AsHashtable
+    } else {
+        $null
+    }
+    $summary = @($output | Where-Object { $_ -like 'Schema conformance*' }) | Select-Object -First 1
+    return [pscustomobject]@{
+        ExitCode     = $exitCode
+        LinesChecked = if ($coverage) { [int]$coverage.linesChecked } else { 0 }
+        Coverage     = $coverage
+        Summary      = if ($summary) { $summary } else { ($output | Select-Object -Last 3) -join ' ' }
+    }
+}
+
 # --- evidence -----------------------------------------------------------------------------------
 
 class L2Assertions {
@@ -786,6 +882,7 @@ function Write-L2Evidence {
     $lines.Add('- `timeline.jsonl` —— 一行一次判据翻转，只追加')
     $lines.Add('- `logs/` —— 每个组件的 stdout 与 stderr')
     $lines.Add('- `snapshots/` —— 收尾时各控制面与服务端数据库的快照')
+    $lines.Add('- `schema-conformance/` —— 车载端报文逐条过 protocol JSON Schema 的覆盖账与违约明细')
     $lines.Add('')
     if ($Rig -eq 'RealOnboard') {
         $lines.Add('本次跑的是真 ControlServer + **真车载端 WPF** + **真 slots-simulator** + 假 RIoT + 假 MesIngest。')
@@ -884,5 +981,6 @@ WHERE d.DemandId = '$DemandId'
 Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Assert-L2ComponentAlive,
     Wait-L2Iterations, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
+    Export-L2InboundProtocolLines, Invoke-L2SchemaConformance,
     Write-L2Evidence, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver,
     Get-L2Journey, Get-L2DeterministicId

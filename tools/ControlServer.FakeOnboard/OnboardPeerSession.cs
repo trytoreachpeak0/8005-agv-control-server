@@ -170,9 +170,11 @@ public sealed class OnboardPeerSession(
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
                 FakeOnboardState state = engine.Snapshot().State;
+                // Exactly the two fields Heartbeat.schema.json allows. This used to carry observedAt as
+                // well; the server never read it, the schema forbids it, and nothing checked this peer's
+                // lines until the L2 schema check did (#35, evidence 20260910-schema-conformance-normal-load-001).
                 await SendLineAsync(Envelope("Heartbeat", NewId(), null, state.SessionGeneration, new
                 {
-                    observedAt = DateTimeOffset.UtcNow,
                     capabilityVersion = 1L,
                     safetyStateVersion = state.SafetyStateVersion
                 }), cancellationToken).ConfigureAwait(false);

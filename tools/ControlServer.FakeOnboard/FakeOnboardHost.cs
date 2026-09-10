@@ -28,6 +28,11 @@ public static class FakeOnboardHost
         SafetySummary seedSafety = ReadSeedSafety(builder.Configuration);
         builder.Services.AddSingleton(_ => new CommandEngine<FakeOnboardState>(
             instanceId, () => new FakeOnboardState { Safety = seedSafety }));
+        // Set by the L2 runner, which validates the file against the protocol schemas afterwards.
+        if (builder.Configuration["FakeOnboard:SchemaRecordPath"] is { Length: > 0 } schemaRecordPath)
+        {
+            SchemaRecorder.Install(schemaRecordPath);
+        }
 
         IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(
             builder.Configuration, "FakeOnboard", DefaultControlPort);

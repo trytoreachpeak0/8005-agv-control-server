@@ -19,5 +19,19 @@
     "keyword": "enum",
     "actual": "\"PROVEN_RECOVERY_CHECKPOINT_REQUIRED\"",
     "issue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8"
+  },
+  {
+    "messageType": "ExceptionRecoverySessionRequested",
+    "pointer": "#/payload/administrator/verificationMethod",
+    "keyword": "enum",
+    "actual": "\"CONFIGURED_PROOF\"",
+    "issue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/9"
+  },
+  {
+    "messageType": "RecoveryActionSubmitted",
+    "pointer": "#/payload/operator/verificationMethod",
+    "keyword": "enum",
+    "actual": "\"CONFIGURED_PROOF\"",
+    "issue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/9"
   }
 ]

@@ -149,6 +149,14 @@ $null = New-Item -ItemType Directory -Path $snapshotRoot -Force
 $stageRoot = Join-Path ([IO.Path]::GetTempPath()) "l2-$runId"
 $null = New-Item -ItemType Directory -Path $stageRoot -Force
 $databasePath = Join-Path $stageRoot 'controlserver.db'
+# Every line the onboard side sent, for the schema check at teardown (#35). Where it comes from depends
+# on the rig: the synthetic peer records its own sends as it makes them, the real onboard's are read
+# back out of ProtocolInbox -- nothing else ever sees what a deployed onboard package put on the wire.
+$schemaLinesPath = if ($realOnboard) {
+    Join-Path $stageRoot 'real-onboard-inbound.ndjson'
+} else {
+    Join-Path $stageRoot 'fake-onboard-outbound.ndjson'
+}
 
 $journal = New-L2Journal -Path (Join-Path $EvidenceRoot 'timeline.jsonl')
 $assertions = New-L2Assertions
@@ -469,7 +477,8 @@ try {
             "--FakeOnboard:port=$FakeOnboardPort",
             "--FakeOnboard:instanceId=l2-onboard",
             "--FakeOnboard:Peer:port=$ControlPort",
-            "--FakeOnboard:Peer:agvId=$agvId")
+            "--FakeOnboard:Peer:agvId=$agvId",
+            "--FakeOnboard:SchemaRecordPath=$schemaLinesPath")
         if ($setup.ContainsKey('OnboardSeed')) {
             foreach ($key in ($setup.OnboardSeed.Keys | Sort-Object)) {
                 $onboardArguments += "--FakeOnboard:Seed:$key=$($setup.OnboardSeed[$key])"
@@ -577,9 +586,13 @@ try {
         }
     }
     if ($connection) {
+        # The two protocol tables are the only record of what crossed the wire, and a PASS deletes the
+        # stage database with them. ConvertTo-Json escapes the JSON columns into strings: they round-trip,
+        # but are not greppable as they stand.
         foreach ($table in @('JourneyRuntimes', 'AcceptedDemands', 'JourneyBacklog', 'OrderIntents',
                              'StationOperations', 'SessionRecoveries', 'OperationResults',
-                             'ExceptionRecoverySessions', 'RecoveryWorkflows')) {
+                             'ExceptionRecoverySessions', 'RecoveryWorkflows',
+                             'ProtocolInbox', 'ProtocolOutbox')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(
@@ -588,6 +601,15 @@ try {
                     [Text.UTF8Encoding]::new($false))
             } catch {
                 Write-Warning "Could not snapshot table ${table}: $_"
+            }
+        }
+        if ($realOnboard) {
+            try {
+                $inboundRows = Export-L2InboundProtocolLines -Connection $connection -Path $schemaLinesPath `
+                    -Origin 'real-onboard'
+                $journal.Note("Exported $inboundRows ProtocolInbox rows for the schema check.")
+            } catch {
+                Write-Warning "Could not export ProtocolInbox for the schema check: $_"
             }
         }
         try { $connection.Close(); $connection.Dispose() } catch { }
@@ -601,6 +623,33 @@ try {
     # invalidated by a protocol release the same way G2 evidence is.
     $protocolCandidate = (Get-Content -LiteralPath (Join-Path $Repository 'src/ControlServer.Host/appsettings.json') -Raw |
         ConvertFrom-Json -AsHashtable).ProtocolCandidate
+
+    # After teardown, so the synthetic peer has sent its last line. Judged on every run, a failed one
+    # included: a scenario that went red for its own reasons can still have a peer sending bad lines,
+    # and that is worth knowing before the scenario is fixed. Only the peer's lines are checked -- the
+    # server's outbound is the same bytes CONTROL_SERVER_G2 already validates at ProtocolEnvelope.
+    $schemaSource = if ($realOnboard) {
+        '真车载端包写进 `ProtocolInbox.RequestJson` 的每一行'
+    } else {
+        '合成对端发出的每一行'
+    }
+    $schemaDescription = "车载端报文逐条符合 $($protocolCandidate.tag) 的 JSON Schema（$schemaSource）"
+    $schemaExpected = '退出码 0，校验行数 > 0，未登记违约 0'
+    try {
+        $conformance = Invoke-L2SchemaConformance -Repository $Repository -LinesPath $schemaLinesPath `
+            -ReportDirectory (Join-Path $EvidenceRoot 'schema-conformance')
+        $journal.Note("Schema conformance, exit $($conformance.ExitCode): $($conformance.Summary)")
+        $assertions.Add('L2-SC-01', $schemaDescription,
+            ($conformance.ExitCode -eq 0 -and $conformance.LinesChecked -gt 0),
+            $schemaExpected, "退出码 $($conformance.ExitCode)：$($conformance.Summary)")
+    } catch {
+        $journal.Note("Schema conformance did not run: $($_.Exception.Message)")
+        $assertions.Add('L2-SC-01', $schemaDescription, $false, $schemaExpected,
+            "校验没有跑成：$($_.Exception.Message)")
+    }
+    if ($outcome -eq 'PASS' -and -not $assertions.AllPassed()) {
+        $outcome = 'FAIL'
+    }
 
     $identity = @{
         controlServerCommit = (& git -C $Repository rev-parse HEAD 2>$null)
