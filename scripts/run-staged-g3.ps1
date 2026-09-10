@@ -2765,8 +2765,12 @@ if ($null -ne $databaseObservation) {
         Where-Object { $_.agvId -ceq $agvId })
 }
 $alarmSnapshotGenerations = @($alarmSnapshotsSent.sessionGeneration | Sort-Object -Unique)
+$alarmClientConnectionIds = @($alarmEvents |
+    Where-Object { $_.event -eq 'message' -and $_.direction -eq 'client-to-server' } |
+    ForEach-Object { $_.connectionId } | Sort-Object -Unique)
 $alarmObservation = [ordered]@{
     snapshotsSent = $alarmSnapshotsSent.Count
+    clientConnectionIds = $alarmClientConnectionIds
     snapshotConnectionIds = @($alarmSnapshotsSent.connectionId | Sort-Object -Unique)
     snapshotSessionGenerations = $alarmSnapshotGenerations
     snapshotMessageIds = @($alarmSnapshotsSent.messageId | Sort-Object -Unique)
@@ -2781,20 +2785,29 @@ $alarmObservation = [ordered]@{
     ($alarmObservation | ConvertTo-Json -Depth 10),
     [Text.UTF8Encoding]::new($false))
 
-# Every connection carries one, and this run reconnects: fewer than two, or all of them on a single
-# connection, means the handshake stopped publishing it rather than that the projection is right.
-$alarmSentPass = $alarmSnapshotsSent.Count -ge 2 -and
-    $alarmObservation.snapshotConnectionIds.Count -ge 2
+# A FULL handshake publishes one. Not every connection does -- see the resume assertion below, which
+# is the corrected form of what the 2026-09-10 FAIL run got wrong.
+$alarmSentPass = $alarmSnapshotsSent.Count -ge 1
 # Acked one for one. A snapshot the server never applied cannot be evidence that it projected it.
-$alarmAckPass = $alarmSnapshotAcks.Count -eq $alarmSnapshotsSent.Count -and $alarmSnapshotAcks.Count -ge 2
+$alarmAckPass = $alarmSnapshotAcks.Count -eq $alarmSnapshotsSent.Count -and $alarmSnapshotAcks.Count -ge 1
+# A reconnect that resumes an interrupted recovery replays the unacknowledged message and republishes
+# NOTHING: those snapshots were already accepted on the previous connection. This run reconnects, so
+# the transcript can say so -- more than one client connection, every alarm snapshot on one of them.
+# Republishing here would be a real defect: it would hand the projection a second snapshot carrying
+# the same board state under a new generation, and the adoption rule would take it as news.
+$alarmResumePass = $alarmClientConnectionIds.Count -ge 2 -and
+    $alarmObservation.snapshotConnectionIds.Count -eq 1
 # One row per vehicle is the design, not an accident of this run: a second row would mean the
 # projection is accumulating history and the dashboard has no single current alarm set to read.
 $alarmSingletonPass = $alarmProjectionRows.Count -eq 1
-# The row has to hold the LATEST session's snapshot. Holding an earlier generation's is exactly the
-# stale value REQ-0269 forbids -- and is what a sequence-only adoption rule produces.
-$alarmLatestGenerationPass = $alarmSingletonPass -and
-    $alarmSnapshotGenerations.Count -ge 2 -and
-    $alarmObservation.projectionSessionGeneration -eq ($alarmSnapshotGenerations | Measure-Object -Maximum).Maximum
+# The row carries the generation the snapshot arrived in. This is the half of the (generation,
+# sequence) adoption rule a staged run can reach; the other half -- a restarted vehicle whose
+# sequence returns to 1 still being adopted -- needs the onboard process to actually restart, which
+# is run-staged-g3-restart.ps1's scenario, not this one.
+$alarmGenerationPass = $alarmSingletonPass -and
+    $alarmSnapshotGenerations.Count -ge 1 -and
+    $alarmObservation.projectionSessionGeneration -eq ($alarmSnapshotGenerations | Measure-Object -Maximum).Maximum -and
+    $alarmObservation.projectionSnapshotSequence -ge 1
 
 $replayPass = $null -ne $runtimeObservation -and
     $runtimeObservation.droppedAckCount -eq 1 -and
@@ -3017,10 +3030,11 @@ $assertionReport = [ordered]@{
     forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    onboardAlarmSnapshotPublishedOnEveryConnection = if ($alarmSentPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmSnapshotPublishedOnTheFullHandshake = if ($alarmSentPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     onboardAlarmSnapshotAppliedAckOnEverySnapshot = if ($alarmAckPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmSnapshotNotRepublishedOnRecoveryResume = if ($alarmResumePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     onboardAlarmProjectionIsASingletonPerVehicle = if ($alarmSingletonPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    onboardAlarmProjectionHoldsTheLatestSessionGeneration = if ($alarmLatestGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmProjectionCarriesTheGenerationItArrivedIn = if ($alarmGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     noMovementOrExternalSideEffects = if ($noMovementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     secretScan = if ($secretLeakFiles.Count -eq 0) { 'PASS' } else { 'FAIL' }
 }

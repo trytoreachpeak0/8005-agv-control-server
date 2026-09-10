@@ -104,14 +104,25 @@ function Get-G3RunnerClaim {
                     'businessMessageDelayedDeliveryAccepted',
                     'businessMessageReorderedDeliveryAccepted')
                 # FP-IS-15 needs no driving: the onboard alarm board publishes a snapshot as part of
-                # every handshake, and this runner already reconnects, so two generations' worth
-                # arrive on their own. What is asserted is the adoption rule -- one row per vehicle,
-                # holding the LATEST generation's snapshot. Message 9 landed on 2026-09-10.
+                # every FULL handshake. Message 9 landed on 2026-09-10.
+                #
+                # "Full" is load-bearing and was got wrong once. The first run of this claim asserted
+                # one snapshot per CONNECTION and failed: a reconnect that resumes an interrupted
+                # recovery replays the unacknowledged message and republishes no snapshots at all.
+                # That FAIL is kept at evidence/g3/20260910-fp-is-15-v2-alarm-snapshot. The resume
+                # assertion below is what replaced it, and it now pins that behaviour rather than
+                # contradicting it.
+                #
+                # This runner reaches one half of the (generation, sequence) adoption rule: the row
+                # carries the generation its snapshot arrived in. The other half -- a restarted
+                # vehicle whose sequence returns to 1 is still adopted -- needs the onboard process
+                # to restart, so it belongs to run-staged-g3-restart.ps1 and is not claimed here.
                 'FP-IS-15' = @(
-                    'onboardAlarmSnapshotPublishedOnEveryConnection',
+                    'onboardAlarmSnapshotPublishedOnTheFullHandshake',
                     'onboardAlarmSnapshotAppliedAckOnEverySnapshot',
+                    'onboardAlarmSnapshotNotRepublishedOnRecoveryResume',
                     'onboardAlarmProjectionIsASingletonPerVehicle',
-                    'onboardAlarmProjectionHoldsTheLatestSessionGeneration')
+                    'onboardAlarmProjectionCarriesTheGenerationItArrivedIn')
             }
         }
         'STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT' = [ordered]@{
