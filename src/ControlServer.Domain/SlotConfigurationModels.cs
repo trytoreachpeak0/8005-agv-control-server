@@ -1,3 +1,7 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+
 namespace ControlServer.Domain;
 
 /// <summary>
@@ -44,6 +48,70 @@ public sealed record SlotIoBindingSpecification(
     string LightCurtainInputPoint,
     string SignalPolarity,
     int PulseResetMilliseconds);
+
+/// <summary>
+/// 仓位配置指纹：两端**必须逐字节一致**地算出同一个值的那套规范化摘要。
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>为什么它必须是两端共用的一套算法。</b>协议 v2 的消息 7 <c>SlotConfigurationActivationCommand</c>
+/// **不携带配置内容**——整个协议里没有任何一条消息携带仓位 IO 绑定。它带的是版本号与指纹。所以那次
+/// 激活是一次**核验**：服务端发它批准的那一版的指纹，车算自己手上那份的指纹，相等才切换，不等就
+/// 拒绝并报 <c>SLOT_CONFIGURATION_FINGERPRINT_MISMATCH</c>。两端各算各的，这条握手就永远不成立。
+/// </para>
+/// <para>
+/// <b>摘要只取两端都有的那六个字段。</b>车载端另有一个 <c>SlotPosition</c>（仓位在车上的位置名），
+/// 服务端这一侧根本没有这个概念——把它算进去，服务端就算不出车能算出的那个值。
+/// </para>
+/// <para>
+/// <b>版本名不在摘要里。</b>摘要回答的是「两边手上的硬件事实是不是同一份」，版本名是另一个问题，
+/// 消息 7 用 <c>targetSlotConfigurationVersion</c> 单独带。把版本名算进去，等于要求车知道服务端的
+/// 版本命名，而车恰恰不知道。
+/// </para>
+/// <para>
+/// <b>它不是 <c>GovernedConfigurationSnapshotRow.ContentSha256</c>。</b>那一个是 #9 的不可改写快照
+/// 对自己内容的摘要，服务端内部审计用，格式随快照的序列化走；这一个是跨端契约，格式在这里写死。
+/// 两者恰好都对同一批绑定取 SHA-256，但它们回答的是不同的问题，不该共用一个实现。
+/// </para>
+/// </remarks>
+public static class SlotConfigurationFingerprint
+{
+    /// <summary>字段分隔符。选一个不可能出现在 IO 点名里的字符。</summary>
+    private const char FieldSeparator = '';
+
+    /// <summary>仓位分隔符。</summary>
+    private const char SlotSeparator = '';
+
+    /// <summary>
+    /// 按仓号升序把六个字段规范化后取 SHA-256，小写十六进制。
+    /// </summary>
+    /// <remarks>
+    /// 数字一律用不变文化格式化——按当前区域格式化会在某些区域下给出带分组分隔符的毫秒数，那样两台
+    /// 机器算出的指纹会不同，而且只在部署到那些机器上时才不同。
+    /// </remarks>
+    public static string Compute(IEnumerable<SlotIoBindingSpecification> bindings)
+    {
+        ArgumentNullException.ThrowIfNull(bindings);
+
+        StringBuilder canonical = new();
+        foreach (SlotIoBindingSpecification binding in bindings.OrderBy(item => item.PhysicalSlotNumber))
+        {
+            if (canonical.Length > 0)
+            {
+                canonical.Append(SlotSeparator);
+            }
+            canonical
+                .Append(binding.PhysicalSlotNumber.ToString(CultureInfo.InvariantCulture)).Append(FieldSeparator)
+                .Append(binding.UnlockOutputPoint).Append(FieldSeparator)
+                .Append(binding.LockFeedbackInputPoint).Append(FieldSeparator)
+                .Append(binding.LightCurtainInputPoint).Append(FieldSeparator)
+                .Append(binding.SignalPolarity).Append(FieldSeparator)
+                .Append(binding.PulseResetMilliseconds.ToString(CultureInfo.InvariantCulture));
+        }
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())))
+            .ToLowerInvariant();
+    }
+}
 
 /// <summary>
 /// 车载端报上来的配置声明的核验结论。

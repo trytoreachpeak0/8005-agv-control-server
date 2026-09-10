@@ -87,7 +87,17 @@ public sealed class SlotConfigurationActivationCoordinator(
             AgvId = agvId,
             SlotModelVersionId = slotModelVersionId,
             ConfigurationVersion = version,
-            Fingerprint = snapshot.ContentSha256,
+            // 指纹是跨端契约，不是这份治理快照对自己内容的摘要（后者是 #9 的审计事实，格式随快照的
+            // 序列化走）。协议 v2 的消息 7 不带配置内容，那次激活是一次核验——车算自己手上那份的指纹
+            // 与它比，所以它必须由两端共用的那套规范化规则算出来。
+            Fingerprint = SlotConfigurationFingerprint.Compute(
+                [.. bindings.Select(binding => new SlotIoBindingSpecification(
+                    binding.PhysicalSlotNumber,
+                    binding.UnlockOutputPoint,
+                    binding.LockFeedbackInputPoint,
+                    binding.LightCurtainInputPoint,
+                    binding.SignalPolarity,
+                    binding.PulseResetMilliseconds))]),
             Kind = SlotConfigurationActivationKind.Activation,
             State = SlotConfigurationActivationState.PendingResult,
             RecoveryRole = SlotConfigurationActivationDelivery.RecoveryRole,

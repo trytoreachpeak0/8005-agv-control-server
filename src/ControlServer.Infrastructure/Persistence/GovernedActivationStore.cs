@@ -190,7 +190,9 @@ public sealed class GovernedActivationStore(
             AgvId = agvId,
             SlotModelVersionId = slotModelVersionId,
             ConfigurationVersion = newVersion,
-            Fingerprint = activated.ContentSha256,
+            // 与正常激活同一套规范化摘要，不是这份快照对自己内容的摘要：回滚也是一次要发到车上去核验
+            // 的激活，车那侧只会算规范化摘要。用 ContentSha256 会让每一次回滚都被车判成指纹不匹配。
+            Fingerprint = SlotConfigurationFingerprint.Compute(FingerprintInput(activated.ContentJson)),
             Kind = SlotConfigurationActivationKind.Rollback,
             RolledBackToVersion = toVersion,
             State = SlotConfigurationActivationState.PendingResult,
@@ -250,5 +252,19 @@ public sealed class GovernedActivationStore(
     /// <c>businessDedupKey</c>，schema 把它定为 <c>Id</c>（<c>format: uuid</c>）。让库里存的和线上
     /// 走的是同一个字符串，而不是在传输层来回换一次形状——一个身份两种写法，迟早有人只查得到一种。
     /// </remarks>
+    private static readonly JsonSerializerOptions SnapshotJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// 从冻结快照的内容里读回那批绑定，好按规范化规则算指纹。
+    /// </summary>
+    /// <remarks>
+    /// 快照的 <c>ContentJson</c> 就是 <see cref="SlotConfigurationActivationCoordinator"/> 写进去的那批
+    /// 绑定，字段名逐一对应。这里只读不改——回滚被回滚到的那一版逐字段不变，是本票的要害。
+    /// </remarks>
+    private static SlotIoBindingSpecification[] FingerprintInput(string contentJson) =>
+        JsonSerializer.Deserialize<SlotIoBindingSpecification[]>(contentJson, SnapshotJson)
+        ?? throw new InvalidDataException(
+            "The frozen slot configuration snapshot does not deserialise into slot IO bindings.");
+
     private static string NewId() => Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
 }

@@ -40,7 +40,13 @@ public sealed class SlotConfigurationActivationTests
         Assert.NotNull(activation.SnapshotId);
         GovernedConfigurationSnapshot snapshot = await fixture.RequireSnapshotAsync(
             $"AGV-01:{model}", activation.ConfigurationVersion);
-        Assert.Equal(snapshot.ContentSha256, activation.Fingerprint);
+        // 指纹是跨端契约，不是这份治理快照对自己内容的摘要：消息 7 不带配置内容，那次激活是一次核验，
+        // 车算自己手上那份的指纹与它比，所以它由两端共用的规范化规则算出来。快照的 ContentSha256 仍然
+        // 是 #9 的审计事实，只是不再兼任这个角色——两者回答的是不同的问题。
+        Assert.Equal(
+            SlotConfigurationFingerprint.Compute(ApprovedSlotHardwareFacts.IoBindings),
+            activation.Fingerprint);
+        Assert.NotEqual(snapshot.ContentSha256, activation.Fingerprint);
         BusinessAuditRecordRow issued = await fixture.Context.Set<BusinessAuditRecordRow>().AsNoTracking()
             .SingleAsync(row => row.Action == "SLOT_CONFIGURATION_ACTIVATION_ISSUED",
                 TestContext.Current.CancellationToken);
