@@ -53,14 +53,19 @@ public sealed class IntegrationSliceTraitArchitectureTests
     private static readonly SortedDictionary<string, string> ClassesOutsideTheSliceFamily =
         new(StringComparer.Ordinal)
         {
+            ["AgvRestorationTests"] = "batch 3 FP-C5 archive-and-restore lifecycle; server-internal, no wire message",
             ["Batch2CapabilityStoresTests"] = "batch 2 track B persistence foundation; server-internal, no wire message",
+            ["Batch3MigrationDisciplineTests"] = "cross-cutting migration and startup guard; hanging it off a slice would defer the guard with the slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
+            ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateGateTests"] = "RIoT create experiment; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateMigrationTests"] = "RIoT create experiment migration; server-internal",
+            ["GovernanceSnapshotAndAuditTests"] = "batch 3 FP-C7/FP-C5 shared snapshot and audit mechanism; server-internal, no wire message",
             ["IntegrationSliceTraitArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
+            ["OnboardAlarmProjectionTests"] = "batch 3 FP-IS-15 server half; OnboardAlarmSnapshot is still pinned in MessagesWithoutAnImplementation on this line, so nothing here stands behind a wire message yet",
             ["OnboardVehicleSafetyEndpointsTests"] = "server-side safety projection endpoint; not a protocol wire message",
             ["PackageCapacityStoreTests"] = "server-internal store; no wire message",
             ["ProtocolIdentityArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
@@ -74,8 +79,13 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["RiotOrderCommandSurfaceTests"] = "7.5 #8, FP-C11 order command surface; single-ended server-to-RIoT",
             ["RiotSdkPackageProvenanceTests"] = "vendored SDK package provenance; not a protocol fact",
             ["RiotSdkRegistrationTests"] = "SDK composition-root wiring; no wire message",
+            ["RollbackAndImpactPreviewTests"] = "batch 3 rollback and impact preview; a rollback is a new activation of an existing frozen version, server-internal",
             ["RouteGraphDispatchTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["RouteGraphEngineTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
+            ["SlotConfigurationActivationTests"] = "batch 3 FP-IS-14 server half; SlotConfigurationActivationCommand and SlotConfigurationActivationResult are still pinned in MessagesWithoutAnImplementation on this line, so nothing here stands behind a wire message yet",
+            ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",
+            ["SlotConfigurationGateModeTests"] = "readiness gate mode validation; no wire message",
+            ["SlotConfigurationReadinessGateTests"] = "batch 3 per-vehicle IO integrity gate; a server-side readiness predicate, no wire message",
             ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT"
         };
 

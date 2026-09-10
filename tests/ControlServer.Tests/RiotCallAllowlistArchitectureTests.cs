@@ -68,7 +68,8 @@ public sealed class RiotCallAllowlistArchitectureTests
         "ControlServer.Domain",
         "ControlServer.Application",
         "ControlServer.Infrastructure",
-        "ControlServer.Host"
+        "ControlServer.Host",
+        "ControlServer.Dashboard"
     ];
 
     /// <summary>
@@ -305,7 +306,7 @@ public sealed class RiotCallAllowlistArchitectureTests
         // client directly, so product code has no business naming its types at all. Every
         // approved Facade method returns RIoT.Sdk.Core types -- the only members of the Facade
         // that put a generated type in a caller's signature are the three Raw properties and the
-        // two DeviceClient methods section 2 denies by name. None of the four product assemblies
+        // two DeviceClient methods section 2 denies by name. None of the five product assemblies
         // references the assembly today.
         if (AssemblyReferences(path).Contains(GeneratedAssembly, StringComparer.Ordinal))
         {
