@@ -923,15 +923,21 @@ public sealed class JourneyRuntimeWorkerTests
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
-    public async Task ADeterminateLoadFailureDoesNotBlockTheJourney()
+    public async Task ADeterminateLoadFailureEndsTheStopInsteadOfWaitingForACancellationNobodyRaises()
     {
         // The counterpart to the test above, and the whole point of ADR-cross-0058 decision 5.
         // Same station timeout, same vehicle, one difference: this time the vehicle could read its
         // slots and reported them -- empty, locked, unlock output reset. That is a complete account
-        // of a failure, so no administrator is needed and the journey is not held. It stays in
-        // AwaitingLoadResult, where LoadTaskCancellation settles the demand (ADR-cross-0015,
-        // ADR-cross-0046); what stops the vehicle occupying the station forever is
-        // ADR-cross-0055's StationDepartureWaitTimeout, not a block.
+        // of a failure, so no administrator is needed and the journey is not held.
+        //
+        // This test used to assert the journey then *stayed* in AwaitingLoadResult, waiting for
+        // LoadTaskCancellation to settle the demand. 8005-agv-program#39 measured that on the real
+        // onboard: nothing ever raises it. The HMI offers no 取消装货 for a settled attempt, the
+        // before-load cancellation refuses any demand with a commanded operation, and neither the
+        // station deadline nor the holding limit is read in this stage -- so the vehicle sat at the
+        // stop for good. The vehicle only reports this failure once the server's own station
+        // deadline has expired and one grace round has passed (#24), which is exactly when the stop
+        // may close; so the server closes it.
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001",
@@ -945,12 +951,97 @@ public sealed class JourneyRuntimeWorkerTests
             determinate: true);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
-        SingleDemandJourneyView settled = await fixture.RuntimeAsync();
-        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, settled.Stage);
-        Assert.NotEqual("LOAD_RESULT_REQUIRES_RECOVERY", settled.BlockReasonCode);
+        // Nothing was loaded and nothing else is aboard, so there is nothing for the gate to take.
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, journey.Stage);
+        Assert.NotEqual("LOAD_RESULT_REQUIRES_RECOVERY", journey.BlockReasonCode);
+
+        // The failure itself stays on record as what it was.
         Assert.Equal(
             StationOperationStatus.Failed,
             (await fixture.OperationAsync(SlotOperationType.Load)).Status);
+
+        // The demand ends the way an expired station ends the demands it abandons, including the
+        // permanent ban: the same SUBLOT must not come back as a new DemandId and send the vehicle
+        // straight back to the stop that just failed.
+        Assert.Equal(
+            DemandExecutionStatus.Cancelled,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(
+                row => row.DemandId == "10000000-0000-4000-8000-000000000001",
+                TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(
+            "CANCELLED_BY_STATION_TIMEOUT",
+            (await fixture.Context.TransportDemandSuppressions.AsNoTracking().SingleAsync(
+                TestContext.Current.CancellationToken)).ReasonCode);
+
+        // And the load command it answered is settled. A determinate failure is not a success, so
+        // nothing else would ever settle it, and an unsettled command is replayed into every later
+        // session under a new generation -- which the peer refuses and tears the session down over.
+        JourneyDemandRow failed = Assert.Single(await fixture.DemandRowsAsync());
+        Assert.Equal(JourneyDemandState.Cancelled, failed.State);
+        Assert.DoesNotContain(failed.LoadCommandMessageId, await fixture.PendingOutboxMessageIdsAsync());
+    }
+
+    /// <summary>
+    /// The multi-stop shape L2 found #39 in: a determinate failure at the second stop ends that
+    /// demand, and the cargo already aboard from the first stop still reaches the gate. Before the
+    /// fix the journey stayed at stop 2 in AwaitingLoadResult with nothing left to move it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ADeterminateLoadFailureAtALaterStopLetsTheCargoAboardReachTheGate()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+
+        await fixture.ScanSublotAsync("SUBLOT-002");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.JourneyRowAsync()).Stage);
+
+        JourneyDemandRow second = (await fixture.DemandRowsAsync())
+            .Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002");
+        StationOperationRow secondLoad = await fixture.Context.StationOperations.AsNoTracking().SingleAsync(
+            row => row.SlotOperationAttemptId == second.LoadSlotOperationAttemptId,
+            TestContext.Current.CancellationToken);
+        await fixture.ApplyTimedOutResultAsync(secondLoad, SlotOperationType.Load, determinate: true);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // The stop closes and the vehicle heads for the gate with what it already carries.
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        Assert.Equal("NO_FURTHER_CARGO", journey.LoadingClosedReason);
+        Assert.Equal(9, journey.NextStopSequence);
+        Assert.DoesNotContain(second.LoadCommandMessageId, await fixture.PendingOutboxMessageIdsAsync());
+
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Equal(
+            DemandExecutionStatus.Succeeded,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(
+                row => row.DemandId == "10000000-0000-4000-8000-000000000001",
+                TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.Cancelled,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(
+                row => row.DemandId == "10000000-0000-4000-8000-000000000002",
+                TestContext.Current.CancellationToken)).Status);
     }
 
     [Fact]

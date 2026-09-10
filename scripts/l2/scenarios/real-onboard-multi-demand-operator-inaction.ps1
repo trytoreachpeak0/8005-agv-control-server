@@ -14,14 +14,14 @@ slots-simulator 上。这是现场窗口一（8005-agv-program#19）在模拟器
 - **停靠 2：开门不放料、门不关超时、门已闭超时。**门一直开着，一分钟期限到期挂
   `STATION_TIMEOUT_DOOR_NOT_CLOSED` 而不结束本站（决策 4）；等满一个 `OperationTimeout` 只再提示、
   不重复脉冲（决策 3）；之后两次关门不放料，第二次结算成确定失败而不是恢复（决策 5）。
-  **然后问出口**：HMI 上有没有「取消装货」，点了之后旅程能不能离开停靠 2。
+  **然后问出口**：确定失败之后旅程能不能自己离开停靠 2。-002 在这里停住了（8005-agv-program#39），
+  修法是服务端自己以 `CANCELLED_BY_STATION_TIMEOUT` 终结这条需求并照常收尾，不需要任何人按按钮。
 - **停靠 3、4：正常装载。**证明前面两站没有把这趟旅程弄坏。
 
 需求、条码、站点都按停靠序号从服务端库里读，不假设发布顺序就是停靠顺序；仓号从车载端自己上报
 的 `UNLOCKING` 里读，不假设服务端选哪个仓。
 
-断言只从服务端 SQLite 与模拟器 `/snapshot` 读。UI 只用来驱动，以及读「取消装货在不在」——那是
-能不能操作的前提，不是业务事实。
+断言只从服务端 SQLite 与模拟器 `/snapshot` 读。UI 只用来驱动。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -36,8 +36,6 @@ $mes = $Context.MesIngest
 $onboard = $Context.Onboard
 $simulator = $Context.Simulator
 $connection = $Context.Connection
-
-$cancelButton = '取消装货'
 
 $areas = @('N1-3', 'N2-6', 'N3-4', 'N4-2')
 $published = foreach ($area in $areas) {
@@ -408,28 +406,30 @@ $assertions.Add(
 
 # --- 4. 停靠 2 的出口 ---------------------------------------------------------------------------------
 
-# 服务端在 AwaitingLoadResult 读到 Failed 只 return，注释说「等 LoadTaskCancellation 结算这条需求」。
-# 站点期限只在 AwaitingSublot 检查，持货超时也不在这个分支里——所以现场这一格唯一的出口，是操作员
-# 在 HMI 上取消。下面三条判据问的就是这条出口在不在、走不走得通。
-$cancelVisible = Wait-L2Condition -Description 'the HMI offers load cancellation after the determinate failure' `
-    -Journal $journal -Criterion 'stop-2-cancel-visible' -TimeoutSeconds 30 `
-    -Probe { $onboard.ButtonEnabled($cancelButton) } -Until { param($v) $v }
-$assertions.Add(
-    'L2-MDI-30', '停靠 2：确定失败之后 HMI 上出现「取消装货」',
-    [bool]$cancelVisible, $true, $cancelVisible)
-
-$journal.Note('Stop 2: operator presses 取消装货 and confirms.')
-$onboard.InvokeButton($cancelButton)
-$null = $onboard.Confirm($cancelButton)
-
-$left = Wait-L2Condition -Description 'the journey left stop 2 after the cancellation' `
-    -Journal $journal -Criterion 'stop-2-exit' -TimeoutSeconds 120 `
+# -002 在这里停住：服务端在 AwaitingLoadResult 读到 Failed 只 return 等 LoadTaskCancellation，而 HMI
+# 不给「取消装货」，站点期限与持货超时也都不查这一格——旅程再也不动，停靠 3 连移动单都没建，停靠 2
+# 的装货命令悬空（8005-agv-program#39）。修法是服务端自己结算：车辆只在服务端期限到期、再宽限一轮
+# 之后才报 FAILED，所以它到达时关站条件本来就成立。这里一个按钮都不按。
+$left = Wait-L2Condition -Description 'the journey left stop 2 on its own after the determinate failure' `
+    -Journal $journal -Criterion 'stop-2-exit' -TimeoutSeconds 60 `
     -Probe { Get-Position } -Until { param($v) $v -notlike '2/*' }
-$stop2Status = Get-DemandStatus $stop2.DemandId
 $assertions.Add(
-    'L2-MDI-31', '停靠 2：取消之后旅程离开这一站，这条需求以取消终结',
-    ($left -notlike '2/*' -and $stop2Status -eq 'Cancelled'),
-    '(not stop 2) / Cancelled', "$left / $stop2Status")
+    'L2-MDI-30', '停靠 2：确定失败之后旅程自己离开这一站，不需要任何人按任何按钮',
+    ($left -notlike '2/*'), '(not stop 2)', $left)
+
+$stop2Status = Get-DemandStatus $stop2.DemandId
+$suppression = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT ReasonCode FROM TransportDemandSuppressions WHERE DemandId = '$($stop2.DemandId)'"
+$suppressionReason = if ($suppression.Count -eq 0) { '(no suppression)' } else { [string]$suppression[0].ReasonCode }
+$command = Invoke-L2Query -Connection $connection -Sql (
+    'SELECT o.AcknowledgedAt FROM JourneyDemands d JOIN ProtocolOutbox o ON o.MessageId = d.LoadCommandMessageId ' +
+    "WHERE d.DemandId = '$($stop2.DemandId)'")
+$commandSettled = $command.Count -eq 1 -and -not (Test-L2Null $command[0].AcknowledgedAt)
+$assertions.Add(
+    'L2-MDI-31', '停靠 2：这条需求以 CANCELLED_BY_STATION_TIMEOUT 终结并被永久抑制，它的装货命令已结算、不会被重放进后续会话',
+    ($stop2Status -eq 'Cancelled' -and $suppressionReason -eq 'CANCELLED_BY_STATION_TIMEOUT' -and $commandSettled),
+    'Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled',
+    "$stop2Status / $suppressionReason / $(if ($commandSettled) { 'command settled' } else { 'command pending' })")
 
 # --- 5. 停靠 3、4：正常装载 ----------------------------------------------------------------------------
 

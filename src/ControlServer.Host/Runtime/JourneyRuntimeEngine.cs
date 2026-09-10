@@ -659,10 +659,7 @@ public sealed class JourneyRuntimeEngine(
                     // ADR-cross-0058 decision 5. A determinate load failure neither blocks the
                     // journey nor opens a recovery session: the vehicle reported exactly what the
                     // slots look like -- known state, door locked, unlock output reset -- and the
-                    // answer was that nobody handed the cargo over. The journey waits here for
-                    // LoadTaskCancellation to settle the demand (ADR-cross-0015, ADR-cross-0046).
-                    // The wait is not open-ended, but closing the stop is ADR-cross-0055's
-                    // StationDepartureWaitTimeout, not this branch. Spelled out rather than left to
+                    // answer was that nobody handed the cargo over. Spelled out rather than left to
                     // the else below, which means something else entirely: no result yet.
                     //
                     // A determinate failure arrives with every door shut, so whatever alarm the open
@@ -670,7 +667,21 @@ public sealed class JourneyRuntimeEngine(
                     // or the stop reads STATION_TIMEOUT_DOOR_NOT_CLOSED against eight locked doors.
                     await ReconcileStationTimeoutDoorNotClosedAsync(
                         runtime, stop, session, now, cancellationToken).ConfigureAwait(false);
-                    return;
+                    // And the server ends the demand itself (8005-agv-program#39). This branch used to
+                    // return and wait for LoadTaskCancellation, which nothing ever raises: the onboard
+                    // offers no cancellation for an attempt whose result is recorded, and neither the
+                    // station deadline nor the holding limit is read in this stage. L2 measured the
+                    // journey sitting at the stop for good. The vehicle only reports this failure once
+                    // the station deadline this server set has expired and one grace round has passed
+                    // (#24), so the stop's closing condition already holds when it arrives. With the
+                    // demand cancelled the batch has closed the other way round, and the terminal
+                    // branch at the top of this case finishes it exactly as it finishes an operator
+                    // cancellation: another round here, the next stop, or the gate.
+                    await store.CancelDemandAfterDeterminateLoadFailureAsync(
+                        loading.DemandId, "CANCELLED_BY_STATION_TIMEOUT", now, cancellationToken)
+                        .ConfigureAwait(false);
+                    demands = await DemandsAsync(runtime, cancellationToken).ConfigureAwait(false);
+                    goto case JourneyRuntimeStage.AwaitingLoadResult;
                 }
                 else if (load?.Status == StationOperationStatus.Committed)
                 {

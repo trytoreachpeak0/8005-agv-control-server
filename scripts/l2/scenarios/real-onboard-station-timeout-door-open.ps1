@@ -391,4 +391,21 @@ $assertions.Add(
     'Ready',
     $(if ($session) { "$($session.Readiness) / $($session.ReasonCode)" } else { '(no session row)' }))
 
+# --- 6. 确定失败之后本站要有出口 ---------------------------------------------------------------------
+
+# 8005-agv-program#39：这一格原先没有出口。服务端读到 Failed 只 return 等 LoadTaskCancellation，HMI 不给
+# 「取消装货」，站点期限与持货超时都不查这一格，旅程永远停在 AwaitingLoadResult。现在服务端自己以
+# CANCELLED_BY_STATION_TIMEOUT 终结这条需求；单需求旅程车上什么都没装，没有东西要送去关卡，就此结束。
+$ended = Wait-L2Condition -Description 'the journey ended after the determinate failure' `
+    -Journal $journal -Criterion 'journey-ended' -TimeoutSeconds 60 `
+    -Probe { Get-Stage } -Until { param($v) $v -eq 'Completed' }
+$assertions.Add(
+    'L2-DT-18', '确定失败之后旅程自己结束，不再停在 AwaitingLoadResult',
+    ($ended -eq 'Completed'), 'Completed', $ended)
+
+$demandStatus = Get-DemandStatus
+$assertions.Add(
+    'L2-DT-19', '需求以取消终结，而不是一直挂着 Accepted 等一个没人会发的取消',
+    ($demandStatus -eq 'Cancelled'), 'Cancelled', $demandStatus)
+
 $journal.Note('Scenario finished.')
