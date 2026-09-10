@@ -117,16 +117,20 @@ function Get-PackageLicense([string]$Id, [string]$Version) {
     $record.nuspecFound = $true
     [xml]$nuspec = Get-Content -Raw -LiteralPath $nuspecPath
     $metadata = $nuspec.package.metadata
-    $record.projectUrl = [string]$metadata.projectUrl
-    $record.authors = [string]$metadata.authors
+    # Every metadata element is read by XPath, never as an adapted property: under Set-StrictMode a
+    # missing adapted property throws instead of reading as empty, and riot.sdk.* ship neither a
+    # projectUrl nor any license -- the very packages the allowlist exists for.
+    $record.projectUrl = [string]$metadata.SelectSingleNode('*[local-name()="projectUrl"]')?.InnerText
+    $record.authors = [string]$metadata.SelectSingleNode('*[local-name()="authors"]')?.InnerText
     $licenseNode = $metadata.SelectSingleNode('*[local-name()="license"]')
+    $licenseUrl = [string]$metadata.SelectSingleNode('*[local-name()="licenseUrl"]')?.InnerText
     if ($licenseNode) {
         $record.licenseKind = [string]$licenseNode.GetAttribute('type')
         $record.license = [string]$licenseNode.InnerText
     }
-    elseif (-not [string]::IsNullOrWhiteSpace([string]$metadata.licenseUrl)) {
+    elseif (-not [string]::IsNullOrWhiteSpace($licenseUrl)) {
         $record.licenseKind = 'url'
-        $record.license = [string]$metadata.licenseUrl
+        $record.license = $licenseUrl
     }
     return $record
 }
