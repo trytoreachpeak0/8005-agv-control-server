@@ -14,7 +14,7 @@ public sealed partial class OnboardMessageProcessor(
     IConfiguration configuration,
     ILogger<OnboardMessageProcessor> logger)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
     private readonly string _serverInstanceId = Guid.NewGuid().ToString("D");
 
     public async Task<string> ProcessAsync(
@@ -577,20 +577,14 @@ public sealed partial class OnboardMessageProcessor(
         string agvId,
         long? sessionGeneration,
         object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        ProtocolEnvelope.Serialize(
             messageType,
-            messageId = Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
             correlationId,
             agvId,
             sessionGeneration,
-            sentAt = timeProvider.GetUtcNow(),
-            payload
-        }, SerializerOptions);
+            timeProvider.GetUtcNow(),
+            payload);
 
     private static object ProtocolReleaseIdentity() => new
     {

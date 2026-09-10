@@ -213,7 +213,7 @@ public static class ControlPlane
             }
             using JsonDocument payload = JsonDocument.Parse(request.PayloadJson);
             long generation = engine.Snapshot().State.SessionGeneration;
-            object answer = request.MessageType switch
+            string answer = request.MessageType switch
             {
                 "SublotEntryRequested" => peer.SublotSubmitted(payload.RootElement, generation),
                 "SlotOperationCommand" => peer.OperationResult(payload.RootElement, generation, command.Completed, command.Determinate),
