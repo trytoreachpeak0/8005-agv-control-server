@@ -1,0 +1,51 @@
+{"at":"2026-09-10T07:08:44.1188130+00:00","note":"L2 run 20260910T070844030Z starting for scenario 'auto-charge-endurance'."}
+{"at":"2026-09-10T07:08:44.1528896+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T07:08:48.2544141+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T07:08:48.3995830+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T07:08:48.4297434+00:00","note":"Server settings from auto-charge-endurance.setup.psd1: JourneyRuntime__autoChargingEnabled=true, JourneyRuntime__chargeResumeBatteryPercent=80, JourneyRuntime__chargerStationId=充电准备点1, JourneyRuntime__chargerStationRiotId=211, JourneyRuntime__chargeTriggerBatteryPercent=20"}
+{"at":"2026-09-10T07:08:51.1191593+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T07:08:53.2816960+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T07:08:53.9816172+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-10T07:08:54.2656591+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-10T07:08:54.2913491+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T07:08:54.3328474+00:00","note":"Environment is up; entering scenario 'auto-charge-endurance'."}
+{"at":"2026-09-10T07:08:54.3928640+00:00","note":"Adding charger station 211 (充电准备点1) to map 25."}
+{"at":"2026-09-10T07:08:54.5625783+00:00","note":"Publishing demand 8837afad1e8e464d8b8e763e28d9e797 (L2-SUBLOT-20260910T070844030Z-A)."}
+{"at":"2026-09-10T07:08:54.6552294+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T07:08:55.4978368+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T07:08:55.5295892+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-710a3618-0506-8158-9298-dbb91c3c362e-S1-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-10T07:08:55.7870294+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-710a3618-0506-8158-9298-dbb91c3c362e-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-10T07:08:57.1811193+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T07:08:58.2272363+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T07:08:59.0416007+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T07:09:00.4365397+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-10T07:09:00.9612298+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-10T07:09:00.9903863+00:00","note":"Battery drops below the trigger level; the vehicle must take itself to the charger."}
+{"at":"2026-09-10T07:09:01.0356642+00:00","criterion":"charging-run","value":"(null)"}
+{"at":"2026-09-10T07:09:01.8158769+00:00","criterion":"charging-run","value":"@{ChargingRunId=92869bd0-ab12-cd5c-96eb-107b702ed88d; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=AwaitingChargerArrival; ChargerStationId=充电准备点1; ChargerStationRiotId=211; MovementLegId=157c1e09-f15d-475d-8952-68e0f830ae7c; UpperId=W2G-CHARGE-92869bd0-ab12-cd5c-96eb-107b702ed88d-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-10 07:09:01.7181778+00:00; UpdatedAt=2026-09-10 07:09:01.7181778+00:00}"}
+{"at":"2026-09-10T07:09:01.8480079+00:00","criterion":"to-charger-intent","value":"@{UpperId=W2G-CHARGE-92869bd0-ab12-cd5c-96eb-107b702ed88d-1; OrderId=ORDER-000003; Status=CONFIRMED; DestinationStationId=211}"}
+{"at":"2026-09-10T07:09:01.8810928+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-10T07:09:02.9456262+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-10T07:09:03.7322160+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-10T07:09:04.7791949+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-10T07:09:05.8265429+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-10T07:09:05.8284755+00:00","note":"Vehicle arrives at the charger and starts drawing current."}
+{"at":"2026-09-10T07:09:05.8591499+00:00","criterion":"charging-run","value":"@{ChargingRunId=92869bd0-ab12-cd5c-96eb-107b702ed88d; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=AwaitingChargerArrival; ChargerStationId=充电准备点1; ChargerStationRiotId=211; MovementLegId=157c1e09-f15d-475d-8952-68e0f830ae7c; UpperId=W2G-CHARGE-92869bd0-ab12-cd5c-96eb-107b702ed88d-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-10 07:09:01.7181778+00:00; UpdatedAt=2026-09-10 07:09:01.8215598+00:00}"}
+{"at":"2026-09-10T07:09:06.9178267+00:00","criterion":"charging-run","value":"@{ChargingRunId=92869bd0-ab12-cd5c-96eb-107b702ed88d; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=Charging; ChargerStationId=充电准备点1; ChargerStationRiotId=211; MovementLegId=157c1e09-f15d-475d-8952-68e0f830ae7c; UpperId=W2G-CHARGE-92869bd0-ab12-cd5c-96eb-107b702ed88d-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-10 07:09:01.7181778+00:00; UpdatedAt=2026-09-10 07:09:06.7120003+00:00}"}
+{"at":"2026-09-10T07:09:06.9228959+00:00","note":"Battery passes the demand floor but not the resume level; the vehicle must stay put."}
+{"at":"2026-09-10T07:09:06.9472996+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-10T07:09:07.7432457+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-10T07:09:08.7939141+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-10T07:09:09.8466327+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-10T07:09:10.8934654+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-09-10T07:09:10.9008338+00:00","note":"Battery reaches the resume level; the vehicle stays plugged in but becomes available."}
+{"at":"2026-09-10T07:09:11.9739746+00:00","criterion":"charging-run","value":"@{ChargingRunId=92869bd0-ab12-cd5c-96eb-107b702ed88d; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=Completed; ChargerStationId=充电准备点1; ChargerStationRiotId=211; MovementLegId=157c1e09-f15d-475d-8952-68e0f830ae7c; UpperId=W2G-CHARGE-92869bd0-ab12-cd5c-96eb-107b702ed88d-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=80; BlockReasonCode=; CreatedAt=2026-09-10 07:09:01.7181778+00:00; UpdatedAt=2026-09-10 07:09:11.7187685+00:00}"}
+{"at":"2026-09-10T07:09:11.9997785+00:00","criterion":"second-journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T07:09:12.0036414+00:00","criterion":"second-to-pickup-intent","value":"@{UpperId=W2G-19967493-71a9-a951-a78d-c490d5377fae-S1-1; OrderId=ORDER-000004; Status=CONFIRMED}"}
+{"at":"2026-09-10T07:09:13.3430941+00:00","criterion":"second-journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T07:09:13.8670930+00:00","criterion":"second-journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T07:09:14.9119044+00:00","criterion":"second-journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-10T07:09:15.1727300+00:00","criterion":"second-journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T07:09:16.2337392+00:00","criterion":"second-journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-10T07:09:16.7629345+00:00","criterion":"second-journey-stage","value":"Completed"}
+{"at":"2026-09-10T07:09:16.7711231+00:00","note":"Scenario finished."}

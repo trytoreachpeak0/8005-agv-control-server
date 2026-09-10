@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "scenario": "session-established-while-moving",
+  "runId": "20260910T070633546Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T070633546Z",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "SyntheticOnboard",
+    "batchId": "BATCH-3",
+    "controlServerCommit": "b5a5e0ebb77a54f6cec727ddd90418c2425119fe"
+  },
+  "assertions": [
+    {
+      "id": "L2-MV-01",
+      "description": "会话建立时车载端报告车辆仍在运动",
+      "outcome": "PASS",
+      "expected": "vehicleStopped=False @ safetyStateVersion=1",
+      "actual": "vehicleStopped=False @ safetyStateVersion=1"
+    },
+    {
+      "id": "L2-MV-02",
+      "description": "车在动不影响会话就绪（就绪只看 departureSafe）",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready"
+    },
+    {
+      "id": "L2-MV-03",
+      "description": "车在动时需求判 ONBOARD_DEPARTURE_UNSAFE",
+      "outcome": "PASS",
+      "expected": "ONBOARD_DEPARTURE_UNSAFE",
+      "actual": "ONBOARD_DEPARTURE_UNSAFE"
+    },
+    {
+      "id": "L2-MV-04",
+      "description": "被拒的需求没有 journey，也没有建单",
+      "outcome": "PASS",
+      "expected": "(no runtime, no intent)",
+      "actual": "runtime=(none) intent=(none)"
+    },
+    {
+      "id": "L2-MV-05",
+      "description": "车停稳后同一条需求被受理并派车",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-MV-06",
+      "description": "同一条 backlog 记录翻成 ACCEPTED",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    },
+    {
+      "id": "L2-MV-07",
+      "description": "推进是被车载端发出的 SafetyStateChanged 推动的",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "L2-MV-08",
+      "description": "车载端仍报运动时，服务端不采信 RIoT 的到站",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-MV-09",
+      "description": "车载端报停稳后到站被采信，进入 AwaitingSublot",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "L2-MV-10",
+      "description": "全程只建了一条 RIoT 单（被拒期间没有派过车）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    }
+  ]
+}
