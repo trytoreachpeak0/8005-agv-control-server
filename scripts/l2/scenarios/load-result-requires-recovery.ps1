@@ -135,7 +135,13 @@ $operationKey = Wait-L2Condition -Description 'the load command reached the peer
     -Journal $journal -Criterion 'pending-operation' -TimeoutSeconds 120 `
     -Probe { Get-PendingOperationKey } -Until { param($v) $null -ne $v }
 
-$stage = Get-Stage $demandId
+# 命令到了对端不等于阶段已经推到 `AwaitingLoadResult`：下发与推阶段不是同一次写入。
+# 这一条原本直读，CI run 34437756302 读到 `AwaitingSublot` 而红，而同一次运行里 330 ms 后就是
+# `AwaitingLoadResult`。与 `load-command-never-answered` 的 `L2-LN-01` 是同一对写入，README 第 14 条
+# 第五例。策略是 Manual，应答发出之前服务端收不到结果，所以这里等不过头，不会越过它直接到 Blocked。
+$stage = Wait-L2Condition -Description 'the journey moved on to waiting for the load result' `
+    -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 60 `
+    -Probe { Get-Stage $demandId } -Until { param($v) $v -eq 'AwaitingLoadResult' }
 $assertions.Add(
     'L2-LR-01', '装载指令已下发，旅程在等结果',
     ($stage -eq 'AwaitingLoadResult'), 'AwaitingLoadResult', $stage)

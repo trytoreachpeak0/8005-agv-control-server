@@ -374,6 +374,13 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     「又开锁了一次」永远等不到。第一跑侥幸绿了，第二跑红。红证据
     `evidence/l2/20260910-real-onboard-recovery-compensate-load-004`，绿的是 `-003`——**同一份脚本
     一绿一红，这就是这类竞态的样子**。基线现在取在按下按钮之前。
+    **第五例是 `load-result-requires-recovery` 的 `L2-LR-01`，和第三例是同一对写入**：等到
+    `pending-operation` 就直读 `Stage`。CI run 34437756302 读到 `AwaitingSublot`，330 ms 后同一次
+    运行里的探测就读到了 `AwaitingLoadResult`；同一份脚本在 run 34448095070 上是绿的。红证据
+    `evidence/l2/20260910-ci-34437756302-load-result-requires-recovery`。它漏掉的原因是第三例
+    只修了出事的那一条，而两条场景的第二段是同一个模板抄出来的。**修一例的时候，要把同一形状的
+    其他地方一起找出来。**这次顺手核了 `scenarios/` 里剩下的 8 处直读 `Get-Stage`：前面要么是
+    `Wait-L2Iterations`，要么读的是早就落库、不会再变的状态，都不是这种形状。
 
 15. **一条不再是有效证据的场景，同时也不再是有效的缺陷记录。**
     `real-onboard-recovery-entry-missing` 的最后一条判据从 2026-09-04 起红得对，服务端同一天
