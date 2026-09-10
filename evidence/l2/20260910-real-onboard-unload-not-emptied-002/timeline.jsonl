@@ -1,0 +1,67 @@
+{"at":"2026-09-10T02:29:24.7535599+00:00","note":"L2 run 20260910T022924683Z starting for scenario 'real-onboard-unload-not-emptied'."}
+{"at":"2026-09-10T02:29:24.7839842+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T02:29:31.6811806+00:00","note":"Reusing cached onboard-hmi publish for 3d8206fc9fc4ce02b58e78a205d9563be68c6b0e."}
+{"at":"2026-09-10T02:29:31.9154118+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T02:29:31.9222412+00:00","note":"Peers: onboard-hmi@3d8206fc9fc4ce02b58e78a205d9563be68c6b0e, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T02:29:33.2023909+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T02:29:33.4872435+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T02:29:35.8562186+00:00","criterion":"simulator-ready","value":"(null)"}
+{"at":"2026-09-10T02:29:36.8281752+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-10T02:29:40.0675378+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T02:29:42.2399062+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T02:29:45.4986131+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-10T02:29:45.5207103+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-10T02:29:45.6089151+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-10T02:29:46.1434022+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T02:29:46.2130218+00:00","note":"Environment is up; entering scenario 'real-onboard-unload-not-emptied'."}
+{"at":"2026-09-10T02:29:46.3039054+00:00","note":"Publishing demand fc7ca5b1e73e4563b37e1aec6b8b7c8a (sublot L2-SUBLOT-20260910T022924683Z) to the fake MesIngest catalog."}
+{"at":"2026-09-10T02:29:46.4692810+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T02:29:47.6092349+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T02:29:47.6199048+00:00","criterion":"to-pickup-intent","value":"PENDING_RECONCILIATION"}
+{"at":"2026-09-10T02:29:47.8893850+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-10T02:29:47.8926906+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-10T02:29:48.0129660+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-10T02:29:48.0987945+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-10T02:29:49.8271249+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-10T02:29:49.8301284+00:00","note":"Typing sublot L2-SUBLOT-20260910T022924683Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-10T02:29:50.0869631+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-10T02:29:50.1923465+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-10T02:29:50.2329003+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-10T02:29:51.0393351+00:00","criterion":"load-attempt","value":"23f478f3-fac2-455e-837e-f7c51229c75d"}
+{"at":"2026-09-10T02:29:51.1445961+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=23f478f3-fac2-455e-837e-f7c51229c75d; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/10/2026 10:29:50}"}
+{"at":"2026-09-10T02:29:51.1754556+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-10T02:29:52.2242761+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-10T02:29:52.2286176+00:00","note":"Loading slot 1 normally."}
+{"at":"2026-09-10T02:29:52.4512520+00:00","criterion":"load-slot-physical","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-10T02:29:52.7221775+00:00","criterion":"load-slot-physical","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-10T02:29:52.7510602+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T02:29:53.8068333+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-10T02:29:54.0664844+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T02:29:54.0692314+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-09-10T02:29:54.1054687+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-10T02:29:54.1462804+00:00","criterion":"unload-attempt","value":"(null)"}
+{"at":"2026-09-10T02:29:54.6653844+00:00","criterion":"unload-attempt","value":"f9b66b57-3603-f15a-a45e-520bcb2337d1"}
+{"at":"2026-09-10T02:29:54.7032764+00:00","criterion":"unload-unlocking","value":"(null)"}
+{"at":"2026-09-10T02:29:54.9640120+00:00","criterion":"unload-unlocking","value":"@{slotOperationAttemptId=f9b66b57-3603-f15a-a45e-520bcb2337d1; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/10/2026 10:29:54}"}
+{"at":"2026-09-10T02:29:54.9708539+00:00","criterion":"unload-waiting-operator","value":"0"}
+{"at":"2026-09-10T02:29:56.0519948+00:00","criterion":"unload-waiting-operator","value":"1"}
+{"at":"2026-09-10T02:29:56.0848919+00:00","note":"Round 1: closing slot 1 without taking the cargo out."}
+{"at":"2026-09-10T02:29:56.1761725+00:00","criterion":"reopen-1-closed-occupied","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-10T02:29:56.4590515+00:00","criterion":"reopen-1-closed-occupied","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-10T02:29:56.5142861+00:00","criterion":"reopen-1-unlocking","value":"1"}
+{"at":"2026-09-10T02:29:56.7907130+00:00","criterion":"reopen-1-unlocking","value":"2"}
+{"at":"2026-09-10T02:29:56.8441524+00:00","criterion":"reopen-1-waiting-operator","value":"1"}
+{"at":"2026-09-10T02:29:57.8985047+00:00","criterion":"reopen-1-waiting-operator","value":"2"}
+{"at":"2026-09-10T02:29:57.9403179+00:00","note":"Round 2: closing slot 1 without taking the cargo out."}
+{"at":"2026-09-10T02:29:58.0060596+00:00","criterion":"reopen-2-closed-occupied","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-10T02:29:58.2821076+00:00","criterion":"reopen-2-closed-occupied","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-10T02:29:58.2920581+00:00","criterion":"reopen-2-unlocking","value":"2"}
+{"at":"2026-09-10T02:29:58.5994510+00:00","criterion":"reopen-2-unlocking","value":"3"}
+{"at":"2026-09-10T02:29:58.6195754+00:00","criterion":"reopen-2-waiting-operator","value":"2"}
+{"at":"2026-09-10T02:29:59.6993320+00:00","criterion":"reopen-2-waiting-operator","value":"3"}
+{"at":"2026-09-10T02:29:59.9858536+00:00","note":"Operator finally takes the cargo out of slot 1 and closes the door."}
+{"at":"2026-09-10T02:30:00.0492887+00:00","criterion":"unload-slot-physical","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-10T02:30:00.3178877+00:00","criterion":"unload-slot-physical","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-10T02:30:00.3268742+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-10T02:30:01.6685992+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-10T02:30:01.6771942+00:00","note":"Scenario finished."}
