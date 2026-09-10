@@ -13,7 +13,7 @@ WIRE_TO_GATE MVP 的服务端生产仓库。`ControlServer_MVP` 当前包含正�
 - vectors SHA-256: `fc5902b71d1b276c674f8a21c738d27193ddcbaf9b352951deffbaf1488d356e`
 - status: `APPROVED_RELEASE`
 
-构建前必须使用 `global.json` 指定的 .NET SDK `8.0.424`。若 SDK 未加入 `PATH`，可先把 `WIRE_TO_GATE_DOTNET_EXE` 指向该版本的 `dotnet.exe`：
+构建前必须使用 `global.json` 指定的 .NET SDK `8.0.425`。若 SDK 未加入 `PATH`，可先把 `WIRE_TO_GATE_DOTNET_EXE` 指向该版本的 `dotnet.exe`：
 
 ```powershell
 .\scripts\build.ps1
