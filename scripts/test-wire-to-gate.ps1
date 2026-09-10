@@ -99,16 +99,26 @@ if ($env:WIRE_TO_GATE_DOTNET_EXE -and -not (Test-Path -LiteralPath $dotnet -Path
 }
 if (Test-Path -LiteralPath $Output) { throw "Output directory already exists: $Output" }
 New-Item -ItemType Directory -Path $Output | Out-Null
+# Absolute before the Push-Location below, or a relative -Output would land under the repository.
+$Output = (Resolve-Path -LiteralPath $Output).Path
 $startedAt = [DateTimeOffset]::UtcNow
 # Every line the slice's tests send is validated against the protocol JSON Schema when the test run
 # ends (tests/ControlServer.Tests/OutboundSchemaConformance.cs). A violation makes dotnet test exit
 # non-zero even though its console summary still says "Failed: 0"; schema-coverage.json and, on
 # failure, schema-violations.json land here next to the TRX.
 $env:WIRE_TO_GATE_SCHEMA_REPORT_DIR = $Output
+# dotnet takes its SDK from the global.json above the *current directory*, not above the project.
+# Started anywhere else, this gate silently builds with the machine's newest SDK: on 2026-09-10,
+# launched from the workspace root, that was 10.0.302, whose analyzers turned CA1859 into build
+# errors under TreatWarningsAsErrors, and all eight slices failed without running a single test
+# (evidence/g2/20260910-schema-conformance-a30c0a4).
+Push-Location $root
 try {
+    $dotnetSdk = (& $dotnet --version).Trim()
     & $dotnet test (Join-Path $root 'tests\ControlServer.Tests\ControlServer.Tests.csproj') -c Release --filter "IntegrationSlice=$Slice" --logger "trx;LogFileName=control-$Slice.trx" --results-directory $Output
     $testExitCode = $LASTEXITCODE
 } finally {
+    Pop-Location
     Remove-Item Env:WIRE_TO_GATE_SCHEMA_REPORT_DIR -ErrorAction SilentlyContinue
 }
 $schemaCoveragePath = Join-Path $Output 'schema-coverage.json'
@@ -131,6 +141,7 @@ $result = [ordered]@{
     protocolVectorsSha256 = $protocolVectorsSha256
     vectorIds = $sliceVectors[$Slice]
     testExitCode = $testExitCode
+    dotnetSdk = $dotnetSdk
     schemaConformance = if ($schemaCoverage) {
         [ordered]@{
             linesChecked = $schemaCoverage.linesChecked
