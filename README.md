@@ -39,8 +39,10 @@ dotnet run --project .\tools\ControlServer.FakeOnboard -c Release -- --host 127.
 
 ```powershell
 .\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice W2G-IS-00 `
-  -ProtocolManifest <protocol-repo>\manifest\release.json -Output <new-evidence-directory>
+  -ProtocolManifest .\vendor\8005-agv-protocol\protocol-v0.3.0\manifest\release.json -Output <new-evidence-directory>
 ```
+
+用 vendored 那份：它与 tag 字节相同。协议仓工作树里的 `manifest/release.json` 在 tag 之后的任何一次提交都会变，喂它会报 `Protocol manifest hash mismatch`。
 
 `W2G-IS-01` 在 `protocol-v0.1.1` 中映射到专用轨迹 `CV-DEMAND-ACCEPT-TO-PICKUP`；旧 `v0.1.0` G2 证据不能继承。
 

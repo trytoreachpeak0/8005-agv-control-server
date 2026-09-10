@@ -484,11 +484,13 @@ dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release
 
 ```powershell
 .\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice W2G-IS-00 `
-    -ProtocolManifest <protocol 仓>\manifest\release.json -Output <新证据目录>
+    -ProtocolManifest .\vendor\8005-agv-protocol\protocol-v0.3.0\manifest\release.json -Output <新证据目录>
 ```
 
 脚本先校验 manifest 的 SHA-256 与 `releaseVersion`／`protocolVersion`／schema／vectors 复合身份，
-不匹配立即失败，因此不可能用错版本的协议凑出绿。
+不匹配立即失败，因此不可能用错版本的协议凑出绿。**喂 vendored 那份，不要喂协议仓工作树里的**：
+前者与 tag 字节相同，后者在 tag 之后的任何一次提交都会变（8005-agv-program#36 就动了一次），报的
+`Protocol manifest hash mismatch` 读起来像钉过期了，其实是文件取错了提交。
 
 staged G3 向量（合成对端，无移动；runner 自行克隆四个仓库并绑定各自的精确 commit）：
 

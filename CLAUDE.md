@@ -207,7 +207,7 @@ say which gate, what it costs, and what it proves, then ask:
 | Gate | Command | When |
 | --- | --- | --- |
 | `G1` | `pnpm g1` in the protocol repo | Protocol content manifest and attestation check |
-| `CONTROL_SERVER_G2` | `.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice <id> -ProtocolManifest <protocol-repo>\manifest\release.json -Output <new dir>` | This side's per-slice conformance |
+| `CONTROL_SERVER_G2` | `.\scripts\test-wire-to-gate.ps1 -Gate G2 -Slice <id> -ProtocolManifest .\vendor\8005-agv-protocol\protocol-v0.3.0\manifest\release.json -Output <new dir>` — the vendored copy, byte-identical to the tag; the protocol working tree's manifest moves with every commit after the tag and fails the hash check | This side's per-slice conformance |
 | `G3` | `.\scripts\run-staged-g3.ps1`, `run-staged-g3-restart.ps1`, `run-demand-bearing-g3-vectors.ps1`, each with `-StageRoot <short path that does not exist> -EvidenceRoot <new dir>`; the third one also needs `-FieldRunRoot <an authorised field run's root>` | Both-ends integration |
 | `RC` | `.\scripts\New-WireToGateReleaseCandidate.ps1` | Cutting a release candidate |
 
