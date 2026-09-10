@@ -100,8 +100,19 @@ if ($env:WIRE_TO_GATE_DOTNET_EXE -and -not (Test-Path -LiteralPath $dotnet -Path
 if (Test-Path -LiteralPath $Output) { throw "Output directory already exists: $Output" }
 New-Item -ItemType Directory -Path $Output | Out-Null
 $startedAt = [DateTimeOffset]::UtcNow
-& $dotnet test (Join-Path $root 'tests\ControlServer.Tests\ControlServer.Tests.csproj') -c Release --filter "IntegrationSlice=$Slice" --logger "trx;LogFileName=control-$Slice.trx" --results-directory $Output
-$testExitCode = $LASTEXITCODE
+# Every line the slice's tests send is validated against the protocol JSON Schema when the test run
+# ends (tests/ControlServer.Tests/OutboundSchemaConformance.cs). A violation makes dotnet test exit
+# non-zero even though its console summary still says "Failed: 0"; schema-coverage.json and, on
+# failure, schema-violations.json land here next to the TRX.
+$env:WIRE_TO_GATE_SCHEMA_REPORT_DIR = $Output
+try {
+    & $dotnet test (Join-Path $root 'tests\ControlServer.Tests\ControlServer.Tests.csproj') -c Release --filter "IntegrationSlice=$Slice" --logger "trx;LogFileName=control-$Slice.trx" --results-directory $Output
+    $testExitCode = $LASTEXITCODE
+} finally {
+    Remove-Item Env:WIRE_TO_GATE_SCHEMA_REPORT_DIR -ErrorAction SilentlyContinue
+}
+$schemaCoveragePath = Join-Path $Output 'schema-coverage.json'
+$schemaCoverage = if (Test-Path -LiteralPath $schemaCoveragePath) { Get-Content -LiteralPath $schemaCoveragePath -Raw | ConvertFrom-Json } else { $null }
 $result = [ordered]@{
     schemaVersion = '1.0.0'
     gate = $Gate
@@ -120,6 +131,13 @@ $result = [ordered]@{
     protocolVectorsSha256 = $protocolVectorsSha256
     vectorIds = $sliceVectors[$Slice]
     testExitCode = $testExitCode
+    schemaConformance = if ($schemaCoverage) {
+        [ordered]@{
+            linesChecked = $schemaCoverage.linesChecked
+            linesInViolation = $schemaCoverage.linesInViolation
+            coverage = 'schema-coverage.json'
+        }
+    } else { $null }
 }
 $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Output 'gate-result.json') -Encoding utf8NoBOM
 exit $testExitCode

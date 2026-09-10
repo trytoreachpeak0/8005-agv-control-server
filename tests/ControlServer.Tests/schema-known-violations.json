@@ -1,0 +1,23 @@
+[
+  {
+    "messageType": "ExceptionRecoverySessionSnapshot",
+    "pointer": "#/payload/blockingFacts/*/reasonCode",
+    "keyword": "enum",
+    "actual": "\"RECOVERY_ACTION_REQUIRED\"",
+    "issue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8"
+  },
+  {
+    "messageType": "ExceptionRecoverySessionSnapshot",
+    "pointer": "#/payload/blockingFacts/*/reasonCode",
+    "keyword": "enum",
+    "actual": "\"RECOVERY_RESULT_REQUIRED\"",
+    "issue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8"
+  },
+  {
+    "messageType": "RecoveryActionRejected",
+    "pointer": "#/payload/problem/reasonCode",
+    "keyword": "enum",
+    "actual": "\"PROVEN_RECOVERY_CHECKPOINT_REQUIRED\"",
+    "issue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8"
+  }
+]

@@ -24,5 +24,8 @@
     <ProjectReference Include="..\..\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj" />
     <ProjectReference Include="..\..\tools\ControlServer.FakeRiot\ControlServer.FakeRiot.csproj" />
     <ProjectReference Include="..\..\tools\ControlServer.ClockSkewProxy\ControlServer.ClockSkewProxy.csproj" />
+    <!-- Build order only: OutboundSchemaConformance runs this validator as its own process. Never let
+         its assembly in here: its System.Text.Json 10 would replace the product's 8.0 one. -->
+    <ProjectReference Include="..\..\tools\ControlServer.SchemaConformance\ControlServer.SchemaConformance.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

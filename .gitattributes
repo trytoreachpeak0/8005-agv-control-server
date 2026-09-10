@@ -10,3 +10,8 @@
 # and any line-ending normalisation would make a checkout hash to something other than what the
 # evidence claims. Store and check them out byte-for-byte.
 evidence/rc/*/release-artifacts/** -text
+
+# The vendored protocol files are checked against ProtocolCandidateIdentity by hash (ManifestSha256 on
+# the manifest, SchemaBundleSha256 recomputed over schemas/), so they must stay exactly the bytes the
+# protocol tag holds.
+vendor/8005-agv-protocol/** -text

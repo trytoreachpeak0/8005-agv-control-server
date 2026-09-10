@@ -1,0 +1,18 @@
+[
+  {
+    "messageType": "SessionAccepted",
+    "origin": "product",
+    "site": "OnboardMessageProcessor.SerializeEnvelope \u003C- OnboardMessageProcessor.\u003CProcessAsync \u003C- OnboardMessageProcessor.ProcessAsync(lambda)",
+    "errors": [
+      {
+        "pointer": "#/payload",
+        "keyword": "required",
+        "message": "Validation properties - the required property \u0027serverInstanceId\u0027 was not present.",
+        "actual": "{\u0022sessionGeneration\u0022:1,\u0022serverBuildCommit\u0022:\u0022TEST_BUILD\u0022,\u0022acceptedProtocolReleaseIdentity\u0022:{\u0022repository\u0022:\u00228005-agv-protocol\u0022,\u0022releaseVersion\u0022:\u00220.3.0\u0022,\u0022tag\u0022:\u0022protocol-v0.3.0\u0022,\u0022commit\u0022:\u0022345c53c5851796819..."
+      }
+    ],
+    "sampleLine": "{\u0022protocolVersion\u0022:3,\u0022profileId\u0022:\u0022WIRE_TO_GATE_MVP\u0022,\u0022protocolReleaseVersion\u0022:\u00220.3.0\u0022,\u0022protocolReleaseManifestSha256\u0022:\u0022b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\u0022,\u0022messageType\u0022:\u0022SessionAccepted\u0022,\u0022messageId\u0022:\u002211fcddb0-8b01-49d0-8a20-2127db30a121\u0022,\u0022correlationId\u0022:\u002200000000-0000-4000-8000-000000000001\u0022,\u0022agvId\u0022:\u0022AGV-001\u0022,\u0022sessionGeneration\u0022:1,\u0022sentAt\u0022:\u00222026-08-25T09:00:00\u002B00:00\u0022,\u0022payload\u0022:{\u0022sessionGeneration\u0022:1,\u0022serverBuildCommit\u0022:\u0022TEST_BUILD\u0022,\u0022acceptedProtocolReleaseIdentity\u0022:{\u0022repository\u0022:\u00228005-agv-protocol\u0022,\u0022releaseVersion\u0022:\u00220.3.0\u0022,\u0022tag\u0022:\u0022protocol-v0.3.0\u0022,\u0022commit\u0022:\u0022345c53c58517968192c87c3e7777ed08ddb48726\u0022,\u0022protocolVersion\u0022:3,\u0022profileId\u0022:\u0022WIRE_TO_GATE_MVP\u0022,\u0022manifestSha256\u0022:\u0022b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\u0022,\u0022schemaBundleSha256\u0022:\u002268bfd531c4b9c08bc80f6d9c5a67264891efa200acdb154eb18e1d083bf4ed98\u0022,\u0022vectorsSha256\u0022:\u0022bd272b63a1d0663d61c4a38d6e8633d7e7d4f7b561a7915c3df51c7a93bd4576\u0022},\u0022acceptedAt\u0022:\u00222026-08-25T09:00:00\u002B00:00\u0022}}",
+    "count": 5,
+    "knownIssue": null
+  }
+]

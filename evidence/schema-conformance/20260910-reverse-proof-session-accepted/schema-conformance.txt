@@ -1,0 +1,3 @@
+Schema conformance (protocol-v0.3.0): 173 lines, 47 distinct, 10 message types, 1 distinct violations, 0 known; schema compilation 20869 ms.
+SCHEMA VIOLATION x5: SessionAccepted sent by product OnboardMessageProcessor.SerializeEnvelope <- OnboardMessageProcessor.<ProcessAsync <- OnboardMessageProcessor.ProcessAsync(lambda)
+  #/payload [required] Validation properties - the required property 'serverInstanceId' was not present. actual: {"sessionGeneration":1,"serverBuildCommit":"TEST_BUILD","acceptedProtocolReleaseIdentity":{"repository":"8005-agv-protocol","releaseVersion":"0.3.0","tag":"protocol-v0.3.0","commit":"345c53c5851796819...

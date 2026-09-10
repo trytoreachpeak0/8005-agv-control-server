@@ -52,6 +52,9 @@ public sealed class OnboardJourneyPublisher(
             envelope["sessionGeneration"] = sessionGeneration;
             envelope["sentAt"] = sentAt;
             string wire = envelope.ToJsonString(SerializerOptions);
+            // The only outbound bytes not produced by ProtocolEnvelope.Serialize. A line re-sent
+            // unchanged above is the one Serialize built when it was first queued.
+            ProtocolEnvelope.OutboundObserver?.Invoke(row.MessageType, wire);
             ProtocolOutboxRow current = await store.QueueOutboundEnvelopeAsync(
                 row.MessageId,
                 row.MessageType,
