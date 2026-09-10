@@ -51,23 +51,24 @@ function Get-G3AssuranceLevelLadder {
 }
 
 # The slices no G3 runner covers. Counting the onboard runner alongside the three here, together they
-# name FP-IS-00/04/05/06 and, since 2026-09-10, FP-IS-15; the slices below appear in none of them.
+# name FP-IS-00/04/05/06 and, since 2026-09-10, FP-IS-14 and FP-IS-15; the slices below appear in
+# none of them.
 # The user ruled on 2026-09-09 that a batch records such a gap rather than writing new
 # cross-repository scenarios to close it, so these slices emit no gate-result.json at all -- an
 # absent artefact, not an INCONCLUSIVE one, on the same reasoning as ticket 14's "a filter that
 # selects nothing is refused, not written up as green".
 #
-# FP-IS-14 is a different KIND of gap from the other four and the difference is the point. Those four
-# lack an assertion: somebody could write one against the peers as they stand. FP-IS-14 cannot be
-# asserted at all today, because the thing it certifies has no way to happen in a running system --
-# see its entry below.
+# FP-IS-14 was listed here on 2026-09-10 as a gap of a different kind -- not a missing assertion but a
+# slice that could not be asserted at all, because nothing outside the process could start an
+# activation. The activation entry point landed the same day and the staged runner now claims it, so
+# it is no longer in this table. The distinction is worth keeping in mind: the four below lack an
+# assertion somebody could write against the peers as they stand.
 function Get-G3SlicesWithoutSurfaceThisBatch {
     return [ordered]@{
         'FP-IS-01' = 'CV-DEMAND-ACCEPT-TO-PICKUP has no assertion in any G3 runner.'
         'FP-IS-02' = 'CV-PICKUP-SUBLOT-LOAD, CV-LOAD-CORRECTION and CV-LOAD-CANCELLATION-ALL-EMPTY have no assertion in any G3 runner.'
         'FP-IS-03' = 'CV-PREDEPARTURE-SAFETY-EXPIRES and CV-OPERATION-RESULT-UNKNOWN-RECONCILE have no assertion in any G3 runner.'
         'FP-IS-07' = 'None of its six vectors has an assertion in any G3 runner; the staged runner records several of its accepted paths as not reachable in a staged run.'
-        'FP-IS-14' = 'CV-SLOT-CONFIGURATION-ACTIVATION cannot be reached by any runner: nothing outside the process can start an activation. SlotConfigurationActivationDispatcher.IssueAsync has no HTTP endpoint and no ControlServer.FieldOps verb -- its only callers are tests. Because ActiveSlotConfigurationRow is written solely where an activation converges, a staged server never holds an approved version, so ReconcileReportedFingerprintAsync takes its "nothing to compare against" branch and returns Agrees=true without comparing. A run would therefore record a handshake that was never checked, which is worse than an absent artefact. Closing this needs the activation entry point, not a new assertion.'
     }
 }
 
@@ -103,6 +104,20 @@ function Get-G3RunnerClaim {
                     'businessMessageAckDropInSessionReplay',
                     'businessMessageDelayedDeliveryAccepted',
                     'businessMessageReorderedDeliveryAccepted')
+                # FP-IS-14 landed on 2026-09-10 together with the activation entry point. Until that
+                # entry point existed nothing outside the process could start an activation, so this
+                # slice had no surface at all -- it was listed in the gap table below.
+                #
+                # The last assertion is the one the slice exists for. No protocol message carries slot
+                # IO bindings, so message 7 carries a version name and a fingerprint and the vehicle
+                # recomputes the digest of what it actually holds. A converged activation therefore
+                # means two implementations, in two processes, produced the same digest from their own
+                # copies -- which the pinned literal in each repository's unit tests cannot say.
+                'FP-IS-14' = @(
+                    'slotConfigurationActivationCommandSentOnceOverTheSession',
+                    'slotConfigurationActivationPersistedBeforeItWasSent',
+                    'slotConfigurationActivationResultReportedByTheVehicle',
+                    'bothEndsComputedTheSameSlotConfigurationFingerprint')
                 # FP-IS-15 needs no driving: the onboard alarm board publishes a snapshot as part of
                 # every FULL handshake. Message 9 landed on 2026-09-10.
                 #
