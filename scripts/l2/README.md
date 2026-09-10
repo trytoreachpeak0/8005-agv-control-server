@@ -414,8 +414,8 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     先 `Push-Location` 进各自的仓（或克隆），并把实际解析到的 SDK 版本记进 timeline。
     **历史证据不受影响**：文档里的调用写法 `pwsh .\scripts\l2\Invoke-L2Scenario.ps1` 本身就要求站
     在仓里；而且 SDK 10 下 ControlServer 构建必然失败，所以凡是构建成功的那次运行，同一进程里
-    发布的 peer 用的也是 8.0.425。同一个坑还在 `scripts/build.ps1`、`test-wire-to-gate.ps1`、
-    `Publish-ControlServer.ps1` 与 `field/Invoke-W1FieldWindow.ps1` 里，不在本目录，另行处理。
+    发布的 peer 用的也是 8.0.425。同一个坑也在 `scripts/build.ps1`、`test-wire-to-gate.ps1`、
+    `Publish-ControlServer.ps1` 与 `field/Invoke-W1FieldWindow.ps1` 里，已由 `fcfb1ad`（PR #21）一并修掉。
 
 ## ADR-cross-0058 的三条操作员不作为场景
 
