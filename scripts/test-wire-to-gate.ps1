@@ -97,27 +97,31 @@ $dotnet = if ($env:WIRE_TO_GATE_DOTNET_EXE) { $env:WIRE_TO_GATE_DOTNET_EXE } els
 if ($env:WIRE_TO_GATE_DOTNET_EXE -and -not (Test-Path -LiteralPath $dotnet -PathType Leaf)) {
     throw "WIRE_TO_GATE_DOTNET_EXE not found: $dotnet"
 }
+# Anchored to the caller's location now, because the test run below changes directory and a relative
+# --results-directory would follow it into the repository.
+$Output = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Output)
 if (Test-Path -LiteralPath $Output) { throw "Output directory already exists: $Output" }
-New-Item -ItemType Directory -Path $Output | Out-Null
-# Absolute before the Push-Location below, or a relative -Output would land under the repository.
-$Output = (Resolve-Path -LiteralPath $Output).Path
-$startedAt = [DateTimeOffset]::UtcNow
 # Every line the slice's tests send is validated against the protocol JSON Schema when the test run
 # ends (tests/ControlServer.Tests/OutboundSchemaConformance.cs). A violation makes dotnet test exit
 # non-zero even though its console summary still says "Failed: 0"; schema-coverage.json and, on
 # failure, schema-violations.json land here next to the TRX.
 $env:WIRE_TO_GATE_SCHEMA_REPORT_DIR = $Output
-# dotnet takes its SDK from the global.json above the *current directory*, not above the project.
-# Started anywhere else, this gate silently builds with the machine's newest SDK: on 2026-09-10,
-# launched from the workspace root, that was 10.0.302, whose analyzers turned CA1859 into build
-# errors under TreatWarningsAsErrors, and all eight slices failed without running a single test
-# (evidence/g2/20260910-schema-conformance-a30c0a4).
-Push-Location $root
+# Run from inside the repository. `dotnet` looks for global.json from the current directory, not from
+# the project path it is handed -- an explicit dotnet.exe included -- so a gate started from outside
+# the clone would test with the newest installed SDK and still write a PASS. The SDK is resolved
+# before the output directory exists, so a missing pinned SDK leaves no half-made evidence behind,
+# and it goes into gate-result.json so the evidence says which toolchain it measured.
+Push-Location -LiteralPath $root
 try {
-    $dotnetSdk = (& $dotnet --version).Trim()
+    $dotnetSdkVersion = & $dotnet --version 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "dotnet could not resolve the SDK pinned by $(Join-Path $root 'global.json'): $dotnetSdkVersion" }
+    $dotnetSdkVersion = "$dotnetSdkVersion".Trim()
+    New-Item -ItemType Directory -Path $Output | Out-Null
+    $startedAt = [DateTimeOffset]::UtcNow
     & $dotnet test (Join-Path $root 'tests\ControlServer.Tests\ControlServer.Tests.csproj') -c Release --filter "IntegrationSlice=$Slice" --logger "trx;LogFileName=control-$Slice.trx" --results-directory $Output
     $testExitCode = $LASTEXITCODE
-} finally {
+}
+finally {
     Pop-Location
     Remove-Item Env:WIRE_TO_GATE_SCHEMA_REPORT_DIR -ErrorAction SilentlyContinue
 }
@@ -132,6 +136,7 @@ $result = [ordered]@{
     finishedAt = ([DateTimeOffset]::UtcNow).ToString('O')
     implementationRepository = '8005-agv-control-server'
     implementationCommit = (git -c safe.directory=$root -C $root rev-parse HEAD).Trim()
+    dotnetSdkVersion = $dotnetSdkVersion
     protocolReleaseStatus = $protocolReleaseStatus
     protocolReleaseVersion = $protocolReleaseVersion
     protocolTag = $protocolTag
@@ -141,7 +146,6 @@ $result = [ordered]@{
     protocolVectorsSha256 = $protocolVectorsSha256
     vectorIds = $sliceVectors[$Slice]
     testExitCode = $testExitCode
-    dotnetSdk = $dotnetSdk
     schemaConformance = if ($schemaCoverage) {
         [ordered]@{
             linesChecked = $schemaCoverage.linesChecked

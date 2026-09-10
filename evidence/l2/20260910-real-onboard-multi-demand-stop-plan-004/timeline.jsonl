@@ -1,0 +1,26 @@
+{"at":"2026-09-10T08:10:18.2305353+00:00","note":"L2 run 20260910T081018170Z starting for scenario 'real-onboard-multi-demand-stop-plan'."}
+{"at":"2026-09-10T08:10:18.2508935+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T08:10:18.4275209+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T08:10:27.7753763+00:00","note":"Reusing cached onboard-hmi publish for 588819d6c62e7b386c25fa5aa24a5264a55a33cf."}
+{"at":"2026-09-10T08:10:27.9701334+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T08:10:27.9758082+00:00","note":"Peers: onboard-hmi@588819d6c62e7b386c25fa5aa24a5264a55a33cf, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T08:10:28.0138420+00:00","note":"Extra map stations from real-onboard-multi-demand-stop-plan.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2"}
+{"at":"2026-09-10T08:10:28.9986938+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T08:10:29.2058299+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T08:10:32.1673876+00:00","criterion":"simulator-ready","value":"(null)"}
+{"at":"2026-09-10T08:10:32.6048358+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-10T08:10:35.5479072+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T08:10:37.1900111+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T08:10:40.7156621+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-10T08:10:40.7530204+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-10T08:10:40.8736329+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-10T08:10:41.1370974+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T08:10:41.2086433+00:00","note":"Environment is up; entering scenario 'real-onboard-multi-demand-stop-plan'."}
+{"at":"2026-09-10T08:10:41.2782510+00:00","note":"Publishing demand L2-MDS-N1-3-20260910T081018170Z in area N1-3."}
+{"at":"2026-09-10T08:10:41.3477989+00:00","note":"Publishing demand L2-MDS-N2-6-20260910T081018170Z in area N2-6."}
+{"at":"2026-09-10T08:10:41.3621417+00:00","note":"Publishing demand L2-MDS-N3-4-20260910T081018170Z in area N3-4."}
+{"at":"2026-09-10T08:10:41.3701896+00:00","note":"Publishing demand L2-MDS-N4-2-20260910T081018170Z in area N4-2."}
+{"at":"2026-09-10T08:10:41.4530775+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T08:10:42.7859332+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T08:10:42.7931201+00:00","criterion":"journey-stops","value":"2"}
+{"at":"2026-09-10T08:12:42.8792004+00:00","note":"Run failed: Timed out after 120s waiting for: all four demands joined one journey. Last observed: 2"}

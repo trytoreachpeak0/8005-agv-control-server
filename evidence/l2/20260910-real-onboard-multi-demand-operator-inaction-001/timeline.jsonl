@@ -1,0 +1,28 @@
+{"at":"2026-09-10T08:22:29.1740658+00:00","note":"L2 run 20260910T082229064Z starting for scenario 'real-onboard-multi-demand-operator-inaction'."}
+{"at":"2026-09-10T08:22:29.2101037+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T08:22:29.5916797+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T08:22:33.6207231+00:00","note":"Reusing cached onboard-hmi publish for 588819d6c62e7b386c25fa5aa24a5264a55a33cf."}
+{"at":"2026-09-10T08:22:33.7612655+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T08:22:33.7702734+00:00","note":"Peers: onboard-hmi@588819d6c62e7b386c25fa5aa24a5264a55a33cf, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T08:22:33.8097058+00:00","note":"Extra map stations from real-onboard-multi-demand-operator-inaction.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2"}
+{"at":"2026-09-10T08:22:34.8198769+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T08:22:35.1139498+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T08:22:37.4869242+00:00","criterion":"simulator-ready","value":"(null)"}
+{"at":"2026-09-10T08:22:38.0335365+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-10T08:22:38.0836659+00:00","note":"Server settings from real-onboard-multi-demand-operator-inaction.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:01:00"}
+{"at":"2026-09-10T08:22:41.5234247+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T08:22:43.6768737+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T08:22:46.4801388+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-10T08:22:46.5115621+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-10T08:22:46.5918473+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-10T08:22:47.1392773+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T08:22:47.2045867+00:00","note":"Environment is up; entering scenario 'real-onboard-multi-demand-operator-inaction'."}
+{"at":"2026-09-10T08:22:47.3163598+00:00","note":"Publishing demand L2-MDI-N1-3-20260910T082229064Z in area N1-3."}
+{"at":"2026-09-10T08:22:47.3882702+00:00","note":"Publishing demand L2-MDI-N2-6-20260910T082229064Z in area N2-6."}
+{"at":"2026-09-10T08:22:47.4002695+00:00","note":"Publishing demand L2-MDI-N3-4-20260910T082229064Z in area N3-4."}
+{"at":"2026-09-10T08:22:47.4094793+00:00","note":"Publishing demand L2-MDI-N4-2-20260910T082229064Z in area N4-2."}
+{"at":"2026-09-10T08:22:47.4839843+00:00","criterion":"journey-dispatched","value":"(no journey)"}
+{"at":"2026-09-10T08:22:48.8450140+00:00","criterion":"journey-dispatched","value":"1/AwaitingPickupArrival"}
+{"at":"2026-09-10T08:22:48.8811929+00:00","criterion":"stop-1-order","value":"W2G-3a321b47-cb4b-f35c-9f0d-8f4df3d9546f-S1-1"}
+{"at":"2026-09-10T08:22:48.9196770+00:00","note":"Vehicle drives to stop 1 (RIoT station 12)."}
+{"at":"2026-09-10T08:22:48.9784308+00:00","note":"Run failed: Response status code does not indicate success: 409 (Conflict)."}

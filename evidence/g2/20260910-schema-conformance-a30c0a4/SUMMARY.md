@@ -25,4 +25,6 @@ src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs(2205,47): error 
 
 ## 修法
 
-`scripts/test-wire-to-gate.ps1` 在调用 `dotnet` 期间 `Push-Location` 到仓库根，并把实际选中的 SDK 写进 `gate-result.json` 的 `dotnetSdk`；`-Output` 先转成绝对路径。修复之后的八切片故意从工作区根重跑，证据在同级的新目录里。
+**同一个坑另一个会话已经修掉了**：PR #21（`fcfb1ad`，2026-09-10 08:25 合入 `ControlServer_MVP`）让 `scripts/test-wire-to-gate.ps1` 等四个构建入口先进仓目录再调 `dotnet`，并把 SDK 写进 `gate-result.json` 的 `dotnetSdkVersion`。本分支当时基于更早的 `683cc23`，所以这一轮撞上了。本分支一度自己又修了一遍（`ad3392c`），把 `ControlServer_MVP` merge 进来时让位于 `fcfb1ad` 的写法，只保留 schema 校验报告目录那一段。
+
+修复之后的八切片证据在同级的新目录里，`gate-result.json` 自带 `dotnetSdkVersion`。

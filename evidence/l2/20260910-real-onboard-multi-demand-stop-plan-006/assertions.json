@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-multi-demand-stop-plan",
+  "runId": "20260910T082007963Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 120s waiting for: slot 2 is open and waiting for cargo. Last observed: \"CLOSED/EMPTY/1/0\"",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "588819d6c62e7b386c25fa5aa24a5264a55a33cf",
+    "rig": "RealOnboard",
+    "controlServerCommit": "bc63153a7b746816904bc9e744b426901a70f712",
+    "batchId": "BATCH-3",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T082007963Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-MDS-01",
+      "description": "四条需求凑成一趟旅程，四个取货停靠加一个关卡",
+      "outcome": "PASS",
+      "expected": "4 PICKUP + 1 GATE",
+      "actual": "4 PICKUP + 1 GATE"
+    },
+    {
+      "id": "L2-MDS-02",
+      "description": "是一趟旅程，不是四趟",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-MDS-03",
+      "description": "服务端按契约发出五条腿的行程带（四个取货加一个关卡）",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    },
+    {
+      "id": "L2-MDS-04",
+      "description": "车辆侧收下了这条行程带——没有 PROTOCOL_SCHEMA_INVALID 拒收",
+      "outcome": "PASS",
+      "expected": "0 次拒收",
+      "actual": "0 次拒收"
+    },
+    {
+      "id": "L2-MDS-11-1",
+      "description": "停靠 1 的 1 号仓走通真 Modbus 闭环",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    }
+  ]
+}

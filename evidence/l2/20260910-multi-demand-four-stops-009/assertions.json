@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "scenario": "multi-demand-four-stops",
+  "runId": "20260910T080816328Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "bc63153a7b746816904bc9e744b426901a70f712",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T080816328Z",
+    "batchId": "BATCH-3",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-MD4-01",
+      "description": "四条需求凑成一趟旅程：四个取货停靠加一个关卡",
+      "outcome": "PASS",
+      "expected": "4 PICKUP + 1 GATE",
+      "actual": "4 PICKUP + 1 GATE"
+    },
+    {
+      "id": "L2-MD4-02",
+      "description": "是一趟旅程，不是四趟",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-MD4-03",
+      "description": "四个取货停靠落在四个不同站点上（这才是多停靠，不是一站多单）",
+      "outcome": "PASS",
+      "expected": 4,
+      "actual": 4
+    },
+    {
+      "id": "L2-MD4-04",
+      "description": "服务端按契约发出五条腿的行程带（四个取货加一个关卡）",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    },
+    {
+      "id": "L2-MD4-05",
+      "description": "行程带里四条 TO_PICKUP 加一条 TO_GATE，序号连续",
+      "outcome": "PASS",
+      "expected": "4 TO_PICKUP + 1 TO_GATE / 1,2,3,4,5",
+      "actual": "4 TO_PICKUP + 1 TO_GATE / 1,2,3,4,5"
+    },
+    {
+      "id": "L2-MD4-11",
+      "description": "停靠 1 装载提交，累计 1 次",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "L2-MD4-12",
+      "description": "停靠 2 装载提交，累计 2 次",
+      "outcome": "PASS",
+      "expected": ">= 2",
+      "actual": 2
+    },
+    {
+      "id": "L2-MD4-13",
+      "description": "停靠 3 装载提交，累计 3 次",
+      "outcome": "PASS",
+      "expected": ">= 3",
+      "actual": 3
+    },
+    {
+      "id": "L2-MD4-14",
+      "description": "停靠 4 装载提交，累计 4 次",
+      "outcome": "PASS",
+      "expected": ">= 4",
+      "actual": 4
+    },
+    {
+      "id": "L2-MD4-20",
+      "description": "四个停靠都装完之后旅程进入去关卡那一段",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-MD4-21",
+      "description": "装货阶段收尾时记下了理由",
+      "outcome": "PASS",
+      "expected": "a reason",
+      "actual": "NO_FURTHER_CARGO"
+    },
+    {
+      "id": "L2-MD4-22",
+      "description": "全程没有任何一次装载被判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    }
+  ]
+}
