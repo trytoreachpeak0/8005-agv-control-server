@@ -28,16 +28,18 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-normal-load` | **真的** | 同一条链路，但条码走 UIA、装卸走真 Modbus | `evidence/l2/20260903-real-onboard-normal-load-005` |
 | `real-onboard-clock-skew` | **真的** | 车载端时钟偏差的有界容差，界内、界外、恢复三段 | `evidence/l2/20260903-real-onboard-clock-skew-007` |
 | `real-onboard-recovery-entry-on-unknown` | **真的** | 锁反馈失效报出一份真的 `UNKNOWN`：旅程停摆，而车上打得开恢复入口 | `evidence/l2/20260910-real-onboard-recovery-entry-on-unknown-001` |
+| `real-onboard-recovery-compensate-load` | **真的** | 上一条的下半段：按下「补偿清空」，五步恢复握手走到底，仓位真被清空 | `evidence/l2/20260910-real-onboard-recovery-compensate-load-007` |
 | `real-onboard-load-door-closed-empty` | **真的** | 装货时关门不放料：反复重开、不判失败、不进恢复；提示节拍到期只再提示不重复脉冲 | `evidence/l2/20260909-real-onboard-load-door-closed-empty-002` |
 | `real-onboard-unload-not-emptied` | **真的** | 卸货时关门不取货：一直闭环到取空，没有取消分支 | `evidence/l2/20260909-real-onboard-unload-not-emptied-001` |
 | `real-onboard-station-timeout-door-open` | **真的** | 站点期限到期而仓门未闭：告警并持续等待，闭合后按决策 5 结算 | `evidence/l2/20260909-real-onboard-station-timeout-door-open-004` |
 
-编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。八个是**红的**，各自的原因见文末：
+编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十一个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
 `-004`（第 9 条）、`real-onboard-load-door-closed-empty-001`（第 13 条）、
 `load-cancelled-in-flight-001`（第 14 条），以及
-`real-onboard-station-timeout-door-open` 的 `-001`/`-002`/`-003`（最后一节）。**后五个都红在场景
-自己身上，不是产品**——`real-onboard-station-timeout-door-open-001` 那一条连诊断都跟着错了一半。
+`real-onboard-station-timeout-door-open` 的 `-001`/`-002`/`-003`（最后一节），以及
+`real-onboard-recovery-compensate-load` 的 `-001`（第 12 条）/`-002`（第 16 条）/`-004`（第 14
+条的第四例）。**除头两条之外全都红在场景或驱动自己身上，不是产品**——`real-onboard-station-timeout-door-open-001` 那一条连诊断都跟着错了一半。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
 `VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
@@ -72,7 +74,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 整趟 41 秒，注入到停摆之间 4.9 秒；旧向量光是等操作员超时就要 120 秒。
 
 **这条场景有意不去点那个恢复按钮。**按下去之后是五步恢复握手加一次真 Modbus 再闭环，那是另一条
-判据链；混进来只会让这一条同时说两件事，而其中一件失败时说不清是哪一件。
+判据链；混进来只会让这一条同时说两件事，而其中一件失败时说不清是哪一件。**那条链 2026-09-10 起有
+自己的场景了**：`real-onboard-recovery-compensate-load`，见下面它自己那一节。
 
 **它 2026-09-04 还改过一次向量，原来测的是 `RESUME_AFTER_REPAIR`，那是错的。**它制造的状态是「装载
 跑完、门关着锁上了、仓位仍是空的」，对应 `COMPENSATE_LOAD_ALL_EMPTY`；而 `RESUME_AFTER_REPAIR` 要的
@@ -328,11 +331,22 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     `FIXED_0`/`FIXED_1` 都只是把光幕钉成一个**已知**值，而 `LockerSnapshot.IsKnown` 要的是三个
     raw 位都非 null，所以它产不出 `UNKNOWN`。`faults/modbus` 能产，代价是整条 IO 连接断掉、
     八个仓位一起未知，那是另一件事。
-12. **模态对话框要按 `AutomationId` 找按钮，不要按标题。**`OnWireToGateRecoveryClick` 会弹一个
-    `MessageBox` 要现场确认，它是同进程的另一个顶层窗口，得从 `RootElement` 找而不是从主窗口找——
-    主窗口这时正停在模态循环里，什么都不答。按钮用 `AutomationId` 认：`MessageBox` 的按钮沿用
-    Win32 控件 id（IDYES = 6、IDNO = 7），不随显示语言变，而标题只有中文 Windows 上才是「是(Y)」。
-    驱动里是 `$onboard.Confirm('申请恢复原操作')`。
+12. **模态对话框是主窗口的后代，不是桌面根的子窗口——而这一条 2026-09-10 之前写反了。**
+    `OnWireToGateRecoveryClick` 这一类按钮会弹一个 `MessageBox` 要现场确认。原文写着它「是同进程
+    的另一个顶层窗口，得从 `RootElement` 找而不是从主窗口找」，`Confirm` 也照那样实现了。**那是
+    照代码推的，一次都没跑过**——唯一可能跑到它的场景（`real-onboard-recovery-entry-on-unknown`）
+    有意停在按钮前面。
+    实测：驱动「补偿清空」时 `RootElement.FindAll(Children, pid)` 只返回主窗口，
+    连全桌面枚举里都没有任何 `#32770`；而 `AutomationElement::FocusedElement` 就落在对话框的
+    「No」按钮上，往上走一层就是 `补偿清空~ControlType.Window~#32770`，
+    `$window.FindAll(Descendants, ClassName='#32770')` 一找就到。红证据
+    `evidence/l2/20260910-real-onboard-recovery-compensate-load-001`。
+    **症状是「点了没反应」，而那正是一个你看不见的对话框的样子**：`InvokePattern.Invoke()` 正常
+    返回、按钮仍然 enabled、车载端日志一行不写。六次运行才定位到，因为每一个观测都在说「点击没
+    发生」。`Confirm` 现在两处都找，并在超时时把两处看到的 `#32770` 一起报出来。
+    按钮仍然按 `AutomationId` 认（IDYES = 6、IDNO = 7），**理由比原来写的更强**：实测这台中文
+    Windows 上按钮标题回来的是「Yes」/「No」——`MessageBox` 的按钮文案跟的是进程的 UI 语言，
+    不是系统显示语言。按标题找会两头落空。
 13. **重开一轮之后不能照着「门弹开了」就动手，要等车载端自己再发一条 `WAITING_OPERATOR`。**
     这是第 7 条那个坑的第二种长相，代价同样是一整趟运行。`real-onboard-load-door-closed-empty`
     第一版按门的物理状态推进：等 `doorState` 变回 `OPEN` 就关下一轮的门。红证据
@@ -354,6 +368,12 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     间歇性读到 `AwaitingSublot`（run 34362936547、34359517708），而同一次运行里紧接着的
     `L2-LN-02` 读到的就是 `AwaitingLoadResult`。**假红比真红贵**：这条场景钉的正是
     「服务端重放未结命令而不改口」，它每红一次都要人去判一次是不是真坏了。
+    **第四例是 `real-onboard-recovery-compensate-load`**（`8005-agv-program#31`）：它在读完握手那
+    几条判据之后才取「补偿之前的 `UNLOCKING` 条数」当基线，而那几条判据自己要花几百毫秒——实测
+    车辆在补偿命令下发后 **106 ms** 就打了脉冲，基线晚了它 90 ms，于是基线里已经含着要等的那一条，
+    「又开锁了一次」永远等不到。第一跑侥幸绿了，第二跑红。红证据
+    `evidence/l2/20260910-real-onboard-recovery-compensate-load-004`，绿的是 `-003`——**同一份脚本
+    一绿一红，这就是这类竞态的样子**。基线现在取在按下按钮之前。
 
 15. **一条不再是有效证据的场景，同时也不再是有效的缺陷记录。**
     `real-onboard-recovery-entry-missing` 的最后一条判据从 2026-09-04 起红得对，服务端同一天
@@ -361,6 +381,20 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     判据**。README 与它自己的文件头在这六天里一直写着「那个缺口本身没有被修掉」——那句话在写下的
     第二天就过期了，只是没有任何东西会去推翻它。**场景一旦停跑，它讲的故事就开始腐坏**；重新指向
     之后第一件事是把它当成一份未知结论去读，而不是去确认已经写好的结论。
+
+16. **一个已经处在目标态的仓位，恢复向量一次 IO 都不碰——而它照样报 `ALL_EMPTY`。**
+    `WireToGateRecoveryVectorExecutor` 在 `!correction` 分支里对每个 `!locker.HasCargo` 的仓位
+    **直接标 `COMPLETED`**，然后发一条 `PREPARING` 就收尾。`real-onboard-recovery-compensate-load`
+    首个可跑版本让维护人员先关门再补偿，仓位于是「门关、已锁、空的」——正是它要达到的终态——
+    服务端侧全绿（工作流 `Reconciled`、`Outcome = ALL_EMPTY`、需求判死），**握手确实走完了，
+    车载端却什么都没做**。红证据
+    `evidence/l2/20260910-real-onboard-recovery-compensate-load-002`。
+    这不是缺陷，是「补偿清空」的定义：空仓本来就不需要清。**但一条只证明了服务端记账的场景，
+    不该挂在「在真 Modbus 上把仓位清空」这句话下面。**现在的场景让维护人员先在仓里发现一箱货
+    （车辆放弃之后放进去的，正是那份 `UNKNOWN` 盖住的窗口），向量才真的走一遍开锁—取空—回锁。
+    另一头还有两道硬前置，一起记着：`ValidateInitialSnapshot` 要求每个目标仓
+    **已锁且开锁输出已复位**，否则当场判 `LOCK_NOT_CLOSED` 返回 `FAILED`——**车辆不会去驱动
+    一扇已经开着的门**，所以「关门」是补偿的入场券，不是布景。
 
 ## ADR-cross-0058 的三条操作员不作为场景
 
@@ -429,3 +463,33 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
    超时，报错还写成 `Last observed: (nothing)`——看着像没读到，其实是读到了想要的那个空。
    **等一个值消失，探针要返回哨兵字符串。**
 
+## `real-onboard-recovery-compensate-load`：入口之后那五步
+
+`real-onboard-recovery-entry-on-unknown` 回答「人在车上有没有出路」，**这一条回答「那条出路走不走
+得通」**。2026-09-10 之前它没有任何一层覆盖：服务端授权侧有 L1
+（`RecoveryStateMachineG2Tests.AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized`），
+车载端请求侧有实现（`WireToGateBusinessService.RecoveryVectors.cs`），**两端合起来跑通过没有，
+没人知道**——合成对端不走界面，`load-result-requires-recovery` 明写「到 Blocked 为止」，G3 的
+恢复向量走的也是合成对端。而现场窗口一（`8005-agv-program#19`）要在真车上打开
+`recoveryResumeEnabled` 验这条路：在那里发现它断了，代价是一整个窗口；在这里，31 秒。
+
+**按的是「补偿清空」，不是「申请恢复」。**HMI 上这是两个按钮、两个 `Can...` 属性、两条向量：
+「申请恢复」是 `RESUME_AFTER_REPAIR`（恢复停在物理断点的操作，本场景的状态下服务端会拒，而且拒得
+对），「补偿清空」是 `COMPENSATE_LOAD_ALL_EMPTY`（前置只要「操作是 Load 且 `RecoveryRequired`」）。
+上一条场景的 `L2-RR-06` 读的是前者在不在，那是更弱的问题。
+
+判据链是握手的五步各一条，加上终局：开恢复会话（作用域与管理员角色）→ 报动作并授权 → 收到
+`LoadCompensationRequested` 之后才下发命令（`COMPENSATE_LOAD_ALL_EMPTY` 是唯一一个授权时不当场
+下发的动作）→ 车载端在真 Modbus 上开锁、取空、回锁 → 服务端对账 `Reconciled`。终局钉的是
+**这一单被判死**：需求与仓位操作 `Cancelled`、旅程 `Completed` 记
+`CANCELLED_BY_LOAD_COMPENSATION`、业务键永久抑制、那条永远等不到 `LoadResult` 的 `LoadBatch`
+命令被结算掉（`8005-agv-program#28` 挖出来的第二个洞，补偿这一路同样走它）。
+
+**补偿不产生「替换结果」，别去找第二行。**`SupersededByResultId` 只由
+`WireToGateStore.RequireResumeAuthorizationAsync` 那条路写，那是 `RESUME_AFTER_REPAIR` 的形状；
+`LoadCompensationResult` 根本不经过 `OperationResults`，它走
+`OnboardRecoveryCoordinator.ApplyCurrentResultAsync` 把这一单判死。`L2-RC-13` 就钉这一条。
+
+现场那三步（发现有货、关门、修传感器）每一步都由执行器的代码要求着，理由见第 16 条与场景文件头。
+写这条场景踩出来的三个坑分别记在第 12 条（对话框在树里的位置）、第 16 条（空仓不碰 IO）和第 14 条
+的第四例（进度基线取晚了）。

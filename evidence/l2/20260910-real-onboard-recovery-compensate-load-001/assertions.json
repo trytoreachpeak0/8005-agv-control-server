@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-recovery-compensate-load",
+  "runId": "20260910T012118529Z",
+  "outcome": "FAIL",
+  "failureReason": "Exception calling \"Confirm\" with \"1\" argument(s): \"No dialog titled '补偿清空' from pid 17304 within 30s. Windows seen: 8005 多仓位AGV车载端.\"",
+  "identity": {
+    "onboardHmiCommit": "3d8206fc9fc4ce02b58e78a205d9563be68c6b0e",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "batchId": "BATCH-3",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T012118529Z",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "2b1ece8a078b8efe73323d6d0f1dc7dd7ad2eb2d"
+  },
+  "assertions": [
+    {
+      "id": "L2-RC-01",
+      "description": "起点到位：车报回一份 UNKNOWN，服务端判 RecoveryRequired 并停摆",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired / UNKNOWN",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired / UNKNOWN"
+    },
+    {
+      "id": "L2-RC-02",
+      "description": "传感器修好之后现场读数是真的：门关、仓空、锁反馈有效、开锁输出已复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-RC-03",
+      "description": "HMI 上出现可用的「补偿清空」入口（它绑 CanRequestLoadCompensation，与「申请恢复」是两个按钮）",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    }
+  ]
+}

@@ -519,45 +519,84 @@ function New-L2OnboardDriver {
         $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     }
 
-    # 「申请恢复」 binds both IsEnabled and Visibility to CanRequestWireToGateRecovery, so when the
-    # operator may not start a recovery the button is not in the automation tree at all. Absent and
-    # disabled therefore mean the same thing here, and both read as "no recovery entry".
-    $driver | Add-Member -MemberType ScriptMethod -Name RecoveryAvailable -Value {
-        $button = $this.Element('Name', $this.RecoveryButtonName)
+    <#
+    Every recovery-vector button in the WrapPanel binds both IsEnabled and Visibility to the same
+    Can... property, so when the operator may not take that action the button is not in the
+    automation tree at all. Absent and disabled therefore mean the same thing, and both read as
+    "no entry for that action".
+
+    Generic rather than one member per button because the panel carries six of them
+    (申请恢复 / 取消装货 / 补偿清空 / 修正装货 / 故障交接 / 重新上报结果), and a scenario that
+    drives a new one should not have to change this module.
+    #>
+    $driver | Add-Member -MemberType ScriptMethod -Name ButtonEnabled -Value {
+        param([Parameter(Mandatory)][string]$Name)
+        $button = $this.Element('Name', $Name)
         if (-not $button) { return $false }
         return [bool]$button.Current.IsEnabled
     }
 
-    $driver | Add-Member -MemberType ScriptMethod -Name RequestRecovery -Value {
-        $button = $this.Element('Name', $this.RecoveryButtonName)
-        if (-not $button) { throw "No button named '$($this.RecoveryButtonName)'." }
+    $driver | Add-Member -MemberType ScriptMethod -Name InvokeButton -Value {
+        param([Parameter(Mandatory)][string]$Name)
+        $button = $this.Element('Name', $Name)
+        if (-not $button) { throw "No button named '$Name'." }
         # WPF's ButtonAutomationPeer.Invoke posts the click with Dispatcher.BeginInvoke, so this
         # returns even though the handler goes straight into a modal MessageBox that parks the UI
         # thread. Confirm() is what gets the thread back.
         $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     }
 
+    $driver | Add-Member -MemberType ScriptMethod -Name RecoveryAvailable -Value {
+        return $this.ButtonEnabled($this.RecoveryButtonName)
+    }
+
+    $driver | Add-Member -MemberType ScriptMethod -Name RequestRecovery -Value {
+        $this.InvokeButton($this.RecoveryButtonName)
+    }
+
     <#
-    Answers the modal MessageBox that MainWindow.OnWireToGateRecoveryClick puts in front of the
-    operator. It is a separate top-level window of the same process, so it is found from the root
-    rather than from the main window -- which is parked in the modal loop and answers nothing.
+    Finds one of this process's modal MessageBox windows by its caption.
+
+    **It is a descendant of the main window, not a child of the desktop root.** That is measured,
+    not assumed: 2026-09-10, driving 「补偿清空」, `RootElement.FindAll(Children, pid)` returned only
+    the main window while the dialog was standing open with focus on its 「No」 button, and
+    `$window.FindAll(Descendants, ClassName = '#32770')` found it. The comment here used to say the
+    opposite -- written from reading the code, never once run, because the only scenario that could
+    have run it stops in front of the button on purpose. Six runs went into finding that out; the
+    symptom was "the click does nothing", which is what a dialog you cannot see looks like.
+
+    Both places are searched anyway. Which one holds an owned dialog is a Windows/UIA detail, and a
+    driver that only knows one of them fails in a way that reads as a product defect.
+    #>
+    $driver | Add-Member -MemberType ScriptMethod -Name Dialog -Value {
+        param([Parameter(Mandatory)][string]$Title)
+        if (-not $this.Window) { throw 'Attach() has not run yet.' }
+        $condition = [System.Windows.Automation.AndCondition]::new(
+            [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ClassNameProperty, '#32770'),
+            [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::NameProperty, $Title))
+        $owned = $this.Window.FindFirst(
+            [System.Windows.Automation.TreeScope]::Descendants, $condition)
+        if ($owned) { return $owned }
+        return [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
+            [System.Windows.Automation.TreeScope]::Children, $condition)
+    }
+
+    <#
+    Answers the modal MessageBox a recovery-vector button puts in front of the operator.
 
     The button is picked by AutomationId, not by caption: a MessageBox names its buttons after the
-    Win32 control ids (IDYES = 6, IDNO = 7), which do not change with the display language, while
-    the caption is 「是(Y)」 only on a Chinese Windows.
+    Win32 control ids (IDYES = 6, IDNO = 7), which do not change with the display language -- and
+    the language is not the one you would guess. On this Chinese Windows the captions came back as
+    「Yes」/「No」, because they follow the *process* UI language, not the system's.
     #>
     $driver | Add-Member -MemberType ScriptMethod -Name Confirm -Value {
         param([Parameter(Mandatory)][string]$Title, [string]$ButtonAutomationId = '6', [int]$TimeoutSeconds = 30)
         $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
-        $seen = [System.Collections.Generic.HashSet[string]]::new()
         while ($true) {
-            $condition = [System.Windows.Automation.PropertyCondition]::new(
-                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $this.ProcessId)
-            $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-                [System.Windows.Automation.TreeScope]::Children, $condition)
-            foreach ($window in $windows) {
-                $null = $seen.Add($window.Current.Name)
-                if ($window.Current.Name -ne $Title) { continue }
+            $window = $this.Dialog($Title)
+            if ($window) {
                 $button = $window.FindFirst(
                     [System.Windows.Automation.TreeScope]::Descendants,
                     [System.Windows.Automation.PropertyCondition]::new(
@@ -568,8 +607,19 @@ function New-L2OnboardDriver {
                 return $true
             }
             if ([DateTimeOffset]::UtcNow -ge $deadline) {
-                $titles = if ($seen.Count -eq 0) { '(no window at all)' } else { ($seen -join ' / ') }
-                throw "No dialog titled '$Title' from pid $($this.ProcessId) within ${TimeoutSeconds}s. Windows seen: $titles."
+                $seen = @()
+                $anyDialog = [System.Windows.Automation.PropertyCondition]::new(
+                    [System.Windows.Automation.AutomationElement]::ClassNameProperty, '#32770')
+                foreach ($found in $this.Window.FindAll(
+                        [System.Windows.Automation.TreeScope]::Descendants, $anyDialog)) {
+                    $seen += "$($found.Current.Name) (owned)"
+                }
+                foreach ($found in [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+                        [System.Windows.Automation.TreeScope]::Children, $anyDialog)) {
+                    $seen += "$($found.Current.Name) (desktop)"
+                }
+                $titles = if ($seen.Count -eq 0) { '(no dialog at all)' } else { ($seen -join ' / ') }
+                throw "No dialog titled '$Title' from pid $($this.ProcessId) within ${TimeoutSeconds}s. Dialogs seen: $titles."
             }
             Start-Sleep -Milliseconds 250
         }

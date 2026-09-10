@@ -1,0 +1,48 @@
+{"at":"2026-09-10T01:43:43.4060483+00:00","note":"L2 run 20260910T014343364Z starting for scenario 'real-onboard-recovery-compensate-load'."}
+{"at":"2026-09-10T01:43:43.4264823+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T01:43:47.4959846+00:00","note":"Reusing cached onboard-hmi publish for 3d8206fc9fc4ce02b58e78a205d9563be68c6b0e."}
+{"at":"2026-09-10T01:43:47.8394591+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T01:43:47.8448348+00:00","note":"Peers: onboard-hmi@3d8206fc9fc4ce02b58e78a205d9563be68c6b0e, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T01:43:48.8673343+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T01:43:49.0465560+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T01:43:50.9840821+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-10T01:43:53.3277537+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T01:43:54.9616487+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T01:43:57.5233273+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-10T01:43:57.5471038+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-10T01:43:57.6685827+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-10T01:43:58.2149905+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T01:43:58.2987976+00:00","note":"Environment is up; entering scenario 'real-onboard-recovery-compensate-load'."}
+{"at":"2026-09-10T01:43:58.3701663+00:00","note":"Publishing demand 8aeb53e7fee347d8be542e06fd9f89f7 (sublot L2-SUBLOT-20260910T014343364Z) to the fake MesIngest catalog."}
+{"at":"2026-09-10T01:43:58.5192444+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T01:43:59.6266696+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T01:43:59.6360962+00:00","criterion":"to-pickup-intent","value":"CREATE_ATTEMPTED"}
+{"at":"2026-09-10T01:43:59.8979789+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-10T01:43:59.9010215+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-10T01:44:00.0086365+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-10T01:44:00.0894509+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-10T01:44:01.0094271+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-10T01:44:01.0111859+00:00","note":"Typing sublot L2-SUBLOT-20260910T014343364Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-10T01:44:01.1118000+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-10T01:44:01.1564070+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-10T01:44:01.1622673+00:00","criterion":"sublot-submitted","value":"0"}
+{"at":"2026-09-10T01:44:01.4310823+00:00","criterion":"sublot-submitted","value":"1"}
+{"at":"2026-09-10T01:44:01.4348751+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-10T01:44:01.9627046+00:00","criterion":"load-attempt","value":"@{SlotOperationAttemptId=8e5739cf-5792-3855-a5cc-6a79b048baba; Status=Prepared}"}
+{"at":"2026-09-10T01:44:01.9864938+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=8e5739cf-5792-3855-a5cc-6a79b048baba; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/10/2026 09:44:01}"}
+{"at":"2026-09-10T01:44:01.9989036+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-10T01:44:03.0434049+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-10T01:44:03.0516475+00:00","note":"Jamming slot 1 lock feedback at LOCKED while the door stands open."}
+{"at":"2026-09-10T01:44:03.1123940+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T01:44:07.8895698+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-10T01:44:07.9114001+00:00","note":"Maintenance closes slot 1 and repairs the lock feedback sensor (override -> AUTO)."}
+{"at":"2026-09-10T01:44:07.9667541+00:00","criterion":"slot-repaired","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-10T01:44:08.0124702+00:00","criterion":"onboard-compensation-entry","value":"True"}
+{"at":"2026-09-10T01:44:08.0195685+00:00","note":"Invoking the 补偿清空 button and confirming the modal dialog."}
+{"at":"2026-09-10T01:44:08.2086505+00:00","criterion":"recovery-session-open","value":"(null)"}
+{"at":"2026-09-10T01:44:08.4699754+00:00","criterion":"recovery-session-open","value":"@{ExceptionRecoverySessionId=a569bb72-4465-fc52-900b-1e158857e7bc; RequestId=e3232b52-cf80-8a55-a6c3-e76ff681eee0; RequestContentHash=9f3935778ad9318d9d76aafdbab3608b9ed5c06485159bd90f59bd63fa7b3106; AgvId=AGV-L2-001; EventId=e3232b52-cf80-8a55-a6c3-e76ff681eee0; DemandId=8aeb53e7-fee3-47d8-be54-2e06fd9f89f7; SlotsJson=[1]; AdministratorId=L2-OPERATOR; AdministratorRole=MAINTENANCE_ADMINISTRATOR; Reason=现场确认装货无法继续，申请补偿清空目标仓位。; State=OPEN; Revision=1; SelectedAction=; ForcedRecoveryGeneration=0; OpenedAt=2026-09-10 01:44:08.2849261+00:00; UpdatedAt=2026-09-10 01:44:08.2849261+00:00}"}
+{"at":"2026-09-10T01:44:08.4929111+00:00","criterion":"recovery-action-authorized","value":"@{WorkflowId=7b665b9b-2690-a254-a4d6-62873cd17881; WorkflowType=COMPENSATE_LOAD_ALL_EMPTY; ExceptionRecoverySessionId=a569bb72-4465-fc52-900b-1e158857e7bc; AgvId=AGV-L2-001; DemandId=8aeb53e7-fee3-47d8-be54-2e06fd9f89f7; SlotOperationAttemptId=8e5739cf-5792-3855-a5cc-6a79b048baba; SlotsJson=[1]; ForcedRecoveryGeneration=0; State=AwaitingAuthorization; RequestMessageId=22678ac1-ccd9-105b-8f0c-fba44968a7ff; RequestContentHash=1f7c8dc58a4ab78c62f366fb9cb433cffc65354634660df770b8908a929c2abf; CommandMessageId=; CommandMessageType=; CommandContentHash=; HandoffId=; ResultMessageId=; ResultContentHash=; Outcome=; CreatedAt=2026-09-10 01:44:08.4155826+00:00; UpdatedAt=2026-09-10 01:44:08.4155826+00:00}"}
+{"at":"2026-09-10T01:44:08.5256077+00:00","criterion":"compensation-command","value":"pending"}
+{"at":"2026-09-10T01:44:08.8081870+00:00","criterion":"compensation-command","value":"LoadCompensationCommand"}
+{"at":"2026-09-10T01:44:08.8390779+00:00","criterion":"compensation-unlocking","value":"2"}
+{"at":"2026-09-10T01:46:09.0396204+00:00","note":"Run failed: Timed out after 120s waiting for: the vehicle re-opened the slot for the compensation. Last observed: 2"}

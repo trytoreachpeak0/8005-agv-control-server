@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-recovery-compensate-load",
+  "runId": "20260910T015352169Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 120s waiting for: the vehicle re-opened the slot for the compensation. Last observed: 3",
+  "identity": {
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T015352169Z",
+    "controlServerCommit": "2b1ece8a078b8efe73323d6d0f1dc7dd7ad2eb2d",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard",
+    "onboardHmiCommit": "3d8206fc9fc4ce02b58e78a205d9563be68c6b0e",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-RC-01",
+      "description": "起点到位：车报回一份 UNKNOWN，服务端判 RecoveryRequired 并停摆",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired / UNKNOWN",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired / UNKNOWN"
+    },
+    {
+      "id": "L2-RC-02",
+      "description": "现场读数变成真的：门关、仓里有货、锁反馈有效、开锁输出已复位——这正是补偿向量的入场券",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-RC-03",
+      "description": "HMI 上出现可用的「补偿清空」入口（它绑 CanRequestLoadCompensation，与「申请恢复」是两个按钮）",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "L2-RC-04",
+      "description": "第一步握手：恢复会话已开，作用域是这一单这一次 attempt，管理员角色已认证",
+      "outcome": "PASS",
+      "expected": "56974aa6-2e48-4800-a480-9cf2909db98d / MAINTENANCE_ADMINISTRATOR / 含仓位 1",
+      "actual": "56974aa6-2e48-4800-a480-9cf2909db98d / MAINTENANCE_ADMINISTRATOR / [1]"
+    },
+    {
+      "id": "L2-RC-05",
+      "description": "第二、三步握手：车载端报的动作是 COMPENSATE_LOAD_ALL_EMPTY，服务端授权并选定它",
+      "outcome": "PASS",
+      "expected": "COMPENSATE_LOAD_ALL_EMPTY / 56974aa6-2e48-4800-a480-9cf2909db98d / af213067-b111-f15a-97a3-739eb8c218f0",
+      "actual": "COMPENSATE_LOAD_ALL_EMPTY / 56974aa6-2e48-4800-a480-9cf2909db98d / af213067-b111-f15a-97a3-739eb8c218f0"
+    },
+    {
+      "id": "L2-RC-06",
+      "description": "服务端在收到 LoadCompensationRequested 之后才下发补偿命令，并把它绑在工作流上",
+      "outcome": "PASS",
+      "expected": "LoadCompensationCommand / 收到 1 条 LoadCompensationRequested",
+      "actual": "LoadCompensationCommand / 收到 1 条"
+    }
+  ]
+}
