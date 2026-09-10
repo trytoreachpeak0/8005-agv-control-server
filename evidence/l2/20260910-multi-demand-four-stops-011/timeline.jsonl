@@ -1,0 +1,51 @@
+{"at":"2026-09-10T08:57:59.2912303+00:00","note":"L2 run 20260910T085759231Z starting for scenario 'multi-demand-four-stops'."}
+{"at":"2026-09-10T08:57:59.3170430+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T08:57:59.4939391+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T08:58:02.8521449+00:00","note":"Extra map stations from multi-demand-four-stops.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2"}
+{"at":"2026-09-10T08:58:03.7712042+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T08:58:03.9261233+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T08:58:06.3464296+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T08:58:08.5403533+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T08:58:09.2620747+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-10T08:58:09.5433500+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-10T08:58:09.5657824+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T08:58:09.6216465+00:00","note":"Environment is up; entering scenario 'multi-demand-four-stops'."}
+{"at":"2026-09-10T08:58:09.7113432+00:00","note":"Publishing demand L2-MD4-N1-3-20260910T085759231Z in area N1-3."}
+{"at":"2026-09-10T08:58:09.7881126+00:00","note":"Publishing demand L2-MD4-N2-6-20260910T085759231Z in area N2-6."}
+{"at":"2026-09-10T08:58:09.8126554+00:00","note":"Publishing demand L2-MD4-N3-4-20260910T085759231Z in area N3-4."}
+{"at":"2026-09-10T08:58:09.8268721+00:00","note":"Publishing demand L2-MD4-N4-2-20260910T085759231Z in area N4-2."}
+{"at":"2026-09-10T08:58:09.9264553+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T08:58:10.7412640+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T08:58:10.7554557+00:00","criterion":"stop-1-order","value":"(null)"}
+{"at":"2026-09-10T08:58:11.0113725+00:00","criterion":"stop-1-order","value":"W2G-9b7b1d0b-42f8-a45f-a5da-baf9055c0763-S1-1"}
+{"at":"2026-09-10T08:58:11.0194400+00:00","note":"Vehicle drives to stop 1 (station N1-3_N1-7 / 12)."}
+{"at":"2026-09-10T08:58:11.1143988+00:00","criterion":"journey-stops","value":"2"}
+{"at":"2026-09-10T08:58:11.9072656+00:00","criterion":"journey-stops","value":"3"}
+{"at":"2026-09-10T08:58:12.1731090+00:00","criterion":"journey-stops","value":"5"}
+{"at":"2026-09-10T08:58:12.2241972+00:00","criterion":"stop-plan-legs","value":"5"}
+{"at":"2026-09-10T08:58:12.2448580+00:00","note":"=== Stop 1 : station N1-3_N1-7 (12) ==="}
+{"at":"2026-09-10T08:58:12.2484437+00:00","criterion":"stop-1-committed","value":"0"}
+{"at":"2026-09-10T08:58:13.2967506+00:00","criterion":"stop-1-committed","value":"1"}
+{"at":"2026-09-10T08:58:13.3034898+00:00","note":"=== Stop 2 : station N2-6 (13) ==="}
+{"at":"2026-09-10T08:58:13.3138156+00:00","criterion":"stop-2-order","value":"(null)"}
+{"at":"2026-09-10T08:58:14.1125765+00:00","criterion":"stop-2-order","value":"W2G-9b7b1d0b-42f8-a45f-a5da-baf9055c0763-S2-1"}
+{"at":"2026-09-10T08:58:14.1150407+00:00","note":"Vehicle drives to stop 2 (station N2-6 / 13)."}
+{"at":"2026-09-10T08:58:14.1611167+00:00","criterion":"stop-2-committed","value":"1"}
+{"at":"2026-09-10T08:58:16.0039038+00:00","criterion":"stop-2-committed","value":"2"}
+{"at":"2026-09-10T08:58:16.0084034+00:00","note":"=== Stop 3 : station N3-4 (14) ==="}
+{"at":"2026-09-10T08:58:16.0211464+00:00","criterion":"stop-3-order","value":"(null)"}
+{"at":"2026-09-10T08:58:17.0821429+00:00","criterion":"stop-3-order","value":"W2G-9b7b1d0b-42f8-a45f-a5da-baf9055c0763-S3-1"}
+{"at":"2026-09-10T08:58:17.0844308+00:00","note":"Vehicle drives to stop 3 (station N3-4 / 14)."}
+{"at":"2026-09-10T08:58:17.1187286+00:00","criterion":"stop-3-committed","value":"2"}
+{"at":"2026-09-10T08:58:18.9581729+00:00","criterion":"stop-3-committed","value":"3"}
+{"at":"2026-09-10T08:58:18.9607239+00:00","note":"=== Stop 4 : station N4-2 (15) ==="}
+{"at":"2026-09-10T08:58:18.9768734+00:00","criterion":"stop-4-order","value":"(null)"}
+{"at":"2026-09-10T08:58:20.0410873+00:00","criterion":"stop-4-order","value":"W2G-9b7b1d0b-42f8-a45f-a5da-baf9055c0763-S4-1"}
+{"at":"2026-09-10T08:58:20.0446701+00:00","note":"Vehicle drives to stop 4 (station N4-2 / 15)."}
+{"at":"2026-09-10T08:58:20.0866804+00:00","criterion":"stop-4-committed","value":"3"}
+{"at":"2026-09-10T08:58:21.9281214+00:00","criterion":"stop-4-committed","value":"4"}
+{"at":"2026-09-10T08:58:21.9384989+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T08:58:22.2058383+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T08:58:22.9992163+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-10T08:58:23.2610670+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T08:58:23.2701247+00:00","note":"Scenario finished."}

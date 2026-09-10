@@ -32,7 +32,9 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-recovery-compensate-load` | **真的** | 上一条的下半段：按下「补偿清空」，五步恢复握手走到底，仓位真被清空 | `evidence/l2/20260910-real-onboard-recovery-compensate-load-007` |
 | `real-onboard-load-door-closed-empty` | **真的** | 装货时关门不放料：反复重开、不判失败、不进恢复；提示节拍到期只再提示不重复脉冲 | `evidence/l2/20260909-real-onboard-load-door-closed-empty-002` |
 | `real-onboard-unload-not-emptied` | **真的** | 卸货时关门不取货：一直闭环到取空，没有取消分支 | `evidence/l2/20260909-real-onboard-unload-not-emptied-001` |
-| `real-onboard-station-timeout-door-open` | **真的** | 站点期限到期而仓门未闭：告警并持续等待，闭合后按决策 5 结算 | `evidence/l2/20260909-real-onboard-station-timeout-door-open-004` |
+| `real-onboard-station-timeout-door-open` | **真的** | 站点期限到期而仓门未闭：告警并持续等待，闭合后按决策 5 结算；结算之后旅程自己结束（#39 之前停在原地） | `evidence/l2/20260910-real-onboard-station-timeout-door-open-001` |
+| `real-onboard-multi-demand-stop-plan` | **真的** | 四停靠旅程：车辆侧收下五条腿的行程带（#37 的回归守卫），四站在真 Modbus 上依次装完 | `evidence/l2/20260910-real-onboard-multi-demand-stop-plan-007` |
+| `real-onboard-multi-demand-operator-inaction` | **真的** | 四停靠旅程里的三种操作员不作为：关门不放料、门开着过期、两次关门判确定失败——然后旅程自己离开那一站，后两站照常装完 | `evidence/l2/20260910-real-onboard-multi-demand-operator-inaction-003` |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十一个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
