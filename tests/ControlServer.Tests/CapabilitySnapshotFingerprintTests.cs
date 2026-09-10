@@ -194,6 +194,41 @@ public sealed class CapabilitySnapshotFingerprintTests
             mismatched.RestorationCandidate!.ReasonCode);
     }
 
+    /// <summary>
+    /// 还在握手、能力快照没到的车，不就绪的原因是握手没完成，不是指纹不符。
+    /// </summary>
+    /// <remarks>
+    /// 指纹不符的原因码排在其它原因之前。所以「车还没报」必须不算不一致——否则服务端手上一旦有了
+    /// 生效版本，每一台重连中的车都会先被报成指纹不符，运维会去追一台唯一的问题只是还在握手的车。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
+    [Trait("ProtocolVector", "CV-SLOT-CONFIGURATION-ACTIVATION")]
+    public async Task AVehicleThatHasNotReportedYetIsNotNamedAsAFingerprintMismatch()
+    {
+        await using WireFixture fixture = await WireFixture.CreateAsync();
+        await fixture.HandshakeAsync();
+        ActiveSlotConfigurationRow active = await fixture.ActivateAsync();
+
+        fixture.Context.ChangeTracker.Clear();
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(row => row.AgvId == AgvId, TestContext.Current.CancellationToken);
+        Assert.Null(session.ReportedSlotConfigurationFingerprint);
+
+        WireToGateStore store = new(fixture.Context);
+        SessionReadinessDecision beforeReport = await store.DecideReadinessAsync(
+            AgvId, session.SessionGeneration, TestContext.Current.CancellationToken);
+        Assert.NotEqual(SessionReadiness.Ready, beforeReport.Readiness);
+        Assert.NotEqual(SlotConfigurationFingerprintVerdict.MismatchCode, beforeReport.ReasonCode);
+
+        // And once the vehicle does report the version this server activated, it is still not named.
+        await fixture.SendCapabilityAsync("00000000-0000-4000-8000-000000000221", 3, active.Fingerprint);
+        fixture.Context.ChangeTracker.Clear();
+        SessionReadinessDecision afterReport = await store.DecideReadinessAsync(
+            AgvId, session.SessionGeneration, TestContext.Current.CancellationToken);
+        Assert.NotEqual(SlotConfigurationFingerprintVerdict.MismatchCode, afterReport.ReasonCode);
+    }
+
     private sealed class WireFixture : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;

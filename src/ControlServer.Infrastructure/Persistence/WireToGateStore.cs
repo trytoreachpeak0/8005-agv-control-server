@@ -64,6 +64,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.ProtocolVersion = identity.ProtocolVersion;
         row.CapabilityRevision = null;
         row.CapabilityHash = null;
+        // Reset with the capability it arrived in. Left alone, the previous generation's report would
+        // stand in for a vehicle that has not reported yet in this one -- and a restarted vehicle is
+        // exactly the one whose configuration may have changed in between.
+        row.ReportedSlotConfigurationFingerprint = null;
         row.SafetyRevision = null;
         row.SafetyHash = null;
         row.DepartureSafe = null;
@@ -183,7 +187,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .Set<ActiveSlotConfigurationRow>().AsNoTracking()
             .FirstOrDefaultAsync(active => active.AgvId == agvId, cancellationToken)
             .ConfigureAwait(false);
+        // No report yet is not a disagreement. The capability snapshot has not arrived in this session,
+        // CapabilityRevision is null so the session is not ready anyway, and the honest reason for that
+        // is HANDSHAKE_INCOMPLETE -- naming the fingerprint mismatch first would send an operator after
+        // a vehicle whose only problem is that it is still handshaking.
         bool slotConfigurationAgrees = activeSlotConfiguration is null ||
+            row.ReportedSlotConfigurationFingerprint is null ||
             string.Equals(
                 activeSlotConfiguration.Fingerprint,
                 row.ReportedSlotConfigurationFingerprint,
