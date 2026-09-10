@@ -85,6 +85,7 @@ internal static class Program
             "audit" => await AuditAsync(context, options),
             "seed-approved-facts" => await SeedApprovedFactsAsync(context, governance, now),
             "bind-io" => await BindIoAsync(context, governance, options, now),
+            "export-audit" => await ExportAuditAsync(context, options, now),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
@@ -383,6 +384,97 @@ internal static class Program
             0);
     }
 
+    /// <summary>
+    /// REQ-0271：把一条审计流在期限内的记录导出成文件。CSV 给人和 Excel，JSON 给下一次审计工具机械读回。
+    /// </summary>
+    /// <remarks>
+    /// 与上面的 <c>audit</c> 不是一回事：那一条只挑本窗口相关的业务审计打到 stdout 供证据留档，这一条导出
+    /// 一整条流（业务或管理员），不按动作名过滤。输出文件已存在就拒绝——导出常常就是证据，覆盖一份旧的等于
+    /// 悄悄改掉它。
+    /// </remarks>
+    private static async Task<int> ExportAuditAsync(
+        ControlServerDbContext context,
+        Dictionary<string, string> options,
+        DateTimeOffset now)
+    {
+        if (!options.TryGetValue("stream", out string? streamText) ||
+            !options.TryGetValue("format", out string? formatText) ||
+            !options.TryGetValue("output", out string? outputPath))
+        {
+            return Usage("export-audit needs --stream <business|administrator> --format <csv|json> --output <file>");
+        }
+        AuditTrail? stream = streamText switch
+        {
+            "business" => AuditTrail.Business,
+            "administrator" => AuditTrail.Administrator,
+            _ => null
+        };
+        AuditExportFormat? format = formatText switch
+        {
+            "csv" => AuditExportFormat.Csv,
+            "json" => AuditExportFormat.Json,
+            _ => null
+        };
+        if (stream is null)
+        {
+            return Usage($"--stream must be business or administrator, not '{streamText}'");
+        }
+        if (format is null)
+        {
+            return Usage($"--format must be csv or json, not '{formatText}'");
+        }
+        if (File.Exists(outputPath))
+        {
+            return Usage($"output file already exists: {outputPath}");
+        }
+        if (!TryReadInstant(options, "since", out DateTimeOffset? from) ||
+            !TryReadInstant(options, "until", out DateTimeOffset? until))
+        {
+            return Usage("--since and --until must be ISO-8601 instants");
+        }
+
+        IReadOnlyList<AuditExportRecord> records;
+        try
+        {
+            records = await AuditExport.ReadAsync(context, stream.Value, from, until, CancellationToken.None);
+        }
+        catch (ArgumentException inverted)
+        {
+            return Usage(inverted.Message);
+        }
+        byte[] content = AuditExport.Render(format.Value, stream.Value, records, from, until, now);
+        await File.WriteAllBytesAsync(outputPath, content);
+        return Emit(
+            new
+            {
+                command = "export-audit",
+                outcome = "OK",
+                stream = AuditExport.StreamName(stream.Value),
+                format = formatText,
+                output = Path.GetFullPath(outputPath),
+                from,
+                until,
+                count = records.Count,
+                sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant()
+            },
+            0);
+    }
+
+    private static bool TryReadInstant(Dictionary<string, string> options, string name, out DateTimeOffset? value)
+    {
+        value = null;
+        if (!options.TryGetValue(name, out string? text))
+        {
+            return true;
+        }
+        if (!DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTimeOffset parsed))
+        {
+            return false;
+        }
+        value = parsed;
+        return true;
+    }
+
     private static int Emit(object payload, int exitCode)
     {
         Console.Out.WriteLine(JsonSerializer.Serialize(payload, Output));
@@ -393,7 +485,7 @@ internal static class Program
     {
         Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"ControlServer.FieldOps: {problem}."));
         Console.Error.WriteLine(
-            "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io>"
+            "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io|export-audit>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
@@ -401,6 +493,9 @@ internal static class Program
         Console.Error.WriteLine("  audit       [--since <iso-8601>]");
         Console.Error.WriteLine("  seed-approved-facts");
         Console.Error.WriteLine("  bind-io     --agv <agvId>");
+        Console.Error.WriteLine(
+            "  export-audit --stream <business|administrator> --format <csv|json> --output <file>"
+            + " [--since <iso-8601>] [--until <iso-8601>]");
         return 2;
     }
 }

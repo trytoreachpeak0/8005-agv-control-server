@@ -54,6 +54,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         new(StringComparer.Ordinal)
         {
             ["AgvRestorationTests"] = "batch 3 FP-C5 archive-and-restore lifecycle; server-internal, no wire message",
+            ["AuditExportTests"] = "batch 3 FP-C14 REQ-0271 audit query and export; server-internal, no wire message",
             ["Batch2CapabilityStoresTests"] = "batch 2 track B persistence foundation; server-internal, no wire message",
             ["Batch3MigrationDisciplineTests"] = "cross-cutting migration and startup guard; hanging it off a slice would defer the guard with the slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
