@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-clock-skew",
+  "runId": "20260910T111538227Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "02af63730e5f0b5c1520f2240bf41867000b4b2f",
+    "vehicleKey": "BROKERX-L2-0001",
+    "onboardHmiCommit": "3cf26651111220cec67a370ac5b9f81bc21bd697",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T111538227Z",
+    "rig": "RealOnboard",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "batchId": "BATCH-3",
+    "clockSkewMs": 100
+  },
+  "assertions": [
+    {
+      "id": "L2-CS-01",
+      "description": "车载端的安全投影确实经过了偏差代理，且 observedAt 被推后",
+      "outcome": "PASS",
+      "expected": "forwardedRequests >= 1，位移 = 100 ms",
+      "actual": "forwardedRequests = 2，位移 = 100 ms"
+    },
+    {
+      "id": "L2-CS-02",
+      "description": "车载端时钟慢 100 ms（容差内）时会话正常建立",
+      "outcome": "PASS",
+      "expected": "Ready/…",
+      "actual": "Ready/READY"
+    },
+    {
+      "id": "L2-CS-03",
+      "description": "偏差 3000 ms 超出容差时车载端仍然 fail-closed，会话降级",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired/DEPARTURE_SAFETY_NOT_READY",
+      "actual": "RecoveryRequired/DEPARTURE_SAFETY_NOT_READY"
+    },
+    {
+      "id": "L2-CS-04",
+      "description": "需求随之被拒，判 ONBOARD_FACTS_NOT_READY",
+      "outcome": "PASS",
+      "expected": "ONBOARD_FACTS_NOT_READY",
+      "actual": "ONBOARD_FACTS_NOT_READY"
+    },
+    {
+      "id": "L2-CS-05",
+      "description": "运行时又转了几轮，仍然没有为这条需求建 journey",
+      "outcome": "PASS",
+      "expected": "(没有 journey)",
+      "actual": "(没有 journey)"
+    },
+    {
+      "id": "L2-CS-06",
+      "description": "偏差回到容差内后，同一条需求被受理——车载端自行恢复，没有重启",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    },
+    {
+      "id": "L2-CS-07",
+      "description": "恢复之后旅程真的建起来并派车",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-CS-08",
+      "description": "会话从 RecoveryRequired 自己回到 Ready，全程没有重启车载端",
+      "outcome": "PASS",
+      "expected": "Ready/…",
+      "actual": "Ready/READY"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 8 lines, 8 distinct, 6 message types, 0 distinct violations, 0 known; schema compilation 13259 ms."
+    }
+  ]
+}

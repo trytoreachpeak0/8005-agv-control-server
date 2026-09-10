@@ -1,0 +1,38 @@
+{"at":"2026-09-10T10:59:50.2393860+00:00","note":"L2 run 20260910T105950206Z starting for scenario 'sublot-wait-timeout'."}
+{"at":"2026-09-10T10:59:50.2651246+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T10:59:50.4004954+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T10:59:53.2723084+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T10:59:53.3882689+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T10:59:53.4085040+00:00","note":"Server settings from sublot-wait-timeout.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:00:10"}
+{"at":"2026-09-10T10:59:55.1628219+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T10:59:56.2684197+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T10:59:56.9074598+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-10T10:59:56.9236489+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T10:59:56.9543801+00:00","note":"Environment is up; entering scenario 'sublot-wait-timeout'."}
+{"at":"2026-09-10T10:59:56.9936306+00:00","note":"Synthetic peer stops answering sublot entry requests: nobody comes to scan."}
+{"at":"2026-09-10T10:59:57.0307454+00:00","note":"Publishing demand 87a49a57522d4de6a814c1f40c54a505 to the fake MesIngest catalog."}
+{"at":"2026-09-10T10:59:57.1009096+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T10:59:57.6536874+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T10:59:57.6821156+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-7c3d0200-705c-c250-a809-e874b12572e9-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-10T10:59:57.6865295+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-10T10:59:58.5486993+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T10:59:58.5782778+00:00","criterion":"runtime-iterations","value":"3"}
+{"at":"2026-09-10T10:59:59.1103986+00:00","criterion":"runtime-iterations","value":"4"}
+{"at":"2026-09-10T11:00:00.1743467+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-10T11:00:01.2325013+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-10T11:00:02.2930782+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-10T11:00:02.2992428+00:00","note":"Waiting for the sublot wait window to expire (10 s, set by the sidecar)."}
+{"at":"2026-09-10T11:00:09.1911582+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-10T11:00:09.2062921+00:00","note":"Synthetic peer answers again; the next demand must run all the way through."}
+{"at":"2026-09-10T11:00:09.2194794+00:00","criterion":"second-journey-stage","value":"(null)"}
+{"at":"2026-09-10T11:00:10.2690162+00:00","criterion":"second-journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T11:00:10.2810455+00:00","criterion":"second-to-pickup-intent","value":"@{UpperId=W2G-bada1132-7220-b052-994f-aeb26a982dc7-S1-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-10T11:00:10.2832560+00:00","note":"Vehicle runs the second pickup leg."}
+{"at":"2026-09-10T11:00:11.6257041+00:00","criterion":"second-journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T11:00:12.1570353+00:00","criterion":"second-journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T11:00:13.2152416+00:00","criterion":"second-journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T11:00:13.2165734+00:00","note":"Vehicle drives to the gate and comes to rest."}
+{"at":"2026-09-10T11:00:14.2761490+00:00","criterion":"second-journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-10T11:00:15.0766810+00:00","criterion":"second-journey-stage","value":"Completed"}
+{"at":"2026-09-10T11:00:15.0829325+00:00","note":"Scenario finished."}
+{"at":"2026-09-10T11:00:32.5508497+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 26 lines, 26 distinct, 9 message types, 0 distinct violations, 0 known; schema compilation 16466 ms."}

@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-multi-demand-stop-plan",
+  "runId": "20260910T110645518Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T110645518Z",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "controlServerCommit": "02af63730e5f0b5c1520f2240bf41867000b4b2f",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard",
+    "onboardHmiCommit": "3cf26651111220cec67a370ac5b9f81bc21bd697"
+  },
+  "assertions": [
+    {
+      "id": "L2-MDS-01",
+      "description": "四条需求凑成一趟旅程，四个取货停靠加一个关卡",
+      "outcome": "PASS",
+      "expected": "4 PICKUP + 1 GATE",
+      "actual": "4 PICKUP + 1 GATE"
+    },
+    {
+      "id": "L2-MDS-02",
+      "description": "是一趟旅程，不是四趟",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-MDS-03",
+      "description": "服务端按契约发出五条腿的行程带（四个取货加一个关卡）",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    },
+    {
+      "id": "L2-MDS-04",
+      "description": "车辆侧收下了这条行程带——没有 PROTOCOL_SCHEMA_INVALID 拒收",
+      "outcome": "PASS",
+      "expected": "0 次拒收",
+      "actual": "0 次拒收"
+    },
+    {
+      "id": "L2-MDS-11-1",
+      "description": "停靠 1 的 1 号仓走通真 Modbus 闭环",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-MDS-21",
+      "description": "停靠 1 的装载提交，累计 1 次",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "L2-MDS-12-2",
+      "description": "停靠 2 的 2 号仓走通真 Modbus 闭环",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-MDS-22",
+      "description": "停靠 2 的装载提交，累计 2 次",
+      "outcome": "PASS",
+      "expected": ">= 2",
+      "actual": 2
+    },
+    {
+      "id": "L2-MDS-13-3",
+      "description": "停靠 3 的 3 号仓走通真 Modbus 闭环",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-MDS-23",
+      "description": "停靠 3 的装载提交，累计 3 次",
+      "outcome": "PASS",
+      "expected": ">= 3",
+      "actual": 3
+    },
+    {
+      "id": "L2-MDS-14-4",
+      "description": "停靠 4 的 4 号仓走通真 Modbus 闭环",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-MDS-24",
+      "description": "停靠 4 的装载提交，累计 4 次",
+      "outcome": "PASS",
+      "expected": ">= 4",
+      "actual": 4
+    },
+    {
+      "id": "L2-MDS-30",
+      "description": "四个停靠都装完之后旅程进入去关卡那一段",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-MDS-31",
+      "description": "装货阶段收尾时记下了理由",
+      "outcome": "PASS",
+      "expected": "a reason",
+      "actual": "NO_FURTHER_CARGO"
+    },
+    {
+      "id": "L2-MDS-32",
+      "description": "全程没有任何一次装载被判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-MDS-33",
+      "description": "四条需求全程保持 Accepted",
+      "outcome": "PASS",
+      "expected": "4 条 Accepted",
+      "actual": "4 条，其中 0 条不是 Accepted"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 70 lines, 70 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 20030 ms."
+    }
+  ]
+}

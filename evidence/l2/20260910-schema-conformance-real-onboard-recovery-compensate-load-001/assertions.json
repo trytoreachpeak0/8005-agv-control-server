@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-recovery-compensate-load",
+  "runId": "20260910T110515623Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T110515623Z",
+    "rig": "RealOnboard",
+    "onboardHmiCommit": "3cf26651111220cec67a370ac5b9f81bc21bd697",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "02af63730e5f0b5c1520f2240bf41867000b4b2f",
+    "batchId": "BATCH-3",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "assertions": [
+    {
+      "id": "L2-RC-01",
+      "description": "起点到位：车报回一份 UNKNOWN，服务端判 RecoveryRequired 并停摆",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired / UNKNOWN",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired / UNKNOWN"
+    },
+    {
+      "id": "L2-RC-02",
+      "description": "现场读数变成真的：门关、仓里有货、锁反馈有效、开锁输出已复位——这正是补偿向量的入场券",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-RC-03",
+      "description": "HMI 上出现可用的「补偿清空」入口（它绑 CanRequestLoadCompensation，与「申请恢复」是两个按钮）",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "L2-RC-04",
+      "description": "第一步握手：恢复会话已开，作用域是这一单这一次 attempt，管理员角色已认证",
+      "outcome": "PASS",
+      "expected": "45150f78-453d-4764-89d7-aee07f9342ca / MAINTENANCE_ADMINISTRATOR / 含仓位 1",
+      "actual": "45150f78-453d-4764-89d7-aee07f9342ca / MAINTENANCE_ADMINISTRATOR / [1]"
+    },
+    {
+      "id": "L2-RC-05",
+      "description": "第二、三步握手：车载端报的动作是 COMPENSATE_LOAD_ALL_EMPTY，服务端授权并选定它",
+      "outcome": "PASS",
+      "expected": "COMPENSATE_LOAD_ALL_EMPTY / 45150f78-453d-4764-89d7-aee07f9342ca / 2fe6a981-4db0-a859-babf-329b603e8552",
+      "actual": "COMPENSATE_LOAD_ALL_EMPTY / 45150f78-453d-4764-89d7-aee07f9342ca / 2fe6a981-4db0-a859-babf-329b603e8552"
+    },
+    {
+      "id": "L2-RC-06",
+      "description": "服务端在收到 LoadCompensationRequested 之后才下发补偿命令，并把它绑在工作流上",
+      "outcome": "PASS",
+      "expected": "LoadCompensationCommand / 收到 1 条 LoadCompensationRequested",
+      "actual": "LoadCompensationCommand / 收到 1 条"
+    },
+    {
+      "id": "L2-RC-07",
+      "description": "第四步握手：车载端在真 Modbus 上重新开锁，门再弹开一次",
+      "outcome": "PASS",
+      "expected": "UNLOCKING > 2 / 门 OPEN",
+      "actual": "UNLOCKING = 3 / 门 OPEN"
+    },
+    {
+      "id": "L2-RC-08",
+      "description": "车载端报回 ALL_EMPTY，那一仓 COMPLETED/EMPTY/LOCKED/RESET——服务端的对账判据要的正是这四样",
+      "outcome": "PASS",
+      "expected": "ALL_EMPTY / COMPLETED / EMPTY / LOCKED / RESET",
+      "actual": "ALL_EMPTY / COMPLETED / EMPTY / LOCKED / RESET"
+    },
+    {
+      "id": "L2-RC-09",
+      "description": "第五步握手走完：服务端对账通过，工作流 Reconciled 而不是又一次 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "Reconciled",
+      "actual": "Reconciled"
+    },
+    {
+      "id": "L2-RC-10",
+      "description": "现场收在安全状态：门关、仓空、已锁、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-RC-11",
+      "description": "补偿终结这一单：需求与仓位操作都判 Cancelled",
+      "outcome": "PASS",
+      "expected": "Cancelled / Cancelled",
+      "actual": "Cancelled / Cancelled"
+    },
+    {
+      "id": "L2-RC-12",
+      "description": "旅程以 CANCELLED_BY_LOAD_COMPENSATION 收尾，同一个理由把业务键永久抑制",
+      "outcome": "PASS",
+      "expected": "Completed / CANCELLED_BY_LOAD_COMPENSATION / 抑制 1 条",
+      "actual": "Completed / CANCELLED_BY_LOAD_COMPENSATION / 抑制 1 条 (CANCELLED_BY_LOAD_COMPENSATION)"
+    },
+    {
+      "id": "L2-RC-13",
+      "description": "补偿不产生替换结果：OperationResults 仍只有那一份 UNKNOWN，且没有被标成被替换",
+      "outcome": "PASS",
+      "expected": "1 份 / UNKNOWN / 未被替换",
+      "actual": "1 份 / UNKNOWN / 未被替换"
+    },
+    {
+      "id": "L2-RC-14",
+      "description": "那条永远等不到 LoadResult 的 LoadBatch 命令，被补偿这一路同样结算掉了",
+      "outcome": "PASS",
+      "expected": "补偿前挂着 / 补偿后已结算",
+      "actual": "补偿前挂着 / 2026-09-10 11:05:38.8922624+00:00"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 37 lines, 37 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 22513 ms."
+    }
+  ]
+}

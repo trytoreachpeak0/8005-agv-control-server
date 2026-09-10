@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-recovery-entry-on-unknown",
+  "runId": "20260910T110604308Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "02af63730e5f0b5c1520f2240bf41867000b4b2f",
+    "batchId": "BATCH-3",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "onboardHmiCommit": "3cf26651111220cec67a370ac5b9f81bc21bd697",
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T110604308Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-RR-01",
+      "description": "真车载端报回不完美的装载结果，旅程停摆在 LOAD_RESULT_REQUIRES_RECOVERY",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-RR-02",
+      "description": "装载操作判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-RR-03",
+      "description": "失败结果已落库，且是这个 attempt 唯一一份存活结果",
+      "outcome": "PASS",
+      "expected": "1 份，未 COMPLETED，未被替换",
+      "actual": "1 份，UNKNOWN"
+    },
+    {
+      "id": "L2-RR-04",
+      "description": "这一份 UNKNOWN 出自锁反馈失效，不是「人没放料」的另一种说法",
+      "outcome": "PASS",
+      "expected": "UNKNOWN / UNKNOWN / ACTION_NOT_ALLOWED_IN_STATE",
+      "actual": "UNKNOWN / UNKNOWN / ACTION_NOT_ALLOWED_IN_STATE"
+    },
+    {
+      "id": "L2-RR-05",
+      "description": "车辆报的锁态与现场相反：它说已锁，门其实开着——这就是要人去看的理由",
+      "outcome": "PASS",
+      "expected": "车报 LOCKED / 现场 OPEN / EMPTY",
+      "actual": "车报 LOCKED / 现场 OPEN / EMPTY"
+    },
+    {
+      "id": "L2-RR-06",
+      "description": "停摆之后车载端 HMI 上出现可用的恢复入口（任何一种恢复动作都行）",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 22 lines, 22 distinct, 10 message types, 0 distinct violations, 0 known; schema compilation 19180 ms."
+    }
+  ]
+}

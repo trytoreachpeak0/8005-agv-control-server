@@ -1,0 +1,274 @@
+[
+  {
+    "MessageId": "4a767b7e-7dc8-40ef-9e8e-bdc339cbe629",
+    "ContentHash": "20fe4322102d792b4f3512c22d57985ba3d2223fa3edd3ff5d9d1f56b5e0a003",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SessionAccepted\",\"messageId\":\"8477ae71-54f7-450d-9d99-73d0470c8b2f\",\"correlationId\":\"4a767b7e-7dc8-40ef-9e8e-bdc339cbe629\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:14.1181794+00:00\",\"payload\":{\"sessionGeneration\":1,\"serverInstanceId\":\"7615c231-bbd9-412a-83af-c8a00372c0db\",\"serverBuildCommit\":\"WORKTREE_BUILD\",\"acceptedProtocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"0.3.0\",\"tag\":\"protocol-v0.3.0\",\"commit\":\"345c53c58517968192c87c3e7777ed08ddb48726\",\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"manifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"schemaBundleSha256\":\"68bfd531c4b9c08bc80f6d9c5a67264891efa200acdb154eb18e1d083bf4ed98\",\"vectorsSha256\":\"bd272b63a1d0663d61c4a38d6e8633d7e7d4f7b561a7915c3df51c7a93bd4576\"},\"acceptedAt\":\"2026-09-10T10:56:14.1180342+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:13.9539127+00:00",
+    "MessageType": "SessionHello",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SessionHello\",\"messageId\":\"4a767b7e-7dc8-40ef-9e8e-bdc339cbe629\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":null,\"sentAt\":\"2026-09-10T10:56:13.8925586\\u002B00:00\",\"payload\":{\"onboardInstanceId\":\"d99585a6-e50a-4bfe-b3ca-beebe61206fe\",\"onboardBuildCommit\":\"FAKE_ONBOARD_WORKTREE_BUILD\",\"supportedProtocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"0.3.0\",\"tag\":\"protocol-v0.3.0\",\"commit\":\"345c53c58517968192c87c3e7777ed08ddb48726\",\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"manifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"schemaBundleSha256\":\"68bfd531c4b9c08bc80f6d9c5a67264891efa200acdb154eb18e1d083bf4ed98\",\"vectorsSha256\":\"bd272b63a1d0663d61c4a38d6e8633d7e7d4f7b561a7915c3df51c7a93bd4576\"},\"credentialProof\":\"[REDACTED]\"}}"
+  },
+  {
+    "MessageId": "e3f0ebd8-fa82-4cab-946e-7f7fa409794d",
+    "ContentHash": "4c8cf37cb576dcfd20d0f7c414f9b905bfc7fdc5cfb6ff233f0d93a30c640885",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"a01845ae-4a09-4911-ab27-263386ca1272\",\"correlationId\":\"e3f0ebd8-fa82-4cab-946e-7f7fa409794d\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:14.1958201+00:00\",\"payload\":{\"snapshotMessageId\":\"e3f0ebd8-fa82-4cab-946e-7f7fa409794d\",\"snapshotKind\":\"CAPABILITY\",\"appliedRevision\":1,\"appliedContentSha256\":\"4c8cf37cb576dcfd20d0f7c414f9b905bfc7fdc5cfb6ff233f0d93a30c640885\"}}",
+    "ReceivedAt": "2026-09-10 10:56:14.1729606+00:00",
+    "MessageType": "CapabilitySnapshot",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"CapabilitySnapshot\",\"messageId\":\"e3f0ebd8-fa82-4cab-946e-7f7fa409794d\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:14.1600382+00:00\",\"payload\":{\"capabilityVersion\":1,\"observedAt\":\"2026-09-10T10:56:14.1590992+00:00\",\"slotModelVersion\":\"fake-slot-model-v1\",\"activeSlotConfigurationVersion\":\"fake-slot-config-v1\",\"slotStates\":[{\"slotNo\":1,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":2,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":3,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":4,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":5,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":6,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":7,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":8,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]}],\"supportsBatchUnlock\":false,\"onboardJournalFormatVersion\":1}}"
+  },
+  {
+    "MessageId": "816c042e-7670-48fb-88c9-f4defa072c50",
+    "ContentHash": "bff9c50d8c3b96ab693022a842344ee8d9cd3f1d2cae6a21671430f5872dda02",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"fd281f7c-536a-4f0e-96bf-fd399f87c01c\",\"correlationId\":\"816c042e-7670-48fb-88c9-f4defa072c50\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:14.2191075+00:00\",\"payload\":{\"snapshotMessageId\":\"816c042e-7670-48fb-88c9-f4defa072c50\",\"snapshotKind\":\"SAFETY_STATE\",\"appliedRevision\":1,\"appliedContentSha256\":\"bff9c50d8c3b96ab693022a842344ee8d9cd3f1d2cae6a21671430f5872dda02\"}}",
+    "ReceivedAt": "2026-09-10 10:56:14.2080098+00:00",
+    "MessageType": "SafetyStateSnapshot",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SafetyStateSnapshot\",\"messageId\":\"816c042e-7670-48fb-88c9-f4defa072c50\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:14.2027425+00:00\",\"payload\":{\"safetyStateVersion\":1,\"observedAt\":\"2026-09-10T10:56:14.2024949+00:00\",\"safety\":{\"departureSafe\":true,\"vehicleStopped\":true,\"allTargetSlotsLocked\":true,\"allUnlockOutputsReset\":true,\"unknownPresent\":false,\"reasonCodes\":[]},\"slotStates\":[{\"slotNo\":1,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":2,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":3,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":4,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":5,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":6,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":7,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]},{\"slotNo\":8,\"operability\":\"OPERABLE\",\"administrativeAvailability\":\"ENABLED\",\"physicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]}]}}"
+  },
+  {
+    "MessageId": "ba825234-1ecc-443c-b1aa-fbfabe98dc3b",
+    "ContentHash": "b9b18dd141156053730e8e311df01eab14cc104ee15ad8521872fb308ad4230c",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"ad2b918c-a62f-4330-bbb9-a8bf802d595a\",\"correlationId\":\"ba825234-1ecc-443c-b1aa-fbfabe98dc3b\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:14.2835542+00:00\",\"payload\":{\"acceptedMessageId\":\"ba825234-1ecc-443c-b1aa-fbfabe98dc3b\",\"acceptedMessageType\":\"RecoveryStateReport\",\"acceptedContentSha256\":\"b9b18dd141156053730e8e311df01eab14cc104ee15ad8521872fb308ad4230c\",\"durablyAcceptedAt\":\"2026-09-10T10:56:14.2834986+00:00\"}}\n{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SessionReadiness\",\"messageId\":\"d6c454ac-d582-4440-8216-6d06a50691ba\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:14.285769+00:00\",\"payload\":{\"readiness\":\"READY\",\"decidedAt\":\"2026-09-10T10:56:14.2856411+00:00\",\"reasonCodes\":[],\"acceptedCapabilityVersion\":1,\"acceptedSafetyStateVersion\":1,\"vehicleBusinessStateRevision\":1}}",
+    "ReceivedAt": "2026-09-10 10:56:14.2263928+00:00",
+    "MessageType": "RecoveryStateReport",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"RecoveryStateReport\",\"messageId\":\"ba825234-1ecc-443c-b1aa-fbfabe98dc3b\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:14.2235846+00:00\",\"payload\":{\"reportId\":\"3d967f15-f6dd-4ada-8a9d-e45c2df688fa\",\"observedAt\":\"2026-09-10T10:56:14.2234702+00:00\",\"unsettledSlotOperationAttemptId\":null,\"provenRecoveryCheckpoint\":\"NONE\",\"activeUnlockSlots\":[],\"forcedRecoveryGeneration\":0,\"pendingResults\":[],\"journalContentSha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}}"
+  },
+  {
+    "MessageId": "0a1fd2a5-bd31-44bd-b642-7704e11e2860",
+    "ContentHash": "92d3bc6b1815330675450fa4953f54018a9b66a3dce5cc8e70c6033f2af405f6",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"HeartbeatAck\",\"messageId\":\"a8eb7b19-bbf9-41a8-a069-268cf7935d8f\",\"correlationId\":\"0a1fd2a5-bd31-44bd-b642-7704e11e2860\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:16.4682092+00:00\",\"payload\":{\"receivedHeartbeatMessageId\":\"0a1fd2a5-bd31-44bd-b642-7704e11e2860\",\"serverTime\":\"2026-09-10T10:56:16.4680318+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:16.3023646+00:00",
+    "MessageType": "Heartbeat",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"Heartbeat\",\"messageId\":\"0a1fd2a5-bd31-44bd-b642-7704e11e2860\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:16.2967954+00:00\",\"payload\":{\"capabilityVersion\":1,\"safetyStateVersion\":1}}"
+  },
+  {
+    "MessageId": "32ccd99e-407f-4a3f-ac92-d7f482926614",
+    "ContentHash": "74db2d0a48b627b9405f5d54301f4ea26117ccaf46929e055ea13363fb347ccd",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:16.4729686+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"32ccd99e-407f-4a3f-ac92-d7f482926614\",\"correlationId\":\"2cc88719-6b81-cb56-b078-f3d6d4e33796\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:16.3741843+00:00\",\"payload\":{\"snapshotMessageId\":\"2cc88719-6b81-cb56-b078-f3d6d4e33796\",\"snapshotKind\":\"VEHICLE_BUSINESS_STATE\",\"appliedRevision\":1,\"appliedContentSha256\":\"c77af3d8af5850245284f65f93144f7dc10b691df1e8b133a37134512b9c2361\"}}"
+  },
+  {
+    "MessageId": "48824907-1a40-4e70-9714-fbdd574865f1",
+    "ContentHash": "d169116c0406232590eb08e42afd677315abfb01bdf67cab3eeec1eb16ae2ee9",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:16.4839627+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"48824907-1a40-4e70-9714-fbdd574865f1\",\"correlationId\":\"a830e17f-4d72-6357-b88c-d5395280a7e3\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:16.383548+00:00\",\"payload\":{\"snapshotMessageId\":\"a830e17f-4d72-6357-b88c-d5395280a7e3\",\"snapshotKind\":\"UPCOMING_STOP_PLAN\",\"appliedRevision\":1,\"appliedContentSha256\":\"cc0c1861fc878a811f768eecb7361c31b8eaa7f13a4c7ac7fe643d02ba485986\"}}"
+  },
+  {
+    "MessageId": "6e326861-9ab3-4826-9ff3-e45b8dcc8915",
+    "ContentHash": "5b2e18abbd1939d4dd0fb4769cbd640eb8b7d22e07a0ebe95e93cfe0ba40e117",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:16.4906246+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"6e326861-9ab3-4826-9ff3-e45b8dcc8915\",\"correlationId\":\"ad63e609-5180-c45d-b01b-ca04cfb0dfac\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:16.4233412+00:00\",\"payload\":{\"snapshotMessageId\":\"ad63e609-5180-c45d-b01b-ca04cfb0dfac\",\"snapshotKind\":\"CURRENT_STOP_WORKLIST\",\"appliedRevision\":1,\"appliedContentSha256\":\"87dc27eb61412864431a7ed408b52aad9a3a4853bf6f3f6ea1b29ef04766d60a\"}}"
+  },
+  {
+    "MessageId": "ee5b1a8a-1f0e-440f-8d69-4ce9ea1be10d",
+    "ContentHash": "45b6772b06e60c7ffa5f3cfe70b8ccfc09e585ec48cf1944b175c070af909842",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"6f370c8d-1e91-4996-b109-7d87b65b3b3f\",\"correlationId\":\"ee5b1a8a-1f0e-440f-8d69-4ce9ea1be10d\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:16.4973974+00:00\",\"payload\":{\"acceptedMessageId\":\"ee5b1a8a-1f0e-440f-8d69-4ce9ea1be10d\",\"acceptedMessageType\":\"SublotSubmitted\",\"acceptedContentSha256\":\"45b6772b06e60c7ffa5f3cfe70b8ccfc09e585ec48cf1944b175c070af909842\",\"durablyAcceptedAt\":\"2026-09-10T10:56:16.4973924+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:16.4962501+00:00",
+    "MessageType": "SublotSubmitted",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SublotSubmitted\",\"messageId\":\"ee5b1a8a-1f0e-440f-8d69-4ce9ea1be10d\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:16.4379452+00:00\",\"payload\":{\"demandId\":\"0b02cf19-e4ef-4ab0-8199-7885f0070c81\",\"operationSessionId\":\"8c20ea89-28e2-9953-999e-802830a9cc2b\",\"stationId\":\"N1-3_N1-7\",\"worklistRevision\":1,\"sublot\":\"L2-MD4-N1-3-20260910T105605292Z\",\"entryMethod\":\"SCANNER\",\"operator\":{\"operatorId\":\"FAKE-ONBOARD-OPERATOR\",\"verificationMethod\":\"BADGE\",\"verifiedAt\":\"2026-09-10T10:56:16.4378416+00:00\"}}}"
+  },
+  {
+    "MessageId": "f46e8274-79d2-42ed-87b1-44a1eeb45d3d",
+    "ContentHash": "7e072ffb2e2e3cb4988338a440715e2e6034db6ade6a27c01d1bfd328706a9a8",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"fd26265a-822d-466d-a0dd-b15847741dbd\",\"correlationId\":\"f46e8274-79d2-42ed-87b1-44a1eeb45d3d\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:17.278338+00:00\",\"payload\":{\"acceptedMessageId\":\"f46e8274-79d2-42ed-87b1-44a1eeb45d3d\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"7e072ffb2e2e3cb4988338a440715e2e6034db6ade6a27c01d1bfd328706a9a8\",\"durablyAcceptedAt\":\"2026-09-10T10:56:17.2783332+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:17.1787395+00:00",
+    "MessageType": "OperationResult",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"OperationResult\",\"messageId\":\"f46e8274-79d2-42ed-87b1-44a1eeb45d3d\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:17.1763912+00:00\",\"payload\":{\"demandId\":\"0b02cf19-e4ef-4ab0-8199-7885f0070c81\",\"slotOperationAttemptId\":\"56fd3729-618e-565e-8200-2ddf1dd58644\",\"operationType\":\"LOAD\",\"overallOutcome\":\"COMPLETED\",\"slotResults\":[{\"slotNo\":1,\"outcome\":\"COMPLETED\",\"finalPhysicalState\":\"OCCUPIED\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]}],\"observedAt\":\"2026-09-10T10:56:17.1729381+00:00\",\"journalCheckpoint\":\"FAKE-ONBOARD-CHECKPOINT\",\"resultContentSha256\":\"88badb6e98a94482799643f4e5bdf29409a37946ea097c133e864d3367e8891a\"}}"
+  },
+  {
+    "MessageId": "d37eddb9-3d6a-46aa-97d1-44125c7006a5",
+    "ContentHash": "cc9d85c59ab4ce6cb3e56387a599087b7acd4eae8951fb75486553d076f5be8c",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"69defbf9-7f64-4fb5-8c3a-7041cddd39c2\",\"correlationId\":\"d37eddb9-3d6a-46aa-97d1-44125c7006a5\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:18.1211522+00:00\",\"payload\":{\"acceptedMessageId\":\"d37eddb9-3d6a-46aa-97d1-44125c7006a5\",\"acceptedMessageType\":\"PreDepartureSafetyCheckResult\",\"acceptedContentSha256\":\"cc9d85c59ab4ce6cb3e56387a599087b7acd4eae8951fb75486553d076f5be8c\",\"durablyAcceptedAt\":\"2026-09-10T10:56:18.1211453+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:18.1199538+00:00",
+    "MessageType": "PreDepartureSafetyCheckResult",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"PreDepartureSafetyCheckResult\",\"messageId\":\"d37eddb9-3d6a-46aa-97d1-44125c7006a5\",\"correlationId\":\"b3365747-3acd-405d-8bdd-a1a0db663bff\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:18.1162247+00:00\",\"payload\":{\"preDepartureSafetyCheckId\":\"b3365747-3acd-405d-8bdd-a1a0db663bff\",\"outcome\":\"SAFE\",\"observedAt\":\"2026-09-10T10:56:18.1161001+00:00\",\"safetyStateVersion\":1,\"validUntil\":\"2026-09-10T10:56:48.1161001+00:00\",\"safety\":{\"departureSafe\":true,\"vehicleStopped\":true,\"allTargetSlotsLocked\":true,\"allUnlockOutputsReset\":true,\"unknownPresent\":false,\"reasonCodes\":[]}}}"
+  },
+  {
+    "MessageId": "f2b9e5d3-5762-4d22-8544-5a26f98b6df1",
+    "ContentHash": "592122930cc5f28f5cf6a0e004bc5bf0dd5657cf4d94cf1826d6c11c0f9fb73c",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"HeartbeatAck\",\"messageId\":\"5f592054-b3b3-452a-a063-50f747aa081d\",\"correlationId\":\"f2b9e5d3-5762-4d22-8544-5a26f98b6df1\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:18.309404+00:00\",\"payload\":{\"receivedHeartbeatMessageId\":\"f2b9e5d3-5762-4d22-8544-5a26f98b6df1\",\"serverTime\":\"2026-09-10T10:56:18.3093995+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:18.3078597+00:00",
+    "MessageType": "Heartbeat",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"Heartbeat\",\"messageId\":\"f2b9e5d3-5762-4d22-8544-5a26f98b6df1\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:18.3068139+00:00\",\"payload\":{\"capabilityVersion\":1,\"safetyStateVersion\":1}}"
+  },
+  {
+    "MessageId": "380dc26e-0a59-43ec-b706-fa9d8d4aa9bd",
+    "ContentHash": "f0f7b2e142106f94ed8744943634774b5dff62044346b8e43aaa57927e4cc2ff",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:19.0966149+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"380dc26e-0a59-43ec-b706-fa9d8d4aa9bd\",\"correlationId\":\"28334750-7b0e-6352-92b7-a1ec9f54cdb1\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:19.0953516+00:00\",\"payload\":{\"snapshotMessageId\":\"28334750-7b0e-6352-92b7-a1ec9f54cdb1\",\"snapshotKind\":\"VEHICLE_BUSINESS_STATE\",\"appliedRevision\":2,\"appliedContentSha256\":\"cbe19e7b1c0ca0caa2c21d039c36f2f0e220480f0e859f75a258adef69e54376\"}}"
+  },
+  {
+    "MessageId": "21521b21-26dc-4a37-a593-754d465f10d8",
+    "ContentHash": "cb873836e45ecc15ccd0c08e87cd7e23c466388651b77e90d0c4f3df832eeefa",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:19.2665867+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"21521b21-26dc-4a37-a593-754d465f10d8\",\"correlationId\":\"7e5c2584-2030-f85e-a0a9-d71b801d04f3\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:19.2656143+00:00\",\"payload\":{\"snapshotMessageId\":\"7e5c2584-2030-f85e-a0a9-d71b801d04f3\",\"snapshotKind\":\"UPCOMING_STOP_PLAN\",\"appliedRevision\":2,\"appliedContentSha256\":\"60bb3992687193214190b932f3b49902aaed51655d4067f31b6d36f55475ea12\"}}"
+  },
+  {
+    "MessageId": "ed97af2d-c6b3-43c4-81b2-54d9bd8aa41e",
+    "ContentHash": "2bdf264e5ea3ee9273363bc86e2996d347b6c90ceda502a15ea89ce3f416686b",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:19.4387698+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"ed97af2d-c6b3-43c4-81b2-54d9bd8aa41e\",\"correlationId\":\"d2c40825-e350-f354-a25c-02cf60eee9b0\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:19.4375345+00:00\",\"payload\":{\"snapshotMessageId\":\"d2c40825-e350-f354-a25c-02cf60eee9b0\",\"snapshotKind\":\"CURRENT_STOP_WORKLIST\",\"appliedRevision\":2,\"appliedContentSha256\":\"0a036c28b8eba4064c8a1ce09771acb42dba9280d514fde1e728db1526fa8dd0\"}}"
+  },
+  {
+    "MessageId": "ce528efe-e88d-4b75-9d23-e686c3d30908",
+    "ContentHash": "2cf7745de312d5fe45a15aeb1714c9b65f3866069704c754923d3598e2050b49",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"17fd2814-6f0c-4788-9abd-d1bdd04bbb64\",\"correlationId\":\"ce528efe-e88d-4b75-9d23-e686c3d30908\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:19.757957+00:00\",\"payload\":{\"acceptedMessageId\":\"ce528efe-e88d-4b75-9d23-e686c3d30908\",\"acceptedMessageType\":\"SublotSubmitted\",\"acceptedContentSha256\":\"2cf7745de312d5fe45a15aeb1714c9b65f3866069704c754923d3598e2050b49\",\"durablyAcceptedAt\":\"2026-09-10T10:56:19.7579341+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:19.6060832+00:00",
+    "MessageType": "SublotSubmitted",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SublotSubmitted\",\"messageId\":\"ce528efe-e88d-4b75-9d23-e686c3d30908\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:19.6051127+00:00\",\"payload\":{\"demandId\":\"2e953413-b0bc-40e1-8a24-82fddfe73bdd\",\"operationSessionId\":\"8c20ea89-28e2-9953-999e-802830a9cc2b\",\"stationId\":\"N2-6\",\"worklistRevision\":2,\"sublot\":\"L2-MD4-N2-6-20260910T105605292Z\",\"entryMethod\":\"SCANNER\",\"operator\":{\"operatorId\":\"FAKE-ONBOARD-OPERATOR\",\"verificationMethod\":\"BADGE\",\"verifiedAt\":\"2026-09-10T10:56:19.6051119+00:00\"}}}"
+  },
+  {
+    "MessageId": "45c712a9-ab85-450e-8805-d4b455a7541e",
+    "ContentHash": "8a1b45032903506d6b17bd4a395c8cb69123efa587a77d47a6291ab731760475",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"f5227c77-8880-4bea-897b-144538a08590\",\"correlationId\":\"45c712a9-ab85-450e-8805-d4b455a7541e\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:20.2420121+00:00\",\"payload\":{\"acceptedMessageId\":\"45c712a9-ab85-450e-8805-d4b455a7541e\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"8a1b45032903506d6b17bd4a395c8cb69123efa587a77d47a6291ab731760475\",\"durablyAcceptedAt\":\"2026-09-10T10:56:20.2420101+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:20.0769576+00:00",
+    "MessageType": "OperationResult",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"OperationResult\",\"messageId\":\"45c712a9-ab85-450e-8805-d4b455a7541e\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:20.076053+00:00\",\"payload\":{\"demandId\":\"2e953413-b0bc-40e1-8a24-82fddfe73bdd\",\"slotOperationAttemptId\":\"3b4e98e7-cd31-ac5e-af64-5c7317fa3ed3\",\"operationType\":\"LOAD\",\"overallOutcome\":\"COMPLETED\",\"slotResults\":[{\"slotNo\":2,\"outcome\":\"COMPLETED\",\"finalPhysicalState\":\"OCCUPIED\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]}],\"observedAt\":\"2026-09-10T10:56:20.0759677+00:00\",\"journalCheckpoint\":\"FAKE-ONBOARD-CHECKPOINT\",\"resultContentSha256\":\"bf70884f2c3f2aba3358b7a14d56666c406087575875cd7a5f860182198ffb41\"}}"
+  },
+  {
+    "MessageId": "a5e2a3dd-0bcf-4aaa-b5a5-3164e6549c72",
+    "ContentHash": "2908e6cd6ca6e8d629326792a6bd558d006213679d18c6384c09e5809c85ca4d",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"HeartbeatAck\",\"messageId\":\"05d1fc3a-b553-4b15-a60d-4f738ae9f6e8\",\"correlationId\":\"a5e2a3dd-0bcf-4aaa-b5a5-3164e6549c72\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:20.2987915+00:00\",\"payload\":{\"receivedHeartbeatMessageId\":\"a5e2a3dd-0bcf-4aaa-b5a5-3164e6549c72\",\"serverTime\":\"2026-09-10T10:56:20.2987871+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:20.2973111+00:00",
+    "MessageType": "Heartbeat",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"Heartbeat\",\"messageId\":\"a5e2a3dd-0bcf-4aaa-b5a5-3164e6549c72\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:20.2961558+00:00\",\"payload\":{\"capabilityVersion\":1,\"safetyStateVersion\":1}}"
+  },
+  {
+    "MessageId": "9cf712bc-c2db-402d-aa5c-598a02faae8f",
+    "ContentHash": "5616ae9564ff9d8e736b7f8278b62c588e472c16d9eb76783072e50a0cea377d",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"38c4361e-e953-420e-ab73-49863f4b1f9a\",\"correlationId\":\"9cf712bc-c2db-402d-aa5c-598a02faae8f\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:21.0841624+00:00\",\"payload\":{\"acceptedMessageId\":\"9cf712bc-c2db-402d-aa5c-598a02faae8f\",\"acceptedMessageType\":\"PreDepartureSafetyCheckResult\",\"acceptedContentSha256\":\"5616ae9564ff9d8e736b7f8278b62c588e472c16d9eb76783072e50a0cea377d\",\"durablyAcceptedAt\":\"2026-09-10T10:56:21.0841599+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:21.0834577+00:00",
+    "MessageType": "PreDepartureSafetyCheckResult",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"PreDepartureSafetyCheckResult\",\"messageId\":\"9cf712bc-c2db-402d-aa5c-598a02faae8f\",\"correlationId\":\"0f5f6528-f11b-eb54-ad9b-fac859741dd4\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:21.0823558+00:00\",\"payload\":{\"preDepartureSafetyCheckId\":\"0f5f6528-f11b-eb54-ad9b-fac859741dd4\",\"outcome\":\"SAFE\",\"observedAt\":\"2026-09-10T10:56:21.0823353+00:00\",\"safetyStateVersion\":1,\"validUntil\":\"2026-09-10T10:56:51.0823353+00:00\",\"safety\":{\"departureSafe\":true,\"vehicleStopped\":true,\"allTargetSlotsLocked\":true,\"allUnlockOutputsReset\":true,\"unknownPresent\":false,\"reasonCodes\":[]}}}"
+  },
+  {
+    "MessageId": "020a409e-13a8-44fc-91d2-4de44ddcfa8e",
+    "ContentHash": "0de04e3008ea87991e3b3624c9f99398c64edae79585478eefcee3790e33ffa4",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:22.085507+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"020a409e-13a8-44fc-91d2-4de44ddcfa8e\",\"correlationId\":\"9f15422d-62eb-1e55-9b7d-2b4fb82f4054\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:22.0845592+00:00\",\"payload\":{\"snapshotMessageId\":\"9f15422d-62eb-1e55-9b7d-2b4fb82f4054\",\"snapshotKind\":\"VEHICLE_BUSINESS_STATE\",\"appliedRevision\":3,\"appliedContentSha256\":\"0f9ebeeb15f6ad644ccbd187af0c36f9711ffaa4c23bb453a305f527ae3b000e\"}}"
+  },
+  {
+    "MessageId": "71c525f1-de56-424f-adf9-9acf506f5201",
+    "ContentHash": "c39c9bca10564ed26e6b59da38ea9505df7e3976990ec8a4ed13b303fe5e4f8d",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:22.2425201+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"71c525f1-de56-424f-adf9-9acf506f5201\",\"correlationId\":\"3f3875e3-ded6-0350-b6ad-507ce38b2251\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:22.0878386+00:00\",\"payload\":{\"snapshotMessageId\":\"3f3875e3-ded6-0350-b6ad-507ce38b2251\",\"snapshotKind\":\"UPCOMING_STOP_PLAN\",\"appliedRevision\":3,\"appliedContentSha256\":\"e5db0fe1d8200f20dd767417fa706b266f4590d080a08564a73fd3083bcb7ed6\"}}"
+  },
+  {
+    "MessageId": "5a3ce6df-60cf-4d90-80a6-e5033aa08742",
+    "ContentHash": "2f333f64c2899046eb632ce829e09ca50a581c0eea1f768011c50e2ea648789a",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:22.2451474+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"5a3ce6df-60cf-4d90-80a6-e5033aa08742\",\"correlationId\":\"f5eb2f2b-841a-1a5d-b439-3acf921e40b7\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:22.0972875+00:00\",\"payload\":{\"snapshotMessageId\":\"f5eb2f2b-841a-1a5d-b439-3acf921e40b7\",\"snapshotKind\":\"CURRENT_STOP_WORKLIST\",\"appliedRevision\":3,\"appliedContentSha256\":\"63937695594cad439b14d1652ad1745bf02a45ead3376631374f5bf831f8425c\"}}"
+  },
+  {
+    "MessageId": "42de1b7a-77b8-4a34-b842-4433c72371c7",
+    "ContentHash": "e816d866d53dd0bd7ad64186a8c34f476d2147376d45763cf6f72a975f631080",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"5f658471-5c5e-4a33-8bc6-ea962e7f78b5\",\"correlationId\":\"42de1b7a-77b8-4a34-b842-4433c72371c7\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:22.2482056+00:00\",\"payload\":{\"acceptedMessageId\":\"42de1b7a-77b8-4a34-b842-4433c72371c7\",\"acceptedMessageType\":\"SublotSubmitted\",\"acceptedContentSha256\":\"e816d866d53dd0bd7ad64186a8c34f476d2147376d45763cf6f72a975f631080\",\"durablyAcceptedAt\":\"2026-09-10T10:56:22.2482034+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:22.2476317+00:00",
+    "MessageType": "SublotSubmitted",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SublotSubmitted\",\"messageId\":\"42de1b7a-77b8-4a34-b842-4433c72371c7\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:22.1008809+00:00\",\"payload\":{\"demandId\":\"26be7607-e703-4e0a-91ea-832e85408dab\",\"operationSessionId\":\"8c20ea89-28e2-9953-999e-802830a9cc2b\",\"stationId\":\"N3-4\",\"worklistRevision\":3,\"sublot\":\"L2-MD4-N3-4-20260910T105605292Z\",\"entryMethod\":\"SCANNER\",\"operator\":{\"operatorId\":\"FAKE-ONBOARD-OPERATOR\",\"verificationMethod\":\"BADGE\",\"verifiedAt\":\"2026-09-10T10:56:22.1008799+00:00\"}}}"
+  },
+  {
+    "MessageId": "7c8d454d-f3c1-4257-a373-c31155cdca3c",
+    "ContentHash": "63ef1c636ecd28ddfd3d69c7905501220aabe5b75706ca078f6eed85172f403f",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"HeartbeatAck\",\"messageId\":\"6f577dbd-0311-490c-8abf-3695e3bd5857\",\"correlationId\":\"7c8d454d-f3c1-4257-a373-c31155cdca3c\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:22.3023971+00:00\",\"payload\":{\"receivedHeartbeatMessageId\":\"7c8d454d-f3c1-4257-a373-c31155cdca3c\",\"serverTime\":\"2026-09-10T10:56:22.3023947+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:22.3012543+00:00",
+    "MessageType": "Heartbeat",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"Heartbeat\",\"messageId\":\"7c8d454d-f3c1-4257-a373-c31155cdca3c\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:22.3003666+00:00\",\"payload\":{\"capabilityVersion\":1,\"safetyStateVersion\":1}}"
+  },
+  {
+    "MessageId": "ab02c216-0fe6-4553-92f3-b4d83683a063",
+    "ContentHash": "d5a20a30885dbd426d06ab51faed6d00a9f2585c90d4eeedb35a403dbf3fe1bb",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"41423cc8-68b0-4f35-a079-508f1ee30e7c\",\"correlationId\":\"ab02c216-0fe6-4553-92f3-b4d83683a063\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:23.248928+00:00\",\"payload\":{\"acceptedMessageId\":\"ab02c216-0fe6-4553-92f3-b4d83683a063\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"d5a20a30885dbd426d06ab51faed6d00a9f2585c90d4eeedb35a403dbf3fe1bb\",\"durablyAcceptedAt\":\"2026-09-10T10:56:23.2489258+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:23.0815072+00:00",
+    "MessageType": "OperationResult",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"OperationResult\",\"messageId\":\"ab02c216-0fe6-4553-92f3-b4d83683a063\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:23.0804685+00:00\",\"payload\":{\"demandId\":\"26be7607-e703-4e0a-91ea-832e85408dab\",\"slotOperationAttemptId\":\"48ff9611-22e0-755c-8b12-f6db82fd46fa\",\"operationType\":\"LOAD\",\"overallOutcome\":\"COMPLETED\",\"slotResults\":[{\"slotNo\":3,\"outcome\":\"COMPLETED\",\"finalPhysicalState\":\"OCCUPIED\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]}],\"observedAt\":\"2026-09-10T10:56:23.0803974+00:00\",\"journalCheckpoint\":\"FAKE-ONBOARD-CHECKPOINT\",\"resultContentSha256\":\"1738984af3b6eb6bdce201482f40f31d2b2b80dcf41c068f7eed15f849d45a03\"}}"
+  },
+  {
+    "MessageId": "e1a369f4-6bd5-4728-8e65-c4223c0b8fb4",
+    "ContentHash": "a41c0eaed3d179bf96d1ce40ec20d8352cd0b11c0faed97fe08c91a88a4baf8f",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"5b2de84b-fd5b-40be-a232-8cc525bc15e2\",\"correlationId\":\"e1a369f4-6bd5-4728-8e65-c4223c0b8fb4\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:24.0788282+00:00\",\"payload\":{\"acceptedMessageId\":\"e1a369f4-6bd5-4728-8e65-c4223c0b8fb4\",\"acceptedMessageType\":\"PreDepartureSafetyCheckResult\",\"acceptedContentSha256\":\"a41c0eaed3d179bf96d1ce40ec20d8352cd0b11c0faed97fe08c91a88a4baf8f\",\"durablyAcceptedAt\":\"2026-09-10T10:56:24.0788255+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:24.0777301+00:00",
+    "MessageType": "PreDepartureSafetyCheckResult",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"PreDepartureSafetyCheckResult\",\"messageId\":\"e1a369f4-6bd5-4728-8e65-c4223c0b8fb4\",\"correlationId\":\"ad5720f0-a542-2159-b3b6-43482168514f\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:24.0768859+00:00\",\"payload\":{\"preDepartureSafetyCheckId\":\"ad5720f0-a542-2159-b3b6-43482168514f\",\"outcome\":\"SAFE\",\"observedAt\":\"2026-09-10T10:56:24.0768656+00:00\",\"safetyStateVersion\":1,\"validUntil\":\"2026-09-10T10:56:54.0768656+00:00\",\"safety\":{\"departureSafe\":true,\"vehicleStopped\":true,\"allTargetSlotsLocked\":true,\"allUnlockOutputsReset\":true,\"unknownPresent\":false,\"reasonCodes\":[]}}}"
+  },
+  {
+    "MessageId": "2788e203-2509-4575-a98a-9078fed8d58d",
+    "ContentHash": "101bd2c53c77e60c77f97199175d950f6f1775827d6cc4f25d37f7da652f2027",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"HeartbeatAck\",\"messageId\":\"3555de8a-620e-4b5f-a3df-86a81b6b7cd5\",\"correlationId\":\"2788e203-2509-4575-a98a-9078fed8d58d\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:24.2994116+00:00\",\"payload\":{\"receivedHeartbeatMessageId\":\"2788e203-2509-4575-a98a-9078fed8d58d\",\"serverTime\":\"2026-09-10T10:56:24.299409+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:24.2979532+00:00",
+    "MessageType": "Heartbeat",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"Heartbeat\",\"messageId\":\"2788e203-2509-4575-a98a-9078fed8d58d\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:24.2967796+00:00\",\"payload\":{\"capabilityVersion\":1,\"safetyStateVersion\":1}}"
+  },
+  {
+    "MessageId": "ccce87a7-5859-444d-8135-44a64883656c",
+    "ContentHash": "4683b3b1c4beaa7b4fdef09922f7c29988221b7bd8b90ca790ade8e7b92a80e7",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:25.0852343+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"ccce87a7-5859-444d-8135-44a64883656c\",\"correlationId\":\"5d5e3177-68da-f155-8430-b3637989e222\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:25.0845075+00:00\",\"payload\":{\"snapshotMessageId\":\"5d5e3177-68da-f155-8430-b3637989e222\",\"snapshotKind\":\"VEHICLE_BUSINESS_STATE\",\"appliedRevision\":4,\"appliedContentSha256\":\"56c7e7038fdce67fcc01d45d5527af9ad6829b6bc49790f05e4f79c9630ff2f3\"}}"
+  },
+  {
+    "MessageId": "3dbe3302-8cdc-47f0-8115-5baefc453180",
+    "ContentHash": "5c8676cd3ed4bbaa68095a3dca519f2c4347c5b9fcb854107bfea01a93ca00eb",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:25.0889408+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"3dbe3302-8cdc-47f0-8115-5baefc453180\",\"correlationId\":\"8355dd3a-34b6-fd56-8184-82fb6f116061\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:25.0865841+00:00\",\"payload\":{\"snapshotMessageId\":\"8355dd3a-34b6-fd56-8184-82fb6f116061\",\"snapshotKind\":\"UPCOMING_STOP_PLAN\",\"appliedRevision\":4,\"appliedContentSha256\":\"6662e21af3823c9ad81c8f2eda44a5d655ef03b48bd49b945aef152e717c29e3\"}}"
+  },
+  {
+    "MessageId": "d4cdd949-8e96-4ba5-a2f6-d002b7eeee47",
+    "ContentHash": "f0acb54d233aea11fb5c5a9cdb0e643cac102c35072019686bdddc41ddee4259",
+    "FirstResponseJson": "",
+    "ReceivedAt": "2026-09-10 10:56:25.2453759+00:00",
+    "MessageType": "SnapshotAppliedAck",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SnapshotAppliedAck\",\"messageId\":\"d4cdd949-8e96-4ba5-a2f6-d002b7eeee47\",\"correlationId\":\"f7389619-b5bc-c05d-bc17-2cc5f4b035e8\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:25.2447652+00:00\",\"payload\":{\"snapshotMessageId\":\"f7389619-b5bc-c05d-bc17-2cc5f4b035e8\",\"snapshotKind\":\"CURRENT_STOP_WORKLIST\",\"appliedRevision\":4,\"appliedContentSha256\":\"e1b6fb7babc1afeef734a496788fdf5b5f7b6bd2a3694b6dc08cedc2f46c0534\"}}"
+  },
+  {
+    "MessageId": "ec23d5e7-682e-4143-9752-67915d2bdfbf",
+    "ContentHash": "d8ff35100023b53e88a187de166a0c6c30d4e0a907fa948ac672843b4bcb1343",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"634f2cef-67cc-47d0-b767-7009e875f5fd\",\"correlationId\":\"ec23d5e7-682e-4143-9752-67915d2bdfbf\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:25.4146295+00:00\",\"payload\":{\"acceptedMessageId\":\"ec23d5e7-682e-4143-9752-67915d2bdfbf\",\"acceptedMessageType\":\"SublotSubmitted\",\"acceptedContentSha256\":\"d8ff35100023b53e88a187de166a0c6c30d4e0a907fa948ac672843b4bcb1343\",\"durablyAcceptedAt\":\"2026-09-10T10:56:25.4146269+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:25.4135918+00:00",
+    "MessageType": "SublotSubmitted",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SublotSubmitted\",\"messageId\":\"ec23d5e7-682e-4143-9752-67915d2bdfbf\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:25.4129141+00:00\",\"payload\":{\"demandId\":\"02df4817-530b-4410-845f-13cc0a72e70b\",\"operationSessionId\":\"8c20ea89-28e2-9953-999e-802830a9cc2b\",\"stationId\":\"N4-2\",\"worklistRevision\":4,\"sublot\":\"L2-MD4-N4-2-20260910T105605292Z\",\"entryMethod\":\"SCANNER\",\"operator\":{\"operatorId\":\"FAKE-ONBOARD-OPERATOR\",\"verificationMethod\":\"BADGE\",\"verifiedAt\":\"2026-09-10T10:56:25.4129132+00:00\"}}}"
+  },
+  {
+    "MessageId": "05d180ab-0578-4fe1-8f11-5b2cd0986442",
+    "ContentHash": "2a0c82d08ddd8880b8c9b40e8a1c77fb70b5f300d6cd573c2aac4ee442692dd8",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"12511b2b-a493-4d90-ba2f-92eba25f38d0\",\"correlationId\":\"05d180ab-0578-4fe1-8f11-5b2cd0986442\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:26.2542161+00:00\",\"payload\":{\"acceptedMessageId\":\"05d180ab-0578-4fe1-8f11-5b2cd0986442\",\"acceptedMessageType\":\"OperationResult\",\"acceptedContentSha256\":\"2a0c82d08ddd8880b8c9b40e8a1c77fb70b5f300d6cd573c2aac4ee442692dd8\",\"durablyAcceptedAt\":\"2026-09-10T10:56:26.254214+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:26.0841285+00:00",
+    "MessageType": "OperationResult",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"OperationResult\",\"messageId\":\"05d180ab-0578-4fe1-8f11-5b2cd0986442\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:26.0832491+00:00\",\"payload\":{\"demandId\":\"02df4817-530b-4410-845f-13cc0a72e70b\",\"slotOperationAttemptId\":\"ef67913e-ec0b-4459-a267-344bf5eeccc9\",\"operationType\":\"LOAD\",\"overallOutcome\":\"COMPLETED\",\"slotResults\":[{\"slotNo\":4,\"outcome\":\"COMPLETED\",\"finalPhysicalState\":\"OCCUPIED\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]}],\"observedAt\":\"2026-09-10T10:56:26.0831724+00:00\",\"journalCheckpoint\":\"FAKE-ONBOARD-CHECKPOINT\",\"resultContentSha256\":\"4330322b6519c4b3a071629dfd663491dde42fee2069f9c2635e79fba0b1fc33\"}}"
+  },
+  {
+    "MessageId": "b0cbc7a5-8942-4e9d-b917-f23ab83e4822",
+    "ContentHash": "fe3a206c12762ba8128378850dda81278c2f0df8dd81bfbbeaccec8bdfa14231",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"HeartbeatAck\",\"messageId\":\"550e2e72-534b-4268-925d-fd60b23bd8f3\",\"correlationId\":\"b0cbc7a5-8942-4e9d-b917-f23ab83e4822\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:26.2987281+00:00\",\"payload\":{\"receivedHeartbeatMessageId\":\"b0cbc7a5-8942-4e9d-b917-f23ab83e4822\",\"serverTime\":\"2026-09-10T10:56:26.2987244+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:26.2969834+00:00",
+    "MessageType": "Heartbeat",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"Heartbeat\",\"messageId\":\"b0cbc7a5-8942-4e9d-b917-f23ab83e4822\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:26.2939336+00:00\",\"payload\":{\"capabilityVersion\":1,\"safetyStateVersion\":1}}"
+  },
+  {
+    "MessageId": "e4fda347-98a5-46fd-812d-63a3a00d1f73",
+    "ContentHash": "0845af818eb557ce870ca2b3d8935f20a04687bcad31118518810d2471c9c9d8",
+    "FirstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"DurableAck\",\"messageId\":\"e941857e-9bb5-4149-90d1-bf339155d283\",\"correlationId\":\"e4fda347-98a5-46fd-812d-63a3a00d1f73\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:27.0837547+00:00\",\"payload\":{\"acceptedMessageId\":\"e4fda347-98a5-46fd-812d-63a3a00d1f73\",\"acceptedMessageType\":\"PreDepartureSafetyCheckResult\",\"acceptedContentSha256\":\"0845af818eb557ce870ca2b3d8935f20a04687bcad31118518810d2471c9c9d8\",\"durablyAcceptedAt\":\"2026-09-10T10:56:27.0837512+00:00\"}}",
+    "ReceivedAt": "2026-09-10 10:56:27.0827304+00:00",
+    "MessageType": "PreDepartureSafetyCheckResult",
+    "RequestJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"PreDepartureSafetyCheckResult\",\"messageId\":\"e4fda347-98a5-46fd-812d-63a3a00d1f73\",\"correlationId\":\"0db5daaf-3c94-4055-90a4-bf9401f5da78\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-10T10:56:27.0818074+00:00\",\"payload\":{\"preDepartureSafetyCheckId\":\"0db5daaf-3c94-4055-90a4-bf9401f5da78\",\"outcome\":\"SAFE\",\"observedAt\":\"2026-09-10T10:56:27.0817892+00:00\",\"safetyStateVersion\":1,\"validUntil\":\"2026-09-10T10:56:57.0817892+00:00\",\"safety\":{\"departureSafe\":true,\"vehicleStopped\":true,\"allTargetSlotsLocked\":true,\"allUnlockOutputsReset\":true,\"unknownPresent\":false,\"reasonCodes\":[]}}}"
+  }
+]

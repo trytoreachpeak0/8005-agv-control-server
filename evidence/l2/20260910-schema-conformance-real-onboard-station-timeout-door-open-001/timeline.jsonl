@@ -1,0 +1,63 @@
+{"at":"2026-09-10T11:13:57.4651015+00:00","note":"L2 run 20260910T111357432Z starting for scenario 'real-onboard-station-timeout-door-open'."}
+{"at":"2026-09-10T11:13:57.4939338+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T11:13:57.6336321+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T11:14:00.0541057+00:00","note":"Reusing cached onboard-hmi publish for 3cf26651111220cec67a370ac5b9f81bc21bd697."}
+{"at":"2026-09-10T11:14:00.1304071+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T11:14:00.1364674+00:00","note":"Peers: onboard-hmi@3cf26651111220cec67a370ac5b9f81bc21bd697, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T11:14:00.8875336+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T11:14:00.9992814+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T11:14:02.7679908+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-10T11:14:02.7877475+00:00","note":"Server settings from real-onboard-station-timeout-door-open.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:01:00"}
+{"at":"2026-09-10T11:14:04.5821451+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T11:14:06.1913301+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T11:14:08.0370761+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-10T11:14:08.0497336+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-10T11:14:08.1298725+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-10T11:14:08.4406252+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T11:14:08.4860276+00:00","note":"Environment is up; entering scenario 'real-onboard-station-timeout-door-open'."}
+{"at":"2026-09-10T11:14:08.5529911+00:00","note":"Publishing demand 5db3b060241a4da59fb92bb90af56851 (sublot L2-SUBLOT-20260910T111357432Z) to the fake MesIngest catalog."}
+{"at":"2026-09-10T11:14:08.6791520+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T11:14:09.3481417+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T11:14:09.3551936+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-10T11:14:09.3620906+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-10T11:14:09.4437192+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-10T11:14:10.2495527+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T11:14:10.3021899+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-10T11:14:10.3057386+00:00","note":"Typing sublot L2-SUBLOT-20260910T111357432Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-10T11:14:10.3726870+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-10T11:14:10.4202305+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-10T11:14:10.4283032+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-10T11:14:10.9628263+00:00","criterion":"load-attempt","value":"c7742546-eefa-1355-b6e5-f75632121c61"}
+{"at":"2026-09-10T11:14:10.9762388+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T11:14:10.9934714+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=c7742546-eefa-1355-b6e5-f75632121c61; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/10/2026 19:14:10}"}
+{"at":"2026-09-10T11:14:11.0031261+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-10T11:14:11.7909271+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-10T11:14:11.8425309+00:00","criterion":"safety-lock-not-closed","value":"[\"LOCK_NOT_CLOSED\"]"}
+{"at":"2026-09-10T11:14:11.8662226+00:00","note":"Waiting for the one-minute station deadline to expire against the open door."}
+{"at":"2026-09-10T11:14:11.8731656+00:00","criterion":"station-timeout-alarm","value":"(none)"}
+{"at":"2026-09-10T11:15:10.7968867+00:00","criterion":"station-timeout-alarm","value":"STATION_TIMEOUT_DOOR_NOT_CLOSED"}
+{"at":"2026-09-10T11:15:10.8210228+00:00","criterion":"runtime-iterations","value":"66"}
+{"at":"2026-09-10T11:15:11.6223787+00:00","criterion":"runtime-iterations","value":"67"}
+{"at":"2026-09-10T11:15:12.6758368+00:00","criterion":"runtime-iterations","value":"68"}
+{"at":"2026-09-10T11:15:13.7344897+00:00","criterion":"runtime-iterations","value":"69"}
+{"at":"2026-09-10T11:15:14.7908855+00:00","criterion":"runtime-iterations","value":"70"}
+{"at":"2026-09-10T11:15:15.8507241+00:00","criterion":"runtime-iterations","value":"71"}
+{"at":"2026-09-10T11:15:16.6423252+00:00","criterion":"runtime-iterations","value":"72"}
+{"at":"2026-09-10T11:15:16.6502317+00:00","note":"Round 1: operator pushes slot 1 shut without putting anything in it."}
+{"at":"2026-09-10T11:15:16.6845793+00:00","criterion":"door-closed-empty-1","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-10T11:15:16.9409928+00:00","criterion":"door-closed-empty-1","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-10T11:15:16.9472011+00:00","criterion":"grace-reopen","value":"1"}
+{"at":"2026-09-10T11:15:17.2206840+00:00","criterion":"grace-reopen","value":"2"}
+{"at":"2026-09-10T11:15:17.2243586+00:00","criterion":"grace-waiting-operator","value":"1"}
+{"at":"2026-09-10T11:15:18.2938003+00:00","criterion":"grace-waiting-operator","value":"2"}
+{"at":"2026-09-10T11:15:18.3054384+00:00","note":"Round 2: operator pushes slot 1 shut without putting anything in it."}
+{"at":"2026-09-10T11:15:18.3188712+00:00","criterion":"door-closed-empty-2","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-10T11:15:18.5742125+00:00","criterion":"door-closed-empty-2","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-10T11:15:18.5970034+00:00","criterion":"determinate-failure","value":"Prepared"}
+{"at":"2026-09-10T11:15:19.1282670+00:00","criterion":"determinate-failure","value":"Failed"}
+{"at":"2026-09-10T11:15:19.1334680+00:00","criterion":"alarm-withdrawn","value":"(none)"}
+{"at":"2026-09-10T11:15:19.1508011+00:00","criterion":"journey-ended","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T11:15:19.9375051+00:00","criterion":"journey-ended","value":"Completed"}
+{"at":"2026-09-10T11:15:19.9392868+00:00","note":"Scenario finished."}
+{"at":"2026-09-10T11:15:20.0298959+00:00","note":"Exported 38 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-10T11:15:37.6239662+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 38 lines, 38 distinct, 10 message types, 0 distinct violations, 0 known; schema compilation 16151 ms."}

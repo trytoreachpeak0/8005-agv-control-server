@@ -1,0 +1,26 @@
+{"at":"2026-09-10T11:01:59.7484056+00:00","note":"L2 run 20260910T110159710Z starting for scenario 'normal-load'."}
+{"at":"2026-09-10T11:01:59.7940910+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T11:01:59.9413434+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T11:02:02.9401779+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T11:02:03.0613272+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T11:02:04.9620618+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T11:02:06.5664751+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T11:02:07.1987342+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-10T11:02:07.2160767+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T11:02:07.2571415+00:00","note":"Environment is up; entering scenario 'normal-load'."}
+{"at":"2026-09-10T11:02:07.2809926+00:00","note":"Publishing demand 662b798278a547929b850d7f0783e579 (sublot L2-SUBLOT-20260910T110159710Z) to the fake MesIngest catalog."}
+{"at":"2026-09-10T11:02:07.3576477+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T11:02:08.4535796+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T11:02:08.4626936+00:00","criterion":"to-pickup-intent","value":"PENDING_RECONCILIATION"}
+{"at":"2026-09-10T11:02:08.7226042+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-10T11:02:08.7377854+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-10T11:02:08.8153317+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-10T11:02:09.3559915+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-10T11:02:10.1453787+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T11:02:11.1986397+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T11:02:11.2035025+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-09-10T11:02:11.2215751+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-10T11:02:12.5430889+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-10T11:02:13.0713865+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-10T11:02:13.0788995+00:00","note":"Scenario finished."}
+{"at":"2026-09-10T11:02:32.0921327+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 17 lines, 17 distinct, 9 message types, 0 distinct violations, 0 known; schema compilation 17925 ms."}

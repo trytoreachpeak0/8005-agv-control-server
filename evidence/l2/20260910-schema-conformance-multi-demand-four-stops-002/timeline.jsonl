@@ -1,0 +1,49 @@
+{"at":"2026-09-10T11:03:10.8123259+00:00","note":"L2 run 20260910T110310766Z starting for scenario 'multi-demand-four-stops'."}
+{"at":"2026-09-10T11:03:10.8536782+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T11:03:11.0546791+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T11:03:13.4578482+00:00","note":"Extra map stations from multi-demand-four-stops.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2"}
+{"at":"2026-09-10T11:03:14.2974220+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T11:03:14.4393486+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T11:03:16.5427176+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T11:03:18.1715795+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T11:03:18.8095674+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-10T11:03:18.8250113+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T11:03:18.8567455+00:00","note":"Environment is up; entering scenario 'multi-demand-four-stops'."}
+{"at":"2026-09-10T11:03:18.8825356+00:00","note":"Publishing demand L2-MD4-N1-3-20260910T110310766Z in area N1-3."}
+{"at":"2026-09-10T11:03:18.9269603+00:00","note":"Publishing demand L2-MD4-N2-6-20260910T110310766Z in area N2-6."}
+{"at":"2026-09-10T11:03:18.9372796+00:00","note":"Publishing demand L2-MD4-N3-4-20260910T110310766Z in area N3-4."}
+{"at":"2026-09-10T11:03:18.9434765+00:00","note":"Publishing demand L2-MD4-N4-2-20260910T110310766Z in area N4-2."}
+{"at":"2026-09-10T11:03:18.9804006+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-10T11:03:20.3020969+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T11:03:20.3174074+00:00","criterion":"stop-1-order","value":"(null)"}
+{"at":"2026-09-10T11:03:20.5932432+00:00","criterion":"stop-1-order","value":"W2G-035e8cf7-01dc-a959-9993-fc1ca13a303d-S1-1"}
+{"at":"2026-09-10T11:03:20.6012464+00:00","note":"Vehicle drives to stop 1 (station N1-3_N1-7 / 12)."}
+{"at":"2026-09-10T11:03:20.6939941+00:00","criterion":"journey-stops","value":"2"}
+{"at":"2026-09-10T11:03:21.2252695+00:00","criterion":"journey-stops","value":"5"}
+{"at":"2026-09-10T11:03:21.2511754+00:00","criterion":"stop-plan-legs","value":"0"}
+{"at":"2026-09-10T11:03:21.5108344+00:00","criterion":"stop-plan-legs","value":"5"}
+{"at":"2026-09-10T11:03:21.5209378+00:00","note":"=== Stop 1 : station N1-3_N1-7 (12) ==="}
+{"at":"2026-09-10T11:03:21.5235471+00:00","criterion":"stop-1-committed","value":"0"}
+{"at":"2026-09-10T11:03:22.0385850+00:00","criterion":"stop-1-committed","value":"1"}
+{"at":"2026-09-10T11:03:22.0417294+00:00","note":"=== Stop 2 : station N2-6 (13) ==="}
+{"at":"2026-09-10T11:03:22.0493970+00:00","criterion":"stop-2-order","value":"(null)"}
+{"at":"2026-09-10T11:03:22.8466441+00:00","criterion":"stop-2-order","value":"W2G-035e8cf7-01dc-a959-9993-fc1ca13a303d-S2-1"}
+{"at":"2026-09-10T11:03:22.8486057+00:00","note":"Vehicle drives to stop 2 (station N2-6 / 13)."}
+{"at":"2026-09-10T11:03:22.8722002+00:00","criterion":"stop-2-committed","value":"1"}
+{"at":"2026-09-10T11:03:24.9587477+00:00","criterion":"stop-2-committed","value":"2"}
+{"at":"2026-09-10T11:03:24.9607070+00:00","note":"=== Stop 3 : station N3-4 (14) ==="}
+{"at":"2026-09-10T11:03:24.9694631+00:00","criterion":"stop-3-order","value":"(null)"}
+{"at":"2026-09-10T11:03:26.0275788+00:00","criterion":"stop-3-order","value":"W2G-035e8cf7-01dc-a959-9993-fc1ca13a303d-S3-1"}
+{"at":"2026-09-10T11:03:26.0291966+00:00","note":"Vehicle drives to stop 3 (station N3-4 / 14)."}
+{"at":"2026-09-10T11:03:26.0612221+00:00","criterion":"stop-3-committed","value":"2"}
+{"at":"2026-09-10T11:03:27.8918426+00:00","criterion":"stop-3-committed","value":"3"}
+{"at":"2026-09-10T11:03:27.8936034+00:00","note":"=== Stop 4 : station N4-2 (15) ==="}
+{"at":"2026-09-10T11:03:27.9014931+00:00","criterion":"stop-4-order","value":"(null)"}
+{"at":"2026-09-10T11:03:28.9611499+00:00","criterion":"stop-4-order","value":"W2G-035e8cf7-01dc-a959-9993-fc1ca13a303d-S4-1"}
+{"at":"2026-09-10T11:03:28.9626478+00:00","note":"Vehicle drives to stop 4 (station N4-2 / 15)."}
+{"at":"2026-09-10T11:03:28.9908124+00:00","criterion":"stop-4-committed","value":"3"}
+{"at":"2026-09-10T11:03:30.8353108+00:00","criterion":"stop-4-committed","value":"4"}
+{"at":"2026-09-10T11:03:30.8383042+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T11:03:31.8928400+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T11:03:31.9001478+00:00","note":"Scenario finished."}
+{"at":"2026-09-10T11:03:50.9873420+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 34 lines, 34 distinct, 9 message types, 0 distinct violations, 0 known; schema compilation 17919 ms."}

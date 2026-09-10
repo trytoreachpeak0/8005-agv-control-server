@@ -1,0 +1,104 @@
+{"at":"2026-09-10T11:06:45.5512589+00:00","note":"L2 run 20260910T110645518Z starting for scenario 'real-onboard-multi-demand-stop-plan'."}
+{"at":"2026-09-10T11:06:45.5767283+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T11:06:45.7129867+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T11:06:48.3132397+00:00","note":"Reusing cached onboard-hmi publish for 3cf26651111220cec67a370ac5b9f81bc21bd697."}
+{"at":"2026-09-10T11:06:48.3823205+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T11:06:48.3864603+00:00","note":"Peers: onboard-hmi@3cf26651111220cec67a370ac5b9f81bc21bd697, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T11:06:48.4089426+00:00","note":"Extra map stations from real-onboard-multi-demand-stop-plan.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2"}
+{"at":"2026-09-10T11:06:49.1511248+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T11:06:49.2898476+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T11:06:51.1065384+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-10T11:06:53.0252691+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T11:06:54.6441550+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T11:06:56.7529943+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-10T11:06:56.7692137+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-10T11:06:56.8381342+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-10T11:06:57.1356854+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T11:06:57.1893792+00:00","note":"Environment is up; entering scenario 'real-onboard-multi-demand-stop-plan'."}
+{"at":"2026-09-10T11:06:57.3991503+00:00","note":"Publishing demand L2-MDS-N1-3-20260910T110645518Z in area N1-3."}
+{"at":"2026-09-10T11:06:57.4815173+00:00","note":"Publishing demand L2-MDS-N2-6-20260910T110645518Z in area N2-6."}
+{"at":"2026-09-10T11:06:57.4928199+00:00","note":"Publishing demand L2-MDS-N3-4-20260910T110645518Z in area N3-4."}
+{"at":"2026-09-10T11:06:57.5017833+00:00","note":"Publishing demand L2-MDS-N4-2-20260910T110645518Z in area N4-2."}
+{"at":"2026-09-10T11:06:57.5671968+00:00","criterion":"journey-dispatched","value":"(no journey)"}
+{"at":"2026-09-10T11:06:58.9078898+00:00","criterion":"journey-dispatched","value":"1/AwaitingPickupArrival"}
+{"at":"2026-09-10T11:06:58.9460299+00:00","criterion":"stop-1-order","value":"W2G-674b9659-ec68-be54-9eac-c7e97d7f2cd3-S1-1"}
+{"at":"2026-09-10T11:06:58.9763069+00:00","note":"Vehicle drives to stop 1 (RIoT station 12)."}
+{"at":"2026-09-10T11:06:59.0537980+00:00","criterion":"journey-stops","value":"2"}
+{"at":"2026-09-10T11:06:59.3196243+00:00","criterion":"journey-stops","value":"4"}
+{"at":"2026-09-10T11:06:59.5855837+00:00","criterion":"journey-stops","value":"5"}
+{"at":"2026-09-10T11:06:59.6322773+00:00","criterion":"stop-plan-legs","value":"5"}
+{"at":"2026-09-10T11:06:59.6544094+00:00","criterion":"stop-1-awaiting-sublot","value":"1/AwaitingSublot"}
+{"at":"2026-09-10T11:06:59.6737982+00:00","note":"=== Stop 1: L2-MDS-N1-3-20260910T110645518Z ==="}
+{"at":"2026-09-10T11:06:59.7311570+00:00","criterion":"stop-1-can-submit","value":"True"}
+{"at":"2026-09-10T11:06:59.8164340+00:00","criterion":"stop-1-submit-ready","value":"True"}
+{"at":"2026-09-10T11:06:59.8824249+00:00","criterion":"stop-1-load-attempt","value":"(null)"}
+{"at":"2026-09-10T11:07:00.4074278+00:00","criterion":"stop-1-load-attempt","value":"d7e00af0-f7fe-105d-8c62-7f649d6c6e66"}
+{"at":"2026-09-10T11:07:00.4425335+00:00","criterion":"stop-1-unlocking","value":"@{slotOperationAttemptId=d7e00af0-f7fe-105d-8c62-7f649d6c6e66; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/10/2026 19:07:00}"}
+{"at":"2026-09-10T11:07:00.5026481+00:00","criterion":"stop-1-slot-1-open","value":"OPEN/EMPTY/0/1"}
+{"at":"2026-09-10T11:07:01.0436341+00:00","criterion":"stop-1-slot-1-open","value":"OPEN/EMPTY/0/0"}
+{"at":"2026-09-10T11:07:01.0452667+00:00","note":"Operator puts cargo in slot 1 and closes the door."}
+{"at":"2026-09-10T11:07:01.0961269+00:00","criterion":"stop-1-slot-1-loaded","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-10T11:07:01.3531200+00:00","criterion":"stop-1-slot-1-loaded","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-10T11:07:01.3590215+00:00","criterion":"stop-1-committed","value":"0"}
+{"at":"2026-09-10T11:07:01.9108116+00:00","criterion":"stop-1-committed","value":"1"}
+{"at":"2026-09-10T11:07:01.9141736+00:00","criterion":"stop-2-order","value":"(null)"}
+{"at":"2026-09-10T11:07:02.4400386+00:00","criterion":"stop-2-order","value":"W2G-674b9659-ec68-be54-9eac-c7e97d7f2cd3-S2-1"}
+{"at":"2026-09-10T11:07:02.4440187+00:00","note":"Vehicle drives to stop 2 (RIoT station 13)."}
+{"at":"2026-09-10T11:07:02.4799314+00:00","criterion":"stop-2-awaiting-sublot","value":"2/AwaitingPickupArrival"}
+{"at":"2026-09-10T11:07:03.5280193+00:00","criterion":"stop-2-awaiting-sublot","value":"2/AwaitingSublot"}
+{"at":"2026-09-10T11:07:03.5309562+00:00","note":"=== Stop 2: L2-MDS-N2-6-20260910T110645518Z ==="}
+{"at":"2026-09-10T11:07:03.5633586+00:00","criterion":"stop-2-can-submit","value":"True"}
+{"at":"2026-09-10T11:07:03.6320862+00:00","criterion":"stop-2-submit-ready","value":"True"}
+{"at":"2026-09-10T11:07:03.6620924+00:00","criterion":"stop-2-load-attempt","value":"(null)"}
+{"at":"2026-09-10T11:07:04.1923057+00:00","criterion":"stop-2-load-attempt","value":"19ff6333-2a74-e452-9045-96fc5cce8039"}
+{"at":"2026-09-10T11:07:04.2004233+00:00","criterion":"stop-2-unlocking","value":"(null)"}
+{"at":"2026-09-10T11:07:04.4734324+00:00","criterion":"stop-2-unlocking","value":"@{slotOperationAttemptId=19ff6333-2a74-e452-9045-96fc5cce8039; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/10/2026 19:07:04}"}
+{"at":"2026-09-10T11:07:04.4811314+00:00","criterion":"stop-2-slot-2-open","value":"OPEN/EMPTY/0/1"}
+{"at":"2026-09-10T11:07:04.7548976+00:00","criterion":"stop-2-slot-2-open","value":"OPEN/EMPTY/0/0"}
+{"at":"2026-09-10T11:07:04.7563427+00:00","note":"Operator puts cargo in slot 2 and closes the door."}
+{"at":"2026-09-10T11:07:04.7940200+00:00","criterion":"stop-2-slot-2-loaded","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-10T11:07:05.0612414+00:00","criterion":"stop-2-slot-2-loaded","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-10T11:07:05.0631609+00:00","criterion":"stop-2-committed","value":"1"}
+{"at":"2026-09-10T11:07:05.6011659+00:00","criterion":"stop-2-committed","value":"2"}
+{"at":"2026-09-10T11:07:05.6033103+00:00","criterion":"stop-3-order","value":"(null)"}
+{"at":"2026-09-10T11:07:06.3923706+00:00","criterion":"stop-3-order","value":"W2G-674b9659-ec68-be54-9eac-c7e97d7f2cd3-S3-1"}
+{"at":"2026-09-10T11:07:06.3952463+00:00","note":"Vehicle drives to stop 3 (RIoT station 14)."}
+{"at":"2026-09-10T11:07:06.4284226+00:00","criterion":"stop-3-awaiting-sublot","value":"3/AwaitingPickupArrival"}
+{"at":"2026-09-10T11:07:07.2092266+00:00","criterion":"stop-3-awaiting-sublot","value":"3/AwaitingSublot"}
+{"at":"2026-09-10T11:07:07.2112366+00:00","note":"=== Stop 3: L2-MDS-N3-4-20260910T110645518Z ==="}
+{"at":"2026-09-10T11:07:07.2384711+00:00","criterion":"stop-3-can-submit","value":"True"}
+{"at":"2026-09-10T11:07:07.2972698+00:00","criterion":"stop-3-submit-ready","value":"True"}
+{"at":"2026-09-10T11:07:07.3293860+00:00","criterion":"stop-3-load-attempt","value":"(null)"}
+{"at":"2026-09-10T11:07:08.3815703+00:00","criterion":"stop-3-load-attempt","value":"beff2eec-0763-3c52-8a8f-c26b644c8ef3"}
+{"at":"2026-09-10T11:07:08.3865009+00:00","criterion":"stop-3-unlocking","value":"@{slotOperationAttemptId=beff2eec-0763-3c52-8a8f-c26b644c8ef3; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/10/2026 19:07:08}"}
+{"at":"2026-09-10T11:07:08.4154040+00:00","criterion":"stop-3-slot-3-open","value":"OPEN/EMPTY/0/1"}
+{"at":"2026-09-10T11:07:08.9410931+00:00","criterion":"stop-3-slot-3-open","value":"OPEN/EMPTY/0/0"}
+{"at":"2026-09-10T11:07:08.9430946+00:00","note":"Operator puts cargo in slot 3 and closes the door."}
+{"at":"2026-09-10T11:07:08.9667605+00:00","criterion":"stop-3-slot-3-loaded","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-10T11:07:09.2326343+00:00","criterion":"stop-3-slot-3-loaded","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-10T11:07:09.2342470+00:00","criterion":"stop-3-committed","value":"2"}
+{"at":"2026-09-10T11:07:09.7562751+00:00","criterion":"stop-3-committed","value":"3"}
+{"at":"2026-09-10T11:07:09.7582385+00:00","criterion":"stop-4-order","value":"(null)"}
+{"at":"2026-09-10T11:07:10.2838424+00:00","criterion":"stop-4-order","value":"W2G-674b9659-ec68-be54-9eac-c7e97d7f2cd3-S4-1"}
+{"at":"2026-09-10T11:07:10.2857815+00:00","note":"Vehicle drives to stop 4 (RIoT station 15)."}
+{"at":"2026-09-10T11:07:10.3092550+00:00","criterion":"stop-4-awaiting-sublot","value":"4/AwaitingPickupArrival"}
+{"at":"2026-09-10T11:07:11.3581825+00:00","criterion":"stop-4-awaiting-sublot","value":"4/AwaitingSublot"}
+{"at":"2026-09-10T11:07:11.3600363+00:00","note":"=== Stop 4: L2-MDS-N4-2-20260910T110645518Z ==="}
+{"at":"2026-09-10T11:07:11.3844932+00:00","criterion":"stop-4-can-submit","value":"True"}
+{"at":"2026-09-10T11:07:11.4323968+00:00","criterion":"stop-4-submit-ready","value":"True"}
+{"at":"2026-09-10T11:07:11.4561550+00:00","criterion":"stop-4-load-attempt","value":"(null)"}
+{"at":"2026-09-10T11:07:12.2421150+00:00","criterion":"stop-4-load-attempt","value":"33f9cda8-8a65-8a5f-97cd-50aeefeac22b"}
+{"at":"2026-09-10T11:07:12.2461615+00:00","criterion":"stop-4-unlocking","value":"@{slotOperationAttemptId=33f9cda8-8a65-8a5f-97cd-50aeefeac22b; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/10/2026 19:07:12}"}
+{"at":"2026-09-10T11:07:12.2569187+00:00","criterion":"stop-4-slot-4-open","value":"OPEN/EMPTY/1/1"}
+{"at":"2026-09-10T11:07:12.5240561+00:00","criterion":"stop-4-slot-4-open","value":"OPEN/EMPTY/0/1"}
+{"at":"2026-09-10T11:07:12.7872298+00:00","criterion":"stop-4-slot-4-open","value":"OPEN/EMPTY/0/0"}
+{"at":"2026-09-10T11:07:12.7884109+00:00","note":"Operator puts cargo in slot 4 and closes the door."}
+{"at":"2026-09-10T11:07:12.8074554+00:00","criterion":"stop-4-slot-4-loaded","value":"CLOSED/OCCUPIED/0/0"}
+{"at":"2026-09-10T11:07:13.0671105+00:00","criterion":"stop-4-slot-4-loaded","value":"CLOSED/OCCUPIED/1/0"}
+{"at":"2026-09-10T11:07:13.0691945+00:00","criterion":"stop-4-committed","value":"3"}
+{"at":"2026-09-10T11:07:13.5938323+00:00","criterion":"stop-4-committed","value":"4"}
+{"at":"2026-09-10T11:07:13.6091936+00:00","criterion":"journey-to-gate","value":"AwaitingLoadResult"}
+{"at":"2026-09-10T11:07:14.4024524+00:00","criterion":"journey-to-gate","value":"AwaitingGateArrival"}
+{"at":"2026-09-10T11:07:14.4217627+00:00","note":"Scenario finished."}
+{"at":"2026-09-10T11:07:14.5172883+00:00","note":"Exported 70 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-10T11:07:36.0953149+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 70 lines, 70 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 20030 ms."}

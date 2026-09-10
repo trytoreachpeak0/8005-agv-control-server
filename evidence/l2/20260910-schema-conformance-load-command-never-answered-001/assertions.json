@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-command-never-answered",
+  "runId": "20260910T105815161Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "02af63730e5f0b5c1520f2240bf41867000b4b2f",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260910T105815161Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-LN-01",
+      "description": "装载指令已下发，旅程在等结果",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult",
+      "actual": "AwaitingLoadResult"
+    },
+    {
+      "id": "L2-LN-02",
+      "description": "旅程仍停在 AwaitingLoadResult（没有进 Blocked）",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult",
+      "actual": "AwaitingLoadResult"
+    },
+    {
+      "id": "L2-LN-03",
+      "description": "没有阻塞原因码（Blocked 与「没有结果」是两种状态）",
+      "outcome": "PASS",
+      "expected": "(none)",
+      "actual": "(none)"
+    },
+    {
+      "id": "L2-LN-04",
+      "description": "装载操作停在 Prepared（不是 RecoveryRequired，也不是 Committed）",
+      "outcome": "PASS",
+      "expected": "Prepared",
+      "actual": "Prepared"
+    },
+    {
+      "id": "L2-LN-05",
+      "description": "需求仍是 Accepted（既没成功，也没转恢复）",
+      "outcome": "PASS",
+      "expected": "Accepted",
+      "actual": "Accepted"
+    },
+    {
+      "id": "L2-LN-06",
+      "description": "未结的装载指令在被持续重放（不是发一次就忘）",
+      "outcome": "PASS",
+      "expected": "> 1",
+      "actual": 5
+    },
+    {
+      "id": "L2-LN-07",
+      "description": "重放用的是同一条命令身份（对端只有一条待答请求）",
+      "outcome": "PASS",
+      "expected": "operation:bf50fff6-9d7b-4654-9b42-0b42be938306",
+      "actual": "operation:bf50fff6-9d7b-4654-9b42-0b42be938306"
+    },
+    {
+      "id": "L2-LN-08",
+      "description": "每次重放都是同一个 messageId（不是每轮新造一条命令）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-LN-09",
+      "description": "没有装载结果就不建 TO_GATE 单",
+      "outcome": "PASS",
+      "expected": "(none)",
+      "actual": "(none)"
+    },
+    {
+      "id": "L2-LN-10",
+      "description": "没有为关卡段派过车（RIoT 单仍只有一条）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-LN-11",
+      "description": "没有下发出发前安全检查",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（合成对端发出的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 11 lines, 11 distinct, 7 message types, 0 distinct violations, 0 known; schema compilation 14712 ms."
+    }
+  ]
+}

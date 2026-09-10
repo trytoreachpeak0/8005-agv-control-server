@@ -1,0 +1,36 @@
+{"at":"2026-09-10T11:15:38.2651162+00:00","note":"L2 run 20260910T111538227Z starting for scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-10T11:15:38.2960371+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T11:15:38.4476508+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-10T11:15:40.7910971+00:00","note":"Reusing cached onboard-hmi publish for 3cf26651111220cec67a370ac5b9f81bc21bd697."}
+{"at":"2026-09-10T11:15:40.8664088+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T11:15:40.8698544+00:00","note":"Peers: onboard-hmi@3cf26651111220cec67a370ac5b9f81bc21bd697, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-10T11:15:41.6485140+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T11:15:41.7839800+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T11:15:43.5654557+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-10T11:15:45.3911769+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T11:15:46.4874697+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T11:15:47.1920192+00:00","criterion":"skew-proxy-live","value":"live"}
+{"at":"2026-09-10T11:15:47.1950612+00:00","note":"Clock skew proxy forwarding vehicle-safety with observedAt +100ms."}
+{"at":"2026-09-10T11:15:49.1526914+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-10T11:15:49.1687068+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-10T11:15:49.2722193+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-10T11:15:49.5456373+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T11:15:49.5958088+00:00","note":"Environment is up; entering scenario 'real-onboard-clock-skew'."}
+{"at":"2026-09-10T11:15:49.7546552+00:00","note":"Pushing observedAt skew to 3000ms, beyond the onboard's tolerance."}
+{"at":"2026-09-10T11:15:49.8296734+00:00","criterion":"session-readiness","value":"Ready/READY"}
+{"at":"2026-09-10T11:15:50.6323664+00:00","criterion":"session-readiness","value":"RecoveryRequired/DEPARTURE_SAFETY_NOT_READY"}
+{"at":"2026-09-10T11:15:50.6346828+00:00","note":"Publishing demand 987b2582058d432ea2f8062cc2c7216a now that the session has degraded."}
+{"at":"2026-09-10T11:15:50.6949369+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-10T11:15:51.4710752+00:00","criterion":"backlog-reason","value":"ONBOARD_FACTS_NOT_READY"}
+{"at":"2026-09-10T11:15:51.5321355+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-10T11:15:52.3437477+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-10T11:15:53.3971903+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-10T11:15:54.4520307+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-10T11:15:55.5116805+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-10T11:15:55.5180763+00:00","note":"Bringing the skew back to 100ms; the onboard must recover on its own."}
+{"at":"2026-09-10T11:15:57.3872195+00:00","criterion":"backlog-reason","value":"ELIGIBLE"}
+{"at":"2026-09-10T11:15:57.9149069+00:00","criterion":"backlog-reason","value":"ACCEPTED"}
+{"at":"2026-09-10T11:15:57.9467394+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-10T11:15:57.9497378+00:00","note":"Scenario finished."}
+{"at":"2026-09-10T11:15:58.0483419+00:00","note":"Exported 8 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-10T11:16:12.4624001+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 8 lines, 8 distinct, 6 message types, 0 distinct violations, 0 known; schema compilation 13259 ms."}
