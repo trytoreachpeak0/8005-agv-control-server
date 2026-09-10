@@ -134,7 +134,14 @@ $operationKey = Wait-L2Condition -Description 'the load command reached the peer
     -Journal $journal -Criterion 'pending-operation' -TimeoutSeconds 120 `
     -Probe { Get-PendingOperationKey } -Until { param($v) $null -ne $v }
 
-$stage = Get-Stage $demandId
+# 等，不是读一次。服务端在同一轮迭代里先把装载指令发出去（发件箱先落库，再上线），迭代末尾才把 stage 写成
+# AwaitingLoadResult 并保存——所以车载端看到指令的那一刻，库里可能还是 AwaitingSublot。2026-09-10 CI run
+# 34461279984 就读在了这两步之间（evidence/l2/20260910-ci-34461279984-load-result-requires-recovery-01），
+# 本机同一 commit 连跑三次都读不到那个窗口。等待不会放过任何真错误：车载端没有应答之前，旅程只可能停在
+# AwaitingLoadResult，停不在别处。
+$stage = Wait-L2Condition -Description 'the journey recorded that it is waiting for the load result' `
+    -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 30 `
+    -Probe { Get-Stage $demandId } -Until { param($v) $v -eq 'AwaitingLoadResult' }
 $assertions.Add(
     'L2-LR-01', '装载指令已下发，旅程在等结果',
     ($stage -eq 'AwaitingLoadResult'), 'AwaitingLoadResult', $stage)
