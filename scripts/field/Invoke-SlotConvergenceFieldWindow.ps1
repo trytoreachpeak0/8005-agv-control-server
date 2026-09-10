@@ -89,6 +89,24 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+# Every path parameter is made absolute against $PWD before anything touches it. PowerShell's
+# cmdlets resolve a relative path against $PWD while .NET's file APIs resolve it against the
+# process's own current directory, and Set-Location moves only the first. This script uses both
+# -- New-Item to create the directories, [IO.File]::WriteAllText to write into them -- so a
+# relative -EvidenceRoot creates the tree in one place and writes to another, which surfaces as
+# "could not find a part of the path" naming a directory that was just created successfully.
+function Resolve-AbsolutePath {
+    param([string]$Path)
+    if (-not $Path) { return $Path }
+    return [IO.Path]::GetFullPath([IO.Path]::Combine($PWD.ProviderPath, $Path))
+}
+
+$EvidenceRoot = Resolve-AbsolutePath $EvidenceRoot
+$StageRoot = Resolve-AbsolutePath $StageRoot
+if ($RecordPath) { $RecordPath = Resolve-AbsolutePath $RecordPath }
+if ($DatabaseSnapshot) { $DatabaseSnapshot = Resolve-AbsolutePath $DatabaseSnapshot }
+if ($HostDirectory) { $HostDirectory = Resolve-AbsolutePath $HostDirectory }
+
 Import-Module (Join-Path $Repository 'scripts/l2/L2.psm1') -Force
 
 $windowId = 'FW-SC1'
@@ -132,7 +150,11 @@ function Add-TimelineEvent {
 function Write-Json {
     param([string]$Path, [object]$Value)
 
-    [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 16), [Text.UTF8Encoding]::new($false))
+    # An empty array pipes nothing into ConvertTo-Json, which yields $null and writes a zero-byte
+    # file -- the one shape the "every table is written even when empty" rule exists to avoid, since
+    # a zero-byte file parses as neither "[]" nor anything else and reads as a truncated write.
+    $json = ($Value | ConvertTo-Json -Depth 16) ?? '[]'
+    [IO.File]::WriteAllText($Path, $json, [Text.UTF8Encoding]::new($false))
 }
 
 # --- collection ---------------------------------------------------------------------------------
@@ -176,6 +198,28 @@ if ($DatabaseSnapshot) {
     New-Item -ItemType Directory -Path $onboardLogs -Force | Out-Null
     & scp -q -r "${VehicleHost}:$VehicleLogDirectory/*" $onboardLogs 2>&1 |
         Tee-Object -FilePath (Join-Path $logRoot "$sequence-scp-onboard-logs.log") -Append | Out-Null
+    # The server's own log, tailed rather than copied whole -- it is a day-long ndjson and the
+    # interesting part is always the last few minutes. When a field window goes wrong this is the
+    # first scene: the database says what state things ended in, the log says what threw.
+    # Sent as an encoded command rather than an inline quoted string. Nesting PowerShell quoting
+    # inside ssh inside PowerShell is where this silently produced nothing the first time: the
+    # remote saw a mangled command, wrote nothing to stdout, and the checkpoint looked complete.
+    $serverLogPath = Join-Path $checkpointDirectory 'controlserver-tail.ndjson'
+    $tailScript = @'
+$f = Get-ChildItem 'C:\ProgramData\8005\ControlServer\logs' -Filter 'controlserver-*.ndjson' |
+    Sort-Object LastWriteTime | Select-Object -Last 1
+if ($f) { Get-Content -LiteralPath $f.FullName -Tail 800 }
+'@
+    $encodedTail = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($tailScript))
+    $tail = & ssh $ServerHost "pwsh -NoProfile -EncodedCommand $encodedTail" 2>$null
+    if ($tail) {
+        [IO.File]::WriteAllText($serverLogPath, (($tail -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+    } else {
+        Add-TimelineEvent -Kind 'server-log-absent' -Data @{
+            sequence = $sequence; source = "${ServerHost}:C:\ProgramData\8005\ControlServer\logs"
+        }
+    }
+
     $onboardLogCount = @(Get-ChildItem -LiteralPath $onboardLogs -Recurse -File -ErrorAction SilentlyContinue).Count
     if ($onboardLogCount -eq 0) {
         Add-TimelineEvent -Kind 'onboard-logs-absent' -Data @{
