@@ -1,0 +1,5 @@
+Schema conformance (protocol-v0.3.0): 69 lines, 31 distinct, 13 message types, 0 distinct violations, 2 known; schema compilation 35922 ms.
+KNOWN SCHEMA VIOLATION (https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8) x9: ExceptionRecoverySessionSnapshot sent by product OnboardJourneyPublisher.SerializeWire <- OnboardJourneyPublisher.QueueEnvelopeAsync <- OnboardJourneyPublisher.QueueExceptionRecoverySessionSnapshotAsync
+  #/payload/blockingFacts/0/reasonCode [enum] Validation enum - did not validate against the enumeration. actual: "RECOVERY_ACTION_REQUIRED"
+KNOWN SCHEMA VIOLATION (https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8) x1: RecoveryActionRejected sent by product OnboardRecoveryCoordinator.Response <- OnboardRecoveryCoordinator.RejectedAction <- OnboardRecoveryCoordinator.SubmitActionAsync
+  #/payload/problem/reasonCode [enum] Validation enum - did not validate against the enumeration. actual: "PROVEN_RECOVERY_CHECKPOINT_REQUIRED"
