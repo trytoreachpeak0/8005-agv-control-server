@@ -1,0 +1,633 @@
+{
+  "schemaVersion": "1.0.0",
+  "runKind": "STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT",
+  "runId": "20260910T053734981Z",
+  "startedAtUtc": "2026-09-10T05:37:34.9811625+00:00",
+  "completedAtUtc": "2026-09-10T05:39:15.3343716+00:00",
+  "status": "INCONCLUSIVE_RUNNER_ERROR",
+  "classification": {
+    "runStatus": "INCONCLUSIVE_RUNNER_ERROR",
+    "assuranceLevel": "STAGED_REBUILD",
+    "formalSlicePass": false,
+    "officialSlices": [
+      {
+        "integrationSliceId": "FP-IS-00",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false
+      },
+      {
+        "integrationSliceId": "FP-IS-06",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false
+      },
+      {
+        "integrationSliceId": "FP-IS-14",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false
+      },
+      {
+        "integrationSliceId": "FP-IS-15",
+        "status": "INCONCLUSIVE",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": false
+      }
+    ],
+    "slicesWithoutSurfaceThisBatch": [
+      "FP-IS-01",
+      "FP-IS-02",
+      "FP-IS-03",
+      "FP-IS-07"
+    ],
+    "fullG3": "INCONCLUSIVE",
+    "releaseCandidate": "INCONCLUSIVE"
+  },
+  "gateResults": [
+    "slices/FP-IS-00/gate-result.json",
+    "slices/FP-IS-06/gate-result.json",
+    "slices/FP-IS-14/gate-result.json",
+    "slices/FP-IS-15/gate-result.json"
+  ],
+  "commits": {
+    "controlServer": "0af174312e61f2507a29742684c660cdf43a7b72",
+    "onboardEvidenceBinding": "afba86e07116192bde386937c559cc7a70a00a7f",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "harness": "0af174312e61f2507a29742684c660cdf43a7b72",
+    "harnessWorktreeCleanAtStart": true
+  },
+  "protocol": {
+    "tag": "protocol-v1.0.0",
+    "tagExists": false,
+    "candidateCommit": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "approvalStatus": "SUPERSEDING_CANDIDATE",
+    "commit": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "manifestSha256": "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788",
+    "schemaBundleSha256": "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b",
+    "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+    "g1": "PASS"
+  },
+  "configurationSha256": "2f8a7cea1c2145874a0e1b2c0ad13b2c28c49e5536c823e04c221a9566b197c5",
+  "configuration": {
+    "loopbackOnly": true,
+    "transport": {
+      "onboardTransport": "plaintext",
+      "certificatesGenerated": false,
+      "temporaryTrustRootInstalled": false,
+      "realOnboardAckDropTransport": "PLAINTEXT_LOOPBACK",
+      "realOnboardAckDropCombination": "FAIL_OR_INCONCLUSIVE"
+    },
+    "ports": {
+      "controlOnboard": 58205,
+      "controlHealth": 58207,
+      "faultProxy": 58215,
+      "businessFaultProxy": 58216,
+      "simulatorModbus": 1502,
+      "simulatorHttp": 58006
+    },
+    "faultInjection": {
+      "parameterisedByMessageType": true,
+      "actions": [
+        "drop-and-close",
+        "drop",
+        "delay",
+        "hold-until-next"
+      ],
+      "businessMessagePlane": [
+        "SublotSubmitted",
+        "OperationProgress",
+        "PreDepartureSafetyCheckResult",
+        "SlotOperationCommandRejected"
+      ],
+      "businessMessagesDrivenBySyntheticPeer": true,
+      "businessMessagesNotReachableInStagedRun": [
+        "OperationResult",
+        "SlotOperationCommand"
+      ],
+      "recoveryMessagePlane": [
+        "ExceptionRecoverySessionRequested",
+        "RecoveryActionSubmitted",
+        "HardwareRecoveryRecordSubmitted",
+        "LoadCancellationStartRequested",
+        "LoadCompensationRequested",
+        "LoadCorrectionRequested",
+        "ForcedMechanicalRecoveryResult",
+        "ForcedMechanicalRecoveryCommand"
+      ],
+      "recoveryMessagesDrivenBySyntheticPeer": true,
+      "recoveryAcceptedPathsNotReachableInStagedRun": [
+        "RESUME_AFTER_REPAIR",
+        "COMPENSATE_LOAD_ALL_EMPTY",
+        "FAULT_CARGO_HANDOFF",
+        "LOAD_CANCELLATION",
+        "LOAD_CORRECTION",
+        "RiotUnknownReconciliation"
+      ],
+      "recoveryAdministratorProofFromEnvironment": true
+    },
+    "journeyRuntimeEnabled": false,
+    "realExternalCredentialsUsed": false,
+    "realRiotOrderCreated": false,
+    "movementCommandSent": false,
+    "vehicleSafetyEligibilityFabricated": false
+  },
+  "commands": [
+    {
+      "name": "clone-control-server",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\8005-b3\\fp-b3",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\control-server"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:37.1608188+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-control-server.log"
+    },
+    {
+      "name": "fetch-control-server",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\control-server",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:39.6702397+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-control-server.log"
+    },
+    {
+      "name": "checkout-control-server",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\control-server",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "0af174312e61f2507a29742684c660cdf43a7b72"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:39.9518342+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-control-server.log"
+    },
+    {
+      "name": "clone-onboard-hmi",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\8005-b3\\hmi-b3",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\onboard-hmi"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:44.4698988+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-onboard-hmi.log"
+    },
+    {
+      "name": "fetch-onboard-hmi",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\onboard-hmi",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:46.3569642+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-onboard-hmi.log"
+    },
+    {
+      "name": "checkout-onboard-hmi",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\onboard-hmi",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "afba86e07116192bde386937c559cc7a70a00a7f"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:46.7403999+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-onboard-hmi.log"
+    },
+    {
+      "name": "clone-slots-simulator",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\Desktop\\8005-workspace\\repos\\slots-simulator",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\slots-simulator"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:47.6259414+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-slots-simulator.log"
+    },
+    {
+      "name": "fetch-slots-simulator",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\slots-simulator",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:48.0733987+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-slots-simulator.log"
+    },
+    {
+      "name": "checkout-slots-simulator",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\slots-simulator",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:48.4338482+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-slots-simulator.log"
+    },
+    {
+      "name": "clone-protocol",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\8005-b3\\proto-g1",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\protocol"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:48.8050983+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-protocol.log"
+    },
+    {
+      "name": "fetch-protocol",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\protocol",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:49.3970602+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-protocol.log"
+    },
+    {
+      "name": "checkout-protocol",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\protocol",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "f6ee75defe6e2d18f63f4082bee445dbb678ab1b"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:49.7530503+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-protocol.log"
+    },
+    {
+      "name": "protocol-install",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\protocol",
+      "file": "C:\\Users\\szy\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe",
+      "arguments": [
+        "C:\\Users\\szy\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\node_modules\\pnpm\\bin\\pnpm.cjs",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:52.2545689+00:00",
+      "exitCode": 0,
+      "log": "logs/protocol-install.log"
+    },
+    {
+      "name": "protocol-g1",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\protocol",
+      "file": "C:\\Users\\szy\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe",
+      "arguments": [
+        "C:\\Users\\szy\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\node_modules\\pnpm\\bin\\pnpm.cjs",
+        "g1"
+      ],
+      "startedAtUtc": "2026-09-10T05:37:56.6349487+00:00",
+      "exitCode": 0,
+      "log": "logs/protocol-g1.log"
+    },
+    {
+      "name": "publish-control-server",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\control-server",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\ControlServer.Host\\ControlServer.Host.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\publish\\control-server"
+      ],
+      "startedAtUtc": "2026-09-10T05:38:25.0541094+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-control-server.log"
+    },
+    {
+      "name": "publish-onboard-hmi",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\onboard-hmi",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\SQCD.Agv.Wpf\\SQCD.Agv.Wpf.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\publish\\onboard-hmi"
+      ],
+      "startedAtUtc": "2026-09-10T05:38:43.1422458+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-onboard-hmi.log"
+    },
+    {
+      "name": "publish-slots-simulator",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\slots-simulator",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\SQCD_8005AGV_Simulator\\SQCD_8005AGV_Simulator.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\publish\\slots-simulator"
+      ],
+      "startedAtUtc": "2026-09-10T05:38:52.9820236+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-slots-simulator.log"
+    },
+    {
+      "name": "publish-field-ops",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\sources\\control-server",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\tools\\ControlServer.FieldOps\\ControlServer.FieldOps.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\publish\\field-ops"
+      ],
+      "startedAtUtc": "2026-09-10T05:39:06.859272+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-field-ops.log"
+    },
+    {
+      "name": "field-ops-seed-approved-facts",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-3\\publish\\field-ops",
+      "file": "dotnet",
+      "arguments": [
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\publish\\field-ops\\ControlServer.FieldOps.dll",
+        "seed-approved-facts",
+        "--database",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-3\\runtime\\controlserver.db"
+      ],
+      "startedAtUtc": "2026-09-10T05:39:14.2190307+00:00",
+      "exitCode": -532462766,
+      "log": "logs/field-ops-seed-approved-facts.log"
+    }
+  ],
+  "assertions": {
+    "identityRejections": "FAIL_OR_INCONCLUSIVE",
+    "sameConnectionSameMessageIdSameContent": "FAIL_OR_INCONCLUSIVE",
+    "sameMessageIdDifferentContentStableConflict": "FAIL_OR_INCONCLUSIVE",
+    "recoveryStateReportFirstAckDropReplay": "FAIL_OR_INCONCLUSIVE",
+    "recoveryStateReportFirstAckDropReplayOverPlaintext": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageSameMessageIdSameContentReplay": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageSameMessageIdDifferentContentStableConflict": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageAckDropInSessionReplay": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageDelayedDeliveryAccepted": "FAIL_OR_INCONCLUSIVE",
+    "businessMessageReorderedDeliveryAccepted": "FAIL_OR_INCONCLUSIVE",
+    "recoverySessionAuthorisationBoundary": "FAIL_OR_INCONCLUSIVE",
+    "recoveryActionsRefusedWithoutPersistedOperation": "FAIL_OR_INCONCLUSIVE",
+    "hardwareRecoveryRecordScopeEnforced": "FAIL_OR_INCONCLUSIVE",
+    "recoveryCommandSurvivesMidFlightDisconnect": "FAIL_OR_INCONCLUSIVE",
+    "forcedRecoveryGenerationAdvancesMonotonically": "FAIL_OR_INCONCLUSIVE",
+    "supersededGenerationResultIsHistoricalEvidenceOnly": "FAIL_OR_INCONCLUSIVE",
+    "recoveryNeverReportsFalseCompletion": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationCommandSentOnceOverTheSession": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationPersistedBeforeItWasSent": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationResultReportedByTheVehicle": "FAIL_OR_INCONCLUSIVE",
+    "bothEndsComputedTheSameSlotConfigurationFingerprint": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmSnapshotPublishedOnTheFullHandshake": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmSnapshotAppliedAckOnEverySnapshot": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmSnapshotNotRepublishedOnRecoveryResume": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmProjectionIsASingletonPerVehicle": "FAIL_OR_INCONCLUSIVE",
+    "onboardAlarmProjectionCarriesTheGenerationItArrivedIn": "FAIL_OR_INCONCLUSIVE",
+    "noMovementOrExternalSideEffects": "PASS",
+    "secretScan": "PASS"
+  },
+  "probe": null,
+  "businessProbe": null,
+  "recoveryProbe": null,
+  "businessFaultInjection": null,
+  "recoveryFaultInjection": null,
+  "recoveryReplay": null,
+  "database": {
+    "recoveryStateReportInboxRows": [],
+    "businessMessageInboxRows": [],
+    "onboardAlarmSnapshotRows": [],
+    "slotConfigurationActivationRows": [],
+    "activeSlotConfigurationRows": [],
+    "currentSessionGeneration": 0,
+    "currentSessionReadiness": "",
+    "currentSessionReasonCode": "",
+    "orderIntentCount": 0,
+    "acceptedDemandCount": 0,
+    "stationOperationCount": 0,
+    "recoveryWorkflowRows": [],
+    "recoveryResultEvidenceRows": [],
+    "exceptionRecoverySessionRows": [],
+    "forcedMechanicalRecoveryCommandOutboxRows": [],
+    "hardwareRecoveryRecordCount": 0,
+    "vehicleForcedRecoveryGeneration": -1,
+    "closedExceptionRecoverySessionCount": 0,
+    "reconciledRecoveryWorkflowCount": 0
+  },
+  "simulatorHealth": null,
+  "controlServerVersion": {
+    "protocolVersion": 2,
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolReleaseVersion": "1.0.0",
+    "protocolTag": "protocol-v1.0.0",
+    "protocolCommit": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "manifestSha256": "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788",
+    "schemaBundleSha256": "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b",
+    "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+    "approvalStatus": "SUPERSEDING_CANDIDATE"
+  },
+  "error": {
+    "type": "System.Management.Automation.RuntimeException",
+    "message": "field-ops-seed-approved-facts exited with code -532462766. See C:\\Users\\szy\\8005-b3\\fp-b3\\evidence\\g3\\20260910-fp-is-14-15-activation-and-alarm\\logs\\field-ops-seed-approved-facts.log"
+  },
+  "secretLeakFiles": [],
+  "evidenceFiles": [
+    {
+      "path": "configuration.json",
+      "sha256": "2f8a7cea1c2145874a0e1b2c0ad13b2c28c49e5536c823e04c221a9566b197c5",
+      "length": 1898
+    },
+    {
+      "path": "logs/checkout-control-server.log",
+      "sha256": "3804e01c5bf9ff88856c934c1d9ab3b675eba2aafa03755df369290a2f5f3f1f",
+      "length": 115
+    },
+    {
+      "path": "logs/checkout-onboard-hmi.log",
+      "sha256": "ae445ba71b6a27cd78b04c74af53dab662310bb02393e8a079910d2ec83ef9e9",
+      "length": 116
+    },
+    {
+      "path": "logs/checkout-protocol.log",
+      "sha256": "9027c8a5daa9b2169cc63fe734fe2c83ebff5963858062a01cca22b683324a47",
+      "length": 93
+    },
+    {
+      "path": "logs/checkout-slots-simulator.log",
+      "sha256": "769de68d1abed1f6df95d49f6b766cf1dd20cd003759385a2b6b773b1a0a8975",
+      "length": 73
+    },
+    {
+      "path": "logs/clone-control-server.log",
+      "sha256": "42b64693f2c43a3286f397a6ce8f7df6b0a7e15d842fa8c311e924f930aa12ad",
+      "length": 81
+    },
+    {
+      "path": "logs/clone-onboard-hmi.log",
+      "sha256": "f60b34c519509f534fad00c8b9cd39200633d96b5673941e218ae82185b02ecf",
+      "length": 78
+    },
+    {
+      "path": "logs/clone-protocol.log",
+      "sha256": "d13ef9e2ce96f397caa4daace928b3e0d046c5faa551b2fea221d06caac31e6b",
+      "length": 75
+    },
+    {
+      "path": "logs/clone-slots-simulator.log",
+      "sha256": "1df45a6440fa3032e39458e99d694de1d41805510c6ddb98b40ffb01f064af66",
+      "length": 82
+    },
+    {
+      "path": "logs/control.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/control.out.log",
+      "sha256": "82e30619ee9ea848ed5369738a1ed57c1458c255fc62a897f027f6fde81fddcb",
+      "length": 64367
+    },
+    {
+      "path": "logs/fetch-control-server.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/fetch-onboard-hmi.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/fetch-protocol.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/fetch-slots-simulator.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/field-ops-seed-approved-facts.log",
+      "sha256": "249edfe5b8b0c254c76bab1cfdcbda20ef6a6efc047be9d26a82ea1ed5b67399",
+      "length": 16
+    },
+    {
+      "path": "logs/protocol-g1.log",
+      "sha256": "bcf40949259da5a72fa5f0703533885dc1349fa65bc48d70058aa32e68e8f634",
+      "length": 592
+    },
+    {
+      "path": "logs/protocol-install.log",
+      "sha256": "24fb23b5dc2bf73c6409340b8091c306f3f581ea13466616c586d93dcac71686",
+      "length": 613
+    },
+    {
+      "path": "logs/publish-control-server.log",
+      "sha256": "a3a7836e248f05d51a84ae56cf2ae03e486388c1e9200359cb88b0d276a3ad1e",
+      "length": 1346
+    },
+    {
+      "path": "logs/publish-field-ops.log",
+      "sha256": "51a3b91954d36500681d65fb9f10952876002d46d4423756eb2c9cae78687057",
+      "length": 987
+    },
+    {
+      "path": "logs/publish-onboard-hmi.log",
+      "sha256": "85871db18fc718ed1ad2ab4e8e937f885f180b4a6ffd45a14e9dc331fc808ab5",
+      "length": 1779
+    },
+    {
+      "path": "logs/publish-slots-simulator.log",
+      "sha256": "d07547a8c17da80b0475475ec7993a3962dbaba9753a9fb077b720aafce153e1",
+      "length": 1120
+    },
+    {
+      "path": "onboard-alarm-snapshot-observation.json",
+      "sha256": "0d9c56a84fda5f6c3ba7b930d6efe7a28ca0f5f0fe837fa5ff22fea4692b0ea4",
+      "length": 325
+    },
+    {
+      "path": "slices/FP-IS-00/gate-result.json",
+      "sha256": "d730ae77aad4bf7766cd0c265f22ff57f48ee7815582fd400f9ff56a81f688cd",
+      "length": 2605
+    },
+    {
+      "path": "slices/FP-IS-06/gate-result.json",
+      "sha256": "2f3d203d75f9e68076c96d32572b51333b8ff95f69ecc9d1c70a4c946a0d8cd4",
+      "length": 2425
+    },
+    {
+      "path": "slices/FP-IS-14/gate-result.json",
+      "sha256": "97482d75bfc2ebd6d9c1d5a36f89e1e33d89ec28d57a36f5166638b458349fb5",
+      "length": 2157
+    },
+    {
+      "path": "slices/FP-IS-15/gate-result.json",
+      "sha256": "bcd57347377fc64df38c7819234845e6a66ea04c983037ec721a048f2cc9c59b",
+      "length": 2211
+    },
+    {
+      "path": "slot-configuration-activation-observation.json",
+      "sha256": "ade0f992c8ea1eac1a0407757762bd3e05b255e02e8de9e0d2dec2bb791ff56d",
+      "length": 281
+    }
+  ]
+}
