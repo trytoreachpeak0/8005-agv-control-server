@@ -12,13 +12,22 @@ namespace ControlServer.Tests;
 /// 服务端消费车载告警快照并投影到看板（<c>FP-IS-15</c> 服务端半边，REQ-0270、REQ-0269）。
 /// </summary>
 /// <remarks>
-/// 协议 v2 消息 9 的收发属批次 2 轨 A，尚未落地——本文件固化的是收到之后怎么存、怎么收敛、怎么显示。
+/// <para>
+/// 本文件固化的是收到之后怎么存、怎么收敛、怎么显示。#16 落地时协议 v2 消息 9 的收发还没做，所以
+/// 这里一条切片 trait 都没有；线上那一半接好之后，这些测试站在
+/// <c>OnboardAlarmSnapshot</c> 背后，归 <c>FP-IS-15</c>。
+/// </para>
+/// <para>
+/// <see cref="TheAlarmCardWasAddedWithoutTouchingTheDashboardMainFiles"/> 是个例外，它没有切片
+/// trait：那一条证的是 #12 立的看板自注册约定，与协议无关，把它挂在切片上等于让约定随切片一起被推迟。
+/// </para>
 /// </remarks>
 public sealed class OnboardAlarmProjectionTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 9, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public async Task ALaterSnapshotReplacesTheEarlierOneWholeAndNeverMergesIntoIt()
     {
         await using AlarmFixture fixture = await AlarmFixture.CreateAsync();
@@ -53,6 +62,7 @@ public sealed class OnboardAlarmProjectionTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public async Task AVehicleOutOfContactShowsTheReasonRatherThanItsLastKnownAlarms()
     {
         await using AlarmFixture fixture = await AlarmFixture.CreateAsync();
@@ -84,6 +94,7 @@ public sealed class OnboardAlarmProjectionTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public async Task OnlyAlarmsUnrelatedToAnyVehiclesOwnSituationReachTheDashboard()
     {
         await using AlarmFixture fixture = await AlarmFixture.CreateAsync();
@@ -108,6 +119,7 @@ public sealed class OnboardAlarmProjectionTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public void AlarmVisibilityIsEvaluatedWithNoIdentityOrKeyInputAnywhereOnItsPath()
     {
         // 本期没有人员认证。把收敛做成需要身份才能求值的权限判断，会让它落在一个全场共用环境变量密钥
@@ -139,6 +151,7 @@ public sealed class OnboardAlarmProjectionTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public void AlarmCodesStayAnOpenStringSetAndShareNothingWithTheClosedProtocolErrorCodeRegistry()
     {
         // 告警 code 不被规约进 ErrorCode：开放集合塞进封闭 enum 等于每加一个故障码就发一次 breaking
@@ -198,6 +211,7 @@ public sealed class OnboardAlarmProjectionTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public async Task TheEndpointServesRealRowsAndTheCardRendersThemIncludingTheLostContactReason()
     {
         await using AlarmFixture fixture = await AlarmFixture.CreateAsync();

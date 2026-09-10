@@ -42,6 +42,7 @@ internal static class GovernanceModule
         services.AddScoped<SlotConfigurationReadinessGate>();
         services.AddScoped<GovernedActivationStore>();
         services.AddScoped<SlotConfigurationActivationCoordinator>();
+        services.AddScoped<OnboardAlarmProjectionStore>();
         return services;
     }
 

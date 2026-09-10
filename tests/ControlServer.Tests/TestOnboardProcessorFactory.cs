@@ -21,6 +21,7 @@ internal static class TestOnboardProcessorFactory
         return new OnboardMessageProcessor(
             store,
             coordinator,
+            new OnboardAlarmProjectionStore(context),
             timeProvider,
             configuration,
             NullLogger<OnboardMessageProcessor>.Instance);

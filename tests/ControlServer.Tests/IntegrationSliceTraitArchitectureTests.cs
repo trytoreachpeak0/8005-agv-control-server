@@ -65,7 +65,6 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["IntegrationSliceTraitArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
-            ["OnboardAlarmProjectionTests"] = "batch 3 FP-IS-15 server half; OnboardAlarmSnapshot is still pinned in MessagesWithoutAnImplementation on this line, so nothing here stands behind a wire message yet",
             ["OnboardVehicleSafetyEndpointsTests"] = "server-side safety projection endpoint; not a protocol wire message",
             ["PackageCapacityStoreTests"] = "server-internal store; no wire message",
             ["ProtocolIdentityArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
@@ -113,7 +112,8 @@ public sealed class IntegrationSliceTraitArchitectureTests
         {
             ["FakeRiotTests"] = (8, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
             ["HttpRiotMovementGatewayTests"] = (20, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
-            ["JourneyRuntimeOptionsTests"] = (2, "option defaults; the traited tests are the validations that fail a deployment closed")
+            ["JourneyRuntimeOptionsTests"] = (2, "option defaults; the traited tests are the validations that fail a deployment closed"),
+            ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };
 
     private sealed record TestMethod(string ClassName, string MethodName, string[] Slices, string[] Vectors);

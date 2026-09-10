@@ -10,6 +10,7 @@ namespace ControlServer.Host.Transport;
 public sealed partial class OnboardMessageProcessor(
     WireToGateStore store,
     OnboardRecoveryCoordinator recoveryCoordinator,
+    OnboardAlarmProjectionStore alarmStore,
     TimeProvider timeProvider,
     IConfiguration configuration,
     ILogger<OnboardMessageProcessor> logger)
@@ -188,6 +189,18 @@ public sealed partial class OnboardMessageProcessor(
                         agvId, generation, revision, contentHash, cancellationToken).ConfigureAwait(false);
                     state.CapabilityRevision = revision;
                     return SnapshotAck(messageId, agvId, generation, "CAPABILITY", revision, contentHash);
+                }
+            // 协议 v2 消息 9。SNAPSHOT，不是 RELIABLE，也不是事件流：后一份整体取代前一份，所以
+            // 断线重连之后不需要知道漏了什么。#16 的 RecordSnapshotAsync 已经处理了「序号回退的
+            // 快照忽略掉」，这里不再判一次。
+            case "OnboardAlarmSnapshot":
+                {
+                    long revision = OnboardAlarmSnapshotWire.Revision(payload);
+                    await alarmStore.RecordSnapshotAsync(
+                        OnboardAlarmSnapshotWire.Read(agvId, payload),
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return SnapshotAck(messageId, agvId, generation, "ONBOARD_ALARM", revision, contentHash);
                 }
             case "SafetyStateSnapshot":
                 {

@@ -31,6 +31,10 @@ public enum OnboardAlarmScope
 /// <see cref="AlarmCode"/> **是字符串，不是 <c>ErrorCode</c>**。告警是开放集合，<c>ErrorCode</c> 是
 /// 封闭 enum，把开放集合塞进封闭 enum 等于每加一个故障码就发一次 breaking change。有架构测试断言这个
 /// 属性是 <c>string</c>，并且服务端收到的告警码集合与协议错误码注册表无交集。
+///
+/// <see cref="AlarmId"/> 是线上那条告警的身份，原样存下不做解释。服务端不靠它跨快照做关联——快照
+/// 整份取代，本来就不需要——但一份线上事实在落库的路上被悄悄丢掉是另一回事。它是可空的尾参，
+/// #16 已有的构造点一个都不用改。
 /// </remarks>
 public sealed record OnboardAlarmEntry(
     string AlarmCode,
@@ -41,7 +45,8 @@ public sealed record OnboardAlarmEntry(
     string? DemandId = null,
     string? StationId = null,
     string? SlotOperationAttemptId = null,
-    int? PhysicalSlotNumber = null);
+    int? PhysicalSlotNumber = null,
+    string? AlarmId = null);
 
 /// <summary>
 /// 一台车当前全量告警的一份快照。
