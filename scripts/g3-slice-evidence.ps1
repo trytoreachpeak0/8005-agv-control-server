@@ -177,6 +177,16 @@ function Get-G3RunnerClaim {
                 'FP-IS-15' = @(
                     'onboardAlarmProjectionAdoptedTheRestartedVehiclesSnapshot',
                     'onboardAlarmProjectionNeverRegressedToAnEarlierGeneration')
+                # FP-IS-14's refusal path, and this runner is the only one that can reach it. The
+                # vehicle reads its slot IO configuration at startup, so a restart is the only moment
+                # where what the vehicle holds can change while the server's approved version stays
+                # put. One activation before the change and one after: accepted, then refused with
+                # SLOT_CONFIGURATION_FINGERPRINT_MISMATCH, and the active version untouched by the
+                # refusal.
+                'FP-IS-14' = @(
+                    'slotConfigurationActivationAcceptedWhileTheVehicleMatched',
+                    'slotConfigurationActivationRefusedAfterTheVehicleConfigurationChanged',
+                    'aRefusedActivationLeftTheActiveConfigurationUntouched')
             }
         }
         'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT' = [ordered]@{

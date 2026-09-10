@@ -134,6 +134,7 @@ $simulatorSource = Join-Path $sourcesRoot 'slots-simulator'
 $controlPublish = Join-Path $publishRoot 'control-server'
 $onboardPublish = Join-Path $publishRoot 'onboard-hmi'
 $simulatorPublish = Join-Path $publishRoot 'slots-simulator'
+$fieldOpsPublish = Join-Path $publishRoot 'field-ops'
 $controlDatabasePath = Join-Path $runtimeRoot 'controlserver.db'
 $onboardJournalPath = Join-Path $runtimeRoot 'onboard-journal.db'
 
@@ -278,6 +279,32 @@ function Start-ControlServer {
     Wait-TcpPort -Port $controlPort
     Wait-TcpPort -Port $healthPort
     return $process
+}
+
+# FP-IS-14's refusal path. Returns the parsed response, or the error text: a refused issue is a
+# result to record, not a reason to abandon a three-phase run.
+function Invoke-SlotConfigurationActivation {
+    param([Parameter(Mandatory)][string]$SlotModelVersionId)
+
+    try {
+        $body = @{
+            agvId = $agvId
+            slotModelVersionId = $SlotModelVersionId
+            administrator = @{
+                operatorId = 'op-restart-g3'
+                verificationMethod = 'BADGE'
+                verifiedAt = ([DateTimeOffset]::UtcNow).ToString('O')
+            }
+        } | ConvertTo-Json -Depth 5
+        $response = Invoke-RestMethod -Method Post `
+            -Uri "http://127.0.0.1:$healthPort/api/governance/v1/slot-configuration-activations" `
+            -Headers @{ Authorization = "Bearer $governanceCredential" } `
+            -ContentType 'application/json' -Body $body -TimeoutSec 20
+        return [ordered]@{ ok = $true; activationId = $response.activationId; state = $response.state; error = $null }
+    }
+    catch {
+        return [ordered]@{ ok = $false; activationId = $null; state = $null; error = $_.Exception.Message }
+    }
 }
 
 function Start-OnboardHmi {
@@ -443,6 +470,14 @@ function Read-ControlDatabase {
         onboardAlarmSnapshotRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
             -Sql 'SELECT AgvId, SessionGeneration, SnapshotSequence FROM OnboardAlarmSnapshots ORDER BY AgvId' `
             -Columns @('agvId', 'sessionGeneration', 'snapshotSequence')
+        # FP-IS-14. Two tables: what was sent and how it settled, and the version the server believes
+        # the vehicle holds. A refusal must appear in the first and change nothing in the second.
+        slotConfigurationActivationRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'SELECT ActivationId, AgvId, State, ConfigurationVersion, Fingerprint, CommandMessageId, ResultJson FROM SlotConfigurationActivations ORDER BY IssuedAt' `
+            -Columns @('activationId', 'agvId', 'state', 'configurationVersion', 'fingerprint', 'commandMessageId', 'resultJson')
+        activeSlotConfigurationRows = Invoke-SqliteRows -DatabasePath $controlDatabasePath `
+            -Sql 'SELECT AgvId, ConfigurationVersion, Fingerprint, ActivationId FROM ActiveSlotConfigurations ORDER BY AgvId' `
+            -Columns @('agvId', 'configurationVersion', 'fingerprint', 'activationId')
         sideEffectCounts = $sideEffectCounts
     }
 }
@@ -511,6 +546,7 @@ $controlDatabaseAfterRun = $null
 $healthReadyStatus = $null
 $peerExitObservations = @()
 $credential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+$governanceCredential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
 # Released in `finally` after the peers are stopped. Declared here so that release is unconditional
 # even when the run dies during the clone or build phase, before the lock was ever taken.
 $desktopLock = $null
@@ -532,6 +568,10 @@ try {
     Invoke-LoggedCommand -Name 'publish-slots-simulator' -WorkingDirectory $simulatorSource -FilePath 'dotnet' `
         -Arguments @('publish', '.\src\SQCD_8005AGV_Simulator\SQCD_8005AGV_Simulator.csproj', '-c', 'Release', '-o', $simulatorPublish) `
         -LogPath (Join-Path $logsRoot 'publish-slots-simulator.log') | Out-Null
+    # FP-IS-14's refusal path needs the same governance preparation the staged runner does.
+    Invoke-LoggedCommand -Name 'publish-field-ops' -WorkingDirectory $controlSource -FilePath 'dotnet' `
+        -Arguments @('publish', '.\tools\ControlServer.FieldOps\ControlServer.FieldOps.csproj', '-c', 'Release', '-o', $fieldOpsPublish) `
+        -LogPath (Join-Path $logsRoot 'publish-field-ops.log') | Out-Null
 
     Add-Type -Path (Join-Path $controlPublish 'Microsoft.Data.Sqlite.dll')
 
@@ -571,6 +611,9 @@ try {
         'MesIngest__baseUrl' = 'http://127.0.0.1:1'
         'RIoT__baseUrl' = 'http://127.0.0.1:1'
         'ControlServerBuild__commit' = $ControlServerCommit
+        'SlotConfigurationActivation__enabled' = 'true'
+        'SlotConfigurationActivation__credentialEnvironmentVariable' = 'CONTROL_SERVER_GOVERNANCE_CREDENTIAL'
+        'CONTROL_SERVER_GOVERNANCE_CREDENTIAL' = $governanceCredential
     }
 
     # The simulator and the onboard client are both WPF, and this runner starts the onboard three
@@ -591,6 +634,20 @@ try {
     # Phase 1: a fresh ControlServer database and a fresh onboard journal.
     $control = Start-ControlServer -Ordinal 1
     $version = Wait-HttpJson -Uri "http://127.0.0.1:$healthPort/version"
+
+    # FP-IS-14. Same two governance acts the staged runner performs, and for the same reason: the
+    # entry point refuses a target that is not published with complete IO bindings.
+    $seedOutput = Invoke-LoggedCommand -Name 'field-ops-seed-approved-facts' -WorkingDirectory $fieldOpsPublish -FilePath 'dotnet' `
+        -Arguments @((Join-Path $fieldOpsPublish 'ControlServer.FieldOps.dll'), 'seed-approved-facts', '--database', $controlDatabasePath) `
+        -LogPath (Join-Path $logsRoot 'field-ops-seed-approved-facts.log')
+    $slotModelVersionId = (($seedOutput -join '') | ConvertFrom-Json).slotModelVersionId
+    if ([string]::IsNullOrWhiteSpace($slotModelVersionId)) {
+        throw 'ControlServer.FieldOps seed-approved-facts did not report a slotModelVersionId.'
+    }
+    Invoke-LoggedCommand -Name 'field-ops-bind-io' -WorkingDirectory $fieldOpsPublish -FilePath 'dotnet' `
+        -Arguments @((Join-Path $fieldOpsPublish 'ControlServer.FieldOps.dll'), 'bind-io', '--database', $controlDatabasePath, '--agv', $agvId) `
+        -LogPath (Join-Path $logsRoot 'field-ops-bind-io.log') | Out-Null
+
     $onboard = Start-OnboardHmi -Ordinal 1
     $phase1Session = Wait-SessionGeneration -GreaterThan 0
     $phase1Window = Measure-StableWindow -Samples $stableWindowSamples
@@ -607,11 +664,35 @@ try {
         stableWindow = $phase1Window
     }
 
+    # Activation 1 of 2: the vehicle still holds the configuration the approved facts describe, so
+    # this one has to be accepted. It is the control case -- without it, a refusal in phase 2 would
+    # prove only that something is broken, not that the fingerprint check is what refused.
+    $activationWhileMatching = Invoke-SlotConfigurationActivation -SlotModelVersionId $slotModelVersionId
+    Start-Sleep -Seconds 5
+
     # Phase 2: the onboard process is killed and restarted against the same journal file.
     $retiredOnboard = $onboard
     Stop-ProcessSafely -Process $onboard
     Start-Sleep -Seconds 2
     $journalBeforeOnboardRestart = Read-OnboardJournal
+
+    # FP-IS-14's refusal path, and the restart is what makes it reachable: the vehicle reads its slot
+    # IO configuration at startup, so this is the only moment in any runner where what the vehicle
+    # holds can change while the server's approved version stays put. 500 -> 600 ms on the pulse
+    # reset is a single field, which is the point: the fingerprint covers all six, and one differing
+    # field must be enough. This is the real scenario -- somebody adjusted a parameter on the vehicle.
+    $tamperedSettings = Get-Content -LiteralPath $onboardConfig -Raw | ConvertFrom-Json
+    foreach ($slot in $tamperedSettings.ioModule.slots) {
+        if ($slot.PSObject.Properties.Name -contains 'pulseResetMilliseconds') {
+            $slot.pulseResetMilliseconds = 600
+        }
+        else {
+            $slot | Add-Member -NotePropertyName 'pulseResetMilliseconds' -NotePropertyValue 600
+        }
+    }
+    $tamperedSettings | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $onboardConfig -Encoding utf8NoBOM
+    $onboardConfigSha256AfterTamper = (Get-FileHash -LiteralPath $onboardConfig -Algorithm SHA256).Hash.ToLowerInvariant()
+
     $onboard = Start-OnboardHmi -Ordinal 2
     $phase2Session = Wait-SessionGeneration -GreaterThan $phase1.sessionGeneration
     $phase2Window = Measure-StableWindow -Samples $stableWindowSamples
@@ -629,6 +710,11 @@ try {
         sessionGeneration = [long]$phase2Session.sessionGeneration
         stableWindow = $phase2Window
     }
+
+    # Activation 2 of 2: the vehicle now computes a different digest over its own configuration, so
+    # it must refuse -- and the server must not write an active configuration off a refusal.
+    $activationAfterTamper = Invoke-SlotConfigurationActivation -SlotModelVersionId $slotModelVersionId
+    Start-Sleep -Seconds 5
 
     # Phase 3: the ControlServer process is killed and restarted against the same SQLite file while
     # the onboard peer stays up and has to reconnect on its own.
@@ -735,6 +821,38 @@ $controlRestartPass = $null -ne $phase2 -and $null -ne $phase3 -and
 # Reading generation 2 there IS the proof. A sequence-only adoption rule cannot produce it: phase 1's
 # row also carries sequence 1, and 1 does not advance past 1, so that rule would have ignored the
 # post-restart snapshot and left this row on generation 1 -- the stale set REQ-0269 forbids.
+# FP-IS-14's refusal path. Both activations are settled by the time this snapshot is read -- it is
+# taken with the server stopped between phase 2 and phase 3.
+$activationRowsAtRestart = @()
+$activeRowsAtRestart = @()
+if ($null -ne $controlDatabaseBeforeServerRestart) {
+    $activationRowsAtRestart = @($controlDatabaseBeforeServerRestart.slotConfigurationActivationRows |
+        Where-Object { $_['agvId'] -ceq $agvId })
+    $activeRowsAtRestart = @($controlDatabaseBeforeServerRestart.activeSlotConfigurationRows |
+        Where-Object { $_['agvId'] -ceq $agvId })
+}
+$acceptedActivationRows = @($activationRowsAtRestart | Where-Object { $_['state'] -ceq 'ACTIVATED' })
+$refusedActivationRows = @($activationRowsAtRestart | Where-Object { $_['state'] -ceq 'FAILED' })
+
+# The control case. Without an accepted activation first, a refusal afterwards would only show that
+# something is broken, not that the fingerprint comparison is what refused.
+$activationAcceptedPass = $null -ne $activationWhileMatching -and $activationWhileMatching['ok'] -and
+    $acceptedActivationRows.Count -eq 1 -and
+    $activeRowsAtRestart.Count -eq 1 -and
+    $activeRowsAtRestart[0]['activationId'] -ceq $acceptedActivationRows[0]['activationId']
+# The refusal itself, and it has to be THIS reason. Any other failure would also produce a FAILED
+# row; the stable error code is what says the vehicle compared and disagreed.
+$activationRefusedPass = $null -ne $activationAfterTamper -and $activationAfterTamper['ok'] -and
+    $refusedActivationRows.Count -eq 1 -and
+    ([string]$refusedActivationRows[0]['resultJson']).Contains('SLOT_CONFIGURATION_FINGERPRINT_MISMATCH', [StringComparison]::Ordinal)
+# And the refusal changed nothing. This is the half that matters operationally: a server that moves
+# its idea of the active version off a refusal would go on to hand every later comparison the wrong
+# expected value, and the vehicle would be refused forever for a reason nobody could see.
+$activationRefusalInertPass = $activationAcceptedPass -and $activationRefusedPass -and
+    $activeRowsAtRestart.Count -eq 1 -and
+    $activeRowsAtRestart[0]['fingerprint'] -ceq $acceptedActivationRows[0]['fingerprint'] -and
+    [long]$activeRowsAtRestart[0]['configurationVersion'] -eq [long]$acceptedActivationRows[0]['configurationVersion']
+
 $alarmRestartRows = @()
 if ($null -ne $controlDatabaseBeforeServerRestart) {
     $alarmRestartRows = @($controlDatabaseBeforeServerRestart.onboardAlarmSnapshotRows)
@@ -862,6 +980,13 @@ $configuration = [ordered]@{
     }
     agvId = $agvId
     onboardConfigSha256 = if ($null -ne $onboardConfigSha256) { $onboardConfigSha256 } else { $null }
+    onboardConfigSha256AfterTamper = if ($null -ne $onboardConfigSha256AfterTamper) { $onboardConfigSha256AfterTamper } else { $null }
+    slotConfigurationActivations = [ordered]@{
+        whileMatching = $activationWhileMatching
+        afterTamper = $activationAfterTamper
+        rowsAtRestart = $activationRowsAtRestart
+        activeRowsAtRestart = $activeRowsAtRestart
+    }
     stableWindowSamplesPerPhase = $stableWindowSamples
     journeyRuntimeEnabled = $false
     realExternalCredentialsUsed = $false
@@ -882,7 +1007,8 @@ $secretLeakFiles = [System.Collections.Generic.List[string]]::new()
 foreach ($file in @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File)) {
     try {
         $text = Get-Content -LiteralPath $file.FullName -Raw
-        if ($text.Contains($credential, [StringComparison]::Ordinal)) {
+        if ($text.Contains($credential, [StringComparison]::Ordinal) -or
+            $text.Contains($governanceCredential, [StringComparison]::Ordinal)) {
             $secretLeakFiles.Add([IO.Path]::GetRelativePath($EvidenceRoot, $file.FullName).Replace('\', '/'))
         }
     }
@@ -910,6 +1036,9 @@ $assertions = [ordered]@{
     onboardOutboxRowsSurviveOnboardRestart = $onboardOutboxDurabilityPass
     recoveryReportIdentityAgreesAcrossPeers = $crossPeerIdentityPass
     sessionRecoveryRowStaysASingletonPerAgv = $sessionRowSingletonPass
+    slotConfigurationActivationAcceptedWhileTheVehicleMatched = $activationAcceptedPass
+    slotConfigurationActivationRefusedAfterTheVehicleConfigurationChanged = $activationRefusedPass
+    aRefusedActivationLeftTheActiveConfigurationUntouched = $activationRefusalInertPass
     onboardAlarmProjectionAdoptedTheRestartedVehiclesSnapshot = $alarmRestartAdoptionPass
     onboardAlarmProjectionNeverRegressedToAnEarlierGeneration = $alarmNoRegressionPass
     noMovementOrExternalSideEffects = $noMovementPass
