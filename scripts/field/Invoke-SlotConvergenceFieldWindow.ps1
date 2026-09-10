@@ -316,6 +316,17 @@ function Get-WindowRows {
             -Sql "SELECT * FROM StationOperations WHERE DemandId IN ($demandList)"
         $rows['OrderIntents'] = Invoke-L2Query -Connection $connection `
             -Sql "SELECT * FROM OrderIntents WHERE DemandId IN ($demandList)"
+        $rows['TransportDemandSuppressions'] = Invoke-L2Query -Connection $connection `
+            -Sql "SELECT * FROM TransportDemandSuppressions WHERE DemandId IN ($demandList)"
+        # Only this window's load commands, and only whether they were settled. A determinate failure
+        # has to settle its LoadBatch (8005-agv-program#39): left pending, it is replayed into every
+        # later session under a new generation and the peer tears that session down.
+        $commandIds = @($rows['JourneyDemands'] | Where-Object { $_.LoadCommandMessageId } |
+            ForEach-Object { "'$($_.LoadCommandMessageId)'" }) -join ','
+        if ($commandIds) {
+            $rows['ProtocolOutbox'] = Invoke-L2Query -Connection $connection `
+                -Sql "SELECT MessageId, MessageType, AcknowledgedAt FROM ProtocolOutbox WHERE MessageId IN ($commandIds)"
+        }
         $journeyIds = @($rows['JourneyDemands'] | ForEach-Object { "'$($_.JourneyId)'" }) -join ','
         if ($journeyIds) {
             $rows['JourneyRuntimes'] = Invoke-L2Query -Connection $connection `
@@ -380,6 +391,7 @@ $rows = Get-WindowRows -DemandIds $recordedDemands -AttemptIds $recordedAttempts
 # run" versus "there was nothing there at that moment", and scenario C is judged on the second.
 foreach ($table in @('AcceptedDemands', 'JourneyDemands', 'JourneyRuntimes', 'JourneyStops',
                      'StationOperations', 'OrderIntents', 'OperationResults',
+                     'TransportDemandSuppressions', 'ProtocolOutbox',
                      'SessionRecoveries', 'ExceptionRecoverySessions', 'ProtocolInbox')) {
     Write-Json -Path (Join-Path $checkpointDirectory "db-$table.json") -Value @($rows[$table])
 }
@@ -414,6 +426,12 @@ function Get-ScenarioRecord {
     return @($record.scenarios | Where-Object { $_.id -eq $Id })[0]
 }
 
+# Local, as in every L2 scenario: L2.psm1 does not export it. Rows straight from Invoke-L2Query carry
+# DBNull for a SQL NULL, which neither `-not` nor `??` treats as null.
+function Test-L2Null($value) {
+    return ($null -eq $value -or $value -is [System.DBNull])
+}
+
 function Get-Rows {
     param([string]$Table, [scriptblock]$Where)
     return @($rows[$Table] | Where-Object $Where)
@@ -425,10 +443,12 @@ function Get-LoadOperation {
 }
 
 function Get-PhaseCount {
-    param([string]$AttemptId, [string]$Phase)
+    # -Inbox reads an earlier checkpoint's rows instead of the final ones: "no second pulse while the
+    # door stood open" is a claim about the stretch before anyone closed it.
+    param([string]$AttemptId, [string]$Phase, [object[]]$Inbox = @($rows['ProtocolInbox']))
 
     $count = 0
-    foreach ($row in @($rows['ProtocolInbox'])) {
+    foreach ($row in @($Inbox)) {
         if ([string]$row.MessageType -ne 'OperationProgress') { continue }
         try { $payload = ([string]$row.RequestJson | ConvertFrom-Json).payload } catch { continue }
         if ($payload.slotOperationAttemptId -eq $AttemptId -and $payload.phase -eq $Phase) { $count++ }
@@ -489,8 +509,14 @@ if ($scenarioA) {
     $assertions.Add('SC1-A-01', '开门不放料：车载端自动重发开锁脉冲，轮次不设上限（现场至少走到第 3 轮）',
         ($unlocking -ge 3), 'UNLOCKING >= 3', $unlocking)
 
-    $assertions.Add('SC1-A-02', '晾满一个 OperationTimeout 之后提示还在走而脉冲停住——提示节拍不重复开一把已经开着的锁',
-        ($waiting -gt $unlocking), "WAITING_OPERATOR > UNLOCKING（$unlocking）", $waiting)
+    # The prompt cadence -- a full OperationTimeout with the door open re-prompts but does not
+    # re-pulse -- used to be judged here. It moved to scenario C (SC1-C-06): the plant's station
+    # deadline is five minutes, so holding a door open for 120 s at this stop and still loading
+    # before the deadline is a race, while scenario C's door stands open for 25 minutes anyway.
+    # What this stop has to show instead is that the reopen loop has a way out: the cargo goes in.
+    $assertions.Add('SC1-A-02', '重开几轮之后照常放料，装载提交——不设上限的重开有出口',
+        ($operation -and [string]$operation.Status -eq 'Committed'),
+        'Committed', ($operation ? [string]$operation.Status : '(没有装载操作行)'))
 
     $failedResults = @(Get-Rows -Table 'OperationResults' -Where {
         $_.SlotOperationAttemptId -eq $attemptId -and [string]$_.OverallOutcome -eq 'FAILED' })
@@ -529,10 +555,15 @@ if ($scenarioB) {
     if ($result -and $result.EvidenceJson) {
         try { $evidence = @([string]$result.EvidenceJson | ConvertFrom-Json) } catch { $evidence = $null }
     }
+    # EvidenceJson is written by JsonSerializer with default options, so SlotBusinessState arrives as
+    # its number (Empty=0, Occupied=1, Unknown=2), not its name. Comparing against 'Unknown' alone
+    # never matched, and this assertion stayed green on exactly the slot it exists to catch.
+    $stateNames = @{ '0' = 'Empty'; '1' = 'Occupied'; '2' = 'Unknown' }
+    $stateName = { param($state) $stateNames[[string]$state] ?? [string]$state }
     $determinate = $evidence -and @($evidence | Where-Object {
-        [string]$_.State -eq 'Unknown' -or -not $_.DoorLocked -or -not $_.UnlockOutputReset }).Count -eq 0
+        (& $stateName $_.State) -eq 'Unknown' -or -not $_.DoorLocked -or -not $_.UnlockOutputReset }).Count -eq 0
     $facts['B.slotEvidence'] = $evidence ? (($evidence | ForEach-Object {
-        "slot$($_.SlotNumber):State=$($_.State)/DoorLocked=$($_.DoorLocked)/UnlockOutputReset=$($_.UnlockOutputReset)" }) -join '; ') : '(没有 EvidenceJson)'
+        "slot$($_.SlotNumber):State=$(& $stateName $_.State)/DoorLocked=$($_.DoorLocked)/UnlockOutputReset=$($_.UnlockOutputReset)" }) -join '; ') : '(没有 EvidenceJson)'
 
     $assertions.Add('SC1-B-02', '三个物理字段都是明确的：State 不是 Unknown、锁已闭、开锁输出已复位',
         [bool]$determinate, '三字段齐全且明确', $facts['B.slotEvidence'])
@@ -541,10 +572,30 @@ if ($scenarioB) {
         ($operation -and [string]$operation.Status -eq 'Failed'),
         'Failed', $facts['B.operationStatus'])
 
+    # 8005-agv-program#39 changed this. The demand used to be left Accepted for a
+    # LoadTaskCancellation that nothing ever raises, and the journey sat at the stop for good; the
+    # server now ends the demand itself, suppresses its business key and settles the load command.
     $demandRow = @(Get-Rows -Table 'AcceptedDemands' -Where { $_.DemandId -eq $scenarioB.demandId })[0]
-    $assertions.Add('SC1-B-04', '确定失败之后需求保持 Accepted，由 LoadTaskCancellation 终结而不是就地判死',
-        ($demandRow -and [string]$demandRow.Status -eq 'Accepted'),
-        'Accepted', ($demandRow ? [string]$demandRow.Status : '(没有这一行)'))
+    $suppression = @(Get-Rows -Table 'TransportDemandSuppressions' -Where { $_.DemandId -eq $scenarioB.demandId })[0]
+    $membership = @(Get-Rows -Table 'JourneyDemands' -Where { $_.DemandId -eq $scenarioB.demandId })[0]
+    $command = $membership ? @(Get-Rows -Table 'ProtocolOutbox' -Where { $_.MessageId -eq $membership.LoadCommandMessageId })[0] : $null
+    $commandSettled = $command -and -not (Test-L2Null $command.AcknowledgedAt)
+    $facts['B.demandEnd'] = "$($demandRow ? $demandRow.Status : '(没有需求行)') / " +
+        "$($suppression ? $suppression.ReasonCode : '(没有抑制行)') / " +
+        "$($command ? ($commandSettled ? 'command settled' : 'command pending') : '(没有装货命令行)')"
+    $assertions.Add('SC1-B-04', '确定失败之后服务端自己终结这条需求：Cancelled、按 CANCELLED_BY_STATION_TIMEOUT 永久抑制、装货命令已结算',
+        ($demandRow -and [string]$demandRow.Status -eq 'Cancelled' -and
+            $suppression -and [string]$suppression.ReasonCode -eq 'CANCELLED_BY_STATION_TIMEOUT' -and $commandSettled),
+        'Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled', $facts['B.demandEnd'])
+
+    # The exit #39 was about. "Not at this stop" would be too strong: another loading round at the same
+    # stop is a legitimate way out. Stuck is exactly this stop, still waiting for a load result.
+    $runtimeRow = $membership ? @(Get-Rows -Table 'JourneyRuntimes' -Where { $_.JourneyId -eq $membership.JourneyId })[0] : $null
+    $facts['B.journeyPosition'] = $runtimeRow ? "$($runtimeRow.CurrentStopSequence)/$($runtimeRow.Stage)" : '(没有旅程行)'
+    $assertions.Add('SC1-B-06', '确定失败之后旅程自己离开这一格，不需要任何人按任何按钮',
+        ($runtimeRow -and -not ([string]$runtimeRow.CurrentStopSequence -eq [string]$membership.StopSequence -and
+            [string]$runtimeRow.Stage -eq 'AwaitingLoadResult')),
+        "不是 $($membership ? $membership.StopSequence : '?')/AwaitingLoadResult", $facts['B.journeyPosition'])
 
     # A single point, and the description says so. Whether the session held Ready for the whole
     # window is a different claim and it is SC1-W-03's, judged from the checkpoint series.
@@ -601,7 +652,22 @@ if ($scenarioC) {
         ($gap -and $gap.TotalMinutes -ge 20),
         '>= 20 分钟', ($gap ? ('{0:N1} 分钟' -f $gap.TotalMinutes) : '(现场记录没有填这两个时刻)'))
 
-    $assertions.Add('SC1-C-05', '关门后的下一轮立即按当时的真实 IO 读数结算，告警随之消失',
+    # Judged at the +20 min checkpoint, before anyone touched the door: by then it has stood open for
+    # well over one OperationTimeout (120 s on agv01), so the vehicle has re-prompted -- and must still
+    # have pulsed exactly once, because re-opening a lock that is already open is not a prompt.
+    $plus20Inbox = Get-CheckpointRows -Label $plus20Label -Table 'ProtocolInbox'
+    $plus20Attempt = $plus20Load ? [string]$plus20Load.SlotOperationAttemptId : $null
+    $plus20Unlocking = ($plus20Attempt -and $null -ne $plus20Inbox) ? (Get-PhaseCount -AttemptId $plus20Attempt -Phase 'UNLOCKING' -Inbox $plus20Inbox) : $null
+    $plus20Waiting = ($plus20Attempt -and $null -ne $plus20Inbox) ? (Get-PhaseCount -AttemptId $plus20Attempt -Phase 'WAITING_OPERATOR' -Inbox $plus20Inbox) : $null
+    $assertions.Add('SC1-C-06', '门一直开着：晾过 OperationTimeout 之后提示还在走而脉冲只打过一次——提示节拍不重复开一把已经开着的锁',
+        ($null -ne $plus20Unlocking -and $plus20Unlocking -eq 1 -and $plus20Waiting -ge 2),
+        'UNLOCKING = 1 / WAITING_OPERATOR >= 2',
+        ($null -ne $plus20Unlocking ? "UNLOCKING $plus20Unlocking / WAITING_OPERATOR $plus20Waiting"
+                                    : "($(Get-MissingRowReason -Label $plus20Label))"))
+
+    # Closing the door does not settle on the first round: decision 1 wins once more and re-opens it
+    # (#25 measured 370 ms), and only the next opposite state settles. Hence "the round after".
+    $assertions.Add('SC1-C-05', '关门之后按真实 IO 读数结算（决策 1 会先重开一轮），告警随之消失',
         ($runtimeRow -and [string]$runtimeRow.BlockReasonCode -ne 'STATION_TIMEOUT_DOOR_NOT_CLOSED' -and
             $operation -and [string]$operation.Status -in @('Committed', 'Failed')),
         '告警清空 / 操作已结算', $facts['C.finalStage'] + ' / ' + ($operation ? [string]$operation.Status : '(没有装载操作行)'))

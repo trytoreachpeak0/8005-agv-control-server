@@ -12,12 +12,12 @@
   "scenarios": [
     {
       "id": "A",
-      "name": "开门不放料：自动重发开锁脉冲，不判失败、不进恢复、不设次数上限",
-      "demandId": "填这一趟的 demandId，从服务端 AcceptedDemands 或 HMI 上抄",
+      "name": "开门不放料：自动重发开锁脉冲，不判失败、不进恢复、不设次数上限，最后放料提交",
+      "demandId": "填停靠 1 那条需求的 demandId，从服务端 JourneyDemands（按 StopSequence）或 HMI 上抄",
       "slotNo": 1,
-      "observedRounds": "现场数到的 UNLOCKING 轮次，例如 1→2→3→4",
+      "observedRounds": "现场数到的 UNLOCKING 轮次，例如 1→2→3",
       "observedRecoveryEntryVisible": false,
-      "note": "晾满一个 OperationTimeout（现场配置 120 s）之后 WAITING_OPERATOR 继续加而 UNLOCKING 停住",
+      "note": "停靠 1。开锁后关门不放料两次（每次都是相反态，车载端自动重开），第三次放料关门提交。现场站点期限只有 5 分钟，全程要在期限内做完——这里不必晾 OperationTimeout，提示节拍改在场景 C 判（SC1-C-06）。",
       "photoPointers": [
         "field-photos/20260910-FW-SC1/A-01-door-open-empty.jpg",
         "field-photos/20260910-FW-SC1/A-02-hmi-waiting-operator.jpg"
@@ -25,11 +25,11 @@
     },
     {
       "id": "B",
-      "name": "仓门已闭超时：确定失败结算，不进恢复，需求保持 Accepted",
-      "demandId": "填这一趟的 demandId",
+      "name": "仓门已闭超时：确定失败结算，不进恢复，服务端自己以 CANCELLED_BY_STATION_TIMEOUT 终结需求、旅程离开本站",
+      "demandId": "与场景 C 同一条：停靠 2 那条需求的 demandId",
       "slotNo": 1,
       "observedSlotReading": "现场 IO 实物读数，例如 CLOSED/EMPTY/锁反馈=1/开锁输出=0",
-      "note": "期限过了不等于判死——决策 1 会先赢一轮，门关到位约 370 ms 后车载端会重新开锁，要再读到一次相反态才结算。别在第一次期限到点时就下结论。",
+      "note": "停靠 2，接在场景 C 的 c-plus-20min 之后。期限过了不等于判死——决策 1 会先赢一轮：第一次关门不放料，门关到位约 370 ms 后车载端重新开锁；再关一次不放料才结算成 FAILED。结算后不按任何按钮，旅程应自己去停靠 3。",
       "photoPointers": [
         "field-photos/20260910-FW-SC1/B-01-door-closed-empty.jpg",
         "field-photos/20260910-FW-SC1/B-02-hmi-failed.jpg"
@@ -38,14 +38,14 @@
     {
       "id": "C",
       "name": "仓门未闭超时：告警 STATION_TIMEOUT_DOOR_NOT_CLOSED，不结束本站",
-      "demandId": "填这一趟的 demandId",
+      "demandId": "填停靠 2 那条需求的 demandId（与场景 B 同一条）",
       "slotNo": 1,
       "deadlineAt": "2026-09-10T14:00:00+08:00",
       "stillWaitingObservedAt": "2026-09-10T14:22:00+08:00",
       "deadlineCheckpoint": "c-deadline-reached",
       "stillWaitingCheckpoint": "c-plus-20min",
       "observedSlotReading": "现场 IO 实物读数，例如 OPEN/EMPTY/锁反馈=0/开锁输出=0",
-      "note": "stage 停在 AwaitingLoadResult 不是 Blocked；关门后的下一轮立即按当时的真实 IO 读数结算。deadlineAt 与 stillWaitingObservedAt 之间必须 >= 20 分钟，两个 checkpoint 的名字要与实际敲的 -Checkpoint 一致。",
+      "note": "停靠 2。扫码、车开锁、门弹开之后人走开，门一直开着：站点期限（现场 5 分钟，从本站开始等 SUBLOT 算起）到点敲 c-deadline-reached，再等 20 分钟敲 c-plus-20min，此前不要碰门——SC1-C-06 在 c-plus-20min 上判脉冲只打过一次。stage 停在 AwaitingLoadResult 不是 Blocked。deadlineAt 与 stillWaitingObservedAt 之间必须 >= 20 分钟，两个 checkpoint 的名字要与实际敲的 -Checkpoint 一致。之后接场景 B。",
       "photoPointers": [
         "field-photos/20260910-FW-SC1/C-01-door-open-at-deadline.jpg",
         "field-photos/20260910-FW-SC1/C-02-hmi-alarm.jpg",
