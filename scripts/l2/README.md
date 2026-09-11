@@ -35,6 +35,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-station-timeout-door-open` | **真的** | 站点期限到期而仓门未闭：告警并持续等待，闭合后按决策 5 结算；结算之后旅程自己结束（#39 之前停在原地） | `evidence/l2/20260910-real-onboard-station-timeout-door-open-001` |
 | `real-onboard-multi-demand-stop-plan` | **真的** | 四停靠旅程：车辆侧收下五条腿的行程带（#37 的回归守卫），四站在真 Modbus 上依次装完 | `evidence/l2/20260910-real-onboard-multi-demand-stop-plan-007` |
 | `real-onboard-multi-demand-operator-inaction` | **真的** | 四停靠旅程里的三种操作员不作为：关门不放料、门开着过期、两次关门判确定失败——然后旅程自己离开那一站，后两站照常装完 | `evidence/l2/20260910-real-onboard-multi-demand-operator-inaction-003` |
+| `real-onboard-restart-while-waiting-operator` | **真的** | 开锁等操作员时杀掉客户端再拉起：车辆按实时 IO 交出那次中断的结论，旅程停摆，补偿清空走到对账（现场窗口一的死锁） | `evidence/l2/20260911-real-onboard-restart-while-waiting-operator-005` |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -44,6 +45,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 `real-onboard-recovery-compensate-load` 的 `-001`（第 12 条）/`-002`（第 16 条）/`-004`（第 14
 条的第四例），以及 `schema-conformance-normal-load-001`（合成对端的 `Heartbeat` 违反 schema，见
 「车载端报文的 schema 校验」一节）。**除头两条之外全都红在场景、驱动或替身自己身上，不是产品**——`real-onboard-station-timeout-door-open-001` 那一条连诊断都跟着错了一半。
+另有 `real-onboard-restart-while-waiting-operator` 的 `-001`/`-002`/`-003` 三个，前两个**红在产品**、
+第三个红在驱动，见最后一节。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
 `VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
@@ -434,6 +437,15 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     `"[REDACTED]"` 之后重序列化的行，schema 只要求非空字符串所以照样能验，但**拿它们核
     `ContentHash` 必然对不上**，那个哈希取自原始行。
 
+19. **服务端每条 TCP 连接只有一个 `DbContext`，它跟踪的实体不会因为别人写了库而变。**握手时
+    `WireToGateStore` 把这台车的活动旅程带跟踪读进去，之后引擎用自己的上下文改 stage，同一连接上
+    再查到的仍是握手那一刻的样子。只有在「车在某个状态下连上、之后状态被别人改掉」时才看得见，
+    所以前面所有场景（车都是在旅程开始之前连上的）一次都没撞上，重启场景第一次跑修好的车载端就撞上了
+    （`-002`）。恢复协调器现在读旅程时先 `ReloadAsync`；**同一类读法在别处还有没有，没有逐条核**。
+20. **重新拉起车载端之后别马上点弹窗。**`-003` 在拉起后约 1 秒点「补偿清空」，确认框已经在 UIA
+    树里，按钮却还不接受输入，`Invoke` 抛 `Operation is not valid due to the current state of the
+    object.`，请求没发出去。`Confirm` 现在在截止前把 `InvalidOperationException` 当「还没好」重试。
+
 ## 车载端报文的 schema 校验：`L2-SC-01`
 
 每条场景收尾时，不论场景本身红绿，都把**车载端那一侧发出的每一行**交给
@@ -556,3 +568,37 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 现场那三步（发现有货、关门、修传感器）每一步都由执行器的代码要求着，理由见第 16 条与场景文件头。
 写这条场景踩出来的三个坑分别记在第 12 条（对话框在树里的位置）、第 16 条（空仓不碰 IO）和第 14 条
 的第四例（进度基线取晚了）。
+
+## `real-onboard-restart-while-waiting-operator`：客户端没了之后那一次开锁怎么收场
+
+2026-09-11 现场窗口一停在这一格（`8005-agv-program#40`，证据
+`evidence/field/20260911-FW-SC1-operator-inaction/` 帧 `03`）：停靠 2 开锁等操作员时客户端被关掉，
+重启后两端互相等——车辆只报一个没了结的 attempt、不补交结果；服务端没有结果就不判
+`RecoveryRequired`、不让旅程停摆，会话也不 `Ready` 所以不重放命令；恢复入口又要求旅程已停摆。
+断电、崩溃、系统更新重启都落在同一格。
+
+**杀进程，不断网。**车载端执行器挂在服务生命周期上，不跟连接走：断网重连时它还在跑，握手上报的
+日志与进程重启后一字不差。只有进程真的没了，那次 attempt 才是没人认领的。`StopComponent` 用
+`Kill`，与断电同形；`RelaunchOnboard` 用同一个 stage、同一份 journal 再起一次。客户端死着的时候
+操作员把门关上、没放货，照抄现场。
+
+三个红证据，两层产品缺陷加一个驱动时序：
+
+1. **`-001`（服务端 `5cc347f`、车载端 `3cf2665`）**：现场原样——`L2-RW-04` 停在
+   `AwaitingLoadResult / ONBOARD_SESSION_NOT_READY / Prepared`，`L2-RW-06` 被拒
+   `RECOVERY_DEMAND_NOT_BLOCKED`。修在车载端（`6846e98`）：会话进入 `Ready`/`RecoveryRequired` 时，
+   日志里的 attempt 若不在本进程在途集合里、发件箱里也没有它的结果，就不再开锁、按实时 IO 交一份
+   `OperationResult`——开过的仓全到最终态且没有未开始的仓为 `COMPLETED`，否则 `UNKNOWN`，物理字段照实填。
+   「有没有人在执行」只有车辆知道，所以这件事修不到服务端。
+2. **`-002`（车载端 `6846e98`）**：`L2-RW-04/05` 转绿，旅程在库里已经 `Blocked`，`L2-RW-06` 仍被拒
+   `RECOVERY_DEMAND_NOT_BLOCKED`——第 19 条。修在服务端 `7401978`。现场即使拿到了结果，那台重启后的车
+   在同一条连接上也开不出恢复会话。
+3. **`-003`**：两端都修好，驱动点弹窗太早——第 20 条。
+
+**这一条不证补偿在 Modbus 上怎么清仓**：仓是空的，补偿向量一次 IO 都不碰（第 16 条），那是
+`real-onboard-recovery-compensate-load` 的事。
+
+**补偿对账之后会话回不到 `Ready`**，场景只记不判：timeline 最后一条 `Session after compensation`
+写着 `RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED`，服务端还挂着那个 attempt——车辆早清掉了，
+服务端只在下一次 `RecoveryStateReport` 才刷新。`real-onboard-recovery-compensate-load` 的历次绿证据里
+同样停在 `OPERATION_RECOVERY_REQUIRED`。

@@ -1,0 +1,55 @@
+{"at":"2026-09-11T03:09:14.2113238+00:00","note":"L2 run 20260911T030914173Z starting for scenario 'real-onboard-restart-while-waiting-operator'."}
+{"at":"2026-09-11T03:09:14.2442533+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-11T03:09:14.3927155+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-11T03:09:19.3266652+00:00","note":"Reusing cached onboard-hmi publish for 6846e98f2891138c95e580460affbd3f35dde3d7."}
+{"at":"2026-09-11T03:09:19.4120958+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T03:09:19.4160901+00:00","note":"Peers: onboard-hmi@6846e98f2891138c95e580460affbd3f35dde3d7, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T03:09:20.2838566+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-11T03:09:20.3974693+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-11T03:09:22.1526945+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-11T03:09:24.1679958+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-11T03:09:25.2787889+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-11T03:09:27.1702602+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-11T03:09:27.1839236+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-11T03:09:27.2342737+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-11T03:09:27.5359958+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-11T03:09:27.5735875+00:00","note":"Environment is up; entering scenario 'real-onboard-restart-while-waiting-operator'."}
+{"at":"2026-09-11T03:09:27.6069504+00:00","note":"Publishing demand 48b9920aeb5e42a192c6ed667d4abb15 (sublot L2-SUBLOT-20260911T030914173Z) to the fake MesIngest catalog."}
+{"at":"2026-09-11T03:09:27.6850555+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-11T03:09:28.7422450+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-11T03:09:28.7558750+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-11T03:09:28.7581414+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-11T03:09:28.8155587+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-11T03:09:28.8456747+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-11T03:09:29.3895712+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-11T03:09:29.3908856+00:00","note":"Typing sublot L2-SUBLOT-20260911T030914173Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-11T03:09:29.4610525+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-11T03:09:29.5185014+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-11T03:09:29.5224036+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-11T03:09:30.2989543+00:00","criterion":"load-attempt","value":"@{SlotOperationAttemptId=46c6f4a7-1d98-2f56-b05f-affdbfd21298; Status=Prepared}"}
+{"at":"2026-09-11T03:09:30.3162851+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=46c6f4a7-1d98-2f56-b05f-affdbfd21298; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/11/2026 11:09:30}"}
+{"at":"2026-09-11T03:09:30.3236475+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-11T03:09:31.3679269+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-11T03:09:31.4041895+00:00","note":"Stopping component 'onboard-hmi'."}
+{"at":"2026-09-11T03:09:31.4619577+00:00","note":"While the onboard is down the operator closes slot 1 without loading it."}
+{"at":"2026-09-11T03:09:31.4945246+00:00","criterion":"slot-closed-empty","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-11T03:09:31.7563270+00:00","criterion":"slot-closed-empty","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-11T03:09:31.7576251+00:00","note":"Slot 1 now reads CLOSED/EMPTY/1/0."}
+{"at":"2026-09-11T03:09:31.7763983+00:00","note":"Relaunching the onboard (start 2) against the same journal."}
+{"at":"2026-09-11T03:09:32.7213000+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-11T03:09:32.7278804+00:00","criterion":"relaunch-report","value":"1"}
+{"at":"2026-09-11T03:09:32.9943737+00:00","criterion":"relaunch-report","value":"2"}
+{"at":"2026-09-11T03:09:33.0078371+00:00","criterion":"journey-stage","value":"AwaitingLoadResult /  / RecoveryRequired"}
+{"at":"2026-09-11T03:09:33.2775954+00:00","criterion":"journey-stage","value":"Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired"}
+{"at":"2026-09-11T03:09:33.3162349+00:00","criterion":"onboard-compensation-entry","value":"True"}
+{"at":"2026-09-11T03:09:33.3191271+00:00","note":"Invoking the 补偿清空 button and confirming the modal dialog."}
+{"at":"2026-09-11T03:09:33.4459679+00:00","criterion":"recovery-session-answer","value":"PENDING"}
+{"at":"2026-09-11T03:09:33.7093195+00:00","criterion":"recovery-session-answer","value":"OPENED:EXECUTING"}
+{"at":"2026-09-11T03:09:33.7249235+00:00","criterion":"compensation-reconciled","value":"AwaitingResult"}
+{"at":"2026-09-11T03:09:34.0026804+00:00","criterion":"compensation-reconciled","value":"Reconciled"}
+{"at":"2026-09-11T03:09:34.0112648+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-11T03:09:34.0495181+00:00","criterion":"load-command-settled","value":"2026-09-11 03:09:33.7549084+00:00"}
+{"at":"2026-09-11T03:09:34.0674843+00:00","note":"Session after compensation: generation 2, RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED, pending attempts [\"46c6f4a7-1d98-2f56-b05f-affdbfd21298\"]."}
+{"at":"2026-09-11T03:09:34.0686006+00:00","note":"Scenario finished: an onboard killed while waiting for the operator came back, settled the interrupted attempt, and the compensation handshake closed the demand."}
+{"at":"2026-09-11T03:09:34.1473434+00:00","note":"Exported 27 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-11T03:09:56.3559294+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 27 lines, 27 distinct, 13 message types, 0 distinct violations, 0 known; schema compilation 20604 ms."}

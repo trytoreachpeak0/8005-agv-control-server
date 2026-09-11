@@ -1,0 +1,43 @@
+{"at":"2026-09-11T03:12:03.7262716+00:00","note":"L2 run 20260911T031203693Z starting for scenario 'real-onboard-recovery-entry-on-unknown'."}
+{"at":"2026-09-11T03:12:03.7517484+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-11T03:12:03.8960901+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-11T03:12:06.1618435+00:00","note":"Reusing cached onboard-hmi publish for 6846e98f2891138c95e580460affbd3f35dde3d7."}
+{"at":"2026-09-11T03:12:06.2460585+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T03:12:06.2517139+00:00","note":"Peers: onboard-hmi@6846e98f2891138c95e580460affbd3f35dde3d7, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T03:12:07.0110050+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-11T03:12:07.1276872+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-11T03:12:08.8874477+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-11T03:12:10.5995094+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-11T03:12:11.6823032+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-11T03:12:13.5724779+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-11T03:12:13.5870824+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-11T03:12:13.6199783+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-11T03:12:13.9094488+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-11T03:12:13.9455389+00:00","note":"Environment is up; entering scenario 'real-onboard-recovery-entry-on-unknown'."}
+{"at":"2026-09-11T03:12:13.9980179+00:00","note":"Publishing demand 082c07e6e8de42a992045487a21a798c (sublot L2-SUBLOT-20260911T031203693Z) to the fake MesIngest catalog."}
+{"at":"2026-09-11T03:12:14.0790833+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-11T03:12:15.1474712+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-11T03:12:15.1531048+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-11T03:12:15.1591993+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-11T03:12:15.2191332+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-11T03:12:15.2514325+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-11T03:12:15.7908369+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-11T03:12:15.7921691+00:00","note":"Typing sublot L2-SUBLOT-20260911T031203693Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-11T03:12:15.8641618+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-11T03:12:15.8880799+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-11T03:12:15.8920477+00:00","criterion":"sublot-submitted","value":"0"}
+{"at":"2026-09-11T03:12:16.1576210+00:00","criterion":"sublot-submitted","value":"1"}
+{"at":"2026-09-11T03:12:16.1740914+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-11T03:12:16.6901963+00:00","criterion":"load-attempt","value":"73230299-ebf2-c85e-8da1-ea0164b89118"}
+{"at":"2026-09-11T03:12:16.7118120+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=73230299-ebf2-c85e-8da1-ea0164b89118; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/11/2026 11:12:16}"}
+{"at":"2026-09-11T03:12:16.7380497+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-11T03:12:17.8007754+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-11T03:12:17.8055895+00:00","note":"Jamming slot 1 lock feedback at LOCKED while the door stands open."}
+{"at":"2026-09-11T03:12:17.8631382+00:00","criterion":"load-unlocking-after-jam","value":"1"}
+{"at":"2026-09-11T03:12:18.3966048+00:00","criterion":"load-unlocking-after-jam","value":"2"}
+{"at":"2026-09-11T03:12:18.4025026+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-11T03:12:21.5810021+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-11T03:12:21.6501945+00:00","criterion":"onboard-recovery-entry","value":"True"}
+{"at":"2026-09-11T03:12:21.6531482+00:00","note":"Scenario finished at the recovery entry: the server authorizes COMPENSATE_LOAD_ALL_EMPTY here, and the entry is now reachable on the vehicle. Whether the handshake then completes is a different scenario."}
+{"at":"2026-09-11T03:12:21.7371307+00:00","note":"Exported 22 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-11T03:12:40.0296106+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 22 lines, 22 distinct, 10 message types, 0 distinct violations, 0 known; schema compilation 17050 ms."}

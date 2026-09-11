@@ -1,0 +1,18 @@
+2026-09-11T11:10:31.6996573+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+6846e98f2891138c95e580460affbd3f35dde3d7。
+2026-09-11T11:10:32.3703752+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T11:10:32.3870180+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T11:10:32.3881517+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T11:10:32.7773504+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-11T11:10:34.6986478+08:00	Information	App	服务端请求录入Sublot：demandId=5b920d5d-4e1c-4f9a-b8c5-a8c2d3b34786，revision=1。 
+2026-09-11T11:10:35.5461682+08:00	Information	App	服务端请求录入Sublot：demandId=5b920d5d-4e1c-4f9a-b8c5-a8c2d3b34786，revision=1。 
+2026-09-11T11:10:35.7389373+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T11:10:35.7650346+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T11:10:35.8794241+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-11T11:10:36.3129709+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-11T11:10:36.5652342+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=5df0111b-b353-275b-9702-7141334d2277。
+2026-09-11T11:10:37.5144941+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+6846e98f2891138c95e580460affbd3f35dde3d7。
+2026-09-11T11:10:38.0044167+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T11:10:38.0135609+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T11:10:38.0146017+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T11:10:38.2436921+08:00	Warning	WireToGateBusinessService	上次仓位操作在执行中中断，未再输出开锁，按实时IO结算：attempt=5df0111b-b353-275b-9702-7141334d2277，outcome=UNKNOWN，checkpoint=SAFE_FINISH_REACHED。
+2026-09-11T11:10:38.2568146+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
