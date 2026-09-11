@@ -2768,6 +2768,297 @@ public sealed class JourneyRuntimeWorkerTests
                 TestContext.Current.CancellationToken)).Status);
     }
 
+    /// <summary>
+    /// 8005-agv-program#47. A real UNKNOWN at the second of three stops, compensated empty by an
+    /// administrator, while the first stop's cargo is aboard and the third stop is still ahead. The
+    /// compensation ends that one demand; the journey has to leave the stop by itself, load the
+    /// third stop and unload both at the gate. Before the fix it stayed Blocked for good: only
+    /// RESUME_AFTER_REPAIR ever moved a journey out of Blocked, and the runtime does nothing there.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ACompensatedLoadAtAMiddleStopSendsTheJourneyOnToItsRemainingStopsAndTheGate()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2"),
+            new RiotMapStation(14, "N1-3"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(300, "等待点"));
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000003", "SUBLOT-003",
+                createdAt: Now.AddMinutes(-8), area: "N1-3", eqp: "EQP-03"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+        fixture.BoxCounts.Set("SUBLOT-003", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        Assert.Equal(3, (await fixture.StopRowsAsync()).Count(row => row.Role == JourneyStopRole.Pickup));
+
+        await fixture.ScanSublotAsync("SUBLOT-002");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyDemandRow second = (await fixture.DemandRowsAsync())
+            .Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002");
+        int compensatedAt = second.StopSequence;
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationForAsync(second.LoadSlotOperationAttemptId), SlotOperationType.Load);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", (await fixture.JourneyRowAsync()).BlockReasonCode);
+
+        await fixture.TerminateBlockedOperationAsync("COMPENSATE_LOAD_ALL_EMPTY");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // The stop closes the way a closed batch closes it: nothing else to load here, so the
+        // vehicle leaves for the next stop that still has something -- not the gate, and not with
+        // loading closed.
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        JourneyDemandRow third = (await fixture.DemandRowsAsync())
+            .Single(row => row.DemandId == "10000000-0000-4000-8000-000000000003");
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        Assert.Equal(compensatedAt, journey.CurrentStopSequence);
+        Assert.Equal(third.StopSequence, journey.NextStopSequence);
+        Assert.Null(journey.LoadingClosedReason);
+        Assert.Null(journey.BlockReasonCode);
+        // The compensated demand's own outcome is what it was before: cancelled, barred, its load
+        // command answered.
+        Assert.Equal(JourneyDemandState.Cancelled, (await fixture.DemandRowsAsync())
+            .Single(row => row.DemandId == second.DemandId).State);
+        Assert.Equal(
+            "CANCELLED_BY_LOAD_COMPENSATION",
+            (await fixture.Context.TransportDemandSuppressions.AsNoTracking().SingleAsync(
+                TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.DoesNotContain(second.LoadCommandMessageId, await fixture.PendingOutboxMessageIdsAsync());
+
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-003");
+        journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        Assert.Equal("NO_FURTHER_CARGO", journey.LoadingClosedReason);
+        Assert.Equal(9, journey.NextStopSequence);
+
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.UnloadCurrentAsync();
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+        AcceptedDemandRow[] outcomes = await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(
+            DemandExecutionStatus.Succeeded,
+            outcomes.Single(row => row.DemandId == "10000000-0000-4000-8000-000000000001").Status);
+        Assert.Equal(
+            DemandExecutionStatus.Cancelled,
+            outcomes.Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002").Status);
+        Assert.Equal(
+            DemandExecutionStatus.Succeeded,
+            outcomes.Single(row => row.DemandId == "10000000-0000-4000-8000-000000000003").Status);
+        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+    }
+
+    /// <summary>
+    /// The same compensation at a stop that still has another demand on its worklist: the stop stays
+    /// open for it, with a fresh round, exactly as a closed batch or an operator cancellation leaves
+    /// it (#28). Which of the two happens is TryContinueLoadingAtStopAsync's judgement, not a rule
+    /// written for compensation.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ACompensatedLoadLeavesTheStopFreeToLoadItsOtherDemand()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10)),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        Assert.Single(await fixture.StopRowsAsync(), row => row.Role == JourneyStopRole.Pickup);
+        await fixture.ScanSublotAsync("SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        await fixture.TerminateBlockedOperationAsync("COMPENSATE_LOAD_ALL_EMPTY");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, journey.Stage);
+        Assert.Null(journey.BlockReasonCode);
+        Assert.Equal(["SUBLOT-002"], await fixture.SublotEntryRequestSublotsAsync());
+
+        await fixture.LoadSublotAsync("SUBLOT-002");
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+    }
+
+    /// <summary>
+    /// A fault-cargo handoff terminates its demand through the same code as a compensation, so it
+    /// left the same hole: the second stop's cargo handed off, the first stop's cargo aboard, and
+    /// the journey Blocked with nothing to move it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AFaultCargoHandoffAtALaterStopLetsTheCargoAboardReachTheGate()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.ScanSublotAsync("SUBLOT-002");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyDemandRow second = (await fixture.DemandRowsAsync())
+            .Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002");
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationForAsync(second.LoadSlotOperationAttemptId), SlotOperationType.Load);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        await fixture.TerminateBlockedOperationAsync("FAULT_CARGO_HANDOFF");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, journey.Stage);
+        Assert.Equal("NO_FURTHER_CARGO", journey.LoadingClosedReason);
+        Assert.Equal(9, journey.NextStopSequence);
+        Assert.Equal(
+            "TERMINATED_BY_FAULT_CARGO_HANDOFF",
+            (await fixture.Context.TransportDemandSuppressions.AsNoTracking().SingleAsync(
+                TestContext.Current.CancellationToken)).ReasonCode);
+
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+    }
+
+    /// <summary>
+    /// The gate half of the same hole. The first unload comes back UNKNOWN and its cargo is handed
+    /// off as fault cargo; the other demand is still aboard, so the journey is not complete, and the
+    /// gate has to go on to unload it. Its unload command, not the handed-off one, is what is
+    /// outstanding afterwards.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AFaultCargoHandoffAtTheGateGoesOnToUnloadTheRestOfTheCargo()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-002");
+        await fixture.ConfirmDepartureSafeAsync();
+        // The recovery session scopes itself to a demand's latest station operation by creation
+        // time; a fixed clock would leave the load and the unload tied.
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await fixture.HeartbeatAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.JourneyRowAsync()).Stage);
+
+        JourneyDemandRow first = (await fixture.DemandRowsAsync())
+            .Single(row => row.State == JourneyDemandState.Loaded && row.UnloadCommandedAt is not null);
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationForAsync(first.UnloadSlotOperationAttemptId), SlotOperationType.Unload);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("UNLOAD_RESULT_REQUIRES_RECOVERY", (await fixture.JourneyRowAsync()).BlockReasonCode);
+
+        await fixture.TerminateBlockedOperationAsync("FAULT_CARGO_HANDOFF");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, journey.Stage);
+        Assert.Null(journey.BlockReasonCode);
+        JourneyDemandRow[] demands = await fixture.DemandRowsAsync();
+        Assert.Equal(JourneyDemandState.Cancelled, demands.Single(row => row.DemandId == first.DemandId).State);
+        JourneyDemandRow rest = demands.Single(row => row.DemandId != first.DemandId);
+        Assert.NotNull(rest.UnloadCommandedAt);
+        string[] pending = await fixture.PendingOutboxMessageIdsAsync();
+        Assert.Contains(rest.UnloadCommandMessageId, pending);
+        Assert.DoesNotContain(first.UnloadCommandMessageId, pending);
+
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+    }
+
+    /// <summary>
+    /// What #47 must not change: compensating the only demand a journey carries ends the journey
+    /// on the spot, the reason stays on it, and the runtime does not pick it back up.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task CompensatingTheOnlyDemandOfAJourneyStillEndsTheJourney()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ApplyTimedOutResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        await fixture.TerminateBlockedOperationAsync("COMPENSATE_LOAD_ALL_EMPTY");
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, journey.Stage);
+        Assert.Equal("CANCELLED_BY_LOAD_COMPENSATION", journey.BlockReasonCode);
+        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+
+        string[] outboxBefore = await fixture.OutboxTypesAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Equal(outboxBefore, await fixture.OutboxTypesAsync());
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     public async Task ACancelledDemandStaysBarredWhenMesIngestReissuesItUnderANewDemandId()
@@ -3863,6 +4154,170 @@ public sealed class JourneyRuntimeWorkerTests
                     }),
                 state,
                 TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
+        /// <summary>
+        /// Ends the slot operation the journey is blocked on through the administrator's recovery
+        /// handshake, the way the onboard HMI drives it: open a recovery session, choose the action,
+        /// and send the result proving every target slot is empty, locked and reset. Only the two
+        /// actions that terminate the demand are offered -- <c>COMPENSATE_LOAD_ALL_EMPTY</c> (which has
+        /// its own authorisation round) and <c>FAULT_CARGO_HANDOFF</c>. Everything goes through
+        /// OnboardMessageProcessor, because OnboardRecoveryCoordinator is where the journey's stage
+        /// is decided on the way out.
+        /// </summary>
+        public async Task TerminateBlockedOperationAsync(string action)
+        {
+            const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RUNTIME_FIXTURE";
+            const string proof = "runtime-fixture-proof-not-a-production-secret";
+            JourneyRuntimeRow journey = await JourneyRowAsync();
+            Assert.Equal(JourneyRuntimeStage.Blocked, journey.Stage);
+            JourneyDemandRow blocked = (await DemandRowsAsync()).Single(row =>
+                (row.State == JourneyDemandState.Planned && row.LoadCommandedAt is not null) ||
+                (row.State == JourneyDemandState.Loaded && row.UnloadCommandedAt is not null));
+            StationOperationRow operation = await OperationForAsync(
+                blocked.State == JourneyDemandState.Planned
+                    ? blocked.LoadSlotOperationAttemptId
+                    : blocked.UnloadSlotOperationAttemptId);
+            int[] slots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
+            string requestId = Guid.NewGuid().ToString("D");
+            string eventId = Guid.NewGuid().ToString("D");
+            string actionId = Guid.NewGuid().ToString("D");
+            object administrator = new
+            {
+                operatorId = "maintenance-001",
+                verificationMethod = "BADGE",
+                verifiedAt = Clock.GetUtcNow()
+            };
+            object[] emptySlots = slots.Select(slot => (object)new
+            {
+                slotNo = slot,
+                outcome = "COMPLETED",
+                finalPhysicalState = "EMPTY",
+                lockState = "LOCKED",
+                unlockOutputState = "RESET",
+                reasonCodes = Array.Empty<string>()
+            }).ToArray();
+            Environment.SetEnvironmentVariable(proofVariable, proof);
+            try
+            {
+                OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                    Context,
+                    new WireToGateStore(Context),
+                    Clock,
+                    new ConfigurationBuilder()
+                        .AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            ["Recovery:AuthenticationProofEnvironmentVariable"] = proofVariable
+                        })
+                        .Build());
+                OnboardConnectionState state = new()
+                {
+                    AgvId = Options.AgvId,
+                    SessionGeneration = 1,
+                    CapabilityRevision = 1,
+                    SafetyRevision = 7,
+                    Readiness = SessionReadiness.Ready
+                };
+                string opened = await processor.ProcessAsync(
+                    PeerEnvelope(
+                        "ExceptionRecoverySessionRequested",
+                        new
+                        {
+                            requestId,
+                            administrator,
+                            administratorRole = "MAINTENANCE_ADMINISTRATOR",
+                            eventId,
+                            demandId = blocked.DemandId,
+                            slots,
+                            reason = "Recover the blocked slot operation.",
+                            authenticationProof = proof
+                        }),
+                    state,
+                    TestContext.Current.CancellationToken);
+                Assert.Contains("ExceptionRecoverySessionOpened", opened, StringComparison.Ordinal);
+                string sessionId = (await Context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(
+                    row => row.RequestId == requestId, TestContext.Current.CancellationToken))
+                    .ExceptionRecoverySessionId;
+                string accepted = await processor.ProcessAsync(
+                    PeerEnvelope(
+                        "RecoveryActionSubmitted",
+                        new
+                        {
+                            recoveryActionId = actionId,
+                            exceptionRecoverySessionId = sessionId,
+                            action,
+                            eventId,
+                            demandId = blocked.DemandId,
+                            slots,
+                            @operator = administrator,
+                            reason = "Every target slot was checked by hand and is empty."
+                        }),
+                    state,
+                    TestContext.Current.CancellationToken);
+                Assert.Contains("RecoveryActionAccepted", accepted, StringComparison.Ordinal);
+                string result;
+                if (action == "COMPENSATE_LOAD_ALL_EMPTY")
+                {
+                    await processor.ProcessAsync(
+                        PeerEnvelope(
+                            "LoadCompensationRequested",
+                            new
+                            {
+                                recoveryActionId = actionId,
+                                exceptionRecoverySessionId = sessionId,
+                                demandId = blocked.DemandId,
+                                slotOperationAttemptId = operation.SlotOperationAttemptId,
+                                @operator = administrator
+                            }),
+                        state,
+                        TestContext.Current.CancellationToken);
+                    result = await processor.ProcessAsync(
+                        PeerEnvelope(
+                            "LoadCompensationResult",
+                            new
+                            {
+                                recoveryActionId = actionId,
+                                demandId = blocked.DemandId,
+                                slotOperationAttemptId = operation.SlotOperationAttemptId,
+                                overallOutcome = "ALL_EMPTY",
+                                slotResults = emptySlots,
+                                observedAt = Clock.GetUtcNow()
+                            }),
+                        state,
+                        TestContext.Current.CancellationToken);
+                }
+                else
+                {
+                    string handoffId = (await Context.RecoveryWorkflows.AsNoTracking().SingleAsync(
+                        row => row.WorkflowId == actionId, TestContext.Current.CancellationToken)).HandoffId!;
+                    result = await processor.ProcessAsync(
+                        PeerEnvelope(
+                            "FaultCargoRecoveryResult",
+                            new
+                            {
+                                exceptionRecoverySessionId = sessionId,
+                                recoveryActionId = actionId,
+                                demandId = blocked.DemandId,
+                                handoffId,
+                                overallOutcome = "HANDED_OFF",
+                                slotResults = emptySlots,
+                                @operator = administrator,
+                                observedAt = Clock.GetUtcNow()
+                            }),
+                        state,
+                        TestContext.Current.CancellationToken);
+                }
+                Assert.Contains("DurableAck", result, StringComparison.Ordinal);
+                Assert.Equal(
+                    RecoveryWorkflowState.Reconciled,
+                    (await Context.RecoveryWorkflows.AsNoTracking().SingleAsync(
+                        row => row.WorkflowId == actionId, TestContext.Current.CancellationToken)).State);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(proofVariable, null);
+            }
             Context.ChangeTracker.Clear();
         }
 

@@ -171,9 +171,7 @@ public sealed class OnboardRecoveryCoordinator(
             StationOperationRow operation = await dbContext.StationOperations.SingleAsync(
                 row => row.SlotOperationAttemptId == slotOperationAttemptId,
                 cancellationToken).ConfigureAwait(false);
-            runtime.Stage = operation.OperationType == SlotOperationType.Load
-                ? JourneyRuntimeStage.AwaitingLoadResult
-                : JourneyRuntimeStage.AwaitingUnloadResult;
+            runtime.Stage = AwaitingResultOf(operation);
             runtime.BlockReasonCode = null;
             runtime.UpdatedAt = timeProvider.GetUtcNow();
         }
@@ -845,12 +843,13 @@ public sealed class OnboardRecoveryCoordinator(
         bool journeyComplete = await store.SettleDemandInJourneyAsync(
             workflow.DemandId, JourneyDemandState.Cancelled, observedAt, cancellationToken)
             .ConfigureAwait(false);
+        StationOperationRow? terminated = null;
         if (workflow.SlotOperationAttemptId is not null)
         {
-            StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
+            terminated = await dbContext.StationOperations.SingleOrDefaultAsync(
                 row => row.SlotOperationAttemptId == workflow.SlotOperationAttemptId,
                 cancellationToken).ConfigureAwait(false);
-            if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
+            if (terminated is not null) terminated.Status = StationOperationStatus.Cancelled;
         }
         string terminalReasonCode = messageType == "FaultCargoRecoveryResult"
             ? "TERMINATED_BY_FAULT_CARGO_HANDOFF"
@@ -875,21 +874,52 @@ public sealed class OnboardRecoveryCoordinator(
             {
                 runtime.Stage = JourneyRuntimeStage.Completed;
             }
+            else if (runtime.Stage == JourneyRuntimeStage.Blocked && terminated is not null)
+            {
+                // ...and it has to be able to carry on (8005-agv-program#47). A compensation or a
+                // fault-cargo handoff is only ever authorised against a Blocked journey, and the
+                // runtime does nothing with Blocked, so a journey whose other demands were still
+                // aboard sat at the stop for good: L2 real-onboard-multi-demand-compensate.
+                //
+                // The journey goes back to waiting on the result of the operation it was blocked
+                // on, exactly as ObserveOperationResultAsync hands it back after a resume. What
+                // happens next is not decided here. That operation's demand is Cancelled now, so
+                // the runtime reads it as a batch that closed the other way round and finishes it
+                // through the one path every terminal end takes (#28, #39): another round at this
+                // stop, the next stop or the gate for a load, the next demand to unload for an
+                // unload. Deciding any of that here would write the same judgement a second time,
+                // and marking the journey on from a message handler is what #39 learnt not to do.
+                // The block reason is cleared by the runtime when it moves the journey on.
+                runtime.Stage = AwaitingResultOf(terminated);
+            }
             runtime.BlockReasonCode = terminalReasonCode;
             runtime.UpdatedAt = observedAt;
         }
-        // The LoadBatch command this result terminates will never receive a LoadResult, and only a
-        // closed batch settles it. Left unsettled it is replayed into every later session carrying a
-        // new session generation, which the peer refuses as a business id whose content changed --
-        // the same failure CancelDemandBeforeLoadAsync settles the sublot entry request for.
+        // The command this result terminates will never receive a result of its own, and only a
+        // closed batch settles one. Left unsettled it is replayed into every later session carrying
+        // a new session generation, which the peer refuses as a business id whose content changed --
+        // the same failure CancelDemandBeforeLoadAsync settles the sublot entry request for. That is
+        // the LoadBatch command for a load and the UnloadBatch command for an unload at the gate;
+        // settling one that was already answered, or never sent, changes nothing.
         JourneyDemandRow? membership = await dbContext.JourneyDemands.SingleOrDefaultAsync(
             row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
         if (membership is not null)
         {
             await store.SettleAnsweredCommandAsync(
                 membership.LoadCommandMessageId, observedAt, cancellationToken).ConfigureAwait(false);
+            await store.SettleAnsweredCommandAsync(
+                membership.UnloadCommandMessageId, observedAt, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// The stage a journey waits in for the result of one station operation -- where it was when the
+    /// operation's result sent it to Blocked, and where the runtime settles that operation.
+    /// </summary>
+    private static JourneyRuntimeStage AwaitingResultOf(StationOperationRow operation) =>
+        operation.OperationType == SlotOperationType.Load
+            ? JourneyRuntimeStage.AwaitingLoadResult
+            : JourneyRuntimeStage.AwaitingUnloadResult;
 
     private async Task KeepDemandAndJourneyBlockedAsync(
         string? demandId,
