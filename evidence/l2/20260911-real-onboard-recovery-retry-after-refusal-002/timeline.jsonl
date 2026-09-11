@@ -1,0 +1,31 @@
+{"at":"2026-09-11T11:05:41.0661260+00:00","note":"L2 run 20260911T110541028Z starting for scenario 'real-onboard-recovery-retry-after-refusal'."}
+{"at":"2026-09-11T11:05:41.0987875+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-11T11:05:41.2438550+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-11T11:05:58.0939980+00:00","note":"Reusing cached onboard-hmi publish for 96c7513d6a282847a814a13bcea781e16f9b70d3."}
+{"at":"2026-09-11T11:05:58.2211184+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T11:05:58.2302708+00:00","note":"Peers: onboard-hmi@96c7513d6a282847a814a13bcea781e16f9b70d3, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T11:05:59.2264975+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-11T11:05:59.3444721+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-11T11:06:01.1287267+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-11T11:06:03.3587536+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-11T11:06:04.9750591+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-11T11:06:06.9308391+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-11T11:06:06.9446640+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-11T11:06:07.0364977+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-11T11:06:07.3465155+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-11T11:06:07.3993934+00:00","note":"Environment is up; entering scenario 'real-onboard-recovery-retry-after-refusal'."}
+{"at":"2026-09-11T11:06:07.5245553+00:00","note":"Publishing demand 37571b8af3bf414cae16efd966440ec0 (sublot L2-RAR-20260911T110541028Z)."}
+{"at":"2026-09-11T11:06:07.6300570+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-11T11:06:09.2367990+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-2b3bf152-2f2f-cb54-bcab-ba66dbb26741-S1-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-11T11:06:09.4942149+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-2b3bf152-2f2f-cb54-bcab-ba66dbb26741-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-11T11:06:09.5116604+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-11T11:06:11.1739214+00:00","note":"field-operator: stop 1: submitted sublot L2-RAR-20260911T110541028Z (demand 37571b8a-f3bf-414c-ae16-efd966440ec0)"}
+{"at":"2026-09-11T11:06:12.7707410+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt 8b1f313e-e05e-685d-b670-0ff12d58d504)"}
+{"at":"2026-09-11T11:06:12.8105610+00:00","note":"Gate station 210 removed from the RIoT map: every engine iteration returns before it can block the journey."}
+{"at":"2026-09-11T11:06:12.8679529+00:00","criterion":"recovery-required-not-blocked","value":"Prepared / AwaitingLoadResult"}
+{"at":"2026-09-11T11:06:16.5590970+00:00","criterion":"recovery-required-not-blocked","value":"RecoveryRequired / AwaitingLoadResult"}
+{"at":"2026-09-11T11:06:16.7298910+00:00","criterion":"slot-repaired","value":"@{slotNo=1; doorState=CLOSED; cargoState=OCCUPIED; unlockOutputRaw=0; lockFeedbackRaw=1; lightCurtainRaw=0; lockFeedbackPending=False; lightCurtainFeedbackPending=False; faults=System.Object[]}"}
+{"at":"2026-09-11T11:06:16.8378517+00:00","criterion":"compensation-offered","value":"(null)"}
+{"at":"2026-09-11T11:08:16.9687423+00:00","note":"Run failed: Timed out after 120s waiting for: the vehicle offers COMPENSATE_LOAD_ALL_EMPTY. Last observed: (nothing)"}
+{"at":"2026-09-11T11:08:17.0627707+00:00","note":"Exported 47 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-11T11:08:35.6221349+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 47 lines, 47 distinct, 10 message types, 0 distinct violations, 0 known; schema compilation 17013 ms."}

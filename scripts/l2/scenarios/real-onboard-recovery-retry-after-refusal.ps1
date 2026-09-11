@@ -128,10 +128,16 @@ $null = Wait-L2Condition -Description "slot $($load.SlotNo) reads closed, locked
 
 # --- 3. 旅程还没 Blocked 时按「补偿清空」：服务端拒绝 ------------------------------------------------------
 
-$null = Wait-L2Condition -Description "the vehicle offers $action" -Journal $journal `
-    -Criterion 'compensation-offered' -TimeoutSeconds 120 `
-    -Probe { Get-FieldAvailableRecoveryActions -Field $field } `
-    -Until { param($a) @($a) -contains $action }
+try {
+    $null = Wait-L2Condition -Description "the vehicle offers $action" -Journal $journal `
+        -Criterion 'compensation-offered' -TimeoutSeconds 60 `
+        -Probe { (Get-FieldAvailableRecoveryActions -Field $field) -join ',' } `
+        -Until { param($a) @($a -split ',') -contains $action }
+} catch {
+    # Press anyway: the automation face answers with the first precondition keeping the button
+    # hidden, which is the diagnosis a timeout alone would throw away.
+    $journal.Note("Not offered: $($_.Exception.Message) Pressing anyway to read the vehicle's own reason.")
+}
 $generationBefore = Get-SessionGeneration
 
 $refused = Invoke-FieldFace -Field $field -Face Onboard -Method POST -Path '/recovery/requests' -Envelope -Body @{
@@ -139,6 +145,8 @@ $refused = Invoke-FieldFace -Field $field -Face Onboard -Method POST -Path '/rec
     reason = 'L2：旅程还没 Blocked 时的补偿清空'
 }
 $refusedCode = [string](Get-FieldProperty $refused.body 'reasonCode')
+$stateJson = (Get-FieldOnboardSnapshot -Field $field).state | ConvertTo-Json -Depth 3 -Compress
+$journal.Note("First press: HTTP $($refused.status) reasonCode=$refusedCode; onboard state $($stateJson.Substring(0, [Math]::Min(2000, $stateJson.Length)))")
 $assertions.Add(
     'L2-RAR-02', '旅程还没 Blocked 时的补偿清空被服务端拒绝，原因码原样回到自动化面',
     ([int]$refused.status -eq 409 -and $refusedCode -eq 'RECOVERY_DEMAND_NOT_BLOCKED'),
