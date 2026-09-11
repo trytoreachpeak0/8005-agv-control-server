@@ -1,0 +1,127 @@
+{
+  "protocolTag": "protocol-v0.3.0",
+  "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138",
+  "schemaBundleSha256": "68bfd531c4b9c08bc80f6d9c5a67264891efa200acdb154eb18e1d083bf4ed98",
+  "validator": "Corvus.Json.Validator 4.6.7",
+  "linesChecked": 29,
+  "distinctLinesChecked": 29,
+  "testAuthoredLinesSkipped": 0,
+  "linesInViolation": 0,
+  "linesInKnownViolation": 0,
+  "origins": {
+    "product": {
+      "directions": [
+        "C_TO_O",
+        "BIDIRECTIONAL"
+      ],
+      "observed": {},
+      "notObserved": [
+        "CapabilitySnapshotRequested",
+        "CurrentStopWorklistSnapshot",
+        "DurableAck",
+        "ExceptionRecoverySessionOpened",
+        "ExceptionRecoverySessionRejected",
+        "ExceptionRecoverySessionSnapshot",
+        "FaultCargoRecoveryCommand",
+        "ForcedMechanicalRecoveryCommand",
+        "HardwareRecoveryRecordResult",
+        "HeartbeatAck",
+        "LoadCancellationAuthorization",
+        "LoadCompensationCommand",
+        "LoadCompensationRejected",
+        "LoadCorrectionCommand",
+        "LoadCorrectionRejected",
+        "ManualChargingReturnToServiceResult",
+        "PreDepartureSafetyCheck",
+        "ProtocolProblem",
+        "RecoveryActionAccepted",
+        "RecoveryActionRejected",
+        "SafetyStateSnapshotRequested",
+        "SessionAccepted",
+        "SessionReadiness",
+        "SessionRejected",
+        "SlotOperationCommand",
+        "SlotOperationResumeCommand",
+        "SnapshotAppliedAck",
+        "SublotEntryRequested",
+        "SublotRejected",
+        "UpcomingStopPlanSnapshot",
+        "VehicleBusinessStateSnapshot"
+      ],
+      "outsideDirection": []
+    },
+    "syntheticPeer": {
+      "directions": [
+        "O_TO_C",
+        "BIDIRECTIONAL"
+      ],
+      "observed": {},
+      "notObserved": [
+        "CapabilitySnapshot",
+        "DurableAck",
+        "ExceptionRecoverySessionRequested",
+        "FaultCargoRecoveryResult",
+        "ForcedMechanicalRecoveryResult",
+        "HardwareRecoveryRecordSubmitted",
+        "Heartbeat",
+        "LoadCancellationResult",
+        "LoadCancellationStartRequested",
+        "LoadCompensationRequested",
+        "LoadCompensationResult",
+        "LoadCorrectionRequested",
+        "LoadCorrectionResult",
+        "ManualChargingReturnToServiceRequested",
+        "OperationProgress",
+        "OperationResult",
+        "PreDepartureSafetyCheckResult",
+        "ProtocolProblem",
+        "RecoveryActionSubmitted",
+        "RecoveryStateReport",
+        "SafetyStateChanged",
+        "SafetyStateSnapshot",
+        "SessionHello",
+        "SlotOperationCommandRejected",
+        "SnapshotAppliedAck",
+        "SublotSubmitted"
+      ],
+      "outsideDirection": []
+    },
+    "realOnboard": {
+      "directions": [
+        "O_TO_C",
+        "BIDIRECTIONAL"
+      ],
+      "observed": {
+        "CapabilitySnapshot": 2,
+        "ExceptionRecoverySessionRequested": 1,
+        "Heartbeat": 1,
+        "OperationProgress": 5,
+        "OperationResult": 1,
+        "RecoveryStateReport": 2,
+        "SafetyStateChanged": 9,
+        "SafetyStateSnapshot": 2,
+        "SessionHello": 2,
+        "SnapshotAppliedAck": 3,
+        "SublotSubmitted": 1
+      },
+      "notObserved": [
+        "DurableAck",
+        "FaultCargoRecoveryResult",
+        "ForcedMechanicalRecoveryResult",
+        "HardwareRecoveryRecordSubmitted",
+        "LoadCancellationResult",
+        "LoadCancellationStartRequested",
+        "LoadCompensationRequested",
+        "LoadCompensationResult",
+        "LoadCorrectionRequested",
+        "LoadCorrectionResult",
+        "ManualChargingReturnToServiceRequested",
+        "PreDepartureSafetyCheckResult",
+        "ProtocolProblem",
+        "RecoveryActionSubmitted",
+        "SlotOperationCommandRejected"
+      ],
+      "outsideDirection": []
+    }
+  }
+}

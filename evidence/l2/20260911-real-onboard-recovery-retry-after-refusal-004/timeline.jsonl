@@ -1,0 +1,36 @@
+{"at":"2026-09-11T11:15:04.2129823+00:00","note":"L2 run 20260911T111504171Z starting for scenario 'real-onboard-recovery-retry-after-refusal'."}
+{"at":"2026-09-11T11:15:04.2479689+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-11T11:15:04.3951808+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-11T11:15:10.7788288+00:00","note":"Reusing cached onboard-hmi publish for 96c7513d6a282847a814a13bcea781e16f9b70d3."}
+{"at":"2026-09-11T11:15:10.8888027+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T11:15:10.8934296+00:00","note":"Peers: onboard-hmi@96c7513d6a282847a814a13bcea781e16f9b70d3, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T11:15:11.7819331+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-11T11:15:11.9037094+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-11T11:15:13.6720993+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-11T11:15:15.7003002+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-11T11:15:16.7964780+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-11T11:15:18.6577513+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-11T11:15:18.6727998+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-11T11:15:18.7379379+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-11T11:15:19.0364046+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-11T11:15:19.0906639+00:00","note":"Environment is up; entering scenario 'real-onboard-recovery-retry-after-refusal'."}
+{"at":"2026-09-11T11:15:19.2191766+00:00","note":"Publishing demand fe4ddbb8e8644d7a801bde948076f21e (sublot L2-RAR-20260911T111504171Z)."}
+{"at":"2026-09-11T11:15:19.3393258+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-11T11:15:20.4185786+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-e386b2eb-9c3c-815a-b1a9-284da27de7ec-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-11T11:15:20.4367218+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-11T11:15:21.3063833+00:00","note":"field-operator: stop 1: submitted sublot L2-RAR-20260911T111504171Z (demand fe4ddbb8-e864-4d7a-801b-de948076f21e)"}
+{"at":"2026-09-11T11:15:22.9022748+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt c570f85f-917a-8351-85f5-418b72500a9a)"}
+{"at":"2026-09-11T11:15:22.9204181+00:00","note":"Gate station 210 removed from the RIoT map: every engine iteration returns before it can block the journey."}
+{"at":"2026-09-11T11:15:22.9767148+00:00","criterion":"recovery-required-not-blocked","value":"Prepared / AwaitingLoadResult"}
+{"at":"2026-09-11T11:15:26.6595757+00:00","criterion":"recovery-required-not-blocked","value":"RecoveryRequired / AwaitingLoadResult"}
+{"at":"2026-09-11T11:15:26.7425505+00:00","criterion":"slot-repaired","value":"@{slotNo=1; doorState=CLOSED; cargoState=OCCUPIED; unlockOutputRaw=0; lockFeedbackRaw=1; lightCurtainRaw=1; lockFeedbackPending=False; lightCurtainFeedbackPending=True; faults=System.Object[]}"}
+{"at":"2026-09-11T11:15:26.7794901+00:00","criterion":"compensation-offered","value":"RESUME_AFTER_REPAIR,COMPENSATE_LOAD_ALL_EMPTY,FAULT_CARGO_HANDOFF,LOAD_CANCELLATION"}
+{"at":"2026-09-11T11:15:26.9895044+00:00","note":"First press: HTTP 409 reasonCode=RECOVERY_DEMAND_NOT_BLOCKED; onboard state {\"agvId\":\"AGV-L2-001\",\"onboard\":{\"state\":\"Connecting\",\"ruleConnected\":false,\"ioConnected\":true,\"visit\":null,\"io\":{\"isConnected\":true,\"lockers\":[\"@{slotIndex=0; physicalNumber=1; unlockOutputRaw=False; lockFeedbackRaw=True; lightCurtainRaw=False; observedAt=09/11/2026 19:15:26; isKnown=True; isLocked=True; hasCargo=True}\",\"@{slotIndex=1; physicalNumber=2; unlockOutputRaw=False; lockFeedbackRaw=True; lightCurtainRaw=True; observedAt=09/11/2026 19:15:26; isKnown=True; isLocked=True; hasCargo=False}\",\"@{slotIndex=2; physicalNumber=3; unlockOutputRaw=False; lockFeedbackRaw=True; lightCurtainRaw=True; observedAt=09/11/2026 19:15:26; isKnown=True; isLocked=True; hasCargo=False}\",\"@{slotIndex=3; physicalNumber=4; unlockOutputRaw=False; lockFeedbackRaw=True; lightCurtainRaw=True; observedAt=09/11/2026 19:15:26; isKnown=True; isLocked=True; hasCargo=False}\",\"@{slotIndex=4; physicalNumber=5; unlockOutputRaw=False; lockFeedbackRaw=True; lightCurtainRaw=True; observedAt=09/11/2026 19:15:26; isKnown=True; isLocked=True; hasCargo=False}\",\"@{slotIndex=5; physicalNumber=6; unlockOutputRaw=False; lockFeedbackRaw=True; lightCurtainRaw=True; observedAt=09/11/2026 19:15:26; isKnown=True; isLocked=True; hasCargo=False}\",\"@{slotIndex=6; physicalNumber=7; unlockOutputRaw=False; lockFeedbackRaw=True; lightCurtainRaw=True; observedAt=09/11/2026 19:15:26; isKnown=True; isLocked=True; hasCargo=False}\",\"@{slotIndex=7; physicalNumber=8; unlockOutputRaw=False; lockFeedbackRaw=True; lightCurtainRaw=True; observedAt=09/11/2026 19:15:26; isKnown=True; isLocked=True; hasCargo=False}\"],\"observedAt\":\"2026-09-11T19:15:26.9231394+08:00\"},\"activeOperation\":null,\"departurePermitted\":false,\"guidance\":\"正在等待仓门控制设备和任务系统连接…\",\"errorCode\":null,\"updatedAt\":\"2026-09-11T19:15:26.9232606+08:00\"},\"wireToGateSession\":{\"connected\":true,\"sessionGeneration\":1,\"readiness\":\"RecoveryRequired\",\"reasonCodes\":[\"SESSION_RECOVERY_REQUIRED\"],\"capabilityVersion\":1,\"safetyStateVersion\":9,\"updatedAt\":\"2026-09-11T19:15:26.8245002+08:0"}
+{"at":"2026-09-11T11:15:27.0047405+00:00","criterion":"journey-blocked","value":"AwaitingLoadResult / "}
+{"at":"2026-09-11T11:15:27.7928147+00:00","criterion":"journey-blocked","value":"Blocked / LOAD_RESULT_REQUIRES_RECOVERY"}
+{"at":"2026-09-11T11:15:27.8901892+00:00","note":"Second request did not complete: COMPENSATE_LOAD_ALL_EMPTY was refused by the vehicle: HTTP 409 ControlServer在旅程会话期间关闭了连接。"}
+{"at":"2026-09-11T11:15:27.9224963+00:00","criterion":"vehicle-reconnected","value":"1"}
+{"at":"2026-09-11T11:15:31.0881032+00:00","criterion":"vehicle-reconnected","value":"2"}
+{"at":"2026-09-11T11:15:31.1015079+00:00","note":"Scenario finished."}
+{"at":"2026-09-11T11:15:31.1975072+00:00","note":"Exported 29 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-11T11:15:48.7447257+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 29 lines, 29 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 15865 ms."}

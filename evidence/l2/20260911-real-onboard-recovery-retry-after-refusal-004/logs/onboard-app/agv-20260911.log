@@ -1,0 +1,22 @@
+2026-09-11T19:15:17.7626506+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+96c7513d6a282847a814a13bcea781e16f9b70d3。
+2026-09-11T19:15:18.3824161+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T19:15:18.4034147+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T19:15:18.4049738+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T19:15:18.5094127+08:00	Information	App	车载端自动化接口已启动：http://127.0.0.1:58414。 
+2026-09-11T19:15:18.8975231+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-11T19:15:20.7847144+08:00	Information	App	服务端请求录入Sublot：demandId=fe4ddbb8-e864-4d7a-801b-de948076f21e，revision=1。 
+2026-09-11T19:15:21.5915315+08:00	Information	App	服务端请求录入Sublot：demandId=fe4ddbb8-e864-4d7a-801b-de948076f21e，revision=1。 
+2026-09-11T19:15:21.8160956+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T19:15:21.9003163+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T19:15:22.0095309+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-11T19:15:22.4194199+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-11T19:15:22.5924852+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c570f85f-917a-8351-85f5-418b72500a9a。
+2026-09-11T19:15:23.0339147+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
+2026-09-11T19:15:23.3897864+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T19:15:23.4469942+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T19:15:23.9634453+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 1->1，光幕DI 1->1。
+2026-09-11T19:15:26.7981787+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 1->1，光幕DI 1->0。
+2026-09-11T19:15:26.9328814+08:00	Warning	WireToGateBusinessService	恢复向量LOAD_COMPENSATION未执行：reason=RECOVERY_DEMAND_NOT_BLOCKED。 | InvalidOperationException: RECOVERY_DEMAND_NOT_BLOCKED
+2026-09-11T19:15:27.8754208+08:00	Warning	WireToGateBusinessService	恢复向量LOAD_COMPENSATION未执行：reason=ControlServer在旅程会话期间关闭了连接。。 | EndOfStreamException: ControlServer在旅程会话期间关闭了连接。
+2026-09-11T19:15:28.9294513+08:00	Warning	WireToGateSessionService	上层会话不可用：WIRE_TO_GATE会话尚未建立。。将在2秒后重连。
+2026-09-11T19:15:31.0228952+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
