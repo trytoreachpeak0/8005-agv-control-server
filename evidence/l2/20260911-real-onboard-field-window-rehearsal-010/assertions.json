@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-field-window-rehearsal",
+  "runId": "20260911T143938427Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "agvId": "AGV-L2-001",
+    "rig": "RealOnboard",
+    "batchId": "BATCH-3",
+    "onboardHmiCommit": "6b8a0b06575f40fa0e682c5d307b9ce46bbe9227",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "a44712a13e4995e3aeb70ffb136a6cfe4115e886",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T143938427Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-FW-01",
+      "description": "四条需求凑成一趟旅程：四个取货停靠加一个关卡",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    },
+    {
+      "id": "L2-FW-10",
+      "description": "停靠 1 场景 A：驱动脚本空关两轮都换来车自己重开，之后放料提交，恢复入口一次没出现",
+      "outcome": "PASS",
+      "expected": "2 轮 / Committed / 入口未出现 / UNLOCKING >= 3",
+      "actual": "2 轮 / Committed / 入口未出现（看到过的按钮：LOAD_CANCELLATION） / UNLOCKING 3"
+    },
+    {
+      "id": "L2-FW-20",
+      "description": "停靠 2 场景 C 接 B：门开着过期挂告警并撑满 3 分钟，回来空关后结算成 Failed，旅程自己离站",
+      "outcome": "PASS",
+      "expected": "Failed / 离开 2/AwaitingLoadResult",
+      "actual": "Failed / 2/AwaitingDepartureSafety（空关 2 次，重开 1 次）"
+    },
+    {
+      "id": "L2-FW-33",
+      "description": "停靠 3：驱动脚本照常装载提交",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-FW-34",
+      "description": "停靠 4：驱动脚本照常装载提交",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-FW-SC1-A-01",
+      "description": "采集器：开门不放料：车载端自动重发开锁脉冲，轮次不设上限（现场至少走到第 3 轮）",
+      "outcome": "PASS",
+      "expected": "\"UNLOCKING >= 3\"",
+      "actual": "3"
+    },
+    {
+      "id": "L2-FW-SC1-A-02",
+      "description": "采集器：重开几轮之后照常放料，装载提交——不设上限的重开有出口",
+      "outcome": "PASS",
+      "expected": "\"Committed\"",
+      "actual": "\"Committed\""
+    },
+    {
+      "id": "L2-FW-SC1-A-03",
+      "description": "采集器：人没放料没有被判成失败：这个 attempt 上没有 FAILED 结果",
+      "outcome": "PASS",
+      "expected": "0",
+      "actual": "0"
+    },
+    {
+      "id": "L2-FW-SC1-A-04",
+      "description": "采集器：需求没有被判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "\"不是 RecoveryRequired\"",
+      "actual": "\"Accepted\""
+    },
+    {
+      "id": "L2-FW-SC1-A-05",
+      "description": "采集器：HMI 上没有出现恢复入口——操作员迟疑不需要管理员凭据（驱动脚本读车载端快照 availableRecoveryActions 里的三个恢复动作）",
+      "outcome": "PASS",
+      "expected": "false",
+      "actual": "false"
+    },
+    {
+      "id": "L2-FW-SC1-B-01",
+      "description": "采集器：车载端报 FAILED",
+      "outcome": "PASS",
+      "expected": "\"FAILED\"",
+      "actual": "\"FAILED\""
+    },
+    {
+      "id": "L2-FW-SC1-B-02",
+      "description": "采集器：三个物理字段都是明确的：State 不是 Unknown、锁已闭、开锁输出已复位",
+      "outcome": "PASS",
+      "expected": "\"三字段齐全且明确\"",
+      "actual": "\"slot2:State=Empty/DoorLocked=True/UnlockOutputReset=True\""
+    },
+    {
+      "id": "L2-FW-SC1-B-03",
+      "description": "采集器：服务端走确定失败而不是 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "\"Failed\"",
+      "actual": "\"Failed\""
+    },
+    {
+      "id": "L2-FW-SC1-B-04",
+      "description": "采集器：确定失败之后服务端自己终结这条需求：Cancelled、按 CANCELLED_BY_STATION_TIMEOUT 永久抑制、装货命令已结算",
+      "outcome": "PASS",
+      "expected": "\"Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled\"",
+      "actual": "\"Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled\""
+    },
+    {
+      "id": "L2-FW-SC1-B-06",
+      "description": "采集器：确定失败之后旅程自己离开这一格，不需要任何人按任何按钮",
+      "outcome": "PASS",
+      "expected": "\"不是 2/AwaitingLoadResult\"",
+      "actual": "\"4/AwaitingLoadResult\""
+    },
+    {
+      "id": "L2-FW-SC1-B-05",
+      "description": "采集器：结算之后会话仍在 Ready：确定失败是业务结果，不是会话故障",
+      "outcome": "PASS",
+      "expected": "\"Ready\"",
+      "actual": "\"Ready / READY\""
+    },
+    {
+      "id": "L2-FW-SC1-C-01",
+      "description": "采集器：站点期限到期时告警挂上了 STATION_TIMEOUT_DOOR_NOT_CLOSED",
+      "outcome": "PASS",
+      "expected": "\"STATION_TIMEOUT_DOOR_NOT_CLOSED\"",
+      "actual": "\"STATION_TIMEOUT_DOOR_NOT_CLOSED\""
+    },
+    {
+      "id": "L2-FW-SC1-C-02",
+      "description": "采集器：期限到期时停靠没有被关闭，stage 停在 AwaitingLoadResult 而不是 Blocked",
+      "outcome": "PASS",
+      "expected": "\"AwaitingLoadResult\"",
+      "actual": "\"AwaitingLoadResult\""
+    },
+    {
+      "id": "L2-FW-SC1-C-03",
+      "description": "采集器：期限到期后再等 3 分钟依然不结束——等待不会自己退化成结束",
+      "outcome": "PASS",
+      "expected": "\"AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED / Prepared\"",
+      "actual": "\"AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED / Prepared\""
+    },
+    {
+      "id": "L2-FW-SC1-C-04",
+      "description": "采集器：那次复查确实在期限之后 3 分钟以上",
+      "outcome": "PASS",
+      "expected": "\">= 3 分钟\"",
+      "actual": "\"3.0 分钟\""
+    },
+    {
+      "id": "L2-FW-SC1-C-06",
+      "description": "采集器：门一直开着：晾过 OperationTimeout 之后提示还在走而脉冲只打过一次——提示节拍不重复开一把已经开着的锁",
+      "outcome": "PASS",
+      "expected": "\"UNLOCKING = 1 / WAITING_OPERATOR >= 2\"",
+      "actual": "\"UNLOCKING 1 / WAITING_OPERATOR 2\""
+    },
+    {
+      "id": "L2-FW-SC1-C-05",
+      "description": "采集器：关门之后按真实 IO 读数结算（决策 1 会先重开一轮），告警随之消失",
+      "outcome": "PASS",
+      "expected": "\"告警清空 / 操作已结算\"",
+      "actual": "\"AwaitingLoadResult / - / Failed\""
+    },
+    {
+      "id": "L2-FW-SC1-W-01",
+      "description": "采集器：三个场景都有现场记录，且记录由驱动脚本按实际动作写出（模拟器 IO 下无人到场，照片不适用）",
+      "outcome": "PASS",
+      "expected": "\"3 个场景 / drivenBy 非空\"",
+      "actual": "\"3 个场景 / drivenBy=FieldOperator.psm1 run 20260911T143938427Z\""
+    },
+    {
+      "id": "L2-FW-SC1-W-02",
+      "description": "采集器：窗口内恢复入口是开着的——否则决策 2 只验证了一半",
+      "outcome": "PASS",
+      "expected": "true",
+      "actual": "true"
+    },
+    {
+      "id": "L2-FW-SC1-W-03",
+      "description": "采集器：每一个 checkpoint 上会话都停在 Ready——全程没有把开着的仓门当成会话故障",
+      "outcome": "PASS",
+      "expected": "\"每个 checkpoint 都是 Ready\"",
+      "actual": "\"01-00-ready=Ready; 02-c-deadline-reached=Ready; 03-c-plus-hold=Ready; 04-b-settled=Ready; 05-finalize=Ready\""
+    },
+    {
+      "id": "L2-FW-50",
+      "description": "采集器在驱动脚本写出的记录上 finalize，整窗 PASS",
+      "outcome": "PASS",
+      "expected": "exit 0 / PASS",
+      "actual": "exit 0 / PASS"
+    },
+    {
+      "id": "L2-FW-40",
+      "description": "关卡：驱动脚本把三条装上车的需求逐条取空，每条卸货都提交，旅程 Completed（多需求关卡清单被车载端拒收时红，见 8005-agv-program#48）",
+      "outcome": "PASS",
+      "expected": "Completed / 3 条卸货 Committed",
+      "actual": "Completed / Committed,Committed,Committed / 会话 Ready/READY"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 182 lines, 182 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 21439 ms."
+    }
+  ]
+}
