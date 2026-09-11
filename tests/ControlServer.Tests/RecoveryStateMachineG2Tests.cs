@@ -469,6 +469,62 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ARecoverySessionIsJudgedOnTheJourneyAsStoredNotAsThisConnectionFirstSawIt()
+    {
+        // 8005-agv-program#40. One DbContext serves a whole TCP connection, and the handshake loads
+        // this vehicle's active journeys into it, tracked. A vehicle that reconnects mid-load is seen
+        // at AwaitingLoadResult; the runtime worker then blocks the journey from its own context. The
+        // recovery request that follows on the same connection used to be judged on the tracked copy
+        // -- still AwaitingLoadResult -- and refused RECOVERY_DEMAND_NOT_BLOCKED against a journey the
+        // database held as Blocked. L2 evidence real-onboard-restart-while-waiting-operator-002.
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_STALE_JOURNEY";
+        const string proof = "stale-journey-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext connectionContext = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(connectionContext, productionShapedSession: true);
+            await using (ControlServerDbContext seed = await CreateContextAsync(connection))
+            {
+                JourneyRuntimeRow runtime = await seed.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
+                runtime.Stage = JourneyRuntimeStage.AwaitingLoadResult;
+                runtime.BlockReasonCode = "ONBOARD_SESSION_NOT_READY";
+                await seed.SaveChangesAsync(TestContext.Current.CancellationToken);
+            }
+            // What the handshake does to the connection's context: every active journey of this
+            // vehicle, tracked, as it stands at that moment.
+            connectionContext.ChangeTracker.Clear();
+            Assert.Equal(
+                JourneyRuntimeStage.AwaitingLoadResult,
+                (await connectionContext.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken)).Stage);
+            // The runtime worker, on its own context, blocks the journey on the recorded recovery.
+            await using (ControlServerDbContext worker = await CreateContextAsync(connection))
+            {
+                JourneyRuntimeRow runtime = await worker.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
+                runtime.Stage = JourneyRuntimeStage.Blocked;
+                runtime.BlockReasonCode = "LOAD_RESULT_REQUIRES_RECOVERY";
+                await worker.SaveChangesAsync(TestContext.Current.CancellationToken);
+            }
+
+            RecordingPeer peer = new(connectionContext);
+            OnboardMessageProcessor processor = Processor(connectionContext, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            string answer = await processor.ProcessAsync(
+                RecoverySessionRequest(proof), state, TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+
+            Assert.Equal("ExceptionRecoverySessionOpened", MessageType(answer));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
     public async Task ForcedRecoveryAdvancesOnceFencesOldOutboxAndKeepsLateGenerationAsEvidenceOnly()
