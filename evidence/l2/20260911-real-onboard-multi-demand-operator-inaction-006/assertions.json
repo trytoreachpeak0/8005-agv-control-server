@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-multi-demand-operator-inaction",
+  "runId": "20260911T073758066Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001",
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T073758066Z",
+    "onboardHmiCommit": "bb58b217e95c611de597212d763f7579fdcb0e03",
+    "controlServerCommit": "55bfa9b4098f6f2d29db9f42bf32792b036f8679"
+  },
+  "assertions": [
+    {
+      "id": "L2-MDI-01",
+      "description": "四条需求凑成一趟旅程，四个取货停靠落在四个不同站点上",
+      "outcome": "PASS",
+      "expected": "4 PICKUP / 4 stations",
+      "actual": "4 PICKUP / 4 stations"
+    },
+    {
+      "id": "L2-MDI-10",
+      "description": "停靠 1：车载端说在等操作员时，它开的那个仓门确实开着、货位是空的",
+      "outcome": "PASS",
+      "expected": "OPEN/EMPTY/0/0",
+      "actual": "OPEN/EMPTY/0/0"
+    },
+    {
+      "id": "L2-MDI-11",
+      "description": "停靠 1 第 1 轮：关门不放料是明确的相反态，车载端自动重开并再次等操作员，没有判失败",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0 -> UNLOCKING+1 -> OPEN / WAITING_OPERATOR+1",
+      "actual": "CLOSED/EMPTY/1/0 -> UNLOCKING 1->2 -> OPEN / WAITING_OPERATOR 1->2"
+    },
+    {
+      "id": "L2-MDI-12",
+      "description": "停靠 1 第 2 轮：关门不放料是明确的相反态，车载端自动重开并再次等操作员，没有判失败",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0 -> UNLOCKING+1 -> OPEN / WAITING_OPERATOR+1",
+      "actual": "CLOSED/EMPTY/1/0 -> UNLOCKING 2->3 -> OPEN / WAITING_OPERATOR 2->3"
+    },
+    {
+      "id": "L2-MDI-13",
+      "description": "停靠 1：重开两轮之后照常放料提交，没有进恢复",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0 / Committed",
+      "actual": "CLOSED/OCCUPIED/1/0 / Committed"
+    },
+    {
+      "id": "L2-MDI-20",
+      "description": "停靠 2：车载端为这次装载开了门，操作员走开——这就是现场原样，不需要注入",
+      "outcome": "PASS",
+      "expected": "OPEN/EMPTY/0/0",
+      "actual": "OPEN/EMPTY/0/0"
+    },
+    {
+      "id": "L2-MDI-21",
+      "description": "停靠 2：期限到期挂告警而不结束本站——旅程仍在 AwaitingLoadResult，装载仍在进行（决策 4）",
+      "outcome": "PASS",
+      "expected": "STATION_TIMEOUT_DOOR_NOT_CLOSED / 2/AwaitingLoadResult / Prepared",
+      "actual": "STATION_TIMEOUT_DOOR_NOT_CLOSED / 2/AwaitingLoadResult / Prepared"
+    },
+    {
+      "id": "L2-MDI-22",
+      "description": "停靠 2：门一直开着，提示节拍到期只再提示一次、不重复脉冲（决策 3）",
+      "outcome": "PASS",
+      "expected": "WAITING_OPERATOR > 1 / UNLOCKING = 1",
+      "actual": "WAITING_OPERATOR 2 / UNLOCKING 1"
+    },
+    {
+      "id": "L2-MDI-23",
+      "description": "停靠 2：期限过后第一次关门不放料换来的是再开一次门，不是判死",
+      "outcome": "PASS",
+      "expected": "UNLOCKING+1 / OPEN",
+      "actual": "UNLOCKING 1->2 / OPEN"
+    },
+    {
+      "id": "L2-MDI-24",
+      "description": "停靠 2：第二次相反态结算成确定失败而不是 RecoveryRequired，会话仍 Ready（决策 5）",
+      "outcome": "PASS",
+      "expected": "Failed / Ready",
+      "actual": "Failed / Ready"
+    },
+    {
+      "id": "L2-MDI-25",
+      "description": "停靠 2：确定失败落地之后告警撤销",
+      "outcome": "PASS",
+      "expected": "(not STATION_TIMEOUT_DOOR_NOT_CLOSED)",
+      "actual": "(none)"
+    },
+    {
+      "id": "L2-MDI-30",
+      "description": "停靠 2：确定失败之后旅程自己离开这一站，不需要任何人按任何按钮",
+      "outcome": "PASS",
+      "expected": "(not stop 2)",
+      "actual": "3/AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-MDI-31",
+      "description": "停靠 2：这条需求以 CANCELLED_BY_STATION_TIMEOUT 终结并被永久抑制，它的装货命令已结算、不会被重放进后续会话",
+      "outcome": "PASS",
+      "expected": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled",
+      "actual": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled"
+    },
+    {
+      "id": "L2-MDI-43",
+      "description": "停靠 3：前两站之后照常装载提交",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0 / Committed",
+      "actual": "CLOSED/OCCUPIED/1/0 / Committed"
+    },
+    {
+      "id": "L2-MDI-44",
+      "description": "停靠 4：前两站之后照常装载提交",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0 / Committed",
+      "actual": "CLOSED/OCCUPIED/1/0 / Committed"
+    },
+    {
+      "id": "L2-MDI-50",
+      "description": "三站装完、一站取消之后旅程进入去关卡那一段，并记下装货收尾的理由",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival / a reason",
+      "actual": "AwaitingGateArrival / NO_FURTHER_CARGO"
+    },
+    {
+      "id": "L2-MDI-51",
+      "description": "全程没有任何一次装载被判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 116 lines, 116 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 20110 ms."
+    }
+  ]
+}
