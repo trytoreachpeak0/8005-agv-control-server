@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "window": "FW-SC1",
+  "windowName": "现场窗口一：三个操作员不作为场景",
+  "runId": "20260911T142119619Z",
+  "outcome": "FAIL",
+  "identity": {
+    "runId": "20260911T142119619Z",
+    "windowId": "FW-SC1",
+    "checkpointLabel": "finalize",
+    "database": "factory01:C:\\ProgramData\\8005\\ControlServer\\data\\controlserver.db",
+    "onboardRecoveryResumeEnabled": true,
+    "onboardIoModule": "127.0.0.1:1502",
+    "packageRunId": "20260911T120317Z",
+    "packageCreatedAt": "2026-09-11T20:04:04.848913+08:00",
+    "controlServer": {
+      "commit": "403f3064606cbbb65a2725af8dc2e173b2872220",
+      "branch": "ControlServer_MVP",
+      "tag": null
+    },
+    "onboardHmi": {
+      "commit": "6b8a0b06575f40fa0e682c5d307b9ce46bbe9227",
+      "branch": "OnboardHmi_MVP",
+      "tag": null
+    },
+    "protocol": {
+      "commit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "branch": null,
+      "tag": "protocol-v0.3.0"
+    }
+  },
+  "fieldRecord": {
+    "windowId": "FW-SC1",
+    "date": "2026-09-11",
+    "site": "老厂",
+    "observers": [],
+    "drivenBy": "FieldOperator.psm1 run 20260911T132635750Z（驱动在写记录时抛 The property 'DemandId' cannot be found on this object；本记录由 agent 按驱动控制台日志与 checkpoint 帧重建，见 8005-agv-program#45）",
+    "reconstruction": {
+      "reason": "Invoke-FieldActDoorLeftOpen 调 -OnCheckpoint 时未丢弃输出，驱动脚本的回调把采集器打印的行混进了场景 C/B 的返回值，New-FieldWindowRecord 在 StrictMode 下取 .DemandId 抛错，记录与 acts.json 都没写出。",
+      "sources": "logs/driver-console.log（驱动控制台原样输出）；snapshots/03-c-plus-20min 的取帧时间；JourneyStops.SublotWaitStartedAt",
+      "lost": "场景 A 的 RecoveryEntryVisible 与 ActionsSeen 只在驱动进程内计算、从未写出，无法重建，留空；SC1-A-05 因此照实判。"
+    },
+    "agvId": "老厂前线新多仓位1",
+    "ioModule": "127.0.0.1:1502",
+    "ioKind": "SIMULATOR",
+    "recoveryWindowOpen": true,
+    "photoPointers": [],
+    "scenarios": [
+      {
+        "id": "A",
+        "name": "开门不放料：自动重发开锁脉冲，不判失败、不进恢复、不设次数上限，最后放料提交",
+        "demandId": "3138faac-c906-40da-92d1-9af189a5996e",
+        "slotNo": 1,
+        "slotOperationAttemptId": "452aa53b-898d-415b-a626-42f3aeef611e",
+        "observedRounds": "空关 2/2 轮；第 2 轮重开后 UNLOCKING=3 WAITING_OPERATOR=3（驱动日志 21:34:31 的读数，不是结算时的读数）",
+        "observedRecoveryEntryVisible": null,
+        "observedBy": "驱动脚本读车载端快照 availableRecoveryActions，但结果只在驱动进程内，未写出、重建时丢失",
+        "observedAvailableActions": null,
+        "photoPointers": []
+      },
+      {
+        "id": "B",
+        "name": "仓门已闭超时：确定失败结算，不进恢复，服务端自己以 CANCELLED_BY_STATION_TIMEOUT 终结需求、旅程离开本站",
+        "demandId": "7561fb92-af4b-4583-b440-9c771d655af8",
+        "slotNo": 3,
+        "slotOperationAttemptId": "47508a25-47d2-ac56-b8ea-0f825a0e389a",
+        "observedSlotReading": "空关 2 次，其中 1 次换来重开；结算 Failed（驱动日志 22:02:47–22:03:03）；之后旅程位置未留存，22:03:12 驱动日志 stage=AwaitingPickupArrival",
+        "photoPointers": []
+      },
+      {
+        "id": "C",
+        "name": "仓门未闭超时：告警 STATION_TIMEOUT_DOOR_NOT_CLOSED，不结束本站",
+        "demandId": "7561fb92-af4b-4583-b440-9c771d655af8",
+        "slotNo": 3,
+        "slotOperationAttemptId": "47508a25-47d2-ac56-b8ea-0f825a0e389a",
+        "deadlineAt": "2026-09-11T21:42:09.1231396+08:00",
+        "alarmObservedAt": "2026-09-11T21:42:11+08:00",
+        "stillWaitingObservedAt": "2026-09-11T22:02:23.8914719+08:00",
+        "stillWaitingObservedAtSource": "checkpoint c-plus-20min 的 checkpoint-started 时刻（该帧库快照即复查读数）；驱动进程内的观测时刻未写出，日志只到秒（22:02:09）",
+        "deadlineCheckpoint": "c-deadline-reached",
+        "stillWaitingCheckpoint": "c-plus-20min",
+        "observedSlotReading": "走开时与期限后 20 分钟的阶段计数只在驱动进程内，未留存；SC1-C-06 按 c-plus-20min 帧的 ProtocolInbox 判",
+        "photoPointers": []
+      }
+    ]
+  },
+  "facts": {
+    "ioKind": "SIMULATOR",
+    "minimumHoldMinutes": 20.0,
+    "drivenBy": "FieldOperator.psm1 run 20260911T132635750Z（驱动在写记录时抛 The property 'DemandId' cannot be found on this object；本记录由 agent 按驱动控制台日志与 checkpoint 帧重建，见 8005-agv-program#45）",
+    "A.slotOperationAttemptId": "452aa53b-898d-415b-a626-42f3aeef611e",
+    "A.phaseCounts": "UNLOCKING=4 WAITING_OPERATOR=4",
+    "B.slotOperationAttemptId": "47508a25-47d2-ac56-b8ea-0f825a0e389a",
+    "B.operationStatus": "Failed",
+    "B.slotEvidence": "slot3:State=Empty/DoorLocked=True/UnlockOutputReset=True",
+    "B.demandEnd": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled",
+    "B.journeyPosition": "9/Completed",
+    "C.finalStage": "Completed / -"
+  },
+  "assertions": [
+    {
+      "id": "SC1-A-01",
+      "description": "开门不放料：车载端自动重发开锁脉冲，轮次不设上限（现场至少走到第 3 轮）",
+      "outcome": "PASS",
+      "expected": "UNLOCKING >= 3",
+      "actual": 4
+    },
+    {
+      "id": "SC1-A-02",
+      "description": "重开几轮之后照常放料，装载提交——不设上限的重开有出口",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "SC1-A-03",
+      "description": "人没放料没有被判成失败：这个 attempt 上没有 FAILED 结果",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "SC1-A-04",
+      "description": "需求没有被判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "不是 RecoveryRequired",
+      "actual": "Succeeded"
+    },
+    {
+      "id": "SC1-A-05",
+      "description": "HMI 上没有出现恢复入口——操作员迟疑不需要管理员凭据（驱动脚本读车载端快照 availableRecoveryActions 里的三个恢复动作）",
+      "outcome": "FAIL",
+      "expected": false,
+      "actual": null
+    },
+    {
+      "id": "SC1-B-01",
+      "description": "车载端报 FAILED",
+      "outcome": "PASS",
+      "expected": "FAILED",
+      "actual": "FAILED"
+    },
+    {
+      "id": "SC1-B-02",
+      "description": "三个物理字段都是明确的：State 不是 Unknown、锁已闭、开锁输出已复位",
+      "outcome": "PASS",
+      "expected": "三字段齐全且明确",
+      "actual": "slot3:State=Empty/DoorLocked=True/UnlockOutputReset=True"
+    },
+    {
+      "id": "SC1-B-03",
+      "description": "服务端走确定失败而不是 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "Failed",
+      "actual": "Failed"
+    },
+    {
+      "id": "SC1-B-04",
+      "description": "确定失败之后服务端自己终结这条需求：Cancelled、按 CANCELLED_BY_STATION_TIMEOUT 永久抑制、装货命令已结算",
+      "outcome": "PASS",
+      "expected": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled",
+      "actual": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled"
+    },
+    {
+      "id": "SC1-B-06",
+      "description": "确定失败之后旅程自己离开这一格，不需要任何人按任何按钮",
+      "outcome": "PASS",
+      "expected": "不是 2/AwaitingLoadResult",
+      "actual": "9/Completed"
+    },
+    {
+      "id": "SC1-B-05",
+      "description": "结算之后会话仍在 Ready：确定失败是业务结果，不是会话故障",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready / READY"
+    },
+    {
+      "id": "SC1-C-01",
+      "description": "站点期限到期时告警挂上了 STATION_TIMEOUT_DOOR_NOT_CLOSED",
+      "outcome": "PASS",
+      "expected": "STATION_TIMEOUT_DOOR_NOT_CLOSED",
+      "actual": "STATION_TIMEOUT_DOOR_NOT_CLOSED"
+    },
+    {
+      "id": "SC1-C-02",
+      "description": "期限到期时停靠没有被关闭，stage 停在 AwaitingLoadResult 而不是 Blocked",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult",
+      "actual": "AwaitingLoadResult"
+    },
+    {
+      "id": "SC1-C-03",
+      "description": "期限到期后再等 20 分钟依然不结束——等待不会自己退化成结束",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED / Prepared",
+      "actual": "AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED / Prepared"
+    },
+    {
+      "id": "SC1-C-04",
+      "description": "那次复查确实在期限之后 20 分钟以上",
+      "outcome": "PASS",
+      "expected": ">= 20 分钟",
+      "actual": "20.2 分钟"
+    },
+    {
+      "id": "SC1-C-06",
+      "description": "门一直开着：晾过 OperationTimeout 之后提示还在走而脉冲只打过一次——提示节拍不重复开一把已经开着的锁",
+      "outcome": "PASS",
+      "expected": "UNLOCKING = 1 / WAITING_OPERATOR >= 2",
+      "actual": "UNLOCKING 1 / WAITING_OPERATOR 13"
+    },
+    {
+      "id": "SC1-C-05",
+      "description": "关门之后按真实 IO 读数结算（决策 1 会先重开一轮），告警随之消失",
+      "outcome": "PASS",
+      "expected": "告警清空 / 操作已结算",
+      "actual": "Completed / - / Failed"
+    },
+    {
+      "id": "SC1-W-01",
+      "description": "三个场景都有现场记录，且记录由驱动脚本按实际动作写出（模拟器 IO 下无人到场，照片不适用）",
+      "outcome": "PASS",
+      "expected": "3 个场景 / drivenBy 非空",
+      "actual": "3 个场景 / drivenBy=FieldOperator.psm1 run 20260911T132635750Z（驱动在写记录时抛 The property 'DemandId' cannot be found on this object；本记录由 agent 按驱动控制台日志与 checkpoint 帧重建，见 8005-agv-program#45）"
+    },
+    {
+      "id": "SC1-W-02",
+      "description": "窗口内恢复入口是开着的——否则决策 2 只验证了一半",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "SC1-W-03",
+      "description": "每一个 checkpoint 上会话都停在 Ready——全程没有把开着的仓门当成会话故障",
+      "outcome": "FAIL",
+      "expected": "每个 checkpoint 都是 Ready",
+      "actual": "01-00-ready=Ready; 02-c-deadline-reached=Ready; 03-c-plus-20min=Ready; 04-b-settled=RecoveryRequired; 05-finalize=Ready"
+    }
+  ]
+}

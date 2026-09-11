@@ -1,0 +1,45 @@
+[21:26:35] Preflight on agv01 and factory01
+  agvId 老厂前线新多仓位1, IO 127.0.0.1:1502, recovery window open, session Ready
+WARNING: This script does not close the journey gates. Start 13-close-gates-when-idle.ps1 once the journey line appears -- started before the dispatch it closes the gates at once.
+[21:26:46] checkpoint 00-ready
+FW-SC1 checkpoint 01-00-ready -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\evidence\field\20260911-FW-SC1-unattended\snapshots\01-00-ready
+[21:27:00] Waiting up to 60 min for the authorised dispatch
+[21:28:50] Journey a72e0b81-f80b-4654-b6ea-ada036a985aa
+[21:33:51] Stop 1: scenario A
+  [21:33:58] stop 1: submitted sublot Q26092108-32 (demand 3138faac-c906-40da-92d1-9af189a5996e)
+  [21:34:06] stop 1: vehicle waits on slot 1 (attempt 452aa53b-898d-415b-a626-42f3aeef611e)
+  [21:34:13] slot 1: door closed
+  [21:34:20] stop 1 round 1: vehicle reopened slot 1 (UNLOCKING 1->2, WAITING_OPERATOR 1->2)
+  [21:34:25] slot 1: door closed
+  [21:34:31] stop 1 round 2: vehicle reopened slot 1 (UNLOCKING 2->3, WAITING_OPERATOR 2->3)
+  [21:34:40] slot 1: door closed with cargo OCCUPIED
+  [21:34:47] Load 452aa53b-898d-415b-a626-42f3aeef611e: vehicle waits on slot 2; serving it with OCCUPIED
+  [21:34:53] slot 2: door closed with cargo OCCUPIED
+  [21:35:01] Load 452aa53b-898d-415b-a626-42f3aeef611e settled as Committed
+[21:37:11] Stop 2: scenario C, then B (20 min past the deadline)
+  [21:37:18] stop 2: submitted sublot Q26091499-13 (demand 7561fb92-af4b-4583-b440-9c771d655af8)
+  [21:37:26] stop 2: vehicle waits on slot 3 (attempt 47508a25-47d2-ac56-b8ea-0f825a0e389a)
+  [21:37:31] stop 2: operator walks away from open slot 3; deadline 2026-09-11T21:42:09.1231396+08:00
+  [21:42:11] stop 2: alarm STATION_TIMEOUT_DOOR_NOT_CLOSED raised; checkpoint c-deadline-reached
+[21:42:11] checkpoint c-deadline-reached
+  [22:02:09] stop 2: still waiting 20 min past the deadline; checkpoint c-plus-20min
+[22:02:09] checkpoint c-plus-20min
+  [22:02:47] slot 3: door closed
+  [22:02:52] stop 2: empty close 1 answered with a reopen
+  [22:02:58] slot 3: door closed
+  [22:03:03] stop 2: load settled as Failed after 2 empty close(s)
+[22:03:05] checkpoint b-settled
+[22:12:59] Gate: unload
+  [22:13:05] gate: unload 0fc43cc5-bde3-6b5f-ac59-d5083a214e4d waits on slot 1; taking the cargo out
+  [22:13:12] slot 1: door closed with cargo EMPTY
+  [22:13:21] gate: unload 0fc43cc5-bde3-6b5f-ac59-d5083a214e4d waits on slot 2; taking the cargo out
+  [22:13:27] slot 2: door closed with cargo EMPTY
+  [22:13:31] journey a72e0b81-f80b-4654-b6ea-ada036a985aa completed at the gate
+[22:13:33] Journey a72e0b81-f80b-4654-b6ea-ada036a985aa completed
+New-FieldWindowRecord: C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\scripts\field\Invoke-SlotConvergenceFieldDrive.ps1:213
+Line |
+ 213 |  $record = New-FieldWindowRecord -AgvId $agvId -IoModule $ioModule -Re …
+     |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | The property 'DemandId' cannot be found on this object. Verify that the property exists.
+
+[exited with code 1]
