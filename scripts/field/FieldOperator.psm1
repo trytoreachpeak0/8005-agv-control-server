@@ -187,7 +187,9 @@ function New-FieldOperator {
 
 function Write-FieldLog {
     param([Parameter(Mandatory)][object]$Field, [Parameter(Mandatory)][string]$Message)
-    & $Field.Log $Message
+    # Discarded for the same reason as -OnCheckpoint's output: every act logs, so a Log that returned
+    # anything would leak into every act's return value.
+    $null = & $Field.Log $Message
 }
 
 function Invoke-FieldQuery {
@@ -720,7 +722,9 @@ and reopens it; the next empty close settles as FAILED, and the journey leaves t
 
 -OnCheckpoint is called with each label at the moment that label names. The collector's judgement of C
 rests on those moments -- a settlement writes over the very state they freeze -- so the call is made
-before the act touches anything again.
+before the act touches anything again. Whatever the callback writes to the pipeline is discarded: the
+field driver's callback runs the collector, whose output once became part of this act's return value
+and broke the record written from it (8005-agv-program#45).
 #>
 function Invoke-FieldActDoorLeftOpen {
     param(
@@ -750,7 +754,7 @@ function Invoke-FieldActDoorLeftOpen {
         -Abort { param($v) $v.Position -ne $expected }
     $alarmAt = [DateTimeOffset]::UtcNow
     Write-FieldLog $Field "stop ${Sequence}: alarm STATION_TIMEOUT_DOOR_NOT_CLOSED raised; checkpoint $DeadlineCheckpoint"
-    & $OnCheckpoint $DeadlineCheckpoint
+    $null = & $OnCheckpoint $DeadlineCheckpoint
 
     # Measured from the published deadline when there is one, so "HoldMinutes past the deadline" is true
     # of the deadline and not only of when this script happened to notice the alarm.
@@ -770,7 +774,7 @@ function Invoke-FieldActDoorLeftOpen {
     }
     $stillWaitingAt = [DateTimeOffset]::UtcNow
     Write-FieldLog $Field "stop ${Sequence}: still waiting $HoldMinutes min past the deadline; checkpoint $StillWaitingCheckpoint"
-    & $OnCheckpoint $StillWaitingCheckpoint
+    $null = & $OnCheckpoint $StillWaitingCheckpoint
     $held = Get-FieldPhaseCounts -Field $Field -AttemptId $load.AttemptId
 
     # B. Decision 1 usually wins one more round after the deadline (#25 measured 370 ms), but not by
@@ -798,7 +802,7 @@ function Invoke-FieldActDoorLeftOpen {
     $left = Wait-FieldCondition -Field $Field -Description "the journey to leave $expected" -TimeoutSeconds 180 `
         -Probe { Get-FieldPosition -Field $Field -JourneyId $JourneyId } `
         -Until { param($p) $p -ne $expected }
-    & $OnCheckpoint $SettledCheckpoint
+    $null = & $OnCheckpoint $SettledCheckpoint
 
     return [pscustomobject]@{
         Act                    = 'CB'
