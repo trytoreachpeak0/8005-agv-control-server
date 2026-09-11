@@ -487,6 +487,9 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     `netsh int ipv4 show excludedportrange protocol=tcp` 里有 `58473–58572` 与 `58573–58672` 两段（Hyper-V /
     WinNAT 动态保留，重启会变）。改 +300（58705–58714）就过了。**挑端口之前先看那张表**；症状是 10013
     而不是「地址已在使用」（10048）。
+24. **点源进来的文件里的 `exit` 不结束外层脚本。**`real-onboard-field-window2-rehearsal-001`：采集器
+    `. FullLoopWindowFinalize.ps1` 之后，那个文件以 `exit` 收尾，外层照样往下跑，FW-SC1 的判据在窗口二上又跑
+    一遍、覆盖了 `assertions.json`——日志里先 `FW-FL2 PASS` 再 `FW-FL2 FAIL`。**点源的文件只设变量，由外层 `exit`。**
 
 ## 车载端报文的 schema 校验：`L2-SC-01`
 
@@ -719,3 +722,18 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 `Reconciled / ALL_EMPTY`、需求 `Cancelled`、旅程 `Completed`，车载端全程 `SessionHello` 1 条。同一个车载端上既有的四条补偿
 回归全绿（服务端 `077574d`）：`real-onboard-field-operator-compensate-004` PASS/10、`real-onboard-recovery-compensate-load-011`
 PASS/17、`real-onboard-multi-demand-compensate-005` PASS/15、`real-onboard-restart-while-waiting-operator-009` PASS/13。
+
+## `real-onboard-field-window2-rehearsal`：现场窗口二整窗彩排
+
+`8005-agv-program#20`。与 `scripts/field/Invoke-FullLoopFieldDrive.ps1` 同一个编排：第一趟四需求，停靠 1 没人扫码等
+站点期限（T）、停靠 2 扫码前取消（X）、停靠 3/4 照常装、关卡第一个开的仓关门不取空两轮（NE）；旅程完成后重启服务端
+（R1）；电量 15% 去 211 充电、22% 接上电、80% 释放（CH）；第二趟两需求照常装卸；再重启（R2）。采集器以
+`-WindowId FW-FL2 -SublotWaitMinutes 1` 判。
+
+**重启服务端是新加的装置能力**：`Context.RestartServer` 杀掉服务端进程、以同一个库与环境再起，车载端留着自己重连，返回新
+进程的启动时刻。与现场的差别是 `Kill` 而不是 `Stop-Service`。
+
+红证据 `-001` 红在采集器（第 24 条），场景本身全绿。绿证据 **`-002`**（服务端 `5015da4`，车载端 `6b8a0b0`）**PASS/40**，
+约三分钟：T 期限后 1.1 秒结算、X 以 `CANCELLED_BY_OPERATOR` 抑制、NE 那一仓 `UNLOCKING=3` 期间卸货保持 `Prepared`、R1 从
+进程启动到 Ready 3.7 秒（中间一瞬 `RecoveryRequired / HANDSHAKE_INCOMPLETE`）、R2 2.6 秒。去充电桩的路上与第二趟出发时
+会话是 `RecoveryRequired`，那是行驶中出车安全不成立，不是缺陷。
