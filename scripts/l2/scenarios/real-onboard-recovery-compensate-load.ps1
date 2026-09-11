@@ -167,6 +167,37 @@ function Get-CompensationWorkflow {
     return $rows[0]
 }
 
+function Get-SessionRecovery {
+    $rows = Invoke-L2Query -Connection $connection `
+        -Sql 'SELECT Readiness, ReasonCode, PendingAttemptIdsJson FROM SessionRecoveries'
+    if ($rows.Count -eq 0) { return $null }
+    return $rows[0]
+}
+
+function Get-InboxRows([string]$messageType) {
+    return @(Invoke-L2Query -Connection $connection `
+        -Sql "SELECT RequestJson FROM ProtocolInbox WHERE MessageType = '$messageType' ORDER BY ReceivedAt")
+}
+
+# Wait-L2Condition 超时就抛异常，判据表里什么都不留。第 9 段的两条修之前必然超时（8005-agv-program#46），
+# 超时正是它们的实际值，所以超时时再读一次世界交回给判据。
+function Wait-L2ConditionOrLast {
+    param(
+        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][string]$Criterion,
+        [Parameter(Mandatory)][scriptblock]$Probe,
+        [Parameter(Mandatory)][scriptblock]$Until,
+        [int]$TimeoutSeconds = 60
+    )
+    try {
+        return Wait-L2Condition -Description $Description -Journal $journal -Criterion $Criterion `
+            -TimeoutSeconds $TimeoutSeconds -Probe $Probe -Until $Until
+    } catch {
+        $journal.Note("Not reached: $($_.Exception.Message)")
+        return & $Probe
+    }
+}
+
 # 等车载端把门开到「在等操作员」为止。绝不能一看到 UNLOCKING 就动手：车载端要求锁反馈稳定
 # feedbackStableMs 才认，WAITING_OPERATOR 是它自己发的、说明它确实观测到了门开着的那一段。
 function Wait-WaitingOperator([string]$attemptId, [string]$criterion, [int]$Before) {
@@ -501,6 +532,105 @@ $assertions.Add(
     '补偿前挂着 / 补偿后已结算',
     "$(if ($loadCommandWasPending) { '补偿前挂着' } else { '补偿前就不是挂着的' }) / $settled")
 
+# --- 9. 车还回来：会话回到 Ready，下一条需求派得出去、车收得下扫码 ----------------------------------
+#
+# 8005-agv-program#46。`-005`/`-006`/`-007` 三次绿里，这一单判死之后会话一直停在
+# `RecoveryRequired / OPERATION_RECOVERY_REQUIRED`，而那时仓位操作早已 `Cancelled`：就绪只在握手、
+# OperationResult 与 SafetyStateChanged 时重算，补偿对账之后没人再算一次。车载端只在自己的会话是
+# READY 时才放行扫码，所以「车收下下一站的扫码」证的是车辆也被告知了，不只是服务端库里改了。
+
+$sessionAfter = Wait-L2ConditionOrLast -Description 'the session returned to Ready after the compensation' `
+    -Criterion 'session-ready-after-compensation' -TimeoutSeconds 60 `
+    -Probe {
+        $row = Get-SessionRecovery
+        "$([string]$row.Readiness) / $([string]$row.ReasonCode)"
+    } `
+    -Until { param($v) $v -eq 'Ready / READY' }
+$assertions.Add(
+    'L2-RC-15', '补偿对账之后服务端会话自己回到 Ready，不是停在 OPERATION_RECOVERY_REQUIRED',
+    ($sessionAfter -eq 'Ready / READY'), 'Ready / READY', $sessionAfter)
+if ($sessionAfter -ne 'Ready / READY') {
+    $journal.Note('Scenario stopped: the session did not return to Ready after the compensation.')
+    return
+}
+
+$nextDemandGuid = [guid]::NewGuid()
+$nextDemandIdWire = $nextDemandGuid.ToString('N')
+$nextDemandId = $nextDemandGuid.ToString('D')
+$nextSublot = "L2-SUBLOT-$($Context.RunId)-NEXT"
+
+$journal.Note("Publishing the next demand $nextDemandIdWire (sublot $nextSublot).")
+$null = $mes.Command('Put', "demands/$nextDemandIdWire", @{
+    sublot      = $nextSublot
+    area        = 'N1-3'
+    eqp         = 'EQP-L2-01'
+    package     = 'L2-PACKAGE'
+    maxBoxCount = 4
+})
+
+$null = Wait-L2Condition -Description 'the next demand was accepted and dispatched to the pickup station' `
+    -Journal $journal -Criterion 'next-journey-stage' -TimeoutSeconds 120 `
+    -Probe { $rows = Get-L2Journey -Connection $connection -DemandId $nextDemandId; if ($rows.Count -gt 0) { [string]$rows[0].Stage } else { $null } } `
+    -Until { param($v) $v -eq 'AwaitingPickupArrival' }
+$nextIntent = Wait-L2Condition -Description 'the next TO_PICKUP intent was confirmed' `
+    -Journal $journal -Criterion 'next-to-pickup-intent' -TimeoutSeconds 60 `
+    -Probe {
+        $rows = Invoke-L2Query -Connection $connection `
+            -Sql "SELECT UpperId, OrderId, Status FROM OrderIntents WHERE DemandId = '$nextDemandId' AND Purpose = 'TO_PICKUP'"
+        if ($rows.Count -gt 0) { $rows[0] } else { $null }
+    } `
+    -Until { param($v) $v -and [string]$v.Status -eq 'CONFIRMED' }
+
+$journal.Note('Vehicle drives to the pickup station for the next demand.')
+$null = $riot.Command('Put', "orders/$($nextIntent.UpperId)", @{
+    orderState        = 3
+    executeVehicleKey = $Context.VehicleKey
+})
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey      = $Context.VehicleKey
+    procState       = 'RUNNING'
+    movementState   = 'MT_RUNNING'
+    speed           = 0.8
+    processingOrder = $true
+    orderTaskId     = $nextIntent.OrderId
+})
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey       = $Context.VehicleKey
+    procState        = 'IDLE'
+    movementState    = 'MT_FINISHED'
+    speed            = 0
+    currentPosition  = $Context.PickupStationRiotId
+    processingOrder  = $false
+    clearOrderTaskId = $true
+})
+$null = $riot.Command('Put', "orders/$($nextIntent.UpperId)", @{ orderState = 5 })
+
+# 先等服务端进入 AwaitingSublot 再扫：车载端提交之后不清空上一轮的录入请求，输入框可能早就是可用的。
+$null = Wait-L2Condition -Description 'the next journey waits for a sublot' `
+    -Journal $journal -Criterion 'next-awaiting-sublot' -TimeoutSeconds 120 `
+    -Probe { $rows = Get-L2Journey -Connection $connection -DemandId $nextDemandId; if ($rows.Count -gt 0) { [string]$rows[0].Stage } else { $null } } `
+    -Until { param($v) $v -eq 'AwaitingSublot' }
+$null = Wait-L2Condition -Description 'the onboard HMI accepts sublot entry for the next demand' `
+    -Journal $journal -Criterion 'next-onboard-can-submit' -TimeoutSeconds 120 `
+    -Probe { $onboard.CanSubmit() } -Until { param($v) $v }
+$onboard.SetSublot($nextSublot)
+$null = Wait-L2Condition -Description 'the manual submit button became enabled for the next sublot' `
+    -Journal $journal -Criterion 'next-onboard-submit-ready' -TimeoutSeconds 30 `
+    -Probe { $onboard.SubmitReady() } -Until { param($v) $v }
+$onboard.Submit()
+
+$nextSubmitted = Wait-L2ConditionOrLast -Description 'the vehicle sent the next sublot to the server' `
+    -Criterion 'next-sublot-submitted' -TimeoutSeconds 60 `
+    -Probe {
+        @(Get-InboxRows 'SublotSubmitted' | Where-Object {
+            ([string]$_.RequestJson | ConvertFrom-Json).payload.sublot -eq $nextSublot
+        }).Count
+    } `
+    -Until { param($v) $v -ge 1 }
+$assertions.Add(
+    'L2-RC-16', '车还回来了：下一条需求被受理并派车，车在取货点收下扫码并交给服务端',
+    ($nextSubmitted -ge 1), "SublotSubmitted($nextSublot) 1 条", "$nextSubmitted 条")
+
 $journal.Note(
-    'Scenario finished: the five-step compensation handshake completed end to end and the demand ' +
-    'was settled by CANCELLED_BY_LOAD_COMPENSATION.')
+    'Scenario finished: the five-step compensation handshake completed end to end, the demand ' +
+    'was settled by CANCELLED_BY_LOAD_COMPENSATION, and the vehicle took the next demand.')

@@ -21,7 +21,7 @@
 第 3 步要用的。那一趟的仓位早就关着没放货，车辆一次 IO 都不碰就会报 `ALL_EMPTY`（README 第 16 条），
 驱动脚本不假设车一定会开门——本条走的是「会开门」那一支，另一支只在补偿动作里少一次服务。
 
-补偿对账之后会话回不到 `Ready`（#46），这里只记不判。
+补偿对账之后会话回不回得到 `Ready`、车还能不能接下一单，由 `L2-FOC-08`/`L2-FOC-09` 判（#46）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -154,11 +154,82 @@ $assertions.Add(
     'L2-FOC-07', '现场收在安全状态：门关、仓空、已锁、开锁输出复位',
     ($reading -eq 'CLOSED/EMPTY/1/0'), 'CLOSED/EMPTY/1/0', $reading)
 
-# 只记不判：补偿对账之后会话回不到 Ready，归 8005-agv-program#46。
-$readiness = @(Invoke-L2Query -Connection $connection `
-    -Sql "SELECT Readiness, ReasonCode FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'")
-if ($readiness.Count -gt 0) {
-    $journal.Note("Session after compensation (recorded, not judged; #46): $($readiness[0].Readiness) / $($readiness[0].ReasonCode)")
+# --- 4. 车还回来：会话回到 Ready，驱动脚本在下一站扫得进码 ------------------------------------------------
+#
+# 8005-agv-program#46。救出卡住的旅程（#44 第 5 步）与无人窗口一（#45）都要在补偿之后接着跑，而这里原来
+# 只记不判：对账完成之后会话停在 RecoveryRequired。第二条判据走的是上车的那个函数——`Start-FieldStopLoad`
+# 经车载端自动化面扫码，车载端的会话不是 READY 就拒收，所以它走得到「车在等操作员」就是车辆被告知了。
+
+$sessionAfter = 'PENDING'
+try {
+    $sessionAfter = Wait-L2Condition -Description 'the session returned to Ready after the compensation' -Journal $journal `
+        -Criterion 'session-ready-after-compensation' -TimeoutSeconds 60 `
+        -Probe {
+            $rows = @(Invoke-L2Query -Connection $connection `
+                -Sql "SELECT Readiness, ReasonCode FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'")
+            ($rows.Count -gt 0) ? "$($rows[0].Readiness) / $($rows[0].ReasonCode)" : '(no session)'
+        } `
+        -Until { param($v) $v -eq 'Ready / READY' }
+} catch {
+    $journal.Note("Not reached: $($_.Exception.Message)")
+    $rows = @(Invoke-L2Query -Connection $connection `
+        -Sql "SELECT Readiness, ReasonCode FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'")
+    $sessionAfter = ($rows.Count -gt 0) ? "$($rows[0].Readiness) / $($rows[0].ReasonCode)" : '(no session)'
 }
+$assertions.Add(
+    'L2-FOC-08', '补偿对账之后服务端会话自己回到 Ready',
+    ($sessionAfter -eq 'Ready / READY'), 'Ready / READY', $sessionAfter)
+if ($sessionAfter -ne 'Ready / READY') {
+    $journal.Note('Scenario stopped: the session did not return to Ready after the compensation.')
+    return
+}
+
+$nextDemandGuid = [guid]::NewGuid()
+$nextDemandId = $nextDemandGuid.ToString('D')
+$nextSublot = "L2-FOC-$($Context.RunId)-NEXT"
+$journal.Note("Publishing the next demand $($nextDemandGuid.ToString('N')) (sublot $nextSublot).")
+$null = $mes.Command('Put', "demands/$($nextDemandGuid.ToString('N'))", @{
+    sublot      = $nextSublot
+    area        = 'N1-3'
+    eqp         = 'EQP-L2-01'
+    package     = 'L2-PACKAGE'
+    maxBoxCount = 4
+})
+
+$nextIntent = Wait-L2Condition -Description 'the next TO_PICKUP intent was confirmed' `
+    -Journal $journal -Criterion 'next-to-pickup-intent' -TimeoutSeconds 120 `
+    -Probe {
+        $rows = Invoke-L2Query -Connection $connection `
+            -Sql "SELECT UpperId, OrderId, Status FROM OrderIntents WHERE DemandId = '$nextDemandId' AND Purpose = 'TO_PICKUP'"
+        if ($rows.Count -eq 0) { $null } else { $rows[0] }
+    } `
+    -Until { param($v) $v -and [string]$v.Status -eq 'CONFIRMED' }
+$nextJourneyId = [string](Get-L2Journey -Connection $connection -DemandId $nextDemandId)[0].JourneyId
+
+$journal.Note('Vehicle drives to the pickup station for the next demand.')
+$null = $riot.Command('Put', "orders/$($nextIntent.UpperId)", @{ orderState = 3; executeVehicleKey = $Context.VehicleKey })
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey = $Context.VehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'
+    speed = 0.8; processingOrder = $true; orderTaskId = $nextIntent.OrderId
+})
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey = $Context.VehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
+    currentPosition = $Context.PickupStationRiotId; processingOrder = $false; clearOrderTaskId = $true
+})
+$null = $riot.Command('Put', "orders/$($nextIntent.UpperId)", @{ orderState = 5 })
+
+$nextStop = $null
+$nextStopError = $null
+try {
+    $nextStop = Start-FieldStopLoad -Field $field -JourneyId $nextJourneyId -Sequence 1 -ArrivalTimeoutSeconds 120
+} catch {
+    $nextStopError = $_.Exception.Message
+    $journal.Note("Next stop did not start: $nextStopError")
+}
+$assertions.Add(
+    'L2-FOC-09', '车还回来了：下一条需求被受理并派车，驱动脚本经自动化面扫码后车开锁等操作员',
+    ($null -ne $nextStop -and $nextStop.DemandId -eq $nextDemandId -and $nextStop.Sublot -eq $nextSublot),
+    "$nextDemandId / $nextSublot / 车在等操作员",
+    ($null -ne $nextStop) ? "$($nextStop.DemandId) / $($nextStop.Sublot) / 车在等操作员" : "未走到：$nextStopError")
 
 $journal.Note('Scenario finished.')

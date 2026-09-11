@@ -38,6 +38,8 @@
 `RECOVERY_DEMAND_NOT_BLOCKED`）。这两条用不抛异常的等待写：超时不是场景出错，是判据的实际值，
 要让它进判据表而不是进 `Last observed:`。会话被拒之后后面的判据无从谈起，场景就地结束。
 
+`L2-RW-11`/`L2-RW-12`（8005-agv-program#46）同样写法：对账之后会话回不到 `Ready`，车就接不了下一单。
+
 断言仍然只从服务端 SQLite 与模拟器 `/snapshot` 读。UI 只用来驱动。
 #>
 [CmdletBinding()]
@@ -431,12 +433,111 @@ $assertions.Add(
     '重启前挂着 / 补偿后已结算',
     "$(if ($loadCommandWasPending) { '重启前挂着' } else { '重启前就不是挂着的' }) / $settled")
 
-# 不作判据，只记下来：补偿之后会话自己回不回得到 Ready。服务端在 OperationResult 那条路上写着
-# 「恢复完成之后没有东西告诉车会话又 READY 了」（OnboardMessageProcessor 的 OPEN 注释）。
-$sessionAfter = Get-SessionRecovery
-$journal.Note("Session after compensation: generation $($sessionAfter.SessionGeneration), " +
-    "$($sessionAfter.Readiness) / $($sessionAfter.ReasonCode), pending attempts $($sessionAfter.PendingAttemptIdsJson).")
+# --- 10. 车还回来：会话回到 Ready，下一条需求派得出去、车收得下扫码 ---------------------------------
+#
+# 8005-agv-program#46。这一段之前只记不判：`-004`/`-005` 两次绿里，对账完成之后会话一直是
+# `RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED`，车辆早清掉的那个 attempt 还挂在服务端。
+# 救完一趟旅程车却接不了下一单，唯一的出路是再重启一次客户端——正是 #40 刚修掉的那一类。
+#
+# 服务端库里 Ready 还不够：它说的是服务端怎么想，不是车知不知道。所以第二条判据要车辆自己收下下一站
+# 的扫码——车载端只在自己的会话是 READY 时才放行提交（`WireToGateBusinessService.CanSubmitSublot`），
+# 服务端的 SublotSubmitted 落库就是车辆知道了的证据。
+
+$sessionAfter = Wait-L2ConditionOrLast -Description 'the session returned to Ready after the compensation' `
+    -Criterion 'session-ready-after-compensation' -TimeoutSeconds 60 `
+    -Probe {
+        $row = Get-SessionRecovery
+        "$([string]$row.Readiness) / $([string]$row.ReasonCode)"
+    } `
+    -Until { param($v) $v -eq 'Ready / READY' }
+$pendingAfter = [string](Get-SessionRecovery).PendingAttemptIdsJson
+$assertions.Add(
+    'L2-RW-11', '补偿对账之后服务端会话自己回到 Ready，不必再重启客户端',
+    ($sessionAfter -eq 'Ready / READY'), 'Ready / READY',
+    "$sessionAfter（握手上报的 pending attempts $pendingAfter）")
+if ($sessionAfter -ne 'Ready / READY') {
+    $journal.Note('Scenario stopped: the session did not return to Ready after the compensation.')
+    return
+}
+
+$nextDemandGuid = [guid]::NewGuid()
+$nextDemandIdWire = $nextDemandGuid.ToString('N')
+$nextDemandId = $nextDemandGuid.ToString('D')
+$nextSublot = "L2-SUBLOT-$($Context.RunId)-NEXT"
+
+$journal.Note("Publishing the next demand $nextDemandIdWire (sublot $nextSublot).")
+$null = $mes.Command('Put', "demands/$nextDemandIdWire", @{
+    sublot      = $nextSublot
+    area        = 'N1-3'
+    eqp         = 'EQP-L2-01'
+    package     = 'L2-PACKAGE'
+    maxBoxCount = 4
+})
+
+$null = Wait-L2Condition -Description 'the next demand was accepted and dispatched to the pickup station' `
+    -Journal $journal -Criterion 'next-journey-stage' -TimeoutSeconds 120 `
+    -Probe { $rows = Get-L2Journey -Connection $connection -DemandId $nextDemandId; if ($rows.Count -gt 0) { [string]$rows[0].Stage } else { $null } } `
+    -Until { param($v) $v -eq 'AwaitingPickupArrival' }
+$nextIntent = Wait-L2Condition -Description 'the next TO_PICKUP intent was confirmed' `
+    -Journal $journal -Criterion 'next-to-pickup-intent' -TimeoutSeconds 60 `
+    -Probe {
+        $rows = Invoke-L2Query -Connection $connection `
+            -Sql "SELECT UpperId, OrderId, Status FROM OrderIntents WHERE DemandId = '$nextDemandId' AND Purpose = 'TO_PICKUP'"
+        if ($rows.Count -gt 0) { $rows[0] } else { $null }
+    } `
+    -Until { param($v) $v -and [string]$v.Status -eq 'CONFIRMED' }
+
+$journal.Note('Vehicle drives to the pickup station for the next demand.')
+$null = $riot.Command('Put', "orders/$($nextIntent.UpperId)", @{
+    orderState        = 3
+    executeVehicleKey = $Context.VehicleKey
+})
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey      = $Context.VehicleKey
+    procState       = 'RUNNING'
+    movementState   = 'MT_RUNNING'
+    speed           = 0.8
+    processingOrder = $true
+    orderTaskId     = $nextIntent.OrderId
+})
+$null = $riot.Command('Put', 'vehicle', @{
+    vehicleKey       = $Context.VehicleKey
+    procState        = 'IDLE'
+    movementState    = 'MT_FINISHED'
+    speed            = 0
+    currentPosition  = $Context.PickupStationRiotId
+    processingOrder  = $false
+    clearOrderTaskId = $true
+})
+$null = $riot.Command('Put', "orders/$($nextIntent.UpperId)", @{ orderState = 5 })
+
+# 先等服务端进入 AwaitingSublot 再扫：车载端提交之后不清空上一轮的录入请求，输入框可能早就是可用的
+# （scripts/l2/README.md 多需求那几条）。
+$null = Wait-L2Condition -Description 'the next journey waits for a sublot' `
+    -Journal $journal -Criterion 'next-awaiting-sublot' -TimeoutSeconds 120 `
+    -Probe { $rows = Get-L2Journey -Connection $connection -DemandId $nextDemandId; if ($rows.Count -gt 0) { [string]$rows[0].Stage } else { $null } } `
+    -Until { param($v) $v -eq 'AwaitingSublot' }
+$null = Wait-L2Condition -Description 'the onboard HMI accepts sublot entry for the next demand' `
+    -Journal $journal -Criterion 'next-onboard-can-submit' -TimeoutSeconds 120 `
+    -Probe { $onboard.CanSubmit() } -Until { param($v) $v }
+$onboard.SetSublot($nextSublot)
+$null = Wait-L2Condition -Description 'the manual submit button became enabled for the next sublot' `
+    -Journal $journal -Criterion 'next-onboard-submit-ready' -TimeoutSeconds 30 `
+    -Probe { $onboard.SubmitReady() } -Until { param($v) $v }
+$onboard.Submit()
+
+$nextSubmitted = Wait-L2ConditionOrLast -Description 'the vehicle sent the next sublot to the server' `
+    -Criterion 'next-sublot-submitted' -TimeoutSeconds 60 `
+    -Probe {
+        @(Get-InboxRows 'SublotSubmitted' | Where-Object {
+            ([string]$_.RequestJson | ConvertFrom-Json).payload.sublot -eq $nextSublot
+        }).Count
+    } `
+    -Until { param($v) $v -ge 1 }
+$assertions.Add(
+    'L2-RW-12', '车还回来了：下一条需求被受理并派车，车在取货点收下扫码并交给服务端',
+    ($nextSubmitted -ge 1), "SublotSubmitted($nextSublot) 1 条", "$nextSubmitted 条")
 
 $journal.Note(
     'Scenario finished: an onboard killed while waiting for the operator came back, settled the ' +
-    'interrupted attempt, and the compensation handshake closed the demand.')
+    'interrupted attempt, the compensation handshake closed the demand, and the vehicle took the next one.')
