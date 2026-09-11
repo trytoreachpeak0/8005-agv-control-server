@@ -377,6 +377,234 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AReportedPendingFactIsReconciledOnlyByAConclusionTheServerHolds()
+    {
+        // 8005-agv-program#46. What the vehicle reports as outstanding at the handshake is written once
+        // and never revisited, so a session whose attempt had long since been answered stayed at
+        // PENDING_FACT_RECONCILIATION_REQUIRED until the vehicle reconnected. The guard it replaces
+        // (#40) still holds: while the server has no conclusion, the attempt stays outstanding --
+        // after a reconnect the onboard executor may still be running it.
+        const string pendingResultMessageId = "e0000000-0000-4000-8000-000000000040";
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+        StationOperationRow operation = await context.StationOperations.SingleAsync(
+            TestContext.Current.CancellationToken);
+        operation.Status = StationOperationStatus.Prepared;
+        SessionRecoveryRow session = await context.SessionRecoveries.SingleAsync(
+            TestContext.Current.CancellationToken);
+        session.UnsettledSlotOperationAttemptId = AttemptId;
+        session.PendingAttemptIdsJson = JsonSerializer.Serialize(new[] { AttemptId });
+        session.PendingResultIdsJson = JsonSerializer.Serialize(new[] { pendingResultMessageId });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        WireToGateStore store = new(context);
+
+        Assert.Equal(
+            "PENDING_FACT_RECONCILIATION_REQUIRED",
+            (await store.DecideReadinessAsync(AgvId, 3, TestContext.Current.CancellationToken)).ReasonCode);
+
+        // A result from before a forced recovery is kept as evidence only and was never applied, so
+        // it is not a conclusion the server acted on.
+        OperationResultRow result = new()
+        {
+            ResultId = "e0000000-0000-4000-8000-000000000041",
+            SlotOperationAttemptId = AttemptId,
+            AgvId = AgvId,
+            ForcedRecoveryGeneration = 0,
+            ContentHash = new string('b', 64),
+            ResultContentSha256 = new string('c', 64),
+            OverallOutcome = "COMPLETED",
+            EvidenceJson = "[]",
+            ObservedAt = Now,
+            HistoricalOnly = true,
+            ReceivedAt = Now
+        };
+        context.OperationResults.Add(result);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(
+            "PENDING_FACT_RECONCILIATION_REQUIRED",
+            (await store.DecideReadinessAsync(AgvId, 3, TestContext.Current.CancellationToken)).ReasonCode);
+
+        result.HistoricalOnly = false;
+        operation.Status = StationOperationStatus.Committed;
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        // The attempt is answered; the reported result message still is not.
+        Assert.Equal(
+            "PENDING_FACT_RECONCILIATION_REQUIRED",
+            (await store.DecideReadinessAsync(AgvId, 3, TestContext.Current.CancellationToken)).ReasonCode);
+
+        context.ProtocolInbox.Add(new ProtocolInboxRow
+        {
+            MessageId = pendingResultMessageId,
+            MessageType = "OperationResult",
+            RequestJson = "{}",
+            ContentHash = new string('d', 64),
+            FirstResponseJson = "{}",
+            ReceivedAt = Now
+        });
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(
+            AgvId, 3, TestContext.Current.CancellationToken);
+
+        Assert.Equal(SessionReadiness.Ready, decision.Readiness);
+        // What the vehicle reported stays as it reported it.
+        Assert.Equal(
+            JsonSerializer.Serialize(new[] { AttemptId }),
+            (await context.SessionRecoveries.SingleAsync(TestContext.Current.CancellationToken))
+                .PendingAttemptIdsJson);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-00")]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    public async Task AResultThatAnswersTheLastPendingAttemptTellsTheVehicleItIsReady()
+    {
+        // The reconnect-mid-load shape: the handshake reported the attempt as outstanding because the
+        // executor was still running it, and it then finished normally. The session used to stay
+        // RecoveryRequired until the next reconnect, and nothing told the vehicle otherwise.
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+        StationOperationRow operation = await context.StationOperations.SingleAsync(
+            TestContext.Current.CancellationToken);
+        operation.Status = StationOperationStatus.Prepared;
+        await ReportAttemptOutstandingAsync(context);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, "CONTROL_SERVER_TEST_UNUSED_PROOF");
+        OnboardConnectionState state = CurrentState(deferOutbound: true);
+
+        string response = await processor.ProcessAsync(
+            Envelope("e0000000-0000-4000-8000-000000000050", "OperationResult", OperationResultPayload()),
+            state,
+            TestContext.Current.CancellationToken);
+        await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+
+        string[] lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        Assert.Equal("DurableAck", MessageType(lines[0]));
+        AssertReadinessLine(lines[1], "READY");
+        Assert.Equal(SessionReadiness.Ready, state.Readiness);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-05")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task AReconciledCompensationTellsTheVehicleItsSessionIsReadyAgain()
+    {
+        // 8005-agv-program#46, the shape L2 real-onboard-restart-while-waiting-operator-004/-005 ended
+        // in: the onboard was killed while a load waited for the operator, reported the attempt at the
+        // handshake, settled it as UNKNOWN on restart, and an administrator compensated it. Demand
+        // Cancelled, journey Completed -- and the session still RecoveryRequired, so the vehicle could
+        // not take the next demand without being restarted again.
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_READY_AFTER_COMPENSATION";
+        const string proof = "ready-after-compensation-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            StationOperationRow operation = await context.StationOperations.SingleAsync(
+                TestContext.Current.CancellationToken);
+            operation.Status = StationOperationStatus.Prepared;
+            await ReportAttemptOutstandingAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+
+            string unknownAck = await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000000060",
+                    "OperationResult",
+                    OperationResultPayload(completed: false)),
+                state,
+                TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+            Assert.Single(unknownAck.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+            // The server holds the vehicle's conclusion now, so what keeps the session out of Ready is
+            // its own verdict on that conclusion rather than a fact it is still waiting for.
+            Assert.Equal(
+                "OPERATION_RECOVERY_REQUIRED",
+                (await context.SessionRecoveries.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken))
+                    .ReasonCode);
+
+            await processor.ProcessAsync(
+                RecoverySessionRequest(proof), state, TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+            string accepted = await processor.ProcessAsync(
+                RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY"), state, TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+            Assert.Equal("RecoveryActionAccepted", MessageType(accepted));
+            await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000000061",
+                    "LoadCompensationRequested",
+                    new
+                    {
+                        recoveryActionId = ActionId,
+                        exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        @operator = Operator()
+                    }),
+                state,
+                TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+            string compensationResult = Envelope(
+                "e0000000-0000-4000-8000-000000000062",
+                "LoadCompensationResult",
+                new
+                {
+                    recoveryActionId = ActionId,
+                    demandId = DemandId,
+                    slotOperationAttemptId = AttemptId,
+                    overallOutcome = "ALL_EMPTY",
+                    slotResults = RecoverySlots.Select(slot => new
+                    {
+                        slotNo = slot,
+                        outcome = "COMPLETED",
+                        finalPhysicalState = "EMPTY",
+                        lockState = "LOCKED",
+                        unlockOutputState = "RESET",
+                        reasonCodes = Array.Empty<string>()
+                    }).ToArray(),
+                    observedAt = Now.AddSeconds(5)
+                });
+
+            string response = await processor.ProcessAsync(
+                compensationResult, state, TestContext.Current.CancellationToken);
+            await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
+
+            Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).Status);
+            string[] lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(2, lines.Length);
+            Assert.Equal("DurableAck", MessageType(lines[0]));
+            AssertReadinessLine(lines[1], "READY");
+            Assert.Equal(SessionReadiness.Ready, state.Readiness);
+            SessionRecoveryRow session = await context.SessionRecoveries.AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken);
+            Assert.Equal(SessionReadiness.Ready, session.Readiness);
+            Assert.Equal("READY", session.ReasonCode);
+
+            // A redelivered result gets the stored first response back, readiness line included, and
+            // recomputes nothing.
+            string replay = await processor.ProcessAsync(
+                compensationResult, state, TestContext.Current.CancellationToken);
+            Assert.Equal(response, replay);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-05")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
     public async Task AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized()
@@ -1025,6 +1253,34 @@ public sealed class RecoveryStateMachineG2Tests
             .Build();
         return TestOnboardProcessorFactory.Create(
             context, store, new FixedTimeProvider(Now), configuration, peer);
+    }
+
+    /// <summary>
+    /// The session as the handshake leaves it when the vehicle has an attempt without a result: it
+    /// names the attempt, and the server holds the session out of Ready until it is reconciled.
+    /// </summary>
+    private static async Task ReportAttemptOutstandingAsync(ControlServerDbContext context)
+    {
+        SessionRecoveryRow session = await context.SessionRecoveries.SingleAsync(
+            TestContext.Current.CancellationToken);
+        session.UnsettledSlotOperationAttemptId = AttemptId;
+        session.ProvenRecoveryCheckpoint = "ACTIVE_UNLOCK_SET";
+        session.PendingAttemptIdsJson = JsonSerializer.Serialize(new[] { AttemptId });
+        session.Readiness = SessionReadiness.RecoveryRequired;
+        session.ReasonCode = "PENDING_FACT_RECONCILIATION_REQUIRED";
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static void AssertReadinessLine(string line, string expectedReadiness)
+    {
+        Assert.Equal("SessionReadiness", MessageType(line));
+        using JsonDocument readiness = JsonDocument.Parse(line);
+        JsonElement payload = readiness.RootElement.GetProperty("payload");
+        Assert.Equal(expectedReadiness, payload.GetProperty("readiness").GetString());
+        if (expectedReadiness == "READY")
+        {
+            Assert.Empty(payload.GetProperty("reasonCodes").EnumerateArray());
+        }
     }
 
     private static OnboardConnectionState CurrentState(bool deferOutbound = false) => new()

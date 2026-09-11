@@ -163,8 +163,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
             .ConfigureAwait(false);
-        bool noPendingFacts = DeserializeStrings(row.PendingAttemptIdsJson).Length == 0 &&
-                              DeserializeStrings(row.PendingResultIdsJson).Length == 0;
+        bool noPendingFacts = !await HasUnreconciledReportedFactsAsync(row, cancellationToken)
+            .ConfigureAwait(false);
         bool departureUsable = row.DepartureSafe == true ||
                                await IsUnsafetyExplainedByOwnCommandAsync(row, cancellationToken)
                                    .ConfigureAwait(false);
@@ -2647,6 +2647,48 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                         pair.operation.Status == StationOperationStatus.Prepared,
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether anything the vehicle reported as outstanding at the handshake is still without a
+    /// conclusion on this side. The report is written once per session and never revisited, so
+    /// reading it as-is held the session out of Ready until the vehicle reconnected, however long
+    /// ago the attempt had been answered (8005-agv-program#46).
+    /// </summary>
+    /// <remarks>
+    /// An attempt counts as reconciled only by a conclusion the server holds and acted on: a
+    /// current-generation OperationResult for it, or a recovery workflow on it that reached
+    /// Reconciled. Never by time, and never by the server's own view of the operation: after a
+    /// reconnect the onboard executor may still be running the attempt, and its report is
+    /// word-for-word the report of a vehicle that restarted (8005-agv-program#40). What the server
+    /// then decides about that conclusion is operationNeedsRecovery's business, not this one's.
+    /// A reported result message is reconciled once the inbox has durably accepted it.
+    /// </remarks>
+    private async Task<bool> HasUnreconciledReportedFactsAsync(
+        SessionRecoveryRow row,
+        CancellationToken cancellationToken)
+    {
+        foreach (string attemptId in DeserializeStrings(row.PendingAttemptIdsJson))
+        {
+            bool answered = await dbContext.OperationResults
+                                .AnyAsync(result => result.SlotOperationAttemptId == attemptId &&
+                                                    result.AgvId == row.AgvId &&
+                                                    !result.HistoricalOnly,
+                                    cancellationToken).ConfigureAwait(false) ||
+                            await dbContext.RecoveryWorkflows
+                                .AnyAsync(workflow => workflow.SlotOperationAttemptId == attemptId &&
+                                                      workflow.AgvId == row.AgvId &&
+                                                      workflow.State == RecoveryWorkflowState.Reconciled,
+                                    cancellationToken).ConfigureAwait(false);
+            if (!answered) return true;
+        }
+        foreach (string messageId in DeserializeStrings(row.PendingResultIdsJson))
+        {
+            if (!await dbContext.ProtocolInbox.AnyAsync(item => item.MessageId == messageId, cancellationToken)
+                    .ConfigureAwait(false))
+                return true;
+        }
+        return false;
     }
 
     private static string GetRecoveryReason(

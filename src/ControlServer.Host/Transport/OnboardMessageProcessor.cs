@@ -303,26 +303,12 @@ public sealed partial class OnboardMessageProcessor(
                     // RecoveryStateReport and SafetyStateChanged, neither of which the vehicle sends
                     // afterwards, so the session stayed READY over a load that needed recovery and
                     // the onboard never showed its recovery entry.
-                    SessionReadinessDecision resultDecision = await store.DecideReadinessAsync(
-                        agvId, generation, cancellationToken).ConfigureAwait(false);
-                    string resultAck = DurableAck(messageType, messageId, agvId, generation, contentHash);
-                    // Only the transition INTO RecoveryRequired, and only when it is new. The gap
-                    // being closed is that the vehicle was never told it needs recovery; the way
-                    // back to READY already has owners (the handshake, RecoveryStateReport,
-                    // SafetyStateChanged), and announcing it here too would change the wire shape of
-                    // the ordinary path — a completed unload would start answering with two lines.
                     //
-                    // OPEN: after a recovery completes, nothing on this path tells the vehicle the
-                    // session is READY again. Today the onboard learns it from its own next
-                    // RecoveryStateReport. If that turns out not to happen, widen this rather than
-                    // adding a second announcement somewhere else.
-                    if (resultDecision.Readiness != SessionReadiness.RecoveryRequired ||
-                        state.Readiness == SessionReadiness.RecoveryRequired)
-                    {
-                        return resultAck;
-                    }
-                    state.Readiness = resultDecision.Readiness;
-                    return $"{resultAck}\n{SessionReadinessLine(resultDecision, agvId, generation, state)}";
+                    // It is also the moment an attempt the handshake reported as outstanding gets its
+                    // conclusion, which can move the session the other way (8005-agv-program#46).
+                    string resultAck = DurableAck(messageType, messageId, agvId, generation, contentHash);
+                    return await WithReadinessChangeAsync(resultAck, agvId, generation, state, cancellationToken)
+                        .ConfigureAwait(false);
                 }
             case "ExceptionRecoverySessionRequested":
             case "RecoveryActionSubmitted":
@@ -337,8 +323,17 @@ public sealed partial class OnboardMessageProcessor(
             case "LoadCancellationResult":
             case "LoadCompensationResult":
             case "LoadCorrectionResult":
-                return await recoveryCoordinator.ProcessResultAsync(root, contentHash, cancellationToken)
-                    .ConfigureAwait(false);
+                {
+                    // Reconciling a recovery settles the operation that held the session out of
+                    // Ready. Nothing else recomputed readiness afterwards: the vehicle sends its
+                    // RecoveryStateReport only at the handshake, so a vehicle whose load had just
+                    // been compensated stayed RECOVERY_REQUIRED until it was restarted
+                    // (8005-agv-program#46).
+                    string recoveryAck = await recoveryCoordinator.ProcessResultAsync(
+                        root, contentHash, cancellationToken).ConfigureAwait(false);
+                    return await WithReadinessChangeAsync(recoveryAck, agvId, generation, state, cancellationToken)
+                        .ConfigureAwait(false);
+                }
             case "SafetyStateChanged":
                 {
                     long revision = payload.GetProperty("safetyStateVersion").GetInt64();
@@ -417,6 +412,28 @@ public sealed partial class OnboardMessageProcessor(
             default:
                 throw new InvalidDataException($"Message type '{messageType}' is not supported by ControlServer.");
         }
+    }
+
+    /// <summary>
+    /// Recomputes readiness after a result and appends a SessionReadiness line only when it changed.
+    /// The ordinary path keeps its one-line answer -- a completed load on a Ready session is Ready
+    /// before and after -- and each result that does move the session says so, in either direction.
+    /// </summary>
+    private async Task<string> WithReadinessChangeAsync(
+        string ack,
+        string agvId,
+        long generation,
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(
+            agvId, generation, cancellationToken).ConfigureAwait(false);
+        if (decision.Readiness == state.Readiness)
+        {
+            return ack;
+        }
+        state.Readiness = decision.Readiness;
+        return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
     }
 
     /// <summary>
