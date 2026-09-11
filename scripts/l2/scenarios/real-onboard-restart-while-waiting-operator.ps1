@@ -529,9 +529,14 @@ $onboard.Submit()
 $nextSubmitted = Wait-L2ConditionOrLast -Description 'the vehicle sent the next sublot to the server' `
     -Criterion 'next-sublot-submitted' -TimeoutSeconds 60 `
     -Probe {
-        @(Get-InboxRows 'SublotSubmitted' | Where-Object {
-            ([string]$_.RequestJson | ConvertFrom-Json).payload.sublot -eq $nextSublot
-        }).Count
+        # foreach, not a pipeline: Invoke-L2Query hands back its rows as one object, so piping them
+        # gives Where-Object the whole array as a single $_ and joins every RequestJson into one string
+        # (-007 died on exactly that, the moment a second SublotSubmitted landed).
+        $count = 0
+        foreach ($row in (Get-InboxRows 'SublotSubmitted')) {
+            if (([string]$row.RequestJson | ConvertFrom-Json).payload.sublot -eq $nextSublot) { $count++ }
+        }
+        $count
     } `
     -Until { param($v) $v -ge 1 }
 $assertions.Add(
