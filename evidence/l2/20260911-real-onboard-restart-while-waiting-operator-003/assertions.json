@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-restart-while-waiting-operator",
+  "runId": "20260911T030735651Z",
+  "outcome": "FAIL",
+  "failureReason": "Exception calling \"Confirm\" with \"1\" argument(s): \"Exception calling \"Invoke\" with \"0\" argument(s): \"Operation is not valid due to the current state of the object.\"\"",
+  "identity": {
+    "onboardHmiCommit": "6846e98f2891138c95e580460affbd3f35dde3d7",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T030735651Z",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "BATCH-3",
+    "controlServerCommit": "74019789971e011813c4468900bbafa81b760289",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-RW-01",
+      "description": "起点到位：车载端开了锁、在等操作员，门开着，仓位操作 Prepared，装货命令挂着",
+      "outcome": "PASS",
+      "expected": "OPEN / Prepared / 装货命令挂着",
+      "actual": "OPEN / Prepared / 装货命令挂着"
+    },
+    {
+      "id": "L2-RW-02",
+      "description": "客户端退出时没有留下结果：OperationResults 0 行，仓位操作仍是 Prepared",
+      "outcome": "PASS",
+      "expected": "0 行 / Prepared",
+      "actual": "0 行 / Prepared"
+    },
+    {
+      "id": "L2-RW-03",
+      "description": "重启后车载端握手如实上报那一次未结的 attempt",
+      "outcome": "PASS",
+      "expected": "44ecfbd4-1a85-3a52-91a5-520919a67645",
+      "actual": "44ecfbd4-1a85-3a52-91a5-520919a67645"
+    },
+    {
+      "id": "L2-RW-04",
+      "description": "重启之后这次装载拿到结论：服务端判 RecoveryRequired 并让旅程停摆，恢复入口才有地方落",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired，结果 1 份",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired，结果 1 份"
+    },
+    {
+      "id": "L2-RW-05",
+      "description": "那份结论报的是 UNKNOWN，但仓位的三个物理字段是重启后的真实读数：EMPTY / LOCKED / RESET",
+      "outcome": "PASS",
+      "expected": "UNKNOWN / UNKNOWN / EMPTY / LOCKED / RESET",
+      "actual": "UNKNOWN / UNKNOWN / EMPTY / LOCKED / RESET"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 22 lines, 22 distinct, 10 message types, 0 distinct violations, 0 known; schema compilation 16821 ms."
+    }
+  ]
+}

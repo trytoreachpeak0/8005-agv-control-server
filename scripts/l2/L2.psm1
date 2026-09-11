@@ -616,8 +616,22 @@ function New-L2OnboardDriver {
                         [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
                         $ButtonAutomationId))
                 if (-not $button) { throw "Dialog '$Title' has no button with AutomationId '$ButtonAutomationId'." }
-                $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-                return $true
+                # A dialog can be in the tree before its buttons take input. Measured 2026-09-11 on
+                # real-onboard-restart-while-waiting-operator-003: pressed about a second after the
+                # onboard was relaunched, Invoke threw "Operation is not valid due to the current
+                # state of the object." and the request never left the vehicle. Until the deadline,
+                # that is "not yet", not a failure.
+                try {
+                    $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                    return $true
+                } catch {
+                    $cause = $_.Exception
+                    while ($cause.InnerException) { $cause = $cause.InnerException }
+                    if ($cause -isnot [System.InvalidOperationException] -or
+                        [DateTimeOffset]::UtcNow -ge $deadline) {
+                        throw
+                    }
+                }
             }
             if ([DateTimeOffset]::UtcNow -ge $deadline) {
                 $seen = @()
