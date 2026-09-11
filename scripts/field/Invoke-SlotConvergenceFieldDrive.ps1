@@ -28,7 +28,12 @@
         the journey that dispatch creates and refuses to start against one already under way.
       * Close the gates when the journey completes. The runtime takes the next demand two seconds after
         Completed, which is less than one SSH round trip; remote-ops/onboard-hmi/scripts/
-        13-close-gates-when-idle.ps1 watches from the server itself. Start it alongside.
+        13-close-gates-when-idle.ps1 watches from the server itself. Start it once this script reports
+        the journey, never before the dispatch: with no unresolved journey the watcher latches onto the
+        newest row, which on the plant database is an already Completed journey, and stops the service
+        and closes the gates on the spot (server-close-gates-watch.ps1, the "runtime is idle already"
+        branch). Pass -JourneyTimeoutSeconds well past the window; on its default hour it gives up
+        without closing anything.
       * Compensation. Compensating one demand of a multi-demand journey leaves the journey Blocked for
         good -- JourneyRuntimeEngine returns on Blocked, and the recovery coordinator only moves the stage
         when the whole journey is settled -- so pressing 补偿清空 mid-window would strand the other stops'
@@ -39,7 +44,8 @@
     scp mangles Windows remote paths into "No such file or directory".
 
 .EXAMPLE
-    # With 13-close-gates-when-idle.ps1 running, and before the authorised -Dispatch:
+    # Before the authorised -Dispatch; start 13-close-gates-when-idle.ps1 -Force -JourneyTimeoutSeconds 14400
+    # only after the "Journey <id>" line below appears:
     .\Invoke-SlotConvergenceFieldDrive.ps1 -EvidenceRoot ..\..\evidence\field\20260912-FW-SC1-unattended
 #>
 [CmdletBinding()]
@@ -143,7 +149,7 @@ Write-Host "  agvId $agvId, IO $ioModule, recovery window $($recoveryWindowOpen 
 if (-not $recoveryWindowOpen) {
     Write-Warning 'The recovery window is closed; SC1-W-02 will fail. 14-set-recovery-window.ps1 opens it.'
 }
-Write-Warning 'This script does not close the journey gates. 13-close-gates-when-idle.ps1 must be running.'
+Write-Warning 'This script does not close the journey gates. Start 13-close-gates-when-idle.ps1 once the journey line appears -- started before the dispatch it closes the gates at once.'
 
 $null = New-Item -ItemType Directory -Path $runStage -Force
 Invoke-Checkpoint '00-ready'
