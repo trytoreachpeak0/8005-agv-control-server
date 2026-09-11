@@ -196,16 +196,26 @@ $assertions.Add(
     'CANCELLED_BY_LOAD_COMPENSATION / 已结算',
     "$suppressionReason / $($commandSettled ? '已结算' : '未结算')")
 
-$sessionAfter = 'PENDING'
-try {
-    $sessionAfter = Wait-L2Condition -Description 'the session returned to Ready after the compensation' -Journal $journal `
-        -Criterion 'session-ready-after-compensation' -TimeoutSeconds 60 `
-        -Probe { Get-SessionReading } -Until { param($v) $v -eq 'Ready / READY' }
-} catch {
-    $sessionAfter = Get-SessionReading
-    $journal.Note("Session did not return to Ready: $($_.Exception.Message)")
+# 会话回到 Ready 这件事不能等 SessionRecoveries 那一行去读（-002 就红在这里）：修好之后旅程在对账后几百毫秒内就
+# 过完出发安全检查、车开动，车载端随即报 VEHICLE_NOT_READY，会话按设计转 DEPARTURE_SAFETY_NOT_READY 直到到站——
+# 每一段行驶都这样，场景的探针开始读时 Ready 早已过去。读的是持久的那一份：服务端收下 LoadCompensationResult
+# 时连同 DurableAck 一起发给车、并缓存在收件箱首个应答里的 SessionReadiness（#46）。旅程能过出发安全检查，本身
+# 也要求会话当时是 Ready。
+$compensationRows = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT FirstResponseJson FROM ProtocolInbox WHERE MessageType = 'LoadCompensationResult'"
+$readinessTold = '(no LoadCompensationResult)'
+foreach ($row in $compensationRows) {
+    $readinessTold = '(no SessionReadiness in the first response)'
+    foreach ($line in ([string]$row.FirstResponseJson -split "`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        $message = $line | ConvertFrom-Json
+        if ($message.messageType -eq 'SessionReadiness') { $readinessTold = [string]$message.payload.readiness }
+    }
 }
-$assertions.Add('L2-MDC-32', '补偿对账之后服务端会话回到 Ready（#46）', ($sessionAfter -eq 'Ready / READY'), 'Ready / READY', $sessionAfter)
+$assertions.Add(
+    'L2-MDC-32', '补偿对账那一刻服务端会话回到 Ready 并告诉了车：LoadCompensationResult 的首个应答里带 SessionReadiness READY（#46）',
+    ($compensationRows.Count -eq 1 -and $readinessTold -eq 'READY'),
+    'READY', "$readinessTold / 现在 $(Get-SessionReading)")
 
 if ($left -notlike '3/*') {
     $journal.Note("Scenario stopped: the journey never left stop 2 ($left); demands $(Get-DemandStates).")
@@ -255,8 +265,12 @@ if ($unloadError) {
         "SELECT MessageId, PayloadJson FROM ProtocolOutbox WHERE MessageType = 'CurrentStopWorklistSnapshot'")
     $gateStation = [string](Invoke-L2Query -Connection $connection `
         -Sql "SELECT StationId FROM JourneyStops WHERE JourneyId = '$script:journeyId' AND Role = 'GATE'")[0].StationId
-    $gateIds = foreach ($row in $gateWorklists) {
-        if (([string]$row.PayloadJson) -like "*$gateStation*") { [string]$row.MessageId }
+    # 解析之后再比：PayloadJson 里的中文站名是 \uXXXX 转义的，按原文 -like 匹配永远对不上（-002 的实际值因此
+    # 写成了 not-gate，而那条被拒的正是关卡清单）。
+    $gateItems = @{}
+    foreach ($row in $gateWorklists) {
+        $payload = ([string]$row.PayloadJson | ConvertFrom-Json).payload
+        if ([string]$payload.stationId -eq $gateStation) { $gateItems[[string]$row.MessageId] = @($payload.items).Count }
     }
     $lines = @()
     if (Test-Path -LiteralPath $serverLog) {
@@ -264,10 +278,10 @@ if ($unloadError) {
     }
     $codes = foreach ($line in $lines) {
         if ($line -match 'CurrentStopWorklistSnapshot ([0-9a-f-]{36}): (\S+)') {
-            "$($Matches[2])@$((@($gateIds) -contains $Matches[1]) ? 'gate' : 'not-gate')"
+            $gateItems.ContainsKey($Matches[1]) ? "$($Matches[2])@关卡清单($($gateItems[$Matches[1]]) 项)" : "$($Matches[2])@非关卡清单"
         }
     }
-    $rejection = " / 车载端拒收关卡作业清单：$(@($codes | Sort-Object -Unique) -join ',') ×$(@($codes).Count)"
+    $rejection = " / 车载端拒收作业清单：$(@($codes | Sort-Object -Unique) -join ',') ×$(@($codes).Count)"
 }
 $session = Get-SessionReading
 $assertions.Add(
