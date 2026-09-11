@@ -21,8 +21,9 @@ RIoT 站点目录并认出关卡站（`RequireFixedStation`），认不出就整
 车连 `OperationResult` 都发不出去（`WIRE_TO_GATE_NOT_READY`）。只动地图上的关卡站，车载端碰不到；取货站一个不少，
 准入策略绑定的站点集合不变（`auto-charge-endurance` 证据 001 踩过的坑）。
 
-判据的核心是 `L2-RAR-05`/`-06`：两次请求是两条不同 messageId 的报文、各自拿到自己的应答，而整趟车载端会话
-没换过代——服务端一次都没掐连接。
+判据的核心是 `L2-RAR-05`/`-06`：两次请求是两条不同 messageId 的报文、各自拿到自己的应答，而车载端从第一次
+按下到收尾没有重连过——服务端一次都没掐连接。车载端 `96c7513`（修复之前）上的 `-003` 与现场原样：第一次
+`409 / RECOVERY_DEMAND_NOT_BLOCKED`，第二次 `409 ControlServer在旅程会话期间关闭了连接。`，服务端只收到一条请求。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -48,10 +49,11 @@ $field = New-FieldOperator -Connection $connection -AgvId $Context.AgvId `
     -SimulatorPort $Context.SimulatorHttpPort -AutomationPort $Context.OnboardAutomationPort `
     -Log { param($message) $journal.Note("field-operator: $message") }.GetNewClosure()
 
-function Get-SessionGeneration {
+# Every connection the vehicle opens starts with one SessionHello, so this counts connections.
+function Get-SessionHelloCount {
     $rows = @(Invoke-L2Query -Connection $connection `
-        -Sql "SELECT SessionGeneration FROM SessionRecoveries WHERE AgvId = '$($Context.AgvId)'")
-    return ($rows.Count -gt 0) ? [long]$rows[0].SessionGeneration : -1
+        -Sql "SELECT COUNT(*) AS N FROM ProtocolInbox WHERE MessageType = 'SessionHello'")
+    return [int]$rows[0].N
 }
 
 # --- 1. 需求出现，车开到取货点 ------------------------------------------------------------------------------
@@ -131,14 +133,14 @@ $null = Wait-L2Condition -Description "slot $($load.SlotNo) reads closed, locked
 try {
     $null = Wait-L2Condition -Description "the vehicle offers $action" -Journal $journal `
         -Criterion 'compensation-offered' -TimeoutSeconds 60 `
-        -Probe { (Get-FieldAvailableRecoveryActions -Field $field) -join ',' } `
-        -Until { param($a) @($a -split ',') -contains $action }
+        -Probe { @((Get-FieldOnboardSnapshot -Field $field).state.availableRecoveryActions) -join ',' } `
+        -Until { param($a) @("$a" -split ',') -contains $action }
 } catch {
     # Press anyway: the automation face answers with the first precondition keeping the button
     # hidden, which is the diagnosis a timeout alone would throw away.
     $journal.Note("Not offered: $($_.Exception.Message) Pressing anyway to read the vehicle's own reason.")
 }
-$generationBefore = Get-SessionGeneration
+$hellosBefore = Get-SessionHelloCount
 
 $refused = Invoke-FieldFace -Field $field -Face Onboard -Method POST -Path '/recovery/requests' -Envelope -Body @{
     action = $action
@@ -200,12 +202,6 @@ $assertions.Add(
     '2 条 / 2 个 id / ExceptionRecoverySessionRejected RECOVERY_DEMAND_NOT_BLOCKED → ExceptionRecoverySessionOpened',
     "$($requests.Count) 条 / $distinctIds 个 id / $($answers -join ' → ')")
 
-$generationAfter = Get-SessionGeneration
-$assertions.Add(
-    'L2-RAR-06', '从第一次按下到补偿走完，车载端会话没换过代——服务端没有因为内容冲突掐连接',
-    ($generationBefore -gt 0 -and $generationAfter -eq $generationBefore),
-    "generation $generationBefore 不变", "generation $generationBefore → $generationAfter")
-
 $stage = '(not reached)'
 if ($null -ne $compensation) {
     # Reconciling the workflow and completing the journey are separate writes (README item 14).
@@ -213,6 +209,25 @@ if ($null -ne $compensation) {
         -Criterion 'journey-completed' -TimeoutSeconds 120 `
         -Probe { [string](Get-FieldJourney -Field $field -JourneyId $journeyId).Stage } -Until { param($v) $v -eq 'Completed' }
 }
+
+# Judged after the journey completed, so a dropped connection has had seconds to come back as a
+# fresh SessionHello. When the compensation failed, give the vehicle its reconnect before judging:
+# -003 read right at the conflict, before the vehicle had redialled, and passed this on a dropped
+# connection.
+if ($null -eq $compensation) {
+    try {
+        $null = Wait-L2Condition -Description 'the vehicle reconnected after the refusal' -Journal $journal `
+            -Criterion 'vehicle-reconnected' -TimeoutSeconds 20 `
+            -Probe { Get-SessionHelloCount } -Until { param($n) [int]$n -gt $hellosBefore }
+    } catch {
+        $journal.Note("No reconnect within 20 s: $($_.Exception.Message)")
+    }
+}
+$hellosAfter = Get-SessionHelloCount
+$assertions.Add(
+    'L2-RAR-06', '从第一次按下到收尾，车载端没有重连——服务端没有因为内容冲突掐连接',
+    ($hellosAfter -eq $hellosBefore), "SessionHello $hellosBefore 条不变", "SessionHello $hellosBefore → $hellosAfter 条")
+
 $slot = Get-FieldSimulatorSlot -Field $field -SlotNo $load.SlotNo
 $reading = "$($slot.doorState)/$($slot.cargoState)/$($slot.lockFeedbackRaw)/$($slot.unlockOutputRaw)"
 $assertions.Add(
