@@ -38,7 +38,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-restart-while-waiting-operator` | **真的** | 开锁等操作员时杀掉客户端再拉起：车辆按实时 IO 交出那次中断的结论，旅程停摆，补偿清空走到对账（现场窗口一的死锁） | `evidence/l2/20260911-real-onboard-restart-while-waiting-operator-005` |
 | `real-onboard-field-operator-compensate` | **真的**，自动化面 | 现场驱动脚本的「制造真的 UNKNOWN + 补偿清空」两幕：扫码与按钮都走车载端 HTTP 自动化面，一次 UIA 都不用 | `evidence/l2/20260911-real-onboard-field-operator-compensate-002` |
 | `real-onboard-field-window-rehearsal` | **真的**，自动化面 | 现场窗口一（无人）整窗彩排：驱动脚本演 A、C 接 B、正常装，采集器在它说的那一刻打 checkpoint、在它写出的记录上 finalize；之后开去关卡卸货（`L2-FW-40`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-field-window-rehearsal-006`（车载端 `54772ff`，含 #48 修复；`-004`/`-005` 是 #48 的红） |
-| `real-onboard-multi-demand-compensate` | **真的**，自动化面 | 四停靠旅程里停靠 2 真的 `UNKNOWN` + 补偿清空：旅程自己离开那一站，后两站照常装，关卡把三条卸完（`L2-MDC-60`/`-61`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-multi-demand-compensate-003`（关卡之前十二条全绿，只红 `L2-MDC-60`/`-61`） |
+| `real-onboard-multi-demand-compensate` | **真的**，自动化面 | 四停靠旅程里停靠 2 真的 `UNKNOWN` + 补偿清空：旅程自己离开那一站（#47 之前停在 `Blocked`），后两站照常装，关卡把三条卸完 | `evidence/l2/20260911-real-onboard-multi-demand-compensate-004`（车载端 `96c7513`，含 #48 修复；`-003` 只红 `L2-MDC-60`/`-61`，原因是 #48） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -58,7 +58,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 `-005` 起卸货只等 5 分钟。`-006` 换上车载端 `54772ff`（`w2g/multi-demand-gate-worklist`，清单项数上限跟
 schema 走到 8）后整条全绿：关卡那份三项 `GATE` 清单 20 ms 内被应答，三条卸货 `Committed`、旅程 `Completed`，
 会话全程停在 generation 1，没有一次重连。`real-onboard-multi-demand-compensate` 的 `-001` **红在产品**（#47，补偿之后旅程停在
-`Blocked`），`-002` 红在场景自己的会话判据与诊断（最后一节），`-003` 只红关卡那两条，原因与 `L2-FW-40` 相同。
+`Blocked`），`-002` 红在场景自己的会话判据与诊断（最后一节），`-003` 只红关卡那两条，原因与 `L2-FW-40` 相同（#48）；
+`-004` 换上车载端 `96c7513` 后全绿。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
 `VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
@@ -682,4 +683,9 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
    的持久记录，不要去赶那个窗口**——与第 14 条是同一类错误的反面。
 3. **`-003`（`372c055`）**：关卡之前十二条全绿，`L2-MDC-60` 红在车载端把关卡作业清单判
    `PROTOCOL_SCHEMA_INVALID@关卡清单(3 项) ×12`、`L2-MDC-61` 随之红——都是 `8005-agv-program#48`，与
-   `real-onboard-field-window-rehearsal` 的 `L2-FW-40` 同一处。卸货只等 5 分钟。车载端修好之后要重跑一次全绿。
+   `real-onboard-field-window-rehearsal` 的 `L2-FW-40` 同一处。卸货只等 5 分钟。
+
+绿证据 **`-004`**（服务端 `caffdee`，车载端 `96c7513` 即 #48 合并之后）**PASS/15**，约 100 秒：补偿之后旅程自己到
+`3/AwaitingPickupArrival`，停靠 3、4 提交，以 `NO_FURTHER_CARGO` 去关卡，三条卸货 `Committed`、旅程 `Completed`；停靠 1、
+3、4 的需求 `Succeeded`、停靠 2 `Cancelled`；收尾会话 `Ready / READY`，对账之后再没有仓位操作进 `RecoveryRequired`、
+也没开第二个恢复会话。
