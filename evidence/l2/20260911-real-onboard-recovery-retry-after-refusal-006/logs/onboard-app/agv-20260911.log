@@ -1,0 +1,25 @@
+2026-09-11T19:18:43.6358752+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+ab346ed4b15d86110429273014d8a9be034bdab1。
+2026-09-11T19:18:44.3053309+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T19:18:44.3270517+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T19:18:44.3288381+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T19:18:44.4398053+08:00	Information	App	车载端自动化接口已启动：http://127.0.0.1:58414。 
+2026-09-11T19:18:44.8574724+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-11T19:18:46.8401565+08:00	Information	App	服务端请求录入Sublot：demandId=e83ccaf3-862f-4960-a5a2-33071edfaf4f，revision=1。 
+2026-09-11T19:18:47.4950238+08:00	Information	App	服务端请求录入Sublot：demandId=e83ccaf3-862f-4960-a5a2-33071edfaf4f，revision=1。 
+2026-09-11T19:18:47.7106067+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T19:18:47.7436983+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T19:18:47.8549208+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-11T19:18:48.2690702+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-11T19:18:48.4887695+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=3d9ecb9d-0977-d653-a795-5afc2bd2c61c。
+2026-09-11T19:18:48.7803751+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
+2026-09-11T19:18:49.1239145+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T19:18:49.1939410+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T19:18:49.7064926+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 1->1，光幕DI 1->1。
+2026-09-11T19:18:52.5739881+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 1->1，光幕DI 1->0。
+2026-09-11T19:18:52.6152577+08:00	Warning	WireToGateBusinessService	恢复向量LOAD_COMPENSATION未执行：reason=RECOVERY_DEMAND_NOT_BLOCKED。 | InvalidOperationException: RECOVERY_DEMAND_NOT_BLOCKED
+2026-09-11T19:18:54.1152506+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T19:18:54.2154747+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 0->0。
+2026-09-11T19:18:54.3387795+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 0->0。
+2026-09-11T19:18:54.6654820+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 0->0。
+2026-09-11T19:18:55.2079417+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 0->1。
+2026-09-11T19:18:55.5337934+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
