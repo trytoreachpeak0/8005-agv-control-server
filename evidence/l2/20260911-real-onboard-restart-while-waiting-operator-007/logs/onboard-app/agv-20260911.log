@@ -1,0 +1,83 @@
+2026-09-11T15:29:10.5793077+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+bb58b217e95c611de597212d763f7579fdcb0e03。
+2026-09-11T15:29:11.3915742+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T15:29:11.4135840+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T15:29:11.4152452+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T15:29:11.9467831+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-11T15:29:14.1833683+08:00	Information	App	服务端请求录入Sublot：demandId=d16bf3ce-9bcb-4a81-a7af-5e52aa47ec06，revision=1。 
+2026-09-11T15:29:15.0068554+08:00	Information	App	服务端请求录入Sublot：demandId=d16bf3ce-9bcb-4a81-a7af-5e52aa47ec06，revision=1。 
+2026-09-11T15:29:15.2378585+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T15:29:15.3195115+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T15:29:15.4306630+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-11T15:29:15.7721631+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-11T15:29:16.0019726+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=f4fbf508-422a-7150-bbbb-aa6ea79e167f。
+2026-09-11T15:29:17.2200715+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+bb58b217e95c611de597212d763f7579fdcb0e03。
+2026-09-11T15:29:17.8330336+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T15:29:17.8438555+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T15:29:17.8455889+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T15:29:18.1455238+08:00	Warning	WireToGateBusinessService	上次仓位操作在执行中中断，未再输出开锁，按实时IO结算：attempt=f4fbf508-422a-7150-bbbb-aa6ea79e167f，outcome=UNKNOWN，checkpoint=SAFE_FINISH_REACHED。
+2026-09-11T15:29:18.1903049+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
+2026-09-11T15:29:23.1973435+08:00	Information	App	服务端请求录入Sublot：demandId=f0bb4665-3fd0-46b2-8d36-4237facaf925，revision=3。 
+2026-09-11T15:29:24.0005349+08:00	Information	App	服务端请求录入Sublot：demandId=f0bb4665-3fd0-46b2-8d36-4237facaf925，revision=3。 
+2026-09-11T15:29:24.0813379+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T15:29:24.1603216+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T15:29:24.2702979+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-11T15:29:24.6127302+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-11T15:29:25.0017575+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:25.9993118+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:27.0086286+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:28.0086004+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:28.9979153+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:29.9988659+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:31.0080245+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:32.0098529+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:32.9980186+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:34.0001679+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:34.9985375+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:36.0018670+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:36.9953911+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:38.0070744+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:39.0063331+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:40.0008002+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:41.0000098+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:42.0006493+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:43.0000899+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:44.0028866+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:45.0003754+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:45.9947499+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:46.9975936+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:47.9949052+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:48.9957314+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:50.0099358+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:50.9968530+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:51.9939562+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:52.9938664+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:53.9955519+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:54.9978499+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:56.0030788+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:56.9944723+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:58.0002523+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:58.9962235+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:29:59.9959574+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:01.0073635+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:02.0049270+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:02.9923120+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:04.0060192+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:05.0067270+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:05.9916826+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:06.9944862+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:07.9983213+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:09.0040214+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:10.0035662+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:11.0063253+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:12.0043052+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:12.9955918+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:13.9992969+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:15.0009478+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:16.0006831+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:17.0025595+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:18.0042741+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:19.0059571+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:20.0061538+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:20.9965696+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:22.0073194+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。
+2026-09-11T15:30:23.0020402+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c73c60a2-5d59-9e5c-8b83-e2e2f4671348。

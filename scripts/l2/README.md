@@ -468,6 +468,13 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     点名这一仓的 `WAITING_OPERATOR`」（`Get-FieldReopenedSlot`）。与第 13、14 条是同一类：条件在读
     的那一刻碰巧成立，而成立的原因不是要等的那件事。彩排的 3 分钟等待让关门点落在节拍前 2 秒，
     才撞出来；现场 20 分钟不一定对齐，判法照样是错的。
+22. **`Invoke-L2Query` 的结果不能直接接管道。**它以 `return , $rows` 结尾，整批行是作为**一个对象**
+    交出来的：`(Get-X)[-1]`、`foreach ($row in (Get-X))` 拿到的是行，`Get-X | Where-Object { ... }` 拿到的
+    却是一个 `$_`——整个数组——`$_.RequestJson` 于是把每一行拼成一个空格分隔的字符串。只有一行时拼出来
+    的仍是合法 JSON，所以它只在第二行落库的那一刻才炸：`ConvertFrom-Json` 报 `Additional text
+    encountered after finished reading JSON content`。`real-onboard-restart-while-waiting-operator-007` 与
+    `real-onboard-recovery-compensate-load-009` 都死在这一条上，而车早在几十毫秒内交了扫码。遍历结果用
+    `foreach`；`@(...)` 包一层也救不了它。
 
 ## 车载端报文的 schema 校验：`L2-SC-01`
 
@@ -621,7 +628,17 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 **这一条不证补偿在 Modbus 上怎么清仓**：仓是空的，补偿向量一次 IO 都不碰（第 16 条），那是
 `real-onboard-recovery-compensate-load` 的事。
 
-**补偿对账之后会话回不到 `Ready`**，场景只记不判：timeline 最后一条 `Session after compensation`
-写着 `RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED`，服务端还挂着那个 attempt——车辆早清掉了，
-服务端只在下一次 `RecoveryStateReport` 才刷新。`real-onboard-recovery-compensate-load` 的历次绿证据里
-同样停在 `OPERATION_RECOVERY_REQUIRED`。
+**补偿对账之后会话回不到 `Ready`**（`8005-agv-program#46`）。`-004`/`-005` 两次绿里只记不判，timeline
+最后一条 `Session after compensation` 写着 `RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED`：
+握手上报的 attempt 只在 `RecoveryStateReport` 时写一次，车辆早清掉了、服务端再也不看；
+`real-onboard-recovery-compensate-load` 的历次绿证据里则停在 `OPERATION_RECOVERY_REQUIRED`——恢复结果
+处理完没人重算就绪。救完一趟旅程车接不了下一单，唯一出路是再重启一次客户端。
+
+现在三条场景都判它：`L2-RW-11`/`L2-RC-15`/`L2-FOC-08` 判服务端会话回到 `Ready`，`L2-RW-12`/`L2-RC-16`/
+`L2-FOC-09` 判**车在下一站收下扫码**——车载端只在自己的会话是 READY 时放行提交，所以这一条证的是车辆
+也被告知了，不只是服务端库里改了。红证据 `-006`（服务端 `f09768c`）红在 `L2-RW-11`，其余十条全绿；修在
+服务端 `369919f`：未结事实按服务端手里的证据判（有结论才算对上账，断网重连时还在跑的 attempt 不放行），
+恢复结果处理完重算就绪，就绪变了就发 `SessionReadiness`。修好之后 `-007` 与
+`real-onboard-recovery-compensate-load-009` 的会话判据已经转绿，却都以异常收场——红在判据脚本自己，
+第 22 条；`9f28ed1` 之后 `-008` **PASS/13**、`real-onboard-recovery-compensate-load-010` **PASS/17**，
+`real-onboard-field-operator-compensate-003`（`369919f`）**PASS/10**。
