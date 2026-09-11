@@ -37,7 +37,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-multi-demand-operator-inaction` | **真的** | 四停靠旅程里的三种操作员不作为：关门不放料、门开着过期、两次关门判确定失败——然后旅程自己离开那一站，后两站照常装完 | `evidence/l2/20260910-real-onboard-multi-demand-operator-inaction-003` |
 | `real-onboard-restart-while-waiting-operator` | **真的** | 开锁等操作员时杀掉客户端再拉起：车辆按实时 IO 交出那次中断的结论，旅程停摆，补偿清空走到对账（现场窗口一的死锁） | `evidence/l2/20260911-real-onboard-restart-while-waiting-operator-005` |
 | `real-onboard-field-operator-compensate` | **真的**，自动化面 | 现场驱动脚本的「制造真的 UNKNOWN + 补偿清空」两幕：扫码与按钮都走车载端 HTTP 自动化面，一次 UIA 都不用 | `evidence/l2/20260911-real-onboard-field-operator-compensate-002` |
-| `real-onboard-field-window-rehearsal` | **真的**，自动化面 | 现场窗口一（无人）整窗彩排：驱动脚本演 A、C 接 B、正常装，采集器在它说的那一刻打 checkpoint、在它写出的记录上 finalize；之后开去关卡卸货（`L2-FW-40`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-field-window-rehearsal-005`（SC1 二十条与采集器 finalize 全绿，只红 `L2-FW-40`） |
+| `real-onboard-field-window-rehearsal` | **真的**，自动化面 | 现场窗口一（无人）整窗彩排：驱动脚本演 A、C 接 B、正常装，采集器在它说的那一刻打 checkpoint、在它写出的记录上 finalize；之后开去关卡卸货（`L2-FW-40`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-field-window-rehearsal-006`（车载端 `54772ff`，含 #48 修复；`-004`/`-005` 是 #48 的红） |
 | `real-onboard-multi-demand-compensate` | **真的**，自动化面 | 四停靠旅程里停靠 2 真的 `UNKNOWN` + 补偿清空：旅程自己离开那一站，后两站照常装，关卡把三条卸完（`L2-MDC-60`/`-61`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-multi-demand-compensate-003`（关卡之前十二条全绿，只红 `L2-MDC-60`/`-61`） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
@@ -55,7 +55,9 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 `-004` 与 `-005` 的 `L2-FW-40` **红在产品**：车载端把三项的关卡作业清单判 `PROTOCOL_SCHEMA_INVALID`
 （8005-agv-program#48）。`-004` 在卸货里空等满 30 分钟，服务端日志与假 RIoT 日志、库快照里的
 `ProtocolInbox` 因此是其余证据的十倍大，**这三个文件提交时无损 gzip**（原文件 SHA-256 记在提交说明里），
-`-005` 起卸货只等 5 分钟。`real-onboard-multi-demand-compensate` 的 `-001` **红在产品**（#47，补偿之后旅程停在
+`-005` 起卸货只等 5 分钟。`-006` 换上车载端 `54772ff`（`w2g/multi-demand-gate-worklist`，清单项数上限跟
+schema 走到 8）后整条全绿：关卡那份三项 `GATE` 清单 20 ms 内被应答，三条卸货 `Committed`、旅程 `Completed`，
+会话全程停在 generation 1，没有一次重连。`real-onboard-multi-demand-compensate` 的 `-001` **红在产品**（#47，补偿之后旅程停在
 `Blocked`），`-002` 红在场景自己的会话判据与诊断（最后一节），`-003` 只红关卡那两条，原因与 `L2-FW-40` 相同。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
