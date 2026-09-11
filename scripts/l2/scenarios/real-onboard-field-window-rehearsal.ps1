@@ -14,12 +14,14 @@
 - 现场记录由 `New-FieldWindowRecord` 按驱动脚本实际做了什么写出，finalize 在这份记录上判。它的 SC1-*
   判据逐条抄进本场景的判据表（`L2-FW-SC1-*`），所以这一次运行的绿就是采集器在这趟旅程上的绿。
 
-编排与 #19 最后一版、#45 的剧本一致：四需求满仓旅程，**停靠 1 演 A，停靠 2 演 C 接 B**，停靠 3、4
-正常装，去关卡卸货收尾。采集器在停靠 4 装完之后就 finalize，关卡卸货另判一条 `L2-FW-40`——卸货不在
+编排：四需求满仓旅程，**停靠 1 演 C 接 B，停靠 2 演 A**，停靠 3、4 正常装，去关卡卸货收尾。
+#19 与 #45 最初是反过来的（A@1、C/B@2）；#45 现场查实那个顺序与 ADR-cross-0057 的持货硬期限冲突——
+持货从第一条装载提交起算、30 分钟，A 装上货之后 C 还要晾「期限 + 20 分钟」，到停靠 3 必然超时，其余
+停靠被 `CANCELLED_BY_STOP_COMPLETE` 结掉。B 的确定失败不起算持货，所以 C/B 放前面就排得开。采集器在停靠 4 装完之后就 finalize，关卡卸货另判一条 `L2-FW-40`——卸货不在
 SC1-* 里，而多需求关卡清单当前被车载端拒收（8005-agv-program#48），排在后面才不会把 A、C、B 的判决一起
 挡掉。与现场只差三处，都写进判据表而不是藏起来：
 
-1. 站点期限一分钟（现场五分钟），停靠 2 才等得到。
+1. 站点期限一分钟（现场五分钟），停靠 1 才等得到；持货期限三分钟（现场 30 分钟），编排排不开时这里就红。
 2. 场景 C 期限之后只等 **3 分钟**（现场 20 分钟），采集器按 `-MinimumHoldMinutes 3` 判，SUMMARY 会写明
    「只能算彩排」。3 分钟够长：`operationTimeoutMs` 120 秒，提示节拍在期限后约一分钟就会再响一次，
    SC1-C-06 要的正是它。
@@ -131,19 +133,9 @@ $stopCount = Wait-L2Condition -Description 'all four demands joined the journey'
     -Until { param($v) [int]$v -ge 5 }
 $assertions.Add('L2-FW-01', '四条需求凑成一趟旅程：四个取货停靠加一个关卡', ([int]$stopCount -eq 5), 5, [int]$stopCount)
 
-# --- 2. 停靠 1：场景 A -----------------------------------------------------------------------------------
+# --- 2. 停靠 1：场景 C 接 B，checkpoint 由驱动脚本在那一刻打 ------------------------------------------------
 
-$actA = Invoke-FieldActReopen -Field $field -JourneyId $script:journeyId -Sequence 1 -Rounds 2 -MinimumSecondsLeft 20
-$assertions.Add(
-    'L2-FW-10', '停靠 1 场景 A：驱动脚本空关两轮都换来车自己重开，之后放料提交，恢复入口一次没出现',
-    ($actA.RoundsCompleted -eq 2 -and $actA.Status -eq 'Committed' -and -not $actA.RecoveryEntryVisible -and $actA.Unlocking -ge 3),
-    '2 轮 / Committed / 入口未出现 / UNLOCKING >= 3',
-    "$($actA.RoundsCompleted) 轮 / $($actA.Status) / 入口$($actA.RecoveryEntryVisible ? '出现过' : '未出现')（看到过的按钮：$(@($actA.ActionsSeen) -join ',')） / UNLOCKING $($actA.Unlocking)")
-
-# --- 3. 停靠 2：场景 C 接 B，checkpoint 由驱动脚本在那一刻打 ------------------------------------------------
-
-Invoke-DriveToStop 2
-$actCB = Invoke-FieldActDoorLeftOpen -Field $field -JourneyId $script:journeyId -Sequence 2 -HoldMinutes $holdMinutes `
+$actCB = Invoke-FieldActDoorLeftOpen -Field $field -JourneyId $script:journeyId -Sequence 1 -HoldMinutes $holdMinutes `
     -StillWaitingCheckpoint 'c-plus-hold' -OnCheckpoint {
         # 故意往管道吐一行：现场驱动的回调把采集器的输出放进了管道，混进这一幕的返回值，
         # New-FieldWindowRecord 在写记录时抛错（8005-agv-program#45）。彩排的回调不吐东西就永远抓不到。
@@ -152,9 +144,19 @@ $actCB = Invoke-FieldActDoorLeftOpen -Field $field -JourneyId $script:journeyId 
         "FW-SC1 checkpoint $label (rehearsal callback output)"
     }
 $assertions.Add(
-    'L2-FW-20', "停靠 2 场景 C 接 B：门开着过期挂告警并撑满 $holdMinutes 分钟，回来空关后结算成 Failed，旅程自己离站",
-    ($actCB.Status -eq 'Failed' -and $actCB.PositionAfter -ne '2/AwaitingLoadResult'),
-    'Failed / 离开 2/AwaitingLoadResult', "$($actCB.Status) / $($actCB.PositionAfter)（空关 $($actCB.EmptyCloses) 次，重开 $($actCB.GraceReopens) 次）")
+    'L2-FW-20', "停靠 1 场景 C 接 B：门开着过期挂告警并撑满 $holdMinutes 分钟，回来空关后结算成 Failed，旅程自己离站",
+    ($actCB.Status -eq 'Failed' -and $actCB.PositionAfter -ne '1/AwaitingLoadResult'),
+    'Failed / 离开 1/AwaitingLoadResult', "$($actCB.Status) / $($actCB.PositionAfter)（空关 $($actCB.EmptyCloses) 次，重开 $($actCB.GraceReopens) 次）")
+
+# --- 3. 停靠 2：场景 A -----------------------------------------------------------------------------------
+
+Invoke-DriveToStop 2
+$actA = Invoke-FieldActReopen -Field $field -JourneyId $script:journeyId -Sequence 2 -Rounds 2 -MinimumSecondsLeft 20
+$assertions.Add(
+    'L2-FW-10', '停靠 2 场景 A：驱动脚本空关两轮都换来车自己重开，之后放料提交，恢复入口一次没出现',
+    ($actA.RoundsCompleted -eq 2 -and $actA.Status -eq 'Committed' -and -not $actA.RecoveryEntryVisible -and $actA.Unlocking -ge 3),
+    '2 轮 / Committed / 入口未出现 / UNLOCKING >= 3',
+    "$($actA.RoundsCompleted) 轮 / $($actA.Status) / 入口$($actA.RecoveryEntryVisible ? '出现过' : '未出现')（看到过的按钮：$(@($actA.ActionsSeen) -join ',')） / UNLOCKING $($actA.Unlocking)")
 
 # --- 4. 停靠 3、4：正常装 ----------------------------------------------------------------------------------
 
