@@ -1023,16 +1023,25 @@ function Invoke-FieldActUnload {
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     $results = [ordered]@{}
     $servedByAttempt = @{}
+    $unloadSql = 'SELECT o.DemandId, o.SlotOperationAttemptId, o.Status FROM StationOperations o ' +
+        'JOIN JourneyDemands d ON d.DemandId = o.DemandId ' +
+        "WHERE d.JourneyId = $(ConvertTo-SqlLiteral $JourneyId) AND o.OperationType = 'Unload'"
     while ($true) {
         $journey = Get-FieldJourney -Field $Field -JourneyId $JourneyId
-        if ([string]$journey.Stage -eq 'Completed') { break }
+        if ([string]$journey.Stage -eq 'Completed') {
+            # Read the operations once more AFTER seeing Completed. The last unload commits and the journey
+            # completes between two polls, so a loop that only records what it saw before Completed drops
+            # it (8005-agv-program#45, rehearsal -009: three unloads Committed in the database, two in the
+            # result). Once the journey is Completed every unload is terminal, so this read is complete.
+            foreach ($operation in (Invoke-FieldQuery -Field $Field -Sql $unloadSql)) {
+                $results[[string]$operation.SlotOperationAttemptId] = [string]$operation.Status
+            }
+            break
+        }
         if ([string]$journey.Stage -eq 'Blocked') {
             throw "Journey $JourneyId blocked at the gate: $($journey.BlockReasonCode)."
         }
-        $operations = Invoke-FieldQuery -Field $Field -Sql (
-            'SELECT o.DemandId, o.SlotOperationAttemptId, o.Status FROM StationOperations o ' +
-            'JOIN JourneyDemands d ON d.DemandId = o.DemandId ' +
-            "WHERE d.JourneyId = $(ConvertTo-SqlLiteral $JourneyId) AND o.OperationType = 'Unload'")
+        $operations = Invoke-FieldQuery -Field $Field -Sql $unloadSql
         foreach ($operation in $operations) {
             $attemptId = [string]$operation.SlotOperationAttemptId
             if ([string]$operation.Status -in $script:TerminalOperationStatuses) {
