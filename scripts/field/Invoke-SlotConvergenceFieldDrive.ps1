@@ -107,14 +107,27 @@ if ($ioModule -notmatch '^(127\.0\.0\.1|localhost):') {
     # automate. A redeployment renders the IO back to the real module, which is exactly when this bites.
     throw "$VehicleHost reads IO from $ioModule, not the slot simulator. Run 09-switch-io-module.ps1 -Simulator first (a deployment resets it)."
 }
+# The face ships shut and every deployment renders it shut again. Opening it is one command in the
+# workspace's remote-ops, with the client stopped; naming that command here saves a window from
+# discovering it one act later (8005-agv-program#50).
+$faceScript = 'remote-ops/onboard-hmi/scripts/15-set-automation-face.ps1'
 if (-not $settings.automation.enabled) {
-    throw "The onboard automation face is off on $VehicleHost (automation.enabled false). A deployment resets it."
+    throw "The onboard automation face is off on $VehicleHost (automation.enabled false; a deployment resets it). Stop the client, run $faceScript -ReviewReference <the record permitting it>, and start the client again."
+}
+if ($settings.environment -eq 'Production' -and -not $settings.automation.productionReviewReference) {
+    throw "automation.enabled is true on $VehicleHost but automation.productionReviewReference is empty, so the client refuses to start in Production. Stop the client and re-run $faceScript -ReviewReference <the record permitting it>."
 }
 $recoveryWindowOpen = [bool]$settings.wireToGate.recoveryResumeEnabled
 $agvId = [string]$settings.agvId
 
 $field = New-FieldOperator -VehicleHost $VehicleHost -ServerHost $ServerHost -AgvId $agvId
-$snapshot = Get-FieldOnboardSnapshot -Field $field
+try {
+    $snapshot = Get-FieldOnboardSnapshot -Field $field
+} catch {
+    # The settings above say the face is on, so what is left is a client that is not running, or one
+    # whose settings were edited by hand while it ran ($faceScript itself refuses a running client).
+    throw "$($_.Exception.Message) The settings on $VehicleHost already open the face: start the client with remote-ops/onboard-hmi/scripts/10-start-onboard-stack.ps1, or restart it if its settings were edited while it ran."
+}
 if ([string]$snapshot.agvId -ne $agvId) { throw "The onboard face reports agvId $($snapshot.agvId), the settings say $agvId." }
 $null = Get-FieldSimulatorSlot -Field $field -SlotNo 1
 
