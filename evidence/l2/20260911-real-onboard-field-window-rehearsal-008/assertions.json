@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-field-window-rehearsal",
+  "runId": "20260911T142626342Z",
+  "outcome": "FAIL",
+  "failureReason": "The property 'Status' cannot be found on this object. Verify that the property exists.",
+  "identity": {
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "onboardHmiCommit": "6b8a0b06575f40fa0e682c5d307b9ce46bbe9227",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "f60534c896c10adba532d30595689946c2d1efa0",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T142626342Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "batchId": "BATCH-3",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-FW-01",
+      "description": "四条需求凑成一趟旅程：四个取货停靠加一个关卡",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    },
+    {
+      "id": "L2-FW-10",
+      "description": "停靠 1 场景 A：驱动脚本空关两轮都换来车自己重开，之后放料提交，恢复入口一次没出现",
+      "outcome": "PASS",
+      "expected": "2 轮 / Committed / 入口未出现 / UNLOCKING >= 3",
+      "actual": "2 轮 / Committed / 入口未出现（看到过的按钮：LOAD_CANCELLATION） / UNLOCKING 3"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 108 lines, 108 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 21024 ms."
+    }
+  ]
+}
