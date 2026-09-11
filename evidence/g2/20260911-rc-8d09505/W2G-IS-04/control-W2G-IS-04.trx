@@ -1,0 +1,88 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="fec3c96c-9ba3-4894-a9b7-b3c6bc007fa8" name="szy@LAB-WIN-01 2026-09-11 17:26:13" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-11T17:26:13.8800494+08:00" queuing="2026-09-11T17:26:13.8800497+08:00" start="2026-09-11T17:26:08.8064402+08:00" finish="2026-09-11T17:26:52.0012030+08:00" />
+  <TestSettings name="default" id="7b12e715-206c-4584-9f77-740cc937931f">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-09-11_17_26_13" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="14c53abe-790e-4639-909c-bcbfb5eb28f3" testId="ec081030-783c-3362-9d98-2539da291754" testName="ControlServer.Tests.OnboardMessageProcessorTests.CompletedUnloadResultAtomicallyClosesDemandBeforeDurableAck" computerName="LAB-WIN-01" duration="00:00:01.7000228" startTime="2026-09-11T17:26:10.8394363+08:00" endTime="2026-09-11T17:26:12.5473760+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="14c53abe-790e-4639-909c-bcbfb5eb28f3" />
+    <UnitTestResult executionId="6cfd27ab-69e6-4817-82e2-39aa143284db" testId="21aefc82-e2cb-0ab9-27cb-dd1c355de7c0" testName="ControlServer.Tests.WireToGateStoreTests.UnloadCompletionCommitsAllFourFactsExactlyOnce" computerName="LAB-WIN-01" duration="00:00:01.5942460" startTime="2026-09-11T17:26:10.8393728+08:00" endTime="2026-09-11T17:26:12.4415839+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="6cfd27ab-69e6-4817-82e2-39aa143284db" />
+    <UnitTestResult executionId="5de44646-2829-4b87-8c7b-a0e0865730bb" testId="87ab6baa-a2fa-4bd2-e2a4-5abe279110f2" testName="ControlServer.Tests.OnboardJourneyPublisherTests.CoreJourneyCommandsEmitFormalSchemaPayloadsWithExactCorrelationRules" computerName="LAB-WIN-01" duration="00:00:01.5580194" startTime="2026-09-11T17:26:10.8394307+08:00" endTime="2026-09-11T17:26:12.4085563+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5de44646-2829-4b87-8c7b-a0e0865730bb" />
+    <UnitTestResult executionId="4de40d55-0fc7-471f-b10a-bd67cff21f36" testId="d5191725-88ac-f958-0bce-e7c43fc6e871" testName="ControlServer.Tests.JourneyRuntimeWorkerTests.AFaultCargoHandoffAtTheGateGoesOnToUnloadTheRestOfTheCargo" computerName="LAB-WIN-01" duration="00:00:04.4002019" startTime="2026-09-11T17:26:14.9467102+08:00" endTime="2026-09-11T17:26:19.3470091+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4de40d55-0fc7-471f-b10a-bd67cff21f36" />
+    <UnitTestResult executionId="77aaf5ba-df41-47e6-a4f6-12b1723a580a" testId="e2369ea8-d8d7-3658-2422-fc8291116fed" testName="ControlServer.Tests.JourneyRuntimeWorkerTests.EachStopPublishesItsWorklistUnderItsOwnRevision" computerName="LAB-WIN-01" duration="00:00:01.9444271" startTime="2026-09-11T17:26:25.2605366+08:00" endTime="2026-09-11T17:26:27.2051959+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="77aaf5ba-df41-47e6-a4f6-12b1723a580a" />
+    <UnitTestResult executionId="cabddc23-6dc4-45f8-a431-54781debd688" testId="ce24c2e7-ff2a-1f88-cefb-245dd0e4aabe" testName="ControlServer.Tests.JourneyRuntimeWorkerTests.ACompletedDemandStillListedByMesIngestIsNeverOfferedForIntakeAgain" computerName="LAB-WIN-01" duration="00:00:01.9680857" startTime="2026-09-11T17:26:19.3491863+08:00" endTime="2026-09-11T17:26:21.3173432+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="cabddc23-6dc4-45f8-a431-54781debd688" />
+    <UnitTestResult executionId="50e2dd82-4529-4b38-a916-1cefc7c8e9a3" testId="480cf8f2-a2fd-ecff-5a3c-67abc4eeb3e2" testName="ControlServer.Tests.DemandAcceptanceAtomicityTests.VehicleLeaseRejectsSecondDemandUntilSuccessfulUnloadReleasesIt" computerName="LAB-WIN-01" duration="00:00:01.5878731" startTime="2026-09-11T17:26:10.8394299+08:00" endTime="2026-09-11T17:26:12.4353134+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="50e2dd82-4529-4b38-a916-1cefc7c8e9a3" />
+    <UnitTestResult executionId="99afb5f8-774a-4c8e-bfa9-9ec603342261" testId="6fea1d2f-e02f-742d-7376-bf8c24835495" testName="ControlServer.Tests.JourneyRuntimeWorkerTests.ProductionRuntimeResumesOneJourneyThroughTrustedArrivalsAndAtomicCompletion" computerName="LAB-WIN-01" duration="00:00:01.9403229" startTime="2026-09-11T17:26:21.3187408+08:00" endTime="2026-09-11T17:26:23.2591387+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="99afb5f8-774a-4c8e-bfa9-9ec603342261" />
+    <UnitTestResult executionId="de5d77aa-830c-4821-adfb-36dd641554cb" testId="bdc4fb63-67dc-07fd-5096-a48bb6f4ed8c" testName="ControlServer.Tests.JourneyRuntimeWorkerTests.ACompletedDemandStillListedByMesIngestDoesNotBlockTheNextEligibleDemand" computerName="LAB-WIN-01" duration="00:00:04.0907861" startTime="2026-09-11T17:26:10.8394482+08:00" endTime="2026-09-11T17:26:14.9392221+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="de5d77aa-830c-4821-adfb-36dd641554cb" />
+    <UnitTestResult executionId="69654540-4fec-47c6-85cf-e7d1bf2979dd" testId="fd10d0f2-29ac-2c11-cf74-87c87b98fd00" testName="ControlServer.Tests.JourneyRuntimeWorkerTests.ASecondJourneyOnTheSameVehicleNeverRepublishesAnAdoptedRevision" computerName="LAB-WIN-01" duration="00:00:01.9983537" startTime="2026-09-11T17:26:23.2612695+08:00" endTime="2026-09-11T17:26:25.2597100+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="69654540-4fec-47c6-85cf-e7d1bf2979dd" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ControlServer.Tests.JourneyRuntimeWorkerTests.EachStopPublishesItsWorklistUnderItsOwnRevision" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="e2369ea8-d8d7-3658-2422-fc8291116fed">
+      <Execution id="77aaf5ba-df41-47e6-a4f6-12b1723a580a" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.JourneyRuntimeWorkerTests" name="EachStopPublishesItsWorklistUnderItsOwnRevision" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.JourneyRuntimeWorkerTests.ACompletedDemandStillListedByMesIngestDoesNotBlockTheNextEligibleDemand" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="bdc4fb63-67dc-07fd-5096-a48bb6f4ed8c">
+      <Execution id="de5d77aa-830c-4821-adfb-36dd641554cb" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.JourneyRuntimeWorkerTests" name="ACompletedDemandStillListedByMesIngestDoesNotBlockTheNextEligibleDemand" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.WireToGateStoreTests.UnloadCompletionCommitsAllFourFactsExactlyOnce" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="21aefc82-e2cb-0ab9-27cb-dd1c355de7c0">
+      <Execution id="6cfd27ab-69e6-4817-82e2-39aa143284db" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.WireToGateStoreTests" name="UnloadCompletionCommitsAllFourFactsExactlyOnce" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.JourneyRuntimeWorkerTests.AFaultCargoHandoffAtTheGateGoesOnToUnloadTheRestOfTheCargo" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="d5191725-88ac-f958-0bce-e7c43fc6e871">
+      <Execution id="4de40d55-0fc7-471f-b10a-bd67cff21f36" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.JourneyRuntimeWorkerTests" name="AFaultCargoHandoffAtTheGateGoesOnToUnloadTheRestOfTheCargo" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.JourneyRuntimeWorkerTests.ASecondJourneyOnTheSameVehicleNeverRepublishesAnAdoptedRevision" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="fd10d0f2-29ac-2c11-cf74-87c87b98fd00">
+      <Execution id="69654540-4fec-47c6-85cf-e7d1bf2979dd" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.JourneyRuntimeWorkerTests" name="ASecondJourneyOnTheSameVehicleNeverRepublishesAnAdoptedRevision" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.DemandAcceptanceAtomicityTests.VehicleLeaseRejectsSecondDemandUntilSuccessfulUnloadReleasesIt" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="480cf8f2-a2fd-ecff-5a3c-67abc4eeb3e2">
+      <Execution id="50e2dd82-4529-4b38-a916-1cefc7c8e9a3" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.DemandAcceptanceAtomicityTests" name="VehicleLeaseRejectsSecondDemandUntilSuccessfulUnloadReleasesIt" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.OnboardJourneyPublisherTests.CoreJourneyCommandsEmitFormalSchemaPayloadsWithExactCorrelationRules" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="87ab6baa-a2fa-4bd2-e2a4-5abe279110f2">
+      <Execution id="5de44646-2829-4b87-8c7b-a0e0865730bb" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.OnboardJourneyPublisherTests" name="CoreJourneyCommandsEmitFormalSchemaPayloadsWithExactCorrelationRules" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.JourneyRuntimeWorkerTests.ACompletedDemandStillListedByMesIngestIsNeverOfferedForIntakeAgain" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="ce24c2e7-ff2a-1f88-cefb-245dd0e4aabe">
+      <Execution id="cabddc23-6dc4-45f8-a431-54781debd688" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.JourneyRuntimeWorkerTests" name="ACompletedDemandStillListedByMesIngestIsNeverOfferedForIntakeAgain" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.JourneyRuntimeWorkerTests.ProductionRuntimeResumesOneJourneyThroughTrustedArrivalsAndAtomicCompletion" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="6fea1d2f-e02f-742d-7376-bf8c24835495">
+      <Execution id="99afb5f8-774a-4c8e-bfa9-9ec603342261" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.JourneyRuntimeWorkerTests" name="ProductionRuntimeResumesOneJourneyThroughTrustedArrivalsAndAtomicCompletion" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.OnboardMessageProcessorTests.CompletedUnloadResultAtomicallyClosesDemandBeforeDurableAck" storage="c:\users\szy\desktop\8005-workspace\repos\8005-agv-control-server\tests\controlserver.tests\bin\release\net8.0\win-x64\controlserver.tests.dll" id="ec081030-783c-3362-9d98-2539da291754">
+      <Execution id="14c53abe-790e-4639-909c-bcbfb5eb28f3" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.OnboardMessageProcessorTests" name="CompletedUnloadResultAtomicallyClosesDemandBeforeDurableAck" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="ec081030-783c-3362-9d98-2539da291754" executionId="14c53abe-790e-4639-909c-bcbfb5eb28f3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="21aefc82-e2cb-0ab9-27cb-dd1c355de7c0" executionId="6cfd27ab-69e6-4817-82e2-39aa143284db" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="87ab6baa-a2fa-4bd2-e2a4-5abe279110f2" executionId="5de44646-2829-4b87-8c7b-a0e0865730bb" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d5191725-88ac-f958-0bce-e7c43fc6e871" executionId="4de40d55-0fc7-471f-b10a-bd67cff21f36" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e2369ea8-d8d7-3658-2422-fc8291116fed" executionId="77aaf5ba-df41-47e6-a4f6-12b1723a580a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ce24c2e7-ff2a-1f88-cefb-245dd0e4aabe" executionId="cabddc23-6dc4-45f8-a431-54781debd688" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="480cf8f2-a2fd-ecff-5a3c-67abc4eeb3e2" executionId="50e2dd82-4529-4b38-a916-1cefc7c8e9a3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6fea1d2f-e02f-742d-7376-bf8c24835495" executionId="99afb5f8-774a-4c8e-bfa9-9ec603342261" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="bdc4fb63-67dc-07fd-5096-a48bb6f4ed8c" executionId="de5d77aa-830c-4821-adfb-36dd641554cb" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="fd10d0f2-29ac-2c11-cf74-87c87b98fd00" executionId="69654540-4fec-47c6-85cf-e7d1bf2979dd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="10" executed="10" passed="10" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:00.41]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:01.13]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:01.39]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:42.55]   Finished:    ControlServer.Tests (ID = '5f32e3228d37e5cb3e7bc60b239275389dd116eb20728c9edbbdde1b1bccd0e8')&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>
