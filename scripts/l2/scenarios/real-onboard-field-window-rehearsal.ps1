@@ -144,7 +144,13 @@ $assertions.Add(
 
 Invoke-DriveToStop 2
 $actCB = Invoke-FieldActDoorLeftOpen -Field $field -JourneyId $script:journeyId -Sequence 2 -HoldMinutes $holdMinutes `
-    -StillWaitingCheckpoint 'c-plus-hold' -OnCheckpoint { param($label) Invoke-WindowCheckpoint $label }
+    -StillWaitingCheckpoint 'c-plus-hold' -OnCheckpoint {
+        # 故意往管道吐一行：现场驱动的回调把采集器的输出放进了管道，混进这一幕的返回值，
+        # New-FieldWindowRecord 在写记录时抛错（8005-agv-program#45）。彩排的回调不吐东西就永远抓不到。
+        param($label)
+        Invoke-WindowCheckpoint $label
+        "FW-SC1 checkpoint $label (rehearsal callback output)"
+    }
 $assertions.Add(
     'L2-FW-20', "停靠 2 场景 C 接 B：门开着过期挂告警并撑满 $holdMinutes 分钟，回来空关后结算成 Failed，旅程自己离站",
     ($actCB.Status -eq 'Failed' -and $actCB.PositionAfter -ne '2/AwaitingLoadResult'),
