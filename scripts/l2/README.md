@@ -39,6 +39,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-field-operator-compensate` | **真的**，自动化面 | 现场驱动脚本的「制造真的 UNKNOWN + 补偿清空」两幕：扫码与按钮都走车载端 HTTP 自动化面，一次 UIA 都不用 | `evidence/l2/20260911-real-onboard-field-operator-compensate-002` |
 | `real-onboard-field-window-rehearsal` | **真的**，自动化面 | 现场窗口一（无人）整窗彩排：驱动脚本演 A、C 接 B、正常装，采集器在它说的那一刻打 checkpoint、在它写出的记录上 finalize；之后开去关卡卸货（`L2-FW-40`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-field-window-rehearsal-006`（车载端 `54772ff`，含 #48 修复；`-004`/`-005` 是 #48 的红） |
 | `real-onboard-multi-demand-compensate` | **真的**，自动化面 | 四停靠旅程里停靠 2 真的 `UNKNOWN` + 补偿清空：旅程自己离开那一站（#47 之前停在 `Blocked`），后两站照常装，关卡把三条卸完 | `evidence/l2/20260911-real-onboard-multi-demand-compensate-004`（车载端 `96c7513`，含 #48 修复；`-003` 只红 `L2-MDC-60`/`-61`，原因是 #48） |
+| `real-onboard-recovery-retry-after-refusal` | **真的**，自动化面 | 旅程还没 `Blocked` 时按「补偿清空」被拒，转 `Blocked` 后同一 attempt 再按：开得出会话、补偿走完、车不被掐连接（现场旅程 54d2cf63 卡在这里，8005-agv-program#49） | `evidence/l2/20260911-real-onboard-recovery-retry-after-refusal-006`（车载端 `ab346ed`；`-004` 是修复前的红基线，见最后一节） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -689,3 +690,32 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 `3/AwaitingPickupArrival`，停靠 3、4 提交，以 `NO_FURTHER_CARGO` 去关卡，三条卸货 `Committed`、旅程 `Completed`；停靠 1、
 3、4 的需求 `Succeeded`、停靠 2 `Cancelled`；收尾会话 `Ready / READY`，对账之后再没有仓位操作进 `RecoveryRequired`、
 也没开第二个恢复会话。
+
+## `real-onboard-recovery-retry-after-refusal`：被拒过一次之后还能不能再请求
+
+现场救旅程 54d2cf63（`8005-agv-program#44`）时，旅程还到不了 `Blocked` 那会儿有人按过一次「补偿清空」，服务端正确地拒了
+`RECOVERY_DEMAND_NOT_BLOCKED`；等旅程真 `Blocked` 了再按，两次都是 `409 ControlServer在旅程会话期间关闭了连接。`。车载端的
+会话请求 id 由 attempt 算出，第二次按下带着同一个 messageId、却是新的 `verifiedAt`/`reason`/`sentAt`，而服务端
+`ProtocolInbox` 的 `contentHash` 是**整行字节**的哈希——同一个 messageId 再发只有冲突掐连接或回放旧拒绝两种结局
+（`8005-agv-program#49`）。修在车载端：恢复请求每次发送都用新 messageId。
+
+**「旅程还没 Blocked」由从假 RIoT 地图上拿掉关卡站造出来**：引擎每轮先 `RequireFixedStation`，认不出就整轮 `return`，
+而仓位操作 `RecoveryRequired` 与会话就绪是传输层写的。六个证据：一个绿，一个修复前的红基线，其余四个都至少有一处红在场景自己：
+
+1. **`-001` 用 `faults/http ServerError` 卡引擎，红在场景**：那个开关是整个假 RIoT 的，**车载端也从它读车辆状态**，
+   车报 `SafetyUnknownPresent` / `VEHICLE_NOT_READY`，会话在结果出来之前掉进 `DEPARTURE_SAFETY_NOT_READY`，
+   `OperationResult` 发不出去（`WIRE_TO_GATE_NOT_READY`）。**要只卡服务端引擎，别动整个假 RIoT。**
+2. **`-002` 按钮探针读成空**：`Get-FieldAvailableRecoveryActions` 以 `return , @(...)` 返回，放进 `Wait-L2Condition`
+   的 `Probe` 读不到——第 22 条的同一种一元数组包装。改用 `Invoke-FieldActCompensate` 自己的
+   `@($s.state.availableRecoveryActions)`，并且等不到也照按，自动化面回的原因码比超时有用。
+3. **`-003`（车载端 `96c7513`）与现场原样**，但 `L2-RAR-06` 假绿：它在冲突当场读会话世代，车还没重连。改为数
+   `SessionHello`，失败分支先等 20 秒重连。
+4. **`-004`（`96c7513`）是判据定稿后的红基线**：`L2-RAR-04/05/06/07` 四条红，服务端只收到一条会话请求，
+   `SessionHello 1 → 2`。
+5. **`-005`（车载端 `ab346ed`）产品已绿、红在判据**：两条请求行经管道拼成一个字符串（第 22 条）。另实测一条第 22 条没写
+   的：**`$x = @(Invoke-L2Query ...)` 的 `Count` 恒为 1**（数组被嵌套一层），`foreach` 拿到的也是整个数组——赋值不要包 `@()`。
+
+绿证据 **`-006`**（服务端 `6af64ab`，车载端 `ab346ed`）**PASS/8**：两条 messageId 不同的会话请求先拒后开，补偿对账
+`Reconciled / ALL_EMPTY`、需求 `Cancelled`、旅程 `Completed`，车载端全程 `SessionHello` 1 条。同一个车载端上既有的四条补偿
+回归全绿（服务端 `077574d`）：`real-onboard-field-operator-compensate-004` PASS/10、`real-onboard-recovery-compensate-load-011`
+PASS/17、`real-onboard-multi-demand-compensate-005` PASS/15、`real-onboard-restart-while-waiting-operator-009` PASS/13。

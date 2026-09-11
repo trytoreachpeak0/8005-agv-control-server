@@ -1,0 +1,40 @@
+{"at":"2026-09-11T11:19:59.2730141+00:00","note":"L2 run 20260911T111959233Z starting for scenario 'real-onboard-field-operator-compensate'."}
+{"at":"2026-09-11T11:19:59.3065771+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-11T11:19:59.4603671+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-11T11:20:05.7366868+00:00","note":"Reusing cached onboard-hmi publish for ab346ed4b15d86110429273014d8a9be034bdab1."}
+{"at":"2026-09-11T11:20:05.8551661+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T11:20:05.8621407+00:00","note":"Peers: onboard-hmi@ab346ed4b15d86110429273014d8a9be034bdab1, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T11:20:06.8214234+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-11T11:20:06.9875898+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-11T11:20:08.8211656+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-11T11:20:11.3385394+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-11T11:20:12.9770364+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-11T11:20:15.3299327+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-11T11:20:15.3484837+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-11T11:20:15.4461460+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-11T11:20:15.7455791+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-11T11:20:15.8004013+00:00","note":"Environment is up; entering scenario 'real-onboard-field-operator-compensate'."}
+{"at":"2026-09-11T11:20:15.9320111+00:00","note":"Publishing demand 811e5f352fb742ada5cbdf84db27f6ea (sublot L2-FOC-20260911T111959233Z)."}
+{"at":"2026-09-11T11:20:16.0578934+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-11T11:20:17.1440492+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6143919e-7fde-e252-a2ad-40a1b8fbfb40-S1-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-11T11:20:17.4125551+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6143919e-7fde-e252-a2ad-40a1b8fbfb40-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-11T11:20:17.4298910+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-11T11:20:19.1140763+00:00","note":"field-operator: stop 1: submitted sublot L2-FOC-20260911T111959233Z (demand 811e5f35-2fb7-42ad-a5cb-df84db27f6ea)"}
+{"at":"2026-09-11T11:20:20.7121953+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt e85db756-b158-655a-bfd0-508b48d5ffe7)"}
+{"at":"2026-09-11T11:20:20.7626696+00:00","note":"field-operator: stop 1: lock feedback of slot 1 jammed at LOCKED while the door is open"}
+{"at":"2026-09-11T11:20:24.8512947+00:00","note":"field-operator: stop 1: maintenance found cargo in slot 1, closed it and repaired the sensor"}
+{"at":"2026-09-11T11:20:25.2070562+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY accepted for demand 811e5f35-2fb7-42ad-a5cb-df84db27f6ea (command 4ff3ebc0-9dc1-4a4d-8e52-f1baf3c4b3b0)"}
+{"at":"2026-09-11T11:20:26.2937235+00:00","note":"field-operator: compensation: vehicle waits on slot 1; maintenance takes the cargo out"}
+{"at":"2026-09-11T11:20:26.5851559+00:00","note":"field-operator: slot 1: door closed with cargo EMPTY"}
+{"at":"2026-09-11T11:20:27.3750818+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY reconciled; demand 811e5f35-2fb7-42ad-a5cb-df84db27f6ea Cancelled"}
+{"at":"2026-09-11T11:20:27.3905556+00:00","criterion":"journey-completed","value":"Completed"}
+{"at":"2026-09-11T11:20:27.4304005+00:00","criterion":"session-ready-after-compensation","value":"Ready / READY"}
+{"at":"2026-09-11T11:20:27.4512406+00:00","note":"Publishing the next demand 17987b8e07424beabc61cf3d09fde813 (sublot L2-FOC-20260911T111959233Z-NEXT)."}
+{"at":"2026-09-11T11:20:27.4758938+00:00","criterion":"next-to-pickup-intent","value":"(null)"}
+{"at":"2026-09-11T11:20:28.5376142+00:00","criterion":"next-to-pickup-intent","value":"@{UpperId=W2G-434c330d-b2cd-b95e-8c51-dd10bc4f9f80-S1-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-11T11:20:28.5753517+00:00","note":"Vehicle drives to the pickup station for the next demand."}
+{"at":"2026-09-11T11:20:29.7003224+00:00","note":"field-operator: stop 1: submitted sublot L2-FOC-20260911T111959233Z-NEXT (demand 17987b8e-0742-4bea-bc61-cf3d09fde813)"}
+{"at":"2026-09-11T11:20:31.5539755+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt 80b4b2d0-1cbc-185e-b84b-678c24a408f1)"}
+{"at":"2026-09-11T11:20:31.5556163+00:00","note":"Scenario finished."}
+{"at":"2026-09-11T11:20:31.6640915+00:00","note":"Exported 51 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-11T11:20:58.8749298+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 51 lines, 51 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 24850 ms."}

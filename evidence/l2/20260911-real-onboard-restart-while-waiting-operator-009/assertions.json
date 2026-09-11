@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-restart-while-waiting-operator",
+  "runId": "20260911T112310767Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard",
+    "batchId": "BATCH-3",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "077574d9777191701cd75727db5270e62bb4e91c",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "onboardHmiCommit": "ab346ed4b15d86110429273014d8a9be034bdab1",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T112310767Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-RW-01",
+      "description": "起点到位：车载端开了锁、在等操作员，门开着，仓位操作 Prepared，装货命令挂着",
+      "outcome": "PASS",
+      "expected": "OPEN / Prepared / 装货命令挂着",
+      "actual": "OPEN / Prepared / 装货命令挂着"
+    },
+    {
+      "id": "L2-RW-02",
+      "description": "客户端退出时没有留下结果：OperationResults 0 行，仓位操作仍是 Prepared",
+      "outcome": "PASS",
+      "expected": "0 行 / Prepared",
+      "actual": "0 行 / Prepared"
+    },
+    {
+      "id": "L2-RW-03",
+      "description": "重启后车载端握手如实上报那一次未结的 attempt",
+      "outcome": "PASS",
+      "expected": "474113c5-2289-0c59-bfd7-6e8b8f17b25c",
+      "actual": "474113c5-2289-0c59-bfd7-6e8b8f17b25c"
+    },
+    {
+      "id": "L2-RW-04",
+      "description": "重启之后这次装载拿到结论：服务端判 RecoveryRequired 并让旅程停摆，恢复入口才有地方落",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired，结果 1 份",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired，结果 1 份"
+    },
+    {
+      "id": "L2-RW-05",
+      "description": "那份结论报的是 UNKNOWN，但仓位的三个物理字段是重启后的真实读数：EMPTY / LOCKED / RESET",
+      "outcome": "PASS",
+      "expected": "UNKNOWN / UNKNOWN / EMPTY / LOCKED / RESET",
+      "actual": "UNKNOWN / UNKNOWN / EMPTY / LOCKED / RESET"
+    },
+    {
+      "id": "L2-RW-06",
+      "description": "重启后按「补偿清空」开得出恢复会话，不被拒 RECOVERY_DEMAND_NOT_BLOCKED",
+      "outcome": "PASS",
+      "expected": "OPENED",
+      "actual": "OPENED:ACTION_SELECTED"
+    },
+    {
+      "id": "L2-RW-07",
+      "description": "补偿握手走完：车载端报 ALL_EMPTY，服务端对账 Reconciled",
+      "outcome": "PASS",
+      "expected": "Reconciled / ALL_EMPTY",
+      "actual": "Reconciled / ALL_EMPTY"
+    },
+    {
+      "id": "L2-RW-08",
+      "description": "现场收在安全状态：门关、仓空、已锁、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-RW-09",
+      "description": "补偿终结这一单：需求 Cancelled，旅程以 CANCELLED_BY_LOAD_COMPENSATION 收尾",
+      "outcome": "PASS",
+      "expected": "Cancelled / Completed / CANCELLED_BY_LOAD_COMPENSATION",
+      "actual": "Cancelled / Completed / CANCELLED_BY_LOAD_COMPENSATION"
+    },
+    {
+      "id": "L2-RW-10",
+      "description": "重启前挂着的那条装货命令被补偿这一路结算掉，不会被重放进后来的会话",
+      "outcome": "PASS",
+      "expected": "重启前挂着 / 补偿后已结算",
+      "actual": "重启前挂着 / 2026-09-11 11:23:29.5808372+00:00"
+    },
+    {
+      "id": "L2-RW-11",
+      "description": "补偿对账之后服务端会话自己回到 Ready，不必再重启客户端",
+      "outcome": "PASS",
+      "expected": "Ready / READY",
+      "actual": "Ready / READY（握手上报的 pending attempts [\"474113c5-2289-0c59-bfd7-6e8b8f17b25c\"]）"
+    },
+    {
+      "id": "L2-RW-12",
+      "description": "车还回来了：下一条需求被受理并派车，车在取货点收下扫码并交给服务端",
+      "outcome": "PASS",
+      "expected": "SublotSubmitted(L2-SUBLOT-20260911T112310767Z-NEXT) 1 条",
+      "actual": "1 条"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 34 lines, 34 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 23327 ms."
+    }
+  ]
+}
