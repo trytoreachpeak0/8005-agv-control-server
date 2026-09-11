@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-field-operator-compensate",
+  "runId": "20260911T064710865Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "12988ac49d7424059bfd449ff388c33d9a91cd1b",
+    "onboardHmiCommit": "bb58b217e95c611de597212d763f7579fdcb0e03",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T064710865Z",
+    "batchId": "BATCH-3"
+  },
+  "assertions": [
+    {
+      "id": "L2-FOC-01",
+      "description": "驱动脚本经自动化面扫码并钉死锁反馈之后，车报回真的 UNKNOWN：仓位操作 RecoveryRequired、旅程 Blocked",
+      "outcome": "PASS",
+      "expected": "6a4a75ba-69dc-48cc-a5a9-cbef6e63d3f2 / RecoveryRequired / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "6a4a75ba-69dc-48cc-a5a9-cbef6e63d3f2 / RecoveryRequired / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-FOC-02",
+      "description": "维护人员三步之后的现场是补偿的入场券：门关、有货、锁反馈有效、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-FOC-03",
+      "description": "驱动脚本经自动化面发起 COMPENSATE_LOAD_ALL_EMPTY，服务端对账 Reconciled、结论 ALL_EMPTY，需求判 Cancelled",
+      "outcome": "PASS",
+      "expected": "Reconciled / ALL_EMPTY / Cancelled",
+      "actual": "Reconciled / ALL_EMPTY / Cancelled"
+    },
+    {
+      "id": "L2-FOC-04",
+      "description": "补偿时车真的开了门，驱动脚本替维护人员把那一仓取空关上——且只服务了那一仓",
+      "outcome": "PASS",
+      "expected": "[1]",
+      "actual": "[1]"
+    },
+    {
+      "id": "L2-FOC-05",
+      "description": "恢复会话的理由带车载端主机加的前缀【车载端自动化接口】——事后分得清这一下是脚本按的",
+      "outcome": "PASS",
+      "expected": "1 个会话 / 理由含【车载端自动化接口】 / COMPENSATE_LOAD_ALL_EMPTY",
+      "actual": "1 个会话 / 【车载端自动化接口】L2 彩排：驱动脚本补偿清空 / COMPENSATE_LOAD_ALL_EMPTY"
+    },
+    {
+      "id": "L2-FOC-06",
+      "description": "单需求旅程以 CANCELLED_BY_LOAD_COMPENSATION 收尾并永久抑制，悬空的 LoadBatch 命令被结算",
+      "outcome": "PASS",
+      "expected": "Completed / CANCELLED_BY_LOAD_COMPENSATION / 抑制 1 条 / 补偿前挂着、之后已结算",
+      "actual": "Completed / CANCELLED_BY_LOAD_COMPENSATION / 抑制 1 条 / 补偿前挂着、已结算"
+    },
+    {
+      "id": "L2-FOC-07",
+      "description": "现场收在安全状态：门关、仓空、已锁、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 38 lines, 38 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 21337 ms."
+    }
+  ]
+}

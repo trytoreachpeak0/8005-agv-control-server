@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-field-window-rehearsal",
+  "runId": "20260911T055117767Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 180s waiting for: stop 5 has a confirmed movement order. Last observed: (nothing)",
+  "identity": {
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T055117767Z",
+    "controlServerCommit": "12988ac49d7424059bfd449ff388c33d9a91cd1b",
+    "onboardHmiCommit": "bb58b217e95c611de597212d763f7579fdcb0e03",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-FW-01",
+      "description": "四条需求凑成一趟旅程：四个取货停靠加一个关卡",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    },
+    {
+      "id": "L2-FW-10",
+      "description": "停靠 1 场景 A：驱动脚本空关两轮都换来车自己重开，之后放料提交，恢复入口一次没出现",
+      "outcome": "FAIL",
+      "expected": "2 轮 / Committed / 入口未出现 / UNLOCKING >= 3",
+      "actual": "2 轮 / Committed / 入口出现过 / UNLOCKING 3"
+    },
+    {
+      "id": "L2-FW-20",
+      "description": "停靠 2 场景 C 接 B：门开着过期挂告警并撑满 3 分钟，回来空关后结算成 Failed，旅程自己离站",
+      "outcome": "PASS",
+      "expected": "Failed / 离开 2/AwaitingLoadResult",
+      "actual": "Failed / 2/AwaitingDepartureSafety（空关 2 次，重开 1 次）"
+    },
+    {
+      "id": "L2-FW-33",
+      "description": "停靠 3：驱动脚本照常装载提交",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-FW-34",
+      "description": "停靠 4：驱动脚本照常装载提交",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 178 lines, 178 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 17952 ms."
+    }
+  ]
+}

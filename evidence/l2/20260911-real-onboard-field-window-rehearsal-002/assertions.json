@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-field-window-rehearsal",
+  "runId": "20260911T054924861Z",
+  "outcome": "FAIL",
+  "failureReason": "The process cannot access the file because another process has locked a portion of the file. : 'C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T054924861Z\\controlserver.db-shm'.",
+  "identity": {
+    "onboardHmiCommit": "bb58b217e95c611de597212d763f7579fdcb0e03",
+    "batchId": "BATCH-3",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "12988ac49d7424059bfd449ff388c33d9a91cd1b",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T054924861Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 5 lines, 5 distinct, 5 message types, 0 distinct violations, 0 known; schema compilation 12316 ms."
+    }
+  ]
+}
