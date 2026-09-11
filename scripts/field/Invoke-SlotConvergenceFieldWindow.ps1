@@ -745,17 +745,36 @@ $assertions.Add('SC1-W-02', '窗口内恢复入口是开着的——否则决策
 # The one assertion that actually spans the window. Every checkpoint carries the vehicle's session
 # row, so "it never left Ready" is answerable -- from the series, never from the final state, which
 # a session that failed and recovered would look exactly like.
+#
+# A frame whose journey is on the road is listed but not judged. A departing vehicle drops out of Ready
+# by design (DEPARTURE_SAFETY_NOT_READY within a second of leaving, #47), and that is not the claim here,
+# which is about a door standing open at a station. The field window of 8005-agv-program#45 took
+# b-settled after the journey had left stop 2 -- the act waits for that on purpose, B-06 is judged from
+# it -- and on the plant a checkpoint starts some ten seconds after it is asked for, so that frame
+# always caught the vehicle moving; on the L2 rig it happened to be quicker than the departure.
+$travelStages = @('AwaitingPickupArrival', 'AwaitingGateArrival')
 $checkpointDirectories = @(Get-ChildItem -LiteralPath $snapshotRoot -Directory | Sort-Object Name)
+$judgedFrames = [System.Collections.Generic.List[string]]::new()
 $readinessSeries = foreach ($directory in $checkpointDirectories) {
     $path = Join-Path $directory.FullName 'db-SessionRecoveries.json'
     $sessionRows = (Test-Path -LiteralPath $path -PathType Leaf) ? @(Get-Content -LiteralPath $path -Raw | ConvertFrom-Json) : @()
     $row = @($sessionRows | Where-Object { -not $recordedAgvId -or $_.AgvId -eq $recordedAgvId })[0]
-    "$($directory.Name)=$($row ? $row.Readiness : '(没有会话行)')"
+    $readiness = $row ? [string]$row.Readiness : '(没有会话行)'
+    $runtimePath = Join-Path $directory.FullName 'db-JourneyRuntimes.json'
+    $runtimeRows = (Test-Path -LiteralPath $runtimePath -PathType Leaf) ? @(Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json) : @()
+    $travelling = @($runtimeRows | Where-Object {
+            (-not $recordedAgvId -or $_.AgvId -eq $recordedAgvId) -and [string]$_.Stage -in $travelStages })[0]
+    if ($travelling) {
+        "$($directory.Name)=$readiness（行驶中 $($travelling.Stage)，不判）"
+    } else {
+        $judgedFrames.Add($readiness)
+        "$($directory.Name)=$readiness"
+    }
 }
 $readinessSeries = @($readinessSeries)
-$assertions.Add('SC1-W-03', '每一个 checkpoint 上会话都停在 Ready——全程没有把开着的仓门当成会话故障',
-    ($readinessSeries.Count -gt 0 -and @($readinessSeries | Where-Object { $_ -notlike '*=Ready' }).Count -eq 0),
-    '每个 checkpoint 都是 Ready', ($readinessSeries -join '; '))
+$assertions.Add('SC1-W-03', '每一个车停着的 checkpoint 上会话都停在 Ready——全程没有把开着的仓门当成会话故障（行驶中的帧列出不判）',
+    ($judgedFrames.Count -gt 0 -and @($judgedFrames | Where-Object { $_ -ne 'Ready' }).Count -eq 0),
+    '每个车停着的 checkpoint 都是 Ready', ($readinessSeries -join '; '))
 
 try { $connection.Close(); $connection.Dispose() } catch { }
 

@@ -15,11 +15,15 @@
     scenarios real-onboard-field-window-rehearsal and real-onboard-field-operator-compensate run on the
     local rig, so what was rehearsed is what runs here.
 
-    The plan is the one 8005-agv-program#19 settled on and #45 inherits: scenario A at pickup stop 1,
-    scenario C followed by B at stop 2, every further pickup loaded normally, every slot emptied at the
-    gate. The journey's composition belongs to the plant's demands, not to this script, so a journey with
-    a single pickup ends the window with B and C never played; the collector then fails SC1-W-01, which
-    is the truthful outcome.
+    The plan: scenario C followed by B at pickup stop 1, scenario A at stop 2, every further pickup loaded
+    normally, every slot emptied at the gate. #19 and the first unattended window of #45 ran it the other
+    way round, and on the plant that order cannot work: the holding limit (ADR-cross-0057, 30 min) runs
+    from the first load that commits, A commits one, and C then stands past the station deadline for
+    another twenty minutes -- so the journey reaches stop 3 past the limit and the engine ends every
+    remaining pickup with CANCELLED_BY_STOP_COMPLETE. B's determinate failure starts no holding clock, so
+    C/B first leaves the whole limit to A and the stops after it. The journey's composition belongs to
+    the plant's demands, not to this script, so a journey with a single pickup ends the window with A
+    never played; the collector then fails SC1-W-01, which is the truthful outcome.
 
     Three things it does NOT do, each on purpose:
 
@@ -34,11 +38,10 @@
         and closes the gates on the spot (server-close-gates-watch.ps1, the "runtime is idle already"
         branch). Pass -JourneyTimeoutSeconds well past the window; on its default hour it gives up
         without closing anything.
-      * Compensation. Compensating one demand of a multi-demand journey leaves the journey Blocked for
-        good -- JourneyRuntimeEngine returns on Blocked, and the recovery coordinator only moves the stage
-        when the whole journey is settled -- so pressing 补偿清空 mid-window would strand the other stops'
-        cargo aboard. Invoke-FieldActCompensate exists and is rehearsed; this runner does not call it until
-        that is fixed.
+      * Compensation. It used to be left out because compensating one demand of a multi-demand journey
+        left the journey Blocked for good; that was 8005-agv-program#47, fixed in 8be28b1. It stays out
+        because SC1 has no criterion for it: Invoke-FieldActCompensate is rehearsed on its own in
+        real-onboard-field-operator-compensate and real-onboard-multi-demand-compensate.
 
     Run it from PowerShell, not Git Bash: the collector copies the database with scp, and Git Bash's MSYS
     scp mangles Windows remote paths into "No such file or directory".
@@ -57,8 +60,9 @@ param(
     [string]$VehicleHost = 'agv01',
     [string]$ServerHost = 'factory01',
 
-    [int]$ScenarioAStop = 1,
-    [int]$ScenarioCBStop = 2,
+    # C/B before A: see the plan in the description for why the other order runs into the holding limit.
+    [int]$ScenarioCBStop = 1,
+    [int]$ScenarioAStop = 2,
     [int]$ReopenRounds = 2,
 
     # Past the station deadline, before the door is closed. Twenty minutes is the ticket's number; the
