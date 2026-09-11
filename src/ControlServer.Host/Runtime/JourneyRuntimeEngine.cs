@@ -1182,6 +1182,15 @@ public sealed class JourneyRuntimeEngine(
     /// the operator is standing at, as long as it is in the dispatch range, and BR-001 says a range
     /// may span neighbouring stations. So a demand entered here is loaded here: its planned stop
     /// moves to this one, and the stop it was going to be loaded at simply has nothing left to do.
+    ///
+    /// A submission answers one entry request, and says which: the vehicle, the operation session
+    /// and the worklist revision it was entered against. Only answers to the request open now are
+    /// judged. The revision is taken from a per-vehicle cursor that every stop and every load round
+    /// advances, so an answer to anything else -- a finished journey, another vehicle, an earlier
+    /// stop or round of this journey -- can never be this request's, and is not a mismatch. Judging
+    /// the whole inbox raised SUBLOT_SUBMISSION_MISMATCH within one poll of every arrival, with
+    /// nobody scanning. Not a time window: the station wait's start is voided on disconnect and
+    /// refilled a pass after the handshake, and an entry arriving in between would be lost.
     /// </remarks>
     private async Task<SublotEntry?> FindMatchingSublotAsync(
         JourneyRuntimeRow runtime,
@@ -1195,8 +1204,12 @@ public sealed class JourneyRuntimeEngine(
             .ToArray();
         AcceptedDemandRow[] accepted = await AcceptedDemandsForAsync(enterable, cancellationToken)
             .ConfigureAwait(false);
+        // A substring pre-filter only, so the inbox's history is not read back and parsed on every
+        // poll. It may let through more than this journey's rows; the parsed comparison below is
+        // what decides.
+        string operationSessionId = runtime.OperationSessionId;
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SublotSubmitted")
+            .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         rows = rows.OrderBy(row => row.ReceivedAt).ToArray();
         foreach (ProtocolInboxRow row in rows)
@@ -1204,17 +1217,20 @@ public sealed class JourneyRuntimeEngine(
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
             JsonElement payload = root.GetProperty("payload");
-            // 判过一次的提交不再进入匹配：被拒的那条留在 inbox 里，否则每一轮都会重新触发一次
-            // 远程重算，也会把同一条拒绝反复发给对端。
-            if (enterable.Any(demand => demand.ConsumedSublotMessageId == row.MessageId))
+            if (RequiredString(root, "agvId") != runtime.AgvId ||
+                RequiredString(payload, "operationSessionId") != runtime.OperationSessionId ||
+                payload.GetProperty("worklistRevision").GetInt64() != stop.WorklistRevision)
             {
                 continue;
             }
-            if (RequiredString(root, "agvId") != runtime.AgvId ||
-                root.GetProperty("sessionGeneration").GetInt64() != session.SessionGeneration ||
-                RequiredString(payload, "operationSessionId") != runtime.OperationSessionId ||
-                RequiredString(payload, "stationId") != stop.StationId ||
-                payload.GetProperty("worklistRevision").GetInt64() != stop.WorklistRevision)
+            // 判过一次的提交不再进入匹配：被拒的那条留在 inbox 里，否则每一轮都会重新触发一次
+            // 远程重算，也会把同一条拒绝反复发给对端。
+            if (demands.Any(demand => demand.ConsumedSublotMessageId == row.MessageId))
+            {
+                continue;
+            }
+            if (root.GetProperty("sessionGeneration").GetInt64() != session.SessionGeneration ||
+                RequiredString(payload, "stationId") != stop.StationId)
             {
                 runtime.BlockReasonCode = "SUBLOT_SUBMISSION_MISMATCH";
                 continue;

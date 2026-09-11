@@ -2140,6 +2140,102 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     /// <summary>
+    /// A submission answers one entry request, and only one open request can be answered. Every
+    /// SublotSubmitted the inbox has ever held used to be judged against the stop being waited at,
+    /// so the field saw SUBLOT_SUBMISSION_MISMATCH two seconds after each arrival with nobody
+    /// scanning: yesterday's journeys, and this journey's own earlier stop, all failed the match.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task SubmissionsAnsweringAnEarlierRequestDoNotRaiseAMismatchAtTheStopBeingWaitedAt()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+            fixture.Demand(
+                "10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // Left behind by a journey this vehicle finished earlier, at the very station it is about
+        // to stop at.
+        int firstSequence = (await fixture.JourneyRowAsync()).CurrentStopSequence;
+        JourneyStopRow firstStop = (await fixture.StopRowsAsync())
+            .Single(row => row.Sequence == firstSequence);
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "SublotSubmitted",
+            new
+            {
+                demandId = "0FFFFFFF-0000-4000-8000-000000000001",
+                operationSessionId = "0FFFFFFF-0000-4000-8000-0000000000AA",
+                stationId = firstStop.StationId,
+                worklistRevision = 1,
+                sublot = "SUBLOT-YESTERDAY",
+                entryMethod = "SCANNER",
+                @operator = new
+                {
+                    operatorId = "OP-001",
+                    verificationMethod = "BADGE",
+                    verifiedAt = Now.AddDays(-1)
+                }
+            });
+
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow waiting = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, waiting.Stage);
+        Assert.Null(waiting.BlockReasonCode);
+
+        // The first stop's own submission was consumed by the load it commanded, and stays in the
+        // inbox. At the next stop it answers nothing that is still open.
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        waiting = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, waiting.Stage);
+        Assert.Equal(2, waiting.CurrentStopSequence);
+        Assert.Null(waiting.BlockReasonCode);
+
+        await fixture.LoadSublotAsync("SUBLOT-002");
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.JourneyRowAsync()).Stage);
+    }
+
+    /// <summary>
+    /// The other half of the same rule: a submission that does answer the open request, and names
+    /// nothing this journey can load, is still a mismatch -- and it opens no slot.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ASubmissionAnsweringTheOpenRequestThatNamesNoDemandRaisesAMismatch()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001");
+
+        await fixture.SubmitSublotAsync(runtime, "SUBLOT-NOT-ON-THIS-JOURNEY");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal("SUBLOT_SUBMISSION_MISMATCH", runtime.BlockReasonCode);
+        Assert.Empty(await fixture.Context.StationOperations.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        // A correct entry for the same request still goes through.
+        await fixture.SubmitSublotAsync(runtime, "SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        Assert.Null(runtime.BlockReasonCode);
+    }
+
+    /// <summary>
     /// FR-001 AC-3: what the operator enters need not belong to the stop they are standing at, only
     /// to the dispatch range. BR-001 allows a range to span neighbouring stations, so a sublot
     /// entered here is loaded here -- and the stop it was planned for drops out of the itinerary.
