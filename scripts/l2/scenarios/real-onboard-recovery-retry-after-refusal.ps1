@@ -186,14 +186,19 @@ $assertions.Add(
 
 # --- 5. 两次请求是两条报文，服务端一次都没掐连接 ---------------------------------------------------------
 
-$requests = @(Invoke-L2Query -Connection $connection `
-    -Sql "SELECT MessageId, FirstResponseJson FROM ProtocolInbox WHERE MessageType = 'ExceptionRecoverySessionRequested' ORDER BY ReceivedAt")
-$answers = @($requests | ForEach-Object {
-    $first = ([string]$_.FirstResponseJson -split "`n")[0] | ConvertFrom-Json
+$requests = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT MessageId, FirstResponseJson FROM ProtocolInbox WHERE MessageType = 'ExceptionRecoverySessionRequested' ORDER BY ReceivedAt"
+# foreach, not a pipeline: piping Invoke-L2Query rows joins their string columns (README item 22).
+# The red runs held one request row and never showed it; -005 held two and threw here.
+$answers = @()
+$messageIds = @()
+foreach ($row in $requests) {
+    $first = ([string]$row.FirstResponseJson -split "`n")[0] | ConvertFrom-Json
     $reason = ($first.messageType -eq 'ExceptionRecoverySessionRejected') ? " $($first.payload.problem.reasonCode)" : ''
-    "$($first.messageType)$reason"
-})
-$distinctIds = @($requests | ForEach-Object { [string]$_.MessageId } | Sort-Object -Unique).Count
+    $answers += "$($first.messageType)$reason"
+    $messageIds += [string]$row.MessageId
+}
+$distinctIds = @($messageIds | Sort-Object -Unique).Count
 $assertions.Add(
     'L2-RAR-05', '两次按下是两条 messageId 不同的会话请求，各自拿到自己的应答：先拒绝、后开出会话',
     ($requests.Count -eq 2 -and $distinctIds -eq 2 -and

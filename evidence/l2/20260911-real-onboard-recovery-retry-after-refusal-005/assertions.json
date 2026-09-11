@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-recovery-retry-after-refusal",
+  "runId": "20260911T111619530Z",
+  "outcome": "FAIL",
+  "failureReason": "Conversion from JSON failed with error: Additional text encountered after finished reading JSON content: {. Path '', line 1, position 642.",
+  "identity": {
+    "onboardHmiCommit": "ab346ed4b15d86110429273014d8a9be034bdab1",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T111619530Z",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "ea8f0e274241d349ebc64f6d13d05642af5a450a",
+    "agvId": "AGV-L2-001",
+    "batchId": "BATCH-3"
+  },
+  "assertions": [
+    {
+      "id": "L2-RAR-01",
+      "description": "车报回真的 UNKNOWN、仓位操作 RecoveryRequired，而引擎停摆让旅程停在 AwaitingLoadResult 转不了 Blocked",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired / AwaitingLoadResult",
+      "actual": "RecoveryRequired / AwaitingLoadResult"
+    },
+    {
+      "id": "L2-RAR-02",
+      "description": "旅程还没 Blocked 时的补偿清空被服务端拒绝，原因码原样回到自动化面",
+      "outcome": "PASS",
+      "expected": "409 / RECOVERY_DEMAND_NOT_BLOCKED",
+      "actual": "409 / RECOVERY_DEMAND_NOT_BLOCKED"
+    },
+    {
+      "id": "L2-RAR-03",
+      "description": "引擎恢复之后旅程转 Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-RAR-04",
+      "description": "同一个 attempt 被拒过之后再请求，服务端对账 Reconciled、结论 ALL_EMPTY，需求判 Cancelled",
+      "outcome": "PASS",
+      "expected": "Reconciled / ALL_EMPTY / Cancelled",
+      "actual": "Reconciled / ALL_EMPTY / Cancelled"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 41 lines, 41 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 18102 ms."
+    }
+  ]
+}
