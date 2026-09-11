@@ -383,20 +383,28 @@ try {
     }
     $journal.Note('Package capacity rules imported.')
 
-    # 3. ControlServer, against the doubles.
-    $serverHandle = Start-L2Process -Name 'control-server' `
-        -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
-        -WorkingDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot |
-        ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 4 -PassThru }
-    $handles.Add($serverHandle)
+    # 3. ControlServer, against the doubles. A scriptblock because a scenario may start the same server a
+    #    second time against the same database -- which is what a service restart on the plant is.
+    $startServer = {
+        param([Parameter(Mandatory)][string]$LogName)
+        $handle = Start-L2Process -Name $LogName `
+            -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
+            -WorkingDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot
+        # As with the onboard: the log name differs per start, the component name does not.
+        $handle.Name = 'control-server'
+        $handle | Add-Member -NotePropertyName Order -NotePropertyValue 4
+        $handles.Add($handle)
 
-    # /health/live, not /health/ready: readiness means a peer has completed the recovery handshake,
-    # and the peer cannot connect until the server is listening. Waiting on readiness here would
-    # deadlock the startup order against itself.
-    $null = Wait-L2Condition -Description 'ControlServer is listening' -Journal $journal -Criterion 'control-server-live' `
-        -TimeoutSeconds 120 -Component $serverHandle `
-        -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
-        -Until { param($v) $v -eq 'live' }
+        # /health/live, not /health/ready: readiness means a peer has completed the recovery handshake,
+        # and the peer cannot connect until the server is listening. Waiting on readiness here would
+        # deadlock the startup order against itself.
+        $null = Wait-L2Condition -Description 'ControlServer is listening' -Journal $journal -Criterion 'control-server-live' `
+            -TimeoutSeconds 120 -Component $handle `
+            -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
+            -Until { param($v) $v -eq 'live' }
+        return $handle
+    }
+    $serverHandle = & $startServer 'control-server'
 
     # 4b. The skew proxy, when a scenario asked for one. After the server (it forwards to it) and
     #     before the onboard (which must find it listening on its first poll).
@@ -596,6 +604,18 @@ try {
             $starts = @($handles | Where-Object { $_.Name -eq 'onboard-hmi' }).Count
             $journal.Note("Relaunching the onboard (start $($starts + 1)) against the same journal.")
             return (& $startRealOnboard "onboard-hmi.start$($starts + 1)").Driver
+        }
+        # A service restart: the same server process stopped and started again against the same
+        # database and environment, the peer left running to reconnect on its own. That is what
+        # 13-close-gates-when-idle.ps1 does to the plant's service after every journey. Returns the new
+        # process's start time, the moment a restart is measured from.
+        RestartServer       = {
+            $alive = @($handles | Where-Object { $_.Name -eq 'control-server' -and -not $_.Process.HasExited })
+            $starts = @($handles | Where-Object { $_.Name -eq 'control-server' }).Count
+            $journal.Note("Restarting ControlServer (start $($starts + 1)) against the same database.")
+            Stop-L2Process -Handles $alive
+            $handle = & $startServer "control-server.start$($starts + 1)"
+            return [DateTimeOffset]$handle.Process.StartTime
         }
     }
 

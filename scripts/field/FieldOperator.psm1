@@ -554,15 +554,15 @@ function Invoke-FieldServeOperation {
 # --- acts --------------------------------------------------------------------------------------------------
 
 <#
-Scans at one pickup stop and returns once the vehicle says it is waiting for the operator on the first
-slot. Every act at a pickup stop starts here.
+Waits until one pickup stop asks the operator for a sublot, on both ends, and returns the stop's demand,
+its sublot and the station deadline the vehicle was given. Every act at a pickup stop starts here.
 
 It waits for the SERVER to be in this stop's AwaitingSublot before it looks at the vehicle. The vehicle
 keeps the previous stop's entry request after a submit, so canSubmitSublot is already true when it
 rolls into the next stop, still naming the old sublot (scripts/l2/README.md, multi-demand notes). The
 sublot has to be the one this stop's demand carries, and it has to be among what the vehicle expects.
 #>
-function Start-FieldStopLoad {
+function Wait-FieldSublotRequest {
     param(
         [Parameter(Mandatory)][object]$Field,
         [Parameter(Mandatory)][string]$JourneyId,
@@ -574,6 +574,7 @@ function Start-FieldStopLoad {
         -Probe { Get-FieldPosition -Field $Field -JourneyId $JourneyId } `
         -Until { param($p) $p -eq "$Sequence/AwaitingSublot" } `
         -Abort { param($p) $p -like '*/Blocked' -or $p -like '*/Completed' }
+    $serverWaitingAt = [DateTimeOffset]::UtcNow
     $demand = Get-FieldStopDemand -Field $Field -JourneyId $JourneyId -Sequence $Sequence
     $sublot = [string]$demand.Sublot
 
@@ -581,6 +582,32 @@ function Start-FieldStopLoad {
         -Probe { Get-FieldOnboardSnapshot -Field $Field } `
         -Until { param($s) $s.state.canSubmitSublot -and @($s.state.expectedSublots) -contains $sublot }
     $deadlineAt = Get-FieldProperty (Get-FieldProperty (Get-FieldProperty $ready.state 'wireToGateJourney') 'currentStopWorklist') 'stationDepartureDeadlineAt'
+
+    return [pscustomobject]@{
+        Sequence        = $Sequence
+        DemandId        = [string]$demand.DemandId
+        Sublot          = $sublot
+        ServerWaitingAt = $serverWaitingAt.ToString('o')
+        DeadlineAt      = $deadlineAt ? ([datetimeoffset]$deadlineAt).ToString('o') : $null
+    }
+}
+
+<#
+Scans at one pickup stop and returns once the vehicle says it is waiting for the operator on the first
+slot.
+#>
+function Start-FieldStopLoad {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        [Parameter(Mandatory)][string]$JourneyId,
+        [Parameter(Mandatory)][int]$Sequence,
+        [int]$ArrivalTimeoutSeconds = 1800
+    )
+
+    $request = Wait-FieldSublotRequest -Field $Field -JourneyId $JourneyId -Sequence $Sequence -ArrivalTimeoutSeconds $ArrivalTimeoutSeconds
+    $demand = [pscustomobject]@{ DemandId = $request.DemandId }
+    $sublot = $request.Sublot
+    $deadlineAt = $request.DeadlineAt
 
     $submit = Invoke-FieldFace -Field $Field -Face Onboard -Method POST -Path '/sublots/submit' -Body @{ sublot = $sublot } -Envelope
     if ([int]$submit.status -ne 200 -or -not (Get-FieldProperty $submit.body 'accepted')) {
@@ -853,6 +880,159 @@ function Invoke-FieldActLoad {
 }
 
 <#
+Where one demand stands on the server: its status, the suppression reason if it was ended for good, how
+many slot operations it ever had, and where its journey is now. Read in one probe, because "the demand
+was cancelled" and "the journey left the stop" are written by the engine in one iteration but read here
+in two round trips -- judging one and then reading the other is the race scripts/l2/README.md item 14
+keeps counting.
+#>
+function Get-FieldDemandSettlement {
+    param([Parameter(Mandatory)][object]$Field, [Parameter(Mandatory)][string]$JourneyId, [Parameter(Mandatory)][string]$DemandId)
+
+    $id = ConvertTo-SqlLiteral $DemandId
+    $rows = Invoke-FieldQuery -Field $Field -Sql (
+        'SELECT a.Status, ' +
+        "(SELECT s.ReasonCode FROM TransportDemandSuppressions s WHERE s.DemandId = $id LIMIT 1) AS Suppression, " +
+        "(SELECT COUNT(*) FROM StationOperations o WHERE o.DemandId = $id) AS Operations " +
+        "FROM AcceptedDemands a WHERE a.DemandId = $id")
+    $journey = Get-FieldJourney -Field $Field -JourneyId $JourneyId
+    $row = ($rows.Count -gt 0) ? $rows[0] : $null
+    return [pscustomobject]@{
+        Status      = $row ? [string]$row.Status : '(no row)'
+        Suppression = $row ? [string]$row.Suppression : ''
+        Operations  = $row ? [int]$row.Operations : 0
+        Position    = $journey ? "$($journey.CurrentStopSequence)/$($journey.Stage)" : '(no journey)'
+    }
+}
+
+<#
+Decision 7 (ADR-cross-0055, SublotWaitTimeout): the vehicle reaches a pickup stop, asks for the sublot,
+and nobody ever scans it. The server ends the demand at the station deadline on its own --
+CANCELLED_BY_STATION_TIMEOUT, suppressed for good -- and the journey leaves the stop, rather than
+holding the vehicle in AwaitingSublot forever.
+
+The act does nothing on purpose once the vehicle has asked. What it waits for is the demand ended AND
+suppressed AND the journey somewhere other than this stop's AwaitingSublot, in one probe.
+#>
+function Invoke-FieldActNoSublot {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        [Parameter(Mandatory)][string]$JourneyId,
+        [Parameter(Mandatory)][int]$Sequence,
+        [scriptblock]$OnCheckpoint = { param($label) },
+        [string]$SettledCheckpoint = 't-settled',
+        # How long past the published deadline to keep waiting. The engine polls every two seconds; the
+        # rest is SSH round trips.
+        [int]$GraceSeconds = 180,
+        [int]$ArrivalTimeoutSeconds = 1800
+    )
+
+    $request = Wait-FieldSublotRequest -Field $Field -JourneyId $JourneyId -Sequence $Sequence -ArrivalTimeoutSeconds $ArrivalTimeoutSeconds
+    $vehicleAskedAt = [DateTimeOffset]::UtcNow
+    Write-FieldLog $Field "stop ${Sequence}: the vehicle asks for sublot $($request.Sublot) and nobody scans it; deadline $($request.DeadlineAt ?? '(not published)')"
+
+    $waiting = "$Sequence/AwaitingSublot"
+    $timeout = $request.DeadlineAt `
+        ? [int][Math]::Max(60, ([datetimeoffset]$request.DeadlineAt - [DateTimeOffset]::UtcNow).TotalSeconds + $GraceSeconds) `
+        : 1800
+    $settled = Wait-FieldCondition -Field $Field -Description "the station deadline to end demand $($request.DemandId) at stop $Sequence" -TimeoutSeconds $timeout `
+        -Probe { Get-FieldDemandSettlement -Field $Field -JourneyId $JourneyId -DemandId $request.DemandId } `
+        -Until { param($v) $v.Status -eq 'Cancelled' -and $v.Suppression -and $v.Position -ne $waiting } `
+        -Abort { param($v) $v.Status -in @('Loaded', 'Succeeded') -or $v.Operations -gt 0 -or $v.Position -like '*/Blocked' }
+    $settledAt = [DateTimeOffset]::UtcNow
+    Write-FieldLog $Field "stop ${Sequence}: demand $($request.DemandId) $($settled.Status) ($($settled.Suppression)); journey now at $($settled.Position)"
+    $null = & $OnCheckpoint $SettledCheckpoint
+
+    return [pscustomobject]@{
+        Act               = 'T'
+        Sequence          = $Sequence
+        DemandId          = $request.DemandId
+        Sublot            = $request.Sublot
+        ServerWaitingAt   = $request.ServerWaitingAt
+        VehicleAskedAt    = $vehicleAskedAt.ToString('o')
+        DeadlineAt        = $request.DeadlineAt
+        SettledObservedAt = $settledAt.ToString('o')
+        Status            = $settled.Status
+        Suppression       = $settled.Suppression
+        Operations        = $settled.Operations
+        PositionAfter     = $settled.Position
+        SettledCheckpoint = $SettledCheckpoint
+    }
+}
+
+<#
+取消订单 before anything is loaded: the vehicle asks for the sublot, the operator presses 取消装货 instead.
+That button is the onboard's LOAD_CANCELLATION with a pending sublot entry, and it needs no recovery
+window -- only a connected Ready session and the operator id the vehicle carries in its machine
+environment (WireToGateBusinessService.CanUseStopOperator).
+
+Whether it worked is read from the server, never from the face's answer (8005-agv-program#51): an
+authorisation the vehicle did not receive still cancels the demand, and a synchronous refusal says
+nothing was sent. So a non-200 is only thrown once the server has had time to show it did nothing.
+#>
+function Invoke-FieldActCancelBeforeSublot {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        [Parameter(Mandatory)][string]$JourneyId,
+        [Parameter(Mandatory)][int]$Sequence,
+        [string]$Reason = '现场窗口二：本站没有货，扫码前取消本站装货',
+        [scriptblock]$OnCheckpoint = { param($label) },
+        [string]$SettledCheckpoint = 'x-settled',
+        [int]$ArrivalTimeoutSeconds = 1800
+    )
+
+    $request = Wait-FieldSublotRequest -Field $Field -JourneyId $JourneyId -Sequence $Sequence -ArrivalTimeoutSeconds $ArrivalTimeoutSeconds
+    $action = 'LOAD_CANCELLATION'
+    $offered = Wait-FieldCondition -Field $Field -Description "the vehicle to offer $action at stop $Sequence" -TimeoutSeconds 120 `
+        -Probe { Get-FieldOnboardSnapshot -Field $Field } `
+        -Until { param($s) @($s.state.availableRecoveryActions) -contains $action }
+
+    $response = Invoke-FieldFace -Field $Field -Face Onboard -Method POST -Path '/recovery/requests' -Envelope -Body @{
+        action = $action
+        reason = $Reason
+    }
+    # 202 is "still running after 15 s": replaying the very same body reads the final answer.
+    while ([int]$response.status -eq 202) {
+        Start-Sleep -Seconds 3
+        $response = Invoke-FieldFace -Field $Field -Face Onboard -Method POST -Path '/recovery/requests' `
+            -Body ([hashtable]($response.sent | ConvertTo-Json -Depth 8 | ConvertFrom-Json -AsHashtable))
+    }
+    $faceAnswer = "HTTP $($response.status) $(Get-FieldProperty (Get-FieldProperty $response 'body') 'reasonCode') $(Get-FieldProperty $response 'error')".Trim()
+    Write-FieldLog $Field "stop ${Sequence}: pressed $action for demand $($request.DemandId): $faceAnswer"
+
+    $waiting = "$Sequence/AwaitingSublot"
+    try {
+        $settled = Wait-FieldCondition -Field $Field -Description "demand $($request.DemandId) to be cancelled by the operator at stop $Sequence" `
+            -TimeoutSeconds (([int]$response.status -eq 200) ? 180 : 60) `
+            -Probe { Get-FieldDemandSettlement -Field $Field -JourneyId $JourneyId -DemandId $request.DemandId } `
+            -Until { param($v) $v.Status -eq 'Cancelled' -and $v.Suppression -and $v.Position -ne $waiting } `
+            -Abort { param($v) $v.Status -in @('Loaded', 'Succeeded') -or $v.Operations -gt 0 -or $v.Position -like '*/Blocked' }
+    } catch {
+        throw "Stop ${Sequence}: $action did not cancel demand $($request.DemandId) (the face answered $faceAnswer). $($_.Exception.Message)"
+    }
+    $settledAt = [DateTimeOffset]::UtcNow
+    Write-FieldLog $Field "stop ${Sequence}: demand $($request.DemandId) $($settled.Status) ($($settled.Suppression)); journey now at $($settled.Position)"
+    $null = & $OnCheckpoint $SettledCheckpoint
+
+    return [pscustomobject]@{
+        Act               = 'X'
+        Sequence          = $Sequence
+        DemandId          = $request.DemandId
+        Sublot            = $request.Sublot
+        DeadlineAt        = $request.DeadlineAt
+        ActionsOffered    = @($offered.state.availableRecoveryActions | ForEach-Object { [string]$_ })
+        CommandId         = [string](Get-FieldProperty $response.sent 'commandId')
+        FaceAnswer        = $faceAnswer
+        SettledObservedAt = $settledAt.ToString('o')
+        Status            = $settled.Status
+        Suppression       = $settled.Suppression
+        Operations        = $settled.Operations
+        PositionAfter     = $settled.Position
+        SettledCheckpoint = $SettledCheckpoint
+    }
+}
+
+<#
 Makes a load come back UNKNOWN for a reason that is really unknown, then leaves the slot the way a
 maintenance technician would before pressing a recovery button.
 
@@ -1010,19 +1190,81 @@ function Invoke-FieldActCompensate {
 }
 
 <#
+The unload side of decision 1, with ADR-cross-0015's asymmetry: an unload has no cancellation branch. The
+operator closes the door with the basket still inside; the vehicle reads the opposite state and reopens,
+round after round, and the only way the operation ends is the cargo actually coming out. Returns once
+-Rounds reopens were seen, with the vehicle waiting on the slot again and the cargo still in it -- the
+caller empties it.
+
+Throws if a close with the cargo inside settles the operation at all: that would be the cancellation
+branch the ADR says does not exist.
+#>
+function Invoke-FieldNotEmptiedRounds {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        [Parameter(Mandatory)][string]$AttemptId,
+        [Parameter(Mandatory)][int]$SlotNo,
+        [Parameter(Mandatory)][int]$Rounds
+    )
+
+    $statusSql = "SELECT DemandId, Status FROM StationOperations WHERE SlotOperationAttemptId = $(ConvertTo-SqlLiteral $AttemptId)"
+    for ($round = 1; $round -le $Rounds; $round++) {
+        $before = Get-FieldPhaseCounts -Field $Field -AttemptId $AttemptId
+        $null = Invoke-FieldCloseSlot -Field $Field -SlotNo $SlotNo -Cargo OCCUPIED -NoSettle
+        $answer = Wait-FieldCondition -Field $Field -Description "the vehicle's answer to closing gate slot $SlotNo with the cargo still in (round $round)" -TimeoutSeconds 180 `
+            -Probe {
+                # Assigned, not piped: Invoke-FieldQuery returns its rows as ONE pipeline object.
+                $operationRows = Invoke-FieldQuery -Field $Field -Sql $statusSql
+                $operation = ($operationRows.Count -gt 0) ? $operationRows[0] : $null
+                $counts = Get-FieldPhaseCounts -Field $Field -AttemptId $AttemptId
+                [pscustomobject]@{
+                    Status    = $operation ? [string]$operation.Status : '(no row)'
+                    Reopened  = (Get-FieldReopenedSlot -Events $counts.Events -BaseCount $before.Events.Count -SlotNo $SlotNo) -gt 0
+                    Unlocking = $counts.Unlocking
+                    Waiting   = $counts.Waiting
+                }
+            } `
+            -Until { param($v) $v.Status -in $script:TerminalOperationStatuses -or $v.Reopened }
+        if ($answer.Status -in $script:TerminalOperationStatuses) {
+            throw "Gate slot ${SlotNo} round ${round}: closing it with the cargo still inside settled unload $AttemptId as $($answer.Status). An unload has no such exit."
+        }
+        Write-FieldLog $Field "gate slot $SlotNo round ${round}: closed with the cargo still in; the vehicle reopened it (UNLOCKING $($before.Unlocking)->$($answer.Unlocking), WAITING_OPERATOR $($before.Waiting)->$($answer.Waiting))"
+    }
+    $final = Get-FieldPhaseCounts -Field $Field -AttemptId $AttemptId
+    $operationRows = Invoke-FieldQuery -Field $Field -Sql $statusSql
+    $operation = $operationRows[0]
+    return [pscustomobject]@{
+        DemandId       = [string]$operation.DemandId
+        AttemptId      = $AttemptId
+        SlotNo         = $SlotNo
+        Rounds         = $Rounds
+        StatusAtRounds = [string]$operation.Status
+        Unlocking      = $final.Unlocking
+        Waiting        = $final.Waiting
+    }
+}
+
+<#
 At the gate: takes the cargo out of every slot the vehicle opens, one unload operation after another,
-until the journey completes.
+until the journey completes. With -NotEmptiedRounds, the first slot the vehicle opens is closed that many
+times with the cargo still inside before it is emptied (Invoke-FieldNotEmptiedRounds), and -OnCheckpoint
+is called at that moment -- the operation is still open and the journey still waiting on it, a state the
+emptying overwrites.
 #>
 function Invoke-FieldActUnload {
     param(
         [Parameter(Mandatory)][object]$Field,
         [Parameter(Mandatory)][string]$JourneyId,
-        [int]$TimeoutSeconds = 1800
+        [int]$TimeoutSeconds = 1800,
+        [int]$NotEmptiedRounds = 0,
+        [scriptblock]$OnCheckpoint = { param($label) },
+        [string]$NotEmptiedCheckpoint = 'ne-reopened'
     )
 
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
     $results = [ordered]@{}
     $servedByAttempt = @{}
+    $notEmptied = $null
     $unloadSql = 'SELECT o.DemandId, o.SlotOperationAttemptId, o.Status FROM StationOperations o ' +
         'JOIN JourneyDemands d ON d.DemandId = o.DemandId ' +
         "WHERE d.JourneyId = $(ConvertTo-SqlLiteral $JourneyId) AND o.OperationType = 'Unload'"
@@ -1052,6 +1294,10 @@ function Invoke-FieldActUnload {
             $counts = Get-FieldPhaseCounts -Field $Field -AttemptId $attemptId
             $slotNo = $counts.WaitingSlot
             if ($slotNo -gt 0 -and -not $servedByAttempt[$attemptId].ContainsKey($slotNo)) {
+                if ($NotEmptiedRounds -gt 0 -and -not $notEmptied) {
+                    $notEmptied = Invoke-FieldNotEmptiedRounds -Field $Field -AttemptId $attemptId -SlotNo $slotNo -Rounds $NotEmptiedRounds
+                    $null = & $OnCheckpoint $NotEmptiedCheckpoint
+                }
                 Write-FieldLog $Field "gate: unload $attemptId waits on slot $slotNo; taking the cargo out"
                 $null = Invoke-FieldCloseSlot -Field $Field -SlotNo $slotNo -Cargo EMPTY
                 $servedByAttempt[$attemptId][$slotNo] = $true
@@ -1064,9 +1310,315 @@ function Invoke-FieldActUnload {
     }
     Write-FieldLog $Field "journey $JourneyId completed at the gate"
     return [pscustomobject]@{
-        Act        = 'UNLOAD'
-        Operations = $results
-        Slots      = @($servedByAttempt.Values | ForEach-Object { $_.Keys } | Sort-Object)
+        Act                  = 'UNLOAD'
+        Operations           = $results
+        Slots                = @($servedByAttempt.Values | ForEach-Object { $_.Keys } | Sort-Object)
+        NotEmptied           = $notEmptied
+        NotEmptiedCheckpoint = $notEmptied ? $NotEmptiedCheckpoint : $null
+    }
+}
+
+# --- between journeys ------------------------------------------------------------------------------------
+
+function Get-FieldSession {
+    param([Parameter(Mandatory)][object]$Field)
+    $rows = Invoke-FieldQuery -Field $Field -Sql (
+        'SELECT SessionGeneration, Readiness, ReasonCode, UpdatedAt FROM SessionRecoveries ' +
+        "WHERE AgvId = $(ConvertTo-SqlLiteral $Field.AgvId)")
+    return ($rows.Count -eq 0) ? $null : $rows[0]
+}
+
+<#
+When the server's process was started, for measuring a restart from. Remote only: the service is read on
+the server itself. On the L2 rig the scenario restarts the process and knows the time already.
+#>
+function Get-FieldServerStartedAt {
+    param([Parameter(Mandatory)][object]$Field, [string]$ServiceName = '8005 AGV ControlServer')
+
+    if ($Field.Mode -eq 'Local') { return $null }
+    $script = @"
+`$service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$($ServiceName.Replace("'", "''"))'"
+`$started = (`$service -and `$service.ProcessId) ? (Get-Process -Id `$service.ProcessId).StartTime.ToUniversalTime().ToString('o') : ''
+'$script:Marker' + `$started
+"@
+    $text = Invoke-FieldRemoteScript -HostAlias $Field.ServerHost -Script $script
+    return $text ? [datetimeoffset]$text : $null
+}
+
+<#
+After a service restart with the vehicle standing still: waits for a session generation newer than
+-GenerationBefore to be Ready, and returns every (generation, readiness, reason) the server held on the way.
+The defect this watches for (docs/defects/20260908-session-recovery-required-never-clears-while-vehicle-idle.md)
+is a new generation that lands in RecoveryRequired and never leaves it while nothing moves -- 6 min 36 s on
+the plant until somebody restarted the client. The series is what tells that apart from a slow reconnect.
+#>
+function Wait-FieldSessionAfterRestart {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        [Parameter(Mandatory)][long]$GenerationBefore,
+        [int]$TimeoutSeconds = 600,
+        [scriptblock]$OnCheckpoint = { param($label) },
+        [string]$ReadyCheckpoint = 'restart-ready'
+    )
+
+    $until = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $series = [System.Collections.Generic.List[object]]::new()
+    $lastKey = $null
+    $firstNewAt = $null
+    while ($true) {
+        $session = $null
+        try { $session = Get-FieldSession -Field $Field } catch { }
+        if ($session) {
+            $generation = [long]$session.SessionGeneration
+            $key = "$generation/$($session.Readiness)/$($session.ReasonCode)"
+            if ($key -ne $lastKey) {
+                $lastKey = $key
+                $series.Add([pscustomobject]@{
+                    ObservedAt = [DateTimeOffset]::UtcNow.ToString('o')
+                    Generation = $generation
+                    Readiness  = [string]$session.Readiness
+                    ReasonCode = [string]$session.ReasonCode
+                    UpdatedAt  = [string]$session.UpdatedAt
+                })
+                Write-FieldLog $Field "session: generation $generation $($session.Readiness)$($session.ReasonCode ? " ($($session.ReasonCode))" : '')"
+            }
+            if ($generation -gt $GenerationBefore -and -not $firstNewAt) { $firstNewAt = [DateTimeOffset]::UtcNow }
+            if ($generation -gt $GenerationBefore -and [string]$session.Readiness -eq 'Ready') { break }
+        }
+        if ([DateTimeOffset]::UtcNow -ge $until) {
+            throw "Timed out after ${TimeoutSeconds}s waiting for a session newer than generation $GenerationBefore to be Ready. Seen: $(($series | ForEach-Object { "$($_.Generation)/$($_.Readiness)/$($_.ReasonCode)" }) -join ' -> ')"
+        }
+        Start-Sleep -Milliseconds ([Math]::Max($Field.PollMilliseconds, 500))
+    }
+    $readyAt = [DateTimeOffset]::UtcNow
+    $null = & $OnCheckpoint $ReadyCheckpoint
+
+    return [pscustomobject]@{
+        GenerationBefore             = $GenerationBefore
+        GenerationAfter              = [long]$series[$series.Count - 1].Generation
+        FirstNewGenerationObservedAt = $firstNewAt.ToString('o')
+        ReadyObservedAt              = $readyAt.ToString('o')
+        Series                       = $series.ToArray()
+        ReadyCheckpoint              = $ReadyCheckpoint
+    }
+}
+
+<#
+The charging errand between two journeys (ADR-cross-0057's auto charging, JourneyRuntimeEngine
+AdvanceAutoChargingAsync): waits for the vehicle's charging run to reach -Stage, keeping every
+(stage, block reason) it sees on the way in -Tracker, and calls -OnCheckpoint when it gets there.
+
+Called once per stage and handed the tracker back each time, because on the L2 rig the scenario has to
+play RIoT between the stages -- drive the vehicle to the pad, raise the battery -- and on the plant the
+driver simply calls the three in a row. The first call names the run: the oldest one created after
+-After, which is when the previous journey was seen completed.
+
+BlockReasonCode is overwritten on every iteration, so CHARGER_NOT_ENGAGED -- standing on the pad without
+drawing current, the one failure the errand cannot fix by waiting -- is only visible to something that was
+watching when it was written. That is the reason for the tracker.
+#>
+function Wait-FieldChargingStage {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        [Parameter(Mandatory)][ValidateSet('AwaitingChargerArrival', 'Charging', 'Completed')][string]$Stage,
+        [object]$Tracker,
+        [datetimeoffset]$After,
+        [int]$TimeoutSeconds = 3600,
+        [scriptblock]$OnCheckpoint = { param($label) },
+        [string]$Checkpoint
+    )
+
+    if (-not $Tracker) {
+        if (-not $PSBoundParameters.ContainsKey('After')) { throw 'The first call names the run: pass -After.' }
+        $Tracker = [pscustomobject]@{
+            After                     = $After.ToString('o')
+            ChargingRunId             = $null
+            UpperId                   = $null
+            ChargerStationRiotId      = $null
+            TriggeredAtBatteryPercent = $null
+            ReleasedAtBatteryPercent  = $null
+            CreatedAt                 = $null
+            CompletedObservedAt       = $null
+            RunsAfter                 = 0
+            Seen                      = [System.Collections.Generic.List[object]]::new()
+            Checkpoints               = [ordered]@{}
+        }
+    }
+    $rank = @{ AwaitingChargerArrival = 1; Charging = 2; Completed = 3 }
+    $after = [datetimeoffset]$Tracker.After
+    $until = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $sql = 'SELECT ChargingRunId, Stage, BlockReasonCode, TriggeredAtBatteryPercent, ReleasedAtBatteryPercent, ' +
+        "UpperId, ChargerStationRiotId, CreatedAt FROM AutoChargingRuns WHERE AgvId = $(ConvertTo-SqlLiteral $Field.AgvId)"
+    $lastQueryError = $null
+    while ($true) {
+        $runs = @()
+        try {
+            # Assigned before filtering: Invoke-FieldQuery returns its rows as ONE pipeline object. Filtered
+            # and ordered here, not in SQL: SQLite stores DateTimeOffset as text and cannot order it.
+            $allRuns = Invoke-FieldQuery -Field $Field -Sql $sql
+            $runs = @($allRuns | ForEach-Object { $_ } | Where-Object { [datetimeoffset]$_.CreatedAt -gt $after } |
+                Sort-Object { [datetimeoffset]$_.CreatedAt })
+            $lastQueryError = $null
+        } catch {
+            # Over SSH one dropped round trip is not a reason to fail a wait measured in tens of minutes.
+            $lastQueryError = $_.Exception.Message
+        }
+        $Tracker.RunsAfter = [Math]::Max($Tracker.RunsAfter, $runs.Count)
+        # Select-Object, not [0]: StrictMode Latest throws on indexing an empty array.
+        $run = $Tracker.ChargingRunId ? ($runs | Where-Object { $_.ChargingRunId -eq $Tracker.ChargingRunId } | Select-Object -First 1) `
+                                      : ($runs | Select-Object -First 1)
+        if ($run) {
+            if (-not $Tracker.ChargingRunId) {
+                $Tracker.ChargingRunId = [string]$run.ChargingRunId
+                $Tracker.UpperId = [string]$run.UpperId
+                $Tracker.ChargerStationRiotId = [int]$run.ChargerStationRiotId
+                $Tracker.TriggeredAtBatteryPercent = [int]$run.TriggeredAtBatteryPercent
+                $Tracker.CreatedAt = [string]$run.CreatedAt
+                Write-FieldLog $Field "charging run $($run.ChargingRunId) started at $($run.TriggeredAtBatteryPercent)% towards station $($run.ChargerStationRiotId)"
+            }
+            $key = "$($run.Stage)/$($run.BlockReasonCode)"
+            $lastSeen = ($Tracker.Seen.Count -gt 0) ? $Tracker.Seen[$Tracker.Seen.Count - 1] : $null
+            if (-not $lastSeen -or "$($lastSeen.Stage)/$($lastSeen.BlockReasonCode)" -ne $key) {
+                $Tracker.Seen.Add([pscustomobject]@{
+                    ObservedAt      = [DateTimeOffset]::UtcNow.ToString('o')
+                    Stage           = [string]$run.Stage
+                    BlockReasonCode = [string]$run.BlockReasonCode
+                })
+                Write-FieldLog $Field "charging run: $($run.Stage)$($run.BlockReasonCode ? " ($($run.BlockReasonCode))" : '')"
+            }
+            if ($rank[[string]$run.Stage] -ge $rank[$Stage]) {
+                if ([string]$run.Stage -eq 'Completed') {
+                    $Tracker.ReleasedAtBatteryPercent = [int]$run.ReleasedAtBatteryPercent
+                    $Tracker.CompletedObservedAt = [DateTimeOffset]::UtcNow.ToString('o')
+                }
+                break
+            }
+        }
+        if ([DateTimeOffset]::UtcNow -ge $until) {
+            throw "Timed out after ${TimeoutSeconds}s waiting for the charging run to reach $Stage. Seen: $(($Tracker.Seen | ForEach-Object { "$($_.Stage)/$($_.BlockReasonCode)" }) -join ' -> ')$($Tracker.ChargingRunId ? '' : ' (no run created after ' + $Tracker.After + ')')$($lastQueryError ? "; last query error: $lastQueryError" : '')"
+        }
+        Start-Sleep -Seconds 2
+    }
+    if ($Checkpoint) {
+        $Tracker.Checkpoints[$Stage] = $Checkpoint
+        $null = & $OnCheckpoint $Checkpoint
+    }
+    return $Tracker
+}
+
+<#
+The field record of window two, written from what the acts did. The collector's FW-FL2 finalize reads it:
+journeyIds says whose rows to export, each scenario names the demand and attempt it is judged on.
+#>
+function New-FullLoopWindowRecord {
+    param(
+        [Parameter(Mandatory)][string]$AgvId,
+        [Parameter(Mandatory)][string]$IoModule,
+        [Parameter(Mandatory)][string]$DriverRunId,
+        [Parameter(Mandatory)][string]$Site,
+        [Parameter(Mandatory)][object[]]$Journeys,
+        [object]$ActT,
+        [object]$ActX,
+        [object]$NotEmptied,
+        [string]$NotEmptiedCheckpoint,
+        [object]$Charging,
+        [hashtable]$ChargeOverride,
+        [object[]]$Restarts = @(),
+        [bool]$RecoveryWindowOpen = $false
+    )
+
+    $scenarios = [System.Collections.Generic.List[object]]::new()
+    if ($ActT) {
+        $scenarios.Add([ordered]@{
+            id                = 'T'
+            name              = '到站不录入 SUBLOT：站点期限到期，服务端以 CANCELLED_BY_STATION_TIMEOUT 终结并永久抑制，车被释放'
+            demandId          = $ActT.DemandId
+            sublot            = $ActT.Sublot
+            stopSequence      = $ActT.Sequence
+            serverWaitingAt   = $ActT.ServerWaitingAt
+            vehicleAskedAt    = $ActT.VehicleAskedAt
+            deadlineAt        = $ActT.DeadlineAt
+            settledObservedAt = $ActT.SettledObservedAt
+            positionAfter     = $ActT.PositionAfter
+            settledCheckpoint = $ActT.SettledCheckpoint
+        })
+    }
+    if ($ActX) {
+        $scenarios.Add([ordered]@{
+            id                = 'X'
+            name              = '到站还没装货就取消：扫码前按「取消装货」，需求 Cancelled 并按 CANCELLED_BY_OPERATOR 抑制，旅程自己离站'
+            demandId          = $ActX.DemandId
+            sublot            = $ActX.Sublot
+            stopSequence      = $ActX.Sequence
+            commandId         = $ActX.CommandId
+            faceAnswer        = $ActX.FaceAnswer
+            actionsOffered    = @($ActX.ActionsOffered)
+            settledObservedAt = $ActX.SettledObservedAt
+            positionAfter     = $ActX.PositionAfter
+            settledCheckpoint = $ActX.SettledCheckpoint
+        })
+    }
+    if ($NotEmptied) {
+        $scenarios.Add([ordered]@{
+            id                     = 'NE'
+            name                   = '关卡卸货未取空：关门时货还在，车反复重开，没有取消分支，取空才提交'
+            demandId               = $NotEmptied.DemandId
+            slotOperationAttemptId = $NotEmptied.AttemptId
+            slotNo                 = $NotEmptied.SlotNo
+            rounds                 = $NotEmptied.Rounds
+            statusAtRounds         = $NotEmptied.StatusAtRounds
+            observedRounds         = "UNLOCKING=$($NotEmptied.Unlocking) WAITING_OPERATOR=$($NotEmptied.Waiting)"
+            checkpoint             = $NotEmptiedCheckpoint
+        })
+    }
+    if ($Charging) {
+        $scenarios.Add([ordered]@{
+            id                        = 'CH'
+            name                      = '两趟之间自动充电：低于触发线自己去充电桩，接上电，到恢复线释放，接着受理下一单'
+            chargingRunId             = $Charging.ChargingRunId
+            upperId                   = $Charging.UpperId
+            chargerStationRiotId      = $Charging.ChargerStationRiotId
+            triggeredAtBatteryPercent = $Charging.TriggeredAtBatteryPercent
+            releasedAtBatteryPercent  = $Charging.ReleasedAtBatteryPercent
+            after                     = $Charging.After
+            completedObservedAt       = $Charging.CompletedObservedAt
+            runsAfter                 = $Charging.RunsAfter
+            seen                      = @($Charging.Seen)
+            checkpoints               = $Charging.Checkpoints
+            thresholdOverride         = $ChargeOverride
+        })
+    }
+    $index = 0
+    foreach ($restart in $Restarts) {
+        $index++
+        $scenarios.Add([ordered]@{
+            id                           = "R$index"
+            name                         = '车静止时服务重启：新会话自己回到 Ready，不停在 RecoveryRequired'
+            afterJourneyId               = $restart.AfterJourneyId
+            serverStartedAt              = $restart.ServerStartedAt
+            generationBefore             = $restart.GenerationBefore
+            generationAfter              = $restart.GenerationAfter
+            firstNewGenerationObservedAt = $restart.FirstNewGenerationObservedAt
+            readyObservedAt              = $restart.ReadyObservedAt
+            series                       = @($restart.Series)
+            checkpoint                   = $restart.ReadyCheckpoint
+        })
+    }
+
+    return [ordered]@{
+        windowId           = 'FW-FL2'
+        date               = (Get-Date).ToString('yyyy-MM-dd')
+        site               = $Site
+        observers          = @()
+        drivenBy           = "FieldOperator.psm1 run $DriverRunId"
+        agvId              = $AgvId
+        ioModule           = $IoModule
+        ioKind             = ($IoModule -match '^(127\.0\.0\.1|localhost):') ? 'SIMULATOR' : 'REAL_MODULE'
+        recoveryWindowOpen = $RecoveryWindowOpen
+        journeys           = @($Journeys)
+        journeyIds         = @($Journeys | ForEach-Object { [string]$_.journeyId })
+        photoPointers      = @()
+        scenarios          = $scenarios.ToArray()
     }
 }
 
@@ -1148,4 +1700,7 @@ Export-ModuleMember -Function New-FieldOperator, Invoke-FieldQuery, Invoke-Field
     Get-FieldStopDemand, Get-FieldOperation, Get-FieldProgress, Get-FieldPhaseCounts, Invoke-FieldCloseSlot,
     Invoke-FieldServeOperation, Start-FieldStopLoad, Invoke-FieldActReopen, Invoke-FieldActDoorLeftOpen,
     Invoke-FieldActLoad, Invoke-FieldActUnknownLoad, Invoke-FieldActCompensate, Invoke-FieldActUnload,
-    New-FieldWindowRecord, Get-FieldProperty
+    New-FieldWindowRecord, Get-FieldProperty,
+    Wait-FieldSublotRequest, Get-FieldDemandSettlement, Invoke-FieldActNoSublot, Invoke-FieldActCancelBeforeSublot,
+    Invoke-FieldNotEmptiedRounds, Get-FieldSession, Get-FieldServerStartedAt, Wait-FieldSessionAfterRestart,
+    Wait-FieldChargingStage, New-FullLoopWindowRecord

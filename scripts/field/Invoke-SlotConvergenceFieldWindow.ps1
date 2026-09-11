@@ -90,6 +90,16 @@ param(
     # written into assertions.json and SUMMARY.md so a short hold can never pass as a field window.
     [double]$MinimumHoldMinutes = 20,
 
+    # Which window this evidence belongs to. FW-SC1 is the slot-convergence window this script was written
+    # for; FW-FL2 is window two (8005-agv-program#20) -- the full loop, cancellation, the charging errand and
+    # the idle restart -- collected the same way and judged by FullLoopWindowFinalize.ps1.
+    [ValidateSet('FW-SC1', 'FW-FL2')]
+    [string]$WindowId = 'FW-SC1',
+
+    # FW-FL2 only: the station deadline the plant runs (SublotWaitTimeout). Five minutes shipped; the L2
+    # rehearsal compresses it and says so here, the way -MinimumHoldMinutes does for FW-SC1.
+    [double]$SublotWaitMinutes = 5,
+
     # This script lives in scripts/field, so the repository root is two levels up.
     [string]$Repository = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 )
@@ -117,7 +127,7 @@ if ($HostDirectory) { $HostDirectory = Resolve-AbsolutePath $HostDirectory }
 
 Import-Module (Join-Path $Repository 'scripts/l2/L2.psm1') -Force
 
-$windowId = 'FW-SC1'
+$windowId = $WindowId
 $runId = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssfffZ')
 $snapshotRoot = Join-Path $EvidenceRoot 'snapshots'
 $logRoot = Join-Path $EvidenceRoot 'logs'
@@ -294,6 +304,19 @@ if (-not $DatabaseSnapshot) {
     # there is no manifest on the vehicle to read, and asking for one finds nothing. The full
     # manifest is written out whole (it inventories every file's SHA-256) but only the three
     # identities go into identity.json: a summary nobody can read is a summary nobody checks.
+    # The journey gates and any charge-threshold override in force at this checkpoint. Window two raises the
+    # charging thresholds for the length of one errand; whether that override was in force, and whether it
+    # was gone again at the end, is a fact about the server's configuration file and nothing else records it.
+    $productionSettings = Get-RemoteJson -Alias $ServerHost -Path 'C:\Program Files\8005 AGV\ControlServer\appsettings.Production.json'
+    if ($productionSettings) {
+        $runtimeSettings = $productionSettings['JourneyRuntime'] ?? @{}
+        $identity['serverProductionJourneyRuntime'] = [ordered]@{
+            enabled                     = $runtimeSettings['enabled']
+            createDispatchEnabled       = ($productionSettings['RiotCreateDispatch'] ?? @{})['enabled']
+            chargeTriggerBatteryPercent = $runtimeSettings['chargeTriggerBatteryPercent']
+            chargeResumeBatteryPercent  = $runtimeSettings['chargeResumeBatteryPercent']
+        }
+    }
     $manifest = Get-RemoteJson -Alias $ServerHost -Path $manifestPath
     if ($manifest) {
         Write-Json -Path (Join-Path $checkpointDirectory 'release-manifest.json') -Value $manifest
@@ -364,8 +387,19 @@ function Get-WindowRows {
                 -Sql "SELECT * FROM JourneyRuntimes WHERE JourneyId IN ($journeyIds)"
             $rows['JourneyStops'] = Invoke-L2Query -Connection $connection `
                 -Sql "SELECT * FROM JourneyStops WHERE JourneyId IN ($journeyIds)"
+            # Whether a finished journey let go of the vehicle. Released is the precondition for the
+            # next demand, and "the vehicle was released" is one of window two's claims.
+            $rows['VehicleDispatchLeases'] = Invoke-L2Query -Connection $connection `
+                -Sql "SELECT * FROM VehicleDispatchLeases WHERE JourneyId IN ($journeyIds)"
         }
     }
+    # The charging errands and their movement orders. An errand has no demand -- its intent is keyed by a
+    # derived CHARGE-<run> marker -- so no demand filter above reaches it. A vehicle makes a handful of
+    # these, and they carry nothing of the plant's own journeys.
+    $rows['AutoChargingRuns'] = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT * FROM AutoChargingRuns$($AgvId ? " WHERE AgvId = '$AgvId'" : '')"
+    $rows['ChargingOrderIntents'] = Invoke-L2Query -Connection $connection `
+        -Sql "SELECT * FROM OrderIntents WHERE Purpose = 'TO_CHARGER'"
     $operationAttempts = @($rows['StationOperations'] | ForEach-Object { [string]$_.SlotOperationAttemptId })
     $allAttempts = @($operationAttempts + $AttemptIds | Where-Object { $_ } | Sort-Object -Unique)
     $attemptList = ($allAttempts | ForEach-Object { "'$_'" }) -join ','
@@ -385,8 +419,12 @@ function Get-WindowRows {
     # "which round is this" can be counted from a fact the server received rather than from a
     # screen someone was looking at. Filtered by attempt so the plant's other traffic stays out.
     if ($attemptList) {
+        # Window two spans two journeys and a dozen attempts; matching every heartbeat the plant ever sent
+        # against each of them is the cost that grows with the store. Only these two types name an attempt
+        # in a way either window judges. FW-SC1 keeps reading what it was made green on.
+        $typeFilter = ($windowId -eq 'FW-FL2') ? " WHERE MessageType IN ('OperationProgress', 'OperationResult')" : ''
         $inbox = Invoke-L2Query -Connection $connection `
-            -Sql "SELECT MessageId, MessageType, ReceivedAt, RequestJson FROM ProtocolInbox ORDER BY ReceivedAt"
+            -Sql "SELECT MessageId, MessageType, ReceivedAt, RequestJson FROM ProtocolInbox$typeFilter ORDER BY ReceivedAt"
         $rows['ProtocolInbox'] = @($inbox | Where-Object {
             $text = [string]$_.RequestJson
             $allAttempts | Where-Object { $text -like "*$_*" }
@@ -409,6 +447,22 @@ if ($Finalize) {
         if ($scenario.demandId) { $recordedDemands += $scenario.demandId }
         if ($scenario.slotOperationAttemptId) { $recordedAttempts += $scenario.slotOperationAttemptId }
     }
+    # Window two is judged on whole journeys -- every demand they carried, loaded or not -- so its record
+    # names the journeys and the demands are read from them.
+    $recordedJourneys = @($record.journeyIds | Where-Object { $_ } | ForEach-Object { "'$_'" }) -join ','
+    if ($recordedJourneys) {
+        $journeyDemands = Invoke-L2Query -Connection $connection `
+            -Sql "SELECT DemandId FROM JourneyDemands WHERE JourneyId IN ($recordedJourneys)"
+        $recordedDemands = @($recordedDemands + @($journeyDemands | ForEach-Object { [string]$_.DemandId }) | Sort-Object -Unique)
+    }
+} elseif ($windowId -eq 'FW-FL2') {
+    # A checkpoint of window two is usually taken right after something was ended -- a timeout, a
+    # cancellation, a journey completing -- so "the live demands" would leave out exactly the rows the
+    # checkpoint is for. The vehicle's two newest journeys carry them whatever their status.
+    $live = Invoke-L2Query -Connection $connection -Sql (
+        'SELECT DemandId FROM JourneyDemands WHERE JourneyId IN ' +
+        '(SELECT JourneyId FROM JourneyRuntimes ORDER BY CreatedAt DESC LIMIT 2)')
+    $recordedDemands = @($live | ForEach-Object { [string]$_.DemandId })
 } else {
     $live = Invoke-L2Query -Connection $connection `
         -Sql "SELECT DemandId FROM AcceptedDemands WHERE Status NOT IN ('Succeeded','Cancelled') ORDER BY AcceptedAt DESC LIMIT 8"
@@ -423,7 +477,8 @@ $rows = Get-WindowRows -DemandIds $recordedDemands -AttemptIds $recordedAttempts
 foreach ($table in @('AcceptedDemands', 'JourneyDemands', 'JourneyRuntimes', 'JourneyStops',
                      'StationOperations', 'OrderIntents', 'OperationResults',
                      'TransportDemandSuppressions', 'ProtocolOutbox',
-                     'SessionRecoveries', 'ExceptionRecoverySessions', 'ProtocolInbox')) {
+                     'SessionRecoveries', 'ExceptionRecoverySessions', 'ProtocolInbox',
+                     'VehicleDispatchLeases', 'AutoChargingRuns', 'ChargingOrderIntents')) {
     Write-Json -Path (Join-Path $checkpointDirectory "db-$table.json") -Value @($rows[$table])
 }
 Write-Json -Path (Join-Path $checkpointDirectory 'identity.json') -Value $identity
@@ -535,6 +590,14 @@ function Get-MissingRowReason {
     return (Get-CheckpointDirectory -Label $Label) `
         ? "checkpoint $Label 在，但里面没有这一趟的旅程行" `
         : "没有 $Label 这个 checkpoint"
+}
+
+if ($windowId -eq 'FW-FL2') {
+    # Window two shares everything above -- collection, identity, the helpers -- and nothing below: its
+    # assertions, assertions.json and SUMMARY.md are its own. The exit is here, not in that file: an exit in
+    # a dot-sourced file does not end this script (rehearsal -001 ran the FW-SC1 assertions over window two).
+    . (Join-Path $PSScriptRoot 'FullLoopWindowFinalize.ps1')
+    exit $fullLoopExitCode
 }
 
 # --- scenario A: the operator opens the door and walks away (decisions 1 and 2) -------------------
