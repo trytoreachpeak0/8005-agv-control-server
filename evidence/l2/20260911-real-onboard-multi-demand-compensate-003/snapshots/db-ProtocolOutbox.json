@@ -1,0 +1,266 @@
+[
+  {
+    "MessageId": "28207ff7-9eb0-3055-a839-c9b96cb48d2b",
+    "MessageType": "VehicleBusinessStateSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"VehicleBusinessStateSnapshot\",\"messageId\":\"28207ff7-9eb0-3055-a839-c9b96cb48d2b\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:32:58.3576058+00:00\",\"payload\":{\"vehicleBusinessStateRevision\":1,\"readiness\":\"READY\",\"manualChargingHold\":false,\"batteryState\":\"SUFFICIENT\",\"blockingFacts\":[],\"observedAt\":\"2026-09-11T08:32:58.3576058\\u002B00:00\"}}",
+    "CreatedAt": "2026-09-11 08:32:58.3576058+00:00",
+    "AcknowledgedAt": "2026-09-11 08:32:58.4149789+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "e26ff5e9-792b-b058-a11d-2febd4bdbf8c",
+    "MessageType": "UpcomingStopPlanSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"UpcomingStopPlanSnapshot\",\"messageId\":\"e26ff5e9-792b-b058-a11d-2febd4bdbf8c\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:32:58.4002714+00:00\",\"payload\":{\"planRevision\":1,\"demandId\":null,\"legs\":[{\"movementLegId\":\"2e941cdd-e315-3e5b-9647-cc188e34c718\",\"legType\":\"TO_PICKUP\",\"sequence\":1,\"stationId\":\"N1-3_N1-7\",\"mapId\":\"MAP-L2\",\"state\":\"ARRIVED\"},{\"movementLegId\":\"f6886ee6-7590-875e-911d-b187b1751263\",\"legType\":\"TO_PICKUP\",\"sequence\":2,\"stationId\":\"N2-6\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"},{\"movementLegId\":\"e1fc7120-4b14-0058-b81a-78150cabdb38\",\"legType\":\"TO_PICKUP\",\"sequence\":3,\"stationId\":\"N3-4\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"},{\"movementLegId\":\"5e978ce3-4710-a357-ac0c-efab565f54d4\",\"legType\":\"TO_PICKUP\",\"sequence\":4,\"stationId\":\"N4-2\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"},{\"movementLegId\":\"606e859d-317b-745a-8367-adb922a1b288\",\"legType\":\"TO_GATE\",\"sequence\":5,\"stationId\":\"\\u5173\\u5361\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"}]}}",
+    "CreatedAt": "2026-09-11 08:32:58.4002714+00:00",
+    "AcknowledgedAt": "2026-09-11 08:32:58.4295479+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "dbae9983-e9db-3459-96f5-1464e0ea8bf2",
+    "MessageType": "CurrentStopWorklistSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"CurrentStopWorklistSnapshot\",\"messageId\":\"dbae9983-e9db-3459-96f5-1464e0ea8bf2\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:32:58.4521039+00:00\",\"payload\":{\"stationId\":\"N1-3_N1-7\",\"worklistRevision\":1,\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationDepartureDeadlineAt\":\"2026-09-11T08:37:58.0755268\\u002B00:00\",\"items\":[{\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"transportDemandKey\":\"L2-MDC-N1-3-20260911T083238758Z|WIRE_TO_GATE\",\"sublot\":\"L2-MDC-N1-3-20260911T083238758Z\",\"workType\":\"WIRE_TO_GATE\",\"stopRole\":\"PICKUP\",\"expectedBasketCount\":1}]}}",
+    "CreatedAt": "2026-09-11 08:32:58.4521039+00:00",
+    "AcknowledgedAt": "2026-09-11 08:32:58.6337214+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "37bfd6b5-3cbc-7658-9857-c8de851f6d34",
+    "MessageType": "SublotEntryRequested",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SublotEntryRequested\",\"messageId\":\"37bfd6b5-3cbc-7658-9857-c8de851f6d34\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:32:58.4675729+00:00\",\"payload\":{\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationId\":\"N1-3_N1-7\",\"worklistRevision\":1,\"expectedSublots\":[\"L2-MDC-N1-3-20260911T083238758Z\",\"L2-MDC-N2-6-20260911T083238758Z\",\"L2-MDC-N3-4-20260911T083238758Z\",\"L2-MDC-N4-2-20260911T083238758Z\"],\"entryMethods\":[\"SCANNER\",\"KEYBOARD\"],\"expiresOnRevisionChange\":true}}",
+    "CreatedAt": "2026-09-11 08:32:58.4675729+00:00",
+    "AcknowledgedAt": "2026-09-11 08:32:59.0618305+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "17f05812-9af0-305f-8893-9b075411fe13",
+    "MessageType": "SlotOperationCommand",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SlotOperationCommand\",\"messageId\":\"17f05812-9af0-305f-8893-9b075411fe13\",\"correlationId\":\"ef029691-80de-0859-9913-155bb9398296\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:32:59.1147158+00:00\",\"payload\":{\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"slotOperationAttemptId\":\"839f18ab-4187-7950-937b-93a35284a87e\",\"operationType\":\"LOAD\",\"slots\":[1],\"expectedBasketCount\":1,\"expectedFinalPhysicalState\":\"OCCUPIED\",\"commandContentSha256\":\"b2521519a08e25aa5ab06350b01f4b4052520968400f91865d6a60131af5c6df\"}}",
+    "CreatedAt": "2026-09-11 08:32:59.1147158+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:02.0639354+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "8c7e01c7-8a5f-e354-b0f6-5f7814b4ed5a",
+    "MessageType": "PreDepartureSafetyCheck",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"PreDepartureSafetyCheck\",\"messageId\":\"8c7e01c7-8a5f-e354-b0f6-5f7814b4ed5a\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:02.1041923+00:00\",\"payload\":{\"preDepartureSafetyCheckId\":\"cdabdde3-6aa3-de59-8628-d6f237038e99\",\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"movementLegId\":\"f6886ee6-7590-875e-911d-b187b1751263\",\"expectedSafetyStateVersion\":9,\"targetStationId\":\"N2-6\"}}",
+    "CreatedAt": "2026-09-11 08:33:02.1041923+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:02.1873853+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "a2da0965-829d-eb53-baa4-9b5b6c6772c6",
+    "MessageType": "VehicleBusinessStateSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"VehicleBusinessStateSnapshot\",\"messageId\":\"a2da0965-829d-eb53-baa4-9b5b6c6772c6\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:03.104335+00:00\",\"payload\":{\"vehicleBusinessStateRevision\":2,\"readiness\":\"READY\",\"manualChargingHold\":false,\"batteryState\":\"SUFFICIENT\",\"blockingFacts\":[],\"observedAt\":\"2026-09-11T08:33:03.104335\\u002B00:00\"}}",
+    "CreatedAt": "2026-09-11 08:33:03.104335+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:03.1173914+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "12b334a7-240d-a658-bb7c-480a55b4d796",
+    "MessageType": "UpcomingStopPlanSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"UpcomingStopPlanSnapshot\",\"messageId\":\"12b334a7-240d-a658-bb7c-480a55b4d796\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:03.1093173+00:00\",\"payload\":{\"planRevision\":2,\"demandId\":null,\"legs\":[{\"movementLegId\":\"2e941cdd-e315-3e5b-9647-cc188e34c718\",\"legType\":\"TO_PICKUP\",\"sequence\":1,\"stationId\":\"N1-3_N1-7\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"f6886ee6-7590-875e-911d-b187b1751263\",\"legType\":\"TO_PICKUP\",\"sequence\":2,\"stationId\":\"N2-6\",\"mapId\":\"MAP-L2\",\"state\":\"ARRIVED\"},{\"movementLegId\":\"e1fc7120-4b14-0058-b81a-78150cabdb38\",\"legType\":\"TO_PICKUP\",\"sequence\":3,\"stationId\":\"N3-4\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"},{\"movementLegId\":\"5e978ce3-4710-a357-ac0c-efab565f54d4\",\"legType\":\"TO_PICKUP\",\"sequence\":4,\"stationId\":\"N4-2\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"},{\"movementLegId\":\"606e859d-317b-745a-8367-adb922a1b288\",\"legType\":\"TO_GATE\",\"sequence\":5,\"stationId\":\"\\u5173\\u5361\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"}]}}",
+    "CreatedAt": "2026-09-11 08:33:03.1093173+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:03.1243269+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "ca758c40-ac5b-fc5d-9f0a-03a03df7b744",
+    "MessageType": "CurrentStopWorklistSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"CurrentStopWorklistSnapshot\",\"messageId\":\"ca758c40-ac5b-fc5d-9f0a-03a03df7b744\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:03.1159013+00:00\",\"payload\":{\"stationId\":\"N2-6\",\"worklistRevision\":2,\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationDepartureDeadlineAt\":\"2026-09-11T08:38:03.0747112\\u002B00:00\",\"items\":[{\"demandId\":\"335d448a-b8df-41bc-b579-a6da282506f3\",\"transportDemandKey\":\"L2-MDC-N2-6-20260911T083238758Z|WIRE_TO_GATE\",\"sublot\":\"L2-MDC-N2-6-20260911T083238758Z\",\"workType\":\"WIRE_TO_GATE\",\"stopRole\":\"PICKUP\",\"expectedBasketCount\":1}]}}",
+    "CreatedAt": "2026-09-11 08:33:03.1159013+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:03.4424262+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "b725bfd5-f970-c954-8466-8dab1e7f1ae2",
+    "MessageType": "SublotEntryRequested",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SublotEntryRequested\",\"messageId\":\"b725bfd5-f970-c954-8466-8dab1e7f1ae2\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:03.2737281+00:00\",\"payload\":{\"demandId\":\"335d448a-b8df-41bc-b579-a6da282506f3\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationId\":\"N2-6\",\"worklistRevision\":2,\"expectedSublots\":[\"L2-MDC-N2-6-20260911T083238758Z\",\"L2-MDC-N3-4-20260911T083238758Z\",\"L2-MDC-N4-2-20260911T083238758Z\"],\"entryMethods\":[\"SCANNER\",\"KEYBOARD\"],\"expiresOnRevisionChange\":true}}",
+    "CreatedAt": "2026-09-11 08:33:03.2737281+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:04.0709894+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "cb18ca87-6c7a-0c58-8fc0-0350c8380b35",
+    "MessageType": "SlotOperationCommand",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SlotOperationCommand\",\"messageId\":\"cb18ca87-6c7a-0c58-8fc0-0350c8380b35\",\"correlationId\":\"2bcb4e7b-6892-ef5e-aced-e3236d1a89e6\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:04.0875765+00:00\",\"payload\":{\"demandId\":\"335d448a-b8df-41bc-b579-a6da282506f3\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"slotOperationAttemptId\":\"5fd1af1b-0560-cb5f-95d1-edb97700e478\",\"operationType\":\"LOAD\",\"slots\":[2],\"expectedBasketCount\":1,\"expectedFinalPhysicalState\":\"OCCUPIED\",\"commandContentSha256\":\"7ea218f00888d37e9067cf64e9e9dbe9db59e95e41b734d86aabbc3dcad94474\"}}",
+    "CreatedAt": "2026-09-11 08:33:04.0875765+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:11.6346863+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "772c9c73-9626-bf5a-8057-220cacdf4f80",
+    "MessageType": "ExceptionRecoverySessionSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"ExceptionRecoverySessionSnapshot\",\"messageId\":\"772c9c73-9626-bf5a-8057-220cacdf4f80\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:09.6604505+00:00\",\"payload\":{\"exceptionRecoverySessionId\":\"67e8a593-1ea6-ba54-b89c-2e82809672ad\",\"recoverySessionRevision\":1,\"state\":\"OPEN\",\"administratorId\":\"L2-OPERATOR\",\"administratorRole\":\"MAINTENANCE_ADMINISTRATOR\",\"eventId\":\"84e2f47e-e96c-9b59-9eba-63841dad1054\",\"demandId\":\"335d448a-b8df-41bc-b579-a6da282506f3\",\"slotOperationAttemptId\":\"5fd1af1b-0560-cb5f-95d1-edb97700e478\",\"slots\":[2],\"selectedAction\":null,\"allowedActions\":[\"RESUME_AFTER_REPAIR\",\"COMPENSATE_LOAD_ALL_EMPTY\",\"FAULT_CARGO_HANDOFF\",\"FORCED_MECHANICAL_RECOVERY\"],\"blockingFacts\":[{\"reasonCode\":\"RECOVERY_ACTION_REQUIRED\",\"subjectType\":\"EXCEPTION_RECOVERY_SESSION\",\"subjectId\":\"67e8a593-1ea6-ba54-b89c-2e82809672ad\"}]}}",
+    "CreatedAt": "2026-09-11 08:33:09.6604505+00:00",
+    "AcknowledgedAt": null,
+    "FencedAt": "2026-09-11 08:33:09.7531366+00:00"
+  },
+  {
+    "MessageId": "38307c74-2532-0453-b69f-a1cae56e5d3c",
+    "MessageType": "ExceptionRecoverySessionSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"ExceptionRecoverySessionSnapshot\",\"messageId\":\"38307c74-2532-0453-b69f-a1cae56e5d3c\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:09.754668+00:00\",\"payload\":{\"exceptionRecoverySessionId\":\"67e8a593-1ea6-ba54-b89c-2e82809672ad\",\"recoverySessionRevision\":2,\"state\":\"ACTION_SELECTED\",\"administratorId\":\"L2-OPERATOR\",\"administratorRole\":\"MAINTENANCE_ADMINISTRATOR\",\"eventId\":\"84e2f47e-e96c-9b59-9eba-63841dad1054\",\"demandId\":\"335d448a-b8df-41bc-b579-a6da282506f3\",\"slotOperationAttemptId\":\"5fd1af1b-0560-cb5f-95d1-edb97700e478\",\"slots\":[2],\"selectedAction\":\"COMPENSATE_LOAD_ALL_EMPTY\",\"allowedActions\":[],\"blockingFacts\":[{\"reasonCode\":\"RECOVERY_RESULT_REQUIRED\",\"subjectType\":\"EXCEPTION_RECOVERY_SESSION\",\"subjectId\":\"67e8a593-1ea6-ba54-b89c-2e82809672ad\"}]}}",
+    "CreatedAt": "2026-09-11 08:33:09.754668+00:00",
+    "AcknowledgedAt": null,
+    "FencedAt": "2026-09-11 08:33:09.811641+00:00"
+  },
+  {
+    "MessageId": "1509a0ef-c624-b859-a680-e4772fbfa8ee",
+    "MessageType": "LoadCompensationCommand",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"LoadCompensationCommand\",\"messageId\":\"1509a0ef-c624-b859-a680-e4772fbfa8ee\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:09.7995084+00:00\",\"payload\":{\"recoveryActionId\":\"3dd26d57-296f-bd57-ac5d-81a0e8ab121b\",\"exceptionRecoverySessionId\":\"67e8a593-1ea6-ba54-b89c-2e82809672ad\",\"demandId\":\"335d448a-b8df-41bc-b579-a6da282506f3\",\"slotOperationAttemptId\":\"5fd1af1b-0560-cb5f-95d1-edb97700e478\",\"slots\":[2],\"expectedFinalPhysicalState\":\"EMPTY\",\"commandContentSha256\":\"4a836cbe79d7aa19ddf25e0e2902c4cd1f7955f7ec79fa9122b5d316c308ca12\"}}",
+    "CreatedAt": "2026-09-11 08:33:09.7995084+00:00",
+    "AcknowledgedAt": null,
+    "FencedAt": null
+  },
+  {
+    "MessageId": "37c22c6d-a83d-8e5d-9d8d-4387200030c1",
+    "MessageType": "ExceptionRecoverySessionSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"ExceptionRecoverySessionSnapshot\",\"messageId\":\"37c22c6d-a83d-8e5d-9d8d-4387200030c1\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:09.8130993+00:00\",\"payload\":{\"exceptionRecoverySessionId\":\"67e8a593-1ea6-ba54-b89c-2e82809672ad\",\"recoverySessionRevision\":3,\"state\":\"EXECUTING\",\"administratorId\":\"L2-OPERATOR\",\"administratorRole\":\"MAINTENANCE_ADMINISTRATOR\",\"eventId\":\"84e2f47e-e96c-9b59-9eba-63841dad1054\",\"demandId\":\"335d448a-b8df-41bc-b579-a6da282506f3\",\"slotOperationAttemptId\":\"5fd1af1b-0560-cb5f-95d1-edb97700e478\",\"slots\":[2],\"selectedAction\":\"COMPENSATE_LOAD_ALL_EMPTY\",\"allowedActions\":[],\"blockingFacts\":[{\"reasonCode\":\"RECOVERY_RESULT_REQUIRED\",\"subjectType\":\"EXCEPTION_RECOVERY_SESSION\",\"subjectId\":\"67e8a593-1ea6-ba54-b89c-2e82809672ad\"}]}}",
+    "CreatedAt": "2026-09-11 08:33:09.8130993+00:00",
+    "AcknowledgedAt": null,
+    "FencedAt": "2026-09-11 08:33:11.7269462+00:00"
+  },
+  {
+    "MessageId": "1ea31352-a1dc-fd5d-94a8-28b1a6aaec5e",
+    "MessageType": "ExceptionRecoverySessionSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"ExceptionRecoverySessionSnapshot\",\"messageId\":\"1ea31352-a1dc-fd5d-94a8-28b1a6aaec5e\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":13,\"sentAt\":\"2026-09-11T08:33:11.7279762+00:00\",\"payload\":{\"exceptionRecoverySessionId\":\"67e8a593-1ea6-ba54-b89c-2e82809672ad\",\"recoverySessionRevision\":4,\"state\":\"CLOSED\",\"administratorId\":\"L2-OPERATOR\",\"administratorRole\":\"MAINTENANCE_ADMINISTRATOR\",\"eventId\":\"84e2f47e-e96c-9b59-9eba-63841dad1054\",\"demandId\":\"335d448a-b8df-41bc-b579-a6da282506f3\",\"slotOperationAttemptId\":\"5fd1af1b-0560-cb5f-95d1-edb97700e478\",\"slots\":[2],\"selectedAction\":\"COMPENSATE_LOAD_ALL_EMPTY\",\"allowedActions\":[],\"blockingFacts\":[]}}",
+    "CreatedAt": "2026-09-11 08:33:11.7279762+00:00",
+    "AcknowledgedAt": null,
+    "FencedAt": null
+  },
+  {
+    "MessageId": "39db9f83-c9af-585a-a431-b63c247e2cb5",
+    "MessageType": "PreDepartureSafetyCheck",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"PreDepartureSafetyCheck\",\"messageId\":\"39db9f83-c9af-585a-a431-b63c247e2cb5\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:12.0953071+00:00\",\"payload\":{\"preDepartureSafetyCheckId\":\"1166e416-2651-7450-8b4e-88b9c7f366c9\",\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"movementLegId\":\"e1fc7120-4b14-0058-b81a-78150cabdb38\",\"expectedSafetyStateVersion\":21,\"targetStationId\":\"N3-4\"}}",
+    "CreatedAt": "2026-09-11 08:33:12.0953071+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:12.1648937+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "90f647de-0625-715e-8104-41ade815dae6",
+    "MessageType": "VehicleBusinessStateSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"VehicleBusinessStateSnapshot\",\"messageId\":\"90f647de-0625-715e-8104-41ade815dae6\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:13.1076159+00:00\",\"payload\":{\"vehicleBusinessStateRevision\":3,\"readiness\":\"READY\",\"manualChargingHold\":false,\"batteryState\":\"SUFFICIENT\",\"blockingFacts\":[],\"observedAt\":\"2026-09-11T08:33:13.1076159\\u002B00:00\"}}",
+    "CreatedAt": "2026-09-11 08:33:13.1076159+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:13.1229943+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "d8dc1108-d5d4-f955-92fd-b59994b1fd98",
+    "MessageType": "UpcomingStopPlanSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"UpcomingStopPlanSnapshot\",\"messageId\":\"d8dc1108-d5d4-f955-92fd-b59994b1fd98\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:13.112771+00:00\",\"payload\":{\"planRevision\":3,\"demandId\":null,\"legs\":[{\"movementLegId\":\"2e941cdd-e315-3e5b-9647-cc188e34c718\",\"legType\":\"TO_PICKUP\",\"sequence\":1,\"stationId\":\"N1-3_N1-7\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"f6886ee6-7590-875e-911d-b187b1751263\",\"legType\":\"TO_PICKUP\",\"sequence\":2,\"stationId\":\"N2-6\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"e1fc7120-4b14-0058-b81a-78150cabdb38\",\"legType\":\"TO_PICKUP\",\"sequence\":3,\"stationId\":\"N3-4\",\"mapId\":\"MAP-L2\",\"state\":\"ARRIVED\"},{\"movementLegId\":\"5e978ce3-4710-a357-ac0c-efab565f54d4\",\"legType\":\"TO_PICKUP\",\"sequence\":4,\"stationId\":\"N4-2\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"},{\"movementLegId\":\"606e859d-317b-745a-8367-adb922a1b288\",\"legType\":\"TO_GATE\",\"sequence\":5,\"stationId\":\"\\u5173\\u5361\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"}]}}",
+    "CreatedAt": "2026-09-11 08:33:13.112771+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:13.1300154+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "648f2104-4724-055d-96c2-3a3eea4ab4ff",
+    "MessageType": "CurrentStopWorklistSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"CurrentStopWorklistSnapshot\",\"messageId\":\"648f2104-4724-055d-96c2-3a3eea4ab4ff\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:13.1213787+00:00\",\"payload\":{\"stationId\":\"N3-4\",\"worklistRevision\":3,\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationDepartureDeadlineAt\":\"2026-09-11T08:38:13.0763886\\u002B00:00\",\"items\":[{\"demandId\":\"e8f585f0-d95d-469c-b0d3-8e1788fc9abe\",\"transportDemandKey\":\"L2-MDC-N3-4-20260911T083238758Z|WIRE_TO_GATE\",\"sublot\":\"L2-MDC-N3-4-20260911T083238758Z\",\"workType\":\"WIRE_TO_GATE\",\"stopRole\":\"PICKUP\",\"expectedBasketCount\":1}]}}",
+    "CreatedAt": "2026-09-11 08:33:13.1213787+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:13.2956855+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "de827e42-700b-fd5e-941e-88f8a5ed5779",
+    "MessageType": "SublotEntryRequested",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SublotEntryRequested\",\"messageId\":\"de827e42-700b-fd5e-941e-88f8a5ed5779\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:13.2884659+00:00\",\"payload\":{\"demandId\":\"e8f585f0-d95d-469c-b0d3-8e1788fc9abe\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationId\":\"N3-4\",\"worklistRevision\":3,\"expectedSublots\":[\"L2-MDC-N3-4-20260911T083238758Z\",\"L2-MDC-N4-2-20260911T083238758Z\"],\"entryMethods\":[\"SCANNER\",\"KEYBOARD\"],\"expiresOnRevisionChange\":true}}",
+    "CreatedAt": "2026-09-11 08:33:13.2884659+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:14.0724701+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "c7d5c964-1630-9651-b752-71f78eb8ad8c",
+    "MessageType": "SlotOperationCommand",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SlotOperationCommand\",\"messageId\":\"c7d5c964-1630-9651-b752-71f78eb8ad8c\",\"correlationId\":\"3a58a711-d028-c451-9e4f-3950cfa073cf\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:14.0872181+00:00\",\"payload\":{\"demandId\":\"e8f585f0-d95d-469c-b0d3-8e1788fc9abe\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"slotOperationAttemptId\":\"d60e8512-992c-4256-9959-4af7c3506192\",\"operationType\":\"LOAD\",\"slots\":[3],\"expectedBasketCount\":1,\"expectedFinalPhysicalState\":\"OCCUPIED\",\"commandContentSha256\":\"2817fe416126ef9cb615d6112c1f6f8b1ebc11e23d11beb0178636787e24ccbc\"}}",
+    "CreatedAt": "2026-09-11 08:33:14.0872181+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:16.0700721+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "371f961c-2bf2-b15f-91f1-263d8049e767",
+    "MessageType": "PreDepartureSafetyCheck",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"PreDepartureSafetyCheck\",\"messageId\":\"371f961c-2bf2-b15f-91f1-263d8049e767\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:16.0949172+00:00\",\"payload\":{\"preDepartureSafetyCheckId\":\"0c982512-d26e-2b50-813d-386d637ad103\",\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"movementLegId\":\"5e978ce3-4710-a357-ac0c-efab565f54d4\",\"expectedSafetyStateVersion\":26,\"targetStationId\":\"N4-2\"}}",
+    "CreatedAt": "2026-09-11 08:33:16.0949172+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:16.1622842+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "64628d97-4918-8b5c-8c12-d39314a92365",
+    "MessageType": "VehicleBusinessStateSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"VehicleBusinessStateSnapshot\",\"messageId\":\"64628d97-4918-8b5c-8c12-d39314a92365\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:17.0977835+00:00\",\"payload\":{\"vehicleBusinessStateRevision\":4,\"readiness\":\"READY\",\"manualChargingHold\":false,\"batteryState\":\"SUFFICIENT\",\"blockingFacts\":[],\"observedAt\":\"2026-09-11T08:33:17.0977835\\u002B00:00\"}}",
+    "CreatedAt": "2026-09-11 08:33:17.0977835+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:17.1081476+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "7b096aa5-c364-b154-ad74-91cd8ae93a7e",
+    "MessageType": "UpcomingStopPlanSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"UpcomingStopPlanSnapshot\",\"messageId\":\"7b096aa5-c364-b154-ad74-91cd8ae93a7e\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:17.101623+00:00\",\"payload\":{\"planRevision\":4,\"demandId\":null,\"legs\":[{\"movementLegId\":\"2e941cdd-e315-3e5b-9647-cc188e34c718\",\"legType\":\"TO_PICKUP\",\"sequence\":1,\"stationId\":\"N1-3_N1-7\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"f6886ee6-7590-875e-911d-b187b1751263\",\"legType\":\"TO_PICKUP\",\"sequence\":2,\"stationId\":\"N2-6\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"e1fc7120-4b14-0058-b81a-78150cabdb38\",\"legType\":\"TO_PICKUP\",\"sequence\":3,\"stationId\":\"N3-4\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"5e978ce3-4710-a357-ac0c-efab565f54d4\",\"legType\":\"TO_PICKUP\",\"sequence\":4,\"stationId\":\"N4-2\",\"mapId\":\"MAP-L2\",\"state\":\"ARRIVED\"},{\"movementLegId\":\"606e859d-317b-745a-8367-adb922a1b288\",\"legType\":\"TO_GATE\",\"sequence\":5,\"stationId\":\"\\u5173\\u5361\",\"mapId\":\"MAP-L2\",\"state\":\"PLANNED\"}]}}",
+    "CreatedAt": "2026-09-11 08:33:17.101623+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:17.1135977+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "2033bd46-161c-5c57-bb65-6058994fa447",
+    "MessageType": "CurrentStopWorklistSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"CurrentStopWorklistSnapshot\",\"messageId\":\"2033bd46-161c-5c57-bb65-6058994fa447\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:17.1065327+00:00\",\"payload\":{\"stationId\":\"N4-2\",\"worklistRevision\":4,\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationDepartureDeadlineAt\":\"2026-09-11T08:38:17.0686336\\u002B00:00\",\"items\":[{\"demandId\":\"47f4c57a-c1c6-4050-8116-60a8ad29e553\",\"transportDemandKey\":\"L2-MDC-N4-2-20260911T083238758Z|WIRE_TO_GATE\",\"sublot\":\"L2-MDC-N4-2-20260911T083238758Z\",\"workType\":\"WIRE_TO_GATE\",\"stopRole\":\"PICKUP\",\"expectedBasketCount\":1}]}}",
+    "CreatedAt": "2026-09-11 08:33:17.1065327+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:17.2764712+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "0f14bc9a-1819-6a5e-a6af-a5e90a7f7949",
+    "MessageType": "SublotEntryRequested",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SublotEntryRequested\",\"messageId\":\"0f14bc9a-1819-6a5e-a6af-a5e90a7f7949\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:17.2700094+00:00\",\"payload\":{\"demandId\":\"47f4c57a-c1c6-4050-8116-60a8ad29e553\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationId\":\"N4-2\",\"worklistRevision\":4,\"expectedSublots\":[\"L2-MDC-N4-2-20260911T083238758Z\"],\"entryMethods\":[\"SCANNER\",\"KEYBOARD\"],\"expiresOnRevisionChange\":true}}",
+    "CreatedAt": "2026-09-11 08:33:17.2700094+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:18.0679036+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "d5517ae6-3af6-b65e-a61b-a5cd010ba562",
+    "MessageType": "SlotOperationCommand",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SlotOperationCommand\",\"messageId\":\"d5517ae6-3af6-b65e-a61b-a5cd010ba562\",\"correlationId\":\"ac4198d6-4848-655d-bd51-607a91bd031b\",\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:18.0823222+00:00\",\"payload\":{\"demandId\":\"47f4c57a-c1c6-4050-8116-60a8ad29e553\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"slotOperationAttemptId\":\"30e523b2-2724-0359-bc14-632e5d175dd5\",\"operationType\":\"LOAD\",\"slots\":[4],\"expectedBasketCount\":1,\"expectedFinalPhysicalState\":\"OCCUPIED\",\"commandContentSha256\":\"b31bdf63c06dfd7a4628bf10cbf7f87a02be430dbd2a6f1296055fed173bd2f1\"}}",
+    "CreatedAt": "2026-09-11 08:33:18.0823222+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:20.0594652+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "3f1b1c64-feec-8855-b625-4f869f4f57f7",
+    "MessageType": "PreDepartureSafetyCheck",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"PreDepartureSafetyCheck\",\"messageId\":\"3f1b1c64-feec-8855-b625-4f869f4f57f7\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:20.0833192+00:00\",\"payload\":{\"preDepartureSafetyCheckId\":\"912c1a66-082f-b65d-950c-382900ce58ff\",\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"movementLegId\":\"606e859d-317b-745a-8367-adb922a1b288\",\"expectedSafetyStateVersion\":31,\"targetStationId\":\"\\u5173\\u5361\"}}",
+    "CreatedAt": "2026-09-11 08:33:20.0833192+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:20.1515793+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "a713133f-1716-6e53-b1e9-84e9941e40b2",
+    "MessageType": "VehicleBusinessStateSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"VehicleBusinessStateSnapshot\",\"messageId\":\"a713133f-1716-6e53-b1e9-84e9941e40b2\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-11T08:33:21.0756047+00:00\",\"payload\":{\"vehicleBusinessStateRevision\":5,\"readiness\":\"READY\",\"manualChargingHold\":false,\"batteryState\":\"SUFFICIENT\",\"blockingFacts\":[],\"observedAt\":\"2026-09-11T08:33:21.0756047\\u002B00:00\"}}",
+    "CreatedAt": "2026-09-11 08:33:21.0756047+00:00",
+    "AcknowledgedAt": "2026-09-11 08:33:21.0884587+00:00",
+    "FencedAt": null
+  },
+  {
+    "MessageId": "1207bb2a-ff44-8f5e-8356-324d036900e4",
+    "MessageType": "CurrentStopWorklistSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"CurrentStopWorklistSnapshot\",\"messageId\":\"1207bb2a-ff44-8f5e-8356-324d036900e4\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":13,\"sentAt\":\"2026-09-11T08:33:21.0800845+00:00\",\"payload\":{\"stationId\":\"\\u5173\\u5361\",\"worklistRevision\":5,\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"stationDepartureDeadlineAt\":null,\"items\":[{\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"transportDemandKey\":\"L2-MDC-N1-3-20260911T083238758Z|WIRE_TO_GATE\",\"sublot\":\"L2-MDC-N1-3-20260911T083238758Z\",\"workType\":\"WIRE_TO_GATE\",\"stopRole\":\"GATE\",\"expectedBasketCount\":1},{\"demandId\":\"e8f585f0-d95d-469c-b0d3-8e1788fc9abe\",\"transportDemandKey\":\"L2-MDC-N3-4-20260911T083238758Z|WIRE_TO_GATE\",\"sublot\":\"L2-MDC-N3-4-20260911T083238758Z\",\"workType\":\"WIRE_TO_GATE\",\"stopRole\":\"GATE\",\"expectedBasketCount\":1},{\"demandId\":\"47f4c57a-c1c6-4050-8116-60a8ad29e553\",\"transportDemandKey\":\"L2-MDC-N4-2-20260911T083238758Z|WIRE_TO_GATE\",\"sublot\":\"L2-MDC-N4-2-20260911T083238758Z\",\"workType\":\"WIRE_TO_GATE\",\"stopRole\":\"GATE\",\"expectedBasketCount\":1}]}}",
+    "CreatedAt": "2026-09-11 08:33:21.0800845+00:00",
+    "AcknowledgedAt": null,
+    "FencedAt": null
+  },
+  {
+    "MessageId": "a7c499e9-150c-d659-8d03-74f2c1668f9c",
+    "MessageType": "UpcomingStopPlanSnapshot",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"UpcomingStopPlanSnapshot\",\"messageId\":\"a7c499e9-150c-d659-8d03-74f2c1668f9c\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":13,\"sentAt\":\"2026-09-11T08:33:21.0849986+00:00\",\"payload\":{\"planRevision\":5,\"demandId\":null,\"legs\":[{\"movementLegId\":\"2e941cdd-e315-3e5b-9647-cc188e34c718\",\"legType\":\"TO_PICKUP\",\"sequence\":1,\"stationId\":\"N1-3_N1-7\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"f6886ee6-7590-875e-911d-b187b1751263\",\"legType\":\"TO_PICKUP\",\"sequence\":2,\"stationId\":\"N2-6\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"e1fc7120-4b14-0058-b81a-78150cabdb38\",\"legType\":\"TO_PICKUP\",\"sequence\":3,\"stationId\":\"N3-4\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"5e978ce3-4710-a357-ac0c-efab565f54d4\",\"legType\":\"TO_PICKUP\",\"sequence\":4,\"stationId\":\"N4-2\",\"mapId\":\"MAP-L2\",\"state\":\"COMPLETED\"},{\"movementLegId\":\"606e859d-317b-745a-8367-adb922a1b288\",\"legType\":\"TO_GATE\",\"sequence\":5,\"stationId\":\"\\u5173\\u5361\",\"mapId\":\"MAP-L2\",\"state\":\"ARRIVED\"}]}}",
+    "CreatedAt": "2026-09-11 08:33:21.0849986+00:00",
+    "AcknowledgedAt": null,
+    "FencedAt": null
+  },
+  {
+    "MessageId": "544b2bbd-2d60-0d56-8a56-308558112e2c",
+    "MessageType": "SlotOperationCommand",
+    "PayloadJson": "{\"protocolVersion\":3,\"profileId\":\"WIRE_TO_GATE_MVP\",\"protocolReleaseVersion\":\"0.3.0\",\"protocolReleaseManifestSha256\":\"b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\",\"messageType\":\"SlotOperationCommand\",\"messageId\":\"544b2bbd-2d60-0d56-8a56-308558112e2c\",\"correlationId\":null,\"agvId\":\"AGV-L2-001\",\"sessionGeneration\":13,\"sentAt\":\"2026-09-11T08:33:21.0908967+00:00\",\"payload\":{\"demandId\":\"63ae222c-3d0b-440d-881b-875647bef718\",\"operationSessionId\":\"e4a34f5f-8ce6-725d-867f-aba76c80e7df\",\"slotOperationAttemptId\":\"a7a0f10c-087c-715e-a9a6-0c00bd9d6f1e\",\"operationType\":\"UNLOAD\",\"slots\":[1],\"expectedBasketCount\":1,\"expectedFinalPhysicalState\":\"EMPTY\",\"commandContentSha256\":\"e154b8fb091ec1b1b43f9f9a4fd0c404805d6facde645d4fbba07b03d3b72b95\"}}",
+    "CreatedAt": "2026-09-11 08:33:21.0908967+00:00",
+    "AcknowledgedAt": null,
+    "FencedAt": null
+  }
+]

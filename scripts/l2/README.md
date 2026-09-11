@@ -38,6 +38,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-restart-while-waiting-operator` | **真的** | 开锁等操作员时杀掉客户端再拉起：车辆按实时 IO 交出那次中断的结论，旅程停摆，补偿清空走到对账（现场窗口一的死锁） | `evidence/l2/20260911-real-onboard-restart-while-waiting-operator-005` |
 | `real-onboard-field-operator-compensate` | **真的**，自动化面 | 现场驱动脚本的「制造真的 UNKNOWN + 补偿清空」两幕：扫码与按钮都走车载端 HTTP 自动化面，一次 UIA 都不用 | `evidence/l2/20260911-real-onboard-field-operator-compensate-002` |
 | `real-onboard-field-window-rehearsal` | **真的**，自动化面 | 现场窗口一（无人）整窗彩排：驱动脚本演 A、C 接 B、正常装，采集器在它说的那一刻打 checkpoint、在它写出的记录上 finalize；之后开去关卡卸货（`L2-FW-40`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-field-window-rehearsal-005`（SC1 二十条与采集器 finalize 全绿，只红 `L2-FW-40`） |
+| `real-onboard-multi-demand-compensate` | **真的**，自动化面 | 四停靠旅程里停靠 2 真的 `UNKNOWN` + 补偿清空：旅程自己离开那一站，后两站照常装，关卡把三条卸完（`L2-MDC-60`/`-61`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-multi-demand-compensate-003`（关卡之前十二条全绿，只红 `L2-MDC-60`/`-61`） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -54,7 +55,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 `-004` 与 `-005` 的 `L2-FW-40` **红在产品**：车载端把三项的关卡作业清单判 `PROTOCOL_SCHEMA_INVALID`
 （8005-agv-program#48）。`-004` 在卸货里空等满 30 分钟，服务端日志与假 RIoT 日志、库快照里的
 `ProtocolInbox` 因此是其余证据的十倍大，**这三个文件提交时无损 gzip**（原文件 SHA-256 记在提交说明里），
-`-005` 起卸货只等 5 分钟。
+`-005` 起卸货只等 5 分钟。`real-onboard-multi-demand-compensate` 的 `-001` **红在产品**（#47，补偿之后旅程停在
+`Blocked`），`-002` 红在场景自己的会话判据与诊断（最后一节），`-003` 只红关卡那两条，原因与 `L2-FW-40` 相同。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
 `VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
@@ -475,6 +477,12 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     encountered after finished reading JSON content`。`real-onboard-restart-while-waiting-operator-007` 与
     `real-onboard-recovery-compensate-load-009` 都死在这一条上，而车早在几十毫秒内交了扫码。遍历结果用
     `foreach`；`@(...)` 包一层也救不了它。
+23. **和别的 agent 并行跑真装置时换端口，别落进 Windows 的排除端口段。**2026-09-11 第一次把整组端口
+    +100（58505–58514）跑，假 RIoT 绑 58508 当场抛 `SocketException (10013): An attempt was made to access
+    a socket in a way forbidden by its access permissions`——不是端口被占，是控制端
+    `netsh int ipv4 show excludedportrange protocol=tcp` 里有 `58473–58572` 与 `58573–58672` 两段（Hyper-V /
+    WinNAT 动态保留，重启会变）。改 +300（58705–58714）就过了。**挑端口之前先看那张表**；症状是 10013
+    而不是「地址已在使用」（10048）。
 
 ## 车载端报文的 schema 校验：`L2-SC-01`
 
@@ -642,3 +650,34 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 `real-onboard-recovery-compensate-load-009` 的会话判据已经转绿，却都以异常收场——红在判据脚本自己，
 第 22 条；`9f28ed1` 之后 `-008` **PASS/13**、`real-onboard-recovery-compensate-load-010` **PASS/17**，
 `real-onboard-field-operator-compensate-003`（`369919f`）**PASS/10**。
+
+## `real-onboard-multi-demand-compensate`：补偿之后旅程还走不走
+
+前面三条补偿场景（`real-onboard-recovery-compensate-load`、`real-onboard-restart-while-waiting-operator`、
+`real-onboard-field-operator-compensate`）**全是单需求旅程**：补偿掉那一条就是整趟结束，服务端直接判
+`Completed`，所以一直绿。现场窗口一（`8005-agv-program#45`）组出来的是四需求满仓旅程，要在里面补偿之后接着跑——
+那种形状谁都没跑过（`8005-agv-program#47`）。
+
+四停靠：停靠 1 正常装（补偿时车上得有货），停靠 2 经 `FieldOperator.psm1` 的 `Invoke-FieldActUnknownLoad` 制造真的
+`UNKNOWN`、`Invoke-FieldActCompensate` 补偿清空，然后判出口；停靠 3、4 正常装，关卡逐条卸完。`L2-MDC-21` 先确认
+补偿那一刻车上确实还有别的需求（停靠 1 `Loaded`、停靠 3、4 `Planned`），否则这一格问不出东西。
+
+三个证据，一层产品缺陷、一层场景判据、一层 #48：
+
+1. **`-001`（服务端 `813af00`，修复之前）红在产品**：补偿对账 `Reconciled / ALL_EMPTY`、需求 `Cancelled`、业务键
+   抑制、`LoadBatch` 命令结算、会话 `Ready` 全都对，`L2-MDC-30` 却读到 `2/Blocked / CANCELLED_BY_LOAD_COMPENSATION`，
+   等满 120 秒不动。`OnboardRecoveryCoordinator.ApplyCurrentResultAsync` 只在 `journeyComplete` 时改 stage，否则只写
+   理由码；而补偿与故障货物交接只对 `Blocked` 的旅程授权、引擎对 `Blocked` 只 `return`。修在服务端 `8be28b1`：旅程
+   不完整且仍 `Blocked` 时把 stage 交还给被终结那次仓位操作的「等结果」那一格，余下由引擎在 #28 的
+   `TerminatedCommandedAt` 收尾分支里按既有判断走（本站再装一轮 / 下一站 / 关卡；在关卡则卸下一条）。
+2. **`-002`（`8be28b1`）出口转绿，红在场景自己的 `L2-MDC-32`**：它读 `SessionRecoveries` 等 `Ready / READY`，读到
+   `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY`。**那是正常的行驶中状态，不是 #46 回归**：`LoadCompensationResult`
+   之后 0.6 秒旅程就过完出发安全检查、车开动，车载端随即报 `VEHICLE_NOT_READY`（`vehicleStopped=false`），会话降级到
+   到站为止——停靠 3 出发时一模一样。探针开始读时 Ready 已经过去。现在读持久的那一份：服务端收下
+   `LoadCompensationResult` 时连同 `DurableAck` 发给车、缓存在 `ProtocolInbox.FirstResponseJson` 里的
+   `SessionReadiness`（`READY`）。同一次还把 `L2-MDC-60` 的诊断写错成 not-gate：`PayloadJson` 里中文站名是 `\uXXXX`
+   转义的，按原文匹配对不上；被拒 19 次的那条正是关卡的三项清单。**等一个会被正常流程马上改写的瞬时状态，要读它留下
+   的持久记录，不要去赶那个窗口**——与第 14 条是同一类错误的反面。
+3. **`-003`（`372c055`）**：关卡之前十二条全绿，`L2-MDC-60` 红在车载端把关卡作业清单判
+   `PROTOCOL_SCHEMA_INVALID@关卡清单(3 项) ×12`、`L2-MDC-61` 随之红——都是 `8005-agv-program#48`，与
+   `real-onboard-field-window-rehearsal` 的 `L2-FW-40` 同一处。卸货只等 5 分钟。车载端修好之后要重跑一次全绿。

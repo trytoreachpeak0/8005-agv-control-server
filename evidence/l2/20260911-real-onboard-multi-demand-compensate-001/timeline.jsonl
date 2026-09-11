@@ -1,0 +1,50 @@
+{"at":"2026-09-11T08:19:24.6950654+00:00","note":"L2 run 20260911T081924653Z starting for scenario 'real-onboard-multi-demand-compensate'."}
+{"at":"2026-09-11T08:19:24.7291184+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-11T08:19:24.8821230+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-11T08:19:27.7036581+00:00","note":"Reusing cached onboard-hmi publish for bb58b217e95c611de597212d763f7579fdcb0e03."}
+{"at":"2026-09-11T08:19:27.8338658+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T08:19:27.8429539+00:00","note":"Peers: onboard-hmi@bb58b217e95c611de597212d763f7579fdcb0e03, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-11T08:19:27.8703698+00:00","note":"Extra map stations from real-onboard-multi-demand-compensate.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2"}
+{"at":"2026-09-11T08:19:28.7013391+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-11T08:19:28.8263323+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-11T08:19:30.6749106+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-11T08:19:32.5600802+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-11T08:19:34.1649526+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-11T08:19:36.3413489+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-11T08:19:36.3564577+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-11T08:19:36.5177445+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-11T08:19:36.7847043+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-11T08:19:36.8663718+00:00","note":"Environment is up; entering scenario 'real-onboard-multi-demand-compensate'."}
+{"at":"2026-09-11T08:19:36.9362646+00:00","note":"Publishing demand L2-MDC-N1-3-20260911T081924653Z in area N1-3."}
+{"at":"2026-09-11T08:19:37.0086039+00:00","note":"Publishing demand L2-MDC-N2-6-20260911T081924653Z in area N2-6."}
+{"at":"2026-09-11T08:19:37.0216177+00:00","note":"Publishing demand L2-MDC-N3-4-20260911T081924653Z in area N3-4."}
+{"at":"2026-09-11T08:19:37.0304139+00:00","note":"Publishing demand L2-MDC-N4-2-20260911T081924653Z in area N4-2."}
+{"at":"2026-09-11T08:19:37.1080768+00:00","criterion":"journey-dispatched","value":"(null)"}
+{"at":"2026-09-11T08:19:38.1927021+00:00","criterion":"journey-dispatched","value":"@{JourneyId=37d09eef-1849-c05d-884c-6d3bdd9472bc; Stage=AwaitingPickupArrival; CurrentStopSequence=1; BlockReasonCode=; LoadingClosedReason=}"}
+{"at":"2026-09-11T08:19:38.2104209+00:00","criterion":"stop-1-order","value":"(null)"}
+{"at":"2026-09-11T08:19:38.4653907+00:00","criterion":"stop-1-order","value":"@{UpperId=W2G-37d09eef-1849-c05d-884c-6d3bdd9472bc-S1-1; StationRiotId=12}"}
+{"at":"2026-09-11T08:19:38.4689979+00:00","note":"Vehicle drives to stop 1 (RIoT station 12)."}
+{"at":"2026-09-11T08:19:38.5588941+00:00","criterion":"journey-stops","value":"2"}
+{"at":"2026-09-11T08:19:39.8856379+00:00","criterion":"journey-stops","value":"5"}
+{"at":"2026-09-11T08:19:40.4668895+00:00","note":"field-operator: stop 1: submitted sublot L2-MDC-N1-3-20260911T081924653Z (demand 4e1cc6ca-a13f-4786-99b3-625db810b4a2)"}
+{"at":"2026-09-11T08:19:41.8123656+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt 828756a0-5330-925c-ac60-c5ad5ec3aa56)"}
+{"at":"2026-09-11T08:19:41.8426826+00:00","note":"field-operator: Load 828756a0-5330-925c-ac60-c5ad5ec3aa56: vehicle waits on slot 1; serving it with OCCUPIED"}
+{"at":"2026-09-11T08:19:42.2012058+00:00","note":"field-operator: slot 1: door closed with cargo OCCUPIED"}
+{"at":"2026-09-11T08:19:42.9938193+00:00","note":"field-operator: Load 828756a0-5330-925c-ac60-c5ad5ec3aa56 settled as Committed"}
+{"at":"2026-09-11T08:19:43.0023545+00:00","criterion":"stop-2-order","value":"(null)"}
+{"at":"2026-09-11T08:19:43.7763108+00:00","criterion":"stop-2-order","value":"@{UpperId=W2G-37d09eef-1849-c05d-884c-6d3bdd9472bc-S2-1; StationRiotId=13}"}
+{"at":"2026-09-11T08:19:43.7778401+00:00","note":"Vehicle drives to stop 2 (RIoT station 13)."}
+{"at":"2026-09-11T08:19:44.9419471+00:00","note":"field-operator: stop 2: submitted sublot L2-MDC-N2-6-20260911T081924653Z (demand b66233bc-ff6d-44be-9ec8-bbdd7295efd6)"}
+{"at":"2026-09-11T08:19:46.7558315+00:00","note":"field-operator: stop 2: vehicle waits on slot 2 (attempt 0c40dd02-a5cd-a65f-b7d9-5b34d844529d)"}
+{"at":"2026-09-11T08:19:46.7666107+00:00","note":"field-operator: stop 2: lock feedback of slot 2 jammed at LOCKED while the door is open"}
+{"at":"2026-09-11T08:19:50.9826342+00:00","note":"field-operator: stop 2: maintenance found cargo in slot 2, closed it and repaired the sensor"}
+{"at":"2026-09-11T08:19:51.3037661+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY accepted for demand b66233bc-ff6d-44be-9ec8-bbdd7295efd6 (command fe38e48a-d12a-4a67-afba-3edd6748056c)"}
+{"at":"2026-09-11T08:19:52.8667899+00:00","note":"field-operator: compensation: vehicle waits on slot 2; maintenance takes the cargo out"}
+{"at":"2026-09-11T08:19:53.1533160+00:00","note":"field-operator: slot 2: door closed with cargo EMPTY"}
+{"at":"2026-09-11T08:19:53.9336087+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY reconciled; demand b66233bc-ff6d-44be-9ec8-bbdd7295efd6 Cancelled"}
+{"at":"2026-09-11T08:19:53.9418398+00:00","criterion":"stop-2-exit","value":"2/Blocked"}
+{"at":"2026-09-11T08:21:53.9945118+00:00","note":"Stop 2 exit not reached: Timed out after 120s waiting for: the journey left stop 2 on its own after the compensation. Last observed: \"2/Blocked\""}
+{"at":"2026-09-11T08:21:54.0008010+00:00","criterion":"session-ready-after-compensation","value":"Ready / READY"}
+{"at":"2026-09-11T08:21:54.0095897+00:00","note":"Scenario stopped: the journey never left stop 2 (2/Blocked); demands 1=Loaded/Accepted 2=Cancelled/Cancelled 3=Planned/Accepted 4=Planned/Accepted."}
+{"at":"2026-09-11T08:21:54.1004320+00:00","note":"Exported 81 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-11T08:22:17.8278017+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 81 lines, 81 distinct, 15 message types, 0 distinct violations, 0 known; schema compilation 22056 ms."}

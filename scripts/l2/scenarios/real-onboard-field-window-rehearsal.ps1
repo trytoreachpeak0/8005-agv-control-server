@@ -25,10 +25,10 @@ SC1-* 里，而多需求关卡清单当前被车载端拒收（8005-agv-program#
    SC1-C-06 要的正是它。
 3. 车由本场景替 RIoT 开到站。现场是真车自己走，驱动脚本在那里只等 stage。
 
-**补偿清空不在这趟旅程里演。**多需求旅程里补偿掉一条需求之后，旅程停在 `Blocked` 再也不动
-（`JourneyRuntimeEngine` 对 `Blocked` 只 `return`，而补偿只在 `journeyComplete` 时才改 stage），车上
-另外三站的货就回不到关卡——本票查实并另开票。补偿这一幕由
-`real-onboard-field-operator-compensate` 单独证。
+**补偿清空不在这趟旅程里演。**写这条场景时，多需求旅程里补偿掉一条需求之后旅程停在 `Blocked` 再也不动，
+车上另外三站的货回不到关卡——本票查实并另开票（8005-agv-program#47）。那一格服务端 `8be28b1` 已修，多需求
+旅程里的补偿由 `real-onboard-multi-demand-compensate` 证；本条保持原来的编排，单需求补偿仍由
+`real-onboard-field-operator-compensate` 证。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
