@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-recovery-retry-after-refusal",
+  "runId": "20260911T104556483Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 180s waiting for: the load required recovery while the engine was stalled. Last observed: \"Prepared / AwaitingLoadResult\"",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "96c7513d6a282847a814a13bcea781e16f9b70d3",
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260911T104556483Z",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "rig": "RealOnboard",
+    "controlServerCommit": "c2ec5ea39e228a64437633954bed9561e9b54521",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "assertions": [
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 58 lines, 58 distinct, 9 message types, 0 distinct violations, 0 known; schema compilation 14840 ms."
+    }
+  ]
+}

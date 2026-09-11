@@ -1,0 +1,18 @@
+2026-09-11T18:46:22.6312862+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+96c7513d6a282847a814a13bcea781e16f9b70d3。
+2026-09-11T18:46:23.4508560+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T18:46:23.4736993+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T18:46:23.4757879+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T18:46:23.6084288+08:00	Information	App	车载端自动化接口已启动：http://127.0.0.1:58414。 
+2026-09-11T18:46:24.0313507+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-11T18:46:27.0916467+08:00	Information	App	服务端请求录入Sublot：demandId=e177740f-3005-44b4-a0f7-ecb030b2d2b3，revision=1。 
+2026-09-11T18:46:27.9080499+08:00	Information	App	服务端请求录入Sublot：demandId=e177740f-3005-44b4-a0f7-ecb030b2d2b3，revision=1。 
+2026-09-11T18:46:28.1157722+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T18:46:28.1800094+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T18:46:28.2904055+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-11T18:46:28.7014270+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-11T18:46:28.9110416+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=4fa8c7c4-ae63-9551-bea2-026a0154f7e4。
+2026-09-11T18:46:29.3113320+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
+2026-09-11T18:46:29.6621392+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T18:46:29.7201606+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T18:46:30.2634194+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 1->1，光幕DI 1->1。
+2026-09-11T18:46:32.6996998+08:00	Error	WireToGateBusinessService	处理服务端业务消息失败：SlotOperationCommand。已保持物理安全阻塞。 | InvalidOperationException: WIRE_TO_GATE_NOT_READY

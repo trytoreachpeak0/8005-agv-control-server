@@ -11,9 +11,15 @@
 `ProtocolInbox` 按整行字节把 messageId 绑死在首个应答上。
 
 **「旅程还没 Blocked」怎么在这里造出来。**`Blocked` 只由 `JourneyRuntimeEngine` 写，引擎每一轮第一件事是读
-RIoT 站点目录，读失败就整轮 `return`（`LogMapStationCatalogFailed`）。所以在车报回 `UNKNOWN` 之前把假 RIoT
-切到 `faults/http ServerError`：仓位操作转 `RecoveryRequired` 与会话就绪都是传输层写的，照常发生；旅程停在
-`AwaitingLoadResult` 转不了 `Blocked`。现场是两个旅程门 `Off`，引擎同样整轮不做事——形状相同，来路不同。
+RIoT 站点目录并认出关卡站（`RequireFixedStation`），认不出就整轮 `return`（`LogMapStationCatalogFailed`）。所以在
+车报回 `UNKNOWN` 之前把关卡站从假 RIoT 的地图上拿掉：仓位操作转 `RecoveryRequired` 与会话就绪都是传输层写的，
+照常发生；旅程停在 `AwaitingLoadResult` 转不了 `Blocked`。现场是两个旅程门 `Off`，引擎同样整轮不做事——形状相同，
+来路不同。
+
+**不能用 `faults/http`。**`-001` 用的就是它，红在场景自己：那个开关是整个假 RIoT 的，车载端也从它读车辆状态，
+于是车报 `SafetyUnknownPresent` / `VEHICLE_NOT_READY`，会话在结果出来之前就掉进 `DEPARTURE_SAFETY_NOT_READY`，
+车连 `OperationResult` 都发不出去（`WIRE_TO_GATE_NOT_READY`）。只动地图上的关卡站，车载端碰不到；取货站一个不少，
+准入策略绑定的站点集合不变（`auto-charge-endurance` 证据 001 踩过的坑）。
 
 判据的核心是 `L2-RAR-05`/`-06`：两次请求是两条不同 messageId 的报文、各自拿到自己的应答，而整趟车载端会话
 没换过代——服务端一次都没掐连接。
@@ -86,8 +92,17 @@ $null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 5 })
 
 $load = Start-FieldStopLoad -Field $field -JourneyId $journeyId -Sequence 1 -ArrivalTimeoutSeconds 120
 
-$journal.Note('RIoT data plane now answers 500: every engine iteration returns before it can block the journey.')
-$null = $riot.Command('Put', 'faults/http', @{ mode = 'ServerError' })
+$currentMap = @($riot.Snapshot().body.maps | Where-Object { $_.mapId -eq $Context.MapId })
+if ($currentMap.Count -ne 1) { throw "Fake RIoT does not serve map $($Context.MapId)." }
+$fullStations = @{}
+foreach ($station in $currentMap[0].stations) { $fullStations["$($station.id)"] = $station.name }
+$withoutGate = @{}
+foreach ($key in $fullStations.Keys) {
+    if ($key -ne "$($Context.GateStationRiotId)") { $withoutGate[$key] = $fullStations[$key] }
+}
+if ($withoutGate.Count -ne $fullStations.Count - 1) { throw "Gate station $($Context.GateStationRiotId) is not on map $($Context.MapId)." }
+$journal.Note("Gate station $($Context.GateStationRiotId) removed from the RIoT map: every engine iteration returns before it can block the journey.")
+$null = $riot.Command('Put', "maps/$($Context.MapId)/stations", @{ stations = $withoutGate })
 $null = Invoke-FieldSimulatorCommand -Field $field -Method PUT -Path "/slots/$($load.SlotNo)/lock-feedback-override" -Body @{ mode = 'FIXED_1' }
 
 $unknown = Wait-L2Condition -Description 'the load required recovery while the engine was stalled' -Journal $journal `
@@ -131,7 +146,7 @@ $assertions.Add(
 
 # --- 4. 引擎恢复，旅程 Blocked，再按一次：补偿走完 --------------------------------------------------------
 
-$null = $riot.Command('Put', 'faults/http', @{ mode = 'Normal' })
+$null = $riot.Command('Put', "maps/$($Context.MapId)/stations", @{ stations = $fullStations })
 $blocked = Wait-L2Condition -Description 'the journey blocked once the engine ran again' -Journal $journal `
     -Criterion 'journey-blocked' -TimeoutSeconds 120 `
     -Probe {

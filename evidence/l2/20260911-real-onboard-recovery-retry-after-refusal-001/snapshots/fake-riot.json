@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-a2615668",
+  "revision": 7,
+  "observedAt": "2026-09-11T18:49:29.2832896+08:00",
+  "body": {
+    "faultMode": "ServerError",
+    "delayMs": 0,
+    "mapStationReads": 190,
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 12,
+        "battery": 80,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-e7185dc7-66a3-c35d-9a9b-ca3e96739123-S1-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13"
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7"
+          },
+          {
+            "id": 210,
+            "name": "关卡"
+          }
+        ]
+      }
+    ]
+  }
+}
