@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "window": "FW-SC1",
+  "windowName": "现场窗口一：三个操作员不作为场景",
+  "runId": "20260911T124032411Z",
+  "outcome": "PASS",
+  "identity": {
+    "runId": "20260911T124032411Z",
+    "windowId": "FW-SC1",
+    "checkpointLabel": "finalize",
+    "database": "local-snapshot"
+  },
+  "fieldRecord": {
+    "windowId": "FW-SC1",
+    "date": "2026-09-11",
+    "site": "L2 真装置彩排（本机）",
+    "observers": [],
+    "drivenBy": "FieldOperator.psm1 run 20260911T123522650Z",
+    "agvId": "AGV-L2-001",
+    "ioModule": "127.0.0.1:58412",
+    "ioKind": "SIMULATOR",
+    "recoveryWindowOpen": true,
+    "photoPointers": [],
+    "scenarios": [
+      {
+        "id": "A",
+        "name": "开门不放料：自动重发开锁脉冲，不判失败、不进恢复、不设次数上限，最后放料提交",
+        "demandId": "c6e7caaf-97c7-4663-b391-10ce16714f06",
+        "slotNo": 1,
+        "slotOperationAttemptId": "5bf14dde-11f5-fb5a-98f5-bc6d019aa1d5",
+        "observedRounds": "空关 2/2 轮；UNLOCKING=3 WAITING_OPERATOR=3",
+        "observedRecoveryEntryVisible": false,
+        "observedBy": "onboard automation snapshot availableRecoveryActions ∩ RESUME_AFTER_REPAIR/COMPENSATE_LOAD_ALL_EMPTY/FAULT_CARGO_HANDOFF",
+        "observedAvailableActions": [
+          "LOAD_CANCELLATION"
+        ],
+        "photoPointers": []
+      },
+      {
+        "id": "B",
+        "name": "仓门已闭超时：确定失败结算，不进恢复，服务端自己以 CANCELLED_BY_STATION_TIMEOUT 终结需求、旅程离开本站",
+        "demandId": "88e9f100-cbf0-43a8-bb8c-7f81c04a5837",
+        "slotNo": 2,
+        "slotOperationAttemptId": "60663bc8-85aa-fe5b-a032-ee1dd9369a0d",
+        "observedSlotReading": "空关 2 次，其中 1 次换来重开；结算 Failed；之后 2/AwaitingDepartureSafety",
+        "photoPointers": []
+      },
+      {
+        "id": "C",
+        "name": "仓门未闭超时：告警 STATION_TIMEOUT_DOOR_NOT_CLOSED，不结束本站",
+        "demandId": "88e9f100-cbf0-43a8-bb8c-7f81c04a5837",
+        "slotNo": 2,
+        "slotOperationAttemptId": "60663bc8-85aa-fe5b-a032-ee1dd9369a0d",
+        "deadlineAt": "2026-09-11T20:37:16.7180114+08:00",
+        "alarmObservedAt": "2026-09-11T20:37:17.7714637+08:00",
+        "stillWaitingObservedAt": "2026-09-11T20:40:17.6198314+08:00",
+        "deadlineCheckpoint": "c-deadline-reached",
+        "stillWaitingCheckpoint": "c-plus-hold",
+        "observedSlotReading": "走开时 UNLOCKING=1 WAITING_OPERATOR=1；期限后 3 分钟 UNLOCKING=1 WAITING_OPERATOR=2",
+        "photoPointers": []
+      }
+    ]
+  },
+  "facts": {
+    "ioKind": "SIMULATOR",
+    "minimumHoldMinutes": 3.0,
+    "drivenBy": "FieldOperator.psm1 run 20260911T123522650Z",
+    "A.slotOperationAttemptId": "5bf14dde-11f5-fb5a-98f5-bc6d019aa1d5",
+    "A.phaseCounts": "UNLOCKING=3 WAITING_OPERATOR=3",
+    "B.slotOperationAttemptId": "60663bc8-85aa-fe5b-a032-ee1dd9369a0d",
+    "B.operationStatus": "Failed",
+    "B.slotEvidence": "slot2:State=Empty/DoorLocked=True/UnlockOutputReset=True",
+    "B.demandEnd": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled",
+    "B.journeyPosition": "4/AwaitingLoadResult",
+    "C.finalStage": "AwaitingLoadResult / -"
+  },
+  "assertions": [
+    {
+      "id": "SC1-A-01",
+      "description": "开门不放料：车载端自动重发开锁脉冲，轮次不设上限（现场至少走到第 3 轮）",
+      "outcome": "PASS",
+      "expected": "UNLOCKING >= 3",
+      "actual": 3
+    },
+    {
+      "id": "SC1-A-02",
+      "description": "重开几轮之后照常放料，装载提交——不设上限的重开有出口",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "SC1-A-03",
+      "description": "人没放料没有被判成失败：这个 attempt 上没有 FAILED 结果",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "SC1-A-04",
+      "description": "需求没有被判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "不是 RecoveryRequired",
+      "actual": "Accepted"
+    },
+    {
+      "id": "SC1-A-05",
+      "description": "HMI 上没有出现恢复入口——操作员迟疑不需要管理员凭据（驱动脚本读车载端快照 availableRecoveryActions 里的三个恢复动作）",
+      "outcome": "PASS",
+      "expected": false,
+      "actual": false
+    },
+    {
+      "id": "SC1-B-01",
+      "description": "车载端报 FAILED",
+      "outcome": "PASS",
+      "expected": "FAILED",
+      "actual": "FAILED"
+    },
+    {
+      "id": "SC1-B-02",
+      "description": "三个物理字段都是明确的：State 不是 Unknown、锁已闭、开锁输出已复位",
+      "outcome": "PASS",
+      "expected": "三字段齐全且明确",
+      "actual": "slot2:State=Empty/DoorLocked=True/UnlockOutputReset=True"
+    },
+    {
+      "id": "SC1-B-03",
+      "description": "服务端走确定失败而不是 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "Failed",
+      "actual": "Failed"
+    },
+    {
+      "id": "SC1-B-04",
+      "description": "确定失败之后服务端自己终结这条需求：Cancelled、按 CANCELLED_BY_STATION_TIMEOUT 永久抑制、装货命令已结算",
+      "outcome": "PASS",
+      "expected": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled",
+      "actual": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / command settled"
+    },
+    {
+      "id": "SC1-B-06",
+      "description": "确定失败之后旅程自己离开这一格，不需要任何人按任何按钮",
+      "outcome": "PASS",
+      "expected": "不是 2/AwaitingLoadResult",
+      "actual": "4/AwaitingLoadResult"
+    },
+    {
+      "id": "SC1-B-05",
+      "description": "结算之后会话仍在 Ready：确定失败是业务结果，不是会话故障",
+      "outcome": "PASS",
+      "expected": "Ready",
+      "actual": "Ready / READY"
+    },
+    {
+      "id": "SC1-C-01",
+      "description": "站点期限到期时告警挂上了 STATION_TIMEOUT_DOOR_NOT_CLOSED",
+      "outcome": "PASS",
+      "expected": "STATION_TIMEOUT_DOOR_NOT_CLOSED",
+      "actual": "STATION_TIMEOUT_DOOR_NOT_CLOSED"
+    },
+    {
+      "id": "SC1-C-02",
+      "description": "期限到期时停靠没有被关闭，stage 停在 AwaitingLoadResult 而不是 Blocked",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult",
+      "actual": "AwaitingLoadResult"
+    },
+    {
+      "id": "SC1-C-03",
+      "description": "期限到期后再等 3 分钟依然不结束——等待不会自己退化成结束",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED / Prepared",
+      "actual": "AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED / Prepared"
+    },
+    {
+      "id": "SC1-C-04",
+      "description": "那次复查确实在期限之后 3 分钟以上",
+      "outcome": "PASS",
+      "expected": ">= 3 分钟",
+      "actual": "3.0 分钟"
+    },
+    {
+      "id": "SC1-C-06",
+      "description": "门一直开着：晾过 OperationTimeout 之后提示还在走而脉冲只打过一次——提示节拍不重复开一把已经开着的锁",
+      "outcome": "PASS",
+      "expected": "UNLOCKING = 1 / WAITING_OPERATOR >= 2",
+      "actual": "UNLOCKING 1 / WAITING_OPERATOR 2"
+    },
+    {
+      "id": "SC1-C-05",
+      "description": "关门之后按真实 IO 读数结算（决策 1 会先重开一轮），告警随之消失",
+      "outcome": "PASS",
+      "expected": "告警清空 / 操作已结算",
+      "actual": "AwaitingLoadResult / - / Failed"
+    },
+    {
+      "id": "SC1-W-01",
+      "description": "三个场景都有现场记录，且记录由驱动脚本按实际动作写出（模拟器 IO 下无人到场，照片不适用）",
+      "outcome": "PASS",
+      "expected": "3 个场景 / drivenBy 非空",
+      "actual": "3 个场景 / drivenBy=FieldOperator.psm1 run 20260911T123522650Z"
+    },
+    {
+      "id": "SC1-W-02",
+      "description": "窗口内恢复入口是开着的——否则决策 2 只验证了一半",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "SC1-W-03",
+      "description": "每一个 checkpoint 上会话都停在 Ready——全程没有把开着的仓门当成会话故障",
+      "outcome": "PASS",
+      "expected": "每个 checkpoint 都是 Ready",
+      "actual": "01-00-ready=Ready; 02-c-deadline-reached=Ready; 03-c-plus-hold=Ready; 04-b-settled=Ready; 05-finalize=Ready"
+    }
+  ]
+}
