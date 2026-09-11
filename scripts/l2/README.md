@@ -36,6 +36,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-multi-demand-stop-plan` | **真的** | 四停靠旅程：车辆侧收下五条腿的行程带（#37 的回归守卫），四站在真 Modbus 上依次装完 | `evidence/l2/20260910-real-onboard-multi-demand-stop-plan-007` |
 | `real-onboard-multi-demand-operator-inaction` | **真的** | 四停靠旅程里的三种操作员不作为：关门不放料、门开着过期、两次关门判确定失败——然后旅程自己离开那一站，后两站照常装完 | `evidence/l2/20260910-real-onboard-multi-demand-operator-inaction-003` |
 | `real-onboard-restart-while-waiting-operator` | **真的** | 开锁等操作员时杀掉客户端再拉起：车辆按实时 IO 交出那次中断的结论，旅程停摆，补偿清空走到对账（现场窗口一的死锁） | `evidence/l2/20260911-real-onboard-restart-while-waiting-operator-005` |
+| `real-onboard-field-operator-compensate` | **真的**，自动化面 | 现场驱动脚本的「制造真的 UNKNOWN + 补偿清空」两幕：扫码与按钮都走车载端 HTTP 自动化面，一次 UIA 都不用 | `evidence/l2/20260911-real-onboard-field-operator-compensate-002` |
+| `real-onboard-field-window-rehearsal` | **真的**，自动化面 | 现场窗口一（无人）整窗彩排：驱动脚本演 A、C 接 B、正常装，采集器在它说的那一刻打 checkpoint、在它写出的记录上 finalize；之后开去关卡卸货（`L2-FW-40`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-field-window-rehearsal-005`（SC1 二十条与采集器 finalize 全绿，只红 `L2-FW-40`） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -46,7 +48,13 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 条的第四例），以及 `schema-conformance-normal-load-001`（合成对端的 `Heartbeat` 违反 schema，见
 「车载端报文的 schema 校验」一节）。**除头两条之外全都红在场景、驱动或替身自己身上，不是产品**——`real-onboard-station-timeout-door-open-001` 那一条连诊断都跟着错了一半。
 另有 `real-onboard-restart-while-waiting-operator` 的 `-001`/`-002`/`-003` 三个，前两个**红在产品**、
-第三个红在驱动，见最后一节。
+第三个红在驱动，见最后一节。`real-onboard-field-window-rehearsal-001` 红在现场驱动脚本自己（第 21 条），`-002` 红在场景拷活库
+（`Copy-Item` 读不了被 SQLite 字节区间锁住的 `-shm`，改为只读连接上 `VACUUM INTO`），`-003` 红在场景
+假设关卡是停靠 5（实际编号 9）、以及驱动把恢复窗口开着时装货途中本来就显示的「取消装货」算成了恢复入口，
+`-004` 与 `-005` 的 `L2-FW-40` **红在产品**：车载端把三项的关卡作业清单判 `PROTOCOL_SCHEMA_INVALID`
+（8005-agv-program#48）。`-004` 在卸货里空等满 30 分钟，服务端日志与假 RIoT 日志、库快照里的
+`ProtocolInbox` 因此是其余证据的十倍大，**这三个文件提交时无损 gzip**（原文件 SHA-256 记在提交说明里），
+`-005` 起卸货只等 5 分钟。
 
 方案第 4 节标 ★ 的三条**现在三条都有了**。第三条（车载端时钟偏差）走了最远：合成对端里根本没有
 `VehicleSafetySignal.IsFresh` 那段逻辑，真车载端接进来之后逻辑在跑了，但两端同机共用一个时钟，
@@ -250,6 +258,10 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   `sublot-wait-timeout` 用它把窗口压到十秒，`auto-charge-endurance` 用它打开自动充电并给出
   充电桩身份，`load-cancelled-before-sublot` 反过来把窗口拉到十分钟——那条场景要证明终结来自
   操作员那一次取消，而不是窗口自己到期。
+- `OnboardAutomation` —— 只对真装置有效。打开真车载端自己的 loopback HTTP 自动化面（端口 58414），
+  场景经 `$Context.OnboardAutomationPort` 找到它。给的是现场驱动脚本 `scripts/field/FieldOperator.psm1`
+  的彩排用的：车上驱动脚本说话的对象只有它，照旧走 UIA 就证不到上车的那份代码。其余真装置场景不开，
+  保持它们绿的那一套配置。
 - `ClockSkewMs` —— 只对真装置有效。车辆安全投影改经 `tools/ControlServer.ClockSkewProxy` 转发，
   `observedAt` 往后推这么多毫秒，等价于车载端时钟慢了这么多。合成对端没有新鲜度判定，给它设这个
   键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。
@@ -279,6 +291,7 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 | 模拟器 HTTP 控制面（真装置） | 58411 |
 | 模拟器 Modbus TCP（真装置） | 58412 |
 | 时钟偏差代理（`ClockSkewMs` 场景） | 58413 |
+| 车载端 HTTP 自动化面（`OnboardAutomation` 场景） | 58414 |
 
 刻意避开现场运行（58105/58107）、staged G3（58205/58207）与 demand-bearing G3（58305/58307）：
 撞上了要的是绑不上端口直接失败，而不是悄悄连到另一台服务器上去。模拟器同理不用它自己的默认
@@ -445,6 +458,16 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 20. **重新拉起车载端之后别马上点弹窗。**`-003` 在拉起后约 1 秒点「补偿清空」，确认框已经在 UIA
     树里，按钮却还不接受输入，`Invoke` 抛 `Operation is not valid due to the current state of the
     object.`，请求没发出去。`Confirm` 现在在截止前把 `InvalidOperationException` 当「还没好」重试。
+21. **判「车重开了、在等人」要看先后，不能看计数。**`real-onboard-field-window-rehearsal-001` 在停靠 2
+    期限后第一次空关，驱动脚本（`scripts/field/FieldOperator.psm1`）等的是「`UNLOCKING` 与
+    `WAITING_OPERATOR` 都比关门前多」。车辆门开着时每满一个 `operationTimeoutMs` 发一条提示节拍的
+    `WAITING_OPERATOR`，而这一条恰好在关门后约 1 秒、重开的 `UNLOCKING` **之前** 290 ms 到——两个计数
+    都涨了，脚本在开锁脉冲还没撤的时候关了第二次门，车辆从此观测不到稳定的已开锁，3 秒
+    `UnlockFeedbackTimeout` 之后交出 `UNKNOWN`（`ACTION_NOT_ALLOWED_IN_STATE`），本该是确定失败的一站
+    停摆成 `RecoveryRequired`。现在判的是「基线之后有一条点名这一仓的 `UNLOCKING`，**它之后**又有一条
+    点名这一仓的 `WAITING_OPERATOR`」（`Get-FieldReopenedSlot`）。与第 13、14 条是同一类：条件在读
+    的那一刻碰巧成立，而成立的原因不是要等的那件事。彩排的 3 分钟等待让关门点落在节拍前 2 秒，
+    才撞出来；现场 20 分钟不一定对齐，判法照样是错的。
 
 ## 车载端报文的 schema 校验：`L2-SC-01`
 

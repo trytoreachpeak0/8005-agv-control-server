@@ -3,12 +3,15 @@
 <#
 .SYNOPSIS
     Collects the evidence for the slot-convergence field window -- the three operator-inaction
-    scenarios of ADR-cross-0058 run on agv01 against a real Modbus IO module.
+    scenarios of ADR-cross-0058 run on agv01, against a real Modbus IO module or (unattended, since
+    2026-09-11) against the vehicle's own slot simulator.
 
 .DESCRIPTION
     This script does not drive a vehicle and does not decide whether the window passed on the
-    physical side. A person opens and closes doors, withholds cargo, and watches the HMI; those
-    facts reach the evidence through the field record they fill in. What this script does is take
+    physical side. Somebody opens and closes doors, withholds cargo, and watches the HMI -- a person
+    on the real module, Invoke-SlotConvergenceFieldDrive.ps1 on the simulator, which also calls the
+    checkpoints and writes the record -- and those facts reach the evidence through the field record.
+    The record's ioKind says which, and the window-level assertions follow it. What this script does is take
     the facts that are already written down by the two ends -- the server's own SQLite store and the
     onboard logs -- freeze them, and compute the assertions ADR-cross-0058 can actually be judged by.
 
@@ -81,6 +84,11 @@ param(
     # output; the L2 module borrows them from whatever build is under test rather than taking a
     # dependency of its own, and this script borrows them the same way.
     [string]$HostDirectory,
+
+    # How long scenario C must still be waiting past the deadline (SC1-C-04). Twenty minutes is the
+    # ticket's number and the field value. Only a rehearsal on the L2 rig passes less, and the value is
+    # written into assertions.json and SUMMARY.md so a short hold can never pass as a field window.
+    [double]$MinimumHoldMinutes = 20,
 
     # This script lives in scripts/field, so the repository root is two levels up.
     [string]$Repository = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
@@ -444,6 +452,17 @@ if (-not $Finalize) {
 $assertions = New-L2Assertions
 $facts = [ordered]@{}
 
+# Which IO the window ran on decides what the record can carry. On the real module a person opened the
+# doors and photographed them; on the vehicle's slot simulator (the unattended windows, 2026-09-11 on)
+# scripts/field/FieldOperator.psm1 played every hand and wrote the record itself, and there is nothing to
+# photograph. The record says which; an old hand-filled record without the field is read from the IO
+# address the vehicle was actually configured with.
+$ioAddress = [string]($identity['onboardIoModule'] ?? $record.ioModule)
+$ioKind = [string]($record.ioKind ?? (($ioAddress -match '^(127\.0\.0\.1|localhost):') ? 'SIMULATOR' : 'REAL_MODULE'))
+$facts['ioKind'] = $ioKind
+$facts['minimumHoldMinutes'] = $MinimumHoldMinutes
+if ($record.drivenBy) { $facts['drivenBy'] = [string]$record.drivenBy }
+
 function Get-ScenarioRecord {
     param([string]$Id)
     return @($record.scenarios | Where-Object { $_.id -eq $Id })[0]
@@ -551,7 +570,10 @@ if ($scenarioA) {
         ($demandRow -and [string]$demandRow.Status -ne 'RecoveryRequired'),
         '不是 RecoveryRequired', ($demandRow ? [string]$demandRow.Status : '(没有这一行)'))
 
-    $assertions.Add('SC1-A-05', 'HMI 上没有出现恢复入口——操作员迟疑不需要管理员凭据（现场观察）',
+    # Unattended, this is read from the onboard automation snapshot's availableRecoveryActions, narrowed to
+    # the protocol's three recovery actions: with the window open, 取消装货 and 修正装货 show during an
+    # ordinary load and are not an entry that needs an administrator (FieldOperator.psm1 says why).
+    $assertions.Add('SC1-A-05', "HMI 上没有出现恢复入口——操作员迟疑不需要管理员凭据（$($scenarioA.observedBy ? '驱动脚本读车载端快照 availableRecoveryActions 里的三个恢复动作' : '现场观察')）",
         ($false -eq $scenarioA.observedRecoveryEntryVisible),
         $false, $scenarioA.observedRecoveryEntryVisible)
 }
@@ -660,7 +682,7 @@ if ($scenarioC) {
     $plus20Load = @($plus20Operations | Where-Object { $_.DemandId -eq $scenarioC.demandId -and $_.OperationType -eq 'Load' })[0]
 
     # The ticket names this value: waiting does not decay into ending.
-    $assertions.Add('SC1-C-03', '期限到期后再等 20 分钟依然不结束——等待不会自己退化成结束',
+    $assertions.Add('SC1-C-03', "期限到期后再等 $MinimumHoldMinutes 分钟依然不结束——等待不会自己退化成结束",
         ($atPlus20Row -and [string]$atPlus20Row.Stage -eq 'AwaitingLoadResult' -and
             [string]$atPlus20Row.BlockReasonCode -eq 'STATION_TIMEOUT_DOOR_NOT_CLOSED' -and
             $plus20Load -and [string]$plus20Load.Status -eq 'Prepared'),
@@ -671,9 +693,9 @@ if ($scenarioC) {
     $deadlineAt = $scenarioC.deadlineAt ? [datetimeoffset]::Parse([string]$scenarioC.deadlineAt) : $null
     $stillWaitingAt = $scenarioC.stillWaitingObservedAt ? [datetimeoffset]::Parse([string]$scenarioC.stillWaitingObservedAt) : $null
     $gap = ($deadlineAt -and $stillWaitingAt) ? ($stillWaitingAt - $deadlineAt) : $null
-    $assertions.Add('SC1-C-04', '那次复查确实在期限之后 20 分钟以上',
-        ($gap -and $gap.TotalMinutes -ge 20),
-        '>= 20 分钟', ($gap ? ('{0:N1} 分钟' -f $gap.TotalMinutes) : '(现场记录没有填这两个时刻)'))
+    $assertions.Add('SC1-C-04', "那次复查确实在期限之后 $MinimumHoldMinutes 分钟以上",
+        ($gap -and $gap.TotalMinutes -ge $MinimumHoldMinutes),
+        ">= $MinimumHoldMinutes 分钟", ($gap ? ('{0:N1} 分钟' -f $gap.TotalMinutes) : '(现场记录没有填这两个时刻)'))
 
     # Judged at the +20 min checkpoint, before anyone touched the door: by then it has stood open for
     # well over one OperationTimeout (120 s on agv01), so the vehicle has re-prompted -- and must still
@@ -701,10 +723,20 @@ if ($scenarioC) {
 
 $photoPointers = @($record.photoPointers) + @($record.scenarios | ForEach-Object { $_.photoPointers }) |
     Where-Object { $_ }
-$assertions.Add('SC1-W-01', '三个场景都有现场记录，且留下了照片指针（照片本身不进 git）',
-    (@($record.scenarios).Count -ge 3 -and $photoPointers.Count -gt 0),
-    '3 个场景 / 至少一个照片指针',
-    "$(@($record.scenarios).Count) 个场景 / $($photoPointers.Count) 个指针")
+if ($ioKind -eq 'SIMULATOR') {
+    # Nobody stood at the vehicle, so there is no photograph to point at -- and asking for one would only
+    # teach the next window to invent a pointer. What replaces it is that the record was written by the
+    # driver that played the operator, from what it did, rather than typed afterwards.
+    $assertions.Add('SC1-W-01', '三个场景都有现场记录，且记录由驱动脚本按实际动作写出（模拟器 IO 下无人到场，照片不适用）',
+        (@($record.scenarios).Count -ge 3 -and [bool]$record.drivenBy),
+        '3 个场景 / drivenBy 非空',
+        "$(@($record.scenarios).Count) 个场景 / drivenBy=$($record.drivenBy ?? '(空)')")
+} else {
+    $assertions.Add('SC1-W-01', '三个场景都有现场记录，且留下了照片指针（照片本身不进 git）',
+        (@($record.scenarios).Count -ge 3 -and $photoPointers.Count -gt 0),
+        '3 个场景 / 至少一个照片指针',
+        "$(@($record.scenarios).Count) 个场景 / $($photoPointers.Count) 个指针")
+}
 
 $assertions.Add('SC1-W-02', '窗口内恢复入口是开着的——否则决策 2 只验证了一半',
     ($true -eq $record.recoveryWindowOpen),
@@ -752,13 +784,35 @@ $photoRows = ($photoPointers | ForEach-Object { "- ``$_``" }) -join "`n"
 $checkpointRows = (@(Get-ChildItem -LiteralPath $snapshotRoot -Directory | Sort-Object Name) | ForEach-Object {
     "- ``snapshots/$($_.Name)/``" }) -join "`n"
 
+$simulated = $ioKind -eq 'SIMULATOR'
+$titleSuffix = $simulated ? '在车上的 slots-simulator 上无人驱动验收' : '在真实 IO 模块上验收'
+$peopleCell = $simulated ? "无人到场，$($record.drivenBy ?? '(未记录驱动)')" : (@($record.observers) -join '、')
+$photoSection = $simulated ? '模拟器 IO 下无人到场，没有照片；现场记录由驱动脚本按实际动作写出。' : $photoRows
+$provenParagraph = $simulated ? @"
+**证明了**：ADR-cross-0058 的决策 1、2、4、5 在 ``$($record.agvId)``（$($record.site)）上、IO 接 slots-simulator
+（``$ioAddress``）时，**软件闭环**的行为与判据一致；操作员的每一个动作由驱动脚本冒充，记录与 checkpoint 由它按实际动作写出。
+车是不是真的在线路上走，这份证据不回答——现场窗口是，L2 彩排不是，看「现场」一栏。
+
+**没有证明**：光幕极性、锁反馈时序与机械弹开行为。ADR-cross-0058 原话是模拟器证明不了这三样，而本窗口的 IO 正是模拟器——
+这是 2026-09-11 改为全部无人值守时有意放弃的，见地图 Out of scope。
+"@ : @"
+**证明了**：ADR-cross-0058 的决策 1、2、4、5 在 ``agv01`` 配真实 Modbus IO 模块
+（``$ioAddress``）上的行为与判据一致——光幕极性、锁反馈时序与机械弹开
+行为都是真的，这正是模拟器证明不了的那三样。
+"@
+$holdNote = ($MinimumHoldMinutes -lt 20) `
+    ? "**注意：本次按 ``-MinimumHoldMinutes $MinimumHoldMinutes`` 判场景 C，低于现场要求的 20 分钟，只能算彩排，不能当现场窗口的证据。**" `
+    : ''
+
 $summary = @"
-# 现场窗口一证据：三个操作员不作为场景在真实 IO 模块上验收
+# 现场窗口一证据：三个操作员不作为场景$titleSuffix
+
+$holdNote
 
 结论：**$outcome**
 
 对应 [ADR-cross-0058](../../../8005-agv-program/docs/adr/cross/0058-slot-convergence.md) 的决策 1、2、4、5，
-以及地图票 [现场窗口一](https://github.com/trytoreachpeak0/8005-agv-program/issues/19)。
+以及地图票 $($simulated ? '[现场窗口一（无人）](https://github.com/trytoreachpeak0/8005-agv-program/issues/45)' : '[现场窗口一](https://github.com/trytoreachpeak0/8005-agv-program/issues/19)')。
 
 ## 身份
 
@@ -767,9 +821,10 @@ $summary = @"
 | runId | ``$runId`` |
 | 窗口 | ``$windowId`` 装卸站收敛语义 |
 | 现场 | $($record.site) |
-| 现场人员 | $(@($record.observers) -join '、') |
+| 现场人员 | $peopleCell |
 | agvId | ``$($record.agvId)`` |
-| IO 模块 | ``$($identity.onboardIoModule ?? $record.ioModule)`` |
+| IO | ``$ioAddress``（$ioKind） |
+| 场景 C 等待下限 | $MinimumHoldMinutes 分钟 |
 | 恢复窗口 | $($record.recoveryWindowOpen ? '窗口内开启' : '**未开启**') |
 | 数据库 | ``$($identity.database)`` |
 
@@ -794,7 +849,7 @@ $factRows
 
 照片本身不进 git，这里只留指针。
 
-$photoRows
+$photoSection
 
 ## checkpoint 序列
 
@@ -816,9 +871,7 @@ $checkpointRows
 
 ## 这份证据证明了什么，没证明什么
 
-**证明了**：ADR-cross-0058 的决策 1、2、4、5 在 ``agv01`` 配真实 Modbus IO 模块
-（``$($identity.onboardIoModule ?? $record.ioModule)``）上的行为与判据一致——光幕极性、锁反馈时序与机械弹开
-行为都是真的，这正是模拟器证明不了的那三样。
+$provenParagraph
 
 **没有证明**：完整闭环。受理→取货→录 SUBLOT→装货→安全检查→去关卡→卸货→收尾，以及自动充电与取消订单
 两条支路，属于现场窗口二（[#20](https://github.com/trytoreachpeak0/8005-agv-program/issues/20)），不在这份证据里。

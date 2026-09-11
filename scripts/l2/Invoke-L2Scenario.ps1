@@ -46,6 +46,9 @@ param(
     [int]$SimulatorModbusPort = 58412,
     # Only started when a scenario asks for clock skew; see scenarios/*.setup.psd1.
     [int]$ClockSkewProxyPort = 58413,
+    # The shipped onboard's own loopback automation face, only turned on when a scenario asks for it
+    # (OnboardAutomation). Its default 58007 is the field value, and an L2 run must not answer there.
+    [int]$OnboardAutomationPort = 58414,
 
     # The two peer repositories are read-only for agents, so they are never built in place: each is
     # cloned to the cache below and published from the clone. Siblings of this repository by
@@ -119,6 +122,13 @@ $extraStations = if ($setup.ContainsKey('ExtraStations')) { $setup.ExtraStations
 $recoveryResume = ($setup.ContainsKey('RecoveryResume') -and $setup.RecoveryResume)
 if ($recoveryResume -and -not $realOnboard) {
     throw "RecoveryResume needs Onboard = 'Real': the synthetic peer never starts a recovery session."
+}
+# The onboard's HTTP automation face instead of (not as well as) UI Automation: what the field driver
+# scripts/field/FieldOperator.psm1 talks to on a vehicle. Declared per scenario so every existing
+# real-onboard scenario keeps running the configuration it went green against -- with the face off.
+$onboardAutomation = ($setup.ContainsKey('OnboardAutomation') -and $setup.OnboardAutomation)
+if ($onboardAutomation -and -not $realOnboard) {
+    throw "OnboardAutomation needs Onboard = 'Real': the synthetic peer has its own control plane."
 }
 # Not a secret: it authorises nothing outside this loopback rig, and the whole point of the run is
 # that it is written down in the evidence.
@@ -448,6 +458,10 @@ try {
                 $settings.vehicleSafety.expectedVehicleKey = $vehicleKey
                 $settings.ioModule.host = '127.0.0.1'
                 $settings.ioModule.port = $SimulatorModbusPort
+                # The rig runs the onboard as Development, so no productionReviewReference is needed;
+                # on a vehicle the same face also needs one.
+                $settings.automation.enabled = $onboardAutomation
+                $settings.automation.port = $OnboardAutomationPort
                 # Into the evidence rather than the stage root: the onboard's own log is the
                 # richest account of a failed run, and the stage root is deleted on a pass.
                 $settings.logging.directory = (Join-Path $logRoot 'onboard-app')
@@ -547,6 +561,16 @@ try {
         GateStationRiotId   = $gateStationRiotId
         PickupStationRiotId = $pickupStationRiotId
         HealthPort          = $HealthPort
+        # What the field driver needs to run against this rig as it would against a vehicle: the two
+        # loopback faces, and the server's store -- a live file a checkpoint copies, and the build
+        # whose Microsoft.Data.Sqlite reads it.
+        SimulatorHttpPort     = $SimulatorHttpPort
+        SimulatorModbusPort   = $SimulatorModbusPort
+        OnboardAutomationPort = $onboardAutomation ? $OnboardAutomationPort : $null
+        DatabasePath          = $databasePath
+        HostDirectory         = $hostDirectory
+        StageRoot             = $stageRoot
+        Repository            = $Repository
         SnapshotRoot        = $snapshotRoot
         # Order is the start position, and Stop-L2Process tears down in reverse: fake RIoT 1, fake
         # MesIngest 2, simulator 3, ControlServer 4, clock skew proxy 5, onboard 6 (synthetic or
