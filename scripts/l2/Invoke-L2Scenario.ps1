@@ -160,7 +160,10 @@ $schemaLinesPath = if ($realOnboard) {
 
 $journal = New-L2Journal -Path (Join-Path $EvidenceRoot 'timeline.jsonl')
 $assertions = New-L2Assertions
-$handles = @()
+# A list rather than an array: a scenario can start a component again (RelaunchOnboard below), and
+# that scriptblock runs in the scenario's scope, where `+=` would build a new local array and
+# teardown would never see the process it started.
+$handles = [System.Collections.Generic.List[object]]::new()
 $connection = $null
 $outcome = 'FAIL'
 $failureReason = $null
@@ -249,7 +252,7 @@ try {
         -ArgumentList $riotArguments `
         -WorkingDirectory $riotDirectory -LogRoot $logRoot |
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 1 -PassThru }
-    $handles += $riotHandle
+    $handles.Add($riotHandle)
 
     $mesHandle = Start-L2Process -Name 'fake-mes-ingest' `
         -FilePath (Join-Path $mesDirectory 'ControlServer.FakeMesIngest.exe') `
@@ -258,7 +261,7 @@ try {
             "--FakeMesIngest:instanceId=l2-mes") `
         -WorkingDirectory $mesDirectory -LogRoot $logRoot |
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 2 -PassThru }
-    $handles += $mesHandle
+    $handles.Add($mesHandle)
 
     $riot = New-L2Double -Name 'fake-riot' -BaseUrl "http://127.0.0.1:$FakeRiotPort"
     $mes = New-L2Double -Name 'fake-mes-ingest' -BaseUrl "http://127.0.0.1:$FakeMesIngestPort"
@@ -289,7 +292,7 @@ try {
             -FilePath (Join-Path $simulatorDirectory 'SQCD_8005AGV_Simulator.exe') `
             -WorkingDirectory $simulatorDirectory -LogRoot $logRoot |
             ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 3 -PassThru }
-        $handles += $simulatorHandle
+        $handles.Add($simulatorHandle)
 
         $simulator = New-L2Double -Name 'slots-simulator' -BaseUrl "http://127.0.0.1:$SimulatorHttpPort" `
             -Prefix 'api/v1' -RequireExpectedRevision
@@ -375,7 +378,7 @@ try {
         -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
         -WorkingDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot |
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 4 -PassThru }
-    $handles += $serverHandle
+    $handles.Add($serverHandle)
 
     # /health/live, not /health/ready: readiness means a peer has completed the recovery handshake,
     # and the peer cannot connect until the server is listening. Waiting on readiness here would
@@ -398,7 +401,7 @@ try {
                 "--ClockSkewProxy:Seed:skewMs=$clockSkewMs") `
             -WorkingDirectory $skewProxyDirectory -LogRoot $logRoot |
             ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5 -PassThru }
-        $handles += $skewProxyHandle
+        $handles.Add($skewProxyHandle)
 
         $skewProxy = New-L2Double -Name 'clock-skew-proxy' -BaseUrl "http://127.0.0.1:$ClockSkewProxyPort"
         $null = Wait-L2Condition -Description 'the clock skew proxy is live' -Journal $journal `
@@ -454,22 +457,36 @@ try {
             'CONTROL_SERVER_OPERATOR_ID'        = 'L2-OPERATOR'
         }
         if ($recoveryResume) { $onboardEnvironment[$recoveryProofVariable] = $recoveryProof }
-        $onboardHandle = Start-L2Process -Name 'onboard-hmi' -Gui `
-            -FilePath (Join-Path $onboardStageDirectory 'SQCD.Agv.Wpf.exe') `
-            -WorkingDirectory $onboardStageDirectory `
-            -Environment $onboardEnvironment `
-            -LogRoot $logRoot |
-            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
-        $handles += $onboardHandle
 
-        $onboard = New-L2OnboardDriver -ProcessId $onboardHandle.Process.Id
-        $journal.Note("Onboard window: $($onboard.Attach(120))")
+        # A scriptblock because a scenario may start the same onboard a second time: same staged
+        # directory, same journal, same environment -- a process that exits and comes back, which is
+        # what a closed window, a crash or a power loss looks like from the server's side.
+        $startRealOnboard = {
+            param([Parameter(Mandatory)][string]$LogName)
+            $handle = Start-L2Process -Name $LogName -Gui `
+                -FilePath (Join-Path $onboardStageDirectory 'SQCD.Agv.Wpf.exe') `
+                -WorkingDirectory $onboardStageDirectory `
+                -Environment $onboardEnvironment `
+                -LogRoot $logRoot
+            # The log name differs per start so the second start does not overwrite the first one's
+            # stdout and stderr; the component name does not, so StopComponent finds either.
+            $handle.Name = 'onboard-hmi'
+            $handle | Add-Member -NotePropertyName Order -NotePropertyValue 6
+            $handles.Add($handle)
 
-        # The simulator counts Modbus clients, so "the onboard is talking to IO" is observed from
-        # the simulator rather than taken on trust from the onboard's own log.
-        $null = Wait-L2Condition -Description 'the onboard connected to the simulator over Modbus' `
-            -Journal $journal -Criterion 'onboard-modbus' -TimeoutSeconds 60 -Component $onboardHandle `
-            -Probe { [int]$simulator.Health().modbus.clientCount } -Until { param($v) $v -ge 1 }
+            $driver = New-L2OnboardDriver -ProcessId $handle.Process.Id
+            $journal.Note("Onboard window: $($driver.Attach(120))")
+
+            # The simulator counts Modbus clients, so "the onboard is talking to IO" is observed from
+            # the simulator rather than taken on trust from the onboard's own log.
+            $null = Wait-L2Condition -Description 'the onboard connected to the simulator over Modbus' `
+                -Journal $journal -Criterion 'onboard-modbus' -TimeoutSeconds 60 -Component $handle `
+                -Probe { [int]$simulator.Health().modbus.clientCount } -Until { param($v) $v -ge 1 }
+            return [pscustomobject]@{ Handle = $handle; Driver = $driver }
+        }
+        $onboardStart = & $startRealOnboard 'onboard-hmi'
+        $onboardHandle = $onboardStart.Handle
+        $onboard = $onboardStart.Driver
     } else {
         # OnboardSeed lands on the safety summary the handshake's SafetyStateSnapshot carries,
         # which is the only way to establish a session that already says the vehicle is moving.
@@ -494,7 +511,7 @@ try {
             -Environment @{ 'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential } `
             -LogRoot $logRoot |
             ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
-        $handles += $onboardHandle
+        $handles.Add($onboardHandle)
 
         $onboard = New-L2Double -Name 'fake-onboard' -BaseUrl "http://127.0.0.1:$FakeOnboardPort"
         $null = Wait-L2Condition -Description 'the synthetic peer reached READY' -Journal $journal -Criterion 'onboard-readiness' `
@@ -544,6 +561,17 @@ try {
             if ($matched.Count -eq 0) { throw "No such component to stop: $Name" }
             $journal.Note("Stopping component '$Name'.")
             Stop-L2Process -Handles $matched
+        }
+        # The other half of powering the onboard down: start the very same staged onboard again,
+        # against the journal the first process left behind. Returns a fresh UI Automation driver;
+        # the one in Onboard above belongs to a process that no longer exists.
+        RelaunchOnboard     = {
+            if (-not $realOnboard) { throw 'RelaunchOnboard needs the real-onboard rig.' }
+            $alive = @($handles | Where-Object { $_.Name -eq 'onboard-hmi' -and -not $_.Process.HasExited })
+            if ($alive.Count -gt 0) { throw 'The onboard is still running; stop it with StopComponent first.' }
+            $starts = @($handles | Where-Object { $_.Name -eq 'onboard-hmi' }).Count
+            $journal.Note("Relaunching the onboard (start $($starts + 1)) against the same journal.")
+            return (& $startRealOnboard "onboard-hmi.start$($starts + 1)").Driver
         }
     }
 

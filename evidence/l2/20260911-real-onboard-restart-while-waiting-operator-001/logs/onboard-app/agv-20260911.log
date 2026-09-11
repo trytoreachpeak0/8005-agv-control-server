@@ -1,0 +1,18 @@
+2026-09-11T10:53:56.7772806+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+3cf26651111220cec67a370ac5b9f81bc21bd697。
+2026-09-11T10:53:57.5151173+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T10:53:57.5321671+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T10:53:57.5332656+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T10:53:57.9366978+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-11T10:53:59.5975356+08:00	Information	App	服务端请求录入Sublot：demandId=8997e172-b14a-4ca2-b8fd-4b0c7f5d8645，revision=1。 
+2026-09-11T10:54:00.4359684+08:00	Information	App	服务端请求录入Sublot：demandId=8997e172-b14a-4ca2-b8fd-4b0c7f5d8645，revision=1。 
+2026-09-11T10:54:00.5984676+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-11T10:54:00.6881820+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-11T10:54:00.8119414+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-11T10:54:01.1558984+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-11T10:54:01.4477250+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=060c23a2-e7a6-3156-bf9f-e2acc6aab48a。
+2026-09-11T10:54:02.3936073+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+3cf26651111220cec67a370ac5b9f81bc21bd697。
+2026-09-11T10:54:02.8814939+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-11T10:54:02.8905635+08:00	Information	OnboardController	IO模块在线。
+2026-09-11T10:54:02.8924417+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-11T10:54:03.1462358+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
+2026-09-11T10:55:33.9534469+08:00	Warning	WireToGateBusinessService	恢复向量LOAD_COMPENSATION未执行：reason=RECOVERY_DEMAND_NOT_BLOCKED。 | InvalidOperationException: RECOVERY_DEMAND_NOT_BLOCKED
