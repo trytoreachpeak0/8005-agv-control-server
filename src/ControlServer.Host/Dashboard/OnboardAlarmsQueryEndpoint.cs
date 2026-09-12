@@ -4,7 +4,7 @@ using ControlServer.Infrastructure.Persistence;
 namespace ControlServer.Host.Dashboard;
 
 /// <summary>
-/// 车队视图的告警数据面：每台车要么是当下进看板的告警，要么是拿不到它的原因。
+/// 车队视图的告警数据面：每台车要么是当下的全部告警（REQ-0270），要么是拿不到它的原因。
 /// </summary>
 /// <remarks>
 /// 接入这个数据面只加了两个文件——这一个，和看板工程里的那张卡片。**没有改任何一个既有文件**，

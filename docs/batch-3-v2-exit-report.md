@@ -78,7 +78,7 @@ Passed!  - Failed:     0, Passed:    45, Skipped:     0, Total:    45 - SQCD.Agv
 | 场景 | 讲什么 | 装置 |
 | --- | --- | --- |
 | `slot-configuration-activation-replay` | `FP-IS-14`：激活「下发 → 断线 → 重连 → 补报」。断线期间服务端不猜，重连后补发同一行命令，车只报一次结果，只收敛一次；顺带经 `FieldOps export-audit` 导出这次激活的业务审计 | 合成车载端，13 条判据 |
-| `onboard-alarm-snapshot-dashboard` | `FP-IS-15`：「车载产快照 → 服务端消费 → 看板可见」。断言读真看板进程渲染的页面；收敛规则、整体取代、失联直述、重连采纳 | 合成车载端 ＋ 真看板进程，8 条判据 |
+| `onboard-alarm-snapshot-dashboard` | `FP-IS-15`：「车载产快照 → 服务端消费 → 看板可见」。断言读真看板进程渲染的页面；看板显示全部告警（2026-09-12 起，REQ-0270 原文）、整体取代、失联直述、重连采纳 | 合成车载端 ＋ 真看板进程，8 条判据 |
 
 | 运行 | commit | 结果 | 证据 |
 | --- | --- | --- | --- |

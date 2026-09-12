@@ -154,12 +154,11 @@ public sealed class OnboardAlarmSnapshotWireTests
     }
 
     /// <summary>
-    /// <c>subjectType</c> 决定告警归哪一侧，认不出来的归看板。
+    /// <c>subjectType</c> 决定告警与车的关系，认不出来的归 <see cref="OnboardAlarmScope.Fleet"/>；看板上全部可见。
     /// </summary>
     /// <remarks>
-    /// 协议把 <c>subjectType</c> 留成开放字符串，所以服务端必然会遇到读不懂的取值。往可见方向倒：
-    /// 未知归 <see cref="OnboardAlarmScope.Fleet"/>，也就是进看板。反过来归给三个车载类之一，等于让
-    /// 一条服务端读不懂的告警只在车上出现，两边加起来就不再是全集了。
+    /// 协议把 <c>subjectType</c> 留成开放字符串，所以服务端必然会遇到读不懂的取值。它仍然被照存为 Fleet，而看板按
+    /// REQ-0270「全部 8005 告警集中显示在 ControlServer」显示全部，一条读不懂的告警同样不会消失。
     /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-15")]
@@ -183,9 +182,10 @@ public sealed class OnboardAlarmSnapshotWireTests
         VehicleAlarmProjection projection = Assert.Single(
             await store.ReadDashboardProjectionAsync(TestContext.Current.CancellationToken));
 
-        // 三条与那台车的当下直接相关的归车载端界面，看板上看不到；读不懂的那条在看板上。
+        // 看板集中显示全部四条，包括读不懂主体类型的那一条。
         Assert.Equal(
-            ["ONBOARD_SOMETHING_THE_SERVER_HAS_NEVER_HEARD_OF"],
+            ["ONBOARD_SLOT_LOCK_FEEDBACK_LOST", "ONBOARD_STATION_BLOCKED", "ONBOARD_OPERATION_STALLED",
+             "ONBOARD_SOMETHING_THE_SERVER_HAS_NEVER_HEARD_OF"],
             projection.Alarms.Select(alarm => alarm.AlarmCode));
 
         OnboardAlarmEntry[] stored = JsonSerializer.Deserialize<OnboardAlarmEntry[]>(

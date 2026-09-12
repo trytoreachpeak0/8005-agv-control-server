@@ -99,13 +99,13 @@ public sealed class OnboardAlarmProjectionTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-15")]
-    public async Task OnlyAlarmsUnrelatedToAnyVehiclesOwnSituationReachTheDashboard()
+    public async Task EveryAlarmOfAVehicleReachesTheDashboardWhateverItsRelationToTheVehicle()
     {
         await using AlarmFixture fixture = await AlarmFixture.CreateAsync();
         await fixture.MarkSessionReadyAsync("AGV-01");
 
-        // 本期没有人员认证，所以收敛不是按人分权，是按「哪个界面看得到什么」：与当前 AGV／当前停靠／
-        // 当前操作直接相关的三类归车载端界面，其余进看板。两边加起来是全集。
+        // REQ-0270：「全部 8005 告警集中显示在 ControlServer」。与当前 AGV／当前停靠／当前操作直接相关的那三类
+        // 在车上也显示（车载端收敛），但看板上一条都不少。2026-09-12 之前这里只放行 Fleet，与原文不符。
         await fixture.Store.RecordSnapshotAsync(
             new OnboardAlarmSnapshotView("AGV-01", 1, Now,
             [
@@ -120,7 +120,15 @@ public sealed class OnboardAlarmProjectionTests
 
         VehicleAlarmProjection projection = Assert.Single(
             await fixture.Store.ReadDashboardProjectionAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(["ONBOARD_FLEET_CLOCK_SKEW"], projection.Alarms.Select(alarm => alarm.AlarmCode));
+        Assert.Equal(
+            ["ONBOARD_IO_MODULE_DISCONNECTED", "ONBOARD_STATION_OPERATION_OVERDUE",
+             "ONBOARD_SLOT_LOCK_FEEDBACK_LOST", "ONBOARD_FLEET_CLOCK_SKEW"],
+            projection.Alarms.Select(alarm => alarm.AlarmCode));
+        // 与车的关系照存：车载端本机界面据此收敛，看板不据此过滤。
+        Assert.Equal(
+            [OnboardAlarmScope.CurrentVehicle, OnboardAlarmScope.CurrentStop,
+             OnboardAlarmScope.CurrentOperation, OnboardAlarmScope.Fleet],
+            projection.Alarms.Select(alarm => alarm.Scope));
     }
 
     [Fact]

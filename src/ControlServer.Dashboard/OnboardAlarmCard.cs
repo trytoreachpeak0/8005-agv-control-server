@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace ControlServer.Dashboard;
 
 /// <summary>
-/// 车队视图的告警卡片：每台车当下进看板的告警，或者拿不到它的原因。
+/// 车队视图的告警卡片：每台车当下的全部告警（REQ-0270），或者拿不到它的原因。
 /// </summary>
 /// <remarks>
 /// 接入它没有改看板主文件——这个文件就是它在看板这一侧的全部。失联的车这一行显示的是失联本身，

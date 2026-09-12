@@ -15,9 +15,9 @@ namespace ControlServer.Host.Transport;
 /// </para>
 /// <para>
 /// <b><c>subjectType</c> 是开放字符串，所以未知取值归 <see cref="OnboardAlarmScope.Fleet"/>。</b>
-/// 这是**朝可见方向**倒的：Fleet 是进看板的那一类，认不出主体类型的告警会被看见，而不是悄悄消失。
-/// 反过来把未知归给三个车载类之一，等于让一条服务端读不懂的告警只出现在车上——两边加起来就不再是
-/// 全集了。
+/// 看板按 REQ-0270 集中显示全部告警，所以这个归类不决定看板上看不看得到；它只回答「这条告警与车的关系」。
+/// 读不懂的主体类型就不声称它与车当下直接相关，照存为 Fleet。2026-09-12 之前看板只放行 Fleet，这里当时是
+/// 为了「朝可见方向倒」，现在那层理由已经不需要了，归类本身不变。
 /// </para>
 /// <para>
 /// <b>告警码全程是字符串。</b>它一次都不经过 <c>ErrorCode</c>：告警是开放集合，协议错误码是封闭
@@ -26,7 +26,7 @@ namespace ControlServer.Host.Transport;
 /// </remarks>
 internal static class OnboardAlarmSnapshotWire
 {
-    /// <summary>看板与车载两侧分账用的主体类型。协议把它留成开放字符串，这里是服务端认得的那几个。</summary>
+    /// <summary>决定告警与车的关系的主体类型。协议把它留成开放字符串，这里是服务端认得的那几个。</summary>
     internal const string VehicleSubject = "VEHICLE";
 
     internal const string SlotSubject = "SLOT";

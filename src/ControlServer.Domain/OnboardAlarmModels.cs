@@ -5,22 +5,23 @@ namespace ControlServer.Domain;
 /// </summary>
 /// <remarks>
 /// **本期没有人员认证，所以「按访问模型收敛」不是按人分权，是按「哪个界面看得到什么」分。**与当前
-/// AGV／当前停靠／当前操作直接相关的显示在对应车载端界面（那一半在 onboard-hmi），其余进看板。所以
-/// 这个枚举描述的是关系，不是权限：求值时不需要也不接受任何身份输入。把它做成需要身份才能求值的权限
-/// 判断，会让它落在一个全场共用环境变量密钥的地基上。
+/// AGV／当前停靠／当前操作直接相关的显示在对应车载端界面（那一半在 onboard-hmi）；看板集中显示全部，
+/// 不按这个枚举过滤（见 <see cref="OnboardAlarmDashboardVisibility"/>）。所以这个枚举描述的是关系，
+/// 不是权限：求值时不需要也不接受任何身份输入。把它做成需要身份才能求值的权限判断，会让它落在一个
+/// 全场共用环境变量密钥的地基上。
 /// </remarks>
 public enum OnboardAlarmScope
 {
-    /// <summary>与那台车本身直接相关。归车载端界面。</summary>
+    /// <summary>与那台车本身直接相关。车载端界面显示，看板也显示。</summary>
     CurrentVehicle,
 
-    /// <summary>与车当前停靠的站点直接相关。归车载端界面。</summary>
+    /// <summary>与车当前停靠的站点直接相关。车载端界面显示，看板也显示。</summary>
     CurrentStop,
 
-    /// <summary>与车当前正在执行的那次操作直接相关。归车载端界面。</summary>
+    /// <summary>与车当前正在执行的那次操作直接相关。车载端界面显示，看板也显示。</summary>
     CurrentOperation,
 
-    /// <summary>与以上三者都不直接相关。**这一类进看板**。</summary>
+    /// <summary>与以上三者都不直接相关。只在看板显示。</summary>
     Fleet
 }
 
@@ -67,11 +68,19 @@ public sealed record OnboardAlarmSnapshotView(
 }
 
 /// <summary>
-/// 哪些告警进看板。
+/// 哪些告警进看板：**全部**。
 /// </summary>
 /// <remarks>
-/// 求值入参只有一份快照：没有身份，没有密钥，没有角色。看板得到的是「与哪台车的当下都不直接相关」
-/// 的那些告警——这条收敛规则的另一半在车载端，两边加起来正好是全集，没有一条告警无处可去。
+/// <para>
+/// REQ-0270 原文：「与当前 AGV、当前停靠或当前操作直接相关的告警显示在对应 OnboardHmi；**全部 8005 告警集中显示在
+/// ControlServer**」。收敛只作用在车载端那一侧——车上的人只看与这台车当下有关的；看板是集中显示，一条都不少。
+/// </para>
+/// <para>
+/// 2026-09-12 之前这里只放行 <see cref="OnboardAlarmScope.Fleet"/>，把收敛规则同时套在了两侧，与原文不符；产品负责人
+/// 当日确认按原文改为全部。<see cref="OnboardAlarmEntry.Scope"/> 仍然照存，它回答的是「这条告警与车的关系」，车载端
+/// 本机界面据此收敛，看板不据此过滤。
+/// </para>
+/// <para>求值入参仍然只有一份快照：没有身份，没有密钥，没有角色。</para>
 /// </remarks>
 public static class OnboardAlarmDashboardVisibility
 {
@@ -79,7 +88,7 @@ public static class OnboardAlarmDashboardVisibility
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        return [.. snapshot.Alarms.Where(alarm => alarm.Scope == OnboardAlarmScope.Fleet)];
+        return [.. snapshot.Alarms];
     }
 }
 

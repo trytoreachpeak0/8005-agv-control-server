@@ -12,7 +12,7 @@
 
 五件事，按 REQ-0269／REQ-0270 的口径：
 1. 完整握手里报一份，空的也报；
-2. 与这台车当下直接相关的告警不进看板，其余进；
+2. 看板集中显示这台车的全部告警，与车直接相关的也在（REQ-0270）；
 3. 后一份整体取代前一份；
 4. 失联的车显示失联本身，不显示它失联前的最后一批告警；
 5. 重连之后看板直接是当下的事实。
@@ -30,8 +30,8 @@ $onboard = $Context.Onboard
 $agvId = $Context.AgvId
 $dashboardUrl = $Context.DashboardUrl
 
-# 与服务端 OnboardAlarmSnapshotWire 的分类对照：VEHICLE 归车载界面；认不出的主体类型归看板（朝可见方向倒）。
-$vehicleOnlyCode = 'L2_ALARM_VEHICLE_ONLY'
+# REQ-0270：「全部 8005 告警集中显示在 ControlServer」。与车直接相关的告警（VEHICLE）车上也显示，看板上同样可见。
+$vehicleOnlyCode = 'L2_ALARM_VEHICLE_RELATED'
 $firstFleetCode = 'L2_ALARM_FLEET_FIRST'
 $secondFleetCode = 'L2_ALARM_FLEET_SECOND'
 $lostContactReason = '车辆失联'
@@ -83,10 +83,10 @@ $assertions.Add(
     ($emptyRow -match '无' -and $emptyRow -notmatch '尚未收到'),
     "$agvId 无", $emptyRow)
 
-# --- 2. 两条告警，一条归车载界面、一条进看板 ----------------------------------------------------------
+# --- 2. 两条告警，一条与车直接相关、一条与哪台车都无关；看板上两条都在 ------------------------------------
 
 $revision = Set-Alarms @(
-    @{ code = $vehicleOnlyCode; severity = 'WARNING'; subjectType = 'VEHICLE'; subjectId = $agvId; displayMessage = '只该出现在车上' },
+    @{ code = $vehicleOnlyCode; severity = 'WARNING'; subjectType = 'VEHICLE'; subjectId = $agvId; displayMessage = '与这台车直接相关' },
     @{ code = $firstFleetCode; severity = 'CRITICAL'; subjectType = 'CHARGER'; subjectId = 'CHARGER-L2-01'; displayMessage = '与任何一台车的当下都无关' })
 
 $secondRow = Wait-L2Condition -Description 'the second alarm snapshot was consumed' `
@@ -99,11 +99,11 @@ $assertions.Add(
 
 $visible = Wait-L2Condition -Description 'the dashboard shows the fleet alarm' `
     -Journal $journal -Criterion 'dashboard-first-alarm' -TimeoutSeconds 30 `
-    -Probe { Get-DashboardRow } -Until { param($v) $null -ne $v -and $v.Contains($firstFleetCode) }
+    -Probe { Get-DashboardRow } -Until { param($v) $null -ne $v -and $v.Contains($firstFleetCode) -and $v.Contains($vehicleOnlyCode) }
 $assertions.Add(
-    'L2-OAS-04', '看板上看得到进看板的那条，看不到只该出现在车上的那条',
-    ($visible.Contains($firstFleetCode) -and -not $visible.Contains($vehicleOnlyCode)),
-    "$firstFleetCode, not $vehicleOnlyCode", $visible)
+    'L2-OAS-04', '看板集中显示全部告警：与车直接相关的那条和与哪台车都无关的那条都看得到',
+    ($visible.Contains($firstFleetCode) -and $visible.Contains($vehicleOnlyCode)),
+    "$firstFleetCode + $vehicleOnlyCode", $visible)
 
 # --- 3. 后一份整体取代前一份 --------------------------------------------------------------------------
 
@@ -114,8 +114,8 @@ $replaced = Wait-L2Condition -Description 'the dashboard shows only the replacem
     -Journal $journal -Criterion 'dashboard-replaced' -TimeoutSeconds 30 `
     -Probe { Get-DashboardRow } -Until { param($v) $null -ne $v -and $v.Contains($secondFleetCode) }
 $assertions.Add(
-    'L2-OAS-05', '新快照整体取代旧快照：看板上只剩新的那条，旧的那条不见了',
-    ($replaced.Contains($secondFleetCode) -and -not $replaced.Contains($firstFleetCode)),
+    'L2-OAS-05', '新快照整体取代旧快照：看板上只剩新的那条，旧的两条都不见了',
+    ($replaced.Contains($secondFleetCode) -and -not $replaced.Contains($firstFleetCode) -and -not $replaced.Contains($vehicleOnlyCode)),
     "$secondFleetCode, not $firstFleetCode", $replaced)
 
 $rowCount = [int](Invoke-L2Query -Connection $connection `

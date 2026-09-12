@@ -106,7 +106,7 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context, 
         || (sessionGeneration == existing.SessionGeneration && sequence > existing.SnapshotSequence);
 
     /// <summary>
-    /// 看板这一轮该显示什么：每台车要么是当下进看板的告警，要么是拿不到它的原因。
+    /// 看板这一轮该显示什么：每台车要么是当下的全部告警（REQ-0270），要么是拿不到它的原因。
     /// </summary>
     /// <remarks>
     /// 失联的车显示「失联」，不显示它失联前的最后一批告警——REQ-0269 的失联直述在这里就是这一句。
