@@ -10,11 +10,11 @@ own way:
 
 - `8005-agv-onboard-hmi` and `slots-simulator` — **writable on `w2g/*` branches
   only** (changed 2026-09-04; they were read-only for agents before). The
-  development work on both is now ours, but their working branches
-  (`OnboardHmi_MVP` and `main`) are not: changes reach Kun Wang as a pull request
-  he decides on, and **since 2026-09-08 we merge it ourselves once he agrees**
-  (before that date we never did). Direct pushes, force-pushes, tags and releases
-  on those branches stay forbidden.
+  development work on both is now ours, and a change reaches their working
+  branches (`OnboardHmi_MVP` and `main`) only as a pull request — **since
+  2026-09-09 both the agreement and the merge are ours**, with nobody else to
+  wait on. Direct pushes, force-pushes, tags and releases on those branches stay
+  forbidden.
 - `8005-agv-protocol` — writable, with no announcement duty since 2026-09-08.
 
 Reaching a machine, or routing a problem to a repository, never grants write
@@ -60,7 +60,8 @@ action. Prefer it over guessing.
 Two people drive this project. Kun Wang (GitHub `SocialKKKK`) owns
 `8005-agv-onboard-hmi` and `slots-simulator`, but **the development work on both
 has been ours since 2026-09-04** — we work them on `w2g/*` branches and deliver
-by pull request for him to accept. Zhengyu Shao owns this repository;
+by pull request, which since 2026-09-09 we agree to and merge ourselves. Zhengyu
+Shao owns this repository;
 `8005-agv-protocol` is jointly maintained. The full account, written for humans
 and in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
 
@@ -108,8 +109,7 @@ What an agent must follow:
   release needs a one-owner attestation (two before 2026-09-08); **AI and CI
   cannot approve**, and "one owner" means the user signs, never an agent.
 - **Batch protocol changes.** A patch release voids the affected G1/G2/G3
-  evidence on both sides, so every small change costs the other side a full gate
-  re-run.
+  evidence — all of it ours — so every small change costs us a full gate re-run.
 
 ## Language
 
