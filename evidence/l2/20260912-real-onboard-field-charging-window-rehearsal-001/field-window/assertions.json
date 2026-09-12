@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "window": "FW-FL2",
+  "windowName": "现场窗口二：完整闭环、取消订单、两趟之间自动充电、车静止时服务重启",
+  "runId": "20260912T095229543Z",
+  "outcome": "PASS",
+  "identity": {
+    "runId": "20260912T095229543Z",
+    "windowId": "FW-FL2",
+    "checkpointLabel": "finalize",
+    "database": "local-snapshot"
+  },
+  "fieldRecord": {
+    "windowId": "FW-FL2",
+    "date": "2026-09-12",
+    "site": "L2 真装置彩排（本机）",
+    "observers": [],
+    "drivenBy": "FieldOperator.psm1 run 20260912T095122103Z",
+    "agvId": "AGV-L2-001",
+    "ioModule": "127.0.0.1:58412",
+    "ioKind": "SIMULATOR",
+    "recoveryWindowOpen": false,
+    "journeys": [
+      {
+        "role": "充电之后",
+        "journeyId": "63b5d126-d8cd-4453-b673-6cef7301ca3e"
+      }
+    ],
+    "journeyIds": [
+      "63b5d126-d8cd-4453-b673-6cef7301ca3e"
+    ],
+    "photoPointers": [],
+    "scenesOwed": [
+      "CH",
+      "N",
+      "R"
+    ],
+    "scenarios": [
+      {
+        "id": "CH",
+        "name": "两趟之间自动充电：低于触发线自己去充电桩，接上电，到恢复线释放，接着受理下一单",
+        "chargingRunId": "331797c5-e0e8-d657-97a1-3b883a684085",
+        "upperId": "W2G-CHARGE-331797c5-e0e8-d657-97a1-3b883a684085-1",
+        "chargerStationRiotId": 211,
+        "triggeredAtBatteryPercent": 15,
+        "releasedAtBatteryPercent": 80,
+        "after": "2026-09-12T17:51:41.2830747+08:00",
+        "completedObservedAt": "2026-09-12T17:51:56.9541697+08:00",
+        "runsAfter": 1,
+        "seen": [
+          {
+            "ObservedAt": "2026-09-12T17:51:44.0973958+08:00",
+            "Stage": "AwaitingChargerArrival",
+            "BlockReasonCode": ""
+          },
+          {
+            "ObservedAt": "2026-09-12T17:51:46.8500761+08:00",
+            "Stage": "Charging",
+            "BlockReasonCode": ""
+          },
+          {
+            "ObservedAt": "2026-09-12T17:51:56.9500897+08:00",
+            "Stage": "Completed",
+            "BlockReasonCode": ""
+          }
+        ],
+        "checkpoints": {
+          "AwaitingChargerArrival": "charge-dispatched",
+          "Charging": "charge-charging",
+          "Completed": "charge-released"
+        },
+        "thresholdOverride": null
+      },
+      {
+        "id": "R1",
+        "name": "车静止时服务重启：新会话自己回到 Ready，不停在 RecoveryRequired",
+        "afterJourneyId": "63b5d126-d8cd-4453-b673-6cef7301ca3e",
+        "serverStartedAt": "2026-09-12T17:52:21.2581711+08:00",
+        "generationBefore": 1,
+        "generationAfter": 2,
+        "firstNewGenerationObservedAt": "2026-09-12T17:52:28.439084+08:00",
+        "readyObservedAt": "2026-09-12T17:52:28.4390996+08:00",
+        "series": [
+          {
+            "ObservedAt": "2026-09-12T17:52:22.3551245+08:00",
+            "Generation": 1,
+            "Readiness": "Ready",
+            "ReasonCode": "READY",
+            "UpdatedAt": "2026-09-12 09:52:18.9277657+00:00"
+          },
+          {
+            "ObservedAt": "2026-09-12T17:52:28.4372677+08:00",
+            "Generation": 2,
+            "Readiness": "Ready",
+            "ReasonCode": "READY",
+            "UpdatedAt": "2026-09-12 09:52:28.2570036+00:00"
+          }
+        ],
+        "checkpoint": "r1-ready"
+      }
+    ]
+  },
+  "facts": {
+    "ioKind": "SIMULATOR",
+    "minimumHoldMinutes": 20.0,
+    "drivenBy": "FieldOperator.psm1 run 20260912T095122103Z",
+    "sublotWaitMinutes": 5.0,
+    "journeyIds": "63b5d126-d8cd-4453-b673-6cef7301ca3e",
+    "scenesOwed": "CH, N, R",
+    "CH.thresholds": "出厂 30/80",
+    "CH.seen": "AwaitingChargerArrival -> Charging -> Completed",
+    "R1.series": "1/Ready(READY) -> 2/Ready(READY)"
+  },
+  "assertions": [
+    {
+      "id": "FL2-N-01",
+      "description": "窗口里的每一趟旅程都走到 Completed，派车租约都已释放",
+      "outcome": "PASS",
+      "expected": "全部 Completed / 已释放",
+      "actual": "63b5d126=Completed/已释放"
+    },
+    {
+      "id": "FL2-N-02",
+      "description": "完整闭环至少走通一次：一条需求录了 SUBLOT、装货提交、过出车前安全检查、卸货提交、需求 Succeeded（装货能提交即缺陷 20260829 现场未复现）",
+      "outcome": "PASS",
+      "expected": "至少一条需求全链路走通",
+      "actual": "2014a558: SUBLOT✓ 装Committed 安检✓ 卸Committed; 9677b2da: SUBLOT✓ 装Committed 安检✓ 卸Committed"
+    },
+    {
+      "id": "FL2-N-03",
+      "description": "每一条 Succeeded 的需求都是全链路走通的——没有哪一条跳过了 SUBLOT、安全检查或卸货提交",
+      "outcome": "PASS",
+      "expected": "2 条都走通",
+      "actual": "2 条走通"
+    },
+    {
+      "id": "FL2-CH-01",
+      "description": "上一趟旅程结束之后才起充电行程，触发时电量低于当时生效的触发线",
+      "outcome": "PASS",
+      "expected": "创建于 09/12/2026 17:51:41 之后 / 触发电量 < 30",
+      "actual": "2026-09-12 09:51:42.7562564+00:00 / 15"
+    },
+    {
+      "id": "FL2-CH-02",
+      "description": "充电行程派了一条去充电桩 211 的 TO_CHARGER 单并已确认",
+      "outcome": "PASS",
+      "expected": "TO_CHARGER / 211 / CONFIRMED",
+      "actual": "TO_CHARGER / 211 / CONFIRMED"
+    },
+    {
+      "id": "FL2-CH-03",
+      "description": "车到桩并真的接上电：行程进入 Charging，驱动脚本全程没有看到 CHARGER_NOT_ENGAGED 或任何 CHARGER_* 阻塞",
+      "outcome": "PASS",
+      "expected": "进入 Charging / 无 CHARGER_* 阻塞",
+      "actual": "AwaitingChargerArrival -> Charging -> Completed"
+    },
+    {
+      "id": "FL2-CH-04",
+      "description": "充到恢复线释放：行程 Completed，释放电量 >= 80",
+      "outcome": "PASS",
+      "expected": "Completed / >= 80",
+      "actual": "Completed / 80"
+    },
+    {
+      "id": "FL2-CH-05",
+      "description": "释放之后接着受理下一单：下一趟旅程在充电行程结束之后创建，两趟之间只充了这一次电",
+      "outcome": "PASS",
+      "expected": "有下一趟旅程 / 两趟之间 1 次充电",
+      "actual": "63b5d126 创建于 2026-09-12 09:51:56.8437399+00:00 / 1 次"
+    },
+    {
+      "id": "FL2-R-00",
+      "description": "至少观测到一次车静止时的服务重启（缺陷 20260908 的发现条件：真实服务重启加一台真车）",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "FL2-R1-01",
+      "description": "重启后新会话（generation > 重启前的 1）回到 Ready，checkpoint r1-ready 上的会话行同样是 Ready",
+      "outcome": "PASS",
+      "expected": "generation > 1 / Ready",
+      "actual": "1/Ready(READY) -> 2/Ready(READY) / checkpoint: 2/Ready"
+    },
+    {
+      "id": "FL2-R1-02",
+      "description": "从服务进程启动到会话 Ready 不超过 60 秒——缺陷现场是 6 分 36 秒不自愈，直到有人重启车载客户端",
+      "outcome": "PASS",
+      "expected": "0–60 秒",
+      "actual": "7.2 秒"
+    },
+    {
+      "id": "FL2-R1-03",
+      "description": "重启时车是静止的：重启前那趟旅程已经 Completed，这正是缺陷的发现条件",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "FL2-W-01",
+      "description": "现场记录由驱动脚本按实际动作写出，IO 是车上的 slots-simulator（无人到场）",
+      "outcome": "PASS",
+      "expected": "drivenBy 非空 / SIMULATOR",
+      "actual": "drivenBy=FieldOperator.psm1 run 20260912T095122103Z / SIMULATOR"
+    }
+  ]
+}

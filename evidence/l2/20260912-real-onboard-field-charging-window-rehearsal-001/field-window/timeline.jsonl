@@ -1,0 +1,13 @@
+{"at":"2026-09-12T17:51:41.7701540+08:00","kind":"checkpoint-started","runId":"20260912T095141721Z","database":"local-snapshot","sequence":"01","label":"00-ready"}
+{"at":"2026-09-12T17:51:41.8980193+08:00","kind":"checkpoint-written","runId":"20260912T095141721Z","sequence":"01","demands":[],"directory":"snapshots/01-00-ready","label":"00-ready","stages":[]}
+{"at":"2026-09-12T17:51:44.5511692+08:00","kind":"checkpoint-started","runId":"20260912T095144507Z","label":"charge-dispatched","database":"local-snapshot","sequence":"02"}
+{"at":"2026-09-12T17:51:44.6636207+08:00","kind":"checkpoint-written","runId":"20260912T095144507Z","label":"charge-dispatched","demands":[],"stages":[],"sequence":"02","directory":"snapshots/02-charge-dispatched"}
+{"at":"2026-09-12T17:51:47.3216537+08:00","kind":"checkpoint-started","runId":"20260912T095147277Z","database":"local-snapshot","sequence":"03","label":"charge-charging"}
+{"at":"2026-09-12T17:51:47.4303064+08:00","kind":"checkpoint-written","runId":"20260912T095147277Z","demands":[],"directory":"snapshots/03-charge-charging","stages":[],"sequence":"03","label":"charge-charging"}
+{"at":"2026-09-12T17:51:57.4104649+08:00","kind":"checkpoint-started","runId":"20260912T095157364Z","database":"local-snapshot","sequence":"04","label":"charge-released"}
+{"at":"2026-09-12T17:51:57.5396906+08:00","kind":"checkpoint-written","runId":"20260912T095157364Z","stages":[],"demands":[],"sequence":"04","directory":"snapshots/04-charge-released","label":"charge-released"}
+{"at":"2026-09-12T17:52:28.8715512+08:00","kind":"checkpoint-started","runId":"20260912T095228828Z","label":"r1-ready","sequence":"05","database":"local-snapshot"}
+{"at":"2026-09-12T17:52:29.0290878+08:00","kind":"checkpoint-written","runId":"20260912T095228828Z","stages":["Completed/-"],"label":"r1-ready","sequence":"05","directory":"snapshots/05-r1-ready","demands":["2014a558-95ee-4466-be9d-b18a533ad3e6","9677b2da-59b7-4040-81a7-8e6d5da6e22f"]}
+{"at":"2026-09-12T17:52:29.5873697+08:00","kind":"checkpoint-started","runId":"20260912T095229543Z","sequence":"06","label":"finalize","database":"local-snapshot"}
+{"at":"2026-09-12T17:52:29.7583936+08:00","kind":"checkpoint-written","runId":"20260912T095229543Z","directory":"snapshots/06-finalize","stages":["Completed/-"],"sequence":"06","label":"finalize","demands":["2014a558-95ee-4466-be9d-b18a533ad3e6","9677b2da-59b7-4040-81a7-8e6d5da6e22f"]}
+{"at":"2026-09-12T17:52:30.0634671+08:00","kind":"window-finalised","runId":"20260912T095229543Z","outcome":"PASS"}
