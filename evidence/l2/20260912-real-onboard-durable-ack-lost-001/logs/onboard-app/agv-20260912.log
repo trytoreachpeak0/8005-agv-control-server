@@ -1,0 +1,44 @@
+2026-09-12T20:40:30.4998235+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+6b8a0b06575f40fa0e682c5d307b9ce46bbe9227。
+2026-09-12T20:40:31.1194980+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-12T20:40:31.1397954+08:00	Information	OnboardController	IO模块在线。
+2026-09-12T20:40:31.1428114+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-12T20:40:31.8481426+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-12T20:40:35.1488940+08:00	Information	App	服务端请求录入Sublot：demandId=c4395f77-4202-4a00-be6b-f9f9515fa51d，revision=1。 
+2026-09-12T20:40:35.9820928+08:00	Information	App	服务端请求录入Sublot：demandId=c4395f77-4202-4a00-be6b-f9f9515fa51d，revision=1。 
+2026-09-12T20:40:36.2050737+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-12T20:40:36.2324929+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-12T20:40:36.3557959+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-12T20:40:36.7891069+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-12T20:40:36.9730467+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=02d19379-9e59-1c52-ad8e-6e583632ca23。
+2026-09-12T20:40:37.4391001+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 1->0。
+2026-09-12T20:40:37.5611968+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 0->0。
+2026-09-12T20:40:37.9807577+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=02d19379-9e59-1c52-ad8e-6e583632ca23。
+2026-09-12T20:40:38.1040617+08:00	Warning	WireToGateBusinessService	OperationResult暂未收到DurableAck：attempt=02d19379-9e59-1c52-ad8e-6e583632ca23。 | EndOfStreamException: ControlServer在旅程会话期间关闭了连接。
+2026-09-12T20:40:41.8714335+08:00	Warning	WireToGateSessionService	上层会话不可用：WIRE_TO_GATE会话尚未建立。。将在2秒后重连。
+2026-09-12T20:40:43.9258633+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:40:45.9609450+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:40:48.0024752+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:40:50.0337309+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:40:52.0660133+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:40:54.1107269+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:40:56.1556616+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:40:58.1932742+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:00.2344172+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:02.2765714+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:04.3101562+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:06.3521647+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:08.3903659+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:10.4258729+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:12.4660945+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:14.4987233+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:16.5339870+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:18.5671995+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:20.5997176+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:22.6400750+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:24.6731205+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:26.7130959+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:28.7475435+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:30.7893904+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:32.8259347+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:34.8695923+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
+2026-09-12T20:41:36.9112535+08:00	Warning	WireToGateSessionService	上层会话不可用：ControlServer在会话恢复期间关闭了连接。。将在2秒后重连。
