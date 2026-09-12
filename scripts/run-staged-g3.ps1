@@ -31,8 +31,12 @@ param(
     # 2026-09-12: $ProtocolCommit -> 16e2567, the same candidate with the single-owner release rule
     #   carried over from main. Its manifest and schema bundle hashes moved, and so did the copy of
     #   the identity in the synthetic peer below; that commit has to be on origin before a run.
-    [string]$ControlServerCommit = 'eefb3a8802664623fdde9dd7bdc759ea5b61a5b0',
-    [string]$OnboardCommit = 'afba86e07116192bde386937c559cc7a70a00a7f',
+    #   $ControlServerCommit -> 6369616: the server on that identity, plus 5f7a34e (the dashboard
+    #     shows every alarm of a vehicle, REQ-0270).
+    #   $OnboardCommit -> f9efa30, the w2g/b3-on-v2 tip: the onboard end on that identity (e30d421),
+    #     the alarm sources wired (a98679f), the G2 script fix (ad0e507) and its G2 evidence.
+    [string]$ControlServerCommit = '63696161d036a4907a39f8597fd64cc6e4c755fd',
+    [string]$OnboardCommit = 'f9efa301734128e850cb5460c20265232611ffff',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '16e2567a7033883f00fc999f7fa08f954dd13a26',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
