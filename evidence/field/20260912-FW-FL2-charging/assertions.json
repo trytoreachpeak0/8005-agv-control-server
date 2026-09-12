@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "window": "FW-FL2",
+  "windowName": "现场窗口二：完整闭环、取消订单、两趟之间自动充电、车静止时服务重启",
+  "runId": "20260912T105545547Z",
+  "outcome": "PASS",
+  "identity": {
+    "runId": "20260912T105545547Z",
+    "windowId": "FW-FL2",
+    "checkpointLabel": "finalize",
+    "database": "factory01:C:\\ProgramData\\8005\\ControlServer\\data\\controlserver.db",
+    "onboardRecoveryResumeEnabled": false,
+    "onboardIoModule": "127.0.0.1:1502",
+    "serverProductionJourneyRuntime": {
+      "enabled": false,
+      "createDispatchEnabled": false,
+      "chargeTriggerBatteryPercent": null,
+      "chargeResumeBatteryPercent": null
+    },
+    "packageRunId": "20260912T100938Z",
+    "packageCreatedAt": "2026-09-12T18:10:27.3888198+08:00",
+    "controlServer": {
+      "commit": "3b379bb8e101d52118a023b9f18747e04dda420c",
+      "branch": "ControlServer_MVP",
+      "tag": null
+    },
+    "onboardHmi": {
+      "commit": "6b8a0b06575f40fa0e682c5d307b9ce46bbe9227",
+      "branch": "OnboardHmi_MVP",
+      "tag": null
+    },
+    "protocol": {
+      "commit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "branch": null,
+      "tag": "protocol-v0.3.0"
+    }
+  },
+  "fieldRecord": {
+    "windowId": "FW-FL2",
+    "date": "2026-09-12",
+    "site": "老厂",
+    "observers": [],
+    "drivenBy": "FieldOperator.psm1 run 20260912T102043924Z",
+    "agvId": "老厂前线新多仓位1",
+    "ioModule": "127.0.0.1:1502",
+    "ioKind": "SIMULATOR",
+    "recoveryWindowOpen": false,
+    "journeys": [
+      {
+        "role": "充电之后",
+        "journeyId": "bcdaf0ee-c053-0555-a522-95b8fdc0e5a6"
+      }
+    ],
+    "journeyIds": [
+      "bcdaf0ee-c053-0555-a522-95b8fdc0e5a6"
+    ],
+    "photoPointers": [],
+    "scenesOwed": [
+      "CH",
+      "N",
+      "R"
+    ],
+    "scenarios": [
+      {
+        "id": "CH",
+        "name": "两趟之间自动充电：低于触发线自己去充电桩，接上电，到恢复线释放，接着受理下一单",
+        "chargingRunId": "8d823dd8-7770-9c57-bbac-af90a57b1782",
+        "upperId": "W2G-CHARGE-8d823dd8-7770-9c57-bbac-af90a57b1782-1",
+        "chargerStationRiotId": 211,
+        "triggeredAtBatteryPercent": 49,
+        "releasedAtBatteryPercent": 62,
+        "after": "2026-09-12T18:20:57.6090837+08:00",
+        "completedObservedAt": "2026-09-12T18:30:43.708068+08:00",
+        "runsAfter": 1,
+        "seen": [
+          {
+            "ObservedAt": "2026-09-12T18:22:42.2360957+08:00",
+            "Stage": "AwaitingChargerArrival",
+            "BlockReasonCode": ""
+          },
+          {
+            "ObservedAt": "2026-09-12T18:23:16.6476735+08:00",
+            "Stage": "Charging",
+            "BlockReasonCode": ""
+          },
+          {
+            "ObservedAt": "2026-09-12T18:30:43.7063428+08:00",
+            "Stage": "Completed",
+            "BlockReasonCode": ""
+          }
+        ],
+        "checkpoints": {
+          "AwaitingChargerArrival": "charge-dispatched",
+          "Charging": "charge-charging",
+          "Completed": "charge-released"
+        },
+        "thresholdOverride": {
+          "resume": 62,
+          "trigger": 50
+        }
+      },
+      {
+        "id": "R1",
+        "name": "车静止时服务重启：新会话自己回到 Ready，不停在 RecoveryRequired",
+        "afterJourneyId": "bcdaf0ee-c053-0555-a522-95b8fdc0e5a6",
+        "serverStartedAt": "2026-09-12T18:55:19.6576388+08:00",
+        "generationBefore": 445,
+        "generationAfter": 446,
+        "firstNewGenerationObservedAt": "2026-09-12T18:55:23.194424+08:00",
+        "readyObservedAt": "2026-09-12T18:55:23.1944373+08:00",
+        "series": [
+          {
+            "ObservedAt": "2026-09-12T18:55:21.1948037+08:00",
+            "Generation": 445,
+            "Readiness": "Ready",
+            "ReasonCode": "READY",
+            "UpdatedAt": "2026-09-12 10:55:12.6338881+00:00"
+          },
+          {
+            "ObservedAt": "2026-09-12T18:55:23.1939433+08:00",
+            "Generation": 446,
+            "Readiness": "Ready",
+            "ReasonCode": "READY",
+            "UpdatedAt": "2026-09-12 10:55:21.9262581+00:00"
+          }
+        ],
+        "checkpoint": "r1-ready"
+      }
+    ]
+  },
+  "facts": {
+    "ioKind": "SIMULATOR",
+    "minimumHoldMinutes": 20.0,
+    "drivenBy": "FieldOperator.psm1 run 20260912T102043924Z",
+    "sublotWaitMinutes": 5.0,
+    "journeyIds": "bcdaf0ee-c053-0555-a522-95b8fdc0e5a6",
+    "scenesOwed": "CH, N, R",
+    "CH.thresholds": "临时覆盖 触发 50% / 恢复 62%（出厂 30/80）",
+    "CH.seen": "AwaitingChargerArrival -> Charging -> Completed",
+    "R1.series": "445/Ready(READY) -> 446/Ready(READY)"
+  },
+  "assertions": [
+    {
+      "id": "FL2-N-01",
+      "description": "窗口里的每一趟旅程都走到 Completed，派车租约都已释放",
+      "outcome": "PASS",
+      "expected": "全部 Completed / 已释放",
+      "actual": "bcdaf0ee=Completed/已释放"
+    },
+    {
+      "id": "FL2-N-02",
+      "description": "完整闭环至少走通一次：一条需求录了 SUBLOT、装货提交、过出车前安全检查、卸货提交、需求 Succeeded（装货能提交即缺陷 20260829 现场未复现）",
+      "outcome": "PASS",
+      "expected": "至少一条需求全链路走通",
+      "actual": "35190022: SUBLOT✓ 装Committed 安检✓ 卸Committed; 55b92015: SUBLOT✓ 装Committed 安检✓ 卸Committed; 7d2870c8: SUBLOT✓ 装Committed 安检✓ 卸Committed; ac306a35: SUBLOT✓ 装Committed 安检✓ 卸Committed; cdafe985: SUBLOT✓ 装Committed 安检✓ 卸Committed"
+    },
+    {
+      "id": "FL2-N-03",
+      "description": "每一条 Succeeded 的需求都是全链路走通的——没有哪一条跳过了 SUBLOT、安全检查或卸货提交",
+      "outcome": "PASS",
+      "expected": "5 条都走通",
+      "actual": "5 条走通"
+    },
+    {
+      "id": "FL2-CH-01",
+      "description": "上一趟旅程结束之后才起充电行程，触发时电量低于当时生效的触发线",
+      "outcome": "PASS",
+      "expected": "创建于 09/12/2026 18:20:57 之后 / 触发电量 < 50",
+      "actual": "2026-09-12 10:22:40.737368+00:00 / 49"
+    },
+    {
+      "id": "FL2-CH-02",
+      "description": "充电行程派了一条去充电桩 211 的 TO_CHARGER 单并已确认",
+      "outcome": "PASS",
+      "expected": "TO_CHARGER / 211 / CONFIRMED",
+      "actual": "TO_CHARGER / 211 / CONFIRMED"
+    },
+    {
+      "id": "FL2-CH-03",
+      "description": "车到桩并真的接上电：行程进入 Charging，驱动脚本全程没有看到 CHARGER_NOT_ENGAGED 或任何 CHARGER_* 阻塞",
+      "outcome": "PASS",
+      "expected": "进入 Charging / 无 CHARGER_* 阻塞",
+      "actual": "AwaitingChargerArrival -> Charging -> Completed"
+    },
+    {
+      "id": "FL2-CH-04",
+      "description": "充到恢复线释放：行程 Completed，释放电量 >= 62",
+      "outcome": "PASS",
+      "expected": "Completed / >= 62",
+      "actual": "Completed / 62"
+    },
+    {
+      "id": "FL2-CH-05",
+      "description": "释放之后接着受理下一单：下一趟旅程在充电行程结束之后创建，两趟之间只充了这一次电",
+      "outcome": "PASS",
+      "expected": "有下一趟旅程 / 两趟之间 1 次充电",
+      "actual": "bcdaf0ee 创建于 2026-09-12 10:30:41.3719263+00:00 / 1 次"
+    },
+    {
+      "id": "FL2-CH-06",
+      "description": "收尾时临时充电线已经撤掉：appsettings.Production.json 里不再有 chargeTriggerBatteryPercent / chargeResumeBatteryPercent，两个门都关着",
+      "outcome": "PASS",
+      "expected": "无覆盖 / 门 Off",
+      "actual": "trigger=- resume=- runtime=False dispatch=False"
+    },
+    {
+      "id": "FL2-R-00",
+      "description": "至少观测到一次车静止时的服务重启（缺陷 20260908 的发现条件：真实服务重启加一台真车）",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "FL2-R1-01",
+      "description": "重启后新会话（generation > 重启前的 445）回到 Ready，checkpoint r1-ready 上的会话行同样是 Ready",
+      "outcome": "PASS",
+      "expected": "generation > 445 / Ready",
+      "actual": "445/Ready(READY) -> 446/Ready(READY) / checkpoint: 446/Ready"
+    },
+    {
+      "id": "FL2-R1-02",
+      "description": "从服务进程启动到会话 Ready 不超过 60 秒——缺陷现场是 6 分 36 秒不自愈，直到有人重启车载客户端",
+      "outcome": "PASS",
+      "expected": "0–60 秒",
+      "actual": "3.5 秒"
+    },
+    {
+      "id": "FL2-R1-03",
+      "description": "重启时车是静止的：重启前那趟旅程已经 Completed，这正是缺陷的发现条件",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "FL2-W-01",
+      "description": "现场记录由驱动脚本按实际动作写出，IO 是车上的 slots-simulator（无人到场）",
+      "outcome": "PASS",
+      "expected": "drivenBy 非空 / SIMULATOR",
+      "actual": "drivenBy=FieldOperator.psm1 run 20260912T102043924Z / SIMULATOR"
+    }
+  ]
+}
