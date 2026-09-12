@@ -11,7 +11,10 @@ public enum GovernedObjectKind
     SlotModelVersion,
     ActiveSlotConfiguration,
     AgvLifecycle,
-    PublicStationBinding
+    PublicStationBinding,
+
+    /// <summary>审计保留期本身（REQ-0271 后半句：它的变更是一次管理员操作）。</summary>
+    AuditRetention
 }
 
 /// <summary>

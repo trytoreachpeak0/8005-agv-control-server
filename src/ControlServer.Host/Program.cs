@@ -248,6 +248,11 @@ static async Task EnsureDatabaseAsync(IServiceProvider services)
     await using AsyncServiceScope scope = services.CreateAsyncScope();
     ControlServerDbContext dbContext = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
     await dbContext.Database.MigrateAsync();
+
+    // REQ-0271：保留期是管理员配置，变更本身要留管理员审计。新值在服务起来的这一刻生效，所以在这一刻记。
+    GovernanceStore governance = scope.ServiceProvider.GetRequiredService<GovernanceStore>();
+    TimeProvider clock = scope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+    await governance.RecordRetentionPolicyAsync(clock.GetUtcNow(), CancellationToken.None);
 }
 
 public partial class Program;

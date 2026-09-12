@@ -242,6 +242,63 @@ public sealed class GovernanceStore : IConfigurationSnapshotStore, IGovernanceAu
         return new GovernedVersionView(snapshot, business, administrator);
     }
 
+    /// <summary>审计保留期配置被采用时写的那条管理员审计的动作名。</summary>
+    public const string RetentionPolicyConfiguredAction = "AUDIT_RETENTION_POLICY_CONFIGURED";
+
+    /// <summary>
+    /// REQ-0271 后半句：超过 180 天之后的保留由系统管理员配置，「变更本身必须形成管理员操作审计记录」。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 保留期是启动配置（<c>Governance:auditRetentionDays</c>），新值在服务起来的那一刻生效，所以在启动时比一次：
+    /// 与最近一条这类审计记下的天数不同、或者从来没记过，就写一条管理员审计，带上前后两个值；相同就什么都不写——
+    /// 重启不是变更。返回是否写了。
+    /// </para>
+    /// <para>
+    /// 本期没有人员认证，记下的是部署身份并标注不可归属自然人；<c>ClaimedAdministratorRole</c> 留空，因为没有任何
+    /// 一条消息声称过角色。改配置的人是谁，这条记录回答不了，它回答的是「这个值从哪一刻起生效、之前是多少」。
+    /// </para>
+    /// </remarks>
+    public async Task<bool> RecordRetentionPolicyAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        double configuredDays = _context.AuditRetention.RetainFor.TotalDays;
+        AdministratorAuditRecordRow? last = await _context.Set<AdministratorAuditRecordRow>()
+            .AsNoTracking()
+            .Where(row => row.Action == RetentionPolicyConfiguredAction)
+            // Ordered on ticks, not on RecordedAt: SQLite cannot ORDER BY a DateTimeOffset.
+            .OrderByDescending(row => row.RecordedAtUtcTicks)
+            .ThenByDescending(row => row.AuditRecordId)
+            .FirstOrDefaultAsync(cancellationToken);
+        double? previousDays = null;
+        if (last is not null)
+        {
+            using JsonDocument detail = JsonDocument.Parse(last.DetailJson);
+            previousDays = detail.RootElement.GetProperty("retainForDays").GetDouble();
+        }
+        if (previousDays == configuredDays)
+        {
+            return false;
+        }
+
+        await WriteAdministratorAsync(
+            new GovernanceAuditEntry(
+                RetentionPolicyConfiguredAction,
+                GovernedObjectKind.AuditRetention,
+                "audit-retention",
+                null,
+                GovernanceActionOutcome.Succeeded,
+                JsonSerializer.Serialize(new
+                {
+                    retainForDays = configuredDays,
+                    previousRetainForDays = previousDays,
+                    floorDays = AuditRetentionPolicy.Default.RetainFor.TotalDays,
+                    configurationKey = "Governance:auditRetentionDays"
+                })),
+            now,
+            cancellationToken);
+        return true;
+    }
+
     /// <summary>
     /// Removes audit records that are past retention. Records still inside it are refused by
     /// <see cref="AuditImmutabilityGuard"/>, so this cannot become a way to erase live audit.

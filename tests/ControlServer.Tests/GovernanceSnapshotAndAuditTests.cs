@@ -166,6 +166,48 @@ public sealed class GovernanceSnapshotAndAuditTests
             .AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// REQ-0271 后半句：保留期的变更本身形成管理员审计。第一次看到记一条；值没变不重复记（重启不是变更）；
+    /// 值变了再记一条，带上前后两个值。
+    /// </summary>
+    [Fact]
+    public async Task TheRetentionSettingIsAuditedAsAnAdministratorActionWhenFirstSeenAndWhenItChanges()
+    {
+        await using GovernanceFixture fixture = await GovernanceFixture.CreateAsync();
+
+        Assert.True(await fixture.Store.RecordRetentionPolicyAsync(
+            fixture.Now, TestContext.Current.CancellationToken));
+        Assert.False(await fixture.Store.RecordRetentionPolicyAsync(
+            fixture.Now.AddMinutes(1), TestContext.Current.CancellationToken));
+
+        GovernanceStore reconfigured = new(
+            fixture.Context,
+            new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+            new AuditRetentionPolicy(TimeSpan.FromDays(365)));
+        Assert.True(await reconfigured.RecordRetentionPolicyAsync(
+            fixture.Now.AddDays(1), TestContext.Current.CancellationToken));
+
+        AdministratorAuditRecordRow[] records = [.. (await fixture.Context.Set<AdministratorAuditRecordRow>()
+                .AsNoTracking()
+                .Where(row => row.Action == GovernanceStore.RetentionPolicyConfiguredAction)
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .OrderBy(row => row.RecordedAtUtcTicks)];
+        Assert.Equal(2, records.Length);
+
+        using JsonDocument first = JsonDocument.Parse(records[0].DetailJson);
+        Assert.Equal(180d, first.RootElement.GetProperty("retainForDays").GetDouble());
+        Assert.Equal(JsonValueKind.Null, first.RootElement.GetProperty("previousRetainForDays").ValueKind);
+        using JsonDocument second = JsonDocument.Parse(records[1].DetailJson);
+        Assert.Equal(365d, second.RootElement.GetProperty("retainForDays").GetDouble());
+        Assert.Equal(180d, second.RootElement.GetProperty("previousRetainForDays").GetDouble());
+        Assert.All(records, row =>
+        {
+            Assert.Equal(GovernedObjectKind.AuditRetention, row.ObjectKind);
+            Assert.Equal(AuditActorAttribution.NotAttributableToNaturalPerson, row.ActorAttribution);
+            Assert.Null(row.ClaimedAdministratorRole);
+        });
+    }
+
     [Fact]
     public async Task ConfiguredRetentionIsAcceptedAboveTheFloorAndRejectedBelowIt()
     {
