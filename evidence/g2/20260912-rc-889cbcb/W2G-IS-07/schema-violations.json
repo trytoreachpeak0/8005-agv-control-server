@@ -1,0 +1,50 @@
+[
+  {
+    "messageType": "ExceptionRecoverySessionSnapshot",
+    "origin": "product",
+    "site": "OnboardJourneyPublisher.QueueEnvelopeAsync \u003C- OnboardJourneyPublisher.QueueExceptionRecoverySessionSnapshotAsync \u003C- OnboardRecoveryCoordinator.QueueSessionSnapshotAsync",
+    "errors": [
+      {
+        "pointer": "#/payload/blockingFacts/0/reasonCode",
+        "keyword": "enum",
+        "message": "Validation enum - did not validate against the enumeration.",
+        "actual": "\u0022RECOVERY_ACTION_REQUIRED\u0022"
+      }
+    ],
+    "sampleLine": "{\u0022protocolVersion\u0022:3,\u0022profileId\u0022:\u0022WIRE_TO_GATE_MVP\u0022,\u0022protocolReleaseVersion\u0022:\u00220.3.0\u0022,\u0022protocolReleaseManifestSha256\u0022:\u0022b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\u0022,\u0022messageType\u0022:\u0022ExceptionRecoverySessionSnapshot\u0022,\u0022messageId\u0022:\u002237a5cf9b-0417-9351-8482-32be3e656336\u0022,\u0022correlationId\u0022:null,\u0022agvId\u0022:\u0022\\u8001\\u5382\\u524D\\u7EBF\\u65B0\\u591A\\u4ED3\\u4F4D1\u0022,\u0022sessionGeneration\u0022:1,\u0022sentAt\u0022:\u00222026-08-26T01:00:00\u002B00:00\u0022,\u0022payload\u0022:{\u0022exceptionRecoverySessionId\u0022:\u002223ac047b-b119-2754-9a63-979259d97de0\u0022,\u0022recoverySessionRevision\u0022:1,\u0022state\u0022:\u0022OPEN\u0022,\u0022administratorId\u0022:\u0022maintenance-001\u0022,\u0022administratorRole\u0022:\u0022MAINTENANCE_ADMINISTRATOR\u0022,\u0022eventId\u0022:\u002274806f4f-926d-4cf1-9c7b-3c13712039f1\u0022,\u0022demandId\u0022:\u002210000000-0000-4000-8000-000000000001\u0022,\u0022slotOperationAttemptId\u0022:\u00227aa04bb9-7a2a-7254-8eed-a6c0a431337b\u0022,\u0022slots\u0022:[1],\u0022selectedAction\u0022:null,\u0022allowedActions\u0022:[\u0022RESUME_AFTER_REPAIR\u0022,\u0022COMPENSATE_LOAD_ALL_EMPTY\u0022,\u0022FAULT_CARGO_HANDOFF\u0022,\u0022FORCED_MECHANICAL_RECOVERY\u0022],\u0022blockingFacts\u0022:[{\u0022reasonCode\u0022:\u0022RECOVERY_ACTION_REQUIRED\u0022,\u0022subjectType\u0022:\u0022EXCEPTION_RECOVERY_SESSION\u0022,\u0022subjectId\u0022:\u002223ac047b-b119-2754-9a63-979259d97de0\u0022}]}}",
+    "count": 3,
+    "knownIssue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8"
+  },
+  {
+    "messageType": "ExceptionRecoverySessionSnapshot",
+    "origin": "product",
+    "site": "OnboardJourneyPublisher.SerializeWire \u003C- OnboardJourneyPublisher.QueueEnvelopeAsync \u003C- OnboardJourneyPublisher.QueueExceptionRecoverySessionSnapshotAsync",
+    "errors": [
+      {
+        "pointer": "#/payload/blockingFacts/0/reasonCode",
+        "keyword": "enum",
+        "message": "Validation enum - did not validate against the enumeration.",
+        "actual": "\u0022RECOVERY_ACTION_REQUIRED\u0022"
+      }
+    ],
+    "sampleLine": "{\u0022protocolVersion\u0022:3,\u0022profileId\u0022:\u0022WIRE_TO_GATE_MVP\u0022,\u0022protocolReleaseVersion\u0022:\u00220.3.0\u0022,\u0022protocolReleaseManifestSha256\u0022:\u0022b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\u0022,\u0022messageType\u0022:\u0022ExceptionRecoverySessionSnapshot\u0022,\u0022messageId\u0022:\u002200e89e6b-8c1d-d455-ae78-aa323e00d530\u0022,\u0022correlationId\u0022:null,\u0022agvId\u0022:\u0022AGV-8005-01\u0022,\u0022sessionGeneration\u0022:3,\u0022sentAt\u0022:\u00222026-08-26T10:00:00\u002B00:00\u0022,\u0022payload\u0022:{\u0022exceptionRecoverySessionId\u0022:\u0022dad21c24-9c1a-8259-997a-044223141685\u0022,\u0022recoverySessionRevision\u0022:1,\u0022state\u0022:\u0022OPEN\u0022,\u0022administratorId\u0022:\u0022maintenance-001\u0022,\u0022administratorRole\u0022:\u0022MAINTENANCE_ADMINISTRATOR\u0022,\u0022eventId\u0022:\u002230000000-0000-4000-8000-000000000001\u0022,\u0022demandId\u0022:\u002210000000-0000-4000-8000-000000000001\u0022,\u0022slotOperationAttemptId\u0022:\u002220000000-0000-4000-8000-000000000001\u0022,\u0022slots\u0022:[1,2],\u0022selectedAction\u0022:null,\u0022allowedActions\u0022:[\u0022RESUME_AFTER_REPAIR\u0022,\u0022COMPENSATE_LOAD_ALL_EMPTY\u0022,\u0022FAULT_CARGO_HANDOFF\u0022,\u0022FORCED_MECHANICAL_RECOVERY\u0022],\u0022blockingFacts\u0022:[{\u0022reasonCode\u0022:\u0022RECOVERY_ACTION_REQUIRED\u0022,\u0022subjectType\u0022:\u0022EXCEPTION_RECOVERY_SESSION\u0022,\u0022subjectId\u0022:\u0022dad21c24-9c1a-8259-997a-044223141685\u0022}]}}",
+    "count": 23,
+    "knownIssue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8"
+  },
+  {
+    "messageType": "RecoveryActionRejected",
+    "origin": "product",
+    "site": "OnboardRecoveryCoordinator.Response \u003C- OnboardRecoveryCoordinator.RejectedAction \u003C- OnboardRecoveryCoordinator.SubmitActionAsync",
+    "errors": [
+      {
+        "pointer": "#/payload/problem/reasonCode",
+        "keyword": "enum",
+        "message": "Validation enum - did not validate against the enumeration.",
+        "actual": "\u0022PROVEN_RECOVERY_CHECKPOINT_REQUIRED\u0022"
+      }
+    ],
+    "sampleLine": "{\u0022protocolVersion\u0022:3,\u0022profileId\u0022:\u0022WIRE_TO_GATE_MVP\u0022,\u0022protocolReleaseVersion\u0022:\u00220.3.0\u0022,\u0022protocolReleaseManifestSha256\u0022:\u0022b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138\u0022,\u0022messageType\u0022:\u0022RecoveryActionRejected\u0022,\u0022messageId\u0022:\u0022fba6dec9-9eec-4748-819d-335a496837da\u0022,\u0022correlationId\u0022:\u0022e0000000-0000-4000-8000-000000000002\u0022,\u0022agvId\u0022:\u0022AGV-8005-01\u0022,\u0022sessionGeneration\u0022:3,\u0022sentAt\u0022:\u00222026-08-26T10:00:00\u002B00:00\u0022,\u0022payload\u0022:{\u0022recoveryActionId\u0022:\u002250000000-0000-4000-8000-000000000001\u0022,\u0022exceptionRecoverySessionId\u0022:\u0022dad21c24-9c1a-8259-997a-044223141685\u0022,\u0022problem\u0022:{\u0022reasonCode\u0022:\u0022PROVEN_RECOVERY_CHECKPOINT_REQUIRED\u0022,\u0022fieldPath\u0022:\u0022payload\u0022,\u0022displayMessage\u0022:\u0022Recovery action is not allowed by current facts.\u0022},\u0022recoverySessionRevision\u0022:1}}",
+    "count": 1,
+    "knownIssue": "https://github.com/trytoreachpeak0/8005-agv-protocol/issues/8"
+  }
+]
