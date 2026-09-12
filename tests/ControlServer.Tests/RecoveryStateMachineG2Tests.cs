@@ -592,6 +592,13 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal(SessionReadiness.Ready, session.Readiness);
             Assert.Equal("READY", session.ReasonCode);
 
+            // The result answers the compensation command, and nothing else ever will: the profile has no
+            // ack for it (LoadCompensationCommandAck is on the denylist). Left pending, the row outlived the
+            // journey in every replay scan (8005-agv-control-server#31).
+            Assert.NotNull((await context.ProtocolOutbox.AsNoTracking().SingleAsync(
+                row => row.MessageType == "LoadCompensationCommand",
+                TestContext.Current.CancellationToken)).AcknowledgedAt);
+
             // A redelivered result gets the stored first response back, readiness line included, and
             // recomputes nothing.
             string replay = await processor.ProcessAsync(
@@ -935,9 +942,11 @@ public sealed class RecoveryStateMachineG2Tests
                 TestContext.Current.CancellationToken)).ReleasedAt);
             Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(
                 TestContext.Current.CancellationToken));
-            Assert.Single(await context.ProtocolOutbox.Where(
+            // A failed result answers the command as surely as a successful one. The workflow takes no
+            // second result, so replaying the command into a later session could only draw a duplicate.
+            Assert.NotNull(Assert.Single(await context.ProtocolOutbox.Where(
                     row => row.MessageType == "LoadCompensationCommand")
-                .ToArrayAsync(TestContext.Current.CancellationToken));
+                .ToArrayAsync(TestContext.Current.CancellationToken)).AcknowledgedAt);
 
             string changedResultIdentity = failedResult.Replace(
                 "a0000000-0000-4000-8000-000000000001",

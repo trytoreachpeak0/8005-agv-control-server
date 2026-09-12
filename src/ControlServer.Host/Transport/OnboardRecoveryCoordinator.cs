@@ -135,6 +135,16 @@ public sealed class OnboardRecoveryCoordinator(
                 sessionGeneration,
                 cancellationToken).ConfigureAwait(false);
         }
+        // The result answers the command that asked for it, and a recovery command has no ack of its own
+        // (LoadCompensationCommandAck is on the profile denylist). A workflow holding its first result takes
+        // no other, so a command left pending can only be replayed into a later session to draw a duplicate
+        // -- a failed workflow's was -- and every other one sat in each replay scan for the life of the
+        // database, settled by hand if at all (8005-agv-control-server#31).
+        if (workflow.CommandMessageId is not null)
+        {
+            await store.SettleAnsweredCommandAsync(workflow.CommandMessageId, observedAt, cancellationToken)
+                .ConfigureAwait(false);
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
     }
