@@ -46,11 +46,20 @@ param(
     [string]$Repository = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
 
     # Skip building the tool when the caller already published it (offline field machine).
-    [string]$FieldOpsExecutable
+    [string]$FieldOpsExecutable,
+
+    # The commit the prebuilt tool came from. The factory server has neither this repository nor git,
+    # so there the caller says it; without it the commit is read from -Repository.
+    [string]$ControlServerCommit
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+
+# FieldOps writes UTF-8 and the vehicles are named in Chinese. A native command's output is decoded
+# with the console encoding before it is redirected to a file, so on a server whose console is still
+# on the ANSI code page every agvId in logs/ and in the verdict would arrive mangled.
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 
 if (Test-Path -LiteralPath $EvidenceRoot) {
     throw "EvidenceRoot already exists: $EvidenceRoot. Evidence directories are append-only; a correction goes to a new directory and names the one it corrects."
@@ -76,6 +85,10 @@ $logs = Join-Path $EvidenceRoot 'logs'
 $snapshots = Join-Path $EvidenceRoot 'snapshots'
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
 New-Item -ItemType Directory -Path $snapshots -Force | Out-Null
+
+# The records go into the evidence exactly as they were handed in, raw probe traces included, so the
+# verdict and what it was computed from sit in one directory.
+Copy-Item -LiteralPath $RecordDirectory -Destination (Join-Path $EvidenceRoot 'field-records') -Recurse
 
 $timelinePath = Join-Path $EvidenceRoot 'timeline.jsonl'
 $runId = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssfffZ')
@@ -136,7 +149,19 @@ if (-not (Test-Path -LiteralPath $script:fieldOps -PathType Leaf)) {
     throw "ControlServer.FieldOps not found at $script:fieldOps"
 }
 
-$commit = (& git -C $Repository rev-parse HEAD).Trim()
+if ($ControlServerCommit) {
+    $commit = $ControlServerCommit
+}
+else {
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        throw 'git is not available here; pass -ControlServerCommit with the commit the FieldOps build came from.'
+    }
+    $commit = & git -C $Repository rev-parse HEAD 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $commit) {
+        throw "No git work tree at $Repository; pass -ControlServerCommit with the commit the FieldOps build came from."
+    }
+    $commit = "$commit".Trim()
+}
 $identity = [ordered]@{
     runId               = $runId
     windowId            = 'W1'
@@ -147,6 +172,8 @@ $identity = [ordered]@{
     controlServerCommit = $commit
     # Null when -FieldOpsExecutable supplied a prebuilt tool; this script did not build it.
     fieldOpsSdkVersion  = $fieldOpsSdkVersion
+    controlServerCommitSource = $ControlServerCommit ? 'parameter' : 'git'
+    fieldRecords        = 'field-records'
     protocolReleaseIdentity = [ordered]@{
         tag              = 'protocol-v0.3.0'
         repositoryCommit = '345c53c58517968192c87c3e7777ed08ddb48726'
@@ -160,6 +187,11 @@ $initial.Payload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Pat
 Add-TimelineEvent -Kind 'status' -Data @{ phase = 'initial'; vehicles = $initial.Payload.vehicles }
 
 $vehicleOutcomes = [System.Collections.Generic.List[hashtable]]::new()
+# A verification's audit is stamped with the record's verifiedAt -- the moment the person finished at
+# the vehicle -- not with the moment this script hands the record in, and the vehicles are verified
+# before the window runs. Exporting from the window's own start would leave every one of those audits
+# outside the export and fail W1-05 on a window that did everything right.
+$auditSince = [DateTimeOffset]$startedAt
 $gateEnabledAt = $null
 $gateAudit = $null
 $step = 0
@@ -168,6 +200,10 @@ foreach ($file in $vehicleRecords) {
     $step++
     $record = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable
     $tag = '{0:d2}-{1}' -f $step, $record.siteAlias
+    if ($record.verifiedAt) {
+        $verifiedAt = [DateTimeOffset]$record.verifiedAt
+        if ($verifiedAt -lt $auditSince) { $auditSince = $verifiedAt }
+    }
     Add-TimelineEvent -Kind 'vehicle-started' -Data @{
         agvId = $record.agvId; siteAlias = $record.siteAlias; recordFile = $file.Name
     }
@@ -225,7 +261,7 @@ foreach ($observation in @($windowRecord.productionContinuityObservations)) {
 }
 
 $auditExport = Invoke-FieldOps -Command 'audit' `
-    -Arguments @('--since', $startedAt.ToString('o')) -LogName '99-audit'
+    -Arguments @('--since', $auditSince.ToString('o')) -LogName '99-audit'
 $auditExport.Payload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $snapshots '99-audit.json') -Encoding utf8
 
 $final = Invoke-FieldOps -Command 'status' -Arguments @() -LogName '99-status-final'
@@ -363,6 +399,7 @@ $photoRows
 ## 目录内容
 
 - ``assertions.json`` —— 机器可读的判据结论，含现场记录原文
+- ``field-records/`` —— 交上来的逐车记录与 ``window.json`` 原样；其中 ``raw/`` 若存在，是 ``Invoke-W1SlotIoProbe.ps1`` 在车上直读 IO 模块的逐仓原始记录与现场人员的逐条回答
 - ``timeline.jsonl`` —— 一行一次动作，只追加；门禁启用那一行的时刻可与第一台车核对通过的时刻直接比对
 - ``logs/`` —— 每次 ``ControlServer.FieldOps`` 调用的 stdout 与 stderr
 - ``snapshots/`` —— 每一步的三车就绪快照，以及本窗口相关的不可改写审计导出

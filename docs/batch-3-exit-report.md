@@ -227,5 +227,5 @@ Passed!  - Failed:     0, Passed:   420, Skipped:     0, Total:   420, Duration:
 | 两切片各四道门禁 `G1` / `CONTROL_SERVER_G2` / `ONBOARD_HMI_G2` / `G3` | 以上全部 |
 | #15／#16 的 L2 场景与三连跑 | 同上 |
 | `real-onboard` 真装置三连跑（v0.3.0 基线） | **已完成，三次全 PASS** |
-| W1 现场窗口实跑 | 现场安排；代码与证据目录已就绪（#17） |
+| W1 现场窗口实跑 | 现场安排；代码与证据目录已就绪（#17）。**2026-09-13 定**：在生产现有的这条 v0.3.0 库上做，真信号、产品负责人本人在车前逐仓核对。因为车载端在这条线上不经服务端授权就不开锁、服务端也只服务一台车，加了逐仓 IO 探针直读 IO 模块（`Invoke-W1SlotIoProbe.ps1`、`Test-W1SlotIoModule.ps1`，本机彩排 `Invoke-W1SlotIoProbeRehearsal.ps1`），并修了窗口脚本在服务器上跑时的三处问题。还卡在 agv02／agv03 离线（要现场通电），以及光幕极性常量与票据 35 不符（`docs/defects/20260913-approved-slot-facts-call-the-light-curtain-active-high.md`），seed 之前要定 |
 | 车载端两个分支合入 `OnboardHmi_MVP` | 开 PR，需先经你同意 |
