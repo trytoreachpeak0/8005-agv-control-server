@@ -29,12 +29,13 @@ public sealed class JourneyRuntimeOptions
     public int ChargerStationRiotId { get; set; }
 
     /// <summary>
-    /// Below this the runtime sends the vehicle to charge. It sits below
-    /// <see cref="MinimumBatteryPercent"/> on purpose -- a vehicle that is merely too low to accept
-    /// a demand is not yet worth a trip to the pad, and the gap keeps it from oscillating between
-    /// "just able to work" and "off to charge".
+    /// Below this the runtime sends the vehicle to charge. It is never below
+    /// <see cref="MinimumBatteryPercent"/>. It used to sit below on purpose, to spare a trip for a
+    /// vehicle merely too low to work, but a vehicle in that band is refused every demand and never
+    /// sent to the pad -- and with nobody watching it stands there until somebody notices
+    /// (8005-agv-program#53). Resuming above the trigger is what keeps it from oscillating.
     /// </summary>
-    public int ChargeTriggerBatteryPercent { get; set; } = 20;
+    public int ChargeTriggerBatteryPercent { get; set; } = 30;
 
     /// <summary>
     /// The level at which a charging vehicle becomes available for demands again. The vehicle stays
@@ -140,12 +141,13 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             if (options.ChargeResumeBatteryPercent is < 1 or > 100)
                 failures.Add("ChargeResumeBatteryPercent must be in 1..100.");
             // Resuming at or below the trigger would send the vehicle back to the charger the moment
-            // it was released, and resuming below the demand floor would release it into a state
-            // where every candidate is refused for battery anyway.
+            // it was released. A trigger below the demand floor leaves a band where every candidate is
+            // refused for battery and nothing sends the vehicle to charge; it also keeps the resume
+            // level, which exceeds the trigger, above that floor.
             if (options.ChargeResumeBatteryPercent <= options.ChargeTriggerBatteryPercent)
                 failures.Add("ChargeResumeBatteryPercent must exceed ChargeTriggerBatteryPercent.");
-            if (options.ChargeResumeBatteryPercent < options.MinimumBatteryPercent)
-                failures.Add("ChargeResumeBatteryPercent must be at least MinimumBatteryPercent.");
+            if (options.ChargeTriggerBatteryPercent < options.MinimumBatteryPercent)
+                failures.Add("ChargeTriggerBatteryPercent must be at least MinimumBatteryPercent.");
         }
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);

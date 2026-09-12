@@ -165,7 +165,27 @@ public static class ControlPlane
                 {
                     [upperId] = updated
                 };
-                return state with { OrdersByUpperId = orders };
+                FakeRiotState next = state with { OrdersByUpperId = orders };
+                // RIoT reports CHARGING because the order's start-charging action engaged the charger
+                // (Q-033), never because the vehicle reached the pad. Scenarios used to write CHARGING
+                // on arrival themselves, and that hid 8005-agv-program#53 -- a charge order that was
+                // only a movement -- from every L2 run.
+                string? chargedVehicle = string.IsNullOrWhiteSpace(updated.ExecuteVehicleKey) ||
+                                         updated.ExecuteVehicleKey.Trim() == "--"
+                    ? updated.AppointVehicleKey
+                    : updated.ExecuteVehicleKey;
+                if (updated.OrderState == 5 && order.OrderState != 5 &&
+                    updated.Missions.Any(mission => mission.StartsCharging) &&
+                    chargedVehicle is not null &&
+                    next.Vehicles.TryGetValue(chargedVehicle, out FakeVehicle? vehicle))
+                {
+                    Dictionary<string, FakeVehicle> vehicles = new(next.Vehicles, StringComparer.Ordinal)
+                    {
+                        [chargedVehicle] = vehicle with { BatteryState = "CHARGING" }
+                    };
+                    next = next with { Vehicles = vehicles };
+                }
+                return next;
             }));
 
         control.MapPut("/maps/{mapId:int}/stations", (int mapId, StationsCommand command) =>

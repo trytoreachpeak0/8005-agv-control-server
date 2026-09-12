@@ -2614,7 +2614,7 @@ public sealed class JourneyRuntimeWorkerTests
         AutoChargingRunRow run = await fixture.ChargingRunAsync();
         Assert.Equal(AutoChargingStage.AwaitingChargerArrival, run.Stage);
         Assert.Equal(211, run.ChargerStationRiotId);
-        Assert.Equal("充电准备点1", run.ChargerStationId);
+        Assert.Equal("充电点1", run.ChargerStationId);
         Assert.Equal(15, run.TriggeredAtBatteryPercent);
         Assert.Null(run.BlockReasonCode);
         Assert.Equal(1, fixture.Riot.CreateCount("TO_CHARGER"));
@@ -2721,7 +2721,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Riot.SetMapStations(
             new RiotMapStation(12, "N1-1"),
             new RiotMapStation(210, "关卡"),
-            new RiotMapStation(211, "充电准备点1B"));
+            new RiotMapStation(211, "充电点1B"));
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
 
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -2729,6 +2729,83 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()
             .ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Equal(0, fixture.Riot.CreateCount("TO_CHARGER"));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AChargerMissingFromTheLiveMapRefusesEveryDemandEvenOnAFullBattery()
+    {
+        // 8005-agv-program#53, 15:38: the shipped binding named a station the live map did not carry,
+        // so no charging run could ever start -- and the runtime accepted a five-stop journey instead.
+        // A wrong binding has to show on the first dispatch, not the first time the battery runs low.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(211, "站点211"));
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("CHARGER_STATION_UNRESOLVED", backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task BelowTheTriggerTheVehicleIsRefusedWorkEvenWhenNoChargingRunCanStart()
+    {
+        // The field window's temporary lines put the trigger above the demand floor. Here RIoT shows
+        // the vehicle holding an order that is not ours, so the charging errand cannot start -- and a
+        // vehicle that should charge but cannot must still not be given work (8005-agv-program#53).
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        fixture.Options.ChargeTriggerBatteryPercent = 76;
+        fixture.Options.ChargeResumeBatteryPercent = 80;
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 75, OrderTaskId = "RIOT-ORDER-NOT-OURS" };
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(await fixture.Context.AutoChargingRuns.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("BATTERY_CHARGE_REQUIRED", backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AChargeOrderThatHangsIsNamedRatherThanWaitedOut()
+    {
+        // Q-033: a start-charging action that cannot engage the charger is retried and leaves the order
+        // HANG (orderState 9). The arrival is never trusted, and waiting does not change that.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        AutoChargingRunRow run = await fixture.ChargingRunAsync();
+
+        fixture.Riot.SetHungOrder(run.UpperId);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        run = await fixture.ChargingRunAsync();
+        Assert.Equal(AutoChargingStage.AwaitingChargerArrival, run.Stage);
+        Assert.Equal("CHARGER_ORDER_HANG", run.BlockReasonCode);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_CHARGER"));
     }
 
     [Fact]
@@ -4053,13 +4130,13 @@ public sealed class JourneyRuntimeWorkerTests
         public void EnableAutoCharging()
         {
             Options.AutoChargingEnabled = true;
-            Options.ChargerStationId = "充电准备点1";
+            Options.ChargerStationId = "充电点1";
             Options.ChargerStationRiotId = 211;
             Riot.SetMapStations(
                 new RiotMapStation(12, "N1-1"),
                 new RiotMapStation(13, "N1-2_N1-3"),
                 new RiotMapStation(210, "关卡"),
-                new RiotMapStation(211, "充电准备点1"));
+                new RiotMapStation(211, "充电点1"));
         }
 
         /// <summary>
@@ -4840,6 +4917,10 @@ public sealed class JourneyRuntimeWorkerTests
 
         public void SetSuccessfulArrival(string purpose, int stationId) =>
             SetSuccessfulArrival(purpose, UpperId(purpose), stationId);
+
+        /// <summary>What RIoT does to a charge order whose start-charging action never engages (Q-033).</summary>
+        public void SetHungOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with { OrderState = 9 };
 
         /// <summary>
         /// The upperId of the last order created for a purpose. It used to be a literal built from

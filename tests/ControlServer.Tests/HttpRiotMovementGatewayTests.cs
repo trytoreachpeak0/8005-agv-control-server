@@ -313,6 +313,115 @@ public sealed class HttpRiotMovementGatewayTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task ChargeOrderCarriesTheStartChargingActionAfterTheMoveToThePad()
+    {
+        // 8005-agv-program#53: a charge order that is only a movement parks the vehicle on the pad at
+        // NO_CHARGE. RIoT engages the charger for act(78, 1, 0) and for nothing else (Q-033).
+        RecordingHandler handler = new(async (request, cancellationToken) =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("/api/order/v1/add/byDefaultMissions", request.RequestUri?.AbsolutePath);
+            string body = await request.Content!.ReadAsStringAsync(cancellationToken);
+            using JsonDocument document = JsonDocument.Parse(body);
+            JsonElement root = document.RootElement;
+            Assert.Equal("AGV-8005-01", root.GetProperty("appointVehicleKey").GetString());
+            Assert.Equal(1, root.GetProperty("isAppointEnable").GetInt32());
+            Assert.Equal(0, root.GetProperty("lockStatus").GetInt32());
+            Assert.Equal("UPPER-CHARGE-001", root.GetProperty("upperId").GetString());
+            JsonElement[] missions = root.GetProperty("mission").EnumerateArray().ToArray();
+            Assert.Equal(2, missions.Length);
+            Assert.Equal("move", missions[0].GetProperty("type").GetString());
+            Assert.Equal(25, missions[0].GetProperty("mapId").GetInt32());
+            Assert.Equal(211, missions[0].GetProperty("destination").GetInt32());
+            Assert.Equal("act", missions[1].GetProperty("type").GetString());
+            Assert.Equal(78, missions[1].GetProperty("actionId").GetInt32());
+            Assert.Equal(1, missions[1].GetProperty("actionParam1").GetInt32());
+            Assert.Equal(0, missions[1].GetProperty("actionParam2").GetInt32());
+            return JsonResponse(CreateSuccessJson("UPPER-CHARGE-001"));
+        });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.CreateAsync(
+            CreateIntent() with
+            {
+                UpperId = "UPPER-CHARGE-001",
+                Purpose = "TO_CHARGER",
+                MapId = 25,
+                DestinationStationId = 211
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Active, result.Kind);
+        Assert.Equal("ORDER-001", result.OrderId);
+        Assert.Equal(25, result.MapId);
+        Assert.Equal(211, result.DestinationStationId);
+        Assert.Equal("SdkAccepted", result.Receipt?.Classification);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task ChargeOrderWithIncompleteIdentifiersRemainsUnknownWithoutRetry()
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(
+            """{"code":"0","message":"成功","result":{"upperId":"UPPER-CHARGE-001"}}"""));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.CreateAsync(
+            CreateIntent() with { UpperId = "UPPER-CHARGE-001", Purpose = "TO_CHARGER" },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Null(result.OrderId);
+        Assert.Equal("PROTOCOL_FAILURE", result.Receipt?.FailureCategory);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task AnOrderRiotExpandedThroughAnEnterExitPointEndsAtItsLastMove()
+    {
+        // Map 25 names 212 as the enter_exit point of charger 211, so RIoT runs a charge order as
+        // move(212) -> move(211) -> act(78). Requiring exactly one move left every charge order
+        // unconfirmable.
+        RecordingHandler handler = new((_, _) => JsonResponse(FoundOrderJson(
+            orderState: 5,
+            missionsJson: """
+                [{"type":"move","mapId":25,"destination":212},{"type":"move","mapId":25,"destination":211},
+                {"type":"act","mapId":0,"destination":0,"actionId":78,"actionParam1":1,"actionParam2":0}]
+                """,
+            endStationNo: 211)));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Terminal, result.Kind);
+        Assert.Equal(25, result.MapId);
+        Assert.Equal(211, result.DestinationStationId);
+    }
+
+    [Fact]
+    public async Task MovesOnTwoDifferentMapsInOneOrderRemainUnknown()
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(FoundOrderJson(
+            orderState: 5,
+            missionsJson: """[{"type":"move","mapId":24,"destination":212},{"type":"move","mapId":25,"destination":211}]""",
+            endStationNo: 211)));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotOrderObservation result = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Unknown, result.Kind);
+        Assert.Equal("IDENTITY_INVALID", result.Receipt?.FailureCategory);
+    }
+
+    [Fact]
     public async Task CreateNullResultReturnsSanitizedUnknownReceiptWithoutRetry()
     {
         const string response = "{\"code\":\"0\",\"message\":\"TOP-SECRET-MARKER\",\"result\":null}";

@@ -65,6 +65,32 @@ public sealed class JourneyRuntimeOptionsTests
             StringComparer.Ordinal);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public void AChargeTriggerBelowTheDemandFloorIsRefused()
+    {
+        // 8005-agv-program#53: shipped at 20 against a floor of 30, a vehicle between the two was
+        // refused every demand and never sent to charge.
+        IConfiguration configuration = new ConfigurationBuilder().Build();
+        JourneyRuntimeOptionsValidator validator = new(configuration);
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+        options.AutoChargingEnabled = true;
+        options.ChargerStationId = "充电点1";
+        options.ChargerStationRiotId = 211;
+        options.ChargeResumeBatteryPercent = 80;
+        const string refusal = "ChargeTriggerBatteryPercent must be at least MinimumBatteryPercent.";
+
+        options.ChargeTriggerBatteryPercent = options.MinimumBatteryPercent - 1;
+        Microsoft.Extensions.Options.ValidateOptionsResult below = validator.Validate(null, options);
+        options.ChargeTriggerBatteryPercent = options.MinimumBatteryPercent;
+        Microsoft.Extensions.Options.ValidateOptionsResult atFloor = validator.Validate(null, options);
+
+        Assert.Contains(refusal, below.Failures ?? [], StringComparer.Ordinal);
+        Assert.DoesNotContain(refusal, atFloor.Failures ?? [], StringComparer.Ordinal);
+        Assert.True(new JourneyRuntimeOptions().ChargeTriggerBatteryPercent >=
+                    new JourneyRuntimeOptions().MinimumBatteryPercent);
+    }
+
     private static JourneyRuntimeOptions ValidEnabledOptions() => new()
     {
         Enabled = true,

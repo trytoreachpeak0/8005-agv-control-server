@@ -311,6 +311,14 @@ public sealed class JourneyRuntimeEngine(
             .ToHashSet(StringComparer.Ordinal);
         HashSet<string> suppressedKeys = await store
             .ReadSuppressedTransportDemandKeysAsync(cancellationToken).ConfigureAwait(false);
+        // A charger this server cannot name exactly on the live map is a charging errand that never
+        // starts, and a vehicle that can never charge must not be given work: it would run down
+        // between journeys with nothing to take it to the pad. Refused at every battery level, so a
+        // wrong binding shows on the first dispatch rather than the first time the battery runs low
+        // (8005-agv-program#53, where the binding was wrong and five stops were accepted instead).
+        string? chargerRefusal = runtimeOptions.AutoChargingEnabled && !ChargerResolves(currentMap)
+            ? "CHARGER_STATION_UNRESOLVED"
+            : null;
         List<EligibleCandidate> eligible = [];
         // Whether some candidate was refused for capacity alone. That is what "the vehicle is full"
         // means, and it is only knowable here: it takes the candidate's own basket count.
@@ -404,7 +412,7 @@ public sealed class JourneyRuntimeEngine(
 
             if (reason == "ELIGIBLE" && route is not null)
             {
-                reason = ValidateDynamicFacts(onboard, vehicle, dynamicFactsNow);
+                reason = chargerRefusal ?? ValidateDynamicFacts(onboard, vehicle, dynamicFactsNow);
             }
             if (reason == "ELIGIBLE" && route is not null &&
                 !await store.IsTaskTypeAllowedAsync(
@@ -930,6 +938,13 @@ public sealed class JourneyRuntimeEngine(
             (!runtimeOptions.AutoChargingEnabled ||
              vehicle.BatteryPercent < runtimeOptions.ChargeResumeBatteryPercent))
             return "BATTERY_POLICY_NOT_SATISFIED";
+        // Below the trigger the vehicle belongs to the charging errand, whether or not the errand
+        // could start this iteration. Discovery only runs once AdvanceAutoChargingAsync has declined,
+        // so without this "should charge but cannot" read exactly like "no need to charge" and the
+        // vehicle was sent out to work instead (8005-agv-program#53).
+        if (runtimeOptions.AutoChargingEnabled &&
+            vehicle.BatteryPercent < runtimeOptions.ChargeTriggerBatteryPercent)
+            return "BATTERY_CHARGE_REQUIRED";
         if (vehicle.Speed is null || vehicle.Speed != 0) return "RIOT_VEHICLE_NOT_STOPPED";
         if (vehicle.LockStatus is null || vehicle.LockStatus != 0 || !string.IsNullOrWhiteSpace(vehicle.OrderTaskId))
             return "RIOT_VEHICLE_ORDER_OCCUPIED";
@@ -1800,8 +1815,20 @@ public sealed class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return true;
                 }
-                if (!await IsTrustedChargerArrivalAsync(run, cancellationToken).ConfigureAwait(false))
+                RiotOrderObservation chargeOrder = await vehicleFacts
+                    .ReconcileByUpperIdAsync(run.UpperId, cancellationToken).ConfigureAwait(false);
+                if (!await IsTrustedChargerArrivalAsync(run, chargeOrder, cancellationToken).ConfigureAwait(false))
                 {
+                    // A start-charging action that cannot engage the charger is retried and then leaves
+                    // the order hung (Q-033: resultCode 407802, orderState 9). Waiting cannot clear
+                    // that -- the plant's rule is a person at the pad -- so it is named, not waited out.
+                    string? hung = chargeOrder.OrderState == 9 ? "CHARGER_ORDER_HANG" : null;
+                    if (run.BlockReasonCode != hung)
+                    {
+                        run.BlockReasonCode = hung;
+                        run.UpdatedAt = now;
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
                     return true;
                 }
                 run.Stage = AutoChargingStage.Charging;
@@ -1830,8 +1857,10 @@ public sealed class JourneyRuntimeEngine(
                     return false;
                 }
                 // Standing on the pad without drawing current is the one failure this errand cannot
-                // fix by waiting: it means the vehicle never engaged. Naming it is all the runtime
-                // can do -- the repair is physical.
+                // fix by waiting. The charge order only succeeds once its start-charging action has
+                // engaged the charger (Q-033), so this means current stopped flowing afterwards -- or,
+                // for a run dispatched before 8005-agv-program#53, that it never started. Naming it is
+                // all the runtime can do -- the repair is physical.
                 string? notEngaged = string.Equals(vehicle.BatteryState, "CHARGING", StringComparison.Ordinal)
                     ? null
                     : "CHARGER_NOT_ENGAGED";
@@ -1949,6 +1978,20 @@ public sealed class JourneyRuntimeEngine(
         return true;
     }
 
+    private bool ChargerResolves(RiotMapStationCatalogSnapshot currentMap)
+    {
+        try
+        {
+            stationResolver.RequireFixedStation(
+                currentMap, runtimeOptions.ChargerStationRiotId, runtimeOptions.ChargerStationId);
+            return true;
+        }
+        catch (StationResolutionException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>
     /// The arrival test for a leg with nothing aboard. It asks the same of RIoT as
     /// <see cref="IsTrustedArrivalAsync"/> -- this exact order, terminal and successful, and the
@@ -1957,12 +2000,11 @@ public sealed class JourneyRuntimeEngine(
     /// </summary>
     private async Task<bool> IsTrustedChargerArrivalAsync(
         AutoChargingRunRow run,
+        RiotOrderObservation order,
         CancellationToken cancellationToken)
     {
         OrderIntentRow intent = await dbContext.OrderIntents.SingleAsync(
             row => row.UpperId == run.UpperId, cancellationToken).ConfigureAwait(false);
-        RiotOrderObservation order = await vehicleFacts.ReconcileByUpperIdAsync(run.UpperId, cancellationToken)
-            .ConfigureAwait(false);
         if (order.Kind != RiotOrderObservationKind.Terminal || order.OrderState != 5 ||
             string.IsNullOrWhiteSpace(order.OrderId) || order.OrderId != intent.OrderId ||
             order.VehicleKey != run.VehicleKey || order.MapId != runtimeOptions.MapId ||

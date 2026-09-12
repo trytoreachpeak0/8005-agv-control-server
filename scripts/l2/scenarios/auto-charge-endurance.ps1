@@ -26,7 +26,7 @@ $mes = $Context.MesIngest
 $connection = $Context.Connection
 
 $chargerStationId = 211
-$chargerStationName = '充电准备点1'
+$chargerStationName = '充电点1'
 
 $firstGuid = [guid]::NewGuid()
 $firstWire = $firstGuid.ToString('N')
@@ -244,9 +244,23 @@ $null = $riot.Command('Put', 'vehicle', @{
     processingOrder  = $false
     clearOrderTaskId = $true
     battery          = 22
-    batteryState     = 'CHARGING'
 })
 $null = $riot.Command('Put', "orders/$($chargerIntent[0].UpperId)", @{ orderState = 5 })
+
+# 到桩本身不通电：RIoT 只在单子里带了开始充电动作 act(78,1,0) 时才接上充电器（Q-033）。这里过去是
+# 场景自己在到桩时写 CHARGING，于是一张只有移动动作的充电单也照样绿——现场车在 211 上停了
+# 十三个小时没充上电，就是那个形状（8005-agv-program#53）。现在 CHARGING 只能由假 RIoT 在带着
+# 那个动作的单子完成时报出来。
+$chargerOrder = @($riot.Snapshot().body.orders | Where-Object { $_.upperId -eq $chargerIntent[0].UpperId })
+$startCharging = @($chargerOrder | ForEach-Object { $_.missions } |
+    Where-Object { $_.type -eq 'act' -and [int]$_.actionId -eq 78 -and [int]$_.actionParam1 -eq 1 -and [int]$_.actionParam2 -eq 0 })
+$vehicle = @($riot.Snapshot().body.vehicles | Where-Object { $_.deviceKey -eq $Context.VehicleKey })
+$assertions.Add(
+    'L2-AC-19', '充电单带开始充电动作 act(78,1,0)，完成后车才报 CHARGING',
+    ($chargerOrder.Count -eq 1 -and $startCharging.Count -eq 1 -and
+        $vehicle.Count -eq 1 -and [string]$vehicle[0].batteryState -eq 'CHARGING'),
+    'act(78,1,0) / CHARGING',
+    "$($startCharging.Count) 个开始充电动作 / $(if ($vehicle.Count -eq 1) { $vehicle[0].batteryState } else { '(no vehicle)' })")
 
 $run = Wait-L2Condition -Description 'the charger arrival was trusted' `
     -Journal $journal -Criterion 'charging-run' -TimeoutSeconds 90 `
@@ -263,7 +277,6 @@ $journal.Note('Battery passes the demand floor but not the resume level; the veh
 $null = $riot.Command('Put', 'vehicle', @{
     vehicleKey   = $Context.VehicleKey
     battery      = 55
-    batteryState = 'CHARGING'
 })
 $null = $mes.Command('Put', "demands/$secondWire", @{
     sublot      = "L2-SUBLOT-$($Context.RunId)-B"
@@ -301,7 +314,6 @@ $journal.Note('Battery reaches the resume level; the vehicle stays plugged in bu
 $null = $riot.Command('Put', 'vehicle', @{
     vehicleKey   = $Context.VehicleKey
     battery      = 80
-    batteryState = 'CHARGING'
 })
 
 $run = Wait-L2Condition -Description 'the charging run released the vehicle' `

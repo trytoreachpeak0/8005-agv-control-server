@@ -41,6 +41,15 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
     /// <summary>RIoT business code for "订单已存在" on byDefaultMissions (BC-ORDER-004).</summary>
     private const string OrderAlreadyExistsBusinessCode = "0610008";
 
+    private const string ChargerPurpose = "TO_CHARGER";
+
+    /// <summary>
+    /// RIoT's charging action template, measured in Round 24/25 (Q-033): actionId 78 with
+    /// actionParam1 1 starts charging and 2 ends it, actionParam2 0 for both.
+    /// </summary>
+    private const int ChargeActionId = 78;
+    private const int StartChargingActionParam = 1;
+
     public async Task<RiotOrderObservation> ReconcileByUpperIdAsync(
         string upperId,
         CancellationToken cancellationToken)
@@ -90,13 +99,15 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         ValidateFrozenIntent(intent);
         try
         {
-            OrderRef created = await riotSession.Order.CreateMoveOrderAsync(
-                intent.UpperId,
-                intent.VehicleKey,
-                intent.MapId,
-                intent.DestinationStationId,
-                intent.UpperId,
-                cancellationToken).ConfigureAwait(false);
+            OrderRef created = string.Equals(intent.Purpose, ChargerPurpose, StringComparison.Ordinal)
+                ? await CreateChargeOrderAsync(intent, cancellationToken).ConfigureAwait(false)
+                : await riotSession.Order.CreateMoveOrderAsync(
+                    intent.UpperId,
+                    intent.VehicleKey,
+                    intent.MapId,
+                    intent.DestinationStationId,
+                    intent.UpperId,
+                    cancellationToken).ConfigureAwait(false);
 
             RiotOrderObservationKind kind = ToObservationKind(created.OrderState);
             if (kind == RiotOrderObservationKind.Unknown ||
@@ -287,6 +298,62 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         }
     }
 
+    /// <summary>
+    /// A charging errand is not a movement order with a charger at the end of it. Standing on the pad
+    /// draws no current: RIoT engages the charger only when the order itself carries the
+    /// start-charging action, which is why agv01 stood on 211 for thirteen hours at NO_CHARGE
+    /// (8005-agv-program#53). The facade builds single-move orders only, so this one goes through its
+    /// generated client, with the facade's own response checks.
+    /// </summary>
+    private async Task<OrderRef> CreateChargeOrderAsync(
+        OrderIntent intent,
+        CancellationToken cancellationToken)
+    {
+        RIoT.Sdk.Generated.Order.Models.OrderRecordDTOObject body = new()
+        {
+            AppointVehicleKey = intent.VehicleKey,
+            IsAppointEnable = 1,
+            LockStatus = 0,
+            OrderName = intent.UpperId,
+            UpperId = intent.UpperId,
+            Mission =
+            [
+                new RIoT.Sdk.Generated.Order.Models.MissionDTO
+                {
+                    Type = "move",
+                    MapId = intent.MapId,
+                    Destination = intent.DestinationStationId
+                },
+                new RIoT.Sdk.Generated.Order.Models.MissionDTO
+                {
+                    Type = "act",
+                    ActionId = ChargeActionId,
+                    ActionParam1 = StartChargingActionParam,
+                    ActionParam2 = 0
+                }
+            ]
+        };
+
+        var response = RiotBusinessResponse.RequireResponse(
+            await riotSession.Order.Raw.Api.Order.V1.Add.ByDefaultMissions
+                .PostAsync(body, cancellationToken: cancellationToken)
+                .ConfigureAwait(false),
+            "byDefaultMissions");
+        RiotBusinessResponse.EnsureSuccess(response.Code, response.Message);
+        RIoT.Sdk.Generated.Order.Models.OrderRecordObject? result = response.Result;
+        if (result?.Id is null ||
+            string.IsNullOrWhiteSpace(result.OrderId) ||
+            string.IsNullOrWhiteSpace(result.UpperId) ||
+            result.OrderState is null)
+        {
+            throw new RiotApiException(
+                "byDefaultMissions returned incomplete order identifiers.",
+                businessCode: "order-ref-missing");
+        }
+
+        return new OrderRef(result.Id.Value, result.OrderId, result.UpperId, result.OrderState.Value);
+    }
+
     private static RiotOrderObservation ToObservation(
         string expectedUpperId,
         OrderSnapshot order,
@@ -296,6 +363,12 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         string? vehicleKey = IsAssignedVehicleKey(order.ExecuteVehicleKey)
             ? order.ExecuteVehicleKey
             : order.AppointVehicleKey;
+        // RIoT expands a destination that names an enter_exit point into move(entry) -> move(station):
+        // that is every charge order to 211, whose enter_exit is 212 on map 25. The vehicle ends where
+        // the last move ends, and RIoT's endStationNo says the same (PROBE-one-charge-full.json). A
+        // multi-move order whose last move disagrees with endStationNo, or does not name one, is not
+        // that expansion and stays ambiguous. The act missions -- the start-charging action, and the
+        // end-charging one RIoT prepends to a charged vehicle's next order -- are not movements.
         OrderMissionSnapshot[] movements = order.Missions
             .Where(mission => string.Equals(mission.Type, "move", StringComparison.Ordinal))
             .ToArray();
@@ -303,8 +376,11 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             string.IsNullOrWhiteSpace(order.OrderId) ||
             !string.Equals(order.UpperId, expectedUpperId, StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(vehicleKey) ||
-            movements.Length != 1 ||
-            movements[0].MapId is not > 0)
+            movements.Length == 0 ||
+            movements[^1].MapId is not > 0 ||
+            movements.Any(movement => movement.MapId != movements[^1].MapId) ||
+            (movements.Length > 1 &&
+             (movements[^1].Destination is null || movements[^1].Destination != order.EndStationNo)))
         {
             return Unknown(expectedUpperId, receipt with
             {
@@ -313,7 +389,8 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             });
         }
 
-        int? destination = movements[0].Destination ?? order.EndStationNo;
+        OrderMissionSnapshot movement = movements[^1];
+        int? destination = movement.Destination ?? order.EndStationNo;
         if (destination is not > 0)
         {
             return Unknown(expectedUpperId, receipt with
@@ -329,7 +406,7 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
             order.OrderId,
             order.OrderState,
             vehicleKey,
-            movements[0].MapId,
+            movement.MapId,
             destination,
             receipt);
     }

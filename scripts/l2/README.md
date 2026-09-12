@@ -157,6 +157,12 @@ resume 是设计不是缺陷。同一状态下 `COMPENSATE_LOAD_ALL_EMPTY` 是�
 要读 MesIngest、箱数与包装规格，全是远程调用。解释在 `AutoChargingRuns` 里：车正在充电，这就
 是原因。`auto-charge-endurance` 的 `L2-AC-10` 就是钉这一条的。
 
+**`CHARGING` 不能由场景来写（2026-09-12，`8005-agv-program#53`）。**两条充电场景过去在车到桩时经
+`PUT /vehicle` 自己写 `batteryState = CHARGING`，于是服务端下的充电单只有一段移动也照样绿；现场同一张单让车在
+211 上停了十三个小时没通电。现在假 RIoT 只在一张带 `act(78,1,0)` 的单完成时报 `CHARGING`，场景只推订单状态
+与电量，`L2-AC-19` 与 `L2-FW2-19` 钉的就是这个动作真的在单子里。同一张票还让服务端在桩解析不到时拒绝一切
+接单，所以假 RIoT 的默认地图带上了 `211 充电点1`。
+
 ## 两套装置
 
 场景在自己的 `scenarios/<名字>.setup.psd1` 里写 `Onboard = 'Real'` 就换装置，命令行不变。

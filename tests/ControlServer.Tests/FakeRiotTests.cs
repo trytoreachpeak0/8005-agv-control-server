@@ -40,8 +40,8 @@ public sealed class FakeRiotTests
         Assert.Equal(0, vehicle.LockStatus);
         Assert.Equal(80, vehicle.BatteryPercent);
         Assert.Equal("NO_CHARGE", vehicle.BatteryState);
-        Assert.Equal([11, 12, 210], map.Stations.Select(station => station.StationId));
-        Assert.Equal(["C15-13", "N1-3_N1-7", "关卡"], map.Stations.Select(station => station.StationName));
+        Assert.Equal([11, 12, 210, 211], map.Stations.Select(station => station.StationId));
+        Assert.Equal(["C15-13", "N1-3_N1-7", "关卡", "充电点1"], map.Stations.Select(station => station.StationName));
     }
 
     [Fact]
@@ -108,6 +108,47 @@ public sealed class FakeRiotTests
         // is the only identity available until RIoT binds a vehicle.
         Assert.Equal("AGV-8005-01", reconciled.VehicleKey);
         Assert.Equal(12, reconciled.DestinationStationId);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task OnlyAnOrderCarryingTheStartChargingActionLeavesTheVehicleCharging()
+    {
+        // 8005-agv-program#53: scenarios used to write CHARGING on arrival themselves, so a charge order
+        // that was only a movement stayed green. Completing a movement leaves the battery alone;
+        // completing an order that carries act(78, 1, 0) is what engages the charger (Q-033).
+        await using FakeRiotFixture fixture = await FakeRiotFixture.StartAsync();
+        HttpRiotMovementGateway gateway = fixture.Gateway();
+        RiotOrderObservation move = await gateway.CreateAsync(
+            Intent("UPPER-MOVE-001", 12), TestContext.Current.CancellationToken);
+        RiotOrderObservation charge = await gateway.CreateAsync(
+            Intent("UPPER-CHARGE-001", 211) with { Purpose = "TO_CHARGER" }, TestContext.Current.CancellationToken);
+
+        await CompleteAsync("UPPER-MOVE-001");
+        RiotVehicleObservation afterMove = await gateway.ReadVehicleAsync(
+            VehicleKey, TestContext.Current.CancellationToken);
+        await CompleteAsync("UPPER-CHARGE-001");
+        RiotVehicleObservation afterCharge = await gateway.ReadVehicleAsync(
+            VehicleKey, TestContext.Current.CancellationToken);
+        RiotOrderObservation reconciled = await gateway.ReconcileByUpperIdAsync(
+            "UPPER-CHARGE-001", TestContext.Current.CancellationToken);
+
+        Assert.Equal(RiotOrderObservationKind.Active, move.Kind);
+        Assert.Equal(RiotOrderObservationKind.Active, charge.Kind);
+        Assert.Equal("NO_CHARGE", afterMove.BatteryState);
+        Assert.Equal("CHARGING", afterCharge.BatteryState);
+        Assert.Equal(RiotOrderObservationKind.Terminal, reconciled.Kind);
+        Assert.Equal(211, reconciled.DestinationStationId);
+
+        async Task CompleteAsync(string upperId)
+        {
+            await fixture.CommandAsync(HttpMethod.Put, $"orders/{upperId}", new
+            {
+                orderState = 3,
+                executeVehicleKey = VehicleKey
+            });
+            await fixture.CommandAsync(HttpMethod.Put, $"orders/{upperId}", new { orderState = 5 });
+        }
     }
 
     [Fact]

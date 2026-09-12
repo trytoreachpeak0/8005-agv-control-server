@@ -68,6 +68,15 @@ ControlServer 的 SDK 实际调用的六个端点，响应形状与 `HttpRiotMov
   把它当真 key 读已经坑过一次）；
 - 重复建单返回业务码 `0610008` 而不是 HTTP 409（BC-ORDER-004），ControlServer 据此转去对账。
 
+另有一条**行为**照真实 RCS 走：**车只在一张带开始充电动作 `act(78,1,0)` 的单推到 `orderState=5` 时报
+`CHARGING`**，到桩本身不改电池状态（Q-033）。act mission 的 `mapId`/`destination` 与 move mission 的
+`actionId`/`actionParam1`/`actionParam2` 照真实 RCS 报 0。过去场景在到桩时自己写 `CHARGING`，于是一张只有
+移动动作的充电单也照样绿，现场车在 211 上停了十三个小时没充上电（`8005-agv-program#53`）。**写场景时不要再
+经 `PUT /vehicle` 给 `batteryState` 写 `CHARGING`**，那等于替被测方摆出终态。
+
+默认种子地图除 `210 关卡` 外还有 `211 充电点1`：出厂配置开着自动充电并指名这个桩，桩解析不到时服务端拒绝
+一切接单（同一张票），一个没有它的地图会让每条场景都受理不了需求。
+
 ### 控制面
 
 `http://127.0.0.1:58008/control/v1`，机器契约见 `openapi.json`（运行时 `/control/v1/openapi.json`）。

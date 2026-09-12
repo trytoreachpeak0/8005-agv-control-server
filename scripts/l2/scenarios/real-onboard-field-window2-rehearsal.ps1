@@ -188,8 +188,14 @@ $chargerOrder = Wait-L2Condition -Description 'the TO_CHARGER order was confirme
         $rows = Invoke-L2Query -Connection $connection -Sql "SELECT UpperId, Status FROM OrderIntents WHERE UpperId = '$($charging.UpperId)'"
         ($rows.Count -gt 0) ? $rows[0] : $null
     } -Until { param($v) $v -and [string]$v.Status -eq 'CONFIRMED' }
-$journal.Note('Vehicle drives to the charger and starts drawing current.')
-Move-Vehicle ([string]$chargerOrder.UpperId) $chargerStationId @{ battery = 22; batteryState = 'CHARGING' }
+$journal.Note('Vehicle drives to the charger; the order''s start-charging action engages it.')
+# No batteryState here: the fake RIoT reports CHARGING only when an order carrying act(78, 1, 0)
+# completes. Writing it on arrival is what hid 8005-agv-program#53 from this rehearsal.
+Move-Vehicle ([string]$chargerOrder.UpperId) $chargerStationId @{ battery = 22 }
+$chargingVehicle = @($riot.Snapshot().body.vehicles | Where-Object { $_.deviceKey -eq $Context.VehicleKey })
+$assertions.Add('L2-FW2-19', '充电单完成后假 RIoT 自己报 CHARGING（单里带开始充电动作）',
+    ($chargingVehicle.Count -eq 1 -and [string]$chargingVehicle[0].batteryState -eq 'CHARGING'),
+    'CHARGING', ($chargingVehicle.Count -eq 1 ? [string]$chargingVehicle[0].batteryState : '(no vehicle)'))
 $charging = Wait-FieldChargingStage -Field $field -Stage Charging -Tracker $charging -TimeoutSeconds 180 `
     -OnCheckpoint $onCheckpoint -Checkpoint 'charge-charging'
 
@@ -199,7 +205,7 @@ $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
 $early = Get-FieldJourney -Field $field
 $assertions.Add('L2-FW2-20', '充电未到恢复线时不受理第二趟的需求', ($null -eq $early), '(无未完成旅程)', ($early ? "$($early.JourneyId) $($early.Stage)" : '(无未完成旅程)'))
 
-$null = $riot.Command('Put', 'vehicle', @{ vehicleKey = $Context.VehicleKey; battery = 80; batteryState = 'CHARGING' })
+$null = $riot.Command('Put', 'vehicle', @{ vehicleKey = $Context.VehicleKey; battery = 80 })
 $charging = Wait-FieldChargingStage -Field $field -Stage Completed -Tracker $charging -TimeoutSeconds 180 `
     -OnCheckpoint $onCheckpoint -Checkpoint 'charge-released'
 

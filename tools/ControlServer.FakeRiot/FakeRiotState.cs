@@ -53,7 +53,21 @@ public sealed record FakeOrder
     public required IReadOnlyList<FakeMission> Missions { get; init; }
 }
 
-public sealed record FakeMission(string Type, int MapId, int Destination);
+/// <summary>
+/// One mission of an order. A <c>move</c> carries a map and a destination; an <c>act</c> carries
+/// RIoT's action template triple instead, and RIoT reports zeros for the fields a mission lacks.
+/// </summary>
+public sealed record FakeMission(
+    string Type,
+    int? MapId,
+    int? Destination,
+    int? ActionId = null,
+    int? ActionParam1 = null,
+    int? ActionParam2 = null)
+{
+    /// <summary>RIoT's start-charging action, <c>act(78, 1, 0)</c> (Round 24/25, Q-033).</summary>
+    public bool StartsCharging => Type == "act" && ActionId == 78 && ActionParam1 == 1;
+}
 
 public sealed record FakeStation(int Id, string Name);
 

@@ -157,8 +157,11 @@ public static class RiotDataPlane
             FakeMission[] missions = root.TryGetProperty("mission", out JsonElement missionArray)
                 ? missionArray.EnumerateArray().Select(item => new FakeMission(
                     item.GetProperty("type").GetString() ?? "move",
-                    item.GetProperty("mapId").GetInt32(),
-                    item.GetProperty("destination").GetInt32())).ToArray()
+                    OptionalInt(item, "mapId"),
+                    OptionalInt(item, "destination"),
+                    OptionalInt(item, "actionId"),
+                    OptionalInt(item, "actionParam1"),
+                    OptionalInt(item, "actionParam2"))).ToArray()
                 : [];
             FakeOrder? created = CreateOrder(engine, upperId, appointVehicleKey, missions);
             return created is null
@@ -199,7 +202,7 @@ public static class RiotDataPlane
                 OrderState = 1,
                 AppointVehicleKey = appointVehicleKey,
                 ExecuteVehicleKey = "--",
-                EndStationNo = missions.Count > 0 ? missions[missions.Count - 1].Destination : null,
+                EndStationNo = missions.LastOrDefault(mission => mission.Destination is not null)?.Destination,
                 Missions = missions
             };
             Dictionary<string, FakeOrder> orders = new(state.OrdersByUpperId, StringComparer.Ordinal)
@@ -218,10 +221,25 @@ public static class RiotDataPlane
         appointVehicleKey = order.AppointVehicleKey,
         executeVehicleKey = order.ExecuteVehicleKey,
         endStationNo = order.EndStationNo,
+        // RIoT fills the fields a mission lacks with zeros rather than leaving them out
+        // (PROBE-one-charge-full.json: the act mission reports mapId 0, destination 0).
         missions = order.Missions
-            .Select(mission => new { type = mission.Type, mapId = mission.MapId, destination = mission.Destination })
+            .Select(mission => new
+            {
+                type = mission.Type,
+                mapId = mission.MapId ?? 0,
+                destination = mission.Destination ?? 0,
+                actionId = mission.ActionId ?? 0,
+                actionParam1 = mission.ActionParam1 ?? 0,
+                actionParam2 = mission.ActionParam2 ?? 0
+            })
             .ToArray()
     };
+
+    private static int? OptionalInt(JsonElement item, string name) =>
+        item.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetInt32()
+            : null;
 
     private static IResult Ok(object? result) => Results.Json(new { code = "0", message = "成功", result });
 

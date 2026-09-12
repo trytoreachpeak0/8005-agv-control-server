@@ -25,9 +25,9 @@
         'JourneyRuntime__pollInterval'                = '00:00:02'
         'JourneyRuntime__sublotWaitTimeout'           = '00:01:00'
         'JourneyRuntime__autoChargingEnabled'         = 'true'
-        'JourneyRuntime__chargerStationId'            = '充电准备点1'
+        'JourneyRuntime__chargerStationId'            = '充电点1'
         'JourneyRuntime__chargerStationRiotId'        = '211'
-        'JourneyRuntime__chargeTriggerBatteryPercent' = '20'
+        'JourneyRuntime__chargeTriggerBatteryPercent' = '30'
         'JourneyRuntime__chargeResumeBatteryPercent'  = '80'
     }
 }

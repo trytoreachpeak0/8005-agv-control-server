@@ -3,7 +3,9 @@ namespace ControlServer.FakeRiot;
 /// <summary>
 /// The safe initial state every round starts from, bound from configuration. Defaults reproduce
 /// the 2026-09-03 field vehicle and map so a scenario that says nothing still faces the shape the
-/// control server was configured against: map 25, gate station 210, one bound vehicle at rest.
+/// control server was configured against: map 25, gate station 210, one bound vehicle at rest --
+/// plus the charger 211 map 25 has carried since 2026-09-12, which the shipped configuration names
+/// and the runtime refuses every demand without.
 /// </summary>
 public sealed class FakeRiotSeed
 {
@@ -22,6 +24,7 @@ public sealed class FakeRiotSeed
     public Dictionary<string, string> Stations { get; set; } = new(StringComparer.Ordinal)
     {
         ["210"] = "关卡",
+        ["211"] = "充电点1",
         ["12"] = "N1-3_N1-7",
         ["11"] = "C15-13"
     };
