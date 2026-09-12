@@ -49,6 +49,10 @@ param(
     # The shipped onboard's own loopback automation face, only turned on when a scenario asks for it
     # (OnboardAutomation). Its default 58007 is the field value, and an L2 run must not answer there.
     [int]$OnboardAutomationPort = 58414,
+    # Only started when a scenario asks for one (ProtocolFaultProxy): the control plane, and the TCP
+    # port the real onboard connects to instead of ControlPort.
+    [int]$ProtocolFaultProxyPort = 58415,
+    [int]$ProtocolFaultProxyListenPort = 58416,
 
     # The two peer repositories are read-only for agents, so they are never built in place: each is
     # cloned to the cache below and published from the clone. Siblings of this repository by
@@ -129,6 +133,13 @@ if ($recoveryResume -and -not $realOnboard) {
 $onboardAutomation = ($setup.ContainsKey('OnboardAutomation') -and $setup.OnboardAutomation)
 if ($onboardAutomation -and -not $realOnboard) {
     throw "OnboardAutomation needs Onboard = 'Real': the synthetic peer has its own control plane."
+}
+# A relay on the onboard protocol connection that can lose a chosen DurableAck
+# (tools/ControlServer.ProtocolFaultProxy). Real onboard only: what a lost ack exercises is the
+# onboard's journal replay, and the synthetic peer keeps no journal and replays nothing.
+$protocolFaultProxy = ($setup.ContainsKey('ProtocolFaultProxy') -and $setup.ProtocolFaultProxy)
+if ($protocolFaultProxy -and -not $realOnboard) {
+    throw "ProtocolFaultProxy needs Onboard = 'Real': the synthetic peer keeps no journal to replay from."
 }
 # Not a secret: it authorises nothing outside this loopback rig, and the whole point of the run is
 # that it is written down in the evidence.
@@ -229,6 +240,7 @@ try {
     $mesDirectory = Join-Path $Repository "tools/ControlServer.FakeMesIngest/bin/$configuration/$framework"
     $onboardDirectory = Join-Path $Repository "tools/ControlServer.FakeOnboard/bin/$configuration/$framework"
     $skewProxyDirectory = Join-Path $Repository "tools/ControlServer.ClockSkewProxy/bin/$configuration/$framework"
+    $faultProxyDirectory = Join-Path $Repository "tools/ControlServer.ProtocolFaultProxy/bin/$configuration/$framework"
 
     $credential = [guid]::NewGuid().ToString('N')
     $agvId = 'AGV-L2-001'
@@ -428,6 +440,29 @@ try {
         $journal.Note("Clock skew proxy forwarding vehicle-safety with observedAt +${clockSkewMs}ms.")
     }
 
+    # 4c. The protocol fault proxy, same reasoning: after the server it relays to, before the onboard
+    #     that connects through it. It starts with no plan, so until a scenario arms one it forwards
+    #     every line.
+    $protocolProxy = $null
+    if ($protocolFaultProxy) {
+        $faultProxyHandle = Start-L2Process -Name 'protocol-fault-proxy' `
+            -FilePath (Join-Path $faultProxyDirectory 'ControlServer.ProtocolFaultProxy.exe') `
+            -ArgumentList @(
+                "--ProtocolFaultProxy:port=$ProtocolFaultProxyPort",
+                "--ProtocolFaultProxy:listenPort=$ProtocolFaultProxyListenPort",
+                "--ProtocolFaultProxy:instanceId=l2-protocol-fault-proxy",
+                "--ProtocolFaultProxy:target=127.0.0.1:$ControlPort") `
+            -WorkingDirectory $faultProxyDirectory -LogRoot $logRoot |
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5 -PassThru }
+        $handles.Add($faultProxyHandle)
+
+        $protocolProxy = New-L2Double -Name 'protocol-fault-proxy' -BaseUrl "http://127.0.0.1:$ProtocolFaultProxyPort"
+        $null = Wait-L2Condition -Description 'the protocol fault proxy is live' -Journal $journal `
+            -Criterion 'protocol-proxy-live' -TimeoutSeconds 60 -Component $faultProxyHandle `
+            -Probe { $protocolProxy.Health().body.status } -Until { param($v) $v -eq 'live' }
+        $journal.Note("Protocol fault proxy relaying 127.0.0.1:$ProtocolFaultProxyListenPort -> 127.0.0.1:$ControlPort.")
+    }
+
     # 5. The onboard last, either way: it connects out to the server, so the server has to be
     #    listening first.
     $onboard = $null
@@ -443,7 +478,8 @@ try {
                 $settings.onboardInstanceId = 'OBU-L2-001'
                 $settings.wireToGate.enabled = $true
                 $settings.wireToGate.host = '127.0.0.1'
-                $settings.wireToGate.port = $ControlPort
+                # Through the fault proxy when the scenario asked for one; this is the only line that says so.
+                $settings.wireToGate.port = $protocolFaultProxy ? $ProtocolFaultProxyListenPort : $ControlPort
                 $settings.wireToGate.onboardInstanceId = '9f2c7f10-3a4d-4a2e-9a26-6f0d5a1c8b77'
                 # Validate() insists this is a real 40-hex commit, and it is the identity the
                 # server records for the peer, so it must be the commit actually published.
@@ -560,6 +596,7 @@ try {
         Onboard             = $onboard
         Simulator           = $simulator
         SkewProxy           = $skewProxy
+        ProtocolProxy       = $protocolProxy
         Connection          = $connection
         RunId               = $runId
         AgvId               = $agvId
@@ -581,9 +618,10 @@ try {
         Repository            = $Repository
         SnapshotRoot        = $snapshotRoot
         # Order is the start position, and Stop-L2Process tears down in reverse: fake RIoT 1, fake
-        # MesIngest 2, simulator 3, ControlServer 4, clock skew proxy 5, onboard 6 (synthetic or
-        # real -- they are mutually exclusive, so they share the position). Two components on the
-        # same number would make that order undefined.
+        # MesIngest 2, simulator 3, ControlServer 4, clock skew proxy and protocol fault proxy 5
+        # (independent of each other, so the order between them does not matter), onboard 6
+        # (synthetic or real -- they are mutually exclusive, so they share the position). Two
+        # dependent components on the same number would make that order undefined.
         # Powering a component down is part of several scenarios -- the vehicle is normally switched
         # off while a blocked load is being dealt with -- so a scenario can stop one by name. Teardown
         # stops whatever is left, and stopping something twice is not an error.
@@ -644,6 +682,14 @@ try {
         $snapshotSources += @{
             Name = 'clock-skew-proxy'
             Url  = "http://127.0.0.1:$ClockSkewProxyPort/control/v1/snapshot"
+        }
+    }
+    if ($protocolFaultProxy) {
+        # Every connection and line that crossed the relay: the only record of how often the onboard
+        # reconnected and what it replayed on each connection.
+        $snapshotSources += @{
+            Name = 'protocol-fault-proxy'
+            Url  = "http://127.0.0.1:$ProtocolFaultProxyPort/control/v1/snapshot"
         }
     }
     foreach ($double in $snapshotSources) {

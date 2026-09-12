@@ -1,0 +1,55 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ControlServer.ProtocolFaultProxy",
+    "version": "1.0.0",
+    "description": "A line-level relay in front of ControlServer's onboard NDJSON listener that can lose a chosen kind of DurableAck after the server has committed the message, and close that connection, so an L2 scenario can exercise the onboard's journal replay against the real server (8005-agv-control-server#30). Every other line is forwarded byte for byte. The relay itself is plain TCP on listenPort; this document covers the HTTP control plane. Loopback only."
+  },
+  "paths": {
+    "/control/v1/health": {
+      "get": { "summary": "Liveness, relay listen address and forward target", "responses": { "200": { "description": "Envelope" } } }
+    },
+    "/control/v1/snapshot": {
+      "get": { "summary": "Current drop plan plus the traffic log: connections (opened, closed, by whom), drops, and one record per line (connection, direction, envelope identity -- never a payload)", "responses": { "200": { "description": "Envelope" } } }
+    },
+    "/control/v1/drop-durable-ack": {
+      "put": {
+        "summary": "Arm a plan: drop the next count DurableAcks whose payload.acceptedMessageType matches, closing the connection each time",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DropDurableAckCommand" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Applied or replayed" },
+          "400": { "description": "INVALID_ARGUMENT" },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT" }
+        }
+      }
+    },
+    "/control/v1/reset": {
+      "post": { "summary": "Start a new round at revision 1 and disarm; the traffic log is kept", "responses": { "200": { "description": "Applied or replayed" } } }
+    },
+    "/control/v1/openapi.json": {
+      "get": { "summary": "This document", "responses": { "200": { "description": "OpenAPI" } } }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DropDurableAckCommand": {
+        "type": "object",
+        "required": ["runId", "commandId", "count"],
+        "properties": {
+          "runId": { "type": "string" },
+          "commandId": { "type": "string" },
+          "expectedRevision": { "type": "integer", "format": "int64", "description": "Optional optimistic concurrency check, skipped on a replay." },
+          "acceptedMessageType": { "type": "string", "description": "Required when count > 0, e.g. OperationResult." },
+          "count": { "type": "integer", "minimum": 0, "maximum": 10, "description": "0 disarms. Each arming is a new plan with its own count." }
+        }
+      }
+    }
+  }
+}
