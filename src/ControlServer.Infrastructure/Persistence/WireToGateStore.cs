@@ -1475,10 +1475,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 return existing.FirstResponseJson;
             }
 
+            const string conflict = "MessageId was replayed with different normalized content.";
             if (replayEquivalenceHash is null ||
                 replayEquivalenceHash(existing.RequestJson) != replayEquivalenceHash(requestJson))
             {
-                throw new ProtocolContentConflictException("MessageId was replayed with different normalized content.");
+                throw new ProtocolContentConflictException(conflict);
             }
 
             // An equivalent resend answered from its first acceptance rather than processed again. The
@@ -1487,8 +1488,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             if (equivalentReplayResponse is not null)
             {
                 return await equivalentReplayResponse(existing.FirstResponseJson).ConfigureAwait(false)
-                    ?? throw new ProtocolContentConflictException(
-                        "MessageId was replayed with different normalized content.");
+                    ?? throw new ProtocolContentConflictException(conflict);
             }
 
             await using var replayTransaction = await dbContext.Database
