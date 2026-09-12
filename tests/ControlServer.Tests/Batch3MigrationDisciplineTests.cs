@@ -15,11 +15,27 @@ namespace ControlServer.Tests;
 /// <c>ControlServerDbContextModelSnapshot.cs</c> is a single file EF rewrites in full, so two
 /// tickets each adding a migration is a hard conflict -- and resolving such a conflict wrongly drops
 /// tables silently rather than failing. This test is the guard: it names the migration batch 3 is
-/// allowed to have, and it fails the moment a second one appears.
+/// allowed to have, and it fails the moment a second one appears. What comes <i>after</i> batch 3 is
+/// named too, in <see cref="MigrationsAfterBatch3"/>, so a migration nobody wrote down still fails.
 /// </remarks>
 public sealed class Batch3MigrationDisciplineTests
 {
     private const string Batch3Migration = "20260909124757_Batch3GovernanceAndSlotConfiguration";
+
+    /// <summary>
+    /// The migrations allowed after batch 3's one, by name.
+    /// </summary>
+    /// <remarks>
+    /// This used to assert that batch 3's migration is the last one. Within batch 3's own tickets that
+    /// is the rule, but it also asserted that no migration may ever follow -- which the rule never meant,
+    /// and which stopped being true when the inbox needed indexes (8005-agv-control-server#29). The
+    /// batch 3 branch (fp/b3-on-v2) names its own followers in the same list; merging the two means
+    /// taking both lists in migration-id order.
+    /// </remarks>
+    private static readonly string[] MigrationsAfterBatch3 =
+    [
+        "20260912153533_ProtocolInboxReadIndexes"
+    ];
 
     private static readonly string[] Batch3Tables =
     [
@@ -47,8 +63,10 @@ public sealed class Batch3MigrationDisciplineTests
         await using MigrationFixture fixture = await MigrationFixture.CreateAsync();
         string[] migrations = [.. fixture.Context.Database.GetMigrations()];
 
-        Assert.Equal(Batch3Migration, migrations[^1]);
         Assert.Single(migrations, name => name.Contains("Batch3", StringComparison.Ordinal));
+        Assert.Equal(
+            [Batch3Migration, .. MigrationsAfterBatch3],
+            migrations[^(1 + MigrationsAfterBatch3.Length)..]);
     }
 
     [Fact]

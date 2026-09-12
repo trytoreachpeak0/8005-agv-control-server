@@ -1257,6 +1257,30 @@ public sealed class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task LivenessReadsOnlyTheEvidenceWindowNotTheInboxHistory()
+    {
+        // The inbox keeps every heartbeat the vehicle ever sent -- about 17,000 rows a day while it is
+        // connected -- and liveness used to load and parse all of them on every read. Measured on the
+        // plant server (8005-agv-control-server#29) that grew past the two-second poll within a week.
+        // Nothing older than MaximumEvidenceAge can make a session live, so nothing older is read. The
+        // unreadable row is a tripwire: loading it at all throws.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AddUnreadableHeartbeatAsync(
+            fixture.Clock.GetUtcNow() - fixture.Options.MaximumEvidenceAge - TimeSpan.FromSeconds(1));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("ACCEPTED", (await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken)).ReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task SupportsBatchUnlockFalseDoesNotBlockAdmission()
     {
         // protocol-v0.1.1 declares supportsBatchUnlock with no semantics and its own canonical
@@ -3668,6 +3692,24 @@ public sealed class JourneyRuntimeWorkerTests
                 ContentHash = new string('b', 64),
                 FirstResponseJson = "{}",
                 ReceivedAt = Clock.GetUtcNow()
+            });
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// Stores a heartbeat whose body cannot be parsed, received at <paramref name="receivedAt"/>. The
+        /// inbox never holds such a row; it exists so that any read which loads the row fails loudly.
+        /// </summary>
+        public async Task AddUnreadableHeartbeatAsync(DateTimeOffset receivedAt)
+        {
+            Context.ProtocolInbox.Add(new ProtocolInboxRow
+            {
+                MessageId = Guid.NewGuid().ToString("D"),
+                MessageType = "Heartbeat",
+                RequestJson = "not json",
+                ContentHash = new string('c', 64),
+                FirstResponseJson = "{}",
+                ReceivedAt = receivedAt
             });
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
