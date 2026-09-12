@@ -1563,7 +1563,7 @@ public sealed class JourneyRuntimeEngine(
             return null;
         }
         DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
-            runtimeOptions.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+            runtimeOptions.AgvId, session.SessionGeneration, now, cancellationToken).ConfigureAwait(false);
         if (lastInboundAt is null || lastInboundAt > now ||
             now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
         {
@@ -1658,19 +1658,30 @@ public sealed class JourneyRuntimeEngine(
     /// last received. Uses the receive time rather than a payload timestamp so a stopped or
     /// misconfigured peer clock cannot make a dead session look alive.
     /// </summary>
+    /// <remarks>
+    /// Only messages received within <see cref="JourneyRuntimeOptions.MaximumEvidenceAge"/> of
+    /// <paramref name="now"/> are read, which decides nothing differently: an older message cannot make
+    /// the session live, and the caller already treats "none" and "too old" alike. Reading the whole
+    /// inbox instead cost 300 ms at 30,000 rows on the plant server and grew by about 17,000 rows a day
+    /// of connection, so liveness alone would have outgrown the two-second poll within a week
+    /// (8005-agv-control-server#29).
+    /// </remarks>
     private async Task<DateTimeOffset?> LatestInboundAtForSessionAsync(
         string agvId,
         long generation,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        long windowStartTicks = (now - runtimeOptions.MaximumEvidenceAge).UtcTicks;
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.ReceivedAtUtcTicks >= windowStartTicks)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         DateTimeOffset? latest = null;
         foreach (ProtocolInboxRow row in rows)
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            // This scans every inbound message, so unlike the per-type readers it meets envelopes
+            // This reads every message type, so unlike the per-type readers it meets envelopes
             // that carry no generation yet (or none at all). Those prove nothing about this
             // session's liveness and are skipped rather than throwing.
             if (!root.TryGetProperty("agvId", out JsonElement agv) ||

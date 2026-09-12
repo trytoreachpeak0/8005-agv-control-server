@@ -222,12 +222,31 @@ public sealed class SessionRecoveryRow
 
 public sealed class ProtocolInboxRow
 {
+    private DateTimeOffset receivedAt;
+
     public required string MessageId { get; set; }
     public required string MessageType { get; set; }
     public required string RequestJson { get; set; }
     public required string ContentHash { get; set; }
     public required string FirstResponseJson { get; set; }
-    public DateTimeOffset ReceivedAt { get; set; }
+
+    /// <summary>When the message was received. Setting it also sets <see cref="ReceivedAtUtcTicks"/>.</summary>
+    public DateTimeOffset ReceivedAt
+    {
+        get => receivedAt;
+        set
+        {
+            receivedAt = value;
+            ReceivedAtUtcTicks = value.UtcTicks;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="ReceivedAt"/> as UTC ticks, the only form of it SQLite can filter or order on. It is
+    /// derived in the setter rather than assigned by each writer: the inbox has several writers,
+    /// test fixtures among them, and one that forgot would make its rows invisible to every read by time.
+    /// </summary>
+    public long ReceivedAtUtcTicks { get; private set; }
 }
 
 public sealed class ProtocolOutboxRow
