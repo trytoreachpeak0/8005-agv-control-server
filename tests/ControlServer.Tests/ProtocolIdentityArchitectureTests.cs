@@ -92,23 +92,19 @@ public sealed class ProtocolIdentityArchitectureTests
     }
 
     /// <summary>
-    /// While the identity names a candidate, packaging a release candidate over it stays refused.
+    /// The identity names the approved release, so a release candidate can be packaged over it.
     /// </summary>
     /// <remarks>
     /// <c>scripts/New-WireToGateReleaseCandidate.ps1</c> gates on <c>APPROVED_RELEASE</c> and this
-    /// is the other half of that gate. Section 6.6 of the full-product scope specification lists
-    /// what protocol v2 still owes -- item 6 is the external approval attestation plus the annotated
-    /// tag <see cref="ProtocolCandidateIdentity.Tag"/> names, and <c>git tag --list</c> in
-    /// the protocol repository does not show that tag. When that lands, this test is where the
-    /// change has to be made deliberately rather than noticed afterwards. The specification says two
-    /// product owners sign; the protocol's own governance moved to exactly one on 2026-09-08, and the
-    /// v2 candidate carried that over on 2026-09-12.
+    /// is the other half of that gate. Until 2026-09-12 this test asserted the opposite, because
+    /// <c>protocol-v1.0.0</c> had been neither approved nor tagged. The change was made here on purpose
+    /// the day both happened: an annotated tag on <see cref="ProtocolCandidateIdentity.RepositoryCommit"/>
+    /// and one approval in the external attestation, given by an AI agent the product owner authorized.
     /// </remarks>
     [Fact]
-    public void ThisIdentityIsACandidateAndDoesNotClaimAnApprovedRelease()
+    public void ThisIdentityIsTheApprovedReleaseItNames()
     {
-        Assert.NotEqual("APPROVED_RELEASE", ProtocolCandidateIdentity.ApprovalStatus);
-        Assert.Equal("SUPERSEDING_CANDIDATE", ProtocolCandidateIdentity.ApprovalStatus);
+        Assert.Equal("APPROVED_RELEASE", ProtocolCandidateIdentity.ApprovalStatus);
     }
 
     /// <summary>
