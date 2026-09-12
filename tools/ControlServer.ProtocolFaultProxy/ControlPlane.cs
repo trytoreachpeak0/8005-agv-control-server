@@ -69,9 +69,10 @@ public static class ControlPlane
                 };
             }));
 
-        // Takes the link down without losing a line: every connection open now is closed at both ends
-        // and the onboard reconnects on its own. Not a plan and not state -- it happens once, when asked,
-        // so it moves no revision; the traffic log records it as the connection's closedBy.
+        // Takes the link down without picking a line to lose: every connection open now is closed at both
+        // ends and the onboard reconnects on its own. Lines already in flight go with the connection, as on
+        // any dropped link. Not a plan and not state -- it happens once, when asked, so it moves no
+        // revision; the traffic log records it as the connection's closedBy.
         control.MapPost("/disconnect", (CommandEnvelope command) =>
         {
             if (string.IsNullOrWhiteSpace(command.CommandId))

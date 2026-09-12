@@ -9,6 +9,6 @@
     RecoveryResume     = $true
 
     # 车载端的 wireToGate 连接经 tools/ControlServer.ProtocolFaultProxy 转发。场景在补偿对账之后用 POST /control/v1/disconnect
-    # 断开一次，什么都不丢。
+    # 断开一次，不丢 ack。
     ProtocolFaultProxy = $true
 }

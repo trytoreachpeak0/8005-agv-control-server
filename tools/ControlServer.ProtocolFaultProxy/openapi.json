@@ -3,7 +3,7 @@
   "info": {
     "title": "ControlServer.ProtocolFaultProxy",
     "version": "1.0.0",
-    "description": "A line-level relay in front of ControlServer's onboard NDJSON listener that can lose a chosen kind of DurableAck after the server has committed the message, and close that connection, so an L2 scenario can exercise the onboard's journal replay against the real server (8005-agv-control-server#30); or take the link down on request with nothing lost, so a scenario can watch what each end does with the next session (8005-agv-control-server#31). Every other line is forwarded byte for byte. The relay itself is plain TCP on listenPort; this document covers the HTTP control plane. Loopback only."
+    "description": "A line-level relay in front of ControlServer's onboard NDJSON listener that can lose a chosen kind of DurableAck after the server has committed the message, and close that connection, so an L2 scenario can exercise the onboard's journal replay against the real server (8005-agv-control-server#30); or take the link down on request without dropping a chosen line, so a scenario can watch what each end does with the next session (8005-agv-control-server#31). Every other line is forwarded byte for byte. The relay itself is plain TCP on listenPort; this document covers the HTTP control plane. Loopback only."
   },
   "paths": {
     "/control/v1/health": {
@@ -32,7 +32,7 @@
     },
     "/control/v1/disconnect": {
       "post": {
-        "summary": "Close every relay connection open right now at both ends, losing no line; the onboard reconnects on its own. Once per commandId: a retry reports the same connections and closes nothing. Moves no revision; the traffic log records closedBy = relay disconnected on request",
+        "summary": "Close every relay connection open right now at both ends without singling out a line to lose (lines already in flight go with the connection); the onboard reconnects on its own. Once per commandId: a retry reports the same connections and closes nothing. Moves no revision; the traffic log records closedBy = relay disconnected on request",
         "responses": {
           "200": { "description": "Envelope whose body lists the connections closed" },
           "400": { "description": "INVALID_ARGUMENT" }

@@ -36,7 +36,7 @@ public sealed record ProtocolFaultProxyState
 /// happens next is the shipped code on both sides. What it is *not* is a flaky network: every other
 /// line is forwarded byte for byte, and the drop is exactly the one a scenario asked for.
 ///
-/// The disconnect is the same link going down with nothing lost in flight: both ends see the
+/// The disconnect is the same link going down without a chosen line lost: both ends see the
 /// connection close, the onboard reconnects, and what is left to watch is how each end treats the new
 /// session -- the server's replay of its own unacknowledged messages included (8005-agv-control-server#31).
 /// </summary>

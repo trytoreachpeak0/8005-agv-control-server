@@ -6,7 +6,7 @@
 车是收下、忽略还是拒收并撕会话（8005-agv-control-server#31）。
 
 前半段与 `real-onboard-field-operator-compensate` 相同：驱动脚本经车载端自动化面制造真的 `UNKNOWN`、按「补偿清空」、
-等对账与会话回到 `Ready`。然后经协议故障代理的 `POST /control/v1/disconnect` 把链路断一次——**什么都不丢**，只断开，
+等对账与会话回到 `Ready`。然后经协议故障代理的 `POST /control/v1/disconnect` 把链路断一次——**不丢 ack**，只断开，
 车自己重连。之后发生的一切都是两端出厂代码对「新会话」的处理，不是一条被丢掉的 ack 引出的补发（那是 #30、#33）。
 
 判据只读三处：服务端库、代理快照（每条连接上服务端发过哪些 messageId）、模拟器快照。
@@ -172,7 +172,7 @@ $assertions.Add(
     "$($recoveryBefore.Count) recovery rows, $($live.Count) live$(if ($live.Count -gt 0) { " ($(Format-Outbox $live))" })")
 $journal.Note("Recovery outbox before the disconnect: $(Format-Outbox $recoveryBefore).")
 
-# --- 2. 断开一次，什么都不丢；车自己重连 --------------------------------------------------------------
+# --- 2. 断开一次，不丢 ack；车自己重连 --------------------------------------------------------------
 
 $connectionsBefore = @((Get-Traffic).connections)
 $lastBefore = [int]$connectionsBefore[-1].connection
