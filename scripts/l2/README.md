@@ -40,6 +40,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-field-window-rehearsal` | **真的**，自动化面 | 现场窗口一（无人）整窗彩排：驱动脚本演 A、C 接 B、正常装，采集器在它说的那一刻打 checkpoint、在它写出的记录上 finalize；之后开去关卡卸货（`L2-FW-40`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-field-window-rehearsal-006`（车载端 `54772ff`，含 #48 修复；`-004`/`-005` 是 #48 的红） |
 | `real-onboard-multi-demand-compensate` | **真的**，自动化面 | 四停靠旅程里停靠 2 真的 `UNKNOWN` + 补偿清空：旅程自己离开那一站（#47 之前停在 `Blocked`），后两站照常装，关卡把三条卸完 | `evidence/l2/20260911-real-onboard-multi-demand-compensate-004`（车载端 `96c7513`，含 #48 修复；`-003` 只红 `L2-MDC-60`/`-61`，原因是 #48） |
 | `real-onboard-recovery-retry-after-refusal` | **真的**，自动化面 | 旅程还没 `Blocked` 时按「补偿清空」被拒，转 `Blocked` 后同一 attempt 再按：开得出会话、补偿走完、车不被掐连接（现场旅程 54d2cf63 卡在这里，8005-agv-program#49） | `evidence/l2/20260911-real-onboard-recovery-retry-after-refusal-006`（车载端 `ab346ed`；`-004` 是修复前的红基线，见最后一节） |
+| `real-onboard-durable-ack-lost` | **真的**，协议故障代理 | 装载结果被服务端收下、`DurableAck` 在路上丢了：车重连后补发同一 messageId，服务端要确认而不是掐连接（#30）；丢一次 ack 只该重连一次（#33） | 尚无整条 PASS：`evidence/l2/20260912-real-onboard-durable-ack-lost-003`（服务端 `8822a59`）#30 的判据全绿，`L2-DA-07` 红在 #33；`-001` 是 #30 修复前的红基线，见文末那一节 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -277,6 +278,10 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 - `ClockSkewMs` —— 只对真装置有效。车辆安全投影改经 `tools/ControlServer.ClockSkewProxy` 转发，
   `observedAt` 往后推这么多毫秒，等价于车载端时钟慢了这么多。合成对端没有新鲜度判定，给它设这个
   键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。
+- `ProtocolFaultProxy` —— 只对真装置有效。车载端的 `wireToGate` 连接改经 `tools/ControlServer.ProtocolFaultProxy`
+  逐行转发，场景经 `$Context.ProtocolProxy` 拿到它的控制面。代理起来时什么都不丢，场景用
+  `PUT /control/v1/drop-durable-ack` 布下「丢 N 次某类报文的 `DurableAck` 并断开」；快照按连接记下每一行的方向与信封
+  身份。合成对端没有 journal、不补发，给它设这个键会直接报错。
 
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
@@ -304,6 +309,8 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 | 模拟器 Modbus TCP（真装置） | 58412 |
 | 时钟偏差代理（`ClockSkewMs` 场景） | 58413 |
 | 车载端 HTTP 自动化面（`OnboardAutomation` 场景） | 58414 |
+| 协议故障代理控制面（`ProtocolFaultProxy` 场景） | 58415 |
+| 协议故障代理数据面，车载端改连这里（`ProtocolFaultProxy` 场景） | 58416 |
 
 刻意避开现场运行（58105/58107）、staged G3（58205/58207）与 demand-bearing G3（58305/58307）：
 撞上了要的是绑不上端口直接失败，而不是悄悄连到另一台服务器上去。模拟器同理不用它自己的默认
@@ -743,3 +750,40 @@ PASS/17、`real-onboard-multi-demand-compensate-005` PASS/15、`real-onboard-res
 约三分钟：T 期限后 1.1 秒结算、X 以 `CANCELLED_BY_OPERATOR` 抑制、NE 那一仓 `UNLOCKING=3` 期间卸货保持 `Prepared`、R1 从
 进程启动到 Ready 3.7 秒（中间一瞬 `RecoveryRequired / HANDSHAKE_INCOMPLETE`）、R2 2.6 秒。去充电桩的路上与第二趟出发时
 会话是 `RecoveryRequired`，那是行驶中出车安全不成立，不是缺陷。
+
+## `real-onboard-durable-ack-lost`：`DurableAck` 丢了之后的补发
+
+车载端的持久出站报文先写 journal 再发，收到 `DurableAck` 才标已确认。服务端已经收下、ack 却没到车上时，下一次连接在
+`SessionAccepted` 之后、任何快照之前逐条补发：同一个 `messageId`、同一个 `sentAt`，只把 `sessionGeneration` 换成新会话的
+（`RebindSessionGeneration`），这是 ADR-cross-0030 的「重连补发沿用原编号」。L2 走 loopback，这个窗口不会自己出现，
+**这条补发路径此前从来没有对着真服务端跑过**。车载端 G2 里有同形用例，但它的替身只比 payload，还会在补发之后主动发 readiness。
+
+**丢 ack 靠 `tools/ControlServer.ProtocolFaultProxy`**（setup 键 `ProtocolFaultProxy`）：车载端改连代理，场景布下「丢一次
+`OperationResult` 的 `DurableAck`」，代理在服务端写出那条 ack 时不转发、两头都断。服务端的提交是真的，车没收到 ack 也是
+真的。判据只读服务端库与代理快照，代理快照按连接记下每一行的方向与信封身份，「车重连了几次、补发在第几条连接、谁关的
+连接」都能直接读出。
+
+判据分属两个缺陷：
+
+| 判据 | 讲什么 | 归属 |
+| --- | --- | --- |
+| `L2-DA-00`～`-02` | 车经代理建会话；丢的是服务端已提交的结果；车在新会话里以新世代补发同一 messageId | 前提 |
+| `L2-DA-03`、`-04` | 补发被 `DurableAck` 确认；丢 ack 之后没有一条连接是车以外的一方关掉的 | `8005-agv-control-server#30` |
+| `L2-DA-05`、`-06` | 旅程走完；装载结果只记一次，卸载 `Committed`，需求 `Succeeded` | `#30` |
+| `L2-DA-07` | 丢一次 ack 只换来一次重连，最后那条连接到收尾还开着 | `8005-agv-control-server#33` |
+
+三个证据：
+
+1. **`-001`（服务端 `3558415`，修复之前）是 #30 的红基线**：车在第 2 条连接以 generation 2 补发，服务端每次抛
+   `ProtocolContentConflictException: MessageId was replayed with different normalized content.` 并掐连接，60 秒 28 条连接、
+   27 条被服务端关掉，旅程停在 `AwaitingLoadResult`。那时 `L2-DA-04` 还是后来 `-07` 的写法；它的实际值列里那 27 个
+   `server closed`，就是现在 `L2-DA-04` 的红。
+2. **`-002`（`e90e924`，修复之后第一跑）**：补发被确认，冲突 0 次，旅程 `Completed`。红在当时的 `L2-DA-04`，读到
+   `2 connections, 0 open (#2: onboard closed)`。那是另一个缺陷：补发之后车等 `SessionReadiness`，而服务端新世代没收到快照、
+   就绪判定没有变化，不发 readiness；车 3 秒超时后自己断开，2 秒后第 3 条连接完整握手才 Ready。**判据本身也错了**：它在补发刚被
+   确认时就数连接，第 3 条连接那时还没开，与第 21 条同一类。现在两条判据都在场景收尾判。
+3. **`-003`（`8822a59`，判据拆开之后）**：#30 的判据全绿，`L2-DA-04` 读到 `0 (#1: relay dropped …; #2: onboard closed; #3: open)`；
+   `L2-DA-07` 红在 `3 connections, 1 open`，留给 #33。
+
+**这条场景要等 #33 修好才会整条 PASS。**#33 票里记着为什么不能简单地让服务端在补发 ack 后发一条 readiness：新世代没有快照，
+能发的只有 `RecoveryRequired`，车收下就进接收循环、不再发快照，会从「超时后自愈」变成卡死。这一点目前是按代码推的，没有实测。
