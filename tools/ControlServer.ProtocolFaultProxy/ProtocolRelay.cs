@@ -121,13 +121,13 @@ public sealed class ProtocolRelay(
     {
         ProtocolFaultProxyState plan = engine.Snapshot().State;
         return plan.PlanId is not null &&
-               plan.DropAckFor is not null &&
+               plan.DropAckForMessageType is not null &&
                string.Equals(line.MessageType, "DurableAck", StringComparison.Ordinal) &&
-               string.Equals(line.AcceptedMessageType, plan.DropAckFor, StringComparison.Ordinal) &&
+               string.Equals(line.AcceptedMessageType, plan.DropAckForMessageType, StringComparison.Ordinal) &&
                log.TryClaimDrop(
                    plan.PlanId,
                    plan.DropCount,
-                   new DropRecord(plan.PlanId, line.Connection, line.At, line.CorrelationId, plan.DropAckFor));
+                   new DropRecord(plan.PlanId, line.Connection, line.At, line.CorrelationId, plan.DropAckForMessageType));
     }
 
     private static LineRecord Describe(int connection, string direction, string line)
