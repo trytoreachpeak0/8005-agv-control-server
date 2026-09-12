@@ -102,6 +102,11 @@ public sealed partial class OnboardMessageProcessor(
         string persistedRequest = messageType == "ExceptionRecoverySessionRequested"
             ? RedactRecoveryAuthenticationProof(line)
             : line;
+        // The same message resent into a later session differs from its first line only in
+        // sessionGeneration: ADR-cross-0030 has a resend keep its messageId, and the onboard rebinds a
+        // pending durable message to the new session (8005-agv-control-server#30). A RecoveryStateReport
+        // is applied again in the new session; anything else is answered from its first acceptance.
+        bool recoveryReport = messageType == "RecoveryStateReport";
         string capturedResponse = await store.CaptureFirstResponseAsync(
             messageId,
             messageType,
@@ -111,10 +116,15 @@ public sealed partial class OnboardMessageProcessor(
                 root, state, messageType, messageId, contentHash, cancellationToken),
             timeProvider.GetUtcNow(),
             cancellationToken,
-            messageType == "RecoveryStateReport" ? RecoveryReplayIdentityHash : null,
-            messageType == "RecoveryStateReport"
+            ReplayIdentityHash,
+            recoveryReport
                 ? response => RestoreAcceptedSnapshotVersions(response, state)
-                : null).ConfigureAwait(false);
+                : null,
+            recoveryReport
+                ? null
+                : firstResponse => RebindDurableAckAsync(
+                    firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
+            .ConfigureAwait(false);
         bool hasDeferredRecoveryOutbound = OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
                                            OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
                                            messageType == "OperationResult" ||
@@ -465,7 +475,8 @@ public sealed partial class OnboardMessageProcessor(
         string acceptedMessageId,
         string agvId,
         long generation,
-        string contentHash) =>
+        string contentHash,
+        DateTimeOffset? durablyAcceptedAt = null) =>
         SerializeEnvelope(
             "DurableAck",
             acceptedMessageId,
@@ -476,8 +487,56 @@ public sealed partial class OnboardMessageProcessor(
                 acceptedMessageId,
                 acceptedMessageType,
                 acceptedContentSha256 = contentHash,
-                durablyAcceptedAt = timeProvider.GetUtcNow()
+                durablyAcceptedAt = durablyAcceptedAt ?? timeProvider.GetUtcNow()
             });
+
+    /// <summary>
+    /// Answers a durable message resent into a later session from its first acceptance, or returns null
+    /// when that first response was not a DurableAck for it -- a snapshot or a recovery request stays a
+    /// conflict. Nothing is processed again: the first processing committed, and what it wrote is bound
+    /// to the first line's hash (ApplyOperationResultAsync, RecoveryResultEvidence), so a second pass
+    /// would throw on its own. The ack is rebuilt for this session and names the line just received,
+    /// which is what the onboard compares it with; durablyAcceptedAt stays the moment it was accepted.
+    /// Readiness is recomputed rather than replayed, because the first response's belonged to the old
+    /// session.
+    /// </summary>
+    private async Task<string?> RebindDurableAckAsync(
+        string firstResponse,
+        string messageType,
+        string messageId,
+        string agvId,
+        string contentHash,
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+        string? firstLine = firstResponse.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (firstLine is null)
+        {
+            return null;
+        }
+        using JsonDocument first = JsonDocument.Parse(firstLine);
+        JsonElement firstRoot = first.RootElement;
+        if (RequiredString(firstRoot, "messageType") != "DurableAck")
+        {
+            return null;
+        }
+        JsonElement firstAck = firstRoot.GetProperty("payload");
+        if (RequiredString(firstAck, "acceptedMessageId") != messageId)
+        {
+            return null;
+        }
+
+        long generation = state.SessionGeneration!.Value;
+        string ack = DurableAck(
+            messageType,
+            messageId,
+            agvId,
+            generation,
+            contentHash,
+            firstAck.GetProperty("durablyAcceptedAt").GetDateTimeOffset());
+        return await WithReadinessChangeAsync(ack, agvId, generation, state, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     private string SerializeReadiness(
         string agvId,
@@ -700,10 +759,14 @@ public sealed partial class OnboardMessageProcessor(
         return Convert.ToHexString(SHA256.HashData(businessContent)).ToLowerInvariant();
     }
 
-    private static string RecoveryReplayIdentityHash(string line)
+    /// <summary>
+    /// A line's identity with its session generation taken out, the one envelope field a resend into a
+    /// later session changes. Everything else, sentAt included, still has to match.
+    /// </summary>
+    private static string ReplayIdentityHash(string line)
     {
         JsonNode root = JsonNode.Parse(line)
-            ?? throw new InvalidDataException("RecoveryStateReport JSON cannot be empty.");
+            ?? throw new InvalidDataException("Protocol line JSON cannot be empty.");
         root["sessionGeneration"] = 0;
         return WireContentHash.Sha256(root.ToJsonString(SerializerOptions));
     }

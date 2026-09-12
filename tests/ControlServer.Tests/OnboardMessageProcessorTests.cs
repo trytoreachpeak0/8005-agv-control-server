@@ -549,6 +549,186 @@ public sealed class OnboardMessageProcessorTests
         }
     }
 
+    /// <summary>
+    /// The vehicle's side of a lost DurableAck (8005-agv-control-server#30). The onboard keeps every
+    /// durable message in its journal until the ack arrives; on the next connection it replays each
+    /// one straight after SessionAccepted -- before any snapshot, see ConnectAndRecoverAsync -- with
+    /// the same messageId, the same sentAt and the same payload, rebound to the new session
+    /// generation (WireToGateProtocolSerializer.RebindSessionGeneration). ADR-cross-0030 requires
+    /// exactly that: a reconnect resend keeps the original messageId.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-06")]
+    public async Task DurableMessagesReplayedIntoANewSessionAfterALostAckAreAcknowledgedOnce()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_DURABLE_REPLAY_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+            OnboardConnectionState firstState = new();
+            await ReachReadyAsync(processor, firstState, credential, TestContext.Current.CancellationToken);
+            long firstGeneration = firstState.SessionGeneration!.Value;
+
+            const string attemptId = "00000000-0000-4000-8000-000000000520";
+            const string demandId = "00000000-0000-4000-8000-000000000511";
+            await store.AcceptWithOrderIntentAsync(
+                new AcceptedDemandSnapshot(
+                    demandId,
+                    "SUBLOT-005|WIRE_TO_GATE",
+                    7,
+                    "00000000-0000-4000-8000-000000000599",
+                    21,
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                new OrderIntent(
+                    "00000000-0000-4000-8000-000000000598",
+                    demandId,
+                    "W2G-D-511-PICKUP-1",
+                    "TO_PICKUP",
+                    "PICKUP-01",
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                TestContext.Current.CancellationToken);
+            await store.PrepareSlotOperationAsync(
+                new StationOperationPlan(
+                    attemptId,
+                    demandId,
+                    "SUBLOT-005",
+                    [1],
+                    SlotOperationType.Load,
+                    0,
+                    new string('b', 64),
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                "00000000-0000-4000-8000-000000000519",
+                "load-command-json",
+                TestContext.Current.CancellationToken);
+            (string MessageType, string MessageId, object Payload)[] messages =
+            [
+                ("SublotSubmitted", "00000000-0000-4000-8000-000000000501", new
+                {
+                    demandId,
+                    operationSessionId = "00000000-0000-4000-8000-000000000512",
+                    stationId = "PICKUP-01",
+                    worklistRevision = 2,
+                    sublot = "SUBLOT-005",
+                    entryMethod = "SCANNER",
+                    @operator = new
+                    {
+                        operatorId = "OP-001",
+                        verificationMethod = "BADGE",
+                        verifiedAt = "2026-08-25T09:00:00Z"
+                    }
+                }),
+                ("OperationProgress", "00000000-0000-4000-8000-000000000502", new
+                {
+                    slotOperationAttemptId = attemptId,
+                    phase = "VERIFYING",
+                    activeUnlockSlots = Array.Empty<int>(),
+                    completedSlots = new[] { 1 },
+                    observedAt = "2026-08-25T09:00:00Z"
+                }),
+                ("PreDepartureSafetyCheckResult", "00000000-0000-4000-8000-000000000503", new
+                {
+                    preDepartureSafetyCheckId = "00000000-0000-4000-8000-000000000513",
+                    outcome = "SAFE",
+                    observedAt = "2026-08-25T09:00:00Z",
+                    safetyStateVersion = 1,
+                    validUntil = "2026-08-25T09:00:02Z",
+                    safety = Safety(departureSafe: true)
+                }),
+                ("OperationResult", attemptId, OperationResultPayload(
+                    demandId,
+                    attemptId,
+                    "LOAD",
+                    "OCCUPIED"))
+            ];
+
+            // First session: every message is durably accepted. The acks are what get lost.
+            Dictionary<string, string> firstLines = new(StringComparer.Ordinal);
+            foreach ((string messageType, string messageId, object payload) in messages)
+            {
+                string line = Envelope(messageType, messageId, firstGeneration, payload);
+                firstLines[messageId] = line;
+                await processor.ProcessAsync(line, firstState, TestContext.Current.CancellationToken);
+            }
+
+            // Second session: SessionAccepted, then the journal replay -- no snapshots in between.
+            OnboardConnectionState secondState = new();
+            await processor.ProcessAsync(
+                Envelope(
+                    "SessionHello",
+                    Guid.NewGuid().ToString("D"),
+                    null,
+                    new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = credential }),
+                secondState,
+                TestContext.Current.CancellationToken);
+            long secondGeneration = secondState.SessionGeneration!.Value;
+            Assert.NotEqual(firstGeneration, secondGeneration);
+
+            foreach ((string messageType, string messageId, object payload) in messages)
+            {
+                string rebound = Envelope(messageType, messageId, secondGeneration, payload);
+                string response = await processor.ProcessAsync(
+                    rebound, secondState, TestContext.Current.CancellationToken);
+
+                string ackLine = response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0];
+                using JsonDocument acknowledgement = JsonDocument.Parse(ackLine);
+                JsonElement root = acknowledgement.RootElement;
+                JsonElement ackPayload = root.GetProperty("payload");
+                Assert.Equal("DurableAck", root.GetProperty("messageType").GetString());
+                Assert.Equal(secondGeneration, root.GetProperty("sessionGeneration").GetInt64());
+                Assert.Equal(messageId, ackPayload.GetProperty("acceptedMessageId").GetString());
+                Assert.Equal(messageType, ackPayload.GetProperty("acceptedMessageType").GetString());
+                // The onboard compares this with the hash of the line it just sent, not the first one.
+                Assert.Equal(WireContentHash(rebound), ackPayload.GetProperty("acceptedContentSha256").GetString());
+                // Answered from the first acceptance, not processed again: the row still holds the
+                // bytes that were accepted.
+                ProtocolInboxRow stored = await context.ProtocolInbox.SingleAsync(
+                    row => row.MessageId == messageId,
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(firstLines[messageId], stored.RequestJson);
+            }
+
+            Assert.Single(await context.OperationResults.ToListAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(
+                StationOperationStatus.Committed,
+                (await context.StationOperations.SingleAsync(
+                    row => row.SlotOperationAttemptId == attemptId,
+                    TestContext.Current.CancellationToken)).Status);
+
+            // Only the session generation may differ. The same messageId with other content is still
+            // a conflict, in the new session as in the old one.
+            string conflicting = Envelope(
+                "OperationResult",
+                attemptId,
+                secondGeneration,
+                OperationResultPayload(demandId, attemptId, "LOAD", "EMPTY"));
+            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
+                conflicting, secondState, TestContext.Current.CancellationToken));
+            Assert.Single(await context.OperationResults.ToListAsync(TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-04")]
     [Trait("IntegrationSlice", "W2G-IS-06")]
