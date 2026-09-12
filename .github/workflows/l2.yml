@@ -77,6 +77,9 @@ jobs:
               @{ Name = 'three-vehicle-exit';          Runs = 3 }
               @{ Name = 'command-surface-order-hold';  Runs = 3 }
               @{ Name = 'route-graph-staleness';       Runs = 3 }
+              # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
+              @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
+              @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }
           )
           $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $failed = @()
@@ -89,7 +92,7 @@ jobs:
                   $evidence = Join-Path $evidenceRoot "$($scenario.Name)-$('{0:d2}' -f $run)"
                   Write-Host "::group::$label"
                   & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 `
-                      -Scenario $scenario.Name -EvidenceRoot $evidence -BatchId 'batch-2'
+                      -Scenario $scenario.Name -EvidenceRoot $evidence -BatchId ($scenario.BatchId ?? 'batch-2')
                   $code = $LASTEXITCODE
                   Write-Host '::endgroup::'
                   if ($code -ne 0) {

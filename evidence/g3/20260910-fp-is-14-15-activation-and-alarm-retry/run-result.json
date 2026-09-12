@@ -1,0 +1,1275 @@
+{
+  "schemaVersion": "1.0.0",
+  "runKind": "STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT",
+  "runId": "20260910T054128034Z",
+  "startedAtUtc": "2026-09-10T05:41:28.0342628+00:00",
+  "completedAtUtc": "2026-09-10T05:43:18.4912875+00:00",
+  "status": "STAGED_G3_RECOVERY_REPLAY_PASS",
+  "classification": {
+    "runStatus": "STAGED_G3_RECOVERY_REPLAY_PASS",
+    "assuranceLevel": "STAGED_REBUILD",
+    "formalSlicePass": true,
+    "officialSlices": [
+      {
+        "integrationSliceId": "FP-IS-00",
+        "status": "PASS",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": true
+      },
+      {
+        "integrationSliceId": "FP-IS-06",
+        "status": "PASS",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": true
+      },
+      {
+        "integrationSliceId": "FP-IS-14",
+        "status": "PASS",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": true
+      },
+      {
+        "integrationSliceId": "FP-IS-15",
+        "status": "PASS",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": true
+      }
+    ],
+    "slicesWithoutSurfaceThisBatch": [
+      "FP-IS-01",
+      "FP-IS-02",
+      "FP-IS-03",
+      "FP-IS-07"
+    ],
+    "fullG3": "INCONCLUSIVE",
+    "releaseCandidate": "INCONCLUSIVE"
+  },
+  "gateResults": [
+    "slices/FP-IS-00/gate-result.json",
+    "slices/FP-IS-06/gate-result.json",
+    "slices/FP-IS-14/gate-result.json",
+    "slices/FP-IS-15/gate-result.json"
+  ],
+  "commits": {
+    "controlServer": "0af174312e61f2507a29742684c660cdf43a7b72",
+    "onboardEvidenceBinding": "afba86e07116192bde386937c559cc7a70a00a7f",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "harness": "0af174312e61f2507a29742684c660cdf43a7b72",
+    "harnessWorktreeCleanAtStart": false
+  },
+  "protocol": {
+    "tag": "protocol-v1.0.0",
+    "tagExists": false,
+    "candidateCommit": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "approvalStatus": "SUPERSEDING_CANDIDATE",
+    "commit": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "manifestSha256": "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788",
+    "schemaBundleSha256": "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b",
+    "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+    "g1": "PASS"
+  },
+  "configurationSha256": "f4ba9086dd4bc1222426c17f8d19cc4f5d9f242dacfba9ffde5a24bf303e12cd",
+  "configuration": {
+    "loopbackOnly": true,
+    "transport": {
+      "onboardTransport": "plaintext",
+      "certificatesGenerated": false,
+      "temporaryTrustRootInstalled": false,
+      "realOnboardAckDropTransport": "PLAINTEXT_LOOPBACK",
+      "realOnboardAckDropCombination": "PASS"
+    },
+    "ports": {
+      "controlOnboard": 58205,
+      "controlHealth": 58207,
+      "faultProxy": 58215,
+      "businessFaultProxy": 58216,
+      "simulatorModbus": 1502,
+      "simulatorHttp": 58006
+    },
+    "faultInjection": {
+      "parameterisedByMessageType": true,
+      "actions": [
+        "drop-and-close",
+        "drop",
+        "delay",
+        "hold-until-next"
+      ],
+      "businessMessagePlane": [
+        "SublotSubmitted",
+        "OperationProgress",
+        "PreDepartureSafetyCheckResult",
+        "SlotOperationCommandRejected"
+      ],
+      "businessMessagesDrivenBySyntheticPeer": true,
+      "businessMessagesNotReachableInStagedRun": [
+        "OperationResult",
+        "SlotOperationCommand"
+      ],
+      "recoveryMessagePlane": [
+        "ExceptionRecoverySessionRequested",
+        "RecoveryActionSubmitted",
+        "HardwareRecoveryRecordSubmitted",
+        "LoadCancellationStartRequested",
+        "LoadCompensationRequested",
+        "LoadCorrectionRequested",
+        "ForcedMechanicalRecoveryResult",
+        "ForcedMechanicalRecoveryCommand"
+      ],
+      "recoveryMessagesDrivenBySyntheticPeer": true,
+      "recoveryAcceptedPathsNotReachableInStagedRun": [
+        "RESUME_AFTER_REPAIR",
+        "COMPENSATE_LOAD_ALL_EMPTY",
+        "FAULT_CARGO_HANDOFF",
+        "LOAD_CANCELLATION",
+        "LOAD_CORRECTION",
+        "RiotUnknownReconciliation"
+      ],
+      "recoveryAdministratorProofFromEnvironment": true
+    },
+    "journeyRuntimeEnabled": false,
+    "realExternalCredentialsUsed": false,
+    "realRiotOrderCreated": false,
+    "movementCommandSent": false,
+    "vehicleSafetyEligibilityFabricated": false
+  },
+  "commands": [
+    {
+      "name": "clone-control-server",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\8005-b3\\fp-b3",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\control-server"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:30.1252522+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-control-server.log"
+    },
+    {
+      "name": "fetch-control-server",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\control-server",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:32.5554043+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-control-server.log"
+    },
+    {
+      "name": "checkout-control-server",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\control-server",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "0af174312e61f2507a29742684c660cdf43a7b72"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:33.1942319+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-control-server.log"
+    },
+    {
+      "name": "clone-onboard-hmi",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\8005-b3\\hmi-b3",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\onboard-hmi"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:37.5822788+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-onboard-hmi.log"
+    },
+    {
+      "name": "fetch-onboard-hmi",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\onboard-hmi",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:39.5970367+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-onboard-hmi.log"
+    },
+    {
+      "name": "checkout-onboard-hmi",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\onboard-hmi",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "afba86e07116192bde386937c559cc7a70a00a7f"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:40.0335748+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-onboard-hmi.log"
+    },
+    {
+      "name": "clone-slots-simulator",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\Desktop\\8005-workspace\\repos\\slots-simulator",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\slots-simulator"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:40.8028065+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-slots-simulator.log"
+    },
+    {
+      "name": "fetch-slots-simulator",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\slots-simulator",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:41.3218621+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-slots-simulator.log"
+    },
+    {
+      "name": "checkout-slots-simulator",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\slots-simulator",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:41.7158182+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-slots-simulator.log"
+    },
+    {
+      "name": "clone-protocol",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\8005-b3\\proto-g1",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\protocol"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:42.1111002+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-protocol.log"
+    },
+    {
+      "name": "fetch-protocol",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\protocol",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:42.6577375+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-protocol.log"
+    },
+    {
+      "name": "checkout-protocol",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\protocol",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "f6ee75defe6e2d18f63f4082bee445dbb678ab1b"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:42.9252768+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-protocol.log"
+    },
+    {
+      "name": "protocol-install",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\protocol",
+      "file": "C:\\Users\\szy\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe",
+      "arguments": [
+        "C:\\Users\\szy\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\node_modules\\pnpm\\bin\\pnpm.cjs",
+        "install",
+        "--frozen-lockfile"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:45.1998167+00:00",
+      "exitCode": 0,
+      "log": "logs/protocol-install.log"
+    },
+    {
+      "name": "protocol-g1",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\protocol",
+      "file": "C:\\Users\\szy\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin\\node.exe",
+      "arguments": [
+        "C:\\Users\\szy\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\node_modules\\pnpm\\bin\\pnpm.cjs",
+        "g1"
+      ],
+      "startedAtUtc": "2026-09-10T05:41:49.1967108+00:00",
+      "exitCode": 0,
+      "log": "logs/protocol-g1.log"
+    },
+    {
+      "name": "publish-control-server",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\control-server",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\ControlServer.Host\\ControlServer.Host.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\publish\\control-server"
+      ],
+      "startedAtUtc": "2026-09-10T05:42:00.3354778+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-control-server.log"
+    },
+    {
+      "name": "publish-onboard-hmi",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\onboard-hmi",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\SQCD.Agv.Wpf\\SQCD.Agv.Wpf.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\publish\\onboard-hmi"
+      ],
+      "startedAtUtc": "2026-09-10T05:42:16.2037547+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-onboard-hmi.log"
+    },
+    {
+      "name": "publish-slots-simulator",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\slots-simulator",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\SQCD_8005AGV_Simulator\\SQCD_8005AGV_Simulator.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\publish\\slots-simulator"
+      ],
+      "startedAtUtc": "2026-09-10T05:42:29.5071351+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-slots-simulator.log"
+    },
+    {
+      "name": "publish-field-ops",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\sources\\control-server",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\tools\\ControlServer.FieldOps\\ControlServer.FieldOps.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\publish\\field-ops"
+      ],
+      "startedAtUtc": "2026-09-10T05:42:38.8041706+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-field-ops.log"
+    },
+    {
+      "name": "field-ops-seed-approved-facts",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\publish\\field-ops",
+      "file": "dotnet",
+      "arguments": [
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\publish\\field-ops\\ControlServer.FieldOps.dll",
+        "seed-approved-facts",
+        "--database",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\runtime\\controlserver.db"
+      ],
+      "startedAtUtc": "2026-09-10T05:42:49.3680099+00:00",
+      "exitCode": 0,
+      "log": "logs/field-ops-seed-approved-facts.log"
+    },
+    {
+      "name": "field-ops-bind-io",
+      "workingDirectory": "C:\\Users\\szy\\8005-b3\\g3-stage-4\\publish\\field-ops",
+      "file": "dotnet",
+      "arguments": [
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\publish\\field-ops\\ControlServer.FieldOps.dll",
+        "bind-io",
+        "--database",
+        "C:\\Users\\szy\\8005-b3\\g3-stage-4\\runtime\\controlserver.db",
+        "--agv",
+        "AGV-8005-STAGED-G3-01"
+      ],
+      "startedAtUtc": "2026-09-10T05:42:52.3445569+00:00",
+      "exitCode": 0,
+      "log": "logs/field-ops-bind-io.log"
+    }
+  ],
+  "assertions": {
+    "identityRejections": "PASS",
+    "sameConnectionSameMessageIdSameContent": "PASS",
+    "sameMessageIdDifferentContentStableConflict": "PASS",
+    "recoveryStateReportFirstAckDropReplay": "PASS",
+    "recoveryStateReportFirstAckDropReplayOverPlaintext": "PASS",
+    "businessMessageSameMessageIdSameContentReplay": "PASS",
+    "businessMessageSameMessageIdDifferentContentStableConflict": "PASS",
+    "businessMessageAckDropInSessionReplay": "PASS",
+    "businessMessageDelayedDeliveryAccepted": "PASS",
+    "businessMessageReorderedDeliveryAccepted": "PASS",
+    "recoverySessionAuthorisationBoundary": "PASS",
+    "recoveryActionsRefusedWithoutPersistedOperation": "PASS",
+    "hardwareRecoveryRecordScopeEnforced": "PASS",
+    "recoveryCommandSurvivesMidFlightDisconnect": "PASS",
+    "forcedRecoveryGenerationAdvancesMonotonically": "PASS",
+    "supersededGenerationResultIsHistoricalEvidenceOnly": "PASS",
+    "recoveryNeverReportsFalseCompletion": "PASS",
+    "slotConfigurationActivationCommandSentOnceOverTheSession": "PASS",
+    "slotConfigurationActivationPersistedBeforeItWasSent": "PASS",
+    "slotConfigurationActivationResultReportedByTheVehicle": "PASS",
+    "bothEndsComputedTheSameSlotConfigurationFingerprint": "PASS",
+    "onboardAlarmSnapshotPublishedOnTheFullHandshake": "PASS",
+    "onboardAlarmSnapshotAppliedAckOnEverySnapshot": "PASS",
+    "onboardAlarmSnapshotNotRepublishedOnRecoveryResume": "PASS",
+    "onboardAlarmProjectionIsASingletonPerVehicle": "PASS",
+    "onboardAlarmProjectionCarriesTheGenerationItArrivedIn": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "secretScan": "PASS"
+  },
+  "probe": {
+    "schemaVersion": "1.0.0",
+    "status": "PASS",
+    "identityRejections": [
+      {
+        "case": "release-mismatch",
+        "status": "PASS",
+        "responseType": "SessionRejected",
+        "reasonCode": "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
+        "requestSha256": "c00c72774b18c13bff1ff206d96d5a909936aca3f06daf9131d71f2e933e89da",
+        "responseSha256": "c1ae9b87b3009266d27f082f1d9d19bf5b99c150810f61ccd4b0a7684363250b",
+        "atUtc": "2026-09-10T13:42:54.9072831+08:00"
+      },
+      {
+        "case": "manifest-mismatch",
+        "status": "PASS",
+        "responseType": "SessionRejected",
+        "reasonCode": "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
+        "requestSha256": "9f2c2bdac31857618a091bff481d68cb1472985268d7d96be2600029794e695f",
+        "responseSha256": "376fb14d7c46dacbf410bc831ac66a305cfa1900770071401c6f8323ab6f8bd1",
+        "atUtc": "2026-09-10T13:42:54.9232325+08:00"
+      },
+      {
+        "case": "credential-mismatch",
+        "status": "PASS",
+        "responseType": "SessionRejected",
+        "reasonCode": "PROTOCOL_RELEASE_IDENTITY_MISMATCH",
+        "requestSha256": "081d5d0494854802be59619a74a175423ced66d8c2aa97948f54f85dc324c862",
+        "responseSha256": "21e75c7c93fe391d95ad962360c3f92b6c7dbe617506bd6b320cacf6ea3dd5b1",
+        "atUtc": "2026-09-10T13:42:54.9374765+08:00"
+      }
+    ],
+    "duplicate": {
+      "status": "PASS",
+      "sameConnection": true,
+      "messageId": "cf325988-abf5-045c-88be-1e9bcc3e6f96",
+      "requestSha256": "ddf691b19da702de39840de9b7589b65b2701af0d1d19b2e7b3f0797702b756d",
+      "byteExactResponseReplay": true,
+      "responseSha256": "8160fd7c96b33abc486ba04578fd40908663419480c2d20eb58ab52d9d842ed9"
+    },
+    "conflict": {
+      "status": "PASS",
+      "messageId": "cf325988-abf5-045c-88be-1e9bcc3e6f96",
+      "firstSameConnectionClosed": true,
+      "repeatConnectionClosed": true,
+      "sessionGenerations": [
+        1,
+        2
+      ]
+    }
+  },
+  "businessProbe": {
+    "schemaVersion": "1.0.0",
+    "status": "PASS",
+    "agvId": "AGV-8005-STAGED-G3-BUSINESS",
+    "businessMessageTypes": [
+      "SublotSubmitted",
+      "OperationProgress",
+      "PreDepartureSafetyCheckResult",
+      "SlotOperationCommandRejected"
+    ],
+    "duplicates": [
+      {
+        "case": "business-duplicate-SublotSubmitted",
+        "status": "PASS",
+        "messageType": "SublotSubmitted",
+        "messageId": "938ce385-4433-8751-aeb0-8490ead1e539",
+        "requestSha256": "bd3359efad3091f7e1a50c2d0c35b37a6bef61ed226eaf34aa9ee46f8e182998",
+        "byteExactResponseReplay": true,
+        "responseSha256": "bb3a38750f6e0a97e7c56ffc2dc5c322c3f45d313944cbb9ae1611dfbf6c6dc6",
+        "atUtc": "2026-09-10T13:43:10.6324448+08:00"
+      },
+      {
+        "case": "business-duplicate-OperationProgress",
+        "status": "PASS",
+        "messageType": "OperationProgress",
+        "messageId": "a7c7e430-432c-a551-94ec-2956bcf86ebc",
+        "requestSha256": "bb958949b8c931f277619aa5d24e1422aae8e9b0280284f5356644a0dc8d1731",
+        "byteExactResponseReplay": true,
+        "responseSha256": "45b0fba946ef4fc7ddad274a7b74013296c2adede29481427f4d430ff482a666",
+        "atUtc": "2026-09-10T13:43:10.6834195+08:00"
+      },
+      {
+        "case": "business-duplicate-PreDepartureSafetyCheckResult",
+        "status": "PASS",
+        "messageType": "PreDepartureSafetyCheckResult",
+        "messageId": "ab69cf67-fbb9-ec51-804a-4f3d86eb5fbb",
+        "requestSha256": "484da98f48bc2cbf05ad4e88e507146144e948e1019c9593694445254d27b0c7",
+        "byteExactResponseReplay": true,
+        "responseSha256": "00fe0e7dc23adeace51a3226d7605713b473c12e96a4f58314bd76c8578458c2",
+        "atUtc": "2026-09-10T13:43:10.7215331+08:00"
+      },
+      {
+        "case": "business-duplicate-SlotOperationCommandRejected",
+        "status": "PASS",
+        "messageType": "SlotOperationCommandRejected",
+        "messageId": "75e40d11-f1d3-5756-8bd6-d42c1f9bf724",
+        "requestSha256": "7df6abc3f831b15c3aab7b8ee387f54fd7ce20e7878bfafe5103bdf2e501b6fc",
+        "byteExactResponseReplay": true,
+        "responseSha256": "6e36a7f5801454b1916388f6fac2b7f2a5dc9b2c003ca3053cf1ff0c63777c1c",
+        "atUtc": "2026-09-10T13:43:10.756965+08:00"
+      }
+    ],
+    "conflicts": [
+      {
+        "case": "business-conflict-SublotSubmitted",
+        "status": "PASS",
+        "messageType": "SublotSubmitted",
+        "messageId": "938ce385-4433-8751-aeb0-8490ead1e539",
+        "conflictingRequestSha256": "e371b01b7598d37de29314fa731513d9d38336c9fe2c838966418bd0afb8aa9a",
+        "firstSameConnectionClosed": true,
+        "repeatConnectionClosed": true,
+        "atUtc": "2026-09-10T13:43:10.6336671+08:00"
+      },
+      {
+        "case": "business-conflict-OperationProgress",
+        "status": "PASS",
+        "messageType": "OperationProgress",
+        "messageId": "a7c7e430-432c-a551-94ec-2956bcf86ebc",
+        "conflictingRequestSha256": "f74f20010069ce52087ff552c9bdcc41b573269c56ff427af2473388bec5e6d6",
+        "firstSameConnectionClosed": true,
+        "repeatConnectionClosed": true,
+        "atUtc": "2026-09-10T13:43:10.6841131+08:00"
+      },
+      {
+        "case": "business-conflict-PreDepartureSafetyCheckResult",
+        "status": "PASS",
+        "messageType": "PreDepartureSafetyCheckResult",
+        "messageId": "ab69cf67-fbb9-ec51-804a-4f3d86eb5fbb",
+        "conflictingRequestSha256": "3a095833e56f6bd1530f3fb9897f5ea78161d3d556a05ff876498df986d8a0c8",
+        "firstSameConnectionClosed": true,
+        "repeatConnectionClosed": true,
+        "atUtc": "2026-09-10T13:43:10.7222987+08:00"
+      },
+      {
+        "case": "business-conflict-SlotOperationCommandRejected",
+        "status": "PASS",
+        "messageType": "SlotOperationCommandRejected",
+        "messageId": "75e40d11-f1d3-5756-8bd6-d42c1f9bf724",
+        "conflictingRequestSha256": "448e4318f495de5d51265547e15f856afedcd1e0245c5e54fac7d215d0cb8908",
+        "firstSameConnectionClosed": true,
+        "repeatConnectionClosed": true,
+        "atUtc": "2026-09-10T13:43:10.7576301+08:00"
+      }
+    ],
+    "ackDropInSessionReplay": {
+      "status": "PASS",
+      "messageType": "PreDepartureSafetyCheckResult",
+      "messageId": "3793e656-3687-ee5f-b590-9456fe49c582",
+      "firstAckSuppressed": true,
+      "replayedAckSha256": "2fe0aba57fcab398e0aed64083fd2947b2065fd4804d85a630757020c11e4af5"
+    },
+    "delayedDelivery": {
+      "status": "PASS",
+      "messageType": "SlotOperationCommandRejected",
+      "messageId": "4ca67053-ac9c-fa57-8b66-9ea068a92e2b",
+      "injectedDelayMilliseconds": 900,
+      "observedRoundTripMilliseconds": 917
+    },
+    "reorderedDelivery": {
+      "status": "PASS",
+      "heldMessageType": "SublotSubmitted",
+      "heldMessageId": "88eddf5f-ec8d-7651-96df-f74d5462856f",
+      "overtakingMessageType": "OperationProgress",
+      "overtakingMessageId": "ae014e07-7120-e357-8a0f-b58e47dfb182",
+      "firstAcknowledgedMessageId": "ae014e07-7120-e357-8a0f-b58e47dfb182",
+      "secondAcknowledgedMessageId": "88eddf5f-ec8d-7651-96df-f74d5462856f"
+    },
+    "coverageLimits": {
+      "OperationResult": "Not reachable in a staged run. OnboardMessageProcessor resolves the forced recovery generation with SingleAsync over StationOperations, so an OperationResult for a fabricated attempt throws before any acknowledgement. StationOperations rows are only written by PrepareSlotOperationAsync, which needs an accepted demand from MesIngest and RIoT.",
+      "SlotOperationCommand": "Not reachable in a staged run. It is only published by JourneyRuntimeEngine, which is disabled here, or replayed by OnboardRecoveryCoordinator from an outbox row that the same demand-bearing path creates."
+    }
+  },
+  "recoveryProbe": {
+    "schemaVersion": "1.0.0",
+    "status": "PASS",
+    "agvId": "AGV-8005-STAGED-G3-RECOVERY",
+    "exceptionRecoverySessionId": "0a4c556a-c4a6-cf5b-b3f9-db9c50850cb5",
+    "sessionAuthorisation": [
+      {
+        "observedReasonCode": "RECOVERY_AUTHENTICATION_FAILED",
+        "case": "recovery-session-authentication-required",
+        "status": "PASS",
+        "responseType": "ExceptionRecoverySessionRejected",
+        "responseSha256": "ffdc09e37a47d9f89fbd8b02be7f5c83b0ec7848f5b02c51046c8c7cb81a601c",
+        "atUtc": "2026-09-10T13:43:14.8199076+08:00"
+      },
+      {
+        "observedReasonCode": "RECOVERY_DEMAND_NOT_BLOCKED",
+        "case": "recovery-session-refused-for-unaccepted-demand",
+        "status": "PASS",
+        "responseType": "ExceptionRecoverySessionRejected",
+        "responseSha256": "3317a42807c2929cb2f0446fb122d2d48a0fde3da0b7b4faa5912c329e53df87",
+        "atUtc": "2026-09-10T13:43:14.8526658+08:00"
+      },
+      {
+        "exceptionRecoverySessionId": "0a4c556a-c4a6-cf5b-b3f9-db9c50850cb5",
+        "case": "recovery-session-opened-without-demand",
+        "status": "PASS",
+        "responseType": "ExceptionRecoverySessionOpened",
+        "responseSha256": "2d2feab230e45d3216fa05305c2a16a3895c1f1413ad2b17221e38238c915948",
+        "atUtc": "2026-09-10T13:43:14.9154662+08:00"
+      },
+      {
+        "exceptionRecoverySessionId": "0a4c556a-c4a6-cf5b-b3f9-db9c50850cb5",
+        "case": "recovery-session-requestid-replay-idempotent",
+        "status": "PASS",
+        "responseType": "ExceptionRecoverySessionOpened",
+        "responseSha256": "cce04bf5d9954b8d2e761c09a3d770ef0335b328cd070c4813b7161e40e8e83e",
+        "atUtc": "2026-09-10T13:43:14.9238705+08:00"
+      },
+      {
+        "observedReasonCode": "ACTION_NOT_ALLOWED_IN_STATE",
+        "case": "recovery-session-single-open-per-vehicle",
+        "status": "PASS",
+        "responseType": "ExceptionRecoverySessionRejected",
+        "responseSha256": "0d6fa66ccfba19901bab0dafa0e907f978183b9bc6707ffe249066217ef8e9ba",
+        "atUtc": "2026-09-10T13:43:14.9308117+08:00"
+      },
+      {
+        "connectionClosed": true,
+        "case": "recovery-session-requestid-content-conflict",
+        "status": "PASS",
+        "responseType": null,
+        "responseSha256": null,
+        "atUtc": "2026-09-10T13:43:14.9521332+08:00"
+      }
+    ],
+    "actionBoundary": [
+      {
+        "action": "RESUME_AFTER_REPAIR",
+        "observedReasonCode": "ACTION_NOT_ALLOWED_IN_STATE",
+        "case": "recovery-action-requires-demand-RESUME_AFTER_REPAIR",
+        "status": "PASS",
+        "responseType": "RecoveryActionRejected",
+        "responseSha256": "24b47533831951bc41af8f2090a5de37541f794c09cb0dc436980fdfda32a3c4",
+        "atUtc": "2026-09-10T13:43:15.0034982+08:00"
+      },
+      {
+        "action": "COMPENSATE_LOAD_ALL_EMPTY",
+        "observedReasonCode": "ACTION_NOT_ALLOWED_IN_STATE",
+        "case": "recovery-action-requires-demand-COMPENSATE_LOAD_ALL_EMPTY",
+        "status": "PASS",
+        "responseType": "RecoveryActionRejected",
+        "responseSha256": "edb9a1f0b34045332c0a288d8bc4aaa53158f4994c0c2e24ffaef1b02462ba21",
+        "atUtc": "2026-09-10T13:43:15.0189202+08:00"
+      },
+      {
+        "action": "FAULT_CARGO_HANDOFF",
+        "observedReasonCode": "ACTION_NOT_ALLOWED_IN_STATE",
+        "case": "recovery-action-requires-demand-FAULT_CARGO_HANDOFF",
+        "status": "PASS",
+        "responseType": "RecoveryActionRejected",
+        "responseSha256": "b6165a3d3b1b9892af3461e93c84aaa3fc020857c7bb8ec9cf1af99cc7d68b40",
+        "atUtc": "2026-09-10T13:43:15.0261667+08:00"
+      },
+      {
+        "action": "FORCED_MECHANICAL_RECOVERY",
+        "observedReasonCode": "RECOVERY_SCOPE_MISMATCH",
+        "case": "recovery-action-scope-mismatch",
+        "status": "PASS",
+        "responseType": "RecoveryActionRejected",
+        "responseSha256": "f016328bef4c5109025bdf28f37613c30eb4f90464949dc06ea4681f02ad3740",
+        "atUtc": "2026-09-10T13:43:15.0323126+08:00"
+      }
+    ],
+    "demandScopedAuthorisationBoundary": [
+      {
+        "messageType": "LoadCancellationStartRequested",
+        "observedDecision": "REJECTED",
+        "case": "load-cancellation-refused-without-accepted-demand",
+        "status": "PASS",
+        "responseType": "LoadCancellationAuthorization",
+        "responseSha256": "f23e87d87a83caf6ca45540831d72e8c49944f09bf6573a2a119ebc18114fa5f",
+        "atUtc": "2026-09-10T13:43:15.0608537+08:00"
+      },
+      {
+        "messageType": "LoadCorrectionRequested",
+        "observedReasonCode": "ACTION_NOT_ALLOWED_IN_STATE",
+        "case": "load-correction-refused-without-committed-operation",
+        "status": "PASS",
+        "responseType": "LoadCorrectionRejected",
+        "responseSha256": "958ef9a66bbbd3343cd8ec28acde11ff253a9653de8bcd818105048fe4c02966",
+        "atUtc": "2026-09-10T13:43:15.0789026+08:00"
+      },
+      {
+        "messageType": "LoadCompensationRequested",
+        "observedReasonCode": "ACTION_NOT_ALLOWED_IN_STATE",
+        "case": "load-compensation-refused-without-authorised-workflow",
+        "status": "PASS",
+        "responseType": "LoadCompensationRejected",
+        "responseSha256": "2c967a5254386c17c5ce453c61d55edd0cf0eb125d8f262c98e84cc7447e3ca8",
+        "atUtc": "2026-09-10T13:43:15.0950928+08:00"
+      }
+    ],
+    "hardwareRecoveryRecord": [
+      {
+        "observedOutcome": "RECORDED",
+        "case": "hardware-recovery-record-recorded",
+        "status": "PASS",
+        "responseType": "HardwareRecoveryRecordResult",
+        "responseSha256": "2b1fae3c08e571e0d8245c7a4d4b51a8596680e7c0f9394970a3012296d2e06f",
+        "atUtc": "2026-09-10T13:43:17.4452019+08:00"
+      },
+      {
+        "observedOutcome": "REJECTED",
+        "observedReasonCode": "RECOVERY_SCOPE_MISMATCH",
+        "case": "hardware-recovery-record-scope-rejected",
+        "status": "PASS",
+        "responseType": "HardwareRecoveryRecordResult",
+        "responseSha256": "fd73b8c47d3472604b38734ade61b1c65daea08261cd10853d2bf0c5b9324a3a",
+        "atUtc": "2026-09-10T13:43:17.4526631+08:00"
+      }
+    ],
+    "disconnectDuringRecoveryCommand": {
+      "status": "PASS",
+      "recoveryActionId": "3a50a1b0-95a8-ee5e-977f-7ffc462d2390",
+      "connectionClosedBeforeCommandArrived": true,
+      "commandReplayedAfterReconnect": true,
+      "replayedCommandRecoveryActionId": "3a50a1b0-95a8-ee5e-977f-7ffc462d2390",
+      "replayedCommandForcedRecoveryGeneration": 1,
+      "replayedCommandSha256": "96f6582948df7f510957675f43660992afbfa810dcf988f9af743b2993a2e936"
+    },
+    "forcedRecoveryGenerationBranches": {
+      "status": "PASS",
+      "firstRecoveryActionId": "3a50a1b0-95a8-ee5e-977f-7ffc462d2390",
+      "secondRecoveryActionId": "ece22300-5230-6f51-8c4a-658286622b33",
+      "staleGenerationResultAcknowledged": true,
+      "currentGenerationResultAcknowledged": true,
+      "resultReplayByteExact": true,
+      "resultContentConflictClosedConnection": true,
+      "currentResultAckSha256": "37a5d1e4f510e26fc7a0c10d7e4821eb3a923d54dd79d96124b788cbe06d1414"
+    },
+    "coverageLimits": {
+      "DisconnectDuringSlotOperation": "Not reachable in a staged run. Interrupting a slot operation needs a StationOperations row in RecoveryRequired, and StationOperations is only written by PrepareSlotOperationAsync from a demand accepted through MesIngest and RIoT. The disconnect vector is therefore taken on the forced mechanical recovery command, which is the one authorised recovery command that needs no demand.",
+      "ResumeCompensationCorrectionCancellationAndFaultCargoAcceptedPaths": "Only their refusal branches are reachable. Each accepted path needs a persisted StationOperations row -- RESUME_AFTER_REPAIR additionally needs a proven recovery checkpoint on the session -- so a staged run can assert that they are refused without a demand, not that they complete with one.",
+      "RiotUnknownReconciliation": "Not reachable in a staged run. RIoT is pointed at a dead port and no demand exists, so no create attempt is made and no UNKNOWN disposition can arise. The behaviour is recorded in the audit chain of evidence/g3/20260829-authorized-single-real-create and still needs a demand-bearing run against the real RIoT to become an asserted vector."
+    }
+  },
+  "businessFaultInjection": {
+    "droppedAckCount": 1,
+    "droppedAckMessageId": "3793e656-3687-ee5f-b590-9456fe49c582",
+    "droppedAckWireSha256": "2fe0aba57fcab398e0aed64083fd2947b2065fd4804d85a630757020c11e4af5",
+    "replayedAckSha256": "2fe0aba57fcab398e0aed64083fd2947b2065fd4804d85a630757020c11e4af5",
+    "byteExactStoredAckReplay": true,
+    "delayedForwardCount": 1,
+    "injectedDelayMilliseconds": 900,
+    "heldForReorderCount": 1,
+    "releasedAfterReorderCount": 1
+  },
+  "recoveryFaultInjection": {
+    "droppedCommandCount": 1,
+    "droppedCommandMessageId": "6d8081bc-4033-5858-aecc-be278dd920f5",
+    "droppedCommandWireSha256": "12ef683034741804fa4279a45d66f4652ed46c468bc5b971911bc67051e847d6",
+    "replayedCommandCount": 1,
+    "replayedCommandWireSha256": [
+      "96f6582948df7f510957675f43660992afbfa810dcf988f9af743b2993a2e936"
+    ],
+    "replayedCommandSessionGenerations": [
+      4
+    ],
+    "droppedCommandSessionGeneration": 3,
+    "forwardedCommandMessageIds": [
+      "6d8081bc-4033-5858-aecc-be278dd920f5",
+      "a1042092-d6e0-ce55-9e9d-79cbbf3e3544"
+    ]
+  },
+  "recoveryReplay": {
+    "droppedAckCount": 1,
+    "droppedReportMessageId": "197bbbd9-440d-45fb-9aa0-3b65c7fcbdc1",
+    "forwardedReplayAckCount": 1,
+    "recoveryReportSendCount": 2,
+    "allRecoveryReportSendCount": 2,
+    "messageIds": [
+      "197bbbd9-440d-45fb-9aa0-3b65c7fcbdc1"
+    ],
+    "payloadSha256": [
+      "7cfd700f58ae25a41e46d91faa6695d9976d203f990cd01b67c5fc747b2a19c8"
+    ],
+    "wireSha256": [
+      "4fd1a89abdde6e313c15b9b001e119c21973afc225dbdc10996e13acd1fc2243",
+      "5fea42ceda2eff39ffb6eed8e84900e2aa5336da7e77fd77bc7a6906d6bab0be"
+    ],
+    "connectionIds": [
+      1,
+      2
+    ],
+    "sessionGenerations": [
+      1,
+      2
+    ],
+    "sessionAfterFault": {
+      "agvId": "AGV-8005-STAGED-G3-01",
+      "sessionGeneration": 2,
+      "readiness": "RecoveryRequired",
+      "reasonCode": "CAPABILITY_SNAPSHOT_REQUIRED",
+      "updatedAt": "2026-09-10T05:43:02.5365311+00:00"
+    }
+  },
+  "database": {
+    "recoveryStateReportInboxRows": [
+      {
+        "messageId": "197bbbd9-440d-45fb-9aa0-3b65c7fcbdc1",
+        "contentHash": "5fea42ceda2eff39ffb6eed8e84900e2aa5336da7e77fd77bc7a6906d6bab0be",
+        "rowCount": 1
+      },
+      {
+        "messageId": "1bf44bb3-6d5d-d45c-8a22-34a14003d1e9",
+        "contentHash": "0b80b716e5aed79db78330c103a1bd1bbbab8262e697279d4ed0cbf8b936d685",
+        "rowCount": 1
+      }
+    ],
+    "businessMessageInboxRows": [
+      {
+        "messageType": "OperationProgress",
+        "messageId": "a7c7e430-432c-a551-94ec-2956bcf86ebc",
+        "contentHash": "bb958949b8c931f277619aa5d24e1422aae8e9b0280284f5356644a0dc8d1731",
+        "rowCount": 1
+      },
+      {
+        "messageType": "OperationProgress",
+        "messageId": "ae014e07-7120-e357-8a0f-b58e47dfb182",
+        "contentHash": "b465a8a05c951cbc196fc988277c4e5937f3b0e2ea72e49ae0e695f8bbc6ca89",
+        "rowCount": 1
+      },
+      {
+        "messageType": "PreDepartureSafetyCheckResult",
+        "messageId": "3793e656-3687-ee5f-b590-9456fe49c582",
+        "contentHash": "83dba8f20ede40846ac358cd83985318ec8e7bce383af9cceb266211b0348744",
+        "rowCount": 1
+      },
+      {
+        "messageType": "PreDepartureSafetyCheckResult",
+        "messageId": "ab69cf67-fbb9-ec51-804a-4f3d86eb5fbb",
+        "contentHash": "484da98f48bc2cbf05ad4e88e507146144e948e1019c9593694445254d27b0c7",
+        "rowCount": 1
+      },
+      {
+        "messageType": "SlotOperationCommandRejected",
+        "messageId": "4ca67053-ac9c-fa57-8b66-9ea068a92e2b",
+        "contentHash": "1be3691ea66d1a83843776fe2edaf72538790feeefaa576ac9e776d7705c1efb",
+        "rowCount": 1
+      },
+      {
+        "messageType": "SlotOperationCommandRejected",
+        "messageId": "75e40d11-f1d3-5756-8bd6-d42c1f9bf724",
+        "contentHash": "7df6abc3f831b15c3aab7b8ee387f54fd7ce20e7878bfafe5103bdf2e501b6fc",
+        "rowCount": 1
+      },
+      {
+        "messageType": "SublotSubmitted",
+        "messageId": "88eddf5f-ec8d-7651-96df-f74d5462856f",
+        "contentHash": "3adcbcf4cc5d07301f69ea6784a39a3dcadf7ee4b7907bb5370ce972e3fd91cf",
+        "rowCount": 1
+      },
+      {
+        "messageType": "SublotSubmitted",
+        "messageId": "938ce385-4433-8751-aeb0-8490ead1e539",
+        "contentHash": "bd3359efad3091f7e1a50c2d0c35b37a6bef61ed226eaf34aa9ee46f8e182998",
+        "rowCount": 1
+      }
+    ],
+    "onboardAlarmSnapshotRows": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-01",
+        "sessionGeneration": 1,
+        "snapshotSequence": 1,
+        "alarmsJsonLength": 2,
+        "alarmCount": 0
+      }
+    ],
+    "slotConfigurationActivationRows": [
+      {
+        "activationId": "9b6fd296-4d3c-4eb4-8c93-ae5342fddc1f",
+        "agvId": "AGV-8005-STAGED-G3-01",
+        "state": "ACTIVATED",
+        "kind": "ACTIVATION",
+        "recoveryRole": "SLOT_CONFIGURATION",
+        "configurationVersion": 2,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "commandMessageId": "b402e048-0bc5-41cd-a575-0714d194247d"
+      }
+    ],
+    "activeSlotConfigurationRows": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-01",
+        "configurationVersion": 2,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "activationId": "9b6fd296-4d3c-4eb4-8c93-ae5342fddc1f"
+      }
+    ],
+    "currentSessionGeneration": 2,
+    "currentSessionReadiness": "RecoveryRequired",
+    "currentSessionReasonCode": "CAPABILITY_SNAPSHOT_REQUIRED",
+    "orderIntentCount": 0,
+    "acceptedDemandCount": 0,
+    "stationOperationCount": 0,
+    "recoveryWorkflowRows": [
+      {
+        "workflowId": "3a50a1b0-95a8-ee5e-977f-7ffc462d2390",
+        "workflowType": "FORCED_MECHANICAL_RECOVERY",
+        "state": "HistoricalOnly",
+        "forcedRecoveryGeneration": 1,
+        "commandMessageId": "6d8081bc-4033-5858-aecc-be278dd920f5",
+        "resultMessageId": "505af6ca-f4b9-7258-8013-cf1f4c8ac10c",
+        "demandId": null,
+        "slotOperationAttemptId": null
+      },
+      {
+        "workflowId": "ece22300-5230-6f51-8c4a-658286622b33",
+        "workflowType": "FORCED_MECHANICAL_RECOVERY",
+        "state": "RecoveryRequired",
+        "forcedRecoveryGeneration": 2,
+        "commandMessageId": "a1042092-d6e0-ce55-9e9d-79cbbf3e3544",
+        "resultMessageId": "087f45d1-fffd-2f51-818b-cb4a02009fb1",
+        "demandId": null,
+        "slotOperationAttemptId": null
+      }
+    ],
+    "recoveryResultEvidenceRows": [
+      {
+        "messageId": "505af6ca-f4b9-7258-8013-cf1f4c8ac10c",
+        "workflowId": "3a50a1b0-95a8-ee5e-977f-7ffc462d2390",
+        "messageType": "ForcedMechanicalRecoveryResult",
+        "forcedRecoveryGeneration": 1,
+        "outcome": "MECHANICALLY_ISOLATED",
+        "historicalOnly": true
+      },
+      {
+        "messageId": "087f45d1-fffd-2f51-818b-cb4a02009fb1",
+        "workflowId": "ece22300-5230-6f51-8c4a-658286622b33",
+        "messageType": "ForcedMechanicalRecoveryResult",
+        "forcedRecoveryGeneration": 2,
+        "outcome": "MECHANICALLY_ISOLATED",
+        "historicalOnly": false
+      }
+    ],
+    "exceptionRecoverySessionRows": [
+      {
+        "exceptionRecoverySessionId": "0a4c556a-c4a6-cf5b-b3f9-db9c50850cb5",
+        "agvId": "AGV-8005-STAGED-G3-RECOVERY",
+        "state": "EXECUTING",
+        "revision": 5,
+        "selectedAction": "FORCED_MECHANICAL_RECOVERY",
+        "demandId": null,
+        "forcedRecoveryGeneration": 2
+      }
+    ],
+    "forcedMechanicalRecoveryCommandOutboxRows": [
+      {
+        "messageId": "6d8081bc-4033-5858-aecc-be278dd920f5",
+        "messageType": "ForcedMechanicalRecoveryCommand",
+        "rowCount": 1
+      },
+      {
+        "messageId": "a1042092-d6e0-ce55-9e9d-79cbbf3e3544",
+        "messageType": "ForcedMechanicalRecoveryCommand",
+        "rowCount": 1
+      }
+    ],
+    "hardwareRecoveryRecordCount": 1,
+    "vehicleForcedRecoveryGeneration": 2,
+    "closedExceptionRecoverySessionCount": 0,
+    "reconciledRecoveryWorkflowCount": 0
+  },
+  "simulatorHealth": {
+    "schemaVersion": "1.0",
+    "instanceId": "agv-slot-simulator-01",
+    "runId": "run-d4b80b4ac10649189c6732960ab4d7f9",
+    "revision": 1,
+    "observedAt": "2026-09-10T13:42:58.1766311+08:00",
+    "status": "READY",
+    "modbus": {
+      "listenAddress": "127.0.0.1",
+      "port": 1502,
+      "unitId": 255,
+      "isRunning": true,
+      "clientCount": 0,
+      "faultMode": "NORMAL",
+      "delayMs": 0
+    }
+  },
+  "controlServerVersion": {
+    "protocolVersion": 2,
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolReleaseVersion": "1.0.0",
+    "protocolTag": "protocol-v1.0.0",
+    "protocolCommit": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "manifestSha256": "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788",
+    "schemaBundleSha256": "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b",
+    "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+    "approvalStatus": "SUPERSEDING_CANDIDATE"
+  },
+  "error": null,
+  "secretLeakFiles": [],
+  "evidenceFiles": [
+    {
+      "path": "business-fault-proxy-events.ndjson",
+      "sha256": "bbecb84115dfc044bc9c4b20371a1b1a6dfe6b7182e79b88cca8efc7aa098116",
+      "length": 57211
+    },
+    {
+      "path": "business-probe-events.ndjson",
+      "sha256": "0bc55cc5896da709b49395be68dd21c3bd5c06c0cbfe0db6af149c27fe17c7e1",
+      "length": 3043
+    },
+    {
+      "path": "business-probe-result.json",
+      "sha256": "8ee85b8e571ee18463bf6aa3b9de4296ed61d788d34b7a85e4950643db623a14",
+      "length": 4714
+    },
+    {
+      "path": "configuration.json",
+      "sha256": "f4ba9086dd4bc1222426c17f8d19cc4f5d9f242dacfba9ffde5a24bf303e12cd",
+      "length": 1882
+    },
+    {
+      "path": "fault-proxy-events.ndjson",
+      "sha256": "d710ceb976751914f23f0bb4430700c0f041fe4cd59491bd5a308569c8df8c50",
+      "length": 10294
+    },
+    {
+      "path": "logs/agv-20260910.log",
+      "sha256": "e32c7c9ca8eea356ce93ac86d63268853353c4136777be5c99617ca63932f37c",
+      "length": 817
+    },
+    {
+      "path": "logs/checkout-control-server.log",
+      "sha256": "3804e01c5bf9ff88856c934c1d9ab3b675eba2aafa03755df369290a2f5f3f1f",
+      "length": 115
+    },
+    {
+      "path": "logs/checkout-onboard-hmi.log",
+      "sha256": "ae445ba71b6a27cd78b04c74af53dab662310bb02393e8a079910d2ec83ef9e9",
+      "length": 116
+    },
+    {
+      "path": "logs/checkout-protocol.log",
+      "sha256": "9027c8a5daa9b2169cc63fe734fe2c83ebff5963858062a01cca22b683324a47",
+      "length": 93
+    },
+    {
+      "path": "logs/checkout-slots-simulator.log",
+      "sha256": "769de68d1abed1f6df95d49f6b766cf1dd20cd003759385a2b6b773b1a0a8975",
+      "length": 73
+    },
+    {
+      "path": "logs/clone-control-server.log",
+      "sha256": "6de2d8ef8ab5dc2d820642cb980178e03ba751a1cbfe568ef24ec24f0b92a9c3",
+      "length": 81
+    },
+    {
+      "path": "logs/clone-onboard-hmi.log",
+      "sha256": "80ef3e0e0ef46a4523549200761f0d440cb9e681f5c966c0f3645e9938b9ba96",
+      "length": 78
+    },
+    {
+      "path": "logs/clone-protocol.log",
+      "sha256": "e31c060f43e58bf27322e5f5602e5c75019fb253d249008caffcd5fccd342a1f",
+      "length": 75
+    },
+    {
+      "path": "logs/clone-slots-simulator.log",
+      "sha256": "3de4dfe71a6a2b3ec9c6da3ccb357725f89a1b7d2432e8776b2912ca80f90d1a",
+      "length": 82
+    },
+    {
+      "path": "logs/control.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/control.out.log",
+      "sha256": "574a1a52a153d804f4e378e71145c688526a34b9b09dd5e276d2f3700b61142f",
+      "length": 283828
+    },
+    {
+      "path": "logs/fetch-control-server.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/fetch-onboard-hmi.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/fetch-protocol.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/fetch-slots-simulator.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/field-ops-bind-io.log",
+      "sha256": "b8d527c3f2ceb9192c7f49744e651b1e4ff06ddeebeac14d2a92d8e32ce267d9",
+      "length": 153
+    },
+    {
+      "path": "logs/field-ops-seed-approved-facts.log",
+      "sha256": "294d7a36d0e3916a418411da2776377d03366d3f1057ea53e1f8d25505e0219b",
+      "length": 161
+    },
+    {
+      "path": "logs/onboard.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/onboard.out.log",
+      "sha256": "4fbf59254f5a4fc175f4c2306c9ae3984524274449ec43b3554101712d81ee40",
+      "length": 746
+    },
+    {
+      "path": "logs/protocol-g1.log",
+      "sha256": "bcf40949259da5a72fa5f0703533885dc1349fa65bc48d70058aa32e68e8f634",
+      "length": 592
+    },
+    {
+      "path": "logs/protocol-install.log",
+      "sha256": "360969e363d527ae434d209feb65cce33f8b39c4aaeec33baf4b6235b16a40bd",
+      "length": 613
+    },
+    {
+      "path": "logs/publish-control-server.log",
+      "sha256": "3ad0c3826145f7eab951c1f9ca116a6ae5ffa8099d585e1ef5cc2bde85595acc",
+      "length": 1342
+    },
+    {
+      "path": "logs/publish-field-ops.log",
+      "sha256": "82a6bee1a02827f3767a9d9890a9058add60ae5acc333eb47fb53cf673c8c418",
+      "length": 987
+    },
+    {
+      "path": "logs/publish-onboard-hmi.log",
+      "sha256": "249225de6cd060c260916c7668324c9e8e8a8194e82e489db29569475f2f481f",
+      "length": 1779
+    },
+    {
+      "path": "logs/publish-slots-simulator.log",
+      "sha256": "32988edeee05d9787a9054b8e31a9deb913d9438e76d925b9bf466ccced5164e",
+      "length": 1120
+    },
+    {
+      "path": "logs/simulator.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/simulator.out.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "onboard-alarm-snapshot-observation.json",
+      "sha256": "544845c9b6172ba5ea7ce840b0372bcf18d07a60f44fc63af69e5f1e31c02372",
+      "length": 405
+    },
+    {
+      "path": "probe-events.ndjson",
+      "sha256": "3b4dce0e25cbc30dad351fa9167aec3f55ed5a5c4611448ea973091da064649b",
+      "length": 2023
+    },
+    {
+      "path": "probe-result.json",
+      "sha256": "dd6ac4431ee3bba71661d80f785a58f55cdfca80de30f4ca9e3a3c48c28c14cc",
+      "length": 1553
+    },
+    {
+      "path": "recovery-probe-events.ndjson",
+      "sha256": "45e35f2912c918101658e586c8c1171bea239ac0c0a479160f366f79458ae816",
+      "length": 5121
+    },
+    {
+      "path": "recovery-probe-result.json",
+      "sha256": "ea342f2036ac420ccac8716f1d3389a26f21c53b5b3ac3b1cf52c128ce4913ec",
+      "length": 6859
+    },
+    {
+      "path": "runtime-sessions.json",
+      "sha256": "62d131a6abae3b814dea58b63c1fb70c2e97e33194bc5134308bad8980f900d3",
+      "length": 354
+    },
+    {
+      "path": "slices/FP-IS-00/gate-result.json",
+      "sha256": "f5df07052be0b0dbb1a073d38dff4dd79fea7da7e5543ddd81f2c14dcaeb609b",
+      "length": 2437
+    },
+    {
+      "path": "slices/FP-IS-06/gate-result.json",
+      "sha256": "ba927d45e48ec624267b94f70a8ee92ce3b779e4bace42358d896926f52eeaa9",
+      "length": 2289
+    },
+    {
+      "path": "slices/FP-IS-14/gate-result.json",
+      "sha256": "39589970b2249e756fadae79049d6ad894afde0528f1da522d16b8d5ec6d3804",
+      "length": 2069
+    },
+    {
+      "path": "slices/FP-IS-15/gate-result.json",
+      "sha256": "92c122eaf825837a26afda9bff653e4b05eb8fda96e5811f6bbf5b16335e751b",
+      "length": 2107
+    },
+    {
+      "path": "slot-configuration-activation-observation.json",
+      "sha256": "7c18e18d0de8a541ba223f07d255cde4d426a5747ee37856dd78f3d2d441f874",
+      "length": 1081
+    }
+  ]
+}

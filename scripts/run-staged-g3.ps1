@@ -27,14 +27,33 @@ param(
     #     protocol-v0.3.0 and is a different protocol from this line.
     #   $SimulatorCommit unchanged: slots-simulator references no protocol identity at all.
     #   $ProtocolCommit unchanged: the v2 candidate, already on origin/fp/v2-candidate.
-    [string]$ControlServerCommit = 'b46b0727de5aad74e9ffd56709219dd76e75e0b2',
-    [string]$OnboardCommit = '153b70594f75ce945e717afd80be9f6279423080',
+    #
+    # 2026-09-12: $ProtocolCommit -> 16e2567, the same candidate with the single-owner release rule
+    #   carried over from main. Its manifest and schema bundle hashes moved, and so did the copy of
+    #   the identity in the synthetic peer below; that commit has to be on origin before a run.
+    #   $ControlServerCommit -> 6369616: the server on that identity, plus 5f7a34e (the dashboard
+    #     shows every alarm of a vehicle, REQ-0270).
+    #   $OnboardCommit -> f9efa30, the w2g/b3-on-v2 tip: the onboard end on that identity (e30d421),
+    #     the alarm sources wired (a98679f), the G2 script fix (ad0e507) and its G2 evidence.
+    [string]$ControlServerCommit = '63696161d036a4907a39f8597fd64cc6e4c755fd',
+    [string]$OnboardCommit = 'f9efa301734128e850cb5460c20265232611ffff',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = 'f6ee75defe6e2d18f63f4082bee445dbb678ab1b'
+    [string]$ProtocolCommit = '16e2567a7033883f00fc999f7fa08f954dd13a26',
+    # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
+    # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
+    # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
+    # still name that commit as a branch tip, so evidence cannot bind a commit that exists only as a
+    # detached object somebody handed the runner.
+    [string]$OnboardRemoteRef = 'origin/w2g/b3-on-v2'
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# R-4 (docs/defects/20260910-g3-runner-red-runs-on-fp-is-14-and-fp-is-15.md): on 2026-09-10 this machine ran
+# out of memory mid-run because the publishes left a dozen MSBuild nodes resident. Every dotnet this runner
+# starts inherits these two, so no node outlives the command that started it.
+$env:MSBUILDDISABLENODEREUSE = '1'
+$env:DOTNET_CLI_USE_MSBUILD_SERVER = '0'
 
 # This run puts two WPF windows on the machine's single interactive desktop, which 8005-mes-ingest's
 # golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
@@ -134,6 +153,7 @@ $protocolSource = Join-Path $sourcesRoot 'protocol'
 $controlPublish = Join-Path $publishRoot 'control-server'
 $onboardPublish = Join-Path $publishRoot 'onboard-hmi'
 $simulatorPublish = Join-Path $publishRoot 'slots-simulator'
+$fieldOpsPublish = Join-Path $publishRoot 'field-ops'
 
 $commands = [System.Collections.Generic.List[object]]::new()
 
@@ -1929,6 +1949,20 @@ public static class StagedG3TlsHarness
                 if (payload.ValueKind == JsonValueKind.Object &&
                     payload.TryGetProperty("acceptedMessageId", out JsonElement acceptedId))
                     value["acceptedMessageId"] = acceptedId.GetString();
+                // SnapshotAppliedAck names what it applied with snapshotKind, not acceptedMessageType,
+                // so without this a snapshot ack is indistinguishable from any other ack in the
+                // transcript. FP-IS-15 needs to tell an ONBOARD_ALARM ack from a SAFETY_STATE one.
+                if (payload.ValueKind == JsonValueKind.Object &&
+                    payload.TryGetProperty("snapshotKind", out JsonElement snapshotKind))
+                    value["snapshotKind"] = snapshotKind.GetString();
+                // payloadSha256 of an OnboardAlarmSnapshot differs on every send -- the payload carries
+                // its own sequence and capture time -- so it cannot say whether two snapshots told the
+                // server the same thing. The alarms array alone can: the onboard board keeps an entry's
+                // id and first-raised time while the condition persists, so an unchanged board serialises
+                // to the same bytes. FP-IS-15's resume assertion compares these.
+                if (payload.ValueKind == JsonValueKind.Object &&
+                    payload.TryGetProperty("alarms", out JsonElement alarms))
+                    value["alarmsSha256"] = Sha256(alarms.GetRawText());
             }
         }
         catch (JsonException error) { value["parseErrorSha256"] = Sha256(error.Message); }
@@ -2050,9 +2084,9 @@ public static class StagedG3TlsHarness
     {
         public const string Release = "1.0.0";
         public const string Profile = "AGV_FULL_PRODUCT";
-        public const string Commit = "f6ee75defe6e2d18f63f4082bee445dbb678ab1b";
-        public const string Manifest = "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788";
-        public const string Schema = "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b";
+        public const string Commit = "16e2567a7033883f00fc999f7fa08f954dd13a26";
+        public const string Manifest = "25fd6689e8234b7d481874b408109cd27eb0f02fbb023225385d6642e9bfd3d0";
+        public const string Schema = "225a83340eb5f27c4e6dfd7bf8aba8007cf787d29f1df860deaf0ba039baf3ff";
         public const string Vectors = "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df";
     }
 
@@ -2160,6 +2194,10 @@ $credential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerato
 # The recovery administrator proof is a server-side secret compared in fixed time. It is generated
 # per run, never written to evidence, and the inbox stores the request with the field redacted.
 $recoveryProof = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+# FP-IS-14's entry point credential. A third one rather than a reuse: the secret scan below asserts
+# that no evidence file carries a run secret, and three distinct values make that check able to tell
+# which surface leaked.
+$governanceCredential = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
 $control = $null
 $onboard = $null
 $simulator = $null
@@ -2191,7 +2229,7 @@ try {
     New-ExactClone -Name 'control-server' -Repository $ControlServerRepository -Destination $controlSource `
         -Commit $ControlServerCommit
     New-ExactClone -Name 'onboard-hmi' -Repository $OnboardRepository -Destination $onboardSource `
-        -Commit $OnboardCommit -RemoteRef 'origin/w2g/fp-v2-impl'
+        -Commit $OnboardCommit -RemoteRef $OnboardRemoteRef
     New-ExactClone -Name 'slots-simulator' -Repository $SimulatorRepository -Destination $simulatorSource `
         -Commit $SimulatorCommit -RemoteRef 'origin/main'
     New-ExactClone -Name 'protocol' -Repository $ProtocolRepository -Destination $protocolSource `
@@ -2245,6 +2283,17 @@ try {
     Invoke-LoggedCommand -Name 'publish-slots-simulator' -WorkingDirectory $simulatorSource -FilePath 'dotnet' `
         -Arguments @('publish', '.\src\SQCD_8005AGV_Simulator\SQCD_8005AGV_Simulator.csproj', '-c', 'Release', '-o', $simulatorPublish) `
         -LogPath (Join-Path $logsRoot 'publish-slots-simulator.log') | Out-Null
+    # FP-IS-14. The activation entry point refuses a target whose IO bindings are not published, and
+    # nothing in a fresh staged database has published any -- that is a governance act, and the tool
+    # that performs it is ControlServer.FieldOps, from the same exact clone as the server.
+    Invoke-LoggedCommand -Name 'publish-field-ops' -WorkingDirectory $controlSource -FilePath 'dotnet' `
+        -Arguments @('publish', '.\tools\ControlServer.FieldOps\ControlServer.FieldOps.csproj', '-c', 'Release', '-o', $fieldOpsPublish) `
+        -LogPath (Join-Path $logsRoot 'publish-field-ops.log') | Out-Null
+    # Node reuse is off for this process tree, but the compiler server the publishes started still sits in
+    # memory. Shut it down before the peers start, and log it like every other command. R-4.
+    Invoke-LoggedCommand -Name 'build-server-shutdown' -WorkingDirectory $controlSource -FilePath 'dotnet' `
+        -Arguments @('build-server', 'shutdown') `
+        -LogPath (Join-Path $logsRoot 'build-server-shutdown.log') | Out-Null
 
     $onboardConfig = Join-Path $onboardPublish 'appsettings.json'
     $settings = Get-Content -LiteralPath $onboardConfig -Raw | ConvertFrom-Json
@@ -2284,6 +2333,11 @@ try {
         'MesIngest__baseUrl' = 'http://127.0.0.1:1'
         'RIoT__baseUrl' = 'http://127.0.0.1:1'
         'ControlServerBuild__commit' = $ControlServerCommit
+        # FP-IS-14. Off by default in the product; a run that wants to prove the activation path has
+        # to turn it on deliberately, exactly as a site would.
+        'SlotConfigurationActivation__enabled' = 'true'
+        'SlotConfigurationActivation__credentialEnvironmentVariable' = 'CONTROL_SERVER_GOVERNANCE_CREDENTIAL'
+        'CONTROL_SERVER_GOVERNANCE_CREDENTIAL' = $governanceCredential
     }
     $control = Start-Process -FilePath 'dotnet' `
         -ArgumentList @(Join-Path $controlPublish 'ControlServer.Host.dll') `
@@ -2297,6 +2351,25 @@ try {
         $version.manifestSha256 -ne $manifestSha256) {
         throw 'Running ControlServer reported an unexpected protocol identity.'
     }
+
+    # FP-IS-14, and the ordering matters. The activation entry point refuses a target that is not
+    # published with complete IO bindings, and a staged database has published none: these two
+    # commands are the governance acts a site performs in its W1 field window. They run against the
+    # SQLite file the server is already using -- SQLite serialises the write, and the vehicle has not
+    # connected yet, so the server is idle here.
+    $fieldOpsDatabase = Join-Path $runtimeRoot 'controlserver.db'
+    $seedOutput = Invoke-LoggedCommand -Name 'field-ops-seed-approved-facts' -WorkingDirectory $fieldOpsPublish -FilePath 'dotnet' `
+        -Arguments @((Join-Path $fieldOpsPublish 'ControlServer.FieldOps.dll'), 'seed-approved-facts', '--database', $fieldOpsDatabase) `
+        -LogPath (Join-Path $logsRoot 'field-ops-seed-approved-facts.log')
+    # Read the model id the tool reports rather than restating the constant here. A second copy of an
+    # identifier is how a runner ends up activating something the database does not have.
+    $slotModelVersionId = (($seedOutput -join '') | ConvertFrom-Json).slotModelVersionId
+    if ([string]::IsNullOrWhiteSpace($slotModelVersionId)) {
+        throw 'ControlServer.FieldOps seed-approved-facts did not report a slotModelVersionId.'
+    }
+    Invoke-LoggedCommand -Name 'field-ops-bind-io' -WorkingDirectory $fieldOpsPublish -FilePath 'dotnet' `
+        -Arguments @((Join-Path $fieldOpsPublish 'ControlServer.FieldOps.dll'), 'bind-io', '--database', $fieldOpsDatabase, '--agv', $agvId) `
+        -LogPath (Join-Path $logsRoot 'field-ops-bind-io.log') | Out-Null
 
     $probeJson = [StagedG3TlsHarness]::RunProbeAsync(
         $controlPort,
@@ -2429,6 +2502,67 @@ try {
         sessionGenerations = @($replayedReports.sessionGeneration | Sort-Object -Unique)
         sessionAfterFault = $sessionEvidence
     }
+
+    # FP-IS-14: issue one activation against the live peer and let the vehicle answer.
+    #
+    # This is the slice's whole point, and it is the ONLY place either repository can prove it. The
+    # command carries a version name and a fingerprint, never the configuration itself -- no message
+    # in the protocol carries slot IO bindings. So the vehicle recomputes the fingerprint of what it
+    # actually holds and compares. A success reported back therefore means the two ends computed the
+    # SAME digest from their own copies, with their own code, in separate processes. Pinned literals
+    # in each repository's unit tests can only say neither drifted from a written-down value; this
+    # says they agree.
+    #
+    # And the command is dropped in flight on purpose. REQ-0264 is why messages 7/8 are RELIABLE and
+    # not REQUEST/RESPONSE: a vehicle that never received the command must not leave the server
+    # believing anything, and a reconnect has to re-deliver the SAME line rather than mint a second
+    # activation. The drop-and-close fault fires once, so the first delivery dies with its connection
+    # and the SLOT_CONFIGURATION recovery role has to carry the rest.
+    [StagedG3TlsHarness]::AddFault('server-to-client', 'SlotConfigurationActivationCommand', $null, 'drop-and-close', 0)
+    $activationIssuedAt = [DateTimeOffset]::UtcNow
+    $activationResponse = $null
+    $activationIssueError = $null
+    try {
+        $activationResponse = Invoke-RestMethod -Method Post `
+            -Uri "http://127.0.0.1:$healthPort/api/governance/v1/slot-configuration-activations" `
+            -Headers @{ Authorization = "Bearer $governanceCredential" } `
+            -ContentType 'application/json' `
+            -Body (@{
+                agvId = $agvId
+                slotModelVersionId = $slotModelVersionId
+                administrator = @{
+                    operatorId = 'op-staged-g3'
+                    verificationMethod = 'BADGE'
+                    verifiedAt = $activationIssuedAt.ToString('O')
+                }
+            } | ConvertTo-Json -Depth 5) `
+            -TimeoutSec 20
+    }
+    catch {
+        # Recorded, not thrown: a refused issue is a FAIL for this slice, not a reason to abandon the
+        # run and lose every other slice's evidence.
+        $activationIssueError = $_.Exception.Message
+    }
+
+    $activationDeadline = [DateTimeOffset]::UtcNow.AddSeconds(45)
+    do {
+        $activationEvents = Read-Ndjson $proxyTranscript
+        $activationResults = @($activationEvents | Where-Object {
+            $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
+            $_.messageType -eq 'SlotConfigurationActivationResult'
+        })
+        $activationCommandAttempts = @($activationEvents | Where-Object {
+            $_.event -eq 'message' -and $_.direction -eq 'server-to-client' -and
+            $_.messageType -eq 'SlotConfigurationActivationCommand'
+        })
+        # Two deliveries and one result: the dropped one, the replay after the reconnect, and the
+        # vehicle's answer to the replay.
+        if ($activationResults.Count -ge 1 -and $activationCommandAttempts.Count -ge 2) { break }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTimeOffset]::UtcNow -lt $activationDeadline)
+    # The result is RELIABLE, so the server acks it durably; give that ack a moment to land before
+    # the peer is torn down, or the activation reads as still pending for reasons of timing alone.
+    Start-Sleep -Seconds 2
 
     # OnboardTcpServer.ExecuteAsync awaits each accepted connection to completion before accepting
     # the next, so the server holds exactly one onboard peer at a time; a synthetic peer opened while
@@ -2620,6 +2754,66 @@ if (Test-Path -LiteralPath $databasePath) {
             }
         }
         finally { $reader.Dispose(); $command.Dispose() }
+        # FP-IS-15. The projection is one row per vehicle by design, so what this reads is the row that
+        # survived, not a history: (sessionGeneration, snapshotSequence) says which snapshot won.
+        # Reading AlarmsJson's length rather than its text keeps the evidence bounded while still
+        # distinguishing "a snapshot arrived" from "an empty one did".
+        $alarmSnapshotRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT AgvId, SessionGeneration, SnapshotSequence, LENGTH(AlarmsJson), AlarmsJson FROM OnboardAlarmSnapshots ORDER BY AgvId"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $alarmsJson = $reader.GetString(4)
+                $alarmCount = try { @([Text.Json.JsonDocument]::Parse($alarmsJson).RootElement.EnumerateArray()).Count } catch { -1 }
+                $alarmSnapshotRows += [ordered]@{
+                    agvId = $reader.GetString(0)
+                    sessionGeneration = $reader.GetInt64(1)
+                    snapshotSequence = $reader.GetInt64(2)
+                    alarmsJsonLength = $reader.GetInt64(3)
+                    alarmCount = $alarmCount
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
+        # FP-IS-14. Two tables, and the pair is what carries the claim: the activation row says what
+        # was sent and how it settled, the active row exists ONLY where an activation converged --
+        # so a matching fingerprint across the two is the vehicle having accepted the digest the
+        # server computed.
+        $activationRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT ActivationId, AgvId, State, Kind, RecoveryRole, ConfigurationVersion, Fingerprint, CommandMessageId FROM SlotConfigurationActivations ORDER BY IssuedAt"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $activationRows += [ordered]@{
+                    activationId = $reader.GetString(0)
+                    agvId = $reader.GetString(1)
+                    state = [string]$reader.GetValue(2)
+                    kind = [string]$reader.GetValue(3)
+                    recoveryRole = [string]$reader.GetValue(4)
+                    configurationVersion = $reader.GetInt64(5)
+                    fingerprint = $reader.GetString(6)
+                    commandMessageId = if ($reader.IsDBNull(7)) { $null } else { $reader.GetString(7) }
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
+        $activeConfigurationRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT AgvId, ConfigurationVersion, Fingerprint, ActivationId FROM ActiveSlotConfigurations ORDER BY AgvId"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $activeConfigurationRows += [ordered]@{
+                    agvId = $reader.GetString(0)
+                    configurationVersion = $reader.GetInt64(1)
+                    fingerprint = $reader.GetString(2)
+                    activationId = $reader.GetString(3)
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
         $recoveryWorkflowRows = @()
         $command = $connection.CreateCommand()
         $command.CommandText = "SELECT WorkflowId, WorkflowType, State, ForcedRecoveryGeneration, CommandMessageId, ResultMessageId, DemandId, SlotOperationAttemptId FROM RecoveryWorkflows ORDER BY CreatedAt"
@@ -2691,6 +2885,9 @@ if (Test-Path -LiteralPath $databasePath) {
         $databaseObservation = [ordered]@{
             recoveryStateReportInboxRows = $recoveryRows
             businessMessageInboxRows = $businessRows
+            onboardAlarmSnapshotRows = $alarmSnapshotRows
+            slotConfigurationActivationRows = $activationRows
+            activeSlotConfigurationRows = $activeConfigurationRows
             currentSessionGeneration = [long](Invoke-Scalar "SELECT SessionGeneration FROM SessionRecoveries WHERE AgvId = '$agvId'")
             currentSessionReadiness = [string](Invoke-Scalar "SELECT Readiness FROM SessionRecoveries WHERE AgvId = '$agvId'")
             currentSessionReasonCode = [string](Invoke-Scalar "SELECT ReasonCode FROM SessionRecoveries WHERE AgvId = '$agvId'")
@@ -2709,6 +2906,198 @@ if (Test-Path -LiteralPath $databasePath) {
     }
     finally { $connection.Dispose() }
 }
+
+# FP-IS-15. The onboard alarm board publishes a snapshot as part of every handshake, so a run that
+# reconnects produces one per connection without the runner having to drive anything. What is being
+# read here is whether the projection tracked them: the server keeps one row per vehicle, and the
+# question REQ-0269 asks is which snapshot that row ended up holding.
+$alarmEvents = Read-Ndjson $proxyTranscript
+$alarmSnapshotsSent = @($alarmEvents | Where-Object {
+    $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
+    $_.messageType -eq 'OnboardAlarmSnapshot'
+})
+$alarmSnapshotAcks = @($alarmEvents | Where-Object {
+    $_.event -eq 'message' -and $_.direction -eq 'server-to-client' -and
+    $_.messageType -eq 'SnapshotAppliedAck' -and $_.snapshotKind -eq 'ONBOARD_ALARM'
+})
+$alarmProjectionRows = @()
+if ($null -ne $databaseObservation) {
+    $alarmProjectionRows = @($databaseObservation.onboardAlarmSnapshotRows |
+        Where-Object { $_.agvId -ceq $agvId })
+}
+$alarmSnapshotGenerations = @($alarmSnapshotsSent.sessionGeneration | Sort-Object -Unique)
+$alarmClientConnectionIds = @($alarmEvents |
+    Where-Object { $_.event -eq 'message' -and $_.direction -eq 'client-to-server' } |
+    ForEach-Object { $_.connectionId } | Sort-Object -Unique)
+# A full handshake is identified by its CapabilitySnapshot, not by being the first connection. This
+# run has three connections and TWO of them are full handshakes -- the reconnect after the activation
+# command was dropped found a clean journal and handshook from the top.
+$alarmFullHandshakeConnectionIds = @($alarmEvents | Where-Object {
+    $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
+    $_.messageType -eq 'CapabilitySnapshot'
+} | ForEach-Object { $_.connectionId } | Sort-Object -Unique)
+# Every snapshot in wire order, marked as either a full handshake's own (the first one on a connection
+# that carried a CapabilitySnapshot -- a handshake always reports the whole set, changed or not) or a
+# later one. A later one is only legitimate when it tells the server something it did not already hold,
+# so it is compared with the snapshot immediately before it. Since a98679f wired the onboard alarm board
+# to real conditions, a condition can come or go on any connection, a resumed one included: on
+# 2026-09-12 ONBOARD_DEPARTURE_SAFETY_SIGNAL_UNAVAILABLE was first raised while connection 2 -- a resume
+# -- was live, and the board published it there (evidence/g3/20260912-fp-is-14-15-staged-6369616, R-5 in
+# docs/defects/20260912-g3-resume-assertion-assumed-alarms-never-change-mid-session.md).
+$alarmConnectionsSeen = [Collections.Generic.HashSet[long]]::new()
+$previousAlarmsSha256 = $null
+$alarmSnapshotSequenceOnWire = @(foreach ($snapshot in $alarmSnapshotsSent) {
+    $handshakeOwn = $alarmFullHandshakeConnectionIds -contains $snapshot.connectionId -and
+        $alarmConnectionsSeen.Add([long]$snapshot.connectionId)
+    if (-not $handshakeOwn) { $null = $alarmConnectionsSeen.Add([long]$snapshot.connectionId) }
+    [ordered]@{
+        connectionId = $snapshot.connectionId
+        sessionGeneration = $snapshot.sessionGeneration
+        messageId = $snapshot.messageId
+        alarmsSha256 = $snapshot.alarmsSha256
+        fullHandshakeOwn = $handshakeOwn
+        sameAlarmsAsPrevious = $null -ne $previousAlarmsSha256 -and $snapshot.alarmsSha256 -eq $previousAlarmsSha256
+    }
+    $previousAlarmsSha256 = $snapshot.alarmsSha256
+})
+$alarmObservation = [ordered]@{
+    snapshotsSent = $alarmSnapshotsSent.Count
+    snapshotsOnWire = $alarmSnapshotSequenceOnWire
+    clientConnectionIds = $alarmClientConnectionIds
+    snapshotConnectionIds = @($alarmSnapshotsSent.connectionId | Sort-Object -Unique)
+    snapshotSessionGenerations = $alarmSnapshotGenerations
+    fullHandshakeConnectionIds = $alarmFullHandshakeConnectionIds
+    snapshotMessageIds = @($alarmSnapshotsSent.messageId | Sort-Object -Unique)
+    appliedAcks = $alarmSnapshotAcks.Count
+    projectionRowsForThisVehicle = $alarmProjectionRows.Count
+    projectionSessionGeneration = if ($alarmProjectionRows.Count -eq 1) { $alarmProjectionRows[0].sessionGeneration } else { $null }
+    projectionSnapshotSequence = if ($alarmProjectionRows.Count -eq 1) { $alarmProjectionRows[0].snapshotSequence } else { $null }
+    projectionAlarmCount = if ($alarmProjectionRows.Count -eq 1) { $alarmProjectionRows[0].alarmCount } else { $null }
+}
+[IO.File]::WriteAllText(
+    (Join-Path $EvidenceRoot 'onboard-alarm-snapshot-observation.json'),
+    ($alarmObservation | ConvertTo-Json -Depth 10),
+    [Text.UTF8Encoding]::new($false))
+
+# FP-IS-14. The activation is one command out and one result back on the same live session.
+$activationCommandsSent = @($alarmEvents | Where-Object {
+    $_.event -eq 'message' -and $_.direction -eq 'server-to-client' -and
+    $_.messageType -eq 'SlotConfigurationActivationCommand'
+})
+$activationResultsReported = @($alarmEvents | Where-Object {
+    $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
+    $_.messageType -eq 'SlotConfigurationActivationResult'
+})
+$activationDbRows = @()
+$activeConfigurationDbRows = @()
+if ($null -ne $databaseObservation) {
+    $activationDbRows = @($databaseObservation.slotConfigurationActivationRows |
+        Where-Object { $_.agvId -ceq $agvId })
+    $activeConfigurationDbRows = @($databaseObservation.activeSlotConfigurationRows |
+        Where-Object { $_.agvId -ceq $agvId })
+}
+$activationObservation = [ordered]@{
+    issueHttpError = $activationIssueError
+    issuedActivationId = if ($null -ne $activationResponse) { $activationResponse.activationId } else { $null }
+    issuedState = if ($null -ne $activationResponse) { $activationResponse.state } else { $null }
+    issuedRecoveryRole = if ($null -ne $activationResponse) { $activationResponse.recoveryRole } else { $null }
+    slotModelVersionId = $slotModelVersionId
+    commandsSent = $activationCommandsSent.Count
+    commandConnectionIds = @($activationCommandsSent.connectionId | Sort-Object -Unique)
+    commandPayloadSha256 = @($activationCommandsSent.payloadSha256 | Sort-Object -Unique)
+    commandMessageIds = @($activationCommandsSent.messageId | Sort-Object -Unique)
+    resultsReported = $activationResultsReported.Count
+    activationRows = $activationDbRows
+    activeConfigurationRows = $activeConfigurationDbRows
+}
+[IO.File]::WriteAllText(
+    (Join-Path $EvidenceRoot 'slot-configuration-activation-observation.json'),
+    ($activationObservation | ConvertTo-Json -Depth 10),
+    [Text.UTF8Encoding]::new($false))
+
+# One issue, one messageId -- however many times it went out. A second id would mean the replay
+# minted a new command, and then the vehicle would be looking at two activations for one decision.
+$activationCommandIds = @($activationCommandsSent.messageId | Sort-Object -Unique)
+$activationCommandPass = $activationCommandIds.Count -eq 1
+# The first delivery was dropped with its connection, so a second one has to exist, on a later
+# connection, byte-for-byte identical. That is what PENDING_RESULT_REPLAY means: re-deliver the same
+# line, not re-decide. REQ-0264 -- a vehicle that never got the command must leave the server
+# believing nothing at all.
+$activationPayloadHashes = @($activationCommandsSent.payloadSha256 | Sort-Object -Unique)
+$activationCommandConnections = @($activationCommandsSent.connectionId | Sort-Object -Unique)
+$activationReplayPass = $activationCommandsSent.Count -ge 2 -and
+    $activationCommandPass -and
+    $activationPayloadHashes.Count -eq 1 -and
+    $activationCommandConnections.Count -ge 2
+# durableBeforeSend, read off the two artefacts rather than trusted: the row that names this command
+# was already in the database, and it names the very messageId that went out.
+$activationDurablePass = $activationCommandPass -and
+    $activationDbRows.Count -eq 1 -and
+    $activationDbRows[0].commandMessageId -eq $activationCommandIds[0]
+# The vehicle answered, once. REQ-0264: no result, no conclusion -- never an assumed success. And a
+# re-delivered command must not produce a second answer to the same question.
+$activationResultPass = $activationResultsReported.Count -ge 1 -and
+    $activationDbRows.Count -eq 1 -and
+    $activationDbRows[0].state -eq 'ACTIVATED'
+# THE assertion this slice exists for. ActiveSlotConfigurations is written in exactly one place --
+# where an activation converges on a reported success -- and the vehicle only reports success when
+# the fingerprint IT computed over the configuration IT holds equals the one the command carried.
+# So a row here, carrying the activation's own fingerprint, is two independent implementations in two
+# separate processes having produced the same digest.
+$fingerprintAgreementPass = $activationDurablePass -and
+    $activationResultPass -and
+    $activeConfigurationDbRows.Count -eq 1 -and
+    $activeConfigurationDbRows[0].fingerprint -eq $activationDbRows[0].fingerprint -and
+    $activeConfigurationDbRows[0].activationId -eq $activationDbRows[0].activationId
+
+# A FULL handshake publishes one. Not every connection does -- see the resume assertion below, which
+# is the corrected form of what the 2026-09-10 FAIL run got wrong.
+$alarmSentPass = $alarmSnapshotsSent.Count -ge 1
+# Acked one for one. A snapshot the server never applied cannot be evidence that it projected it.
+$alarmAckPass = $alarmSnapshotAcks.Count -eq $alarmSnapshotsSent.Count -and $alarmSnapshotAcks.Count -ge 1
+# A reconnect that resumes an interrupted recovery replays the unacknowledged message and republishes
+# NOTHING it already published: those snapshots were accepted on the previous connection. A full
+# handshake does publish one, whatever the board holds. So the claim has two halves:
+#   - every full handshake carries a snapshot of its own;
+#   - every OTHER snapshot -- on a resumed connection, or later on a handshaken one -- carries alarms
+#     different from the snapshot before it. Republishing the same board state is the defect: it would
+#     hand the projection the same alarms under a new generation and the adoption rule would take it as
+#     news.
+# The run must also have resumed at least once, or the second half was never exercised.
+#
+# History, both kept as evidence. The first form ("all alarm snapshots on a single connection") failed
+# on 2026-09-10 the moment a run had two full handshakes (evidence/g3/20260910-fp-is-14-pending-result-replay).
+# The second form was an IFF -- the connections carrying a snapshot are exactly the full handshakes --
+# which held only while the onboard alarm board never changed mid-session. a98679f made it change with
+# real conditions, and on 2026-09-12 a condition first raised during the resume was published there,
+# correctly (evidence/g3/20260912-fp-is-14-15-staged-6369616). Connections were never the claim; content is.
+$alarmSnapshotsWithoutAlarmsDigest = @($alarmSnapshotSequenceOnWire | Where-Object { [string]::IsNullOrEmpty($_.alarmsSha256) })
+$alarmRepublishedSnapshots = @($alarmSnapshotSequenceOnWire | Where-Object { -not $_.fullHandshakeOwn -and $_.sameAlarmsAsPrevious })
+$alarmHandshakesWithoutSnapshot = @($alarmFullHandshakeConnectionIds |
+    Where-Object { $alarmObservation.snapshotConnectionIds -notcontains $_ })
+$alarmResumePass = $alarmClientConnectionIds.Count -gt $alarmFullHandshakeConnectionIds.Count -and
+    $alarmFullHandshakeConnectionIds.Count -ge 1 -and
+    $alarmHandshakesWithoutSnapshot.Count -eq 0 -and
+    $alarmSnapshotsWithoutAlarmsDigest.Count -eq 0 -and
+    $alarmRepublishedSnapshots.Count -eq 0
+# Several snapshots arrived across several generations and the projection kept exactly the last one.
+# This is the "a later snapshot replaces an earlier one wholesale" half of REQ-0269, which no run
+# before 2026-09-10 reached -- only one snapshot had ever arrived.
+$alarmSupersedePass = $alarmSnapshotsSent.Count -ge 2 -and
+    $alarmSnapshotGenerations.Count -ge 2 -and
+    $alarmProjectionRows.Count -eq 1 -and
+    $alarmObservation.projectionSessionGeneration -eq ($alarmSnapshotGenerations | Measure-Object -Maximum).Maximum
+# One row per vehicle is the design, not an accident of this run: a second row would mean the
+# projection is accumulating history and the dashboard has no single current alarm set to read.
+$alarmSingletonPass = $alarmProjectionRows.Count -eq 1
+# The row carries the generation the snapshot arrived in. This is the half of the (generation,
+# sequence) adoption rule a staged run can reach; the other half -- a restarted vehicle whose
+# sequence returns to 1 still being adopted -- needs the onboard process to actually restart, which
+# is run-staged-g3-restart.ps1's scenario, not this one.
+$alarmGenerationPass = $alarmSingletonPass -and
+    $alarmSnapshotGenerations.Count -ge 1 -and
+    $alarmObservation.projectionSessionGeneration -eq ($alarmSnapshotGenerations | Measure-Object -Maximum).Maximum -and
+    $alarmObservation.projectionSnapshotSequence -ge 1
 
 $replayPass = $null -ne $runtimeObservation -and
     $runtimeObservation.droppedAckCount -eq 1 -and
@@ -2904,7 +3293,8 @@ foreach ($file in @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File)) {
     try {
         $text = Get-Content -LiteralPath $file.FullName -Raw
         if ($text.Contains($credential, [StringComparison]::Ordinal) -or
-            $text.Contains($recoveryProof, [StringComparison]::Ordinal)) {
+            $text.Contains($recoveryProof, [StringComparison]::Ordinal) -or
+            $text.Contains($governanceCredential, [StringComparison]::Ordinal)) {
             $secretLeakFiles.Add([IO.Path]::GetRelativePath($EvidenceRoot, $file.FullName).Replace('\', '/'))
         }
     }
@@ -2931,6 +3321,17 @@ $assertionReport = [ordered]@{
     forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    slotConfigurationActivationCarriesOneMessageIdOnly = if ($activationCommandPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    slotConfigurationActivationReplayedByteForByteAfterAMidFlightDrop = if ($activationReplayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    slotConfigurationActivationPersistedBeforeItWasSent = if ($activationDurablePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    slotConfigurationActivationResultReportedByTheVehicle = if ($activationResultPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    bothEndsComputedTheSameSlotConfigurationFingerprint = if ($fingerprintAgreementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmSnapshotPublishedOnTheFullHandshake = if ($alarmSentPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmSnapshotAppliedAckOnEverySnapshot = if ($alarmAckPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmSnapshotNotRepublishedOnRecoveryResume = if ($alarmResumePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmProjectionKeptOnlyTheLatestOfSeveralSnapshots = if ($alarmSupersedePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmProjectionIsASingletonPerVehicle = if ($alarmSingletonPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    onboardAlarmProjectionCarriesTheGenerationItArrivedIn = if ($alarmGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     noMovementOrExternalSideEffects = if ($noMovementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     secretScan = if ($secretLeakFiles.Count -eq 0) { 'PASS' } else { 'FAIL' }
 }
@@ -2981,7 +3382,8 @@ $gateResultPaths = Write-G3GateResults -RunKind $G3RunKind -EvidenceRoot $Eviden
 foreach ($gateResultPath in $gateResultPaths) {
     $gateResultText = Get-Content -Raw -LiteralPath $gateResultPath
     if ($gateResultText.Contains($credential, [StringComparison]::Ordinal) -or
-        $gateResultText.Contains($recoveryProof, [StringComparison]::Ordinal)) {
+        $gateResultText.Contains($recoveryProof, [StringComparison]::Ordinal) -or
+        $gateResultText.Contains($governanceCredential, [StringComparison]::Ordinal)) {
         throw "A gate result carries a run secret: $gateResultPath"
     }
 }

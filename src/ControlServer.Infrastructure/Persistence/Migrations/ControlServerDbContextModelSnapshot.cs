@@ -84,6 +84,97 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("AcceptedDemands");
                 });
 
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.ActiveSlotConfigurationRow", b =>
+                {
+                    b.Property<string>("AgvId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ActivatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActivationId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ConfigurationVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlotModelVersionId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SnapshotId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AgvId");
+
+                    b.HasIndex("Fingerprint");
+
+                    b.ToTable("ActiveSlotConfigurations", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AdministratorAuditRecordRow", b =>
+                {
+                    b.Property<string>("AuditRecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorAttribution")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorIdentity")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClaimedAdministratorRole")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DetailJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObjectId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObjectKind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RecordedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SnapshotId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("AuditRecordId");
+
+                    b.HasIndex("RecordedAtUtcTicks");
+
+                    b.HasIndex("ObjectKind", "ObjectId");
+
+                    b.ToTable("AdministratorAuditRecords", (string)null);
+                });
+
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AdmissionDecisionSnapshotRow", b =>
                 {
                     b.Property<string>("SlotOperationAttemptId")
@@ -161,6 +252,174 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("AdmissionPolicyState");
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AgvArchiveRow", b =>
+                {
+                    b.Property<string>("AgvId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ArchiveReason")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ArchivedActiveSlotConfigurationFingerprint")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ArchivedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ArchivedLifecycleGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("AgvId");
+
+                    b.ToTable("AgvArchives", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AgvLifecycleRow", b =>
+                {
+                    b.Property<string>("AgvId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Archived")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CandidateRiotBindingJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Commissioned")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("LifecycleGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AgvId");
+
+                    b.ToTable("AgvLifecycles", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.AgvRestorationAttemptRow", b =>
+                {
+                    b.Property<string>("RestorationAttemptId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgvId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ArchiveReason")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AuditRecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Outcome")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RestoredLifecycleGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("SettledAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("RestorationAttemptId");
+
+                    b.HasIndex("AgvId", "StartedAt");
+
+                    b.ToTable("AgvRestorationAttempts", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.BusinessAuditRecordRow", b =>
+                {
+                    b.Property<string>("AuditRecordId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorAttribution")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorIdentity")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DetailJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObjectId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObjectKind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("RecordedAtUtcTicks")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SnapshotId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("AuditRecordId");
+
+                    b.HasIndex("RecordedAtUtcTicks");
+
+                    b.HasIndex("ObjectKind", "ObjectId");
+
+                    b.ToTable("BusinessAuditRecords", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.ConfigurationConsumerBindingRow", b =>
+                {
+                    b.Property<string>("ConsumerKind")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConsumerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObjectKind")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObjectId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("FrozenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("FrozenVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SnapshotId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ConsumerKind", "ConsumerId", "ObjectKind", "ObjectId");
+
+                    b.HasIndex("FrozenAt");
+
+                    b.ToTable("ConfigurationConsumerBindings", (string)null);
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.ConnectionRecoveryRow", b =>
@@ -456,6 +715,43 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasIndex("TransportDemandKey");
 
                     b.ToTable("FrozenDemandStations");
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.GovernedConfigurationSnapshotRow", b =>
+                {
+                    b.Property<string>("SnapshotId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentSha256")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("FrozenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObjectId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObjectKind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SnapshotId");
+
+                    b.HasIndex("ContentSha256");
+
+                    b.HasIndex("ObjectKind", "ObjectId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("GovernedConfigurationSnapshots", (string)null);
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.HardwareRecoveryRecordRow", b =>
@@ -821,6 +1117,32 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasKey("Package");
 
                     b.ToTable("MissingPackages");
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.OnboardAlarmSnapshotRow", b =>
+                {
+                    b.Property<string>("AgvId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AlarmsJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("SessionGeneration")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SnapshotSequence")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("AgvId");
+
+                    b.ToTable("OnboardAlarmSnapshots", (string)null);
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.OperationResultRow", b =>
@@ -1899,6 +2221,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<long>("ReportedForcedRecoveryGeneration")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ReportedSlotConfigurationFingerprint")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SafetyHash")
                         .HasColumnType("TEXT");
 
@@ -1923,6 +2248,294 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasKey("AgvId");
 
                     b.ToTable("SessionRecoveries");
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotConfigurationActivationRow", b =>
+                {
+                    b.Property<string>("ActivationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgvId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CommandMessageId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("ConfigurationVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RecoveryRole")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ResultReceivedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("RolledBackToVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SlotModelVersionId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SnapshotId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ActivationId");
+
+                    b.HasIndex("CommandMessageId")
+                        .IsUnique()
+                        .HasFilter("CommandMessageId IS NOT NULL");
+
+                    b.HasIndex("AgvId", "IssuedAt");
+
+                    b.ToTable("SlotConfigurationActivations", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotConfigurationReadinessRow", b =>
+                {
+                    b.Property<string>("AgvId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("InvalidatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Ready")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlotModelVersionId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AgvId");
+
+                    b.ToTable("SlotConfigurationReadiness", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotConfigurationVerificationRow", b =>
+                {
+                    b.Property<string>("VerificationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgvId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("CloseSignalConfirmed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("FieldRecordReference")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("InPlaceSignalConfirmed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("OpenSignalConfirmed")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PhysicalSlotNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SlotModelVersionId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("VerifiedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("VerificationId");
+
+                    b.HasIndex("AgvId", "SlotModelVersionId", "PhysicalSlotNumber")
+                        .IsUnique();
+
+                    b.ToTable("SlotConfigurationVerifications", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotIoBindingRow", b =>
+                {
+                    b.Property<string>("SlotIoBindingId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AgvId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LightCurtainInputPoint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LockFeedbackInputPoint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PhysicalSlotNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PulseResetMilliseconds")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SignalPolarity")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlotModelVersionId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SnapshotId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UnlockOutputPoint")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SlotIoBindingId");
+
+                    b.HasIndex("AgvId", "SlotModelVersionId", "PhysicalSlotNumber", "Version")
+                        .IsUnique();
+
+                    b.ToTable("SlotIoBindings", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotModelSlotRow", b =>
+                {
+                    b.Property<string>("SlotModelVersionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("PhysicalSlotNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SlotPosition")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlotTemplateId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("SlotModelVersionId", "PhysicalSlotNumber");
+
+                    b.HasIndex("SlotTemplateId");
+
+                    b.ToTable("SlotModelSlots", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotModelVersionRow", b =>
+                {
+                    b.Property<string>("SlotModelVersionId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ModelKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SlotCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SnapshotId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SlotModelVersionId");
+
+                    b.HasIndex("ModelKey", "Version")
+                        .IsUnique();
+
+                    b.ToTable("SlotModelVersions", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.SlotTemplateRow", b =>
+                {
+                    b.Property<string>("SlotTemplateId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CompatibleBasketTypesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("HeightMm")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("LengthMm")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SnapshotId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TemplateKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WidthMm")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("SlotTemplateId");
+
+                    b.HasIndex("TemplateKey", "Version")
+                        .IsUnique();
+
+                    b.ToTable("SlotTemplates", (string)null);
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.StationOperationRow", b =>

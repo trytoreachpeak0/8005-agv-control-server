@@ -11,6 +11,7 @@ public sealed class OnboardRecoveryCoordinator(
     ControlServerDbContext dbContext,
     WireToGateStore store,
     OnboardJourneyPublisher publisher,
+    SlotConfigurationActivationDispatcher activationDispatcher,
     TimeProvider timeProvider,
     IConfiguration configuration)
 {
@@ -223,7 +224,12 @@ public sealed class OnboardRecoveryCoordinator(
             .Select(row => row.CommandMessageId!)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         string[] snapshotIds = await PendingSessionSnapshotIdsAsync(agvId, cancellationToken).ConfigureAwait(false);
-        string[] pendingIds = commandIds.Concat(snapshotIds).ToArray();
+        // 恢复角色 SLOT_CONFIGURATION：还没拿到结果的那几次激活，命令要跟着这一轮补发。判据是激活
+        // 本身还在待补报态，不是发件箱那一行没被 ack——车 ack 了命令然后在报结果之前掉线，正是必须
+        // 补发的那种情况。
+        IReadOnlyList<string> activationIds = await activationDispatcher
+            .PendingCommandMessageIdsAsync(agvId, cancellationToken).ConfigureAwait(false);
+        string[] pendingIds = [.. commandIds, .. snapshotIds, .. activationIds];
         if (pendingIds.Length > 0)
             await publisher.ReplayPendingForSessionAsync(
                 agvId, sessionGeneration, pendingIds.ToHashSet(StringComparer.Ordinal), cancellationToken)

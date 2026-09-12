@@ -56,6 +56,15 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
     public DbSet<FrozenDemandStationRow> FrozenDemandStations => Set<FrozenDemandStationRow>();
     public DbSet<CreateGateAuditRow> CreateGateAudit => Set<CreateGateAuditRow>();
 
+    /// <summary>
+    /// How long audit records are protected from deletion. Defaults to the REQ-0271 floor of 180
+    /// days; the host binds the configured value over it. Changing it never permits an update.
+    /// </summary>
+    public AuditRetentionPolicy AuditRetention { get; set; } = AuditRetentionPolicy.Default;
+
+    /// <summary>The clock the retention check reads.</summary>
+    public TimeProvider AuditClock { get; set; } = TimeProvider.System;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
@@ -148,6 +157,29 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<MissingPackageRow>().HasKey(row => row.Package);
 
         Batch2CapabilityModel.Configure(modelBuilder);
+        // 批次 3 的表全部走每实体一个 IEntityTypeConfiguration<T>，放在 Persistence/Configurations
+        // 下——加一张表是加一个文件，不是在这里再加一段。上面那些手写配置是 v2 线既有的，两种写法
+        // 并存：程序集扫描只会捡到 Configurations/ 里的那些，不会碰上面任何一行。
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ControlServerDbContext).Assembly);
+    }
+
+    // Audit immutability lives here rather than in the stores that write audit, so that it is a
+    // property of the context every caller already goes through instead of a rule each new caller
+    // has to remember.
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
+        PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        AuditImmutabilityGuard.Enforce(ChangeTracker, AuditRetention, AuditClock.GetUtcNow());
+        PublishedVersionImmutabilityGuard.Enforce(ChangeTracker);
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 }
 
@@ -264,6 +296,23 @@ public sealed class SessionRecoveryRow
     public required string ProfileId { get; set; }
     public int ProtocolVersion { get; set; }
     public long? CapabilityRevision { get; set; }
+
+    /// <summary>
+    /// 车在最近一份 <c>CapabilitySnapshot</c> 里报的 <c>activeSlotConfigurationFingerprint</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 记下来而不是当场拒收，是 2026-09-10 改的。此前不一致就回 <c>ProtocolProblem</c>、会话不建立，
+    /// 理由是 fail-closed；G3 跑出来的后果是一台被动过配置的车永远上不了线，**而唯一能把它改回来的
+    /// 手段——下发一次激活——要走会话**。不一致本身堵死了修复不一致的那条路，人必须到车前。
+    /// </para>
+    /// <para>
+    /// 现在会话照建，这一份指纹存在这里，由 <c>DecideReadinessAsync</c> 与服务端认定的那一版比对：
+    /// 不一致的车拿不到业务就绪、不会被派活，但连接在，激活下得去。fail-closed 的实质保住了——
+    /// 服务端不确定车装着什么就不给它干活——关掉的只是「连都不让连」那一层。
+    /// </para>
+    /// </remarks>
+    public string? ReportedSlotConfigurationFingerprint { get; set; }
     public string? CapabilityHash { get; set; }
     public long? SafetyRevision { get; set; }
     public string? SafetyHash { get; set; }

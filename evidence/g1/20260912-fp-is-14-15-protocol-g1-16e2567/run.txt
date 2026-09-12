@@ -1,0 +1,56 @@
+G1 run, 2026-09-12, control host.
+
+Repository under test
+  source        C:\Users\szy\8005-b3\proto-gov (local clone, fp/v2-candidate ahead of origin by 16e2567)
+  destination   C:\Users\szy\8005-b3\proto-g1-16e2567
+  command       git clone -b fp/v2-candidate <source> <destination>
+  HEAD          16e2567a7033883f00fc999f7fa08f954dd13a26  (fp/v2-candidate)
+  .git          directory (a NORMAL clone, not a linked worktree)
+  git status    before: 0 changed entries
+
+Toolchain
+  node          v24.20.0
+  pnpm          11.25.0
+
+Install
+  corepack pnpm install --frozen-lockfile
+  -> ✓ Lockfile passes supply-chain policies (verified 3d ago)
+  -> Lockfile is up to date, resolution step is skipped
+  -> Progress: resolved 1, reused 0, downloaded 0, added 0
+  -> Packages: +6
+  -> ++++++
+  -> Packages are hard linked from the content-addressable store to the virtual store.
+  ->   Content-addressable store is at: C:\Users\szy\AppData\Local\pnpm\store\v11
+  ->   Virtual store is at:             node_modules/.pnpm
+  -> Progress: resolved 6, reused 6, downloaded 0, added 6, done
+  -> 
+  -> devDependencies:
+  -> + ajv 8.20.0
+  -> + ajv-formats 3.0.1
+  -> 
+  -> Done in 1.1s using pnpm v11.25.0
+
+G1
+  corepack pnpm g1
+  exit code     0
+  git status after: 
+  (empty = evidence/g1-result.json written by the gate is byte-identical to the one committed in 16e2567)
+
+G1 stdout
+  $ node tools/g1-validate.mjs
+  {
+    "gate": "G1",
+    "status": "PASS",
+    "candidateManifestSha256": "25fd6689e8234b7d481874b408109cd27eb0f02fbb023225385d6642e9bfd3d0",
+    "approvalAttestationStatus": "PENDING",
+    "approvalAttestationSha256": "476d770fd62696775d4e05f3279859e66eba225869605d9eaecee2df5121d9d1",
+    "approvalAttestationSource": "TRACKED_TEMPLATE",
+    "schemaCount": 69,
+    "messageTypeCount": 63,
+    "validExampleCount": 63,
+    "invalidExampleCount": 1548,
+    "trajectoryCount": 31,
+    "integrationSliceCount": 16,
+    "checkedAt": "2026-09-04T00:00:00Z",
+    "failures": []
+  }

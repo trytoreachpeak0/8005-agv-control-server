@@ -1,0 +1,44 @@
+G1 run, 2026-09-10, control host.
+
+Repository under test
+  source        C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-protocol (local clone)
+  destination   C:\Users\szy\8005-b3\proto-g1
+  command       git clone -b fp/v2-candidate <source> <destination>
+  HEAD          f6ee75defe6e2d18f63f4082bee445dbb678ab1b  (fp/v2-candidate)
+  .git          directory (a NORMAL clone, deliberately not a linked worktree -- see SUMMARY.md)
+  git status    clean, before and after the run
+
+Toolchain
+  node          v24.20.0   (C:\Program Files\nodejs\node.exe, not on the default PATH)
+  pnpm          11.25.0    (via corepack 0.35.0)
+
+Install
+  corepack pnpm install --frozen-lockfile
+  -> Lockfile is up to date, resolution step is skipped
+  -> devDependencies: + ajv 8.20.0  + ajv-formats 3.0.1
+  -> Done in 2s using pnpm v11.25.0
+
+Gate
+  corepack pnpm g1        ($ node tools/g1-validate.mjs)
+  EXITCODE=0
+
+  {
+    "gate": "G1",
+    "status": "PASS",
+    "candidateManifestSha256": "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788",
+    "approvalAttestationStatus": "PENDING",
+    "approvalAttestationSha256": "476d770fd62696775d4e05f3279859e66eba225869605d9eaecee2df5121d9d1",
+    "approvalAttestationSource": "TRACKED_TEMPLATE",
+    "schemaCount": 69,
+    "messageTypeCount": 63,
+    "validExampleCount": 63,
+    "invalidExampleCount": 1548,
+    "trajectoryCount": 31,
+    "integrationSliceCount": 16,
+    "checkedAt": "2026-09-04T00:00:00Z",
+    "failures": []
+  }
+
+After the run
+  git status -- evidence/g1-result.json  -> no output.
+  The file the gate wrote is byte-for-byte the file committed at f6ee75d.

@@ -97,10 +97,12 @@ public sealed class ProtocolIdentityArchitectureTests
     /// <remarks>
     /// <c>scripts/New-WireToGateReleaseCandidate.ps1</c> gates on <c>APPROVED_RELEASE</c> and this
     /// is the other half of that gate. Section 6.6 of the full-product scope specification lists
-    /// what protocol v2 still owes -- item 6 is two product owners' external attestation plus the
-    /// annotated tag <see cref="ProtocolCandidateIdentity.Tag"/> names, and <c>git tag --list</c> in
+    /// what protocol v2 still owes -- item 6 is the external approval attestation plus the annotated
+    /// tag <see cref="ProtocolCandidateIdentity.Tag"/> names, and <c>git tag --list</c> in
     /// the protocol repository does not show that tag. When that lands, this test is where the
-    /// change has to be made deliberately rather than noticed afterwards.
+    /// change has to be made deliberately rather than noticed afterwards. The specification says two
+    /// product owners sign; the protocol's own governance moved to exactly one on 2026-09-08, and the
+    /// v2 candidate carried that over on 2026-09-12.
     /// </remarks>
     [Fact]
     public void ThisIdentityIsACandidateAndDoesNotClaimAnApprovedRelease()

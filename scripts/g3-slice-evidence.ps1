@@ -50,12 +50,19 @@ function Get-G3AssuranceLevelLadder {
     }
 }
 
-# The four slices no G3 runner covers. Counting the onboard runner alongside the three here, all
-# four together name only FP-IS-00/04/05/06; these four appear in none of them. The user ruled on
-# 2026-09-09 that this batch records the gap rather than writing four new cross-repository
-# scenarios to close it, so these slices emit no gate-result.json at all -- an absent artefact,
-# not an INCONCLUSIVE one, on the same reasoning as ticket 14's "a filter that selects nothing is
-# refused, not written up as green".
+# The slices no G3 runner covers. Counting the onboard runner alongside the three here, together they
+# name FP-IS-00/04/05/06 and, since 2026-09-10, FP-IS-14 and FP-IS-15; the slices below appear in
+# none of them.
+# The user ruled on 2026-09-09 that a batch records such a gap rather than writing new
+# cross-repository scenarios to close it, so these slices emit no gate-result.json at all -- an
+# absent artefact, not an INCONCLUSIVE one, on the same reasoning as ticket 14's "a filter that
+# selects nothing is refused, not written up as green".
+#
+# FP-IS-14 was listed here on 2026-09-10 as a gap of a different kind -- not a missing assertion but a
+# slice that could not be asserted at all, because nothing outside the process could start an
+# activation. The activation entry point landed the same day and the staged runner now claims it, so
+# it is no longer in this table. The distinction is worth keeping in mind: the four below lack an
+# assertion somebody could write against the peers as they stand.
 function Get-G3SlicesWithoutSurfaceThisBatch {
     return [ordered]@{
         'FP-IS-01' = 'CV-DEMAND-ACCEPT-TO-PICKUP has no assertion in any G3 runner.'
@@ -97,6 +104,42 @@ function Get-G3RunnerClaim {
                     'businessMessageAckDropInSessionReplay',
                     'businessMessageDelayedDeliveryAccepted',
                     'businessMessageReorderedDeliveryAccepted')
+                # FP-IS-14 landed on 2026-09-10 together with the activation entry point. Until that
+                # entry point existed nothing outside the process could start an activation, so this
+                # slice had no surface at all -- it was listed in the gap table below.
+                #
+                # The last assertion is the one the slice exists for. No protocol message carries slot
+                # IO bindings, so message 7 carries a version name and a fingerprint and the vehicle
+                # recomputes the digest of what it actually holds. A converged activation therefore
+                # means two implementations, in two processes, produced the same digest from their own
+                # copies -- which the pinned literal in each repository's unit tests cannot say.
+                'FP-IS-14' = @(
+                    'slotConfigurationActivationCarriesOneMessageIdOnly',
+                    'slotConfigurationActivationReplayedByteForByteAfterAMidFlightDrop',
+                    'slotConfigurationActivationPersistedBeforeItWasSent',
+                    'slotConfigurationActivationResultReportedByTheVehicle',
+                    'bothEndsComputedTheSameSlotConfigurationFingerprint')
+                # FP-IS-15 needs no driving: the onboard alarm board publishes a snapshot as part of
+                # every FULL handshake. Message 9 landed on 2026-09-10.
+                #
+                # "Full" is load-bearing and was got wrong once. The first run of this claim asserted
+                # one snapshot per CONNECTION and failed: a reconnect that resumes an interrupted
+                # recovery replays the unacknowledged message and republishes no snapshots at all.
+                # That FAIL is kept at evidence/g3/20260910-fp-is-15-v2-alarm-snapshot. The resume
+                # assertion below is what replaced it, and it now pins that behaviour rather than
+                # contradicting it.
+                #
+                # This runner reaches one half of the (generation, sequence) adoption rule: the row
+                # carries the generation its snapshot arrived in. The other half -- a restarted
+                # vehicle whose sequence returns to 1 is still adopted -- needs the onboard process
+                # to restart, so it belongs to run-staged-g3-restart.ps1 and is not claimed here.
+                'FP-IS-15' = @(
+                    'onboardAlarmSnapshotPublishedOnTheFullHandshake',
+                    'onboardAlarmSnapshotAppliedAckOnEverySnapshot',
+                    'onboardAlarmSnapshotNotRepublishedOnRecoveryResume',
+                    'onboardAlarmProjectionKeptOnlyTheLatestOfSeveralSnapshots',
+                    'onboardAlarmProjectionIsASingletonPerVehicle',
+                    'onboardAlarmProjectionCarriesTheGenerationItArrivedIn')
             }
         }
         'STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT' = [ordered]@{
@@ -125,6 +168,25 @@ function Get-G3RunnerClaim {
                     'controlDatabaseFileReusedAcrossServerRestart',
                     'controlInboxRowsSurviveServerRestart',
                     'onboardOutboxRowsSurviveOnboardRestart')
+                # FP-IS-15's other half, which only this runner can reach. The staged runner proves
+                # the projection holds the generation its snapshot arrived in; this one restarts the
+                # onboard PROCESS, so the vehicle comes back with an alarm board counting from 1
+                # again. Reading generation 2 in the projection after that is the proof that adoption
+                # is keyed on (generation, sequence) and not on sequence alone -- a sequence-only rule
+                # would have ignored the post-restart snapshot, since 1 does not advance past 1.
+                'FP-IS-15' = @(
+                    'onboardAlarmProjectionAdoptedTheRestartedVehiclesSnapshot',
+                    'onboardAlarmProjectionNeverRegressedToAnEarlierGeneration')
+                # FP-IS-14's refusal path, and this runner is the only one that can reach it. The
+                # vehicle reads its slot IO configuration at startup, so a restart is the only moment
+                # where what the vehicle holds can change while the server's approved version stays
+                # put. One activation before the change and one after: accepted, then refused with
+                # SLOT_CONFIGURATION_FINGERPRINT_MISMATCH, and the active version untouched by the
+                # refusal.
+                'FP-IS-14' = @(
+                    'slotConfigurationActivationAcceptedWhileTheVehicleMatched',
+                    'slotConfigurationActivationRefusedAfterTheVehicleConfigurationChanged',
+                    'aRefusedActivationLeftTheActiveConfigurationUntouched')
             }
         }
         'DEMAND_BEARING_G3_RESULT_AND_RIOT_UNKNOWN_VECTORS_NO_MOVEMENT' = [ordered]@{

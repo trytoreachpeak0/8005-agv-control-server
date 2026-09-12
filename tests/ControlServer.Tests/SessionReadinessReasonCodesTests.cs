@@ -56,6 +56,29 @@ public sealed class SessionReadinessReasonCodesTests
             "to itself and drop it from this test rather than leaving the two vocabularies guessing.");
     }
 
+    /// <summary>
+    /// The one session reason that is already a protocol ErrorCode, and so maps to itself.
+    /// </summary>
+    /// <remarks>
+    /// Not in <see cref="InternalReasonCodes"/>: that list also feeds the theory asserting its codes are
+    /// NOT protocol codes, whose own message says to map an adopted code to itself and drop it from
+    /// there. It is also not produced by <c>GetRecoveryReason</c> but by <c>DecideReadinessAsync</c>
+    /// directly, which is how it escaped a hand-kept list on 2026-09-10 and threw while serialising
+    /// SessionReadiness in G3. The guard that follows the code the store actually produces lives in
+    /// <c>CapabilitySnapshotFingerprintTests</c>.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
+    [Trait("ProtocolVector", "CV-SLOT-CONFIGURATION-ACTIVATION")]
+    public void AFingerprintMismatchGoesOnTheWireAsItself()
+    {
+        string wire = ProtocolErrorCodes.ToSessionReadinessReasonCode(
+            SlotConfigurationFingerprintVerdict.MismatchCode);
+
+        Assert.Equal(SlotConfigurationFingerprintVerdict.MismatchCode, wire);
+        Assert.True(ProtocolErrorCodes.Contains(wire));
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
     public void AnUnmappedReasonCodeThrowsRatherThanReachingTheWire()

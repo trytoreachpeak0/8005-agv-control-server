@@ -1,0 +1,24 @@
+{"at":"2026-09-10T10:05:58.4453179+00:00","note":"L2 run 20260910T100558405Z starting for scenario 'slot-configuration-activation-replay'."}
+{"at":"2026-09-10T10:05:58.4596610+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-10T10:06:01.6186953+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-10T10:06:01.7959814+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-10T10:06:04.5233767+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-10T10:06:06.2171946+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-10T10:06:06.2566422+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-09-10T10:06:06.9790158+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-10T10:06:07.2448905+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-10T10:06:07.2699289+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-10T10:06:07.3223523+00:00","note":"Environment is up; entering scenario 'slot-configuration-activation-replay'."}
+{"at":"2026-09-10T10:06:07.3654841+00:00","note":"FieldOps: seed-approved-facts --database C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260910T100558405Z\\controlserver.db"}
+{"at":"2026-09-10T10:06:09.7855500+00:00","note":"FieldOps: bind-io --database C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260910T100558405Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-10T10:06:11.6431301+00:00","note":"Activation 3d9756f2-92f9-4475-81df-d556b1423c41 issued: PENDING_RESULT, command 877e9ecc-447b-48cd-8a8d-db39f7c384fb."}
+{"at":"2026-09-10T10:06:11.6654703+00:00","criterion":"activation-command-held","value":"1"}
+{"at":"2026-09-10T10:06:11.7342292+00:00","note":"Vehicle concluded the activation locally and dropped the link before reporting it."}
+{"at":"2026-09-10T10:06:11.8094731+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-10T10:06:12.0669568+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-10T10:06:13.0877045+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-10T10:06:13.8605907+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-10T10:06:14.0470904+00:00","criterion":"activation-activated","value":"PENDING_RESULT"}
+{"at":"2026-09-10T10:06:14.3018245+00:00","criterion":"activation-activated","value":"ACTIVATED"}
+{"at":"2026-09-10T10:06:14.3399630+00:00","note":"FieldOps: export-audit --database C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260910T100558405Z\\controlserver.db --stream business --format csv --output C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-34463597736-1\\slot-configuration-activation-replay-01\\snapshots\\audit-business-export.csv"}
+{"at":"2026-09-10T10:06:15.6908215+00:00","note":"下发 → 断线 → 重连 → 补报走通；服务端断线期间不猜，补发同一行，只收敛一次。"}

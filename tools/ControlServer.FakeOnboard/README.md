@@ -37,7 +37,7 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 | `Manual` | 挂起，等场景调 `/answer/{key}` |
 | `Silent` | 永不应答——这就是站点操作跑掉自己那个操作员超时时，服务端看到的样子 |
 
-四类请求各自独立设：`sublot`、`loadResult`、`unloadResult`、`safetyCheck`。
+五类请求各自独立设：`sublot`、`loadResult`、`unloadResult`、`safetyCheck`、`slotConfigurationActivation`。
 
 ## 控制面
 
@@ -49,6 +49,21 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 | `PUT` | `/policy` | 改四类请求的应答策略 |
 | `PUT` | `/safety` | 报新的安全状态（发 `SafetyStateChanged`） |
 | `PUT` | `/answer/{key}` | 应答一条挂起的请求 |
+| `PUT` | `/connection` | `connected: false` 断开到服务端的会话，`true` 重开并走完整握手 |
+| `PUT` | `/alarms` | 整体替换告警集，并作为下一份 `OnboardAlarmSnapshot` 发出 |
+
+## 协议 v2 的三条消息（批次 3）
+
+**消息 9 `OnboardAlarmSnapshot`**：完整握手里在 `SafetyStateSnapshot` 之后报一份，空的也报——与真车载端同一个
+位置。`PUT /alarms` 每次整体替换、修订号加一；断线时改的告警集留到下一次握手再报。
+
+**消息 7／8**：`SlotConfigurationActivationCommand` 到达时，已有结论的激活原样再报一次结论，不重新激活；没有
+结论的按 `slotConfigurationActivation` 策略挂起或应答，key 是 `activation:{activationId}`。`/answer` 对激活多一个
+`deliver`：为 `false` 时结论落在本机、结果先不发，这是「车换好了配置，结果还没送出去线就断了」。服务端重连
+后按 `SLOT_CONFIGURATION` 重发命令，车认出已有结论，补报。
+
+**`CapabilitySnapshot` 的指纹**：这个假车没有 IO 可算摘要，它采纳每一次被它接受的激活的目标版本与指纹。
+「两端算出同一个摘要」是 G3 对真车载端的断言，不是它能证的。
 
 `/snapshot` 的 `readiness`：握手前与掉线后是 `DISCONNECTED`，服务端授予后是 `READY`，读循环
 挂了是 `FAULTED`（`readinessReasonCode` 带异常）。**`FAULTED` 这个状态是踩坑踩出来的**——一个

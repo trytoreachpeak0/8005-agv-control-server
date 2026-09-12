@@ -66,7 +66,7 @@
             "in": "path",
             "required": true,
             "schema": { "type": "string" },
-            "description": "\"sublot\", \"safety-check\", or \"operation:{slotOperationAttemptId}\". Read the exact keys from /control/v1/snapshot."
+            "description": "\"sublot\", \"safety-check\", \"operation:{slotOperationAttemptId}\", or \"activation:{activationId}\". Read the exact keys from /control/v1/snapshot."
           }
         ],
         "requestBody": {
@@ -76,6 +76,35 @@
         "responses": {
           "200": { "description": "The answer was sent." },
           "409": { "description": "NOT_FOUND when no request is open under that key, NOT_ALLOWED_IN_STATE when no session is connected." }
+        }
+      }
+    },
+    "/control/v1/connection": {
+      "put": {
+        "summary": "Drops the session to ControlServer (connected: false) or opens a new one with a full handshake (connected: true).",
+        "description": "Not routed through the command engine. A reconnect the server refuses answers 409 CONNECTION_CHANGE_FAILED with the reason in detail.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ConnectionCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "connected, changed, sessionGeneration and readiness after the change." },
+          "409": { "description": "CONNECTION_CHANGE_FAILED or NOT_ALLOWED_IN_STATE." }
+        }
+      }
+    },
+    "/control/v1/alarms": {
+      "put": {
+        "summary": "Replaces the whole alarm set and publishes it as the next OnboardAlarmSnapshot.",
+        "description": "alarmSnapshotRevision moves on by one. A disconnected peer keeps the set and reports it in its next handshake.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AlarmsCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "Accepted or replayed." },
+          "400": { "description": "INVALID_ARGUMENT: an alarm without code or subjectType, or a severity other than INFO, WARNING or CRITICAL." },
+          "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or NOT_ALLOWED_IN_STATE." }
         }
       }
     }
@@ -92,6 +121,36 @@
         }
       },
       "AnswerMode": { "type": "string", "enum": ["Auto", "Manual", "Silent"] },
+      "ConnectionCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          { "type": "object", "required": ["connected"], "properties": { "connected": { "type": "boolean" } } }
+        ]
+      },
+      "AlarmsCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "alarms": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["code", "subjectType"],
+                  "properties": {
+                    "code": { "type": "string" },
+                    "severity": { "type": "string", "enum": ["INFO", "WARNING", "CRITICAL"], "default": "WARNING" },
+                    "subjectType": { "type": "string" },
+                    "subjectId": { "type": "string", "nullable": true },
+                    "displayMessage": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
       "PolicyCommand": {
         "allOf": [
           { "$ref": "#/components/schemas/CommandEnvelope" },
@@ -101,7 +160,8 @@
               "sublot": { "$ref": "#/components/schemas/AnswerMode" },
               "loadResult": { "$ref": "#/components/schemas/AnswerMode" },
               "unloadResult": { "$ref": "#/components/schemas/AnswerMode" },
-              "safetyCheck": { "$ref": "#/components/schemas/AnswerMode" }
+              "safetyCheck": { "$ref": "#/components/schemas/AnswerMode" },
+              "slotConfigurationActivation": { "$ref": "#/components/schemas/AnswerMode" }
             }
           }
         ]
@@ -133,7 +193,12 @@
               "completed": {
                 "type": "boolean",
                 "default": true,
-                "description": "true for a completed operation or a SAFE pre-departure answer; false for a failed one. Ignored for a sublot submission."
+                "description": "true for a completed operation, a SAFE pre-departure answer or an accepted activation; false for a failed one or a fingerprint-mismatch rejection. Ignored for a sublot submission."
+              },
+              "deliver": {
+                "type": "boolean",
+                "default": true,
+                "description": "Activations only. false concludes the activation on the peer but holds its result back until ControlServer replays the command after a reconnect."
               }
             }
           }

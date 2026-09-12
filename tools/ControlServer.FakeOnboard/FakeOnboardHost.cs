@@ -39,6 +39,7 @@ public static class FakeOnboardHost
 
         WebApplication app = builder.Build();
         app.MapControlPlane();
+        app.MapControlPlaneV2();
         return app;
     }
 

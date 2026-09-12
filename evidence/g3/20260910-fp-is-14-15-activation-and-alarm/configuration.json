@@ -1,0 +1,63 @@
+{
+  "loopbackOnly": true,
+  "transport": {
+    "onboardTransport": "plaintext",
+    "certificatesGenerated": false,
+    "temporaryTrustRootInstalled": false,
+    "realOnboardAckDropTransport": "PLAINTEXT_LOOPBACK",
+    "realOnboardAckDropCombination": "FAIL_OR_INCONCLUSIVE"
+  },
+  "ports": {
+    "controlOnboard": 58205,
+    "controlHealth": 58207,
+    "faultProxy": 58215,
+    "businessFaultProxy": 58216,
+    "simulatorModbus": 1502,
+    "simulatorHttp": 58006
+  },
+  "faultInjection": {
+    "parameterisedByMessageType": true,
+    "actions": [
+      "drop-and-close",
+      "drop",
+      "delay",
+      "hold-until-next"
+    ],
+    "businessMessagePlane": [
+      "SublotSubmitted",
+      "OperationProgress",
+      "PreDepartureSafetyCheckResult",
+      "SlotOperationCommandRejected"
+    ],
+    "businessMessagesDrivenBySyntheticPeer": true,
+    "businessMessagesNotReachableInStagedRun": [
+      "OperationResult",
+      "SlotOperationCommand"
+    ],
+    "recoveryMessagePlane": [
+      "ExceptionRecoverySessionRequested",
+      "RecoveryActionSubmitted",
+      "HardwareRecoveryRecordSubmitted",
+      "LoadCancellationStartRequested",
+      "LoadCompensationRequested",
+      "LoadCorrectionRequested",
+      "ForcedMechanicalRecoveryResult",
+      "ForcedMechanicalRecoveryCommand"
+    ],
+    "recoveryMessagesDrivenBySyntheticPeer": true,
+    "recoveryAcceptedPathsNotReachableInStagedRun": [
+      "RESUME_AFTER_REPAIR",
+      "COMPENSATE_LOAD_ALL_EMPTY",
+      "FAULT_CARGO_HANDOFF",
+      "LOAD_CANCELLATION",
+      "LOAD_CORRECTION",
+      "RiotUnknownReconciliation"
+    ],
+    "recoveryAdministratorProofFromEnvironment": true
+  },
+  "journeyRuntimeEnabled": false,
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "movementCommandSent": false,
+  "vehicleSafetyEligibilityFabricated": false
+}

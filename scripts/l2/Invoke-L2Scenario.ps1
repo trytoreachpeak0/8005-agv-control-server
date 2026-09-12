@@ -54,6 +54,8 @@ param(
     [int]$SimulatorModbusPort = 48412,
     # Only started when a scenario asks for clock skew; see scenarios/*.setup.psd1.
     [int]$ClockSkewProxyPort = 48413,
+    # Only started when a scenario sets Dashboard = $true; see scenarios/*.setup.psd1.
+    [int]$DashboardPort = 48414,
     # One port per synthetic peer, counting up from here, so a fleet of N takes 48420..48420+N-1.
     # Its own block rather than a neighbour of the others: the peers are the only component whose
     # count is not fixed, and the old layout put peer 1 and peer 2 straight onto the simulator's
@@ -126,6 +128,16 @@ if ($recoveryResume -and -not $realOnboard) {
 # that it is written down in the evidence.
 $recoveryProofVariable = 'CONTROL_SERVER_RECOVERY_PROOF'
 $recoveryProof = 'l2-recovery-proof-not-a-production-secret'
+# FP-IS-14's activation entry point. Off in the product, because what it sends makes a vehicle swap its
+# own slot IO bindings; a scenario that proves the activation path turns it on here, the same switch a
+# site turns on deliberately.
+$slotConfigurationActivation = ($setup.ContainsKey('SlotConfigurationActivation') -and $setup.SlotConfigurationActivation)
+$governanceCredentialVariable = 'CONTROL_SERVER_GOVERNANCE_CREDENTIAL'
+# Not a secret either, for the same reason as the recovery proof above.
+$governanceCredential = 'l2-governance-credential-not-a-production-secret'
+# The dashboard process. It reads only the server's read-only /api/dashboard/ endpoints over HTTP, so
+# starting it changes nothing about the server under test.
+$dashboard = ($setup.ContainsKey('Dashboard') -and $setup.Dashboard)
 if (-not $OnboardRepository) {
     $OnboardRepository = Join-Path (Split-Path -Parent $Repository) '8005-agv-onboard-hmi'
 }
@@ -215,6 +227,8 @@ try {
     $mesDirectory = Join-Path $Repository "tools/ControlServer.FakeMesIngest/bin/$configuration/$framework"
     $onboardDirectory = Join-Path $Repository "tools/ControlServer.FakeOnboard/bin/$configuration/$framework"
     $skewProxyDirectory = Join-Path $Repository "tools/ControlServer.ClockSkewProxy/bin/$configuration/$framework"
+    $fieldOpsDirectory = Join-Path $Repository "tools/ControlServer.FieldOps/bin/$configuration/$framework"
+    $dashboardDirectory = Join-Path $Repository "src/ControlServer.Dashboard/bin/$configuration/$framework"
 
     $credential = [guid]::NewGuid().ToString('N')
     $agvId = 'AGV-L2-001'
@@ -394,6 +408,11 @@ try {
     if ($recoveryResume) {
         $serverEnvironment['Recovery__AuthenticationProofEnvironmentVariable'] = $recoveryProofVariable
         $serverEnvironment[$recoveryProofVariable] = $recoveryProof
+    }
+    if ($slotConfigurationActivation) {
+        $serverEnvironment['SlotConfigurationActivation__enabled'] = 'true'
+        $serverEnvironment['SlotConfigurationActivation__credentialEnvironmentVariable'] = $governanceCredentialVariable
+        $serverEnvironment[$governanceCredentialVariable] = $governanceCredential
     }
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
@@ -625,6 +644,26 @@ try {
         -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/ready" -TimeoutSec 5).status } `
         -Until { param($v) $v -eq 'ready' }
 
+    # 6. The dashboard, when the scenario asked for it. Last, and after readiness: it fetches from the
+    #    server on every render, so starting it any earlier only gives it a server that is not ready
+    #    to say anything yet.
+    $dashboardUrl = $null
+    if ($dashboard) {
+        $dashboardUrl = "http://127.0.0.1:$DashboardPort"
+        $dashboardHandle = Start-L2Process -Name 'dashboard' `
+            -FilePath (Join-Path $dashboardDirectory 'ControlServer.Dashboard.exe') `
+            -ArgumentList @(
+                "--Dashboard:url=$dashboardUrl",
+                "--Dashboard:controlServerBaseUrl=http://127.0.0.1:$HealthPort") `
+            -WorkingDirectory $dashboardDirectory -LogRoot $logRoot |
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 7 -PassThru }
+        $handles += $dashboardHandle
+        $null = Wait-L2Condition -Description 'the dashboard is serving its page' -Journal $journal `
+            -Criterion 'dashboard-live' -TimeoutSeconds 60 -Component $dashboardHandle `
+            -Probe { (Invoke-WebRequest -Uri $dashboardUrl -TimeoutSec 5).StatusCode } `
+            -Until { param($v) $v -eq 200 }
+    }
+
     $connection = Open-L2Database -HostDirectory $hostDirectory -DatabasePath $databasePath
 
     $context = [pscustomobject]@{
@@ -652,6 +691,26 @@ try {
         PickupStationRiotId = $pickupStationRiotId
         HealthPort          = $HealthPort
         SnapshotRoot        = $snapshotRoot
+        # Null unless the setup file turned the activation entry point on.
+        GovernanceCredential = if ($slotConfigurationActivation) { $governanceCredential } else { $null }
+        # Null unless the setup file asked for the dashboard.
+        DashboardUrl        = $dashboardUrl
+        # ControlServer.FieldOps, the same executable a site's W1 window runs, against the SQLite file the
+        # server is using. Returns the one JSON object the tool prints; a non-zero exit is a thrown error
+        # carrying its stderr, because a governance act that silently did nothing would leave the rest of
+        # the scenario proving something else.
+        InvokeFieldOps      = {
+            param([Parameter(Mandatory)][string[]]$Arguments)
+            $all = @($Arguments[0], '--database', $databasePath) + @($Arguments | Select-Object -Skip 1)
+            $journal.Note("FieldOps: $($all -join ' ')")
+            $lines = @(& (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe') @all 2>&1)
+            $exit = $LASTEXITCODE
+            $text = ($lines | ForEach-Object { [string]$_ }) -join "`n"
+            if ($exit -ne 0) { throw "ControlServer.FieldOps $($Arguments[0]) exited with $exit`: $text" }
+            $json = $lines | Where-Object { $_ -is [string] -and $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
+            if (-not $json) { throw "ControlServer.FieldOps $($Arguments[0]) printed no JSON: $text" }
+            return ($json | ConvertFrom-Json)
+        }
         # Order is the start position, and Stop-L2Process tears down in reverse: fake RIoT 1, fake
         # MesIngest 2, simulator 3, ControlServer 4, clock skew proxy 5, onboard 6 (synthetic or
         # real -- they are mutually exclusive, so they share the position). Two components on the
@@ -720,7 +779,9 @@ try {
                              'StationOperations', 'SessionRecoveries', 'OperationResults',
                              'ExceptionRecoverySessions', 'RecoveryWorkflows',
                              'RouteGraphSnapshots', 'MapStationCatalogStates',
-                             'FrozenDemandStations', 'CreateGateAudit')) {
+                             'FrozenDemandStations', 'CreateGateAudit',
+                             'SlotConfigurationActivations', 'ActiveSlotConfigurations',
+                             'OnboardAlarmSnapshots', 'BusinessAuditRecords')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "1.3.0",
+  "gate": "G3",
+  "runKind": "STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT",
+  "runId": "20260910T053734981Z",
+  "integrationSliceId": "FP-IS-14",
+  "status": "INCONCLUSIVE",
+  "assuranceLevel": "STAGED_REBUILD",
+  "formalSlicePass": false,
+  "startedAt": "2026-09-10T05:37:34.9811625+00:00",
+  "finishedAt": "2026-09-10T05:39:15.2721276+00:00",
+  "implementationRepository": "8005-agv-control-server",
+  "commits": {
+    "controlServer": "0af174312e61f2507a29742684c660cdf43a7b72",
+    "onboardEvidenceBinding": "afba86e07116192bde386937c559cc7a70a00a7f",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+    "harness": "0af174312e61f2507a29742684c660cdf43a7b72",
+    "harnessWorktreeCleanAtStart": true
+  },
+  "protocolReleaseVersion": "1.0.0",
+  "protocolTag": "protocol-v1.0.0",
+  "protocolProfileId": "AGV_FULL_PRODUCT",
+  "protocolVersion": 2,
+  "protocolApprovalStatus": "SUPERSEDING_CANDIDATE",
+  "protocolRepositoryCommit": "f6ee75defe6e2d18f63f4082bee445dbb678ab1b",
+  "protocolManifestSha256": "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788",
+  "protocolSchemaBundleSha256": "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b",
+  "protocolVectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+  "integrationSliceIndexSha256": "71e0a63d49d1973653e1f70addc19c334faff5e53e8597733c1423a7307bd82f",
+  "integrationSliceIndexSource": "vendor/8005-agv-protocol/integration-slices/index.json",
+  "vectorIds": [
+    "CV-SLOT-CONFIGURATION-ACTIVATION"
+  ],
+  "assertionIds": {
+    "slotConfigurationActivationCommandSentOnceOverTheSession": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationPersistedBeforeItWasSent": "FAIL_OR_INCONCLUSIVE",
+    "slotConfigurationActivationResultReportedByTheVehicle": "FAIL_OR_INCONCLUSIVE",
+    "bothEndsComputedTheSameSlotConfigurationFingerprint": "FAIL_OR_INCONCLUSIVE",
+    "identityRejections": "FAIL_OR_INCONCLUSIVE",
+    "noMovementOrExternalSideEffects": "PASS",
+    "secretScan": "PASS"
+  }
+}

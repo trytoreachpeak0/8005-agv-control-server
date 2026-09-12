@@ -77,11 +77,8 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
             ["DemandSelectionResult"] = "FP-IS-09, batch 7",
             ["ManualStationClearanceConfirmationRequested"] = "FP-IS-13, batch 8",
             ["ManualStationClearanceConfirmationResult"] = "FP-IS-13, batch 8",
-            ["OnboardAlarmSnapshot"] = "FP-IS-15, batch 3",
             ["SafetyStateSnapshotRequested"] =
                 "predates v2; the server refuses readiness with SAFETY_STATE_VERSION_GAP instead of asking again",
-            ["SlotConfigurationActivationCommand"] = "FP-IS-14, batch 3",
-            ["SlotConfigurationActivationResult"] = "FP-IS-14, batch 3",
             ["SublotRejected"] =
                 "predates v2; SublotSubmitted is answered with an unconditional DurableAck, so nothing emits it",
             ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 8",

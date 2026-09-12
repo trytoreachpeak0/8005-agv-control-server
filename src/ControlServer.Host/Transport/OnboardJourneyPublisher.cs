@@ -404,6 +404,28 @@ public sealed class OnboardJourneyPublisher(
             }, cancellationToken);
     }
 
+    /// <summary>
+    /// 消息 7 <c>SlotConfigurationActivationCommand</c> 排进发件箱。
+    /// </summary>
+    /// <remarks>
+    /// 只排队，不发送——manifest 给这条消息的 <c>durableBeforeSend</c> 是真，所以「落库」与「上线」
+    /// 是两步，调用方拿到这一行之后再 <see cref="SendPersistedAsync"/>。同一个 messageId 再排一次
+    /// 是幂等的（<c>QueueEnvelopeAsync</c> 复用已存在那一行的 <c>sentAt</c>），断线重连的补发因此
+    /// 是逐字节相同的一行，而不是一条新命令。
+    /// </remarks>
+    public Task<ProtocolOutboxRow> QueueSlotConfigurationActivationCommandAsync(
+        string messageId,
+        string agvId,
+        long sessionGeneration,
+        object payload,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        return QueueEnvelopeAsync(
+            "SlotConfigurationActivationCommand", messageId, null, agvId, sessionGeneration,
+            payload, cancellationToken);
+    }
+
     public async Task SendPersistedAsync(string messageId, CancellationToken cancellationToken)
     {
         ProtocolOutboxRow row = await store.FindOutboundEnvelopeAsync(messageId, cancellationToken)

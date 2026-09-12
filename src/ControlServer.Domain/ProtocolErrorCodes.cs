@@ -16,7 +16,7 @@ namespace ControlServer.Domain;
 /// <para>
 /// **This list and the identity beside it now name the same candidate.** The 54 values below are
 /// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
-/// <c>84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788</c>
+/// <c>25fd6689e8234b7d481874b408109cd27eb0f02fbb023225385d6642e9bfd3d0</c>
 /// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, <c>protocolVersion: 2</c>),
 /// and <see cref="ProtocolCandidateIdentity"/> names that same commit. They were deliberately out
 /// of step for four days: this list moved to v2 first because eleven codes were appended and none
@@ -114,6 +114,13 @@ public static class ProtocolErrorCodes
         // Exact protocol counterparts.
         "DEPARTURE_SAFETY_NOT_READY" => "DEPARTURE_UNSAFE",
         "FORCED_RECOVERY_GENERATION_MISMATCH" => "FORCED_RECOVERY_GENERATION_STALE",
+        // REQ-0316. Already a protocol ErrorCode, so it goes on the wire as itself -- and it has to go
+        // as itself, not collapse onto SESSION_RECOVERY_REQUIRED: the vehicle's operator needs to know
+        // the fix is an activation, not a recovery session. Added 2026-09-10 when a fingerprint
+        // disagreement stopped refusing the session and became a readiness reason instead; without
+        // this arm the server threw while serialising SessionReadiness and dropped the connection,
+        // which is how G3 found it (evidence/g3/20260910-fp-is-14-fingerprint-mismatch-unready).
+        SlotConfigurationFingerprintVerdict.MismatchCode => SlotConfigurationFingerprintVerdict.MismatchCode,
 
         // The handshake has not delivered a snapshot the server needs. The protocol's gap codes are
         // the closest true statement: the server does not have the revision it requires.

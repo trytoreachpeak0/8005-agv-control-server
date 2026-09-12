@@ -20,7 +20,7 @@ public sealed class WireToGateStoreTests
             ProtocolCandidateIdentity.ProtocolVersion);
 
         await fixture.Store.BeginSessionRecoveryAsync(identity, fixture.CancellationToken);
-        await fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 1, 4, "cap-hash", fixture.CancellationToken);
+        await fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 1, 4, "cap-hash", null, fixture.CancellationToken);
         await fixture.Store.ApplySafetySnapshotAsync("AGV-001", 1, 9, true, "safe-hash", fixture.CancellationToken);
         await fixture.Store.ApplyRecoveryReportAsync(
             "AGV-001", 1, "REPORT-001", 0, null, null, [], [], [], fixture.CancellationToken);
@@ -29,7 +29,7 @@ public sealed class WireToGateStoreTests
 
         Assert.Equal(SessionReadiness.Ready, decision.Readiness);
         await Assert.ThrowsAsync<StaleSessionGenerationException>(() =>
-            fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 0, 5, "late", fixture.CancellationToken));
+            fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 0, 5, "late", null, fixture.CancellationToken));
 
         await fixture.Store.BeginSessionRecoveryAsync(identity with { SessionGeneration = 2 }, fixture.CancellationToken);
         SessionReadinessDecision reconnectDecision = await fixture.Store.GetReadinessAsync(
@@ -134,7 +134,7 @@ public sealed class WireToGateStoreTests
             ProtocolCandidateIdentity.ManifestSha256, ProtocolCandidateIdentity.ProfileId,
             ProtocolCandidateIdentity.ProtocolVersion);
         await fixture.Store.BeginSessionRecoveryAsync(identity, fixture.CancellationToken);
-        await fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 1, 4, "cap-hash", fixture.CancellationToken);
+        await fixture.Store.ApplyCapabilitySnapshotAsync("AGV-001", 1, 4, "cap-hash", null, fixture.CancellationToken);
         await fixture.Store.ApplySafetySnapshotAsync(
             "AGV-001", 1, 9, true, "safe-hash", fixture.CancellationToken, [], unknownPresent: false);
         await fixture.Store.ApplyRecoveryReportAsync(

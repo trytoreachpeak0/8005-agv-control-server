@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RuntimeFrameworkVersion>8.0.30</RuntimeFrameworkVersion>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <!-- No ProjectReference on purpose. The dashboard reads ControlServer over its read-only HTTP
+       query endpoints and nothing else; an architecture test asserts it links to none of the
+       Domain, Application or Infrastructure assemblies, which is what keeps its data contract
+       disjoint from the protocol. -->
+  <ItemGroup>
+    <!-- Deliberately not named appsettings.json. ControlServer.Tests references this project,
+         and a project reference copies content to the referencing project output, and two files
+         called appsettings.json in one output directory means one of them silently wins, which is
+         exactly what happened the first time this project was added. -->
+    <None Update="dashboard.settings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

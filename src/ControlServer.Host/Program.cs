@@ -5,6 +5,7 @@ using ControlServer.Domain;
 using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
 using ControlServer.Host.Transport;
+using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -94,6 +95,7 @@ builder.Services.AddSingleton<IValidateOptions<OnboardTransportOptions>, Onboard
 builder.Services.AddScoped<OnboardMessageProcessor>();
 builder.Services.AddScoped<OnboardJourneyPublisher>();
 builder.Services.AddScoped<OnboardRecoveryCoordinator>();
+builder.Services.AddScoped<SlotConfigurationActivationDispatcher>();
 builder.Services.AddSingleton<OnboardPeer>();
 builder.Services.AddSingleton<IOnboardPeer>(services => services.GetRequiredService<OnboardPeer>());
 builder.Services.AddHostedService<OnboardTcpServer>();
@@ -121,6 +123,10 @@ builder.Services.AddOptions<OnboardSafetyProjectionOptions>()
     .Bind(builder.Configuration.GetSection(OnboardSafetyProjectionOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<OnboardSafetyProjectionOptions>, OnboardSafetyProjectionOptionsValidator>();
+builder.Services.AddOptions<SlotConfigurationActivationOptions>()
+    .Bind(builder.Configuration.GetSection(SlotConfigurationActivationOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<SlotConfigurationActivationOptions>, SlotConfigurationActivationOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>((services, client) =>
 {
@@ -133,6 +139,8 @@ builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>(
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
     }
 });
+// 批次 3 的治理机制：版本化快照、两条不可改写审计流，以及吃它们的那几个 store。
+builder.Services.AddGovernance(builder.Configuration);
 
 WebApplication app = builder.Build();
 app.UseSerilogRequestLogging();
@@ -209,6 +217,12 @@ if (app.Configuration.GetValue<bool>("OnboardSafetyProjection:enabled"))
 {
     app.MapOnboardVehicleSafety();
 }
+// 默认不挂。这个入口发出去的是让车换掉自己仓位 IO 绑定的那条命令，装好就开着等于把它挂在网上。
+if (app.Configuration.GetValue<bool>("SlotConfigurationActivation:enabled"))
+{
+    app.MapSlotConfigurationActivation();
+}
+app.MapDashboardQueries();
 
 await app.RunAsync();
 
@@ -234,6 +248,11 @@ static async Task EnsureDatabaseAsync(IServiceProvider services)
     await using AsyncServiceScope scope = services.CreateAsyncScope();
     ControlServerDbContext dbContext = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
     await dbContext.Database.MigrateAsync();
+
+    // REQ-0271：保留期是管理员配置，变更本身要留管理员审计。新值在服务起来的这一刻生效，所以在这一刻记。
+    GovernanceStore governance = scope.ServiceProvider.GetRequiredService<GovernanceStore>();
+    TimeProvider clock = scope.ServiceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
+    await governance.RecordRetentionPolicyAsync(clock.GetUtcNow(), CancellationToken.None);
 }
 
 public partial class Program;

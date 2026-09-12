@@ -10,6 +10,8 @@ namespace ControlServer.Host.Transport;
 public sealed partial class OnboardMessageProcessor(
     WireToGateStore store,
     OnboardRecoveryCoordinator recoveryCoordinator,
+    OnboardAlarmProjectionStore alarmStore,
+    SlotConfigurationActivationDispatcher activationDispatcher,
     TimeProvider timeProvider,
     IConfiguration configuration,
     ILogger<OnboardMessageProcessor> logger)
@@ -184,10 +186,52 @@ public sealed partial class OnboardMessageProcessor(
             case "CapabilitySnapshot":
                 {
                     long revision = payload.GetProperty("capabilityVersion").GetInt64();
+                    string reportedFingerprint = RequiredString(
+                        payload, SlotConfigurationActivationDelivery.CapabilityFingerprintField);
+                    // 协议 v2 在 CapabilitySnapshot 上加了 activeSlotConfigurationFingerprint：车报的
+                    // 是它此刻装着哪一版仓位配置。核验照做、不一致照样写治理审计，**但结论不再是拒收**。
+                    //
+                    // 2026-09-10 改的。原来不一致就回 ProtocolProblem、会话不建立，理由是 fail-closed；
+                    // G3 跑出来的后果是一台被动过配置的车永远上不了线——而唯一能把它改回来的手段，
+                    // 下发一次激活，要走会话。不一致本身堵死了修复不一致的那条路，人必须到车前。
+                    // 证据在 evidence/g3/20260910-fp-is-14-fingerprint-mismatch。
+                    //
+                    // 现在会话照建，车报的那份指纹存进会话行，由 DecideReadinessAsync 与服务端认定的
+                    // 那一版比对：不一致的车拿不到业务就绪、不会被派活，但连接在，激活下得去。
+                    // fail-closed 的实质保住了，关掉的只是「连都不让连」那一层。
+                    await activationDispatcher.ReconcileReportedFingerprintAsync(
+                        agvId,
+                        reportedFingerprint,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
                     await store.ApplyCapabilitySnapshotAsync(
-                        agvId, generation, revision, contentHash, cancellationToken).ConfigureAwait(false);
+                        agvId, generation, revision, contentHash, reportedFingerprint,
+                        cancellationToken).ConfigureAwait(false);
                     state.CapabilityRevision = revision;
                     return SnapshotAck(messageId, agvId, generation, "CAPABILITY", revision, contentHash);
+                }
+            // 协议 v2 消息 8。RELIABLE 而不是 RESPONSE：REQ-0264 的「不能猜测成功」正是
+            // PENDING_RESULT_REPLAY 存在的理由，用 RESPONSE 就没有补报语义，断线即丢。补报的幂等
+            // 在 #15 的 RecordResultAsync 里——同一次激活报两次，第二次原样返回已收敛的那一行。
+            case "SlotConfigurationActivationResult":
+                {
+                    await activationDispatcher.RecordResultAsync(
+                        SlotConfigurationActivationWire.Result(payload),
+                        cancellationToken).ConfigureAwait(false);
+                    return DurableAck(messageType, messageId, agvId, generation, contentHash);
+                }
+            // 协议 v2 消息 9。SNAPSHOT，不是 RELIABLE，也不是事件流：后一份整体取代前一份，所以
+            // 断线重连之后不需要知道漏了什么。#16 的 RecordSnapshotAsync 已经处理了「序号回退的
+            // 快照忽略掉」，这里不再判一次。
+            case "OnboardAlarmSnapshot":
+                {
+                    long revision = OnboardAlarmSnapshotWire.Revision(payload);
+                    await alarmStore.RecordSnapshotAsync(
+                        OnboardAlarmSnapshotWire.Read(agvId, payload),
+                        generation,
+                        timeProvider.GetUtcNow(),
+                        cancellationToken).ConfigureAwait(false);
+                    return SnapshotAck(messageId, agvId, generation, "ONBOARD_ALARM", revision, contentHash);
                 }
             case "SafetyStateSnapshot":
                 {

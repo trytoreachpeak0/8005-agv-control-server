@@ -60,7 +60,7 @@ public sealed class ProtocolPayloadShapeArchitectureTests
     /// newline, the file's own SHA-256 in lower hex, and a newline.
     /// </summary>
     private const string ApprovedSchemaTreeSha256 =
-        "09a28097e3f0adf01578275f6ec02b76bd39023163dad929ae74a74fc536c31b";
+        "346dbd6f9f95acdd5bbd26b34318c7049ffad9e45ce946969770d4b1b6dbb563";
 
     [Fact]
     public void TheVendoredSchemaTreeIsTheProtocolSchemaTreeFileForFile()

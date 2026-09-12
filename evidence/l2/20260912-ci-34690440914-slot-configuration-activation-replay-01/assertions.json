@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "scenario": "slot-configuration-activation-replay",
+  "runId": "20260912T112009758Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "17cf478323f9c97e4aaea3f7c7a3cef732908249",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260912T112009758Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "16e2567a7033883f00fc999f7fa08f954dd13a26",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "25fd6689e8234b7d481874b408109cd27eb0f02fbb023225385d6642e9bfd3d0",
+      "schemaBundleSha256": "225a83340eb5f27c4e6dfd7bf8aba8007cf787d29f1df860deaf0ba039baf3ff",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "batchId": "batch-3",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-SCA-01",
+      "description": "已批准的八仓事实入库，这台车八个仓位的 IO 都绑上了",
+      "outcome": "PASS",
+      "expected": "OK / 8",
+      "actual": "OK / 8"
+    },
+    {
+      "id": "L2-SCA-02",
+      "description": "下发回 202，激活处在待补报态，恢复角色是 SLOT_CONFIGURATION",
+      "outcome": "PASS",
+      "expected": "202 / PENDING_RESULT / SLOT_CONFIGURATION",
+      "actual": "202 / PENDING_RESULT / SLOT_CONFIGURATION"
+    },
+    {
+      "id": "L2-SCA-03",
+      "description": "车收到的就是服务端落库的那条命令",
+      "outcome": "PASS",
+      "expected": "a544bf9d-79e8-4097-aecd-e87591f3af18",
+      "actual": "a544bf9d-79e8-4097-aecd-e87591f3af18"
+    },
+    {
+      "id": "L2-SCA-04",
+      "description": "断线期间服务端不猜：激活仍待补报，生效配置一行都没写",
+      "outcome": "PASS",
+      "expected": "PENDING_RESULT / 0",
+      "actual": "PENDING_RESULT / 0"
+    },
+    {
+      "id": "L2-SCA-05",
+      "description": "车上已经有结论，但一份结果都没送出去",
+      "outcome": "PASS",
+      "expected": "1 outcome / 0 sent",
+      "actual": "1 outcome / 0 sent"
+    },
+    {
+      "id": "L2-SCA-06",
+      "description": "重连走完完整握手，会话代前进",
+      "outcome": "PASS",
+      "expected": "READY / > 1",
+      "actual": "READY / 2"
+    },
+    {
+      "id": "L2-SCA-07",
+      "description": "补报到达之后激活收敛为 ACTIVATED",
+      "outcome": "PASS",
+      "expected": "ACTIVATED",
+      "actual": "ACTIVATED"
+    },
+    {
+      "id": "L2-SCA-08",
+      "description": "重连后补发的是同一条命令（同一个 messageId），不是新的一次下发",
+      "outcome": "PASS",
+      "expected": ">=2 receipts of a544bf9d-79e8-4097-aecd-e87591f3af18",
+      "actual": "a544bf9d-79e8-4097-aecd-e87591f3af18,a544bf9d-79e8-4097-aecd-e87591f3af18"
+    },
+    {
+      "id": "L2-SCA-09",
+      "description": "车只报了一次结果",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-SCA-10",
+      "description": "一次下发只有一行激活，补报没有产生第二次激活",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-SCA-11",
+      "description": "生效配置写了一行，就是这次激活、就是它的目标指纹",
+      "outcome": "PASS",
+      "expected": "1 / b2066154-0b1c-4c3f-87ee-6178cd4d6ced / de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+      "actual": "1 / b2066154-0b1c-4c3f-87ee-6178cd4d6ced / de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9"
+    },
+    {
+      "id": "L2-SCA-12",
+      "description": "车重连后报的正是生效那一版，会话就绪，没有被判成指纹不符",
+      "outcome": "PASS",
+      "expected": "Ready / READY",
+      "actual": "Ready / READY"
+    },
+    {
+      "id": "L2-SCA-13",
+      "description": "业务审计经 FieldOps export-audit 导出为带 BOM 的 CSV，含这次激活的下发与结果两条",
+      "outcome": "PASS",
+      "expected": "OK / BOM / ISSUED + RESULT_RECORDED",
+      "actual": "OK / BOM=True / count=5"
+    }
+  ]
+}
