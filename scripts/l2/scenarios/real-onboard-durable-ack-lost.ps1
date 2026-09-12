@@ -84,6 +84,36 @@ function Get-ProxyLines([string]$direction, [string]$messageType) {
     return @((Get-Traffic).lines | Where-Object { $_.direction -eq $direction -and $_.messageType -eq $messageType })
 }
 
+<#
+丢 ack 之后的连接各自是怎么结束的。判在场景收尾（或补发判红之后），不在补发刚被确认的那一刻：`-002` 在那一刻
+取样，读到「2 条连接、0 条开着」，而车 2 秒之后就开了第 3 条——条件在读的那一刻碰巧成立，与 README 第 21 条
+同一类错误。
+
+两条判据分属两个缺陷，所以分开判：
+- `L2-DA-04` 是 #30：服务端掐连接。丢 ack 之后只要有一条连接不是车自己关的、也不是到收尾还开着，就是红。
+- `L2-DA-07` 是补发之后车等不到 `SessionReadiness`、超时自己断开再完整握手一次：多出来的那次重连。
+#>
+function Add-ConnectionAssertions([int]$dropConnection) {
+    $connections = @((Get-Traffic).connections)
+    $shape = @($connections | ForEach-Object {
+        "#$($_.connection): $(if ($null -eq $_.closedAt) { 'open' } else { $_.closedBy })"
+    }) -join '; '
+    $cutByPeer = @($connections | Where-Object {
+        [int]$_.connection -gt $dropConnection -and $null -ne $_.closedAt -and $_.closedBy -ne 'onboard closed'
+    })
+    $assertions.Add(
+        'L2-DA-04', '补发之后服务端不再掐连接：丢 ack 之后没有一条连接是被服务端关掉的',
+        ($cutByPeer.Count -eq 0), '0 connections after the drop ended by anyone but the onboard',
+        "$($cutByPeer.Count) ($shape)")
+
+    $open = @($connections | Where-Object { $null -eq $_.closedAt })
+    $assertions.Add(
+        'L2-DA-07', '丢一次 ack 只换来一次重连：之后只有一条连接，而且到收尾还开着',
+        ($connections.Count -eq $dropConnection + 1 -and $open.Count -eq 1),
+        "$($dropConnection + 1) connections, 1 open",
+        "$($connections.Count) connections, $($open.Count) open ($shape)")
+}
+
 # 与 real-onboard-normal-load 同一个驱动：等车载端自己发出 WAITING_OPERATOR 才动货和门，理由见那边。
 function Invoke-SlotOperation([string]$operationType, [string]$cargoState) {
     $attemptId = Wait-L2Condition -Description "the server issued the $operationType command" `
@@ -246,20 +276,6 @@ $assertions.Add(
     $replayAcked, "DurableAck for $resultId on a connection after $dropConnection",
     $(if ($replayAcked) { 'acknowledged' } else { 'no acknowledgement within 60 s' }))
 
-# 给「还在重连」留出时间显形：确认之后再让运行时转几轮，再数连接。
-if ($replayAcked) {
-    $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
-}
-$connections = @((Get-Traffic).connections)
-$openConnections = @($connections | Where-Object { $null -eq $_.closedAt })
-$closedBy = @($connections | Where-Object { $null -ne $_.closedAt } |
-    ForEach-Object { "#$($_.connection): $($_.closedBy)" }) -join '; '
-$assertions.Add(
-    'L2-DA-04', '丢一次 ack 只换来一次重连：之后只有一条连接，而且它还开着',
-    ($connections.Count -eq $dropConnection + 1 -and $openConnections.Count -eq 1),
-    "$($dropConnection + 1) connections, 1 open",
-    "$($connections.Count) connections, $($openConnections.Count) open ($closedBy)")
-
 # 服务端日志只做诊断，不当判据：判据读的是库和代理。
 $logRoot = Join-Path (Split-Path -Parent $Context.SnapshotRoot) 'logs'
 $conflicts = @(Get-ChildItem -LiteralPath $logRoot -Filter 'control-server*.log' |
@@ -267,6 +283,7 @@ $conflicts = @(Get-ChildItem -LiteralPath $logRoot -Filter 'control-server*.log'
 $journal.Note("ControlServer logged $conflicts 'MessageId was replayed with different normalized content' conflict(s).")
 
 if (-not $replayAcked) {
+    Add-ConnectionAssertions -dropConnection $dropConnection
     $assertions.Add(
         'L2-DA-05', '补发被确认之后旅程照常走完', $false, 'Completed',
         "(not reached: the replay was never acknowledged; stage $(Get-Stage))")
@@ -299,11 +316,14 @@ $loadResults = Invoke-L2Query -Connection $connection `
     -Sql "SELECT COUNT(*) AS N FROM OperationResults WHERE SlotOperationAttemptId = '$($load.AttemptId)'"
 $demandRows = Invoke-L2Query -Connection $connection `
     -Sql "SELECT Status FROM AcceptedDemands WHERE DemandId = '$demandId'"
+$unloadStatus = Get-OperationStatus 'Unload'
+$demandStatus = if ($demandRows.Count -eq 1) { [string]$demandRows[0].Status } else { '(no demand row)' }
 $assertions.Add(
     'L2-DA-06', '装载结果只记了一次，卸载 Committed，需求 Succeeded',
-    ([long]$loadResults[0].N -eq 1 -and (Get-OperationStatus 'Unload') -eq 'Committed' -and
-        $demandRows.Count -eq 1 -and [string]$demandRows[0].Status -eq 'Succeeded'),
+    ([long]$loadResults[0].N -eq 1 -and $unloadStatus -eq 'Committed' -and $demandStatus -eq 'Succeeded'),
     '1 / Committed / Succeeded',
-    "$([long]$loadResults[0].N) / $(Get-OperationStatus 'Unload') / $(if ($demandRows.Count -eq 1) { [string]$demandRows[0].Status } else { '(no demand row)' })")
+    "$([long]$loadResults[0].N) / $unloadStatus / $demandStatus")
+
+Add-ConnectionAssertions -dropConnection $dropConnection
 
 $journal.Note('Scenario finished.')

@@ -10,7 +10,7 @@ namespace ControlServer.ProtocolFaultProxy;
 public sealed record ProtocolFaultProxyState
 {
     /// <summary>The acceptedMessageType whose DurableAck is dropped. Null forwards everything.</summary>
-    public string? DropAckFor { get; init; }
+    public string? DropAckForMessageType { get; init; }
 
     /// <summary>How many such acks the plan drops before it goes back to forwarding them.</summary>
     public int DropCount { get; init; }

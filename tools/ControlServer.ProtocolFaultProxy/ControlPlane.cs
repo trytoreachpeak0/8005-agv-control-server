@@ -62,7 +62,7 @@ public static class ControlPlane
                 // plan, so arming again after a drop has to be able to drop again.
                 return new ProtocolFaultProxyState
                 {
-                    DropAckFor = command.AcceptedMessageType,
+                    DropAckForMessageType = command.AcceptedMessageType,
                     DropCount = count,
                     PlanId = command.CommandId
                 };
