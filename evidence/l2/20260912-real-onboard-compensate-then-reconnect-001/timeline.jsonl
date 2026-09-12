@@ -1,0 +1,57 @@
+{"at":"2026-09-12T13:57:57.9588613+00:00","note":"L2 run 20260912T135757910Z starting for scenario 'real-onboard-compensate-then-reconnect'."}
+{"at":"2026-09-12T13:57:57.9723423+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-12T13:57:58.1005779+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-12T13:58:05.0405036+00:00","note":"Reusing cached onboard-hmi publish for 6b8a0b06575f40fa0e682c5d307b9ce46bbe9227."}
+{"at":"2026-09-12T13:58:05.1601109+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-12T13:58:05.1669216+00:00","note":"Peers: onboard-hmi@6b8a0b06575f40fa0e682c5d307b9ce46bbe9227, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-12T13:58:06.0614536+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-12T13:58:06.1762342+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-12T13:58:07.9469526+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-12T13:58:10.1033273+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-12T13:58:11.2032912+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-12T13:58:11.8531474+00:00","criterion":"protocol-proxy-live","value":"live"}
+{"at":"2026-09-12T13:58:11.8561392+00:00","note":"Protocol fault proxy relaying 127.0.0.1:58416 -> 127.0.0.1:58405."}
+{"at":"2026-09-12T13:58:13.7757087+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-12T13:58:13.7897760+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-12T13:58:13.8512162+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-12T13:58:14.1190836+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-12T13:58:14.1749971+00:00","note":"Environment is up; entering scenario 'real-onboard-compensate-then-reconnect'."}
+{"at":"2026-09-12T13:58:14.3282136+00:00","criterion":"proxy-session","value":"1"}
+{"at":"2026-09-12T13:58:14.3608874+00:00","note":"Publishing demand 7349acac99c440ee924538f3ef90110b (sublot L2-CR-20260912T135757910Z)."}
+{"at":"2026-09-12T13:58:14.4793254+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-12T13:58:15.7965145+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-e11e4744-c8cf-d052-926f-af841cc33617-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-12T13:58:15.8017139+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-12T13:58:16.7332882+00:00","note":"field-operator: stop 1: submitted sublot L2-CR-20260912T135757910Z (demand 7349acac-99c4-40ee-9245-38f3ef90110b)"}
+{"at":"2026-09-12T13:58:18.3390316+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt 0af23def-f90d-d45f-aa23-95625c73053b)"}
+{"at":"2026-09-12T13:58:18.3893488+00:00","note":"field-operator: stop 1: lock feedback of slot 1 jammed at LOCKED while the door is open"}
+{"at":"2026-09-12T13:58:22.4333856+00:00","note":"field-operator: stop 1: maintenance found cargo in slot 1, closed it and repaired the sensor"}
+{"at":"2026-09-12T13:58:22.7755484+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY accepted for demand 7349acac-99c4-40ee-9245-38f3ef90110b (command 93cf1860-f030-445b-bab4-cdad96eb443d)"}
+{"at":"2026-09-12T13:58:23.8291241+00:00","note":"field-operator: compensation: vehicle waits on slot 1; maintenance takes the cargo out"}
+{"at":"2026-09-12T13:58:24.1120682+00:00","note":"field-operator: slot 1: door closed with cargo EMPTY"}
+{"at":"2026-09-12T13:58:24.9023352+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY reconciled; demand 7349acac-99c4-40ee-9245-38f3ef90110b Cancelled"}
+{"at":"2026-09-12T13:58:24.9091369+00:00","criterion":"journey-completed","value":"Completed"}
+{"at":"2026-09-12T13:58:24.9298998+00:00","criterion":"session-ready-after-compensation","value":"@{SessionGeneration=1; Readiness=Ready; ReasonCode=READY}"}
+{"at":"2026-09-12T13:58:24.9771747+00:00","criterion":"recovery-outbox-settled","value":"2"}
+{"at":"2026-09-12T13:58:40.0286325+00:00","note":"Not settled: Timed out after 15s waiting for: the recovery session messages were settled after the compensation. Last observed: 2"}
+{"at":"2026-09-12T13:58:40.0422096+00:00","note":"Recovery outbox before the disconnect: ExceptionRecoverySessionSnapshot[70a6803e] ack=False fenced=True; ExceptionRecoverySessionSnapshot[d2a83da4] ack=False fenced=True; LoadCompensationCommand[d1b71aa7] ack=False fenced=False; ExceptionRecoverySessionSnapshot[00eab989] ack=False fenced=True; ExceptionRecoverySessionSnapshot[6972a98f] ack=False fenced=False."}
+{"at":"2026-09-12T13:58:40.0545074+00:00","note":"Disconnecting the relay (1 connection(s) so far, last #1)."}
+{"at":"2026-09-12T13:58:40.0781243+00:00","note":"The relay closed connection(s) 1."}
+{"at":"2026-09-12T13:58:40.0893444+00:00","criterion":"reconnected","value":"0"}
+{"at":"2026-09-12T13:58:46.1679500+00:00","criterion":"reconnected","value":"1"}
+{"at":"2026-09-12T13:58:46.1730746+00:00","criterion":"session-ready-after-reconnect","value":"@{SessionGeneration=2; Readiness=Ready; ReasonCode=READY}"}
+{"at":"2026-09-12T13:58:46.2206453+00:00","criterion":"runtime-iterations","value":"36"}
+{"at":"2026-09-12T13:58:47.0139363+00:00","criterion":"runtime-iterations","value":"37"}
+{"at":"2026-09-12T13:58:48.0678187+00:00","criterion":"runtime-iterations","value":"38"}
+{"at":"2026-09-12T13:58:49.1220715+00:00","criterion":"runtime-iterations","value":"39"}
+{"at":"2026-09-12T13:58:50.1780584+00:00","criterion":"runtime-iterations","value":"40"}
+{"at":"2026-09-12T13:58:50.1940500+00:00","note":"Server->onboard after the disconnect: #2 SessionAccepted, #2 SnapshotAppliedAck, #2 SnapshotAppliedAck, #2 DurableAck, #2 SessionReadiness, #2 ExceptionRecoverySessionSnapshot, #2 DurableAck, #2 SessionReadiness."}
+{"at":"2026-09-12T13:58:50.2000002+00:00","note":"Recovery outbox after the reconnect: ExceptionRecoverySessionSnapshot[70a6803e] ack=False fenced=True; ExceptionRecoverySessionSnapshot[d2a83da4] ack=False fenced=True; LoadCompensationCommand[d1b71aa7] ack=False fenced=False; ExceptionRecoverySessionSnapshot[00eab989] ack=False fenced=True; ExceptionRecoverySessionSnapshot[6972a98f] ack=False fenced=False."}
+{"at":"2026-09-12T13:58:50.2117117+00:00","note":"Publishing demand cfef0087cb0844da9d10b3cea54a2476 (sublot L2-CR-20260912T135757910Z-NEXT)."}
+{"at":"2026-09-12T13:58:50.2295907+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-12T13:58:51.2671918+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-8cd310d4-8b90-e25f-a63c-2b5827929c43-S1-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-12T13:58:51.2689102+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-12T13:58:52.4257240+00:00","note":"field-operator: stop 1: submitted sublot L2-CR-20260912T135757910Z-NEXT (demand cfef0087-cb08-44da-9d10-b3cea54a2476)"}
+{"at":"2026-09-12T13:58:54.0166433+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt f50dacdc-d531-1959-ad7d-91f347fba3a9)"}
+{"at":"2026-09-12T13:58:54.0332080+00:00","note":"Scenario finished."}
+{"at":"2026-09-12T13:58:54.1282265+00:00","note":"Exported 57 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-12T13:59:14.3722253+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 57 lines, 57 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 18416 ms."}
