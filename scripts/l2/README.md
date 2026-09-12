@@ -41,6 +41,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-multi-demand-compensate` | **真的**，自动化面 | 四停靠旅程里停靠 2 真的 `UNKNOWN` + 补偿清空：旅程自己离开那一站（#47 之前停在 `Blocked`），后两站照常装，关卡把三条卸完 | `evidence/l2/20260911-real-onboard-multi-demand-compensate-004`（车载端 `96c7513`，含 #48 修复；`-003` 只红 `L2-MDC-60`/`-61`，原因是 #48） |
 | `real-onboard-recovery-retry-after-refusal` | **真的**，自动化面 | 旅程还没 `Blocked` 时按「补偿清空」被拒，转 `Blocked` 后同一 attempt 再按：开得出会话、补偿走完、车不被掐连接（现场旅程 54d2cf63 卡在这里，8005-agv-program#49） | `evidence/l2/20260911-real-onboard-recovery-retry-after-refusal-006`（车载端 `ab346ed`；`-004` 是修复前的红基线，见最后一节） |
 | `real-onboard-durable-ack-lost` | **真的**，协议故障代理 | 装载结果被服务端收下、`DurableAck` 在路上丢了：车重连后补发同一 messageId，服务端要确认而不是掐连接（#30）；丢一次 ack 只该重连一次（#33） | 尚无整条 PASS：`evidence/l2/20260912-real-onboard-durable-ack-lost-003`（服务端 `8822a59`）#30 的判据全绿，`L2-DA-07` 红在 #33；`-001` 是 #30 修复前的红基线，见文末那一节 |
+| `real-onboard-compensate-then-reconnect` | **真的**，自动化面，协议故障代理 | 补偿清空对账之后断线重连一次（不丢 ack）：补偿会话留下的恢复会话快照与补偿命令全部结清、一条都不重放进新会话，车照常接单（#31） | `evidence/l2/20260912-real-onboard-compensate-then-reconnect-003`（服务端 `11bee90`，车载端 `86fe0a4`；`-001` 是修复前的红基线，`-002` 绿着却带着车载端回归，见文末那一节） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -280,8 +281,8 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。
 - `ProtocolFaultProxy` —— 只对真装置有效。车载端的 `wireToGate` 连接改经 `tools/ControlServer.ProtocolFaultProxy`
   逐行转发，场景经 `$Context.ProtocolProxy` 拿到它的控制面。代理起来时什么都不丢，场景用
-  `PUT /control/v1/drop-durable-ack` 布下「丢 N 次某类报文的 `DurableAck` 并断开」；快照按连接记下每一行的方向与信封
-  身份。合成对端没有 journal、不补发，给它设这个键会直接报错。
+  `PUT /control/v1/drop-durable-ack` 布下「丢 N 次某类报文的 `DurableAck` 并断开」，或者用 `POST /control/v1/disconnect`
+  不挑任何一行地断开一次；快照按连接记下每一行的方向与信封身份。合成对端没有 journal、不补发，给它设这个键会直接报错。
 
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
@@ -787,3 +788,48 @@ PASS/17、`real-onboard-multi-demand-compensate-005` PASS/15、`real-onboard-res
 
 **这条场景要等 #33 修好才会整条 PASS。**#33 票里记着为什么不能简单地让服务端在补发 ack 后发一条 readiness：新世代没有快照，
 能发的只有 `RecoveryRequired`，车收下就进接收循环、不再发快照，会从「超时后自愈」变成卡死。这一点目前是按代码推的，没有实测。
+
+## `real-onboard-compensate-then-reconnect`：补偿会话留下的报文，车下一次重连时怎样
+
+补偿清空对账之后，现场 [`8005-agv-program#44`](https://github.com/trytoreachpeak0/8005-agv-program/issues/44) 与
+`real-onboard-field-operator-compensate` 的库里都留着 4 份 `ExceptionRecoverySessionSnapshot` 和 1 条 `LoadCompensationCommand`，
+`AcknowledgedAt` 为空；#44 是靠 12 号脚本按旅程归属确认掉的。这一条回答它们在正常路径下——车下一次重连——会怎样
+（`8005-agv-control-server#31`）。
+
+前半段与 `real-onboard-field-operator-compensate` 相同，会话回到 `Ready` 之后经协议故障代理的 `POST /control/v1/disconnect`
+断开一次。**不丢 ack，只断开**：丢 ack 会让车补发，那是 `real-onboard-durable-ack-lost` 的事。
+
+| 判据 | 讲什么 |
+| --- | --- |
+| `L2-CR-00`～`-02` | 前提：车经代理建会话；补偿走到对账；会话回到 `Ready` |
+| `L2-CR-03` | 补偿对账之后，恢复会话报文没有一行既未确认又未 fence |
+| `L2-CR-04` | 重连之后新世代回到 `Ready` |
+| `L2-CR-05` | 恢复会话报文一条都没被重放进新会话 |
+| `L2-CR-06` | 车还接得了下一单 |
+| `L2-CR-07` | 断开一次只换来一次重连，没有哪一端撕会话 |
+
+三个证据：
+
+1. **`-001`（服务端 `5d92bab`，车载端 `6b8a0b0`）是红基线，而且红的不是票里担心的那种**：车不撕会话、gen 2 回到 `Ready`、
+   下一单照常，`8005-agv-program#28` 那种悬空命令撕会话的形状没有出现。红的是 `L2-CR-03` 与 `L2-CR-05`，两端各有一半：
+   - **车载端从不确认恢复会话快照。**protocol 的 `SnapshotAppliedAck` 为它留了 `snapshotKind = EXCEPTION_RECOVERY_SESSION`，
+     服务端也接，车载端却只把它当命令分派。新 revision 会 fence 旧的，最后那份 `CLOSED` 没东西取代，于是被重放进之后的每个
+     会话，每个恢复会话留下一行、越积越多。车对它的处理是幂等的，所以不出事，只是永远不结。
+   - **服务端从不结算恢复命令。**`LoadCompensationCommandAck` 在 profile denylist 上，命令唯一的回答是它的恢复结果，而
+     `ProcessResultAsync` 不拿结果结算它。已对账的不再重放，只一直留在重放扫描里；失败工作流的会被重放。
+2. **`-002`（服务端 `219b033`，车载端 `a696add`）PASS/9，但车载端那一半带着回归，判据看不出来**：服务端首次恢复结果即结算
+   命令（[#35](https://github.com/trytoreachpeak0/8005-agv-control-server/pull/35)），车载端对**每一份**恢复会话快照回 ack
+   （[onboard-hmi#41](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/pull/41)），5 行全部 `ack=True`、断开之后 0 条重放。
+   code review 查出确认 OPEN 的代价：服务端只在每次 `RecoveryStateReport` 之后重放未确认、未 fence 的恢复快照，而车载端只在
+   内存里留着当前恢复会话、journal 只存会话 id。确认过的 OPEN 不再重放，WPF 重启之后恢复按钮抛 `RECOVERY_SESSION_STATE_PENDING`，
+   再申请又被拒 `RECOVERY_SESSION_ALREADY_OPEN`。这条场景不重启车载端，所以一直是绿的。
+3. **`-003`（服务端 `11bee90`，车载端 `86fe0a4`）PASS/9**：车载端只确认 CLOSED。OPEN、ACTION_SELECTED、EXECUTING 三份
+   `ack=False fenced=True`（被下一个 revision 取代），CLOSED 与补偿命令 `ack=True`；断开之后 0 条重放。
+
+**为什么不只在服务端对账时把快照也一并结掉**：那样一份在路上丢了的 `CLOSED` 快照再也补发不到，车会一直停在 `EXECUTING`
+投影上、恢复按钮全灰。快照该由收到它的一方确认，协议本来就是这么写的。
+
+**为什么车只确认 CLOSED**：确认的意思是「不必再发给我」。开着的会话车载端没有落盘，重启之后只能靠握手重放拿回来，所以不能
+确认。CLOSED 生效的那件事——journal 里的恢复状态清空——在补偿结果记下时（`CompleteRecoveryVectorStateAsync`）就已落盘，早于
+CLOSED 到达，与协议向量 `CV-SNAPSHOT-REPLACE-AND-ACK` 的 `durable-before-ack` 一致。**「开着恢复会话时重启车载端」目前没有
+L2**，钉住它的是车载端 G2 `OnlyTheClosedRecoverySessionSnapshotIsAcknowledged`（OPEN 不确认）。
