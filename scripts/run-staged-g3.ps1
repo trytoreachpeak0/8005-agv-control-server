@@ -34,12 +34,15 @@ param(
     #   Later the same day: $ProtocolCommit -> 9f22db8, where a release may also be approved by an AI
     #   agent the product owner authorized. The attestation schema changed, so the manifest and the
     #   schema bundle hash moved again.
+    #   Then protocol-v1.0.0 was released on that commit, and both ends moved to APPROVED_RELEASE:
+    #   $ControlServerCommit -> 6b21662 (the approved identity), $OnboardCommit -> c86bac5 (the
+    #   onboard approved identity 98f4e06 plus its G2 evidence, the w2g/b3-on-v2 tip).
     #   $ControlServerCommit -> 6369616: the server on that identity, plus 5f7a34e (the dashboard
     #     shows every alarm of a vehicle, REQ-0270).
     #   $OnboardCommit -> f9efa30, the w2g/b3-on-v2 tip: the onboard end on that identity (e30d421),
     #     the alarm sources wired (a98679f), the G2 script fix (ad0e507) and its G2 evidence.
-    [string]$ControlServerCommit = '63696161d036a4907a39f8597fd64cc6e4c755fd',
-    [string]$OnboardCommit = 'f9efa301734128e850cb5460c20265232611ffff',
+    [string]$ControlServerCommit = '6b21662c60a2e13aaf86043b146d3d886cf91dd1',
+    [string]$OnboardCommit = 'c86bac5eaec57c36351f7d45b458deaa42fde22e',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '9f22db825d52ad86c1d803bd0c1925dcc58d6793',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
