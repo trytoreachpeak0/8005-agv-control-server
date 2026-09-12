@@ -1955,6 +1955,14 @@ public static class StagedG3TlsHarness
                 if (payload.ValueKind == JsonValueKind.Object &&
                     payload.TryGetProperty("snapshotKind", out JsonElement snapshotKind))
                     value["snapshotKind"] = snapshotKind.GetString();
+                // payloadSha256 of an OnboardAlarmSnapshot differs on every send -- the payload carries
+                // its own sequence and capture time -- so it cannot say whether two snapshots told the
+                // server the same thing. The alarms array alone can: the onboard board keeps an entry's
+                // id and first-raised time while the condition persists, so an unchanged board serialises
+                // to the same bytes. FP-IS-15's resume assertion compares these.
+                if (payload.ValueKind == JsonValueKind.Object &&
+                    payload.TryGetProperty("alarms", out JsonElement alarms))
+                    value["alarmsSha256"] = Sha256(alarms.GetRawText());
             }
         }
         catch (JsonException error) { value["parseErrorSha256"] = Sha256(error.Message); }
@@ -2928,8 +2936,33 @@ $alarmFullHandshakeConnectionIds = @($alarmEvents | Where-Object {
     $_.event -eq 'message' -and $_.direction -eq 'client-to-server' -and
     $_.messageType -eq 'CapabilitySnapshot'
 } | ForEach-Object { $_.connectionId } | Sort-Object -Unique)
+# Every snapshot in wire order, marked as either a full handshake's own (the first one on a connection
+# that carried a CapabilitySnapshot -- a handshake always reports the whole set, changed or not) or a
+# later one. A later one is only legitimate when it tells the server something it did not already hold,
+# so it is compared with the snapshot immediately before it. Since a98679f wired the onboard alarm board
+# to real conditions, a condition can come or go on any connection, a resumed one included: on
+# 2026-09-12 ONBOARD_DEPARTURE_SAFETY_SIGNAL_UNAVAILABLE was first raised while connection 2 -- a resume
+# -- was live, and the board published it there (evidence/g3/20260912-fp-is-14-15-staged-6369616, R-5 in
+# docs/defects/20260912-g3-resume-assertion-assumed-alarms-never-change-mid-session.md).
+$alarmConnectionsSeen = [Collections.Generic.HashSet[long]]::new()
+$previousAlarmsSha256 = $null
+$alarmSnapshotSequenceOnWire = @(foreach ($snapshot in $alarmSnapshotsSent) {
+    $handshakeOwn = $alarmFullHandshakeConnectionIds -contains $snapshot.connectionId -and
+        $alarmConnectionsSeen.Add([long]$snapshot.connectionId)
+    if (-not $handshakeOwn) { $null = $alarmConnectionsSeen.Add([long]$snapshot.connectionId) }
+    [ordered]@{
+        connectionId = $snapshot.connectionId
+        sessionGeneration = $snapshot.sessionGeneration
+        messageId = $snapshot.messageId
+        alarmsSha256 = $snapshot.alarmsSha256
+        fullHandshakeOwn = $handshakeOwn
+        sameAlarmsAsPrevious = $null -ne $previousAlarmsSha256 -and $snapshot.alarmsSha256 -eq $previousAlarmsSha256
+    }
+    $previousAlarmsSha256 = $snapshot.alarmsSha256
+})
 $alarmObservation = [ordered]@{
     snapshotsSent = $alarmSnapshotsSent.Count
+    snapshotsOnWire = $alarmSnapshotSequenceOnWire
     clientConnectionIds = $alarmClientConnectionIds
     snapshotConnectionIds = @($alarmSnapshotsSent.connectionId | Sort-Object -Unique)
     snapshotSessionGenerations = $alarmSnapshotGenerations
@@ -3023,20 +3056,30 @@ $alarmSentPass = $alarmSnapshotsSent.Count -ge 1
 # Acked one for one. A snapshot the server never applied cannot be evidence that it projected it.
 $alarmAckPass = $alarmSnapshotAcks.Count -eq $alarmSnapshotsSent.Count -and $alarmSnapshotAcks.Count -ge 1
 # A reconnect that resumes an interrupted recovery replays the unacknowledged message and republishes
-# NOTHING: those snapshots were already accepted on the previous connection. A full handshake does
-# publish one. So the exact claim is an IFF -- the set of connections carrying an alarm snapshot is
-# the set carrying a CapabilitySnapshot, no more and no less.
+# NOTHING it already published: those snapshots were accepted on the previous connection. A full
+# handshake does publish one, whatever the board holds. So the claim has two halves:
+#   - every full handshake carries a snapshot of its own;
+#   - every OTHER snapshot -- on a resumed connection, or later on a handshaken one -- carries alarms
+#     different from the snapshot before it. Republishing the same board state is the defect: it would
+#     hand the projection the same alarms under a new generation and the adoption rule would take it as
+#     news.
+# The run must also have resumed at least once, or the second half was never exercised.
 #
-# This replaced a coarser form ("all alarm snapshots on a single connection") that failed on
-# 2026-09-10 the moment a run had two full handshakes; the evidence is kept at
-# evidence/g3/20260910-fp-is-14-pending-result-replay. Counting connections was never the claim:
-# republishing on a RESUME is the defect, because it would hand the projection the same board state
-# under a new generation and the adoption rule would take it as news.
+# History, both kept as evidence. The first form ("all alarm snapshots on a single connection") failed
+# on 2026-09-10 the moment a run had two full handshakes (evidence/g3/20260910-fp-is-14-pending-result-replay).
+# The second form was an IFF -- the connections carrying a snapshot are exactly the full handshakes --
+# which held only while the onboard alarm board never changed mid-session. a98679f made it change with
+# real conditions, and on 2026-09-12 a condition first raised during the resume was published there,
+# correctly (evidence/g3/20260912-fp-is-14-15-staged-6369616). Connections were never the claim; content is.
+$alarmSnapshotsWithoutAlarmsDigest = @($alarmSnapshotSequenceOnWire | Where-Object { [string]::IsNullOrEmpty($_.alarmsSha256) })
+$alarmRepublishedSnapshots = @($alarmSnapshotSequenceOnWire | Where-Object { -not $_.fullHandshakeOwn -and $_.sameAlarmsAsPrevious })
+$alarmHandshakesWithoutSnapshot = @($alarmFullHandshakeConnectionIds |
+    Where-Object { $alarmObservation.snapshotConnectionIds -notcontains $_ })
 $alarmResumePass = $alarmClientConnectionIds.Count -gt $alarmFullHandshakeConnectionIds.Count -and
     $alarmFullHandshakeConnectionIds.Count -ge 1 -and
-    $null -eq (Compare-Object `
-        -ReferenceObject $alarmFullHandshakeConnectionIds `
-        -DifferenceObject $alarmObservation.snapshotConnectionIds)
+    $alarmHandshakesWithoutSnapshot.Count -eq 0 -and
+    $alarmSnapshotsWithoutAlarmsDigest.Count -eq 0 -and
+    $alarmRepublishedSnapshots.Count -eq 0
 # Several snapshots arrived across several generations and the projection kept exactly the last one.
 # This is the "a later snapshot replaces an earlier one wholesale" half of REQ-0269, which no run
 # before 2026-09-10 reached -- only one snapshot had ever arrived.
