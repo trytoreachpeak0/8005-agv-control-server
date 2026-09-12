@@ -17,6 +17,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# R-4 (docs/defects/20260910-g3-runner-red-runs-on-fp-is-14-and-fp-is-15.md): on 2026-09-10 this machine ran
+# out of memory mid-run because the publishes left a dozen MSBuild nodes resident. Every dotnet this runner
+# starts inherits these two, so no node outlives the command that started it.
+$env:MSBUILDDISABLENODEREUSE = '1'
+$env:DOTNET_CLI_USE_MSBUILD_SERVER = '0'
 
 # This run puts WPF windows on the machine's single interactive desktop, which 8005-mes-ingest's
 # golden renderer and desktop suite also claim. The mutex name is the cross-repository contract.
@@ -572,6 +577,11 @@ try {
     Invoke-LoggedCommand -Name 'publish-field-ops' -WorkingDirectory $controlSource -FilePath 'dotnet' `
         -Arguments @('publish', '.\tools\ControlServer.FieldOps\ControlServer.FieldOps.csproj', '-c', 'Release', '-o', $fieldOpsPublish) `
         -LogPath (Join-Path $logsRoot 'publish-field-ops.log') | Out-Null
+    # Node reuse is off for this process tree, but the compiler server the publishes started still sits in
+    # memory. Shut it down before the peers start, and log it like every other command. R-4.
+    Invoke-LoggedCommand -Name 'build-server-shutdown' -WorkingDirectory $controlSource -FilePath 'dotnet' `
+        -Arguments @('build-server', 'shutdown') `
+        -LogPath (Join-Path $logsRoot 'build-server-shutdown.log') | Out-Null
 
     Add-Type -Path (Join-Path $controlPublish 'Microsoft.Data.Sqlite.dll')
 

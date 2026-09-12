@@ -1,6 +1,6 @@
 # 缺陷：`FP-IS-14`／`FP-IS-15` 的 G3 里红在 runner 自己的四次运行
 
-Status: fixed（R-1～R-3）；R-4 为操作规程缓解，runner 内未修
+Status: fixed
 Owner repository: `8005-agv-control-server`（`scripts/run-staged-g3.ps1`、`scripts/run-staged-g3-restart.ps1`、`scripts/g3-slice-evidence.ps1`）
 Found by: 下文每一节各自的 `Found by`
 Product at discovery: 各节分列
@@ -137,6 +137,9 @@ logs/field-ops-seed-approved-facts.log:  Out of memory.
 `MSBUILDDISABLENODEREUSE=1`、`DOTNET_CLI_USE_MSBUILD_SERVER=0`，命令其余部分一字未改。同日之后的每一轮
 G3 都照此执行，没有再出现。
 
-**runner 自己不做这件事**，所以换一个人、换一台机器照 `-EvidenceRoot` 那一行命令直接跑，仍可能撞上。要真正
-修掉，应当让 runner 在 publish 之后自行关掉构建服务器、或在 publish 的子进程环境里设那两个变量。这不在本文件
-范围内，记在这里是为了不让「后来没再出现」被读成「已经修好」。
+~~**runner 自己不做这件事**，所以换一个人、换一台机器照 `-EvidenceRoot` 那一行命令直接跑，仍可能撞上。~~
+
+**2026-09-12 修进了 runner**（产品负责人批准）：`run-staged-g3.ps1` 与 `run-staged-g3-restart.ps1` 在脚本开头设
+`MSBUILDDISABLENODEREUSE=1`、`DOTNET_CLI_USE_MSBUILD_SERVER=0`，runner 起的每一个 `dotnet` 都继承；四个 publish
+之后再记一条 `build-server-shutdown` 命令，与其它命令一样写进 `run-result.json` 的 `commands` 与 `logs/`。
+照 `-EvidenceRoot` 那一行命令直接跑不再依赖操作者记得先手工清理。
