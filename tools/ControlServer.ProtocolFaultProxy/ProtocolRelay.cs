@@ -12,10 +12,12 @@ namespace ControlServer.ProtocolFaultProxy;
 public sealed class ProtocolRelay(
     ProtocolFaultProxyHost.RelayEndpoints endpoints,
     CommandEngine<ProtocolFaultProxyState> engine,
-    TrafficLog log) : BackgroundService
+    TrafficLog log,
+    RelayConnections connections) : BackgroundService
 {
     public const string OnboardToServer = "onboard->server";
     public const string ServerToOnboard = "server->onboard";
+    public const string DisconnectedOnRequest = "relay disconnected on request";
 
     // Both ends frame a line with a bare LF (OnboardPeer.Encode, WireToGateProtocolSerializer.SerializeLine)
     // and both hash the bytes of a line, so the relay must hand each one on exactly: read it without its
@@ -60,6 +62,7 @@ public sealed class ProtocolRelay(
             }
 
             using CancellationTokenSource relay = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            connections.Register(connection, relay);
             NetworkStream onboardStream = onboard.GetStream();
             NetworkStream serverStream = server.GetStream();
             Task<string> upstream = PumpAsync(onboardStream, serverStream, connection, OnboardToServer, relay.Token);
@@ -72,7 +75,8 @@ public sealed class ProtocolRelay(
             onboard.Close();
             server.Close();
             await Task.WhenAll(upstream, downstream).ConfigureAwait(false);
-            log.CloseConnection(connection, closedBy);
+            // A requested disconnect reaches the pumps as a cancelled read; record what it really was.
+            log.CloseConnection(connection, connections.Release(connection) ? DisconnectedOnRequest : closedBy);
         }
     }
 

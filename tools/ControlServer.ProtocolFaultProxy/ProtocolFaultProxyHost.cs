@@ -21,7 +21,7 @@ public sealed record ProtocolFaultProxyState
 
 /// <summary>
 /// A line-level relay between the onboard and ControlServer's onboard protocol listener that can
-/// lose one kind of DurableAck on the way back, and nothing else.
+/// lose one kind of DurableAck on the way back, or take the link down on request, and nothing else.
 ///
 /// Why this exists. The onboard keeps a durable message in its journal until the DurableAck for it
 /// arrives; if the link goes down after the server has committed the message but before the ack
@@ -35,6 +35,10 @@ public sealed record ProtocolFaultProxyState
 /// close -- which is what a dropped link after the server's commit looks like from both ends. What
 /// happens next is the shipped code on both sides. What it is *not* is a flaky network: every other
 /// line is forwarded byte for byte, and the drop is exactly the one a scenario asked for.
+///
+/// The disconnect is the same link going down with nothing lost in flight: both ends see the
+/// connection close, the onboard reconnects, and what is left to watch is how each end treats the new
+/// session -- the server's replay of its own unacknowledged messages included (8005-agv-control-server#31).
 /// </summary>
 public static class ProtocolFaultProxyHost
 {
@@ -77,6 +81,7 @@ public static class ProtocolFaultProxyHost
         builder.Services.AddSingleton(new RelayEndpoints(
             new IPEndPoint(controlListener.Address, listenPort), targetEndpoint));
         builder.Services.AddSingleton<TrafficLog>();
+        builder.Services.AddSingleton<RelayConnections>();
         string instanceId = builder.Configuration["ProtocolFaultProxy:instanceId"] ?? "protocol-fault-proxy-1";
         builder.Services.AddSingleton(new CommandEngine<ProtocolFaultProxyState>(
             instanceId, () => new ProtocolFaultProxyState()));

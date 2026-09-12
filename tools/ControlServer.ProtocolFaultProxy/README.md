@@ -1,7 +1,7 @@
 # ControlServer.ProtocolFaultProxy
 
 挡在车载端和 ControlServer 的车载协议监听之间，逐行转发 NDJSON，**只在被要求时吞掉某一类报文的
-`DurableAck`、然后断开那条连接**，别的一律原样转发。
+`DurableAck`、然后断开那条连接，或者什么都不丢、直接断开**，别的一律原样转发。
 
 ```
 车载端 ──TCP──► 代理 ──TCP──► ControlServer :58405
@@ -45,7 +45,7 @@ ack 的链路。
 | 项 | 值 |
 | --- | --- |
 | 数据面 | 纯 TCP，`listenPort`（L2 用 58416），监听地址与控制面相同 |
-| 控制面 | `/control/v1/health`、`/snapshot`、`/drop-durable-ack`、`/reset`、`/openapi.json` |
+| 控制面 | `/control/v1/health`、`/snapshot`、`/drop-durable-ack`、`/disconnect`、`/reset`、`/openapi.json` |
 | 机器契约 | `openapi.json`，运行时在 `/control/v1/openapi.json` |
 | 监听 | 仅 loopback，默认控制面 58091、数据面 58092 |
 
@@ -57,6 +57,20 @@ PUT /control/v1/drop-durable-ack  { "runId": ..., "commandId": ..., "acceptedMes
 
 `count` 为 0 撤掉计划，上限 10。每次布置都是一个新计划、各自计数，所以丢过一次之后可以再布一次。
 `/reset` 撤计划，不清流量记录——已经过去的流量是证据。
+
+断开一次：
+
+```powershell
+POST /control/v1/disconnect  { "runId": ..., "commandId": ... }
+```
+
+把此刻开着的每条连接两头都关掉，**一行都不丢**，车自己重连；应答里列出关掉的连接号，快照里那几条连接的
+`closedBy` 记成 `relay disconnected on request`。同一个 `commandId` 重试只回上次关掉的那几条、不再断开，
+免得应答丢了换来第二次重连。它不是计划，不动 revision。
+
+**为什么要一个「什么都不丢」的断开**：丢 ack 会让车补发，之后发生的事就混进了车的补发路径（#30、#33）。
+[`8005-agv-control-server#31`](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/31) 要看的是
+**服务端**把自己没被确认的报文重放进新会话、车怎么处理，那需要一次干净的断线。
 
 ## 三条边界
 

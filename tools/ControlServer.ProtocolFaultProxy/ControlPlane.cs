@@ -25,6 +25,7 @@ public static class ControlPlane
         ProtocolFaultProxyHost.RelayEndpoints endpoints =
             app.Services.GetRequiredService<ProtocolFaultProxyHost.RelayEndpoints>();
         TrafficLog log = app.Services.GetRequiredService<TrafficLog>();
+        RelayConnections relays = app.Services.GetRequiredService<RelayConnections>();
         RouteGroupBuilder control = app.MapGroup("/control/v1");
 
         control.MapGet("/openapi.json", ControlPlaneConventions.OpenApiDocument);
@@ -67,6 +68,23 @@ public static class ControlPlane
                     PlanId = command.CommandId
                 };
             }));
+
+        // Takes the link down without losing a line: every connection open now is closed at both ends
+        // and the onboard reconnects on its own. Not a plan and not state -- it happens once, when asked,
+        // so it moves no revision; the traffic log records it as the connection's closedBy.
+        control.MapPost("/disconnect", (CommandEnvelope command) =>
+        {
+            if (string.IsNullOrWhiteSpace(command.CommandId))
+            {
+                return ControlPlaneConventions.Refused(engine, ReasonCodes.InvalidArgument, null);
+            }
+            int[] closed = relays.Disconnect(command.CommandId);
+            return Results.Json(ControlPlaneConventions.Envelope(engine, new
+            {
+                commandId = command.CommandId,
+                connections = closed
+            }));
+        });
 
         // Resets the plan, not the traffic: what already crossed the relay stays evidence.
         control.MapPost("/reset", (CommandEnvelope command) =>
