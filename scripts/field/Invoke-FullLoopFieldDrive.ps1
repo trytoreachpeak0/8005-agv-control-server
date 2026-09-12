@@ -43,9 +43,22 @@
     Run it from PowerShell, not Git Bash: the collector copies the database with scp, and Git Bash's MSYS
     scp mangles Windows remote paths.
 
+    Resuming. A window aborted mid-journey leaves that journey in flight, and this plan cannot start over on
+    it. -ResumeJourneyId takes it as journey 1 from wherever it stands; -CarriedActsPath names the aborted
+    window's carried-acts.json, whose T and X act records go into this window's field record as they were
+    played (each marked carriedFrom), so neither is played again. The wait for the dispatch becomes a wait
+    for the journey to leave its stop, and what the stop's departure safety check did meanwhile is recorded
+    as scene S52 (8005-agv-program#52).
+
 .EXAMPLE
     # Before the first authorised -Dispatch; start 13-close-gates-when-idle.ps1 after each "Journey <id>" line:
     .\Invoke-FullLoopFieldDrive.ps1 -EvidenceRoot ..\..\evidence\field\20260912-FW-FL2-unattended
+
+.EXAMPLE
+    # Resuming the journey the first attempt left on stop 2:
+    .\Invoke-FullLoopFieldDrive.ps1 -EvidenceRoot ..\..\evidence\field\20260912-FW-FL2-resumed `
+        -ResumeJourneyId bb16f190-fb7d-2958-82f0-9fc67e77d243 `
+        -CarriedActsPath ..\..\evidence\field\20260912-FW-FL2-unattended\carried-acts.json
 #>
 [CmdletBinding()]
 param(
@@ -73,6 +86,14 @@ param(
     # End after journey 1 and its restart, without the charging errand and journey 2.
     [switch]$SkipCharging,
 
+    # Resume the journey an earlier, aborted window left in flight as journey 1, instead of waiting for a
+    # fresh one. The scenes that window already played come from its carried-acts.json and are not played
+    # again; the two go together.
+    [string]$ResumeJourneyId,
+    [string]$CarriedActsPath,
+    # From printing the wait to the resumed journey leaving the stop it was left standing at.
+    [int]$ResumeLeaveMinutes = 20,
+
     [string]$Site = '老厂',
     [string]$StageRoot = (Join-Path $env:USERPROFILE 'w2g-stage\field'),
     [switch]$SkipFinalize
@@ -92,6 +113,15 @@ Import-Module (Join-Path $PSScriptRoot 'FieldOperator.psm1') -Force
 if ($NoSublotStop -eq $CancelStop) { throw 'Scenario T and scenario X cannot share a stop.' }
 if (Test-Path -LiteralPath $EvidenceRoot) {
     throw "$EvidenceRoot exists. A window's evidence goes to a new directory; the collector refuses to append across windows."
+}
+if ([bool]$ResumeJourneyId -ne [bool]$CarriedActsPath) { throw '-ResumeJourneyId and -CarriedActsPath go together.' }
+$carried = $null
+if ($CarriedActsPath) {
+    $CarriedActsPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PWD.ProviderPath, $CarriedActsPath))
+    $carried = Get-Content -Raw -LiteralPath $CarriedActsPath | ConvertFrom-Json
+    if ([string]$carried.journeyId -ne $ResumeJourneyId) {
+        throw "$CarriedActsPath carries the scenes of journey $($carried.journeyId), not $ResumeJourneyId."
+    }
 }
 
 function Write-Phase([string]$Message) {
@@ -145,17 +175,36 @@ if ([string]$snapshot.agvId -ne $agvId) { throw "The onboard face reports agvId 
 $null = Get-FieldSimulatorSlot -Field $field -SlotNo 1
 
 $session = Get-FieldSession -Field $field
-if (-not $session -or [string]$session.Readiness -ne 'Ready') {
+$sessionReady = $session -and [string]$session.Readiness -eq 'Ready'
+if (-not $sessionReady -and -not $ResumeJourneyId) {
     throw "The server does not hold $agvId's session as Ready ($(($session | ConvertTo-Json -Compress) ?? 'no row'))."
 }
 $active = Get-FieldJourney -Field $field
-if ($active -and -not ([int]$active.CurrentStopSequence -eq 1 -and [string]$active.Stage -eq 'AwaitingPickupArrival')) {
-    throw "Journey $($active.JourneyId) is already at $($active.CurrentStopSequence)/$($active.Stage). The plan maps scenes onto stops of a fresh journey; settle that one first."
+if ($ResumeJourneyId) {
+    if (-not $active -or [string]$active.JourneyId -ne $ResumeJourneyId) {
+        throw "Resuming journey $ResumeJourneyId, but $agvId's unfinished journey is $($active ? "$($active.JourneyId) at $($active.CurrentStopSequence)/$($active.Stage)" : 'none')."
+    }
+    if ([string]$active.Stage -eq 'Blocked') { throw "Journey $ResumeJourneyId is Blocked ($($active.BlockReasonCode)); resuming it drives nothing." }
+    foreach ($act in @($carried.T, $carried.X)) {
+        if ($act -and [int]$act.Sequence -gt [int]$active.CurrentStopSequence) {
+            throw "Carried scene $($act.Act) is at stop $($act.Sequence), ahead of the journey at stop $($active.CurrentStopSequence): it was never played."
+        }
+    }
+    if (-not $sessionReady) {
+        # A vehicle whose client was stopped mid-journey holds RecoveryRequired until it handshakes again, and
+        # the service restart -Dispatch makes re-establishes the session anyway. The drive checks it by acting.
+        Write-Warning "Session is $($session ? "$($session.Readiness) ($($session.ReasonCode))" : 'missing'), not Ready. Resuming anyway; the dispatch restarts the service."
+    }
+} elseif ($active -and -not ([int]$active.CurrentStopSequence -eq 1 -and [string]$active.Stage -eq 'AwaitingPickupArrival')) {
+    throw "Journey $($active.JourneyId) is already at $($active.CurrentStopSequence)/$($active.Stage). The plan maps scenes onto stops of a fresh journey; resume it with -ResumeJourneyId or settle it first."
 }
 if (Get-ServerChargeOverride) {
     throw "appsettings.Production.json on $ServerHost already carries a charge-threshold override. Journey 1 must run on the shipped thresholds; run Set-JourneyRuntime.ps1 -Off first."
 }
-Write-Host "  agvId $agvId, IO $ioModule, recovery window $($recoveryWindowOpen ? 'open (not needed)' : 'closed'), session Ready generation $($session.SessionGeneration)"
+Write-Host "  agvId $agvId, IO $ioModule, recovery window $($recoveryWindowOpen ? 'open (not needed)' : 'closed'), session $($session ? "$($session.Readiness) generation $($session.SessionGeneration)" : '(no row)')"
+if ($ResumeJourneyId) {
+    Write-Host "  resuming journey $ResumeJourneyId at $($active.CurrentStopSequence)/$($active.Stage); carried scenes $((@('T', 'X') | Where-Object { $carried.$_ }) -join ', ') from $CarriedActsPath"
+}
 Write-Warning 'This script neither dispatches nor closes the gates. Start 13-close-gates-when-idle.ps1 after each "Journey <id>" line -- started earlier it closes the gates at once.'
 
 $null = New-Item -ItemType Directory -Path $runStage -Force
@@ -163,8 +212,9 @@ Invoke-Checkpoint '00-ready'
 
 # --- driving one journey ----------------------------------------------------------------------------------
 
-$played = [ordered]@{ T = $null; X = $null; NE = $null; NECheckpoint = $null }
+$played = [ordered]@{ T = $carried ? $carried.T : $null; X = $carried ? $carried.X : $null; NE = $null; NECheckpoint = $null }
 $acts = [ordered]@{}
+if ($carried) { $acts['carried'] = $CarriedActsPath }
 
 function Invoke-JourneyDrive {
     param([string]$JourneyId, [string]$Tag, [int]$TStop, [int]$XStop)
@@ -236,15 +286,53 @@ $journeys = [System.Collections.Generic.List[object]]::new()
 $restarts = [System.Collections.Generic.List[object]]::new()
 $charging = $null
 $chargeOverride = $null
+$reask = $null
 
 try {
     # --- journey 1 ----------------------------------------------------------------------------------------
-    Write-Phase "Waiting up to $JourneyWaitMinutes min for the first authorised dispatch"
-    $journey = Wait-FieldCondition -Field $field -Description "a journey for $agvId" -TimeoutSeconds ($JourneyWaitMinutes * 60) `
-        -Probe { Get-FieldJourney -Field $field } -Until { param($j) $j }
-    $journey1 = [string]$journey.JourneyId
-    Write-Phase "Journey $journey1"
-    $journeys.Add(@{ journeyId = $journey1; role = 'T/X/NE' })
+    if ($ResumeJourneyId) {
+        # The journey is already there; what the dispatch has to produce is the journey moving on from where
+        # the aborted window left it. Left on a departure safety check whose answer lapsed long ago, that is
+        # the field observation of 8005-agv-program#52: a re-ask under a new check id, then departure.
+        # Script scope, not a function: the probes below run inside the module and read these by name.
+        $journey1 = $ResumeJourneyId
+        $resumeSequence = [int]$active.CurrentStopSequence
+        $resumePosition = "$resumeSequence/$($active.Stage)"
+        $stopBefore = Get-FieldStopSafetyCheck -Field $field -JourneyId $journey1 -Sequence $resumeSequence
+        Write-Phase ("Waiting up to $ResumeLeaveMinutes min for the authorised dispatch to move journey $journey1 on from " +
+            "$resumePosition (departure safety check $($stopBefore.PreDepartureSafetyCheckId))")
+        $positionAfter = Wait-FieldCondition -Field $field -Description "journey $journey1 to leave $resumePosition" `
+            -TimeoutSeconds ($ResumeLeaveMinutes * 60) `
+            -Probe { Get-FieldPosition -Field $field -JourneyId $journey1 } `
+            -Until { param($p) $p -ne $resumePosition } -Abort { param($p) $p -like '*/Blocked' }
+        $leftAt = [DateTimeOffset]::UtcNow
+        $stopAfter = Get-FieldStopSafetyCheck -Field $field -JourneyId $journey1 -Sequence $resumeSequence
+        Write-Phase ("Journey $journey1 left $resumePosition for $positionAfter; stop $resumeSequence check " +
+            "$($stopBefore.PreDepartureSafetyCheckId) -> $($stopAfter.PreDepartureSafetyCheckId), consumed $($stopAfter.ConsumedSafetyResultMessageId ?? '(none)')")
+        Invoke-Checkpoint 'resumed-departed'
+        $reask = [pscustomobject]@{
+            JourneyId      = $journey1
+            Sequence       = $resumeSequence
+            PositionBefore = $resumePosition
+            CheckIdBefore  = [string]$stopBefore.PreDepartureSafetyCheckId
+            ConsumedBefore = $stopBefore.ConsumedSafetyResultMessageId
+            PositionAfter  = $positionAfter
+            CheckIdAfter   = [string]$stopAfter.PreDepartureSafetyCheckId
+            ConsumedAfter  = $stopAfter.ConsumedSafetyResultMessageId
+            LeftObservedAt = $leftAt.ToString('o')
+            Checkpoint     = 'resumed-departed'
+        }
+        $acts['J1-resume'] = $reask
+        Write-Phase "Journey $journey1"
+        $journeys.Add(@{ journeyId = $journey1; role = 'T/X/NE（续跑：T、X 在中止的窗口里演过）' })
+    } else {
+        Write-Phase "Waiting up to $JourneyWaitMinutes min for the first authorised dispatch"
+        $journey = Wait-FieldCondition -Field $field -Description "a journey for $agvId" -TimeoutSeconds ($JourneyWaitMinutes * 60) `
+            -Probe { Get-FieldJourney -Field $field } -Until { param($j) $j }
+        $journey1 = [string]$journey.JourneyId
+        Write-Phase "Journey $journey1"
+        $journeys.Add(@{ journeyId = $journey1; role = 'T/X/NE' })
+    }
 
     $generation = Invoke-JourneyDrive -JourneyId $journey1 -Tag 'J1' -TStop $NoSublotStop -XStop $CancelStop
     $journey1CompletedAt = [DateTimeOffset]::UtcNow
@@ -291,7 +379,8 @@ Save-Acts
 
 $record = New-FullLoopWindowRecord -AgvId $agvId -IoModule $ioModule -DriverRunId $runId -Site $Site `
     -Journeys $journeys.ToArray() -ActT $played.T -ActX $played.X -NotEmptied $played.NE -NotEmptiedCheckpoint $played.NECheckpoint `
-    -Charging $charging -ChargeOverride $chargeOverride -Restarts $restarts.ToArray() -RecoveryWindowOpen $recoveryWindowOpen
+    -Charging $charging -ChargeOverride $chargeOverride -Restarts $restarts.ToArray() -RecoveryWindowOpen $recoveryWindowOpen `
+    -DepartureSafetyReask $reask
 $recordPath = Join-Path $runStage 'field-record.json'
 [IO.File]::WriteAllText($recordPath, ($record | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
 Write-Phase "Field record written to $recordPath"

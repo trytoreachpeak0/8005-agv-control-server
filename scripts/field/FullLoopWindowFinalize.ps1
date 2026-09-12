@@ -289,6 +289,25 @@ foreach ($restart in $restarts) {
         'Completed', $before ? [string]$before.Stage : '(checkpoint 里没有那趟旅程)')
 }
 
+# --- S52: a resumed journey re-asks a lapsed departure safety check (8005-agv-program#52) --------------------
+# Only a window that resumed a journey an aborted one left standing on its departure safety check has this
+# scene, so its absence is not a failure.
+
+$scenarioS52 = Get-ScenarioRecord -Id 'S52'
+if ($scenarioS52) {
+    $stop = @(Get-Rows -Table 'JourneyStops' -Where {
+            $_.JourneyId -eq $scenarioS52.journeyId -and [int]$_.Sequence -eq [int]$scenarioS52.stopSequence }) | Select-Object -First 1
+    $facts['S52.check'] = "$($scenarioS52.checkIdBefore) -> $($stop ? $stop.PreDepartureSafetyCheckId : '(无停靠行)')"
+    $consumed = $stop -and -not (Test-L2Null $stop.ConsumedSafetyResultMessageId)
+    $assertions.Add('FL2-S52-01', "在途旅程停靠 $($scenarioS52.stopSequence) 的出车前安全检查换了新 id 重问，并消费了一份回答（最终库行）",
+        ($stop -and [string]$stop.PreDepartureSafetyCheckId -ne [string]$scenarioS52.checkIdBefore -and $consumed),
+        "检查 id ≠ $($scenarioS52.checkIdBefore) / 已消费回答",
+        "$($stop ? $stop.PreDepartureSafetyCheckId : '(无停靠行)') / $($consumed ? "已消费 $($stop.ConsumedSafetyResultMessageId)" : '未消费')")
+    $assertions.Add('FL2-S52-02', "开门后旅程自己离开 $($scenarioS52.positionBefore)，没有进入 Blocked",
+        ([string]$scenarioS52.positionAfter -ne [string]$scenarioS52.positionBefore -and [string]$scenarioS52.positionAfter -notlike '*/Blocked'),
+        "离开 $($scenarioS52.positionBefore)", "$($scenarioS52.positionAfter)（$($scenarioS52.leftObservedAt)）")
+}
+
 # --- window ---------------------------------------------------------------------------------------------------
 
 $assertions.Add('FL2-W-01', '现场记录由驱动脚本按实际动作写出，IO 是车上的 slots-simulator（无人到场）',
@@ -322,11 +341,18 @@ $checkpointRows = (@(Get-ChildItem -LiteralPath $snapshotRoot -Directory | Sort-
 $rehearsalNote = ($SublotWaitMinutes -lt 5 -or -not $identity.Contains('serverProductionJourneyRuntime')) `
     ? "**注意：本次按 ``-SublotWaitMinutes $SublotWaitMinutes`` 判场景 T，且没有读到生产配置，只能算彩排，不能当现场窗口的证据。**" `
     : ''
+$carriedScenes = @(@($record.scenarios) | Where-Object { $_.carriedFrom })
+$carriedNote = ($carriedScenes.Count -gt 0) `
+    ? ("**场景 $(($carriedScenes | ForEach-Object { $_.id }) -join '、') 是在 ``$($carriedScenes[0].carriedFrom)`` 那次中止的窗口里演的。**" +
+        "本窗接着跑同一趟旅程，没有重演；动作记录取自那个目录的 ``carried-acts.json``（时刻来自当时驱动的控制台输出），判据判的是本窗的最终库行。") `
+    : ''
 
 $summary = @"
 # 现场窗口二证据：完整闭环、取消订单、两趟之间自动充电、车静止时服务重启
 
 $rehearsalNote
+
+$carriedNote
 
 结论：**$outcome**
 

@@ -1,0 +1,43 @@
+{
+  "purpose": "场景 T 与 X 已在本目录这次中止的窗口里演过。续跑窗口（Invoke-FullLoopFieldDrive.ps1 -ResumeJourneyId）不再重演，把这两条动作记录原样带进它的现场记录，由它的 finalize 在最终库行上判。",
+  "journeyId": "bb16f190-fb7d-2958-82f0-9fc67e77d243",
+  "sources": {
+    "driverConsole": "logs/driver-console.log",
+    "checkpoints": ["snapshots/02-t-settled", "snapshots/03-x-settled", "snapshots/04-stuck-departure-safety-after-x"]
+  },
+  "T": {
+    "Act": "T",
+    "Sequence": 1,
+    "DemandId": "72004cd6-0533-4298-89fe-c401944c248c",
+    "Sublot": "Q26091814-1",
+    "ServerWaitingAt": "2026-09-12T13:35:17+08:00",
+    "VehicleAskedAt": "2026-09-12T13:35:22+08:00",
+    "DeadlineAt": "2026-09-12T13:40:02.0988145+08:00",
+    "SettledObservedAt": "2026-09-12T13:40:04+08:00",
+    "Status": "Cancelled",
+    "Suppression": "CANCELLED_BY_STATION_TIMEOUT",
+    "Operations": 0,
+    "PositionAfter": "2/AwaitingPickupArrival",
+    "SettledCheckpoint": "t-settled",
+    "CarriedFrom": "evidence/field/20260912-FW-FL2-unattended",
+    "CarriedNote": "时刻取自 logs/driver-console.log，精度到秒。ServerWaitingAt 取驱动循环看到 1/AwaitingSublot 的那一行（13:35:17）；库里本站 SublotWaitStartedAt 是 05:35:02.0988Z，期限正好是它加 5 分钟。"
+  },
+  "X": {
+    "Act": "X",
+    "Sequence": 2,
+    "DemandId": "b060ae3f-1747-4d4d-a930-5cfc9356f4c6",
+    "Sublot": "Q26092612-12",
+    "DeadlineAt": null,
+    "ActionsOffered": ["LOAD_CANCELLATION"],
+    "CommandId": null,
+    "FaceAnswer": "HTTP 200",
+    "SettledObservedAt": "2026-09-12T13:42:21+08:00",
+    "Status": "Cancelled",
+    "Suppression": "CANCELLED_BY_OPERATOR",
+    "Operations": 0,
+    "PositionAfter": "2/AwaitingDepartureSafety",
+    "SettledCheckpoint": "x-settled",
+    "CarriedFrom": "evidence/field/20260912-FW-FL2-unattended",
+    "CarriedNote": "控制台只记了按下与结算两行。ActionsOffered 只写 LOAD_CANCELLATION：Invoke-FieldActCancelBeforeSublot 要等 availableRecoveryActions 含它才会按，按下即证明当时给了；当时完整的按钮列表没有记下。CommandId 同样没有记下。"
+  }
+}

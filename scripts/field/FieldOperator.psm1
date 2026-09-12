@@ -367,6 +367,16 @@ function Get-FieldJourney {
     return ($rows.Count -eq 0) ? $null : $rows[0]
 }
 
+function Get-FieldStopSafetyCheck {
+    # The departure safety check a stop is asking under, and the answer it consumed, if any.
+    param([Parameter(Mandatory)][object]$Field, [Parameter(Mandatory)][string]$JourneyId, [Parameter(Mandatory)][int]$Sequence)
+
+    $rows = Invoke-FieldQuery -Field $Field -Sql (
+        'SELECT PreDepartureSafetyCheckId, PreDepartureSafetyCheckMessageId, ConsumedSafetyResultMessageId FROM JourneyStops ' +
+        "WHERE JourneyId = $(ConvertTo-SqlLiteral $JourneyId) AND Sequence = $Sequence")
+    return ($rows.Count -eq 0) ? $null : $rows[0]
+}
+
 function Get-FieldPosition {
     # "<stop>/<stage>" in one string, so "at stop n in stage s" is one comparison.
     param([Parameter(Mandatory)][object]$Field, [Parameter(Mandatory)][string]$JourneyId)
@@ -1524,7 +1534,9 @@ function New-FullLoopWindowRecord {
         [object]$Charging,
         [hashtable]$ChargeOverride,
         [object[]]$Restarts = @(),
-        [bool]$RecoveryWindowOpen = $false
+        [bool]$RecoveryWindowOpen = $false,
+        # A resumed journey leaving the stop an aborted window left it standing at (8005-agv-program#52).
+        [object]$DepartureSafetyReask
     )
 
     $scenarios = [System.Collections.Generic.List[object]]::new()
@@ -1541,6 +1553,9 @@ function New-FullLoopWindowRecord {
             settledObservedAt = $ActT.SettledObservedAt
             positionAfter     = $ActT.PositionAfter
             settledCheckpoint = $ActT.SettledCheckpoint
+            # Set only on an act an earlier, aborted window played and a resumed window carried in.
+            carriedFrom       = Get-FieldProperty $ActT 'CarriedFrom'
+            carriedNote       = Get-FieldProperty $ActT 'CarriedNote'
         })
     }
     if ($ActX) {
@@ -1556,6 +1571,24 @@ function New-FullLoopWindowRecord {
             settledObservedAt = $ActX.SettledObservedAt
             positionAfter     = $ActX.PositionAfter
             settledCheckpoint = $ActX.SettledCheckpoint
+            carriedFrom       = Get-FieldProperty $ActX 'CarriedFrom'
+            carriedNote       = Get-FieldProperty $ActX 'CarriedNote'
+        })
+    }
+    if ($DepartureSafetyReask) {
+        $scenarios.Add([ordered]@{
+            id             = 'S52'
+            name           = '缺陷 #52 修复的现场观测：停在出车前安全检查上、回答早已过期的在途旅程，开门后换检查 id 重问并自己离站'
+            journeyId      = $DepartureSafetyReask.JourneyId
+            stopSequence   = $DepartureSafetyReask.Sequence
+            positionBefore = $DepartureSafetyReask.PositionBefore
+            checkIdBefore  = $DepartureSafetyReask.CheckIdBefore
+            consumedBefore = $DepartureSafetyReask.ConsumedBefore
+            positionAfter  = $DepartureSafetyReask.PositionAfter
+            checkIdAfter   = $DepartureSafetyReask.CheckIdAfter
+            consumedAfter  = $DepartureSafetyReask.ConsumedAfter
+            leftObservedAt = $DepartureSafetyReask.LeftObservedAt
+            checkpoint     = $DepartureSafetyReask.Checkpoint
         })
     }
     if ($NotEmptied) {
@@ -1703,4 +1736,4 @@ Export-ModuleMember -Function New-FieldOperator, Invoke-FieldQuery, Invoke-Field
     New-FieldWindowRecord, Get-FieldProperty,
     Wait-FieldSublotRequest, Get-FieldDemandSettlement, Invoke-FieldActNoSublot, Invoke-FieldActCancelBeforeSublot,
     Invoke-FieldNotEmptiedRounds, Get-FieldSession, Get-FieldServerStartedAt, Wait-FieldSessionAfterRestart,
-    Wait-FieldChargingStage, New-FullLoopWindowRecord
+    Wait-FieldChargingStage, New-FullLoopWindowRecord, Get-FieldStopSafetyCheck
