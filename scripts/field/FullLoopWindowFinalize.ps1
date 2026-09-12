@@ -60,6 +60,14 @@ function Get-SlotPhaseCount([string]$AttemptId, [string]$Phase, [int]$SlotNo) {
 $facts['sublotWaitMinutes'] = $SublotWaitMinutes
 $facts['journeyIds'] = (@($record.journeyIds) -join ', ')
 
+# The scenes this window set out to play. A record written before the field existed owed all of them. A scene
+# the window never owed has no row at all rather than a red "was it played": the charging-only window
+# (Invoke-FullLoopFieldDrive.ps1 -ChargingOnly) follows a window that already played T, X and NE.
+$scenesOwed = @($record.scenesOwed | Where-Object { $_ })
+if ($scenesOwed.Count -eq 0) { $scenesOwed = @('T', 'X', 'NE', 'N', 'CH', 'R') }
+$facts['scenesOwed'] = $scenesOwed -join ', '
+function Test-SceneOwed([string]$Id) { return $scenesOwed -contains $Id }
+
 # --- T: nobody scans (decision 7) ------------------------------------------------------------------------
 
 $scenarioT = Get-ScenarioRecord -Id 'T'
@@ -97,7 +105,7 @@ if ($scenarioT) {
             $runtimeOfT -and [string]$runtimeOfT.Stage -eq 'Completed' -and $leaseOfT -and -not (Test-L2Null $leaseOfT.ReleasedAt)),
         '离站 / Completed / 租约已释放',
         "$($scenarioT.positionAfter) / $($runtimeOfT ? $runtimeOfT.Stage : '(无旅程行)') / $(($leaseOfT -and -not (Test-L2Null $leaseOfT.ReleasedAt)) ? '已释放' : '未释放或无租约行')")
-} else {
+} elseif (Test-SceneOwed 'T') {
     $assertions.Add('FL2-T-01', '到站不录入 SUBLOT 这一幕演到了', $false, '现场记录里有场景 T', '(无)')
 }
 
@@ -124,7 +132,7 @@ if ($scenarioX) {
             [string]$scenarioX.positionAfter -ne "$($scenarioX.stopSequence)/AwaitingSublot"),
         'LOAD_CANCELLATION 在按钮里 / 离站',
         "$(@($scenarioX.actionsOffered) -join ',') / $($scenarioX.positionAfter)")
-} else {
+} elseif (Test-SceneOwed 'X') {
     $assertions.Add('FL2-X-01', '到站还没装货就取消这一幕演到了', $false, '现场记录里有场景 X', '(无)')
 }
 
@@ -158,7 +166,7 @@ if ($scenarioNE) {
             $demand -and [string]$demand.Status -eq 'Succeeded'),
         'Committed / 仅 COMPLETED / Succeeded',
         "$($operation ? $operation.Status : '(无操作行)') / $(@($results | ForEach-Object { $_.OverallOutcome }) -join ',') / $($demand ? $demand.Status : '(无需求行)')")
-} else {
+} elseif (Test-SceneOwed 'NE') {
     $assertions.Add('FL2-NE-01', '关卡卸货未取空这一幕演到了', $false, '现场记录里有场景 NE', '(无)')
 }
 
@@ -209,9 +217,10 @@ $assertions.Add('FL2-N-03', '每一条 Succeeded 的需求都是全链路走通�
 $scenarioCH = Get-ScenarioRecord -Id 'CH'
 if ($scenarioCH) {
     $override = $scenarioCH.thresholdOverride
-    $trigger = $override ? [int]$override.trigger : 20
+    # The shipped trigger has been 30 since 8005-agv-program#53 (it was 20).
+    $trigger = $override ? [int]$override.trigger : 30
     $resume = $override ? [int]$override.resume : 80
-    $facts['CH.thresholds'] = $override ? "临时覆盖 触发 $trigger% / 恢复 $resume%（出厂 20/80）" : '出厂 20/80'
+    $facts['CH.thresholds'] = $override ? "临时覆盖 触发 $trigger% / 恢复 $resume%（出厂 30/80）" : '出厂 30/80'
     $run = @(Get-Rows -Table 'AutoChargingRuns' -Where { $_.ChargingRunId -eq $scenarioCH.chargingRunId }) | Select-Object -First 1
     $facts['CH.seen'] = (@($scenarioCH.seen) | ForEach-Object { "$($_.Stage)$($_.BlockReasonCode ? "($($_.BlockReasonCode))" : '')" }) -join ' -> '
 
@@ -256,7 +265,7 @@ if ($scenarioCH) {
             '无覆盖 / 门 Off',
             "trigger=$($production.chargeTriggerBatteryPercent ?? '-') resume=$($production.chargeResumeBatteryPercent ?? '-') runtime=$($production.enabled) dispatch=$($production.createDispatchEnabled)")
     }
-} else {
+} elseif (Test-SceneOwed 'CH') {
     $assertions.Add('FL2-CH-01', '两趟之间的自动充电这一幕演到了', $false, '现场记录里有场景 CH', '(无)')
 }
 
@@ -347,12 +356,26 @@ $carriedNote = ($carriedScenes.Count -gt 0) `
         "本窗接着跑同一趟旅程，没有重演；动作记录取自那个目录的 ``carried-acts.json``（时刻来自当时驱动的控制台输出），判据判的是本窗的最终库行。") `
     : ''
 
+$notOwed = @(@('T', 'X', 'NE', 'CH') | Where-Object { -not (Test-SceneOwed $_) })
+$owedNote = ($notOwed.Count -gt 0) `
+    ? "**本窗只欠场景 $($scenesOwed -join '、')。**$($notOwed -join '、') 不在本窗的剧本里，判据表里没有它们的行：既不算演到，也不算没演到。" `
+    : ''
+$claims = [System.Collections.Generic.List[string]]::new()
+$claims.Add('一趟 WIRE_TO_GATE 旅程从受理到关卡收尾的软件闭环')
+if (Test-SceneOwed 'T') { $claims.Add('决策 7 的站点期限在生产包里真的会终结一条没人扫码的需求并放车') }
+if (Test-SceneOwed 'X') { $claims.Add('扫码前取消') }
+if (Test-SceneOwed 'NE') { $claims.Add('卸货没取空时没有取消分支') }
+if (Test-SceneOwed 'CH') { $claims.Add('没有未完成旅程时车会自己去 211 充电、到恢复线后接单') }
+$claims.Add('车静止时服务重启后会话自己回到 Ready')
+
 $summary = @"
 # 现场窗口二证据：完整闭环、取消订单、两趟之间自动充电、车静止时服务重启
 
 $rehearsalNote
 
 $carriedNote
+
+$owedNote
 
 结论：**$outcome**
 
@@ -403,12 +426,11 @@ $checkpointRows
 ## 这份证据证明了什么，没证明什么
 
 **证明了**：在 ``$($record.agvId)``（$($record.site)）上、车走真实线路、IO 接 slots-simulator（``$ioAddress``）时，
-一趟 WIRE_TO_GATE 旅程从受理到关卡收尾的软件闭环；决策 7 的站点期限在生产包里真的会终结一条没人扫码的需求并放车；
-扫码前取消；卸货没取空时没有取消分支；两趟之间车会自己去 211 充电、到恢复线后接单；车静止时服务重启后会话自己回到 Ready。
+$($claims -join '；')。
 
 **没有证明**：
 
-- **20% / 80% 这两个数本身。**充电那一幕按用户 2026-09-11 的决定临时抬线（见 $($facts['CH.thresholds'] ?? '(无充电幕)')），证的是机制，不是出厂阈值；出厂值只由 L2 ``auto-charge-endurance`` 覆盖。
+- **出厂触发线与恢复线（30% / 80%）这两个数本身。**充电那一幕按用户 2026-09-11 的决定临时抬线（见 $($facts['CH.thresholds'] ?? '(无充电幕)')），证的是机制，不是出厂阈值；出厂值只由 L2 ``auto-charge-endurance`` 覆盖。
 - **光幕极性、锁反馈时序与机械弹开。**IO 是模拟器，与现场窗口一（无人）同一个缺口，见地图 Out of scope。
 - **另外两台车。**
 "@

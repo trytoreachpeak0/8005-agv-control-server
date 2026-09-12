@@ -27,7 +27,7 @@
       Journey 2   the demand the released vehicle takes, loaded and unloaded normally -- the full loop.
                   Scenes journey 1 could not host (too few pickup stops) are played here instead.
       Restart 2   the same restart once journey 2 completes; Set-JourneyRuntime.ps1 -Off also drops the
-                  threshold override, so the window ends on the shipped 20 / 80 (R2).
+                  threshold override, so the window ends on the shipped 30 / 80 (R2).
 
     What it does NOT do, each on purpose:
 
@@ -50,6 +50,12 @@
     for the journey to leave its stop, and what the stop's departure safety check did meanwhile is recorded
     as scene S52 (8005-agv-program#52).
 
+    Charging only. -ChargingOnly skips journey 1 and its restart and never plays T, X or NE: the window opens with
+    no journey unresolved, the authorised -Dispatch carries the charge-threshold override, and the scenes are CH,
+    the journey the released vehicle takes (N) and the restart after it (R). The field record lists them in
+    scenesOwed and the collector judges nothing else. Start 13-close-gates-when-idle.ps1 after the one
+    "Journey <id>" line, never during the charging errand.
+
 .EXAMPLE
     # Before the first authorised -Dispatch; start 13-close-gates-when-idle.ps1 after each "Journey <id>" line:
     .\Invoke-FullLoopFieldDrive.ps1 -EvidenceRoot ..\..\evidence\field\20260912-FW-FL2-unattended
@@ -59,6 +65,10 @@
     .\Invoke-FullLoopFieldDrive.ps1 -EvidenceRoot ..\..\evidence\field\20260912-FW-FL2-resumed `
         -ResumeJourneyId bb16f190-fb7d-2958-82f0-9fc67e77d243 `
         -CarriedActsPath ..\..\evidence\field\20260912-FW-FL2-unattended\carried-acts.json
+
+.EXAMPLE
+    # The charging-only short window, once Complete-ChargingRun.ps1 has left no charging run unfinished:
+    .\Invoke-FullLoopFieldDrive.ps1 -EvidenceRoot ..\..\evidence\field\20260912-FW-FL2-charging -ChargingOnly
 #>
 [CmdletBinding()]
 param(
@@ -86,6 +96,10 @@ param(
     # End after journey 1 and its restart, without the charging errand and journey 2.
     [switch]$SkipCharging,
 
+    # Play only the charging errand and the journey the released vehicle takes, then its restart: no journey 1,
+    # and no T, X or NE anywhere. For the short window #20 still owed once S52, T, X, NE and R had been played.
+    [switch]$ChargingOnly,
+
     # Resume the journey an earlier, aborted window left in flight as journey 1, instead of waiting for a
     # fresh one. The scenes that window already played come from its carried-acts.json and are not played
     # again; the two go together.
@@ -111,6 +125,10 @@ $runStage = Join-Path $StageRoot "FW-FL2-drive-$runId"
 Import-Module (Join-Path $PSScriptRoot 'FieldOperator.psm1') -Force
 
 if ($NoSublotStop -eq $CancelStop) { throw 'Scenario T and scenario X cannot share a stop.' }
+if ($ChargingOnly -and ($ResumeJourneyId -or $SkipCharging)) {
+    throw '-ChargingOnly plays the charging errand and the journey after it; it takes neither -ResumeJourneyId nor -SkipCharging.'
+}
+if ($ChargingOnly) { $NotEmptiedRounds = 0 }
 if (Test-Path -LiteralPath $EvidenceRoot) {
     throw "$EvidenceRoot exists. A window's evidence goes to a new directory; the collector refuses to append across windows."
 }
@@ -195,11 +213,22 @@ if ($ResumeJourneyId) {
         # the service restart -Dispatch makes re-establishes the session anyway. The drive checks it by acting.
         Write-Warning "Session is $($session ? "$($session.Readiness) ($($session.ReasonCode))" : 'missing'), not Ready. Resuming anyway; the dispatch restarts the service."
     }
+} elseif ($ChargingOnly -and $active) {
+    throw "Journey $($active.JourneyId) is unfinished at $($active.CurrentStopSequence)/$($active.Stage). The engine sends no vehicle to charge while a journey is unresolved; let it complete or settle it first."
 } elseif ($active -and -not ([int]$active.CurrentStopSequence -eq 1 -and [string]$active.Stage -eq 'AwaitingPickupArrival')) {
     throw "Journey $($active.JourneyId) is already at $($active.CurrentStopSequence)/$($active.Stage). The plan maps scenes onto stops of a fresh journey; resume it with -ResumeJourneyId or settle it first."
 }
+# The engine drives an unfinished charging run and takes no demand until it completes, and a run left standing on
+# a charger that never engaged completes never (bc7244b5, 8005-agv-program#20). Nothing this window plans can
+# happen behind one.
+$unfinishedRuns = @(Invoke-FieldQuery -Field $field -Sql (
+        "SELECT ChargingRunId, Stage, BlockReasonCode FROM AutoChargingRuns WHERE AgvId = '$($agvId.Replace("'", "''"))' AND Stage <> 'Completed'") |
+    ForEach-Object { $_ })
+if ($unfinishedRuns.Count -gt 0) {
+    throw "$agvId has an unfinished charging run: $(($unfinishedRuns | ForEach-Object { "$($_.ChargingRunId) $($_.Stage)/$($_.BlockReasonCode)" }) -join '; '). Complete it first with remote-ops/factory-server/scripts/control-server/Complete-ChargingRun.ps1."
+}
 if (Get-ServerChargeOverride) {
-    throw "appsettings.Production.json on $ServerHost already carries a charge-threshold override. Journey 1 must run on the shipped thresholds; run Set-JourneyRuntime.ps1 -Off first."
+    throw "appsettings.Production.json on $ServerHost already carries a charge-threshold override. The window starts on the shipped thresholds and the authorised -Dispatch writes the override; run Set-JourneyRuntime.ps1 -Off first."
 }
 Write-Host "  agvId $agvId, IO $ioModule, recovery window $($recoveryWindowOpen ? 'open (not needed)' : 'closed'), session $($session ? "$($session.Readiness) generation $($session.SessionGeneration)" : '(no row)')"
 if ($ResumeJourneyId) {
@@ -208,6 +237,7 @@ if ($ResumeJourneyId) {
 Write-Warning 'This script neither dispatches nor closes the gates. Start 13-close-gates-when-idle.ps1 after each "Journey <id>" line -- started earlier it closes the gates at once.'
 
 $null = New-Item -ItemType Directory -Path $runStage -Force
+$windowStartedAt = [DateTimeOffset]::UtcNow
 Invoke-Checkpoint '00-ready'
 
 # --- driving one journey ----------------------------------------------------------------------------------
@@ -290,7 +320,9 @@ $reask = $null
 
 try {
     # --- journey 1 ----------------------------------------------------------------------------------------
-    if ($ResumeJourneyId) {
+    if ($ChargingOnly) {
+        $journey1 = $null
+    } elseif ($ResumeJourneyId) {
         # The journey is already there; what the dispatch has to produce is the journey moving on from where
         # the aborted window left it. Left on a departure safety check whose answer lapsed long ago, that is
         # the field observation of 8005-agv-program#52: a re-ask under a new check id, then departure.
@@ -334,16 +366,22 @@ try {
         $journeys.Add(@{ journeyId = $journey1; role = 'T/X/NE' })
     }
 
-    $generation = Invoke-JourneyDrive -JourneyId $journey1 -Tag 'J1' -TStop $NoSublotStop -XStop $CancelStop
-    $journey1CompletedAt = [DateTimeOffset]::UtcNow
-    $restarts.Add((Wait-RestartAfter -JourneyId $journey1 -GenerationBefore $generation -CompletedAt $journey1CompletedAt -Checkpoint 'r1-ready'))
-    Save-Acts
+    if ($ChargingOnly) {
+        # No journey 1: the charging run is the window's first scene, so it only has to start after the window opened.
+        $chargeAfter = $windowStartedAt
+    } else {
+        $generation = Invoke-JourneyDrive -JourneyId $journey1 -Tag 'J1' -TStop $NoSublotStop -XStop $CancelStop
+        $journey1CompletedAt = [DateTimeOffset]::UtcNow
+        $restarts.Add((Wait-RestartAfter -JourneyId $journey1 -GenerationBefore $generation -CompletedAt $journey1CompletedAt -Checkpoint 'r1-ready'))
+        Save-Acts
+        $chargeAfter = $journey1CompletedAt
+    }
 
     if (-not $SkipCharging) {
         # --- the charging errand ------------------------------------------------------------------------
-        Write-Phase ("Waiting up to $JourneyWaitMinutes min for the second authorised dispatch, with a charge-threshold override " +
+        Write-Phase ("Waiting up to $JourneyWaitMinutes min for the $($ChargingOnly ? '' : 'second ')authorised dispatch, with a charge-threshold override " +
             '(Set-JourneyRuntime.ps1 -Dispatch -ChargeTriggerBatteryPercent <above the battery> -ChargeResumeBatteryPercent <a few % higher>)')
-        $charging = Wait-FieldChargingStage -Field $field -Stage AwaitingChargerArrival -After $journey1CompletedAt `
+        $charging = Wait-FieldChargingStage -Field $field -Stage AwaitingChargerArrival -After $chargeAfter `
             -TimeoutSeconds ($JourneyWaitMinutes * 60) -OnCheckpoint $onCheckpoint -Checkpoint 'charge-dispatched'
         $chargeOverride = Get-ServerChargeOverride
         Write-Phase "Charging run $($charging.ChargingRunId) at $($charging.TriggeredAtBatteryPercent)%; override $(($chargeOverride | ConvertTo-Json -Compress) ?? '(none)')"
@@ -361,11 +399,12 @@ try {
         Write-Phase "Journey $journey2"
         $journeys.Add(@{ journeyId = $journey2; role = '充电之后' })
         # Scenes journey 1 had no stop for are played here, from the first pickup on.
-        $tStop = $played.T ? 0 : 1
-        $xStop = $played.X ? 0 : ($played.T ? 1 : 2)
+        # A charging-only window owes neither; an earlier window played them.
+        $tStop = ($ChargingOnly -or $played.T) ? 0 : 1
+        $xStop = ($ChargingOnly -or $played.X) ? 0 : ($played.T ? 1 : 2)
         $generation = Invoke-JourneyDrive -JourneyId $journey2 -Tag 'J2' -TStop $tStop -XStop $xStop
         $journey2CompletedAt = [DateTimeOffset]::UtcNow
-        $restarts.Add((Wait-RestartAfter -JourneyId $journey2 -GenerationBefore $generation -CompletedAt $journey2CompletedAt -Checkpoint 'r2-ready'))
+        $restarts.Add((Wait-RestartAfter -JourneyId $journey2 -GenerationBefore $generation -CompletedAt $journey2CompletedAt -Checkpoint ($ChargingOnly ? 'r1-ready' : 'r2-ready')))
     }
 } catch {
     Write-Warning "Window aborted: $($_.Exception.Message)"
@@ -377,14 +416,15 @@ Save-Acts
 
 # --- record and verdict --------------------------------------------------------------------------------------
 
+$scenesOwed = $ChargingOnly ? @('CH', 'N', 'R') : ($SkipCharging ? @('T', 'X', 'NE', 'N', 'R') : @('T', 'X', 'NE', 'N', 'CH', 'R'))
 $record = New-FullLoopWindowRecord -AgvId $agvId -IoModule $ioModule -DriverRunId $runId -Site $Site `
     -Journeys $journeys.ToArray() -ActT $played.T -ActX $played.X -NotEmptied $played.NE -NotEmptiedCheckpoint $played.NECheckpoint `
     -Charging $charging -ChargeOverride $chargeOverride -Restarts $restarts.ToArray() -RecoveryWindowOpen $recoveryWindowOpen `
-    -DepartureSafetyReask $reask
+    -DepartureSafetyReask $reask -ScenesOwed $scenesOwed
 $recordPath = Join-Path $runStage 'field-record.json'
 [IO.File]::WriteAllText($recordPath, ($record | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
 Write-Phase "Field record written to $recordPath"
-foreach ($scene in 'T', 'X', 'NE') {
+foreach ($scene in @('T', 'X', 'NE') | Where-Object { $scenesOwed -contains $_ }) {
     if (-not $played[$scene]) { Write-Warning "Scene $scene was never played; the collector will judge the record as it is." }
 }
 

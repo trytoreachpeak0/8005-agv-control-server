@@ -1536,7 +1536,11 @@ function New-FullLoopWindowRecord {
         [object[]]$Restarts = @(),
         [bool]$RecoveryWindowOpen = $false,
         # A resumed journey leaving the stop an aborted window left it standing at (8005-agv-program#52).
-        [object]$DepartureSafetyReask
+        [object]$DepartureSafetyReask,
+        # The scenes this window set out to play. The finalize judges a missing scene as a failure only when it
+        # is owed here: a charging-only window does not owe T, X and NE, which an earlier window already played.
+        [ValidateSet('T', 'X', 'NE', 'N', 'CH', 'R')]
+        [string[]]$ScenesOwed = @('T', 'X', 'NE', 'N', 'CH', 'R')
     )
 
     $scenarios = [System.Collections.Generic.List[object]]::new()
@@ -1651,6 +1655,7 @@ function New-FullLoopWindowRecord {
         journeys           = @($Journeys)
         journeyIds         = @($Journeys | ForEach-Object { [string]$_.journeyId })
         photoPointers      = @()
+        scenesOwed         = @($ScenesOwed)
         scenarios          = $scenarios.ToArray()
     }
 }
