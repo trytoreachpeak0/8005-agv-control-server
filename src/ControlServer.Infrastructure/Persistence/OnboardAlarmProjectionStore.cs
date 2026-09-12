@@ -28,9 +28,9 @@ namespace ControlServer.Infrastructure.Persistence;
 public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context, TimeProvider? timeProvider = null)
 {
     /// <summary>
-    /// 多久听不到这一代会话的任何入站消息就算失联。ADR-cross-0027：心跳两秒一次，六秒存活超时。
+    /// 多久听不到这一代会话的任何入站消息就算失联。与车队会话卡片共用 <see cref="SessionLiveness.Timeout"/>。
     /// </summary>
-    public static readonly TimeSpan LinkLivenessTimeout = TimeSpan.FromSeconds(6);
+    public static readonly TimeSpan LinkLivenessTimeout = SessionLiveness.Timeout;
 
     private static readonly JsonSerializerOptions AlarmJson = new()
     {
@@ -174,38 +174,15 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context, 
     /// </remarks>
     private async Task<HashSet<string>> LinkedVehiclesAsync(CancellationToken cancellationToken)
     {
-        Dictionary<string, long> readyGenerations = await _context.SessionRecoveries.AsNoTracking()
-            .Where(row => row.Readiness == SessionReadiness.Ready)
-            .ToDictionaryAsync(
-                row => row.AgvId, row => row.SessionGeneration, StringComparer.Ordinal, cancellationToken);
-        HashSet<string> linked = new(StringComparer.Ordinal);
-        if (readyGenerations.Count == 0)
-        {
-            return linked;
-        }
-
-        DateTimeOffset now = _timeProvider.GetUtcNow();
-        ProtocolInboxRow[] inbound = await _context.ProtocolInbox.AsNoTracking()
-            .ToArrayAsync(cancellationToken);
-        foreach (ProtocolInboxRow row in inbound)
-        {
-            if (row.ReceivedAt > now || now - row.ReceivedAt > LinkLivenessTimeout)
-            {
-                continue;
-            }
-            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
-            JsonElement root = document.RootElement;
-            if (root.TryGetProperty("agvId", out JsonElement agv) &&
-                agv.ValueKind == JsonValueKind.String &&
-                agv.GetString() is { } agvId &&
-                readyGenerations.TryGetValue(agvId, out long generation) &&
-                root.TryGetProperty("sessionGeneration", out JsonElement sessionGeneration) &&
-                sessionGeneration.ValueKind == JsonValueKind.Number &&
-                sessionGeneration.GetInt64() == generation)
-            {
-                linked.Add(agvId);
-            }
-        }
+        HashSet<string> heard = await SessionLiveness.HeardFromAsync(
+            _context, _timeProvider.GetUtcNow(), cancellationToken);
+        HashSet<string> linked = new(
+            await _context.SessionRecoveries.AsNoTracking()
+                .Where(row => row.Readiness == SessionReadiness.Ready)
+                .Select(row => row.AgvId)
+                .ToArrayAsync(cancellationToken),
+            StringComparer.Ordinal);
+        linked.IntersectWith(heard);
         return linked;
     }
 }

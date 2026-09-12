@@ -72,9 +72,9 @@ REQ-0269 与 #16 验收标准明文禁止的形态。
 
 ## 仍然开着的
 
-**车队会话卡片有同一类问题，本次没有修。**`FleetSessionsQueryEndpoint` 直接把 `SessionRecoveries.Readiness`
-投到看板上，一台断了线的车在那张卡片上同样一直显示 `Ready`。它不在批次 3 两个切片的验收标准里，也没有场景
-在看它；记在这里，免得「告警卡片修好了」被读成「看板的失联判定修好了」。
+~~**车队会话卡片有同一类问题，本次没有修。**~~ **2026-09-12 已修**（产品负责人批准）：在线判定抽成
+`SessionLiveness`，告警卡片与车队会话卡片共用同一条规则；听不到当前这一代会话的车，车队卡片不再给就绪与
+原因码，只给「车辆失联」。回归守卫：`DashboardSkeletonTests.AVehicleWhoseSessionHasGoneQuietIsShownOutOfContactRatherThanWithItsLastReadiness`。
 
 **`FP-IS-15` 的 `CONTROL_SERVER_G2` 与 G3 证据绑的是 `6dc4bc8`**，本次改了这个切片的服务端代码
 （`OnboardAlarmProjectionStore` 与 `FP-IS-15` 名下的测试），那两份不再绑定现行产品代码。

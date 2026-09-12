@@ -168,6 +168,8 @@ public sealed class DashboardSkeletonTests
                 ReasonCode = "READY",
                 UpdatedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero)
             });
+            // 看板判在线要听得到这一代会话：没有这条入站消息，这台车在车队卡片上就是失联，不是 Ready。
+            context.ProtocolInbox.Add(HeardFrom("AGV-01", generation: 0, TimeSpan.Zero));
             context.Set<ActiveSlotConfigurationRow>().Add(new ActiveSlotConfigurationRow
             {
                 AgvId = "AGV-01",
@@ -200,12 +202,93 @@ public sealed class DashboardSkeletonTests
         }
     }
 
+    /// <summary>
+    /// 车断线时服务端不改会话行，它留着最后一次在线时的判定。车队卡片要从「多久没听到这一代会话」看出失联，
+    /// 不能把那一列原样投上来——与车载告警卡片同一条规则。
+    /// </summary>
+    [Fact]
+    public async Task AVehicleWhoseSessionHasGoneQuietIsShownOutOfContactRatherThanWithItsLastReadiness()
+    {
+        SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using (connection)
+        {
+            DbContextOptions<ControlServerDbContext> options =
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+            foreach (string agvId in new[] { "AGV-01", "AGV-02", "AGV-03" })
+            {
+                context.SessionRecoveries.Add(new SessionRecoveryRow
+                {
+                    AgvId = agvId,
+                    SessionGeneration = 3,
+                    ProtocolCommit = "c",
+                    ManifestSha256 = "m",
+                    ProfileId = "AGV_FULL_PRODUCT",
+                    ProtocolVersion = 2,
+                    Readiness = SessionReadiness.Ready,
+                    ReasonCode = "READY",
+                    UpdatedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.Zero)
+                });
+            }
+            context.ProtocolInbox.Add(HeardFrom("AGV-01", generation: 3, TimeSpan.FromSeconds(1)));
+            context.ProtocolInbox.Add(HeardFrom("AGV-02", generation: 3, SessionLiveness.Timeout + TimeSpan.FromSeconds(1)));
+            // 最后一条消息很新，但属于上一代会话：车换了一代，旧一代的心跳不替新一代说话。
+            context.ProtocolInbox.Add(HeardFrom("AGV-03", generation: 2, TimeSpan.FromSeconds(1)));
+            await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+            IDashboardCard card = DashboardCardCatalog.Discovered.Cards
+                .Single(candidate => candidate.CardId == "fleet-session-readiness");
+            IDashboardQueryEndpoint endpoint = DashboardQueryEndpointCatalog
+                .Discover(typeof(FleetSessionsQueryEndpoint).Assembly)
+                .Endpoints.Single(candidate => candidate.Path == card.SourcePath);
+            object rows = await endpoint.ReadAsync(context, TestContext.Current.CancellationToken);
+            using JsonDocument document = JsonDocument.Parse(JsonSerializer.Serialize(rows));
+            string html = card.RenderFact(document.RootElement);
+
+            string heard = RowOf(html, "AGV-01");
+            Assert.Contains("Ready", heard, StringComparison.Ordinal);
+            Assert.Contains("READY", heard, StringComparison.Ordinal);
+            foreach (string quietAgvId in new[] { "AGV-02", "AGV-03" })
+            {
+                string quiet = RowOf(html, quietAgvId);
+                Assert.Contains(VehicleAlarmProjection.LinkDownReason, quiet, StringComparison.Ordinal);
+                Assert.DoesNotContain("Ready", quiet, StringComparison.Ordinal);
+                Assert.DoesNotContain("READY", quiet, StringComparison.Ordinal);
+            }
+            // 只读：看板的判定不改会话行，恢复握手要用的那一行原样留着。
+            Assert.All(
+                await context.SessionRecoveries.AsNoTracking().ToArrayAsync(TestContext.Current.CancellationToken),
+                row => Assert.Equal(SessionReadiness.Ready, row.Readiness));
+        }
+    }
+
     [Fact]
     public void ACardWhoseDataSourceIsOutsideTheReadOnlyQueryPrefixIsRefused()
     {
         InvalidOperationException failure =
             Assert.Throws<InvalidOperationException>(() => new DashboardCardCatalog([new OffContractCard()]));
         Assert.Contains(DashboardPaths.QueryPrefix, failure.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>服务端在 <paramref name="ago"/> 之前收到的、这台车这一代会话的一条心跳。</summary>
+    private static ProtocolInboxRow HeardFrom(string agvId, long generation, TimeSpan ago) => new()
+    {
+        MessageId = Guid.NewGuid().ToString("D"),
+        MessageType = "Heartbeat",
+        RequestJson = JsonSerializer.Serialize(new { messageType = "Heartbeat", agvId, sessionGeneration = generation }),
+        ContentHash = new string('0', 64),
+        FirstResponseJson = "{}",
+        ReceivedAt = DateTimeOffset.UtcNow - ago
+    };
+
+    private static string RowOf(string html, string agvId)
+    {
+        int start = html.IndexOf("<tr><td>" + agvId + "</td>", StringComparison.Ordinal);
+        Assert.True(start >= 0, "No row for " + agvId + ".");
+        int end = html.IndexOf("</tr>", start, StringComparison.Ordinal);
+        return html[start..end];
     }
 
     private static IEnumerable<string> Occurrences(string haystack, string needle)
