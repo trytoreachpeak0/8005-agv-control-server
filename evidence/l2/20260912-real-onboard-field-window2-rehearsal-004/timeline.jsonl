@@ -1,0 +1,26 @@
+{"at":"2026-09-12T09:15:16.0926710+00:00","note":"L2 run 20260912T091516060Z starting for scenario 'real-onboard-field-window2-rehearsal'."}
+{"at":"2026-09-12T09:15:16.1039555+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-12T09:15:16.2346867+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-12T09:15:18.5960083+00:00","note":"Reusing cached onboard-hmi publish for 6b8a0b06575f40fa0e682c5d307b9ce46bbe9227."}
+{"at":"2026-09-12T09:15:18.7264925+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-12T09:15:18.7342200+00:00","note":"Peers: onboard-hmi@6b8a0b06575f40fa0e682c5d307b9ce46bbe9227, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-12T09:15:18.7819853+00:00","note":"Extra map stations from real-onboard-field-window2-rehearsal.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2, 211=充电准备点1"}
+{"at":"2026-09-12T09:15:19.5405790+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-12T09:15:19.6414357+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-12T09:15:21.8097170+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-12T09:15:21.8282327+00:00","note":"Server settings from real-onboard-field-window2-rehearsal.setup.psd1: JourneyRuntime__autoChargingEnabled=true, JourneyRuntime__chargeResumeBatteryPercent=80, JourneyRuntime__chargerStationId=充电点1, JourneyRuntime__chargerStationRiotId=211, JourneyRuntime__chargeTriggerBatteryPercent=30, JourneyRuntime__pollInterval=00:00:02, JourneyRuntime__sublotWaitTimeout=00:01:00"}
+{"at":"2026-09-12T09:15:23.3623951+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-12T09:15:24.4526335+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-12T09:15:27.0535372+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-12T09:15:27.0810023+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-12T09:15:27.1733304+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-12T09:15:27.4547876+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-12T09:15:27.4992617+00:00","note":"Environment is up; entering scenario 'real-onboard-field-window2-rehearsal'."}
+{"at":"2026-09-12T09:15:27.7530218+00:00","note":"Publishing demand L2-FW2-J1-N1-3-20260912T091516060Z in area N1-3."}
+{"at":"2026-09-12T09:15:27.8110081+00:00","note":"Publishing demand L2-FW2-J1-N2-6-20260912T091516060Z in area N2-6."}
+{"at":"2026-09-12T09:15:27.8211526+00:00","note":"Publishing demand L2-FW2-J1-N3-4-20260912T091516060Z in area N3-4."}
+{"at":"2026-09-12T09:15:27.8289095+00:00","note":"Publishing demand L2-FW2-J1-N4-2-20260912T091516060Z in area N4-2."}
+{"at":"2026-09-12T09:15:27.9772500+00:00","criterion":"journey-1-dispatched","value":"(null)"}
+{"at":"2026-09-12T09:17:28.0164328+00:00","note":"Run failed: Timed out after 120s waiting for: the first journey was dispatched. Last observed: (nothing)"}
+{"at":"2026-09-12T09:17:28.1126628+00:00","note":"Exported 29 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-12T09:17:40.2461098+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 29 lines, 29 distinct, 6 message types, 0 distinct violations, 0 known; schema compilation 11394 ms."}

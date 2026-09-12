@@ -9,12 +9,13 @@
 
     # 与 real-onboard-field-window-rehearsal 同一张图凑出四个取货停靠，再加充电桩 211。启动前就要在图上：
     # 准入策略把版本绑在首次看到的站点集合上（Invoke-L2Scenario.ps1 的 ExtraStations 注释）。桩的名字不是
-    # 区号格式，那个集合原样不动。
+    # 区号格式，那个集合原样不动。211 的名字必须与下面 chargerStationId 一致：这里曾写着旧的「充电准备点1」，
+    # 服务端从 8005-agv-program#53 起桩解析不到就拒绝一切接单，红证据 -004 四条需求全是 CHARGER_STATION_UNRESOLVED。
     ExtraStations     = @{
         '13'  = 'N2-6'
         '14'  = 'N3-4'
         '15'  = 'N4-2'
-        '211' = '充电准备点1'
+        '211' = '充电点1'
     }
 
     # 站点期限出厂五分钟压到一分钟，场景 T 才等得起。充电四项与生产 appsettings.json 同值写明，
