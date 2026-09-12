@@ -5,8 +5,8 @@ agent's instructions for working here.
 
 ## Write authority
 
-This repository is writable. The others in the workspace are not, each in its
-own way:
+This repository is writable, and so are `8005-agv-program`, `8005-mes-ingest`,
+`riot-sdk` and `8005-test-lab`. The remaining three each carry a note:
 
 - `8005-agv-onboard-hmi` and `slots-simulator` — **writable on `w2g/*` branches
   only** (changed 2026-09-04; they were read-only for agents before). The
