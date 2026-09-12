@@ -1,6 +1,6 @@
 # 缺陷：本站没装货就结束之后，出车前安全检查拖到下一轮才判，回答必然过期，旅程永远停在 AwaitingDepartureSafety
 
-Status: fixed（修复已提交，待切 RC 上线）
+Status: fixed，已上线（2026-09-12 14:53，release run `34678572182`，服务端 `e0d6df7`、车载端 `6b8a0b0` 未变，包 SHA-256 `529b8d5b…`；上线前 `CONTROL_SERVER_G2` 重跑 `W2G-IS-02`/`-03`/`-04`/`-07` 全 PASS，证据 `evidence/g2/20260912-rc-889cbcb/`）。现场自救 `bb16f190` 待下一次开窗时观测
 Tracking: [8005-agv-program#52](https://github.com/trytoreachpeak0/8005-agv-program/issues/52)
 Found by: 现场窗口二（无人）实跑，`agv01`，2026-09-12，证据
 `evidence/field/20260912-FW-FL2-unattended/snapshots/04-stuck-departure-safety-after-x/`（窗口中止，未 finalize，见同目录 `ABORTED.md`）。
