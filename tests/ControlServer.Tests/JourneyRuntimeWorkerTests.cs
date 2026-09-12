@@ -705,6 +705,57 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     /// <summary>
+    /// 8005-agv-control-server#28. One DbContext serves a whole TCP connection, and SessionHello loads
+    /// the current stop of every active journey into it, tracked. A vehicle that reconnects on its way
+    /// to the pickup is seen there at LoadRound 0; the runtime then arrives and asks for the sublot as
+    /// round 1 from its own context. An operator who cancels before scanning, on that same connection,
+    /// is settled against the stop the connection is holding -- and round 0 has no request to settle.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ACancellationBeforeLoadSettlesTheSublotRequestAskedAfterTheVehicleConnected()
+    {
+        const string demandId = "10000000-0000-4000-8000-000000000001";
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(demandId, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(0, (await fixture.CurrentStopRowAsync()).LoadRound);
+
+        // The vehicle reconnects on its way to the pickup, and the handshake runs on the connection's
+        // own context.
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        WireToGateStore connectionStore = new(connection);
+        await connectionStore.BeginSessionRecoveryAsync(
+            new SessionIdentity(
+                fixture.Options.AgvId,
+                2,
+                ProtocolCandidateIdentity.RepositoryCommit,
+                ProtocolCandidateIdentity.ManifestSha256,
+                ProtocolCandidateIdentity.ProfileId,
+                ProtocolCandidateIdentity.ProtocolVersion),
+            TestContext.Current.CancellationToken);
+
+        // The runtime, on a context of its own each pass, sees the session ready and arrives.
+        await fixture.RecreateEngineAsync();
+        await fixture.AdvanceSessionAsync(2);
+        await fixture.ArriveAtCurrentStopAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.JourneyRowAsync()).Stage);
+        JourneyStopRow asked = await fixture.CurrentStopRowAsync();
+        Assert.Equal(1, asked.LoadRound);
+        string sublotRequest = WireToGateStore.SublotRequestId(asked.JourneyId, asked.Sequence, asked.LoadRound);
+        Assert.Contains(sublotRequest, await fixture.PendingOutboxMessageIdsAsync());
+
+        Assert.True(await connectionStore.CancelDemandBeforeLoadAsync(
+            demandId,
+            "CANCELLED_BY_OPERATOR",
+            fixture.Clock.GetUtcNow(),
+            TestContext.Current.CancellationToken));
+
+        Assert.DoesNotContain(sublotRequest, await fixture.PendingOutboxMessageIdsAsync());
+    }
+
+    /// <summary>
     /// 8005-agv-program#52's second half. Once the only answer to a check has lapsed, nothing could
     /// ever satisfy that check again: the peer evaluates afresh on every request but names its
     /// answer after the check id, so asking again under the same id is either refused as changed
@@ -3570,6 +3621,13 @@ public sealed class JourneyRuntimeWorkerTests
             Engine = CreateEngine();
             await Task.CompletedTask;
         }
+
+        /// <summary>
+        /// A second context on the same database, held the way OnboardTcpServer holds one for as long
+        /// as a TCP connection lives. What it has tracked does not follow what the runtime writes.
+        /// </summary>
+        public ControlServerDbContext OpenConnectionContext() => new(
+            new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(Connection).Options);
 
         public async Task AdvanceSessionAsync(long generation)
         {
