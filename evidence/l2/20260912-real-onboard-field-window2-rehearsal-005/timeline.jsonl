@@ -1,0 +1,120 @@
+{"at":"2026-09-12T09:20:21.0946660+00:00","note":"L2 run 20260912T092021062Z starting for scenario 'real-onboard-field-window2-rehearsal'."}
+{"at":"2026-09-12T09:20:21.1206479+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-12T09:20:21.2418973+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-12T09:20:25.7602346+00:00","note":"Reusing cached onboard-hmi publish for 6b8a0b06575f40fa0e682c5d307b9ce46bbe9227."}
+{"at":"2026-09-12T09:20:25.8509930+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-12T09:20:25.8552602+00:00","note":"Peers: onboard-hmi@6b8a0b06575f40fa0e682c5d307b9ce46bbe9227, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-12T09:20:25.8813683+00:00","note":"Extra map stations from real-onboard-field-window2-rehearsal.setup.psd1: 13=N2-6, 14=N3-4, 15=N4-2, 211=充电点1"}
+{"at":"2026-09-12T09:20:26.7486601+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-12T09:20:26.8501425+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-12T09:20:28.6208857+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-12T09:20:28.6350872+00:00","note":"Server settings from real-onboard-field-window2-rehearsal.setup.psd1: JourneyRuntime__autoChargingEnabled=true, JourneyRuntime__chargeResumeBatteryPercent=80, JourneyRuntime__chargerStationId=充电点1, JourneyRuntime__chargerStationRiotId=211, JourneyRuntime__chargeTriggerBatteryPercent=30, JourneyRuntime__pollInterval=00:00:02, JourneyRuntime__sublotWaitTimeout=00:01:00"}
+{"at":"2026-09-12T09:20:30.5827044+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-12T09:20:31.6608864+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-12T09:20:33.4556063+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-12T09:20:33.4721131+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-12T09:20:33.5473317+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-12T09:20:33.8191363+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-12T09:20:33.8658074+00:00","note":"Environment is up; entering scenario 'real-onboard-field-window2-rehearsal'."}
+{"at":"2026-09-12T09:20:33.9691286+00:00","note":"Publishing demand L2-FW2-J1-N1-3-20260912T092021062Z in area N1-3."}
+{"at":"2026-09-12T09:20:34.0323594+00:00","note":"Publishing demand L2-FW2-J1-N2-6-20260912T092021062Z in area N2-6."}
+{"at":"2026-09-12T09:20:34.0434927+00:00","note":"Publishing demand L2-FW2-J1-N3-4-20260912T092021062Z in area N3-4."}
+{"at":"2026-09-12T09:20:34.0502820+00:00","note":"Publishing demand L2-FW2-J1-N4-2-20260912T092021062Z in area N4-2."}
+{"at":"2026-09-12T09:20:34.1008950+00:00","criterion":"journey-1-dispatched","value":"(null)"}
+{"at":"2026-09-12T09:20:36.2021159+00:00","criterion":"journey-1-dispatched","value":"@{JourneyId=5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8; Stage=AwaitingPickupArrival; CurrentStopSequence=1; BlockReasonCode=; LoadingClosedReason=}"}
+{"at":"2026-09-12T09:20:36.9446517+00:00","note":"Collector checkpoint 00-ready taken."}
+{"at":"2026-09-12T09:20:36.9732421+00:00","criterion":"stop-1-order","value":"@{UpperId=W2G-5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8-S1-1; StationRiotId=12}"}
+{"at":"2026-09-12T09:20:36.9864434+00:00","note":"Vehicle drives to stop 1 of journey 5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8 (RIoT station 12)."}
+{"at":"2026-09-12T09:20:37.0929729+00:00","criterion":"journey-1-stops","value":"2"}
+{"at":"2026-09-12T09:20:39.6872720+00:00","criterion":"journey-1-stops","value":"5"}
+{"at":"2026-09-12T09:20:39.9793491+00:00","note":"field-operator: stop 1: the vehicle asks for sublot L2-FW2-J1-N1-3-20260912T092021062Z and nobody scans it; deadline 2026-09-12T17:21:39.4121368+08:00"}
+{"at":"2026-09-12T09:21:41.4512299+00:00","note":"field-operator: stop 1: demand 0c376047-d110-4d6b-b165-453aa858ca47 Cancelled (CANCELLED_BY_STATION_TIMEOUT); journey now at 1/AwaitingDepartureSafety"}
+{"at":"2026-09-12T09:21:42.0958378+00:00","note":"Collector checkpoint t-settled taken."}
+{"at":"2026-09-12T09:21:42.1021446+00:00","criterion":"stop-2-order","value":"@{UpperId=W2G-5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8-S2-1; StationRiotId=13}"}
+{"at":"2026-09-12T09:21:42.1070342+00:00","note":"Vehicle drives to stop 2 of journey 5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8 (RIoT station 13)."}
+{"at":"2026-09-12T09:21:43.8348858+00:00","note":"field-operator: stop 2: pressed LOAD_CANCELLATION for demand 040c0211-7402-49cd-82b6-7c77c4018487: HTTP 200"}
+{"at":"2026-09-12T09:21:45.6711364+00:00","note":"field-operator: stop 2: demand 040c0211-7402-49cd-82b6-7c77c4018487 Cancelled (CANCELLED_BY_OPERATOR); journey now at 3/AwaitingPickupArrival"}
+{"at":"2026-09-12T09:21:46.3809805+00:00","note":"Collector checkpoint x-settled taken."}
+{"at":"2026-09-12T09:21:46.3878742+00:00","criterion":"stop-3-order","value":"@{UpperId=W2G-5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8-S3-1; StationRiotId=14}"}
+{"at":"2026-09-12T09:21:46.3922868+00:00","note":"Vehicle drives to stop 3 of journey 5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8 (RIoT station 14)."}
+{"at":"2026-09-12T09:21:47.6311539+00:00","note":"field-operator: stop 3: submitted sublot L2-FW2-J1-N3-4-20260912T092021062Z (demand 9a59498c-c902-45a8-a651-16dada52dc27)"}
+{"at":"2026-09-12T09:21:50.7695355+00:00","note":"field-operator: stop 3: vehicle waits on slot 3 (attempt fbd164d4-58d3-5e59-85a2-f04a769834a7)"}
+{"at":"2026-09-12T09:21:50.7786993+00:00","note":"field-operator: Load fbd164d4-58d3-5e59-85a2-f04a769834a7: vehicle waits on slot 3; serving it with OCCUPIED"}
+{"at":"2026-09-12T09:21:51.1460067+00:00","note":"field-operator: slot 3: door closed with cargo OCCUPIED"}
+{"at":"2026-09-12T09:21:51.9546201+00:00","note":"field-operator: Load fbd164d4-58d3-5e59-85a2-f04a769834a7 settled as Committed"}
+{"at":"2026-09-12T09:21:51.9605807+00:00","criterion":"stop-4-order","value":"(null)"}
+{"at":"2026-09-12T09:21:53.7619663+00:00","criterion":"stop-4-order","value":"@{UpperId=W2G-5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8-S4-1; StationRiotId=15}"}
+{"at":"2026-09-12T09:21:53.7627308+00:00","note":"Vehicle drives to stop 4 of journey 5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8 (RIoT station 15)."}
+{"at":"2026-09-12T09:21:55.8966016+00:00","note":"field-operator: stop 4: submitted sublot L2-FW2-J1-N4-2-20260912T092021062Z (demand 362e9904-2fc6-47d0-88ba-cd80803f963b)"}
+{"at":"2026-09-12T09:21:58.4976901+00:00","note":"field-operator: stop 4: vehicle waits on slot 4 (attempt 19d2e435-8633-7850-a75e-a82f306fb65b)"}
+{"at":"2026-09-12T09:21:58.4996471+00:00","note":"field-operator: Load 19d2e435-8633-7850-a75e-a82f306fb65b: vehicle waits on slot 4; serving it with OCCUPIED"}
+{"at":"2026-09-12T09:21:58.8091648+00:00","note":"field-operator: slot 4: door closed with cargo OCCUPIED"}
+{"at":"2026-09-12T09:21:59.5835169+00:00","note":"field-operator: Load 19d2e435-8633-7850-a75e-a82f306fb65b settled as Committed"}
+{"at":"2026-09-12T09:21:59.5861087+00:00","criterion":"stop-9-order","value":"(null)"}
+{"at":"2026-09-12T09:22:01.6306459+00:00","criterion":"stop-9-order","value":"@{UpperId=W2G-5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8-S9-1; StationRiotId=210}"}
+{"at":"2026-09-12T09:22:01.6315377+00:00","note":"Vehicle drives to stop 9 of journey 5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8 (RIoT station 210)."}
+{"at":"2026-09-12T09:22:04.7284485+00:00","note":"field-operator: slot 3: door closed with cargo OCCUPIED"}
+{"at":"2026-09-12T09:22:06.3292737+00:00","note":"field-operator: gate slot 3 round 1: closed with the cargo still in; the vehicle reopened it (UNLOCKING 1->2, WAITING_OPERATOR 1->2)"}
+{"at":"2026-09-12T09:22:06.3407594+00:00","note":"field-operator: slot 3: door closed with cargo OCCUPIED"}
+{"at":"2026-09-12T09:22:07.9298527+00:00","note":"field-operator: gate slot 3 round 2: closed with the cargo still in; the vehicle reopened it (UNLOCKING 2->3, WAITING_OPERATOR 2->3)"}
+{"at":"2026-09-12T09:22:08.5859961+00:00","note":"Collector checkpoint ne-reopened taken."}
+{"at":"2026-09-12T09:22:08.5874843+00:00","note":"field-operator: gate: unload 2de6755d-7794-6456-b332-51bfac5a3b27 waits on slot 3; taking the cargo out"}
+{"at":"2026-09-12T09:22:08.8751235+00:00","note":"field-operator: slot 3: door closed with cargo EMPTY"}
+{"at":"2026-09-12T09:22:12.6951657+00:00","note":"field-operator: gate: unload b7d8859a-d341-8b5b-81a0-14d016baef9b waits on slot 4; taking the cargo out"}
+{"at":"2026-09-12T09:22:12.9791065+00:00","note":"field-operator: slot 4: door closed with cargo EMPTY"}
+{"at":"2026-09-12T09:22:15.7923678+00:00","note":"field-operator: journey 5a91ecae-c1e8-ca55-a57b-f84bbed7e0a8 completed at the gate"}
+{"at":"2026-09-12T09:22:15.8589464+00:00","note":"Restarting ControlServer (start 2) against the same database."}
+{"at":"2026-09-12T09:22:17.0083767+00:00","note":"field-operator: session: generation 1 Ready (READY)"}
+{"at":"2026-09-12T09:22:21.0455570+00:00","note":"field-operator: session: generation 2 RecoveryRequired (HANDSHAKE_INCOMPLETE)"}
+{"at":"2026-09-12T09:22:21.5598134+00:00","note":"field-operator: session: generation 2 Ready (READY)"}
+{"at":"2026-09-12T09:22:22.2352831+00:00","note":"Collector checkpoint r1-ready taken."}
+{"at":"2026-09-12T09:22:22.2388292+00:00","note":"Battery drops below the trigger level."}
+{"at":"2026-09-12T09:22:24.2985780+00:00","note":"field-operator: charging run 9a77485d-304b-475d-adfd-a77dc8dad76a started at 15% towards station 211"}
+{"at":"2026-09-12T09:22:24.3005404+00:00","note":"field-operator: charging run: AwaitingChargerArrival"}
+{"at":"2026-09-12T09:22:24.9469473+00:00","note":"Collector checkpoint charge-dispatched taken."}
+{"at":"2026-09-12T09:22:24.9581169+00:00","criterion":"to-charger-intent","value":"@{UpperId=W2G-CHARGE-9a77485d-304b-475d-adfd-a77dc8dad76a-1; Status=CONFIRMED}"}
+{"at":"2026-09-12T09:22:24.9677535+00:00","note":"Vehicle drives to the charger; the order's start-charging action engages it."}
+{"at":"2026-09-12T09:22:27.0035389+00:00","note":"field-operator: charging run: Charging"}
+{"at":"2026-09-12T09:22:27.6841206+00:00","note":"Collector checkpoint charge-charging taken."}
+{"at":"2026-09-12T09:22:27.6855387+00:00","note":"Publishing demand L2-FW2-J2-N1-3-20260912T092021062Z in area N1-3."}
+{"at":"2026-09-12T09:22:27.7029773+00:00","note":"Publishing demand L2-FW2-J2-N2-6-20260912T092021062Z in area N2-6."}
+{"at":"2026-09-12T09:22:27.7231846+00:00","criterion":"runtime-iterations","value":"59"}
+{"at":"2026-09-12T09:22:29.0254535+00:00","criterion":"runtime-iterations","value":"60"}
+{"at":"2026-09-12T09:22:30.8646146+00:00","criterion":"runtime-iterations","value":"61"}
+{"at":"2026-09-12T09:22:32.9527660+00:00","criterion":"runtime-iterations","value":"62"}
+{"at":"2026-09-12T09:22:34.7864965+00:00","criterion":"runtime-iterations","value":"63"}
+{"at":"2026-09-12T09:22:36.8030312+00:00","note":"field-operator: charging run: Completed"}
+{"at":"2026-09-12T09:22:37.4905049+00:00","note":"Collector checkpoint charge-released taken."}
+{"at":"2026-09-12T09:22:37.4944305+00:00","criterion":"journey-2-dispatched","value":"@{JourneyId=d3302d72-0955-a657-b513-fc725ccd09de; Stage=AwaitingPickupArrival; CurrentStopSequence=1; BlockReasonCode=; LoadingClosedReason=}"}
+{"at":"2026-09-12T09:22:37.5042096+00:00","criterion":"stop-1-order","value":"@{UpperId=W2G-d3302d72-0955-a657-b513-fc725ccd09de-S1-1; StationRiotId=12}"}
+{"at":"2026-09-12T09:22:37.5102753+00:00","note":"Vehicle drives to stop 1 of journey d3302d72-0955-a657-b513-fc725ccd09de (RIoT station 12)."}
+{"at":"2026-09-12T09:22:37.5400302+00:00","criterion":"journey-2-stops","value":"2"}
+{"at":"2026-09-12T09:22:39.0693874+00:00","criterion":"journey-2-stops","value":"3"}
+{"at":"2026-09-12T09:22:39.1294056+00:00","note":"field-operator: stop 1: submitted sublot L2-FW2-J2-N1-3-20260912T092021062Z (demand d9146b00-b610-4c57-b79c-a11aa9db076c)"}
+{"at":"2026-09-12T09:22:41.9633480+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt 3c64ff8a-e6f2-605a-ae2b-3cb5eae133b8)"}
+{"at":"2026-09-12T09:22:41.9655528+00:00","note":"field-operator: Load 3c64ff8a-e6f2-605a-ae2b-3cb5eae133b8: vehicle waits on slot 1; serving it with OCCUPIED"}
+{"at":"2026-09-12T09:22:42.2587957+00:00","note":"field-operator: slot 1: door closed with cargo OCCUPIED"}
+{"at":"2026-09-12T09:22:43.0394860+00:00","note":"field-operator: Load 3c64ff8a-e6f2-605a-ae2b-3cb5eae133b8 settled as Committed"}
+{"at":"2026-09-12T09:22:43.0430096+00:00","criterion":"stop-2-order","value":"(null)"}
+{"at":"2026-09-12T09:22:45.0857753+00:00","criterion":"stop-2-order","value":"@{UpperId=W2G-d3302d72-0955-a657-b513-fc725ccd09de-S2-1; StationRiotId=13}"}
+{"at":"2026-09-12T09:22:45.0865670+00:00","note":"Vehicle drives to stop 2 of journey d3302d72-0955-a657-b513-fc725ccd09de (RIoT station 13)."}
+{"at":"2026-09-12T09:22:47.2423697+00:00","note":"field-operator: stop 2: submitted sublot L2-FW2-J2-N2-6-20260912T092021062Z (demand 6408696e-3241-4679-9126-c9bb994be230)"}
+{"at":"2026-09-12T09:22:49.8228793+00:00","note":"field-operator: stop 2: vehicle waits on slot 2 (attempt 3c4584fa-d483-e15b-bbcb-f01fd0e73172)"}
+{"at":"2026-09-12T09:22:49.8256406+00:00","note":"field-operator: Load 3c4584fa-d483-e15b-bbcb-f01fd0e73172: vehicle waits on slot 2; serving it with OCCUPIED"}
+{"at":"2026-09-12T09:22:50.1351398+00:00","note":"field-operator: slot 2: door closed with cargo OCCUPIED"}
+{"at":"2026-09-12T09:22:50.9127965+00:00","note":"field-operator: Load 3c4584fa-d483-e15b-bbcb-f01fd0e73172 settled as Committed"}
+{"at":"2026-09-12T09:22:50.9144703+00:00","criterion":"stop-9-order","value":"@{UpperId=W2G-d3302d72-0955-a657-b513-fc725ccd09de-S9-1; StationRiotId=210}"}
+{"at":"2026-09-12T09:22:50.9223435+00:00","note":"Vehicle drives to stop 9 of journey d3302d72-0955-a657-b513-fc725ccd09de (RIoT station 210)."}
+{"at":"2026-09-12T09:22:54.4781685+00:00","note":"field-operator: gate: unload 3ccd0ca1-05d9-4a59-b96e-d10cf58ce583 waits on slot 1; taking the cargo out"}
+{"at":"2026-09-12T09:22:54.7637940+00:00","note":"field-operator: slot 1: door closed with cargo EMPTY"}
+{"at":"2026-09-12T09:22:58.0628074+00:00","note":"field-operator: gate: unload f975eae0-87a2-195a-9df9-c6f739356493 waits on slot 2; taking the cargo out"}
+{"at":"2026-09-12T09:22:58.3506274+00:00","note":"field-operator: slot 2: door closed with cargo EMPTY"}
+{"at":"2026-09-12T09:23:01.1274107+00:00","note":"field-operator: journey d3302d72-0955-a657-b513-fc725ccd09de completed at the gate"}
+{"at":"2026-09-12T09:23:01.1306473+00:00","note":"Restarting ControlServer (start 3) against the same database."}
+{"at":"2026-09-12T09:23:02.2251290+00:00","note":"field-operator: session: generation 2 Ready (READY)"}
+{"at":"2026-09-12T09:23:03.7461154+00:00","note":"field-operator: session: generation 3 Ready (READY)"}
+{"at":"2026-09-12T09:23:04.4687133+00:00","note":"Collector checkpoint r2-ready taken."}
+{"at":"2026-09-12T09:23:05.8013583+00:00","note":"Collector finalize exit 0: FW-FL2 PASS -> C:\\Users\\szy\\Desktop\\8005-workspace\\repos\\8005-agv-control-server\\evidence\\l2\\20260912-real-onboard-field-window2-rehearsal-005\\field-window"}
+{"at":"2026-09-12T09:23:05.8102397+00:00","note":"Scenario finished."}
+{"at":"2026-09-12T09:23:05.9100541+00:00","note":"Exported 185 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-12T09:23:24.7239235+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 185 lines, 185 distinct, 12 message types, 0 distinct violations, 0 known; schema compilation 17467 ms."}

@@ -1,6 +1,6 @@
 # 缺陷：自动充电在现场从来做不成——充电桩绑定对不上地图、起不了充电照常接单、充电单只有移动动作
 
-Status: open
+Status: fixed（`3c9ced4`，未上线，现场验证归 8005-agv-program#20 的充电短窗口）
 Tracking: [8005-agv-program#53](https://github.com/trytoreachpeak0/8005-agv-program/issues/53)
 Found by: 现场窗口二（无人）续跑，`agv01`，2026-09-12，证据 `evidence/field/20260912-FW-FL2-resumed/`（窗口没有 finalize，见同目录 `ABORTED.md`）。
 Product at discovery: 服务端 `e0d6df7`、车载端 `6b8a0b0`、`protocol-v0.3.0`（run `34678572182` 的包）
@@ -44,7 +44,31 @@ L2 的 `auto-charge-endurance` 与 `real-onboard-field-window2-rehearsal` 都往
 这也解释了 2026-09-11 到 12 日车在 211 停了 13 小时一直 `NO_CHARGE`：停在桩上本身不会充电。
 L2 的假 RIoT 在车到桩时直接把 `batteryState` 写成 `CHARGING`，所以测不出这一层。
 
-## 修复方向（未实施）
+## 修复（`3c9ced4`，2026-09-12）
+
+1. **充电单**：`HttpRiotMovementGateway` 对 `TO_CHARGER` 下 `move(桩) + act(78,1,0)`，经 facade 的 Kiota 客户端建单，
+   沿用 facade 的应答检查，没有切新 SDK 包。没有用 `/api/task/v1/order/charge/{vehicleKey}`：program 仓票 04 的 Q11
+   早已否决它（RIoT 本体充电机制、要求站点设成充电桩 type），`CONTEXT.md` 的 `RoutineOrderCreationCall` 定的就是
+   `move + act(78,1)`。
+   生产 RIoT map 25 实读（只读 GET）：208 个站全是 `type=1`，只有 211 配了 `user_define_properties.enter_exit = "212"`，
+   所以 RIoT 会把充电单展开成 `move(212) → move(211) → act(78)`。对账原来要求恰好一段移动，现改为取最后一段，
+   多段时最后一段必须与 `endStationNo` 一致。
+2. **fail closed**：开着自动充电时，电量低于触发线拒绝接单（`BATTERY_CHARGE_REQUIRED`）；桩在当前地图上解析不到时
+   不论电量一律拒绝接单（`CHARGER_STATION_UNRESOLVED`，用户定），绑定错误在第一次派车就暴露。出厂值改为 `充电点1 / 211`。
+3. **空档**：配置校验改为要求触发线不低于接单最低线（用户定），出厂触发线 20 → 30。
+   `Set-JourneyRuntime.ps1` 在写配置前按同一规则拒绝（工作区 `6dd66d4`）。
+4. **充电器接不上**：Q-033 说充电单重试后 `orderState=9` HANG，现在充电行程写 `CHARGER_ORDER_HANG`，不再静默等待。
+5. **L2**：假 RIoT 只在带 `act(78,1,0)` 的单推到 5 时报 `CHARGING`，两条充电场景不再在到桩时自己写
+   （`L2-AC-19`、`L2-FW2-19`）；默认种子地图加上 `211 充电点1`。
+
+验证：单元测试 446 全绿；L2 `20260912-normal-load-001` PASS、`20260912-auto-charge-endurance-001` PASS、
+`20260912-real-onboard-field-window2-rehearsal-005` PASS/41。红证据 `-004`：彩排 setup 的假地图仍写旧名「充电准备点1」，
+四条需求全是 `CHARGER_STATION_UNRESOLVED`（`b31b6d8` 修）——新规则按设计把绑定错误挡在了第一次派车。
+
+**没有验证的**：生产 RIoT 上 78 号动作模板是否存在、agv01 执行 `act(78,1,0)` 能否真的接上电。Round 24/25 在测试环境
+`172.10.1.72` 上测，只有现场短窗口能回答。
+
+## 修复方向（原记录，已按上节实施）
 
 1. 出厂值改成现场值 `充电点1 / 211`（生产上已用 `appsettings.Production.json` 覆盖）。另外，让固定站点绑定在现场能被尽早发现：
    比如服务起来时就对 RIoT 当前地图解析一次，对不上就不报 ready。只靠「该充电时才报一条 Warning」是不够的。

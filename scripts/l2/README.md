@@ -22,7 +22,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `load-cancelled-before-sublot` | 合成 | 到站发现没货，操作员在扫码前取消，车接下一单 | `evidence/l2/20260908-load-cancelled-before-sublot-002` |
 | `load-cancelled-in-flight` | 合成 | 装货命令已下发、门已开着时取消：这一单终结，这个停靠不终结 | `evidence/l2/20260909-load-cancelled-in-flight-002` |
 | `sublot-wait-timeout` | 合成 | 到站没人扫码，等待窗口到期自己终结，下一单照常跑完 | `evidence/l2/20260908-sublot-wait-timeout-001` |
-| `auto-charge-endurance` | 合成 | 一趟串四幕：送完一单、低电自去充电、充满、再送一单 | `evidence/l2/20260908-auto-charge-endurance-007` |
+| `auto-charge-endurance` | 合成 | 一趟串四幕：送完一单、低电自去充电、充满、再送一单 | `evidence/l2/20260912-auto-charge-endurance-001` |
 | `multi-demand-one-stop` | 合成 | 一个停靠上多张单，作业清单是复数的 | `evidence/l2/20260908-multi-demand-one-stop-001` |
 | `multi-demand-four-stops` | 合成 | 四张单落在四个不同站点：到第一站后吸收成一趟，行程带发五条腿，四站依次装完去关卡 | `evidence/l2/20260910-multi-demand-four-stops-009` |
 | `load-command-never-answered` | 合成 | 装载指令石沉大海，服务端重发而不改口 | `evidence/l2/20260908-regression-load-command-never-answered-001` |
