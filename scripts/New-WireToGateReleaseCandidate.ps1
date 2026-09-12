@@ -326,8 +326,9 @@ if ($protocol.approvalStatus -ne 'APPROVED_RELEASE') {
     # Since the v2 identity switch this is the expected outcome rather than an accident: the server
     # is bound to the protocol v2 candidate, whose approvalStatus is SUPERSEDING_CANDIDATE. Section
     # 6.6 of the full-product scope specification lists what the candidate still owes before a
-    # ProtocolRelease can be cut, and item 6 is two product owners' external attestation plus the
-    # annotated tag protocol-v1.0.0. Packaging a release candidate over that is the thing the check
+    # ProtocolRelease can be cut, and item 6 is the external approval attestation (one product owner
+    # since 2026-09-08, carried into the candidate on 2026-09-12) plus the annotated tag
+    # protocol-v1.0.0. Packaging a release candidate over that is the thing the check
     # exists to refuse; name the status so the operator is not left guessing.
     throw ("The published ControlServer package is bound to protocol {0} ({1}) with approvalStatus " +
            "'{2}', not 'APPROVED_RELEASE'. A release candidate cannot be packaged until that " +

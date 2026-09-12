@@ -16,7 +16,7 @@ namespace ControlServer.Domain;
 /// <para>
 /// **This list and the identity beside it now name the same candidate.** The 54 values below are
 /// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
-/// <c>84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788</c>
+/// <c>25fd6689e8234b7d481874b408109cd27eb0f02fbb023225385d6642e9bfd3d0</c>
 /// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, <c>protocolVersion: 2</c>),
 /// and <see cref="ProtocolCandidateIdentity"/> names that same commit. They were deliberately out
 /// of step for four days: this list moved to v2 first because eleven codes were appended and none

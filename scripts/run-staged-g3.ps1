@@ -27,10 +27,14 @@ param(
     #     protocol-v0.3.0 and is a different protocol from this line.
     #   $SimulatorCommit unchanged: slots-simulator references no protocol identity at all.
     #   $ProtocolCommit unchanged: the v2 candidate, already on origin/fp/v2-candidate.
+    #
+    # 2026-09-12: $ProtocolCommit -> 16e2567, the same candidate with the single-owner release rule
+    #   carried over from main. Its manifest and schema bundle hashes moved, and so did the copy of
+    #   the identity in the synthetic peer below; that commit has to be on origin before a run.
     [string]$ControlServerCommit = 'eefb3a8802664623fdde9dd7bdc759ea5b61a5b0',
     [string]$OnboardCommit = 'afba86e07116192bde386937c559cc7a70a00a7f',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = 'f6ee75defe6e2d18f63f4082bee445dbb678ab1b',
+    [string]$ProtocolCommit = '16e2567a7033883f00fc999f7fa08f954dd13a26',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
     # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
@@ -2068,9 +2072,9 @@ public static class StagedG3TlsHarness
     {
         public const string Release = "1.0.0";
         public const string Profile = "AGV_FULL_PRODUCT";
-        public const string Commit = "f6ee75defe6e2d18f63f4082bee445dbb678ab1b";
-        public const string Manifest = "84f984eabf17106e92666c415b63100d404e9ec69a9a710dfddf17683cc42788";
-        public const string Schema = "71146c881e8ec199e9a977779ec1a557bed96a9ab71e36cfc3dfb7b329351c6b";
+        public const string Commit = "16e2567a7033883f00fc999f7fa08f954dd13a26";
+        public const string Manifest = "25fd6689e8234b7d481874b408109cd27eb0f02fbb023225385d6642e9bfd3d0";
+        public const string Schema = "225a83340eb5f27c4e6dfd7bf8aba8007cf787d29f1df860deaf0ba039baf3ff";
         public const string Vectors = "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df";
     }
 
