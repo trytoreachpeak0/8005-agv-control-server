@@ -1,0 +1,60 @@
+[15:16:45] Preflight on agv01 and factory01
+  agvId 老厂前线新多仓位1, IO 127.0.0.1:1502, recovery window closed, session Ready generation 437
+  resuming journey bb16f190-fb7d-2958-82f0-9fc67e77d243 at 2/AwaitingDepartureSafety; carried scenes T, X from C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\evidence\field\20260912-FW-FL2-unattended\carried-acts.json
+WARNING: This script neither dispatches nor closes the gates. Start 13-close-gates-when-idle.ps1 after each "Journey <id>" line -- started earlier it closes the gates at once.
+[15:16:57] checkpoint 00-ready
+FW-FL2 checkpoint 01-00-ready -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\evidence\field\20260912-FW-FL2-resumed\snapshots\01-00-ready
+[15:17:13] Waiting up to 20 min for the authorised dispatch to move journey bb16f190-fb7d-2958-82f0-9fc67e77d243 on from 2/AwaitingDepartureSafety (departure safety check 55627923-f8bc-bf54-a57e-b3dc60790dc6)
+[15:18:34] Journey bb16f190-fb7d-2958-82f0-9fc67e77d243 left 2/AwaitingDepartureSafety for 3/AwaitingPickupArrival; stop 2 check 55627923-f8bc-bf54-a57e-b3dc60790dc6 -> 6cc361d1-8b7c-825f-8f40-6292e844016b, consumed e965fdff-900a-3652-b77f-65870a8dc195
+[15:18:34] checkpoint resumed-departed
+FW-FL2 checkpoint 02-resumed-departed -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\evidence\field\20260912-FW-FL2-resumed\snapshots\02-resumed-departed
+[15:18:51] Journey bb16f190-fb7d-2958-82f0-9fc67e77d243
+[15:22:20] J1 stop 3: load
+  [15:22:27] stop 3: submitted sublot Q26091208-17 (demand 4d283146-bea4-4747-b6c5-5f72858a5746)
+  [15:22:31] stop 3: vehicle waits on slot 5 (attempt 86cbf0bc-61cf-9658-8ac2-5716c4a24c7d)
+  [15:22:36] Load 86cbf0bc-61cf-9658-8ac2-5716c4a24c7d: vehicle waits on slot 5; serving it with OCCUPIED
+  [15:22:42] slot 5: door closed with cargo OCCUPIED
+  [15:22:50] Load 86cbf0bc-61cf-9658-8ac2-5716c4a24c7d: vehicle waits on slot 6; serving it with OCCUPIED
+  [15:22:57] slot 6: door closed with cargo OCCUPIED
+  [15:23:02] Load 86cbf0bc-61cf-9658-8ac2-5716c4a24c7d settled as Committed
+[15:27:05] J1 stop 4: load
+  [15:27:12] stop 4: submitted sublot Q26092108-38 (demand 27c13755-6e27-44ad-a745-b71308c3a6b8)
+  [15:27:20] stop 4: vehicle waits on slot 7 (attempt d428d252-8441-f55b-9de0-f695682879b2)
+  [15:27:23] Load d428d252-8441-f55b-9de0-f695682879b2: vehicle waits on slot 7; serving it with OCCUPIED
+  [15:27:30] slot 7: door closed with cargo OCCUPIED
+  [15:27:38] Load d428d252-8441-f55b-9de0-f695682879b2: vehicle waits on slot 8; serving it with OCCUPIED
+  [15:27:44] slot 8: door closed with cargo OCCUPIED
+  [15:27:50] Load d428d252-8441-f55b-9de0-f695682879b2 settled as Committed
+[15:30:11] J1 gate: unload (first slot closed 2 times with the basket inside: NE)
+  [15:30:25] slot 5: door closed with cargo OCCUPIED
+  [15:30:29] gate slot 5 round 1: closed with the cargo still in; the vehicle reopened it (UNLOCKING 1->2, WAITING_OPERATOR 1->2)
+  [15:30:37] slot 5: door closed with cargo OCCUPIED
+  [15:30:42] gate slot 5 round 2: closed with the cargo still in; the vehicle reopened it (UNLOCKING 2->3, WAITING_OPERATOR 2->3)
+[15:30:48] checkpoint j1-ne-reopened
+FW-FL2 checkpoint 03-j1-ne-reopened -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\evidence\field\20260912-FW-FL2-resumed\snapshots\03-j1-ne-reopened
+  [15:31:06] gate: unload 2b0c6540-78f6-ef5b-8d6a-92c4316befb2 waits on slot 5; taking the cargo out
+  [15:31:12] slot 5: door closed with cargo EMPTY
+  [15:31:20] gate: unload 2b0c6540-78f6-ef5b-8d6a-92c4316befb2 waits on slot 6; taking the cargo out
+  [15:31:26] slot 6: door closed with cargo EMPTY
+  [15:31:34] gate: unload 7be174ae-5ab4-a258-bf25-1bb59208d16e waits on slot 7; taking the cargo out
+  [15:31:40] slot 7: door closed with cargo EMPTY
+  [15:31:48] gate: unload 7be174ae-5ab4-a258-bf25-1bb59208d16e waits on slot 8; taking the cargo out
+  [15:31:54] slot 8: door closed with cargo EMPTY
+  [15:32:00] journey bb16f190-fb7d-2958-82f0-9fc67e77d243 completed at the gate
+[15:32:01] Journey bb16f190-fb7d-2958-82f0-9fc67e77d243 completed; waiting up to 30 min for the gate watcher's restart to end in a Ready session
+  [15:32:03] session: generation 438 Ready (READY)
+  [15:32:05] session: generation 439 Ready (READY)
+[15:32:05] checkpoint r1-ready
+FW-FL2 checkpoint 04-r1-ready -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\evidence\field\20260912-FW-FL2-resumed\snapshots\04-r1-ready
+[15:32:26] Waiting up to 60 min for the second authorised dispatch, with a charge-threshold override (Set-JourneyRuntime.ps1 -Dispatch -ChargeTriggerBatteryPercent <above the battery> -ChargeResumeBatteryPercent <a few % higher>)
+  [16:20:43] charging run bc7244b5-0aa6-1452-ac7f-b36c48f9eda1 started at 67% towards station 211
+  [16:20:43] charging run: AwaitingChargerArrival
+[16:20:43] checkpoint charge-dispatched
+FW-FL2 checkpoint 06-charge-dispatched -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\evidence\field\20260912-FW-FL2-resumed\snapshots\06-charge-dispatched
+[16:21:03] Charging run bc7244b5-0aa6-1452-ac7f-b36c48f9eda1 at 67%; override {"trigger":68,"resume":72}
+  [16:23:46] charging run: Charging
+[16:23:46] checkpoint charge-charging
+FW-FL2 checkpoint 07-charge-charging -> C:\Users\szy\Desktop\8005-workspace\repos\8005-agv-control-server\evidence\field\20260912-FW-FL2-resumed\snapshots\07-charge-charging
+  [16:24:06] charging run: Charging (CHARGER_NOT_ENGAGED)
+
+[killed]
