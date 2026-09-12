@@ -1259,11 +1259,10 @@ public sealed class JourneyRuntimeWorkerTests
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task LivenessReadsOnlyTheEvidenceWindowNotTheInboxHistory()
     {
-        // The inbox keeps every heartbeat the vehicle ever sent -- about 17,000 rows a day while it is
-        // connected -- and liveness used to load and parse all of them on every read. Measured on the
-        // plant server (8005-agv-control-server#29) that grew past the two-second poll within a week.
-        // Nothing older than MaximumEvidenceAge can make a session live, so nothing older is read. The
-        // unreadable row is a tripwire: loading it at all throws.
+        // Liveness used to load and parse the whole inbox on every read; see
+        // JourneyRuntimeEngine.LatestInboundAtForSessionAsync. Nothing older than MaximumEvidenceAge can
+        // make a session live, so nothing older is read. The unreadable row is a tripwire: loading it at
+        // all throws.
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Catalog.Set(fixture.Demand(
             "10000000-0000-4000-8000-000000000001",
