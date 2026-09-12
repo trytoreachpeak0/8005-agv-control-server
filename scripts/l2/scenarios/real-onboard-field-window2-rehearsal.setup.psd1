@@ -19,7 +19,10 @@
 
     # 站点期限出厂五分钟压到一分钟，场景 T 才等得起。充电四项与生产 appsettings.json 同值写明，
     # 而不是靠默认：桩的编号与名字必须和上面的图对上，RequireFixedStation 两样都要精确匹配。
+    # 轮询间隔用生产上的 2 秒，不用 L2 默认的 1 秒。车给出车前安全检查的回答只有 2 秒有效期：-002 在 1 秒间隔下
+    # 全绿，现场第一次跑就卡在停靠 2（8005-agv-program#52）——结束本站的那一轮没有当场判回答，下一轮已经过期。
     ServerSettings    = @{
+        'JourneyRuntime__pollInterval'                = '00:00:02'
         'JourneyRuntime__sublotWaitTimeout'           = '00:01:00'
         'JourneyRuntime__autoChargingEnabled'         = 'true'
         'JourneyRuntime__chargerStationId'            = '充电准备点1'

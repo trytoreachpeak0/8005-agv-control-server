@@ -648,6 +648,128 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_GATE"));
     }
 
+    /// <summary>
+    /// 8005-agv-program#52. The same window, reached from the other way a stop ends: its station
+    /// deadline. TryTimeOutSublotWaitAsync concluded the stop and returned, so the answer was read on
+    /// the next poll -- two seconds later against a two-second window. On the plant it squeaked
+    /// through by 30 ms at one stop of the field window and not at the next.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task AStopEndedByItsStationDeadlineJudgesTheDepartureSafetyAnswerWhileItIsStillValid()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.LoadFirstStopAndArriveAtSecondAsync();
+
+        fixture.AnswerDepartureSafetyChecksLikeThePeer();
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, journey.Stage);
+        Assert.Null(journey.BlockReasonCode);
+        Assert.Equal(
+            JourneyDemandState.Cancelled,
+            (await fixture.DemandRowsAsync()).Single(row => row.DemandId == "10000000-0000-4000-8000-000000000002").State);
+    }
+
+    /// <summary>
+    /// 8005-agv-program#52, the case the field window actually stopped on: the operator presses
+    /// 取消装货 before scanning, the coordinator cancels the stop's only demand, and the engine finds
+    /// nothing left to load at its next pass. That branch concluded the stop and broke out of the
+    /// switch, and the journey sat at AwaitingDepartureSafety / PRE_DEPARTURE_SAFETY_NOT_VALID with a
+    /// SAFE answer in the inbox that had lapsed before anyone read it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task AStopWhoseDemandsWereAllCancelledJudgesTheDepartureSafetyAnswerWhileItIsStillValid()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.LoadFirstStopAndArriveAtSecondAsync();
+
+        fixture.AnswerDepartureSafetyChecksLikeThePeer();
+        Assert.True(await new WireToGateStore(fixture.Context).CancelDemandBeforeLoadAsync(
+            "10000000-0000-4000-8000-000000000002",
+            "CANCELLED_BY_OPERATOR",
+            fixture.Clock.GetUtcNow(),
+            TestContext.Current.CancellationToken));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, journey.Stage);
+        Assert.Null(journey.BlockReasonCode);
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_GATE"));
+    }
+
+    /// <summary>
+    /// 8005-agv-program#52's second half. Once the only answer to a check has lapsed, nothing could
+    /// ever satisfy that check again: the peer evaluates afresh on every request but names its
+    /// answer after the check id, so asking again under the same id is either refused as changed
+    /// content or answered with the stale copy. The journey stood there until somebody moved the
+    /// vehicle by hand. The runtime now asks again under a new id, once per pass, and settles the
+    /// request it abandoned.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-03")]
+    public async Task ALapsedDepartureSafetyAnswerIsAskedForAgainUnderANewCheckId()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AdvanceToDepartureSafetyAsync();
+        JourneyStopRow asked = await fixture.CurrentStopRowAsync();
+
+        DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "PreDepartureSafetyCheckResult",
+            RuntimeFixture.SafeDepartureAnswer(asked.PreDepartureSafetyCheckId, answeredAt, answeredAt.AddSeconds(2)),
+            asked.PreDepartureSafetyCheckId);
+
+        // Lapsed, but not for long: a vehicle that keeps answering "unsafe" is asked again every so
+        // often, not on every pass.
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(asked.PreDepartureSafetyCheckId, (await fixture.CurrentStopRowAsync()).PreDepartureSafetyCheckId);
+        Assert.Equal("PRE_DEPARTURE_SAFETY_NOT_VALID", (await fixture.JourneyRowAsync()).BlockReasonCode);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(8));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyStopRow reasked = await fixture.CurrentStopRowAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.JourneyRowAsync()).Stage);
+        Assert.NotEqual(asked.PreDepartureSafetyCheckId, reasked.PreDepartureSafetyCheckId);
+        Assert.NotEqual(asked.PreDepartureSafetyCheckMessageId, reasked.PreDepartureSafetyCheckMessageId);
+        ProtocolOutboxRow[] checks = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "PreDepartureSafetyCheck")
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, checks.Length);
+        Assert.NotNull(checks.Single(row => row.MessageId == asked.PreDepartureSafetyCheckMessageId).AcknowledgedAt);
+        using (JsonDocument sent = JsonDocument.Parse(
+                   checks.Single(row => row.MessageId == reasked.PreDepartureSafetyCheckMessageId).PayloadJson))
+        {
+            Assert.Equal(
+                reasked.PreDepartureSafetyCheckId,
+                sent.RootElement.GetProperty("payload").GetProperty("preDepartureSafetyCheckId").GetString());
+        }
+
+        // Unanswered is not lapsed: the new check is asked once and then waited for, not re-asked on
+        // every pass.
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .CountAsync(row => row.MessageType == "PreDepartureSafetyCheck", TestContext.Current.CancellationToken));
+
+        await fixture.ConfirmDepartureSafeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_GATE"));
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task HardAdmissionFiltersBeforeStableBacklogOrderingAndRemoteSideEffects()
@@ -3798,6 +3920,76 @@ public sealed class JourneyRuntimeWorkerTests
                 },
                 stop.PreDepartureSafetyCheckMessageId);
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        }
+
+        public async Task<JourneyStopRow> CurrentStopRowAsync()
+        {
+            JourneyRuntimeRow journey = await JourneyRowAsync();
+            return (await StopRowsAsync()).Single(row => row.Sequence == journey.CurrentStopSequence);
+        }
+
+        /// <summary>A SAFE pre-departure answer for one check, observed and valid as given.</summary>
+        public static object SafeDepartureAnswer(string checkId, DateTimeOffset observedAt, DateTimeOffset validUntil) => new
+        {
+            preDepartureSafetyCheckId = checkId,
+            outcome = "SAFE",
+            observedAt,
+            safetyStateVersion = 7,
+            validUntil,
+            safety = new
+            {
+                departureSafe = true,
+                vehicleStopped = true,
+                allTargetSlotsLocked = true,
+                allUnlockOutputsReset = true,
+                unknownPresent = false,
+                reasonCodes = Array.Empty<string>()
+            }
+        };
+
+        /// <summary>
+        /// Answers every pre-departure safety check the instant it is sent, the way the shipped onboard
+        /// does (WireToGateBusinessService.HandlePreDepartureSafetyCheckAsync): SAFE, correlated by the
+        /// check id, valid for two seconds -- less than the plant's poll interval. The clock does not
+        /// move while it answers, so an answer is only ever judged valid in the pass that asked for it.
+        /// </summary>
+        public void AnswerDepartureSafetyChecksLikeThePeer() => Peer.OnMessageSent = async line =>
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement root = document.RootElement;
+            if (root.GetProperty("messageType").GetString() != "PreDepartureSafetyCheck")
+            {
+                return;
+            }
+            string checkId = root.GetProperty("payload").GetProperty("preDepartureSafetyCheckId").GetString()!;
+            DateTimeOffset answeredAt = Clock.GetUtcNow();
+            await AddInboxAsync(
+                Guid.NewGuid().ToString("D"),
+                "PreDepartureSafetyCheckResult",
+                SafeDepartureAnswer(checkId, answeredAt, answeredAt.AddSeconds(2)),
+                checkId);
+        };
+
+        /// <summary>
+        /// Two demands at two pickup stations: the first loaded and departed from, the vehicle now
+        /// parked at the second stop waiting for a sublot nobody has scanned.
+        /// </summary>
+        public async Task LoadFirstStopAndArriveAtSecondAsync()
+        {
+            Catalog.Set(
+                Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001",
+                    createdAt: Now.AddMinutes(-10), area: "N1-1", eqp: "EQP-01"),
+                Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002",
+                    createdAt: Now.AddMinutes(-9), area: "N1-2", eqp: "EQP-02"));
+            BoxCounts.Set("SUBLOT-001", 7);
+            BoxCounts.Set("SUBLOT-002", 7);
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            await ArriveAtCurrentStopAsync();
+            await LoadSublotAsync("SUBLOT-001");
+            await ConfirmDepartureSafeAsync();
+            await ArriveAtCurrentStopAsync();
+            Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await JourneyRowAsync()).Stage);
+            Assert.Equal(2, (await CurrentStopRowAsync()).Sequence);
         }
 
         /// <summary>Drives the vehicle to the stop it is currently heading for.</summary>

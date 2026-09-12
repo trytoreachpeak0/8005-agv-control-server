@@ -71,6 +71,12 @@ public sealed class JourneyRuntimeEngine(
             LogLevel.Information,
             new EventId(2108, nameof(LogSublotRejected)),
             "Entered sublot for demand {DemandId} was refused: {ReasonCode}.");
+    private static readonly Action<ILogger, string, int, string, Exception?> LogDepartureSafetyReasked =
+        LoggerMessage.Define<string, int, string>(
+            LogLevel.Warning,
+            new EventId(2110, nameof(LogDepartureSafetyReasked)),
+            "Journey {JourneyId} stop {StopSequence}: every answer to the pre-departure safety check had lapsed; " +
+            "asked again as check {PreDepartureSafetyCheckId}.");
     /// <summary>
     /// Where the pickup stops sit in a journey's stop sequence, and where the gate sits.
     /// </summary>
@@ -514,6 +520,7 @@ public sealed class JourneyRuntimeEngine(
             RuntimeMessageIds(stops, demands),
             cancellationToken).ConfigureAwait(false);
 
+        bool departureSafetyReasked = false;
         switch (runtime.Stage)
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
@@ -556,7 +563,17 @@ public sealed class JourneyRuntimeEngine(
                     // is one decision, made in one place.
                     await ConcludeLoadingStopAsync(
                         runtime, stops, stop, demands, session, now, cancellationToken).ConfigureAwait(false);
-                    break;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    if (runtime.Stage != JourneyRuntimeStage.AwaitingDepartureSafety)
+                    {
+                        return;
+                    }
+                    // Judged in this pass, exactly as after a closed batch: the answer is valid for two
+                    // seconds and the next poll is two seconds away. Breaking out here left the field
+                    // journey of 8005-agv-program#52 at AwaitingDepartureSafety for good -- the
+                    // operator had cancelled the stop's only demand before scanning.
+                    demands = await DemandsAsync(runtime, cancellationToken).ConfigureAwait(false);
+                    goto case JourneyRuntimeStage.AwaitingDepartureSafety;
                 }
                 SublotEntry? entry = await FindMatchingSublotAsync(
                     runtime, stop, demands, session, cancellationToken).ConfigureAwait(false);
@@ -566,6 +583,14 @@ public sealed class JourneyRuntimeEngine(
                             runtime, stops, stop, demands, session, now, cancellationToken)
                         .ConfigureAwait(false))
                     {
+                        // A deadline that ended the stop has asked for departure safety too, and the
+                        // answer has to be read for the same reason (#52). On the plant this path
+                        // made it through once by 30 ms.
+                        if (runtime.Stage == JourneyRuntimeStage.AwaitingDepartureSafety)
+                        {
+                            demands = await DemandsAsync(runtime, cancellationToken).ConfigureAwait(false);
+                            goto case JourneyRuntimeStage.AwaitingDepartureSafety;
+                        }
                         return;
                     }
                     // This is the stage's quiet exit -- nobody scanned yet -- and it is the one
@@ -746,6 +771,19 @@ public sealed class JourneyRuntimeEngine(
                 now = timeProvider.GetUtcNow();
                 if (safety is null)
                 {
+                    // An answer that has lapsed can never satisfy this check again, and nothing else
+                    // asks a second time (8005-agv-program#52). Asked again at most once per pass, so a
+                    // peer whose answers arrive already lapsed -- a clock behind ours -- cannot spin
+                    // this loop.
+                    if (!departureSafetyReasked &&
+                        await TryReaskLapsedDepartureSafetyAsync(
+                            runtime, departingFrom, target, demands, session, now, cancellationToken)
+                        .ConfigureAwait(false))
+                    {
+                        departureSafetyReasked = true;
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        goto case JourneyRuntimeStage.AwaitingDepartureSafety;
+                    }
                     if (runtime.BlockReasonCode is not null)
                     {
                         runtime.UpdatedAt = now;
@@ -2788,7 +2826,20 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        await publisher.PublishPreDepartureSafetyCheckAsync(
+        await PublishDepartureSafetyCheckAsync(runtime, stop, target, demands, session, cancellationToken)
+            .ConfigureAwait(false);
+        runtime.NextStopSequence = target.Sequence;
+        SetStage(runtime, JourneyRuntimeStage.AwaitingDepartureSafety, now, stop);
+    }
+
+    private Task PublishDepartureSafetyCheckAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        JourneyStopRow target,
+        IReadOnlyList<JourneyDemandRow> demands,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken) =>
+        publisher.PublishPreDepartureSafetyCheckAsync(
             stop.PreDepartureSafetyCheckMessageId,
             runtime.AgvId,
             session.SessionGeneration,
@@ -2798,9 +2849,68 @@ public sealed class JourneyRuntimeEngine(
                 target.MovementLegId,
                 session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
                 target.StationId),
-            cancellationToken).ConfigureAwait(false);
-        runtime.NextStopSequence = target.Sequence;
-        SetStage(runtime, JourneyRuntimeStage.AwaitingDepartureSafety, now, stop);
+            cancellationToken);
+
+    /// <summary>
+    /// How long an answer to the current pre-departure check must have been lapsed before the check is
+    /// asked again. The peer grants two seconds; this bounds a vehicle that keeps answering "unsafe"
+    /// to one check every ten seconds rather than one per poll.
+    /// </summary>
+    private static readonly TimeSpan DepartureSafetyReaskAfter = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Asks the pre-departure safety check again, under a new id, once every answer to the current one
+    /// has lapsed (8005-agv-program#52).
+    /// </summary>
+    /// <remarks>
+    /// A lapsed answer can never satisfy the check it answers: validity is the peer's own statement
+    /// about a moment that has passed. Asking again under the same id does not help either. The peer
+    /// evaluates afresh on every request but names its answer after the check id, safety revision and
+    /// outcome, so a second answer is the same message id with different content -- which the inbox
+    /// refuses as changed content -- or the stale copy replayed. So the new request carries new ids,
+    /// derived from the ones they replace so that a crash between saving and sending rebuilds the very
+    /// same request, and the abandoned request is settled rather than replayed into later sessions.
+    ///
+    /// A check nobody has answered is left alone: the outbox replays it on reconnect, and asking again
+    /// would only race the answer in flight. A live answer, safe or not, is judged as it stands.
+    /// </remarks>
+    private async Task<bool> TryReaskLapsedDepartureSafetyAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        JourneyStopRow target,
+        IReadOnlyList<JourneyDemandRow> demands,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "PreDepartureSafetyCheckResult")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        DateTimeOffset? latestValidUntil = null;
+        foreach (ProtocolInboxRow row in rows)
+        {
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            if (RequiredString(payload, "preDepartureSafetyCheckId") != stop.PreDepartureSafetyCheckId)
+                continue;
+            DateTimeOffset validUntil = payload.GetProperty("validUntil").GetDateTimeOffset();
+            if (latestValidUntil is null || validUntil > latestValidUntil)
+                latestValidUntil = validUntil;
+        }
+        if (latestValidUntil is not { } lapsedSince || now - lapsedSince < DepartureSafetyReaskAfter)
+        {
+            return false;
+        }
+
+        await store.SettleAnsweredCommandAsync(stop.PreDepartureSafetyCheckMessageId, now, cancellationToken)
+            .ConfigureAwait(false);
+        stop.PreDepartureSafetyCheckId = StableGuid(stop.PreDepartureSafetyCheckId, "departure-safety-reask");
+        stop.PreDepartureSafetyCheckMessageId = StableGuid(stop.PreDepartureSafetyCheckMessageId, "departure-safety-reask");
+        stop.UpdatedAt = now;
+        await PublishDepartureSafetyCheckAsync(runtime, stop, target, demands, session, cancellationToken)
+            .ConfigureAwait(false);
+        LogDepartureSafetyReasked(logger, runtime.JourneyId, stop.Sequence, stop.PreDepartureSafetyCheckId, null);
+        return true;
     }
 
     /// <summary>One operator entry, paired with the demand its sublot names.</summary>
