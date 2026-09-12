@@ -1,0 +1,24 @@
+{"at":"2026-09-12T15:17:53.9425121+00:00","note":"L2 run 20260912T151753900Z starting for scenario 'onboard-alarm-snapshot-dashboard'."}
+{"at":"2026-09-12T15:17:53.9579034+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-12T15:17:57.2496909+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-12T15:17:57.4246940+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-12T15:18:00.3317503+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-12T15:18:02.4917337+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-12T15:18:02.5222413+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-12T15:18:03.2422526+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-12T15:18:03.5143525+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-12T15:18:03.5429254+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-12T15:18:04.4812738+00:00","criterion":"dashboard-live","value":"200"}
+{"at":"2026-09-12T15:18:04.5576562+00:00","note":"Environment is up; entering scenario 'onboard-alarm-snapshot-dashboard'."}
+{"at":"2026-09-12T15:18:04.6918948+00:00","criterion":"alarm-snapshot-handshake","value":"@{AgvId=AGV-L2-001; SessionGeneration=1; SnapshotSequence=1; AlarmsJson=[]}"}
+{"at":"2026-09-12T15:18:04.7911001+00:00","criterion":"dashboard-empty","value":"AGV-L2-001  无"}
+{"at":"2026-09-12T15:18:04.8917906+00:00","note":"Vehicle published alarm snapshot revision 2 with 2 alarm(s)."}
+{"at":"2026-09-12T15:18:04.8973166+00:00","criterion":"alarm-snapshot-2","value":"@{AgvId=AGV-L2-001; SessionGeneration=1; SnapshotSequence=1; AlarmsJson=[]}"}
+{"at":"2026-09-12T15:18:05.1939145+00:00","criterion":"alarm-snapshot-2","value":"@{AgvId=AGV-L2-001; SessionGeneration=1; SnapshotSequence=2; AlarmsJson=[{\"AlarmCode\":\"L2_ALARM_VEHICLE_RELATED\",\"Severity\":\"WARNING\",\"RaisedAt\":\"2026-09-12T15:18:04.8640826+00:00\",\"Scope\":\"CurrentVehicle\",\"Message\":\"\\u4E0E\\u8FD9\\u53F0\\u8F66\\u76F4\\u63A5\\u76F8\\u5173\",\"DemandId\":null,\"StationId\":null,\"SlotOperationAttemptId\":null,\"PhysicalSlotNumber\":null,\"AlarmId\":\"d9f80129-d6e3-405f-831c-bc9ad386431b\"},{\"AlarmCode\":\"L2_ALARM_FLEET_FIRST\",\"Severity\":\"CRITICAL\",\"RaisedAt\":\"2026-09-12T15:18:04.8640826+00:00\",\"Scope\":\"Fleet\",\"Message\":\"\\u4E0E\\u4EFB\\u4F55\\u4E00\\u53F0\\u8F66\\u7684\\u5F53\\u4E0B\\u90FD\\u65E0\\u5173\",\"DemandId\":null,\"StationId\":null,\"SlotOperationAttemptId\":null,\"PhysicalSlotNumber\":null,\"AlarmId\":\"4fe77f76-7c72-4036-8750-e3bb053c53b8\"}]}"}
+{"at":"2026-09-12T15:18:05.2485179+00:00","criterion":"dashboard-first-alarm","value":"AGV-L2-001  L2_ALARM_VEHICLE_RELATED、L2_ALARM_FLEET_FIRST"}
+{"at":"2026-09-12T15:18:05.2881950+00:00","note":"Vehicle published alarm snapshot revision 3 with 1 alarm(s)."}
+{"at":"2026-09-12T15:18:05.3263465+00:00","criterion":"dashboard-replaced","value":"AGV-L2-001  L2_ALARM_FLEET_SECOND"}
+{"at":"2026-09-12T15:18:05.5137288+00:00","criterion":"dashboard-lost-contact","value":"AGV-L2-001  L2_ALARM_FLEET_SECOND"}
+{"at":"2026-09-12T15:18:11.6670622+00:00","criterion":"dashboard-lost-contact","value":"AGV-L2-001  车辆失联"}
+{"at":"2026-09-12T15:18:11.7730702+00:00","criterion":"dashboard-reconnected","value":"AGV-L2-001  L2_ALARM_FLEET_SECOND"}
+{"at":"2026-09-12T15:18:11.7858283+00:00","note":"车载产快照 → 服务端消费 → 看板可见走通；收敛、整体取代、失联直述、重连采纳各有一条断言。"}

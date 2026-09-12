@@ -31,14 +31,20 @@ param(
     # 2026-09-12: $ProtocolCommit -> 16e2567, the same candidate with the single-owner release rule
     #   carried over from main. Its manifest and schema bundle hashes moved, and so did the copy of
     #   the identity in the synthetic peer below; that commit has to be on origin before a run.
+    #   Later the same day: $ProtocolCommit -> 9f22db8, where a release may also be approved by an AI
+    #   agent the product owner authorized. The attestation schema changed, so the manifest and the
+    #   schema bundle hash moved again.
+    #   Then protocol-v1.0.0 was released on that commit, and both ends moved to APPROVED_RELEASE:
+    #   $ControlServerCommit -> 6b21662 (the approved identity), $OnboardCommit -> c86bac5 (the
+    #   onboard approved identity 98f4e06 plus its G2 evidence, the w2g/b3-on-v2 tip).
     #   $ControlServerCommit -> 6369616: the server on that identity, plus 5f7a34e (the dashboard
     #     shows every alarm of a vehicle, REQ-0270).
     #   $OnboardCommit -> f9efa30, the w2g/b3-on-v2 tip: the onboard end on that identity (e30d421),
     #     the alarm sources wired (a98679f), the G2 script fix (ad0e507) and its G2 evidence.
-    [string]$ControlServerCommit = '63696161d036a4907a39f8597fd64cc6e4c755fd',
-    [string]$OnboardCommit = 'f9efa301734128e850cb5460c20265232611ffff',
+    [string]$ControlServerCommit = '6b21662c60a2e13aaf86043b146d3d886cf91dd1',
+    [string]$OnboardCommit = 'c86bac5eaec57c36351f7d45b458deaa42fde22e',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '16e2567a7033883f00fc999f7fa08f954dd13a26',
+    [string]$ProtocolCommit = '9f22db825d52ad86c1d803bd0c1925dcc58d6793',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
     # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
@@ -2084,9 +2090,9 @@ public static class StagedG3TlsHarness
     {
         public const string Release = "1.0.0";
         public const string Profile = "AGV_FULL_PRODUCT";
-        public const string Commit = "16e2567a7033883f00fc999f7fa08f954dd13a26";
-        public const string Manifest = "25fd6689e8234b7d481874b408109cd27eb0f02fbb023225385d6642e9bfd3d0";
-        public const string Schema = "225a83340eb5f27c4e6dfd7bf8aba8007cf787d29f1df860deaf0ba039baf3ff";
+        public const string Commit = "9f22db825d52ad86c1d803bd0c1925dcc58d6793";
+        public const string Manifest = "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23";
+        public const string Schema = "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685";
         public const string Vectors = "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df";
     }
 
@@ -2235,16 +2241,16 @@ try {
     New-ExactClone -Name 'protocol' -Repository $ProtocolRepository -Destination $protocolSource `
         -Commit $ProtocolCommit
 
-    # Bind the candidate commit, not the tag. protocol-v1.0.0 has not been cut -- spec 6.6 wants two
-    # product owners' attestation plus an annotated tag, and neither has happened, so the protocol
-    # repository still carries only v0.1.0/v0.1.1/v0.2.0/v0.3.0. Asserting the tag resolves is how
-    # this runner used to establish protocol identity; on the v2 line that assertion throws before
-    # the run starts. Ticket 15 made exactly this change on the onboard side (run-w2g-g2.ps1:370).
+    # Bind the commit, not the tag. From the v2 identity switch until 2026-09-12 protocol-v1.0.0 had
+    # not been cut, so asserting the tag resolves -- how this runner used to establish protocol
+    # identity -- would have thrown before every run; ticket 15 made the same change on the onboard
+    # side. The tag was cut on 2026-09-12 and the identity now says APPROVED_RELEASE.
     #
     # Not a weakening: the identity that matters is the manifest/schema/vector digests, and G1 below
     # refuses unless its output carries $manifestSha256. The tag only ever named that commit. What
-    # stays enforced is that if the tag DOES exist it must point at the candidate -- a tag pointing
-    # somewhere else means someone cut a release from other content, and that must not run silently.
+    # stays enforced is that if the tag DOES exist it must point at the bound commit -- a tag pointing
+    # somewhere else means someone cut a release from other content, and that must not run silently --
+    # and, since the identity claims an approved release, that the tag exists at all.
     # Three states, kept apart on purpose: tag absent, tag verified, git itself failed. A single
     # `rev-list ... 2>$null` collapses the third into the first and records tagExists=false, which
     # reads as "checked, none" -- the one shape that must not be silent, because the assertion this
@@ -2258,8 +2264,11 @@ try {
         $tagCommit = (& git -C $protocolSource rev-list -n 1 "refs/tags/$protocolTag^{commit}").Trim()
         if ($LASTEXITCODE -ne 0) { throw "Unable to resolve refs/tags/$protocolTag in $protocolSource" }
         if ($tagCommit -ne $ProtocolCommit) {
-            throw "$protocolTag exists but resolves to $tagCommit, not the candidate $ProtocolCommit"
+            throw "$protocolTag exists but resolves to $tagCommit, not the bound commit $ProtocolCommit"
         }
+    }
+    if ($expectedProtocol.approvalStatus -eq 'APPROVED_RELEASE' -and -not $protocolTagExists) {
+        throw "The identity claims APPROVED_RELEASE but $protocolTag does not exist in $protocolSource"
     }
     # The exact clone carries no node_modules, and G1 validates against ajv, so restore first.
     Invoke-LoggedCommand -Name 'protocol-install' -WorkingDirectory $protocolSource -FilePath $pnpmFilePath `

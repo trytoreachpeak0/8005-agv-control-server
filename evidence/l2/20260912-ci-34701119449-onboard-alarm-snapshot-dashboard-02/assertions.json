@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "scenario": "onboard-alarm-snapshot-dashboard",
+  "runId": "20260912T151813135Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "a1243a8f5870bcacfd3257ddf2422bebabf8e2db",
+    "stageRoot": "C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260912T151813135Z",
+    "batchId": "batch-3",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-OAS-01",
+      "description": "完整握手里报了一份告警快照，空的也报，服务端收下了",
+      "outcome": "PASS",
+      "expected": "1 / []",
+      "actual": "1 / []"
+    },
+    {
+      "id": "L2-OAS-02",
+      "description": "看板上这台车在线、告警为「无」，不是「尚未收到该车快照」",
+      "outcome": "PASS",
+      "expected": "AGV-L2-001 无",
+      "actual": "AGV-L2-001  无"
+    },
+    {
+      "id": "L2-OAS-03",
+      "description": "服务端收下的是整份快照，两条告警都在库里",
+      "outcome": "PASS",
+      "expected": "L2_ALARM_VEHICLE_RELATED + L2_ALARM_FLEET_FIRST",
+      "actual": "[{\"AlarmCode\":\"L2_ALARM_VEHICLE_RELATED\",\"Severity\":\"WARNING\",\"RaisedAt\":\"2026-09-12T15:18:23.9694295+00:00\",\"Scope\":\"CurrentVehicle\",\"Message\":\"\\u4E0E\\u8FD9\\u53F0\\u8F66\\u76F4\\u63A5\\u76F8\\u5173\",\"DemandId\":null,\"StationId\":null,\"SlotOperationAttemptId\":null,\"PhysicalSlotNumber\":null,\"AlarmId\":\"d9db5358-2cb4-47a6-8df4-3c60e1e86ab5\"},{\"AlarmCode\":\"L2_ALARM_FLEET_FIRST\",\"Severity\":\"CRITICAL\",\"RaisedAt\":\"2026-09-12T15:18:23.9694295+00:00\",\"Scope\":\"Fleet\",\"Message\":\"\\u4E0E\\u4EFB\\u4F55\\u4E00\\u53F0\\u8F66\\u7684\\u5F53\\u4E0B\\u90FD\\u65E0\\u5173\",\"DemandId\":null,\"StationId\":null,\"SlotOperationAttemptId\":null,\"PhysicalSlotNumber\":null,\"AlarmId\":\"404e13ae-5e57-4704-8093-6676e32cdae6\"}]"
+    },
+    {
+      "id": "L2-OAS-04",
+      "description": "看板集中显示全部告警：与车直接相关的那条和与哪台车都无关的那条都看得到",
+      "outcome": "PASS",
+      "expected": "L2_ALARM_FLEET_FIRST + L2_ALARM_VEHICLE_RELATED",
+      "actual": "AGV-L2-001  L2_ALARM_VEHICLE_RELATED、L2_ALARM_FLEET_FIRST"
+    },
+    {
+      "id": "L2-OAS-05",
+      "description": "新快照整体取代旧快照：看板上只剩新的那条，旧的两条都不见了",
+      "outcome": "PASS",
+      "expected": "L2_ALARM_FLEET_SECOND, not L2_ALARM_FLEET_FIRST",
+      "actual": "AGV-L2-001  L2_ALARM_FLEET_SECOND"
+    },
+    {
+      "id": "L2-OAS-06",
+      "description": "一车一行，停在最新那一份的序号上",
+      "outcome": "PASS",
+      "expected": "1 / 3",
+      "actual": "1 / 3"
+    },
+    {
+      "id": "L2-OAS-07",
+      "description": "车失联时看板显示失联本身，不显示它失联前的最后一批告警",
+      "outcome": "PASS",
+      "expected": "车辆失联, not L2_ALARM_FLEET_SECOND",
+      "actual": "AGV-L2-001  车辆失联"
+    },
+    {
+      "id": "L2-OAS-08",
+      "description": "重连的完整握手重报当下的全量告警，服务端按新会话代采纳，看板恢复显示",
+      "outcome": "PASS",
+      "expected": "L2_ALARM_FLEET_SECOND / generation 2",
+      "actual": "AGV-L2-001  L2_ALARM_FLEET_SECOND / generation 2"
+    }
+  ]
+}

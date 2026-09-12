@@ -1,0 +1,52 @@
+[14:12:37] 1/7 核对远端：fp/v2-candidate 的顶是 9f22db825d52ad86c1d803bd0c1925dcc58d6793，protocol-v1.0.0 还不存在
+9f22db825d52ad86c1d803bd0c1925dcc58d6793	refs/heads/fp/v2-candidate
+[14:12:41] 2/7 干净克隆并检出 9f22db825d52ad86c1d803bd0c1925dcc58d6793，核 manifest 哈希
+✓ Lockfile passes supply-chain policies (verified 3d ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +6
+++++++
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: C:\Users\szy\AppData\Local\pnpm\store\v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 6, reused 6, downloaded 0, added 5
+Progress: resolved 6, reused 6, downloaded 0, added 6, done
+
+devDependencies:
++ ajv 8.20.0
++ ajv-formats 3.0.1
+
+Done in 1.9s using pnpm v11.25.0
+[14:12:49] 3/7 写入外置 attestation（不进 git），批准人 claude-opus-5 (Claude Code agent)（AI_AGENT）
+[14:12:49] 4/7 带 PROTOCOL_APPROVAL_ATTESTATION 跑发布 G1
+$ node tools/g1-validate.mjs
+{
+  "gate": "G1",
+  "status": "PASS",
+  "candidateManifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+  "approvalAttestationStatus": "APPROVED",
+  "approvalAttestationSha256": "18c0420e3943630ac54d06da52d2b913e12a16d1b3851d1e4871823ef9369286",
+  "approvalAttestationSource": "EXTERNAL_RELEASE_ASSET",
+  "schemaCount": 69,
+  "messageTypeCount": 63,
+  "validExampleCount": 63,
+  "invalidExampleCount": 1548,
+  "trajectoryCount": 31,
+  "integrationSliceCount": 16,
+  "checkedAt": "2026-09-04T00:00:00Z",
+  "failures": []
+}
+[14:12:55] 5/7 打注释 tag protocol-v1.0.0
+Committer identity unknown
+
+*** Please tell me who you are.
+
+Run
+
+  git config --global user.email "you@example.com"
+  git config --global user.name "Your Name"
+
+to set your account's default identity.
+Omit --global to set the identity only in this repository.
+
+fatal: unable to auto-detect email address (got 'szy@LAB-WIN-01.(none)')

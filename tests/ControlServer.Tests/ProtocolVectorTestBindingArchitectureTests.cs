@@ -51,7 +51,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
 {
     /// <summary>
     /// SHA-256 of the frozen slice family index, over the file's bytes. Taken from
-    /// <c>8005-agv-protocol</c> commit <c>16e2567a7033883f00fc999f7fa08f954dd13a26</c> (branch
+    /// <c>8005-agv-protocol</c> commit <c>9f22db825d52ad86c1d803bd0c1925dcc58d6793</c> (branch
     /// <c>fp/v2-candidate</c>, the v2 candidate G1 passed on) on 2026-09-12. The file has not
     /// changed since it was first frozen at <c>f6ee75d</c> on 2026-09-08.
     /// </summary>
