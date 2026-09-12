@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1.3.0",
+  "gate": "G3",
+  "runKind": "STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT",
+  "runId": "20260912T150303050Z",
+  "integrationSliceId": "FP-IS-15",
+  "status": "PASS",
+  "assuranceLevel": "STAGED_REBUILD",
+  "formalSlicePass": true,
+  "startedAt": "2026-09-12T15:03:03.0508582+00:00",
+  "finishedAt": "2026-09-12T15:04:29.7676834+00:00",
+  "implementationRepository": "8005-agv-control-server",
+  "commits": {
+    "controlServer": "6b21662c60a2e13aaf86043b146d3d886cf91dd1",
+    "onboardEvidenceBinding": "c86bac5eaec57c36351f7d45b458deaa42fde22e",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+    "harness": "a1243a8f5870bcacfd3257ddf2422bebabf8e2db",
+    "harnessWorktreeCleanAtStart": true
+  },
+  "protocolReleaseVersion": "1.0.0",
+  "protocolTag": "protocol-v1.0.0",
+  "protocolProfileId": "AGV_FULL_PRODUCT",
+  "protocolVersion": 2,
+  "protocolApprovalStatus": "APPROVED_RELEASE",
+  "protocolRepositoryCommit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+  "protocolManifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+  "protocolSchemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+  "protocolVectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+  "integrationSliceIndexSha256": "71e0a63d49d1973653e1f70addc19c334faff5e53e8597733c1423a7307bd82f",
+  "integrationSliceIndexSource": "vendor/8005-agv-protocol/integration-slices/index.json",
+  "vectorIds": [
+    "CV-ONBOARD-ALARM-SNAPSHOT"
+  ],
+  "assertionIds": {
+    "onboardAlarmSnapshotPublishedOnTheFullHandshake": "PASS",
+    "onboardAlarmSnapshotAppliedAckOnEverySnapshot": "PASS",
+    "onboardAlarmSnapshotNotRepublishedOnRecoveryResume": "PASS",
+    "onboardAlarmProjectionKeptOnlyTheLatestOfSeveralSnapshots": "PASS",
+    "onboardAlarmProjectionIsASingletonPerVehicle": "PASS",
+    "onboardAlarmProjectionCarriesTheGenerationItArrivedIn": "PASS",
+    "identityRejections": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "secretScan": "PASS"
+  }
+}
