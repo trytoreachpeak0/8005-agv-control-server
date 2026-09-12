@@ -1,0 +1,44 @@
+[14:29:38] 1/7 核对远端：fp/v2-candidate 的顶是 9f22db825d52ad86c1d803bd0c1925dcc58d6793，protocol-v1.0.0 还不存在
+9f22db825d52ad86c1d803bd0c1925dcc58d6793	refs/heads/fp/v2-candidate
+[14:29:43] 2/7 干净克隆并检出 9f22db825d52ad86c1d803bd0c1925dcc58d6793，核 manifest 哈希
+✓ Lockfile passes supply-chain policies (verified 3d ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +6
+++++++
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: C:\Users\szy\AppData\Local\pnpm\store\v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 6, reused 6, downloaded 0, added 6, done
+
+devDependencies:
++ ajv 8.20.0
++ ajv-formats 3.0.1
+
+Done in 1.1s using pnpm v11.25.0
+[14:29:48] 3/7 写入外置 attestation（不进 git），批准人 claude-opus-5 (Claude Code agent)（AI_AGENT）
+[14:29:48] 4/7 带 PROTOCOL_APPROVAL_ATTESTATION 跑发布 G1
+$ node tools/g1-validate.mjs
+{
+  "gate": "G1",
+  "status": "PASS",
+  "candidateManifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+  "approvalAttestationStatus": "APPROVED",
+  "approvalAttestationSha256": "545fba1c6d67be0cf2b834142340001e36ab9b3245ec1fc1eabaf9b28ccf22e0",
+  "approvalAttestationSource": "EXTERNAL_RELEASE_ASSET",
+  "schemaCount": 69,
+  "messageTypeCount": 63,
+  "validExampleCount": 63,
+  "invalidExampleCount": 1548,
+  "trajectoryCount": 31,
+  "integrationSliceCount": 16,
+  "checkedAt": "2026-09-04T00:00:00Z",
+  "failures": []
+}
+[14:29:52] 5/7 打注释 tag protocol-v1.0.0
+[14:29:52] 6/7 推送 tag（推送前再核一次远端没有同名 tag）
+To https://github.com/trytoreachpeak0/8005-agv-protocol.git
+ * [new tag]         protocol-v1.0.0 -> protocol-v1.0.0
+[14:29:57] 7/7 创建 GitHub Release 并上传同一份 attestation
+https://github.com/trytoreachpeak0/8005-agv-protocol/releases/tag/protocol-v1.0.0
+[14:30:01] 完成：protocol-v1.0.0 -> 9f22db825d52ad86c1d803bd0c1925dcc58d6793；attestation 545fba1c6d67be0cf2b834142340001e36ab9b3245ec1fc1eabaf9b28ccf22e0；日志 C:\Users\szy\8005-b3\release-protocol-v1.0.0\publish-20260912T142938Z.log
