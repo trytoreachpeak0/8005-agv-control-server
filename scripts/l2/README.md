@@ -436,15 +436,15 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     只修了出事的那一条，而两条场景的第二段是同一个模板抄出来的。**修一例的时候，要把同一形状的
     其他地方一起找出来。**这次顺手核了 `scenarios/` 里剩下的 8 处直读 `Get-Stage`：前面要么是
     `Wait-L2Iterations`，要么读的是早就落库、不会再变的状态，都不是这种形状。
-    **2026-09-13 的普查（`8005-agv-control-server#26`）把剩下的也过了一遍**：`scenarios/` 与 `scripts/field/` 里
-    等待或动作之后紧跟的直读、以及被后面某个等待拿去比较的基线，用 AST 抽出 237 处，逐处对照服务端的写入边界判。
+    **2026-09-13 的普查（`8005-agv-control-server#26`）把剩下的也过了一遍**：`scripts/l2/`（场景、`L2.psm1`、
+    `Invoke-L2Scenario.ps1`）与 `scripts/field/` 里等待或动作之后紧跟的直读、以及被后面某个等待拿去比较的基线，用 AST 抽出 238 处，逐处对照服务端的写入边界判。
     判法只有一条：直读的东西要么与被等的条件落在**同一次提交**，要么在因果上**必然先于**它落库，否则就是这种形状。
     写入边界记在这里，下次不必再读一遍服务端：
     - 一条入站消息的处理整个包在记收件箱的那个事务里（`WireToGateStore`）：收件箱行、仓位操作状态、需求转
       `RecoveryRequired`、补偿与取消的对账（工作流、需求与仓位操作 `Cancelled`、业务键抑制、租约、旅程阶段）一起提交。
     - `CancelDemandBeforeLoadAsync`（扫码前取消、条码等待超时）一次提交：需求 `Cancelled`、抑制、租约、条码请求结算、
       最后一单时旅程 `Completed`。
-    - 引擎在自己的上下文里推阶段，每 2 秒一轮。它据以推进的东西（`Committed`、`Succeeded`、`LoadingClosedReason`、
+    - 引擎在自己的上下文里推阶段，每轮一次（出厂 2 秒，L2 里 `JourneyRuntime__pollInterval` 设成 1 秒）。它据以推进的东西（`Committed`、`Succeeded`、`LoadingClosedReason`、
       `TO_GATE` 单 `CONFIRMED`、backlog 的 `ACCEPTED`）都早于或同于阶段转换落库，所以「等到阶段、再读这些」是安全的；
       反过来「等到消息处理器写的东西、再读引擎写的东西」就不是。
 
@@ -453,7 +453,7 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     `FieldOperator.psm1` 的 `Invoke-FieldServeOperation` 把「送完那一刻的开锁次数」取在关门**之后**，车应答这次关门的
     重开脉冲会被数进基线，「送完之后又被开锁」的守卫因此永远不响——前者是假红，后者是漏报，而后者是上车的代码。
     另有一处相邻的：`normal-load` 的 `L2-NL-03` 是否定判据，`PUT` 之后立刻读，服务端一轮都没跑，永远是绿的，现在先
-    `Wait-L2Iterations`。收口的办法见「加一个场景」一节末尾。
+    `Wait-L2Iterations`。收口的办法见「加一个场景」一节里的「两条读取纪律」。
 
 15. **一条不再是有效证据的场景，同时也不再是有效的缺陷记录。**
     `real-onboard-recovery-entry-missing` 的最后一条判据从 2026-09-04 起红得对，服务端同一天

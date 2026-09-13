@@ -104,7 +104,8 @@ few hundred milliseconds of other criteria; the vehicle had pulsed 106 ms after 
 already held the pulse being waited for and the wait could never end. Holding only this function, a caller
 cannot write that order.
 
-Until runs inside Wait-L2Condition, so none of the scriptblocks may use a name either function declares.
+The wrapper handed to Wait-L2Condition resolves its variables through dynamic scope inside this module, which
+is why it reads $changeUntil and not $Until. Scriptblocks written in a scenario keep the scenario's own scope.
 #>
 function Wait-L2Change {
     param(

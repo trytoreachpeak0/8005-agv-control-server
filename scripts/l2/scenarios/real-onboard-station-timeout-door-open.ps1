@@ -326,8 +326,8 @@ $assertions.Add(
 $reopenPhysical = $null
 for ($round = 1; $round -le 2; $round++) {
     $journal.Note("Round ${round}: operator pushes slot $slotNo shut without putting anything in it.")
-    # 两个基线由 Wait-L2Change 紧贴关门之前读：关门之后再取，车载端应答这次关门的重开脉冲可能已经数进去了
-    # （README 第 14 条第四例）。
+    # 两个基线交给 Wait-L2Change 紧贴关门之前读。原本手写时也是取在关门之前的，没有错；改用函数是让「基线在
+    # 动作之前」由接口保证，而不是靠写的人记得（README 第 14 条第四例）。
     $close = Wait-L2Change -Description "slot $slotNo is closed and locked with no cargo (round $round)" `
         -Journal $journal -Criterion "door-closed-empty-$round" -TimeoutSeconds 60 `
         -Baseline {
@@ -367,7 +367,7 @@ for ($round = 1; $round -le 2; $round++) {
         # 门又开了，所以告警也回来了。它名的是一个条件而不是一个事件。
         #
         # 要等，不能直读（control-server#26 普查）：WAITING_OPERATOR 是传输层收下就落库的，告警却是引擎每轮
-        # （2 秒）按车辆安全投影重算的，两者不是同一次写入。关门那几百毫秒里引擎若正好轮到一次，会先把告警
+        # （出厂 2 秒，L2 里 1 秒）按车辆安全投影重算的，两者不是同一次写入。关门那几百毫秒里引擎若正好轮到一次，会先把告警
         # 撤掉，下一轮看到门开才挂回来——等到 WAITING_OPERATOR 就直读，读到的可能正是那个空档。
         $stillAlarmed = try {
             Wait-L2Condition -Description 'the door alarm is up again on the reopened door' `
