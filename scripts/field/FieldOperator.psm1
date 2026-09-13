@@ -1386,6 +1386,9 @@ function Invoke-FieldJourneyDrive {
         [Parameter(Mandatory)][object]$Field,
         [Parameter(Mandatory)][string]$JourneyId,
         [scriptblock]$OnPoll = { param($journey) },
+        # Asked at a pickup stop the vehicle has reached with no load under way, with (journeyId, sequence).
+        # Returns N (load it), X (取消装货 before the scan) or T (nobody scans; the station deadline ends it).
+        [scriptblock]$ChooseAct = { param($journeyId, $sequence) 'N' },
         [int]$PollSeconds = 3,
         [int]$ProbeFailureLimit = 20
     )
@@ -1421,8 +1424,23 @@ function Invoke-FieldJourneyDrive {
             $demand = Get-FieldStopDemand -Field $Field -JourneyId $JourneyId -Sequence $sequence
             $operation = Get-FieldOperation -Field $Field -DemandId ([string]$demand.DemandId)
             if (-not $operation -and $stage -eq 'AwaitingSublot') {
-                Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: load"
-                $acts.Add((Invoke-FieldActLoad -Field $Field -JourneyId $JourneyId -Sequence $sequence))
+                $choice = [string]@(& $ChooseAct $JourneyId $sequence)[-1]
+                switch ($choice) {
+                    'N' {
+                        Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: load"
+                        $acts.Add((Invoke-FieldActLoad -Field $Field -JourneyId $JourneyId -Sequence $sequence))
+                    }
+                    'X' {
+                        Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: 取消装货 before the scan (X)"
+                        $acts.Add((Invoke-FieldActCancelBeforeSublot -Field $Field -JourneyId $JourneyId -Sequence $sequence `
+                            -Reason '连续运行：扫码前取消本站装货'))
+                    }
+                    'T' {
+                        Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: nobody scans; waiting out the station deadline (T)"
+                        $acts.Add((Invoke-FieldActNoSublot -Field $Field -JourneyId $JourneyId -Sequence $sequence))
+                    }
+                    default { throw "ChooseAct returned '$choice' for stop $sequence of journey $JourneyId; expected N, X or T." }
+                }
                 continue
             }
             if (-not $operation) {
@@ -1481,7 +1499,9 @@ function Invoke-FieldContinuousDrive {
         [int]$ProbeFailureLimit = 30,
         [scriptblock]$ShouldStop = { $false },
         [scriptblock]$OnPoll = { param($journey) },
-        [scriptblock]$OnJourney = { param($record) }
+        [scriptblock]$OnJourney = { param($record) },
+        # Handed to Invoke-FieldJourneyDrive: which act each pickup stop gets.
+        [scriptblock]$ChooseAct = { param($journeyId, $sequence) 'N' }
     )
 
     $completed = 0
@@ -1523,7 +1543,8 @@ function Invoke-FieldContinuousDrive {
         while ($true) {
             $record.Attempts++
             try {
-                $drive = Invoke-FieldJourneyDrive -Field $Field -JourneyId $journeyId -OnPoll $OnPoll -PollSeconds $DrivePollSeconds
+                $drive = Invoke-FieldJourneyDrive -Field $Field -JourneyId $journeyId -OnPoll $OnPoll -ChooseAct $ChooseAct `
+                    -PollSeconds $DrivePollSeconds
                 $record.Acts = @($record.Acts) + @($drive.Acts)
                 $record.Outcome = 'Completed'
                 $record.CompletedAt = [DateTimeOffset]::UtcNow.ToString('o')

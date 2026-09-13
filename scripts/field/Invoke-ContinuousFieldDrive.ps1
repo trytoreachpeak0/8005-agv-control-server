@@ -48,8 +48,16 @@ param(
     [string]$StopFile,
     # 0 runs until the stop file appears.
     [int]$MaxJourneys = 0,
-    [int]$ResumeAttempts = 3
+    [int]$ResumeAttempts = 3,
+    # Per pickup stop, drawn independently: the chance that nobody scans (T, the station deadline ends the demand)
+    # and that the operator presses 取消装货 before the scan (X). The rest is a plain load. Both suppress the real
+    # demand for good, so both default to 0.
+    [ValidateRange(0, 100)][int]$NoSublotPercent = 0,
+    [ValidateRange(0, 100)][int]$CancelPercent = 0
 )
+if ($NoSublotPercent + $CancelPercent -gt 100) {
+    throw "-NoSublotPercent ($NoSublotPercent) and -CancelPercent ($CancelPercent) add up to more than 100."
+}
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -136,8 +144,14 @@ $onPoll = {
 
 $onJourney = {
     param($record)
-    $loads = @($record.Acts | Where-Object { $_.Act -in 'N', 'N-RESUMED' } |
-        ForEach-Object { [ordered]@{ stop = $_.Sequence; sublot = $_.Sublot; status = $_.Status; resumed = ($_.Act -eq 'N-RESUMED') } })
+    $loads = @($record.Acts | Where-Object { $_.Act -in 'N', 'N-RESUMED', 'X', 'T' } |
+        ForEach-Object {
+            [ordered]@{
+                stop        = $_.Sequence; act = $_.Act; sublot = $_.Sublot; status = $_.Status
+                suppression = $_.PSObject.Properties['Suppression'] ? $_.Suppression : $null
+                resumed     = ($_.Act -eq 'N-RESUMED')
+            }
+        })
     $unloads = @($record.Acts | Where-Object { $_.Act -eq 'UNLOAD' } | ForEach-Object { @($_.Operations.Values) })
     Write-DriveEvent "journey-$($record.Outcome -eq 'Completed' ? 'completed' : 'failed')" ([ordered]@{
             journeyId = $record.JourneyId; outcome = $record.Outcome; pickedUpAt = $record.PickedUpAt
@@ -146,10 +160,18 @@ $onJourney = {
         })
 }
 
+$chooseAct = {
+    param($journeyId, $sequence)
+    $roll = [Random]::Shared.Next(100)
+    $act = ($roll -lt $NoSublotPercent) ? 'T' : (($roll -lt $NoSublotPercent + $CancelPercent) ? 'X' : 'N')
+    Write-DriveEvent 'act-chosen' ([ordered]@{ journeyId = $journeyId; stop = $sequence; roll = $roll; act = $act })
+    $act
+}
+
 $exitCode = 0
 try {
     $count = Invoke-FieldContinuousDrive -Field $field -MaxJourneys $MaxJourneys -ResumeAttempts $ResumeAttempts `
-        -ShouldStop { Test-Path -LiteralPath $StopFile } -OnPoll $onPoll -OnJourney $onJourney
+        -ShouldStop { Test-Path -LiteralPath $StopFile } -OnPoll $onPoll -OnJourney $onJourney -ChooseAct $chooseAct
     Write-DriveEvent 'stopped' ([ordered]@{
             journeysCompleted = $count
             reason            = ($MaxJourneys -gt 0 -and $count -ge $MaxJourneys) ? 'max-journeys' : 'stop-file'
