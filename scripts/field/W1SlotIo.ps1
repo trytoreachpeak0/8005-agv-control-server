@@ -73,7 +73,10 @@ function Read-W1Exactly {
 function Invoke-W1ModbusPdu {
     param([Parameter(Mandatory)]$Session, [Parameter(Mandatory)][byte[]]$Pdu)
 
-    $Session.TransactionId = ($Session.TransactionId + 1) % 65536
+    # 1..255, never 0 and never above one byte. The vehicles' Kangnaide C2000 module echoes only the low
+    # byte of the transaction id: measured on agv01 on 2026-09-13, request 256 came back as transaction 0
+    # on every run, whatever the polling interval. A 16-bit counter loses the module after 255 requests.
+    $Session.TransactionId = ($Session.TransactionId % 255) + 1
     $transactionId = $Session.TransactionId
     $length = $Pdu.Length + 1
     [byte[]]$request = @(
