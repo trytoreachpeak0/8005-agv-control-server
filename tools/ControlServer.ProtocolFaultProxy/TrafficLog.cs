@@ -103,6 +103,11 @@ public sealed record LineRecord(
     string? AcceptedMessageType,
     bool Dropped);
 
+/// <summary>
+/// One dropped line. <c>AcceptedMessageId</c> is its correlationId, the message it answers, for an ack and an
+/// answer alike. <c>AcceptedMessageType</c> is what the plan named: the acknowledged type for a DurableAck,
+/// the dropped line's own type for an answer.
+/// </summary>
 public sealed record DropRecord(
     string PlanId,
     int Connection,

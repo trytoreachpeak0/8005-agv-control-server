@@ -5,14 +5,20 @@ using ControlServer.TestDoubles;
 namespace ControlServer.ProtocolFaultProxy;
 
 /// <summary>
-/// The only state this double owns: which DurableAck to swallow, and how many of them.
+/// The only state this double owns: which lines to swallow, and how many of them.
 /// </summary>
 public sealed record ProtocolFaultProxyState
 {
-    /// <summary>The acceptedMessageType whose DurableAck is dropped. Null forwards everything.</summary>
+    /// <summary>The acceptedMessageType whose DurableAck is dropped, closing the connection. Null forwards everything.</summary>
     public string? DropAckForMessageType { get; init; }
 
-    /// <summary>How many such acks the plan drops before it goes back to forwarding them.</summary>
+    /// <summary>
+    /// A server-to-onboard messageType whose lines are dropped while the link stays up: one answer lost on
+    /// its own. Null forwards them. A plan arms this or <see cref="DropAckForMessageType"/>, never both.
+    /// </summary>
+    public string? DropMessageType { get; init; }
+
+    /// <summary>How many such lines the plan drops before it goes back to forwarding them.</summary>
     public int DropCount { get; init; }
 
     /// <summary>The commandId that armed the plan; drops are counted against the plan that asked for them.</summary>
@@ -21,7 +27,8 @@ public sealed record ProtocolFaultProxyState
 
 /// <summary>
 /// A line-level relay between the onboard and ControlServer's onboard protocol listener that can
-/// lose one kind of DurableAck on the way back, or take the link down on request, and nothing else.
+/// lose one kind of DurableAck on the way back, lose one kind of answer while the link stays up, or
+/// take the link down on request, and nothing else.
 ///
 /// Why this exists. The onboard keeps a durable message in its journal until the DurableAck for it
 /// arrives; if the link goes down after the server has committed the message but before the ack

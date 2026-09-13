@@ -12,6 +12,16 @@ public sealed record DropDurableAckCommand : CommandEnvelope
     public int? Count { get; init; }
 }
 
+/// <summary>
+/// Arms the relay to swallow the next <c>count</c> server-to-onboard lines of <c>messageType</c> and keep
+/// the connection open. A count of zero disarms it.
+/// </summary>
+public sealed record DropMessageCommand : CommandEnvelope
+{
+    public string? MessageType { get; init; }
+    public int? Count { get; init; }
+}
+
 public static class ControlPlane
 {
     /// <summary>A handful covers every lost-ack scenario worth writing; more than that is a typo or a loop.</summary>
@@ -64,6 +74,31 @@ public static class ControlPlane
                 return new ProtocolFaultProxyState
                 {
                     DropAckForMessageType = command.AcceptedMessageType,
+                    DropCount = count,
+                    PlanId = command.CommandId
+                };
+            }));
+
+        // One answer lost on its own: the line never reaches the onboard and the link stays up, so the
+        // onboard waits for it until its own messageTimeout ends the wait -- the shape of an answer lost in
+        // transit, or of one the onboard failed on after the server had acted (8005-agv-onboard-hmi#39).
+        // A DurableAck is drop-durable-ack's: losing one takes the link down with it.
+        control.MapPut("/drop-message", (DropMessageCommand command) =>
+            ControlPlaneConventions.Handle(engine, "drop-message", command, state =>
+            {
+                if (command.Count is not int count || count < 0 || count > MaximumDrops ||
+                    (count > 0 && (string.IsNullOrWhiteSpace(command.MessageType) ||
+                                   string.Equals(command.MessageType, "DurableAck", StringComparison.Ordinal))))
+                {
+                    throw new CommandRefusedException(ReasonCodes.InvalidArgument);
+                }
+                if (count == 0)
+                {
+                    return state.PlanId is null ? null : new ProtocolFaultProxyState();
+                }
+                return new ProtocolFaultProxyState
+                {
+                    DropMessageType = command.MessageType,
                     DropCount = count,
                     PlanId = command.CommandId
                 };

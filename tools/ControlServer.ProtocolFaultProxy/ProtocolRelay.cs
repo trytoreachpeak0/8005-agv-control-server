@@ -101,13 +101,20 @@ public sealed class ProtocolRelay(
                 }
 
                 LineRecord record = Describe(connection, direction, line);
-                if (direction == ServerToOnboard && TryDrop(record))
+                if (direction == ServerToOnboard && TryDropAck(record))
                 {
                     // Nothing after the dropped line is forwarded either -- the server wrote the
                     // readiness that follows an ack in the same send, and a link that loses one
                     // loses both.
                     log.RecordLine(record with { Dropped = true });
                     return "relay dropped DurableAck for " + record.AcceptedMessageType;
+                }
+
+                if (direction == ServerToOnboard && TryDropMessage(record))
+                {
+                    // The link stays up and the next line goes through: this one answer is lost, nothing else.
+                    log.RecordLine(record with { Dropped = true });
+                    continue;
                 }
 
                 log.RecordLine(record);
@@ -121,7 +128,19 @@ public sealed class ProtocolRelay(
         }
     }
 
-    private bool TryDrop(LineRecord line)
+    private bool TryDropMessage(LineRecord line)
+    {
+        ProtocolFaultProxyState plan = engine.Snapshot().State;
+        return plan.PlanId is not null &&
+               plan.DropMessageType is not null &&
+               string.Equals(line.MessageType, plan.DropMessageType, StringComparison.Ordinal) &&
+               log.TryClaimDrop(
+                   plan.PlanId,
+                   plan.DropCount,
+                   new DropRecord(plan.PlanId, line.Connection, line.At, line.CorrelationId, plan.DropMessageType));
+    }
+
+    private bool TryDropAck(LineRecord line)
     {
         ProtocolFaultProxyState plan = engine.Snapshot().State;
         return plan.PlanId is not null &&
