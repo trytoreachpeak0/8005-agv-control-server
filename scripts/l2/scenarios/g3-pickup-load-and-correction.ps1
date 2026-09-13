@@ -420,15 +420,27 @@ $workflowState = Wait-L2Condition -Description 'the correction workflow settled'
 $requests = @((Get-Inbound 'LoadCorrectionRequested') | Where-Object { [string]$_.Payload.slotOperationAttemptId -eq $attemptId })
 $correctionCommands = @((Get-Outbound 'LoadCorrectionCommand') | Where-Object { [string]$_.Payload.slotOperationAttemptId -eq $attemptId })
 $correctionResults = @((Get-Inbound 'LoadCorrectionResult') | Where-Object { [string]$_.Payload.slotOperationAttemptId -eq $attemptId })
+# 恢复命令的「已答复」不记在发件箱行上，而记在工作流上：服务端重连时只补发工作流尚未收敛的恢复命令
+# （OnboardRecoveryCoordinator.ReplayPendingCommandsAsync 按 State 筛），旅程运行时的重放白名单里没有恢复命令。
+# 所以这里判的是「命令就是工作流绑定的那一条，工作流由这份结果收敛」，而不是发件箱行的 AcknowledgedAt——
+# 调试运行 corr-005 里后者为空，工作流却已 Reconciled、命令不会再被补发。仓位命令不同，它由旅程运行时
+# 结清，G3-02-05 照旧要求它被确认。
+$workflowRows = @(Invoke-L2Query -Connection $connection `
+    -Sql "SELECT CommandMessageId, ResultMessageId, State FROM RecoveryWorkflows WHERE WorkflowId = '$correctionId'")
+$settledByResult = $workflowRows.Count -eq 1 -and $correctionCommands.Count -eq 1 -and $correctionResults.Count -eq 1 -and
+    [string]$workflowRows[0].CommandMessageId -eq $correctionCommands[0].MessageId -and
+    [string]$workflowRows[0].ResultMessageId -eq $correctionResults[0].MessageId -and
+    [string]$workflowRows[0].State -eq 'Reconciled'
 $assertions.Add(
     'G3-02-08',
-    '消息顺序与向量一致：LoadCorrectionRequested → LoadCorrectionCommand → LoadCorrectionResult → DurableAck，各一次，命令被车载端确认（CV-LOAD-CORRECTION orderedExpectedMessages）',
+    '消息顺序与向量一致：LoadCorrectionRequested → LoadCorrectionCommand → LoadCorrectionResult → DurableAck，各一次；命令是修正工作流绑定的那一条，工作流由这份结果收敛（CV-LOAD-CORRECTION orderedExpectedMessages）',
     ($requests.Count -eq 1 -and $correctionCommands.Count -eq 1 -and $correctionResults.Count -eq 1 -and
         $requests[0].At -lt $correctionCommands[0].At -and $correctionCommands[0].At -lt $correctionResults[0].At -and
-        $correctionCommands[0].Acknowledged -and $correctionResults[0].Response -eq 'DurableAck'),
-    'Requested < Command(ack) < Result → DurableAck，各 1',
-    ("Requested×$($requests.Count) / Command×$($correctionCommands.Count)$(if ($correctionCommands.Count -ge 1) { "(ack=$($correctionCommands[0].Acknowledged))" }) / " +
-     "Result×$($correctionResults.Count)$(if ($correctionResults.Count -ge 1) { "→$($correctionResults[0].Response)" })"))
+        $correctionResults[0].Response -eq 'DurableAck' -and $settledByResult),
+    'Requested < Command < Result → DurableAck，各 1 / 工作流绑定该命令并由该结果收敛',
+    ("Requested×$($requests.Count) / Command×$($correctionCommands.Count) / " +
+     "Result×$($correctionResults.Count)$(if ($correctionResults.Count -ge 1) { "→$($correctionResults[0].Response)" }) / " +
+     "工作流绑定并收敛=$settledByResult$(if ($workflowRows.Count -eq 1) { "（$([string]$workflowRows[0].State)）" })"))
 
 $assertions.Add(
     'G3-02-09',
