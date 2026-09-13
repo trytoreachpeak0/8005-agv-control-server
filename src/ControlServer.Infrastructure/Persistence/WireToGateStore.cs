@@ -19,6 +19,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// </summary>
     private const long RevisionsPerJourney = 2;
 
+    /// <summary>
+    /// The plan stream takes three per journey rather than two. Since 2026-09-13 the plan also goes
+    /// out before the pickup arrival (CV-DEMAND-ACCEPT-TO-PICKUP) at the stored revision, so the
+    /// pickup and the gate publish it one and two above that.
+    /// </summary>
+    private const long PlanRevisionsPerJourney = 3;
+
     public async Task<long> GetNextSessionGenerationAsync(string agvId, CancellationToken cancellationToken)
     {
         long current = await dbContext.SessionRecoveries
@@ -2027,7 +2034,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
 
         runtime.VehicleBusinessRevision = highest.VehicleBusiness + RevisionsPerJourney;
         runtime.WorklistRevision = highest.Worklist + RevisionsPerJourney;
-        runtime.PlanRevision = highest.Plan + RevisionsPerJourney;
+        runtime.PlanRevision = highest.Plan + PlanRevisionsPerJourney;
     }
 
     private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)

@@ -62,8 +62,10 @@ public sealed class JourneyRuntimeWorkerTests
 
         runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        // Two plans: the one sent once the pickup order was confirmed and the one sent at the
+        // pickup. Their order is ThePlanGoesOutBeforeArrivalAndAgainAfterTheWorklistAtThePickup's.
         Assert.Equal(
-            ["CurrentStopWorklistSnapshot", "SublotEntryRequested", "UpcomingStopPlanSnapshot", "VehicleBusinessStateSnapshot"],
+            ["CurrentStopWorklistSnapshot", "SublotEntryRequested", "UpcomingStopPlanSnapshot", "UpcomingStopPlanSnapshot", "VehicleBusinessStateSnapshot"],
             (await fixture.OutboxTypesAsync()).Order(StringComparer.Ordinal));
 
         await fixture.AddInboxAsync(
@@ -321,9 +323,12 @@ public sealed class JourneyRuntimeWorkerTests
         {
             long[] revisions = stream.ToArray();
             // Three stops have been published: pickup and gate on the first journey, pickup on the
-            // second. That is three distinct revisions, and the sequence may never step back.
+            // second. That is three distinct revisions of the worklist and the vehicle state. The plan
+            // also went out before each pickup arrival, so it has five: before, at the pickup and at
+            // the gate on the first journey, before and at the pickup on the second. The sequence may
+            // never step back.
             Assert.Equal(revisions.Order(), revisions);
-            Assert.Equal(3, revisions.Distinct().Count());
+            Assert.Equal(stream.Key == "UpcomingStopPlanSnapshot" ? 5 : 3, revisions.Distinct().Count());
         }
     }
 
@@ -363,10 +368,11 @@ public sealed class JourneyRuntimeWorkerTests
         AdoptingPeer peer = await DriveToGateWithAdoptingPeerAsync(iteration => iteration != iterationLosingAcks);
 
         // A green run only means something if the peer actually reached the dangerous state: it has
-        // to be holding the gate revision of all three snapshot types.
+        // to be holding the gate revision of all three snapshot types. The plan went out once more,
+        // before the pickup arrival, so it adopted three revisions where the others adopted two.
         foreach (IGrouping<string, long> stream in peer.Adopted.GroupBy(item => item.MessageType, item => item.Revision))
         {
-            Assert.Equal(2, stream.Distinct().Count());
+            Assert.Equal(stream.Key == "UpcomingStopPlanSnapshot" ? 3 : 2, stream.Distinct().Count());
         }
 
         Assert.Equal(3, peer.Adopted.Select(item => item.MessageType).Distinct().Count());
@@ -391,10 +397,14 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(
             ["CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot", "VehicleBusinessStateSnapshot"],
             peer.Regressions.Select(item => item.MessageType).Distinct().Order(StringComparer.Ordinal));
+        // The pickup revision redelivered under the gate revision. For the plan that is 2 under 3: its
+        // first revision, the one sent before the arrival, was retired at the pickup and is never
+        // redelivered at all (ThePlanSentBeforeArrivalIsRetiredWhenThePickupPlanSupersedesIt).
         Assert.All(peer.Regressions, item =>
         {
-            Assert.Equal(1, item.Delivered);
-            Assert.Equal(2, item.Held);
+            long gateRevision = item.MessageType == "UpcomingStopPlanSnapshot" ? 3 : 2;
+            Assert.Equal(gateRevision, item.Held);
+            Assert.Equal(gateRevision - 1, item.Delivered);
         });
     }
 
@@ -1498,6 +1508,139 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
     }
 
+    /// <summary>
+    /// CV-DEMAND-ACCEPT-TO-PICKUP in the order its input.ndjson gives it: once the TO_PICKUP order
+    /// exists the vehicle is told its plan -- the pickup leg ACTIVE, the drop-off leg PLANNED --
+    /// before it arrives; at the pickup it is told the worklist first and the arrived plan after
+    /// it, one revision up.
+    /// </summary>
+    /// <remarks>
+    /// Until 2026-09-13 nothing went out before the arrival and a single plan went out after the
+    /// worklist. No gate caught it: this suite compared the outbox as a sorted set of types, and the
+    /// onboard end's G2 is written against a fake server that sends the vector's order, so each end
+    /// passed against its own picture of the other. The order is read from the wire lines the peer
+    /// received, because the fixture clock does not move and every outbox row shares a CreatedAt.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task ThePlanGoesOutBeforeArrivalAndAgainAfterTheWorklistAtThePickup()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, runtime.Stage);
+        Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_PICKUP"));
+
+        (string Type, string MessageId, JsonElement Payload)[] beforeArrival = JourneySnapshotsInFirstSentOrder(fixture);
+        (string Type, string MessageId, JsonElement Payload) dispatchPlan = Assert.Single(beforeArrival);
+        Assert.Equal("UpcomingStopPlanSnapshot", dispatchPlan.Type);
+        Assert.Equal(runtime.PlanRevision, dispatchPlan.Payload.GetProperty("planRevision").GetInt64());
+        Assert.Equal(
+            [("TO_PICKUP", "ACTIVE"), ("TO_DROPOFF", "PLANNED")],
+            dispatchPlan.Payload.GetProperty("legs").EnumerateArray()
+                .Select(leg => (leg.GetProperty("legType").GetString()!, leg.GetProperty("state").GetString()!))
+                .ToArray());
+        Assert.Single(
+            await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+
+        (string Type, string MessageId, JsonElement Payload)[] sequence = JourneySnapshotsInFirstSentOrder(fixture);
+        Assert.Equal(
+            ["UpcomingStopPlanSnapshot", "CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot"],
+            sequence.Select(item => item.Type).ToArray());
+        Assert.Equal(dispatchPlan.MessageId, sequence[0].MessageId);
+        Assert.Equal(runtime.PlanRevision + 1, sequence[2].Payload.GetProperty("planRevision").GetInt64());
+        Assert.Equal(
+            [("TO_PICKUP", "ARRIVED"), ("TO_DROPOFF", "PLANNED")],
+            sequence[2].Payload.GetProperty("legs").EnumerateArray()
+                .Select(leg => (leg.GetProperty("legType").GetString()!, leg.GetProperty("state").GetString()!))
+                .ToArray());
+    }
+
+    /// <summary>
+    /// The plan sent before the arrival is superseded by the one sent at the pickup, and a superseded
+    /// snapshot is never worth delivering: replayed after the higher revision, it is a regression the
+    /// vehicle refuses by tearing the session down. A peer that lost every acknowledgement from the
+    /// first plan to the pickup is the one that would reach it, so the pickup retires it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-DEMAND-ACCEPT-TO-PICKUP")]
+    public async Task ThePlanSentBeforeArrivalIsRetiredWhenThePickupPlanSupersedesIt()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        AdoptingPeer peer = new(fixture.Context, fixture.Clock);
+        fixture.Peer.OnMessageSent = line =>
+        {
+            peer.Receive(line);
+            return Task.CompletedTask;
+        };
+
+        async Task IterateLosingAcksAsync()
+        {
+            peer.LoseBufferedAcks();
+            await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        }
+
+        await IterateLosingAcksAsync();
+        await IterateLosingAcksAsync();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        await IterateLosingAcksAsync();
+        await IterateLosingAcksAsync();
+        await IterateLosingAcksAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.DoesNotContain(peer.Regressions, item => item.MessageType == "UpcomingStopPlanSnapshot");
+        ProtocolOutboxRow[] plans = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(row => row.MessageType == "UpcomingStopPlanSnapshot")
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        ProtocolOutboxRow retired = Assert.Single(plans, row => PlanRevisionOf(row) == runtime.PlanRevision);
+        Assert.NotNull(retired.FencedAt);
+        Assert.Null(Assert.Single(plans, row => PlanRevisionOf(row) == runtime.PlanRevision + 1).FencedAt);
+    }
+
+    private static long PlanRevisionOf(ProtocolOutboxRow row)
+    {
+        using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+        return document.RootElement.GetProperty("payload").GetProperty("planRevision").GetInt64();
+    }
+
+    /// <summary>
+    /// The plan and worklist snapshots the peer was sent, each message once, in the order it was
+    /// first sent. Replays repeat a line; only the first send says where it stands in the sequence.
+    /// </summary>
+    private static (string Type, string MessageId, JsonElement Payload)[] JourneySnapshotsInFirstSentOrder(
+        RuntimeFixture fixture) =>
+        fixture.Peer.Lines
+            .Select(line => JsonDocument.Parse(System.Text.Encoding.UTF8.GetString(line)).RootElement)
+            .Where(root => root.GetProperty("messageType").GetString() is
+                "UpcomingStopPlanSnapshot" or "CurrentStopWorklistSnapshot")
+            .Select(root => (
+                Type: root.GetProperty("messageType").GetString()!,
+                MessageId: root.GetProperty("messageId").GetString()!,
+                Payload: root.GetProperty("payload").Clone()))
+            .DistinctBy(item => item.MessageId)
+            .ToArray();
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     [Trait("IntegrationSlice", "FP-IS-03")]
@@ -1596,11 +1739,18 @@ public sealed class JourneyRuntimeWorkerTests
         foreach (ProtocolOutboxRow row in replayed)
         {
             using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
-            Assert.Equal(2, document.RootElement.GetProperty("sessionGeneration").GetInt64());
+            // A retired row is not pending, so it is neither replayed nor re-enveloped: it keeps the
+            // generation it was sent in. The one retired here is the plan sent before the pickup
+            // arrival, which the pickup plan superseded (and this fixture's peer never acknowledges).
+            long expectedGeneration = row.FencedAt is null ? 2 : 1;
+            Assert.Equal(expectedGeneration, document.RootElement.GetProperty("sessionGeneration").GetInt64());
             Assert.True(JsonNode.DeepEquals(
                 JsonNode.Parse(originalPayloads[row.MessageId]),
                 JsonNode.Parse(document.RootElement.GetProperty("payload").GetRawText())));
         }
+
+        ProtocolOutboxRow retired = Assert.Single(replayed, row => row.FencedAt is not null);
+        Assert.Equal("UpcomingStopPlanSnapshot", retired.MessageType);
     }
 
     [Fact]

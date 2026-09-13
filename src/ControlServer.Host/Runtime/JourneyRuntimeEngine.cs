@@ -521,6 +521,7 @@ public sealed class JourneyRuntimeEngine(
                 {
                     return;
                 }
+                await PublishPickupDispatchPlanOnceAsync(runtime, session, cancellationToken).ConfigureAwait(false);
                 ArrivalCheck pickupArrival = await CheckArrivalAsync(
                     runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false);
                 if (!pickupArrival.Trusted)
@@ -981,6 +982,8 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             Worklist(runtime, demand, runtime.PickupStationId, "PICKUP", runtime.WorklistRevision),
             cancellationToken).ConfigureAwait(false);
+        await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
+            .ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             runtime.PlanMessageId,
             runtime.AgvId,
@@ -998,6 +1001,78 @@ public sealed class JourneyRuntimeEngine(
                 runtime.WorklistRevision,
                 demand.Sublot),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// CV-DEMAND-ACCEPT-TO-PICKUP's first snapshot: the plan as it stands once the TO_PICKUP order
+    /// exists and before the vehicle is at the pickup -- the pickup leg ACTIVE, the drop-off leg
+    /// PLANNED.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Published once, then left to the replay.</b> Every iteration of this stage passes through
+    /// here, and publishing sends whatever is unacknowledged, so calling the publisher each time
+    /// would put the same line on the wire once per poll. The replay at the top of
+    /// <see cref="AdvanceAsync"/> already re-sends an unacknowledged row, which is what a lost
+    /// acknowledgement needs.
+    /// </para>
+    /// <para>
+    /// <b>Not before the order is confirmed.</b> The vector's checkpoints put the TO_PICKUP intent
+    /// ahead of the RIoT call and the projection revision ahead of the send; a plan naming a leg
+    /// nothing has dispatched would project a journey that is not committed.
+    /// </para>
+    /// <para>
+    /// Until 2026-09-13 the server sent no plan before the arrival. Neither G2 noticed: this side's
+    /// test compared the outbox as a sorted set of types, and the onboard side's is written against
+    /// a fake server that sends the vector's order.
+    /// </para>
+    /// </remarks>
+    private async Task PublishPickupDispatchPlanOnceAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        CancellationToken cancellationToken)
+    {
+        string messageId = PickupDispatchPlanMessageId(runtime);
+        if (await dbContext.ProtocolOutbox.AsNoTracking()
+                .AnyAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await publisher.PublishUpcomingStopPlanAsync(
+            messageId,
+            runtime.AgvId,
+            session.SessionGeneration,
+            PickupDispatchPlan(runtime),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Retires a snapshot that the next revision of its stream supersedes, if it is still waiting
+    /// for an acknowledgement.
+    /// </summary>
+    /// <remarks>
+    /// The replay sends unacknowledged rows oldest first, and the vehicle refuses a snapshot below the
+    /// revision it has adopted as SNAPSHOT_REVISION_REGRESSION, tearing the session down. The plan
+    /// sent before the arrival is the one row that can fall behind like that without the journey
+    /// having needed a message from the vehicle in between, so the pickup retires it before
+    /// publishing the plan that replaces it. A snapshot states what is current, so nothing the
+    /// vehicle needs is lost: it adopts the higher revision directly.
+    /// </remarks>
+    private async Task RetireSupersededSnapshotAsync(string messageId, CancellationToken cancellationToken)
+    {
+        ProtocolOutboxRow? row = await dbContext.ProtocolOutbox
+            .SingleOrDefaultAsync(
+                item => item.MessageId == messageId && item.AcknowledgedAt == null && item.FencedAt == null,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (row is null)
+        {
+            return;
+        }
+
+        row.FencedAt = timeProvider.GetUtcNow();
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async Task PublishLoadAsync(
@@ -1620,15 +1695,25 @@ public sealed class JourneyRuntimeEngine(
     // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.
     private const string TransportPurpose = "TRANSPORT";
 
-    private static UpcomingStopPlanProjection PickupPlan(JourneyRuntimeRow runtime) => new(
+    // The plan stream advances three times per journey: before the pickup arrival at the stored
+    // revision, at the pickup one above it, at the gate two above it. WireToGateStore seeds the next
+    // journey on the vehicle three above, so the stream never steps back across journeys.
+    private static UpcomingStopPlanProjection PickupDispatchPlan(JourneyRuntimeRow runtime) => new(
         runtime.PlanRevision,
+        [
+            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "ACTIVE"),
+            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "PLANNED")
+        ]);
+
+    private static UpcomingStopPlanProjection PickupPlan(JourneyRuntimeRow runtime) => new(
+        runtime.PlanRevision + 1,
         [
             PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "ARRIVED"),
             PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "PLANNED")
         ]);
 
     private static UpcomingStopPlanProjection GatePlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision + 1,
+        runtime.PlanRevision + 2,
         [
             PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "COMPLETED"),
             PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "ARRIVED")
@@ -1656,10 +1741,16 @@ public sealed class JourneyRuntimeEngine(
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             $"{demandId}|{sublot}|{operation}|{string.Join(',', slots)}"))).ToLowerInvariant();
 
+    // Derived rather than stored: the row predates this snapshot, and a deterministic id from the
+    // demand is what the stored ones are anyway (WireToGateStore.ToRuntimeRow), without a migration.
+    private static string PickupDispatchPlanMessageId(JourneyRuntimeRow runtime) =>
+        StableGuid(runtime.DemandId, "pickup-dispatch-plan");
+
     private static HashSet<string> RuntimeMessageIds(JourneyRuntimeRow runtime) =>
     [
         runtime.VehicleBusinessMessageId,
         runtime.WorklistMessageId,
+        PickupDispatchPlanMessageId(runtime),
         runtime.PlanMessageId,
         runtime.SublotRequestMessageId,
         runtime.LoadCommandMessageId,
