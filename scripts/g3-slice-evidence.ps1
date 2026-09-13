@@ -38,35 +38,49 @@
 # from this list AND unoccupied by any runner: it is the level a run would reach by exercising the
 # candidate release artefact itself, which nothing does today. It is listed so that the ladder shows
 # its own top rung rather than ending at the highest rung that happens to be built.
+#
+# JOURNEY_SIMULATED_COUNTERPARTS joined this list on 2026-09-13, by the user's ruling that day. It is
+# the level scripts/run-journey-g3.ps1 runs at: the bound server with its journey runtime on, the
+# shipped onboard WPF driven through UI Automation and the real slots simulator, against the loopback
+# ControlServer.FakeRiot and ControlServer.FakeMesIngest. The user ruled that a run at this level
+# counts as a formal slice pass, under its own name so that nobody reads it as a run against a real
+# RCS -- the existing levels never touched one either. It is neither above nor below
+# DEMAND_BEARING_RESTORE: that one restores real field state and drives a synthetic peer, this one
+# drives the real peer through a live journey and restores nothing.
 function Get-G3AssuranceLevelsThatCountAsSlicePass {
-    return @('STAGED_REBUILD', 'DEMAND_BEARING_RESTORE')
+    return @('STAGED_REBUILD', 'DEMAND_BEARING_RESTORE', 'JOURNEY_SIMULATED_COUNTERPARTS')
 }
 
 function Get-G3AssuranceLevelLadder {
     return [ordered]@{
         STAGED_REBUILD = 'Commits bound; peers rebuilt from exact clones; synthetic peer harness; no candidate release artefact touched.'
         DEMAND_BEARING_RESTORE = 'As STAGED_REBUILD, plus a restored controlserver.db from an authorised field run.'
+        JOURNEY_SIMULATED_COUNTERPARTS = 'Commits bound; peers rebuilt from exact clones; the journey runtime on, driving the shipped onboard WPF through UI Automation and the real slots simulator, against loopback fakes of RIoT and MesIngest. No real RCS, vehicle or IO module; no candidate release artefact touched.'
         CANDIDATE_ARTEFACT = 'The candidate release artefact itself is what runs. No runner produces this level today.'
     }
 }
 
-# The slices no G3 runner covers. Counting the onboard runner alongside the three here, together they
-# name FP-IS-00/04/05/06 and, since 2026-09-10, FP-IS-14 and FP-IS-15; the slices below appear in
-# none of them.
+# The slices no G3 runner covers. Counting the onboard runner alongside the four here, together they
+# name FP-IS-00/04/05/06, since 2026-09-10 FP-IS-14 and FP-IS-15, and since 2026-09-13 FP-IS-01; the
+# slices below appear in none of them.
 # The user ruled on 2026-09-09 that a batch records such a gap rather than writing new
 # cross-repository scenarios to close it, so these slices emit no gate-result.json at all -- an
 # absent artefact, not an INCONCLUSIVE one, on the same reasoning as ticket 14's "a filter that
 # selects nothing is refused, not written up as green".
 #
+# The user reversed that ruling on 2026-09-13 for FP-IS-01/02/03/07: all four are to get a G3 surface,
+# through run-journey-g3.ps1. A slice leaves this table when that runner actually claims assertions
+# for it, not before -- ticket 23 forbids naming a slice in a claim with nothing behind it. FP-IS-01
+# left on 2026-09-13 with the demand-to-pickup scenario.
+#
 # FP-IS-14 was listed here on 2026-09-10 as a gap of a different kind -- not a missing assertion but a
 # slice that could not be asserted at all, because nothing outside the process could start an
 # activation. The activation entry point landed the same day and the staged runner now claims it, so
-# it is no longer in this table. The distinction is worth keeping in mind: the four below lack an
+# it is no longer in this table. The distinction is worth keeping in mind: the slices below lack an
 # assertion somebody could write against the peers as they stand.
 function Get-G3SlicesWithoutSurfaceThisBatch {
     return [ordered]@{
-        'FP-IS-01' = 'CV-DEMAND-ACCEPT-TO-PICKUP has no assertion in any G3 runner.'
-        'FP-IS-02' = 'CV-PICKUP-SUBLOT-LOAD, CV-LOAD-CORRECTION and CV-LOAD-CANCELLATION-ALL-EMPTY have no assertion in any G3 runner.'
+        'FP-IS-02' ='CV-PICKUP-SUBLOT-LOAD, CV-LOAD-CORRECTION and CV-LOAD-CANCELLATION-ALL-EMPTY have no assertion in any G3 runner.'
         'FP-IS-03' = 'CV-PREDEPARTURE-SAFETY-EXPIRES and CV-OPERATION-RESULT-UNKNOWN-RECONCILE have no assertion in any G3 runner.'
         'FP-IS-07' = 'None of its six vectors has an assertion in any G3 runner; the staged runner records several of its accepted paths as not reachable in a staged run.'
     }
@@ -215,6 +229,38 @@ function Get-G3RunnerClaim {
                     'acceptedDemandSurvivesTheHostRestart',
                     'vehicleDispatchLeaseSurvivesTheHostRestart',
                     'restartedHostServesTheSameStore')
+            }
+        }
+        # scripts/run-journey-g3.ps1, since 2026-09-13. Each assertion is one judgment of an L2
+        # real-onboard scenario run from the ControlServer clone at the bound commit; the runner holds
+        # the scenario-to-assertion table. The run-wide ones are what make those judgments evidence
+        # about the bound identity: the clones, the tag, and every scenario's own recorded identity.
+        'JOURNEY_G3_REAL_ONBOARD_SIMULATED_COUNTERPARTS' = [ordered]@{
+            assuranceLevel = 'JOURNEY_SIMULATED_COUNTERPARTS'
+            runWide = @(
+                'exactClonesAtTheSharedCommitBinding',
+                'protocolReleaseTagResolvesToTheBoundCommit',
+                'everyScenarioRanTheBoundControlServer',
+                'everyScenarioReportedTheBoundProtocolRelease',
+                'everyScenarioRanTheRealOnboardRig',
+                'everyScenarioPublishedThePeersAtTheBinding',
+                'noScenarioAbortedBeforeItsJudgments',
+                'secretScan')
+            slices = [ordered]@{
+                # CV-DEMAND-ACCEPT-TO-PICKUP, in the order its input.ndjson gives. Writing this claim is
+                # what found that the server sent no plan before the arrival
+                # (docs/defects/20260913-no-plan-snapshot-before-pickup-arrival.md).
+                'FP-IS-01' = @(
+                    'exactlyOneAcceptedDemandSnapshot',
+                    'exactlyOneToPickupIntent',
+                    'exactlyOneRiotOrder',
+                    'planPublishedAndAcknowledgedBeforePickupArrival',
+                    'noSlotOperationBeforePickupArrival',
+                    'trustedPickupArrivalAdopted',
+                    'demandAcceptanceSnapshotSequenceMatchesVector',
+                    'onboardAppliedTheCommittedProjection',
+                    'finalStateOneDemandOneOrderAtPickupNoSlotOperation',
+                    'onboardNeverDiscoversSelectsOrBindsDemand')
             }
         }
     }
