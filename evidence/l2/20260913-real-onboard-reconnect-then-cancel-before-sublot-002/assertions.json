@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-reconnect-then-cancel-before-sublot",
+  "runId": "20260913T070337886Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 60s waiting for: the session was Ready again in a newer generation. Last observed: {\"SessionGeneration\":2,\"Readiness\":\"RecoveryRequired\",\"ReasonCode\":\"DEPARTURE_SAFETY_NOT_READY\"}",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "BATCH-3",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260913T070337886Z",
+    "controlServerCommit": "321e6127e0c6ba01d216da45231da51f49032669",
+    "onboardHmiCommit": "336a105720f8570eeaf6d48e43a80325634ac540",
+    "rig": "RealOnboard",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-RCS-00",
+      "description": "车载端的会话经协议故障代理建立（否则断开注入不到这条链路上）",
+      "outcome": "PASS",
+      "expected": ">= 1 SessionHello through the proxy",
+      "actual": 1
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 22 lines, 22 distinct, 6 message types, 0 distinct violations, 0 known; schema compilation 11422 ms."
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{"at":"2026-09-13T07:01:07.2331723+00:00","note":"L2 run 20260913T070107192Z starting for scenario 'real-onboard-reconnect-then-cancel-before-sublot'."}
+{"at":"2026-09-13T07:01:07.2631076+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T07:01:07.4233432+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-13T07:01:25.9215263+00:00","note":"Building onboard-hmi at 336a105720f8570eeaf6d48e43a80325634ac540 from a throwaway clone."}
+{"at":"2026-09-13T07:01:26.7800989+00:00","note":"dotnet SDK resolved for onboard-hmi publish: 8.0.425"}
+{"at":"2026-09-13T07:01:32.8798426+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T07:01:32.8839448+00:00","note":"Peers: onboard-hmi@336a105720f8570eeaf6d48e43a80325634ac540, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T07:01:33.8750940+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T07:01:34.0043327+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T07:01:35.8489553+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-13T07:01:39.9444384+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T07:01:41.5610102+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T07:01:42.2471166+00:00","criterion":"protocol-proxy-live","value":"live"}
+{"at":"2026-09-13T07:01:42.2507516+00:00","note":"Protocol fault proxy relaying 127.0.0.1:58416 -> 127.0.0.1:58405."}
+{"at":"2026-09-13T07:01:45.5326235+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-13T07:01:45.5476249+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-13T07:01:45.6448187+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-13T07:01:45.9320648+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T07:01:45.9978441+00:00","note":"Environment is up; entering scenario 'real-onboard-reconnect-then-cancel-before-sublot'."}
+{"at":"2026-09-13T07:01:46.3426148+00:00","criterion":"proxy-session","value":"1"}
+{"at":"2026-09-13T07:01:46.4464613+00:00","criterion":"session-ready","value":"@{SessionGeneration=1; Readiness=Ready; ReasonCode=READY}"}
+{"at":"2026-09-13T07:01:46.4854834+00:00","note":"Publishing demand c95d33c0ad2348ee93705a27743faaac."}
+{"at":"2026-09-13T07:01:46.5872098+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-13T07:01:47.6321219+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6262c2da-8a24-5c51-9edd-5c2d1a777240-S1-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-13T07:01:47.9092099+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6262c2da-8a24-5c51-9edd-5c2d1a777240-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T07:01:47.9238599+00:00","note":"Run failed: Exception calling \"ExecuteReader\" with \"0\" argument(s): \"SQLite Error 1: 'no such column: r.SublotRequestMessageId'.\""}
+{"at":"2026-09-13T07:01:48.0645473+00:00","note":"Exported 5 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-13T07:02:03.5073246+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 5 lines, 5 distinct, 5 message types, 0 distinct violations, 0 known; schema compilation 13508 ms."}
