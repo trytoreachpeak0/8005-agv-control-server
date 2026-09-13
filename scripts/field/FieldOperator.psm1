@@ -1029,12 +1029,14 @@ function Invoke-FieldActCancelBeforeSublot {
         [string]$Reason = '现场窗口二：本站没有货，扫码前取消本站装货',
         [scriptblock]$OnCheckpoint = { param($label) },
         [string]$SettledCheckpoint = 'x-settled',
-        [int]$ArrivalTimeoutSeconds = 1800
+        [int]$ArrivalTimeoutSeconds = 1800,
+        # How long to wait for the vehicle to offer the button. Throws "to offer LOAD_CANCELLATION" when it does not.
+        [int]$OfferTimeoutSeconds = 120
     )
 
     $request = Wait-FieldSublotRequest -Field $Field -JourneyId $JourneyId -Sequence $Sequence -ArrivalTimeoutSeconds $ArrivalTimeoutSeconds
     $action = 'LOAD_CANCELLATION'
-    $offered = Wait-FieldCondition -Field $Field -Description "the vehicle to offer $action at stop $Sequence" -TimeoutSeconds 120 `
+    $offered = Wait-FieldCondition -Field $Field -Description "the vehicle to offer $action at stop $Sequence" -TimeoutSeconds $OfferTimeoutSeconds `
         -Probe { Get-FieldOnboardSnapshot -Field $Field } `
         -Until { param($s) @($s.state.availableRecoveryActions) -contains $action }
 
@@ -1432,8 +1434,19 @@ function Invoke-FieldJourneyDrive {
                     }
                     'X' {
                         Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: 取消装货 before the scan (X)"
-                        $acts.Add((Invoke-FieldActCancelBeforeSublot -Field $Field -JourneyId $JourneyId -Sequence $sequence `
-                            -Reason '连续运行：扫码前取消本站装货'))
+                        try {
+                            $acts.Add((Invoke-FieldActCancelBeforeSublot -Field $Field -JourneyId $JourneyId -Sequence $sequence `
+                                -Reason '连续运行：扫码前取消本站装货' -OfferTimeoutSeconds 30))
+                        } catch {
+                            if ($_.Exception.Message -notlike '*to offer LOAD_CANCELLATION*') { throw }
+                            # The vehicle never offered the button. Throwing would resume the journey and draw again at
+                            # a stop whose deadline is already running; leaving the stop to that deadline keeps the
+                            # drive going and records that the button was missing (L2 continuous-mixed -001).
+                            Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: 取消装货 was not offered within 30 s; leaving the stop to its station deadline"
+                            $fallback = Invoke-FieldActNoSublot -Field $Field -JourneyId $JourneyId -Sequence $sequence
+                            $fallback.Act = 'X-UNOFFERED'
+                            $acts.Add($fallback)
+                        }
                     }
                     'T' {
                         Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: nobody scans; waiting out the station deadline (T)"

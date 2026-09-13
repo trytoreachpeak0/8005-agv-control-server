@@ -144,7 +144,7 @@ $onPoll = {
 
 $onJourney = {
     param($record)
-    $loads = @($record.Acts | Where-Object { $_.Act -in 'N', 'N-RESUMED', 'X', 'T' } |
+    $loads = @($record.Acts | Where-Object { $_.Act -in 'N', 'N-RESUMED', 'X', 'X-UNOFFERED', 'T' } |
         ForEach-Object {
             [ordered]@{
                 stop        = $_.Sequence; act = $_.Act; sublot = $_.Sublot; status = $_.Status
