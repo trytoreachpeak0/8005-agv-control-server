@@ -1,0 +1,120 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-da73513d",
+  "revision": 11,
+  "observedAt": "2026-09-13T17:23:48.9603903+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 10,
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 210,
+        "battery": 80,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-61c56f37-78d5-4ba7-8dc8-b7d5ced21c28-PICKUP-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      },
+      {
+        "id": 488002,
+        "orderId": "ORDER-000002",
+        "upperId": "W2G-61c56f37-78d5-4ba7-8dc8-b7d5ced21c28-GATE-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 210,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 210
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13",
+            "edgeId": 6,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7",
+            "edgeId": 2,
+            "posX": 0,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 210,
+            "name": "关卡",
+            "edgeId": 4,
+            "posX": 20000,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          }
+        ]
+      }
+    ],
+    "commandInvocations": [],
+    "edgeGroups": [],
+    "dynamicRouteCosts": {},
+    "removedEdges": [
+      {
+        "mapId": 25,
+        "edgeIds": []
+      }
+    ],
+    "removedStations": [
+      {
+        "mapId": 25,
+        "stationIds": []
+      }
+    ]
+  }
+}
