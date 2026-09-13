@@ -1369,6 +1369,190 @@ function Invoke-FieldActUnload {
     }
 }
 
+# --- a plant that simply runs ----------------------------------------------------------------------------
+
+<#
+Drives one journey to Completed with plain acts only: every pickup loaded, the gate unloaded. It picks the
+journey up wherever it stands, which is what lets a continuous drive survive its own restart -- a stop past its
+scan has its open load served, a gate mid-unload is served from where it is.
+
+-OnPoll is handed the journey row between observations; the L2 rehearsal moves its fake RIoT there. A probe that
+fails is retried rather than fatal, because over SSH one dropped round trip is not a reason to abandon a journey,
+but ProbeFailureLimit failures in a row are. Throws on Blocked, naming the reason: a blocked journey is not
+something an operator's hands can fix.
+#>
+function Invoke-FieldJourneyDrive {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        [Parameter(Mandatory)][string]$JourneyId,
+        [scriptblock]$OnPoll = { param($journey) },
+        [int]$PollSeconds = 3,
+        [int]$ProbeFailureLimit = 20
+    )
+
+    $acts = [System.Collections.Generic.List[object]]::new()
+    $handled = @{}
+    $probeFailures = 0
+    while ($true) {
+        try {
+            $journey = Get-FieldJourney -Field $Field -JourneyId $JourneyId
+            $probeFailures = 0
+        } catch {
+            $probeFailures++
+            if ($probeFailures -ge $ProbeFailureLimit) {
+                throw "Could not read journey $JourneyId $probeFailures times in a row: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds $PollSeconds
+            continue
+        }
+        if (-not $journey) { throw "Journey $JourneyId has no row." }
+        $stage = [string]$journey.Stage
+        $sequence = [int]$journey.CurrentStopSequence
+        if ($stage -eq 'Completed') {
+            return [pscustomobject]@{ JourneyId = $JourneyId; Acts = $acts.ToArray() }
+        }
+        if ($stage -eq 'Blocked') { throw "Journey $JourneyId blocked at stop ${sequence}: $($journey.BlockReasonCode)." }
+
+        if (($stage -in @('AwaitingSublot', 'AwaitingLoadResult')) -and -not $handled.ContainsKey("load-$sequence")) {
+            $handled["load-$sequence"] = $true
+            # Whether a load is already under way decides, not the stage name: a drive that died between its scan
+            # and the engine's next iteration comes back to AwaitingSublot with the load command already sent, and
+            # scanning again there waits two minutes for a request the vehicle is no longer making.
+            $demand = Get-FieldStopDemand -Field $Field -JourneyId $JourneyId -Sequence $sequence
+            $operation = Get-FieldOperation -Field $Field -DemandId ([string]$demand.DemandId)
+            if (-not $operation -and $stage -eq 'AwaitingSublot') {
+                Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: load"
+                $acts.Add((Invoke-FieldActLoad -Field $Field -JourneyId $JourneyId -Sequence $sequence))
+                continue
+            }
+            if (-not $operation) {
+                $operation = Wait-FieldCondition -Field $Field -Description "the load command at stop $sequence" -TimeoutSeconds 120 `
+                    -Probe { Get-FieldOperation -Field $Field -DemandId ([string]$demand.DemandId) } -Until { param($o) $o }
+            }
+            if ([string]$operation.Status -notin $script:TerminalOperationStatuses) {
+                Write-FieldLog $Field "journey ${JourneyId} stop ${sequence}: resuming the load already under way (attempt $($operation.SlotOperationAttemptId))"
+                $served = Invoke-FieldServeOperation -Field $Field -DemandId ([string]$demand.DemandId) `
+                    -AttemptId ([string]$operation.SlotOperationAttemptId) -Cargo OCCUPIED
+                $acts.Add([pscustomobject]@{
+                    Act         = 'N-RESUMED'
+                    Sequence    = $sequence
+                    DemandId    = [string]$demand.DemandId
+                    Sublot      = [string]$demand.Sublot
+                    AttemptId   = [string]$operation.SlotOperationAttemptId
+                    Status      = $served.Status
+                    ServedSlots = $served.ServedSlots
+                })
+            }
+            continue
+        }
+        if ($stage -eq 'AwaitingUnloadResult') {
+            Write-FieldLog $Field "journey ${JourneyId}: unload at the gate"
+            $acts.Add((Invoke-FieldActUnload -Field $Field -JourneyId $JourneyId))
+            continue
+        }
+
+        $null = & $OnPoll $journey
+        Start-Sleep -Seconds $PollSeconds
+    }
+}
+
+<#
+Journey after journey, for as long as the engine hands them out: the operator of a plant that simply runs. It
+never dispatches and never closes a gate; it waits for whatever journey the engine starts and drives it.
+
+A journey the acts fail on is resumed from where it stands, up to ResumeAttempts times, because
+Invoke-FieldJourneyDrive picks a journey up at any stage. A Blocked journey is not resumed: it ends the drive by
+throwing, after -OnJourney has been handed its record.
+
+-ShouldStop is asked only while no journey is unresolved, so a stop never strands a journey half driven. With the
+gates still open the engine can start the next journey within one poll of the last one completing; closing them
+first (13-close-gates-when-idle.ps1) is what makes the stop land. -OnPoll is handed $null while idle.
+Returns the number of journeys completed.
+#>
+function Invoke-FieldContinuousDrive {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        # 0 runs until -ShouldStop says so.
+        [int]$MaxJourneys = 0,
+        [int]$ResumeAttempts = 3,
+        [int]$IdlePollSeconds = 10,
+        [int]$DrivePollSeconds = 3,
+        [int]$ResumeDelaySeconds = 15,
+        [int]$ProbeFailureLimit = 30,
+        [scriptblock]$ShouldStop = { $false },
+        [scriptblock]$OnPoll = { param($journey) },
+        [scriptblock]$OnJourney = { param($record) }
+    )
+
+    $completed = 0
+    $probeFailures = 0
+    while ($MaxJourneys -le 0 -or $completed -lt $MaxJourneys) {
+        try {
+            $next = Get-FieldJourney -Field $Field
+            $probeFailures = 0
+        } catch {
+            $probeFailures++
+            if ($probeFailures -ge $ProbeFailureLimit) {
+                throw "Could not read $($Field.AgvId)'s journeys $probeFailures times in a row: $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds $IdlePollSeconds
+            continue
+        }
+        if (-not $next) {
+            if (& $ShouldStop) {
+                Write-FieldLog $Field 'stop requested and no journey is unresolved'
+                break
+            }
+            $null = & $OnPoll $null
+            Start-Sleep -Seconds $IdlePollSeconds
+            continue
+        }
+
+        $journeyId = [string]$next.JourneyId
+        $record = [pscustomobject]@{
+            JourneyId   = $journeyId
+            PickedUpAt  = "$($next.CurrentStopSequence)/$($next.Stage)"
+            StartedAt   = [DateTimeOffset]::UtcNow.ToString('o')
+            CompletedAt = $null
+            Outcome     = $null
+            Attempts    = 0
+            Acts        = @()
+            Errors      = [System.Collections.Generic.List[object]]::new()
+        }
+        Write-FieldLog $Field "journey $journeyId picked up at $($record.PickedUpAt)"
+        while ($true) {
+            $record.Attempts++
+            try {
+                $drive = Invoke-FieldJourneyDrive -Field $Field -JourneyId $journeyId -OnPoll $OnPoll -PollSeconds $DrivePollSeconds
+                $record.Acts = @($record.Acts) + @($drive.Acts)
+                $record.Outcome = 'Completed'
+                $record.CompletedAt = [DateTimeOffset]::UtcNow.ToString('o')
+                break
+            } catch {
+                $message = $_.Exception.Message
+                $position = $null
+                try {
+                    $row = Get-FieldJourney -Field $Field -JourneyId $journeyId
+                    $position = $row ? "$($row.CurrentStopSequence)/$($row.Stage)$($row.BlockReasonCode ? " ($($row.BlockReasonCode))" : '')" : $null
+                } catch { }
+                $record.Errors.Add([pscustomobject]@{ At = [DateTimeOffset]::UtcNow.ToString('o'); Position = $position; Message = $message })
+                $blocked = $position -and $position -like '*/Blocked*'
+                if ($blocked -or $record.Attempts -ge $ResumeAttempts) {
+                    $record.Outcome = $blocked ? 'Blocked' : 'Failed'
+                    $null = & $OnJourney $record
+                    throw "Journey $journeyId $($record.Outcome.ToLowerInvariant()) after $($record.Attempts) attempt(s) at $($position ?? '(unknown)'): $message"
+                }
+                Write-FieldLog $Field "journey $journeyId attempt $($record.Attempts) failed at $($position ?? '(unknown)'): $message -- resuming in ${ResumeDelaySeconds}s"
+                Start-Sleep -Seconds $ResumeDelaySeconds
+            }
+        }
+        $completed++
+        Write-FieldLog $Field "journey $journeyId completed ($completed so far)"
+        $null = & $OnJourney $record
+    }
+    return $completed
+}
+
 # --- between journeys ------------------------------------------------------------------------------------
 
 function Get-FieldSession {
@@ -1782,4 +1966,5 @@ Export-ModuleMember -Function New-FieldOperator, Invoke-FieldQuery, Invoke-Field
     New-FieldWindowRecord, Get-FieldProperty,
     Wait-FieldSublotRequest, Get-FieldDemandSettlement, Invoke-FieldActNoSublot, Invoke-FieldActCancelBeforeSublot,
     Invoke-FieldNotEmptiedRounds, Get-FieldSession, Get-FieldServerStartedAt, Wait-FieldSessionAfterRestart,
-    Wait-FieldChargingStage, New-FullLoopWindowRecord, Get-FieldStopSafetyCheck
+    Wait-FieldChargingStage, New-FullLoopWindowRecord, Get-FieldStopSafetyCheck,
+    Invoke-FieldJourneyDrive, Invoke-FieldContinuousDrive
