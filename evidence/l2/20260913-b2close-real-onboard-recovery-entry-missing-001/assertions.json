@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-recovery-entry-missing",
+  "runId": "20260913T090125932Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260913T090125932Z",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "c86bac5eaec57c36351f7d45b458deaa42fde22e",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard",
+    "batchId": "batch-2",
+    "controlServerCommit": "33e7bde39a372e7491aba2ef2559a20820815c21",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-RR-01",
+      "description": "真车载端报回不完美的装载结果，旅程停摆在 LOAD_RESULT_REQUIRES_RECOVERY",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-RR-02",
+      "description": "装载操作判 RecoveryRequired",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-RR-03",
+      "description": "失败结果已落库，且是这个 attempt 唯一一份存活结果",
+      "outcome": "PASS",
+      "expected": "1 份，未 COMPLETED，未被替换",
+      "actual": "1 份，UNKNOWN"
+    },
+    {
+      "id": "L2-RR-04",
+      "description": "仓位物理事实与失败一致：门关着、锁上了，但仍然是空的",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY",
+      "actual": "CLOSED/EMPTY"
+    },
+    {
+      "id": "L2-RR-05",
+      "description": "停摆之后车载端 HMI 上出现可用的恢复入口（任何一种恢复动作都行）",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    }
+  ]
+}

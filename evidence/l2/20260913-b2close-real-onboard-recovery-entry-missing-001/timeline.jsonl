@@ -1,0 +1,44 @@
+{"at":"2026-09-13T09:01:25.9819101+00:00","note":"L2 run 20260913T090125932Z starting for scenario 'real-onboard-recovery-entry-missing'."}
+{"at":"2026-09-13T09:01:25.9950996+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T09:01:28.1902035+00:00","note":"Reusing cached onboard-hmi publish for c86bac5eaec57c36351f7d45b458deaa42fde22e."}
+{"at":"2026-09-13T09:01:28.2916983+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T09:01:28.2955879+00:00","note":"Peers: onboard-hmi@c86bac5eaec57c36351f7d45b458deaa42fde22e, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T09:01:28.3207365+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-13T09:01:29.1752565+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T09:01:29.2967886+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T09:01:31.2624564+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-13T09:01:39.8405225+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T09:01:42.0615800+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-13T09:01:46.3356347+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T09:01:46.3541020+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-13T09:01:48.4310859+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-13T09:01:48.4450071+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-13T09:01:48.5185682+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-13T09:01:49.0634753+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T09:01:49.1104279+00:00","note":"Environment is up; entering scenario 'real-onboard-recovery-entry-missing'."}
+{"at":"2026-09-13T09:01:49.1818795+00:00","note":"Publishing demand 86459cf83c2b4c5ea6db9f8f62f2c4c0 (sublot L2-SUBLOT-20260913T090125932Z) to the fake MesIngest catalog."}
+{"at":"2026-09-13T09:01:49.3031128+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-13T09:01:50.6302664+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-13T09:01:50.6387346+00:00","criterion":"to-pickup-intent","value":"CREATE_ATTEMPTED"}
+{"at":"2026-09-13T09:01:50.8975318+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-13T09:01:50.9011290+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-13T09:01:51.0126334+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-13T09:01:51.0565083+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-13T09:01:52.2237485+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-13T09:01:52.2248475+00:00","note":"Typing sublot L2-SUBLOT-20260913T090125932Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-13T09:01:52.3036559+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-13T09:01:52.3375675+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-13T09:01:52.3518932+00:00","criterion":"sublot-submitted","value":"0"}
+{"at":"2026-09-13T09:01:52.6174582+00:00","criterion":"sublot-submitted","value":"1"}
+{"at":"2026-09-13T09:01:52.6292734+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-13T09:01:52.8833714+00:00","criterion":"load-attempt","value":"55cc2daa-7e1e-935a-ab37-84905aff305b"}
+{"at":"2026-09-13T09:01:52.9176029+00:00","criterion":"load-unlocking","value":"(null)"}
+{"at":"2026-09-13T09:01:53.1851789+00:00","criterion":"load-unlocking","value":"@{slotOperationAttemptId=55cc2daa-7e1e-935a-ab37-84905aff305b; phase=UNLOCKING; activeUnlockSlots=System.Object[]; completedSlots=System.Object[]; observedAt=09/13/2026 17:01:52}"}
+{"at":"2026-09-13T09:01:53.1915740+00:00","criterion":"load-waiting-operator","value":"0"}
+{"at":"2026-09-13T09:01:53.9906937+00:00","criterion":"load-waiting-operator","value":"1"}
+{"at":"2026-09-13T09:01:53.9940233+00:00","note":"Operator closes slot 1 without putting the basket in; the load will fail."}
+{"at":"2026-09-13T09:01:54.0471057+00:00","note":"Waiting out the onboard operation timeout (about 120s) before the result arrives."}
+{"at":"2026-09-13T09:01:54.0506743+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-13T09:03:53.7942195+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-13T09:03:53.8707179+00:00","criterion":"onboard-recovery-entry","value":"True"}
+{"at":"2026-09-13T09:03:53.8738591+00:00","note":"Scenario finished at the missing recovery entry: the server would authorize COMPENSATE_LOAD_ALL_EMPTY here, but the vehicle cannot open a recovery session."}
