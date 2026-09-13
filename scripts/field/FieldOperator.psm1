@@ -346,6 +346,43 @@ function Wait-FieldCondition {
     }
 }
 
+<#
+Reads a baseline, performs the action it is a baseline for, and returns both: Baseline, and Value. Given a
+probe it then waits for the change -- Until is handed the baseline first and the probed value second -- and
+Value is what satisfied it; without one, Value is what the action returned, for a baseline that guards
+something later rather than a wait right here.
+
+The baseline is read in here, immediately before the action, because reading it after is the failure this
+exists for (scripts/l2/README.md item 14): whatever the vehicle does in answer to the action is by then
+already counted, so a wait for it never ends and a guard against it never fires. Scriptblocks resolve the
+calling act's variables through dynamic scope, as Wait-FieldCondition's do, so they must not use a name
+either function declares.
+#>
+function Wait-FieldChange {
+    param(
+        [Parameter(Mandatory)][object]$Field,
+        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][scriptblock]$Baseline,
+        [Parameter(Mandatory)][scriptblock]$Action,
+        [scriptblock]$Probe,
+        [scriptblock]$Until,
+        [int]$TimeoutSeconds = 120,
+        [scriptblock]$Abort
+    )
+
+    if ([bool]$Probe -ne [bool]$Until) { throw "Wait-FieldChange takes -Probe and -Until together: $Description." }
+    $changeBaseline = & $Baseline
+    $changeActionResult = & $Action
+    if (-not $Probe) {
+        return [pscustomobject]@{ Baseline = $changeBaseline; Value = $changeActionResult }
+    }
+    # Distinct names: the wrapper below runs inside Wait-FieldCondition, whose own $Until would shadow ours.
+    $changeUntil = $Until
+    $changeValue = Wait-FieldCondition -Field $Field -Description $Description -TimeoutSeconds $TimeoutSeconds `
+        -Abort $Abort -Probe $Probe -Until { param($v) & $changeUntil $changeBaseline $v }
+    return [pscustomobject]@{ Baseline = $changeBaseline; Value = $changeValue }
+}
+
 # --- the server's view -------------------------------------------------------------------------------
 
 function ConvertTo-SqlLiteral([string]$Value) {
@@ -549,9 +586,13 @@ function Invoke-FieldServeOperation {
         $slotNo = $counts.WaitingSlot
         if ($slotNo -gt 0 -and -not $Served.ContainsKey($slotNo)) {
             Write-FieldLog $Field "$OperationType ${AttemptId}: vehicle waits on slot $slotNo; serving it with $Cargo"
-            $null = Invoke-FieldCloseSlot -Field $Field -SlotNo $slotNo -Cargo $Cargo
-            $after = Get-FieldProgress -Field $Field -AttemptId $AttemptId
-            $Served[$slotNo] = Get-FieldUnlockCountForSlot -Events $after -SlotNo $slotNo
+            # The count the guard above compares against is the one from just before the close. Read after it,
+            # a reopen pulse the vehicle fires in answer to the close is already in it, and the guard never sees
+            # the one thing it exists for (control-server#26; Invoke-FieldActReopen reads its count before too).
+            $serve = Wait-FieldChange -Field $Field -Description "slot $slotNo served with $Cargo" `
+                -Baseline { Get-FieldUnlockCountForSlot -Events (Get-FieldProgress -Field $Field -AttemptId $AttemptId) -SlotNo $slotNo } `
+                -Action { $null = Invoke-FieldCloseSlot -Field $Field -SlotNo $slotNo -Cargo $Cargo }
+            $Served[$slotNo] = $serve.Baseline
             continue
         }
         if ([DateTimeOffset]::UtcNow -ge $deadline) {
@@ -1734,7 +1775,7 @@ function New-FieldWindowRecord {
 }
 
 Export-ModuleMember -Function New-FieldOperator, Invoke-FieldQuery, Invoke-FieldFace, Invoke-FieldSimulatorCommand,
-    Get-FieldSimulatorSlot, Get-FieldOnboardSnapshot, Wait-FieldCondition, Get-FieldJourney, Get-FieldPosition,
+    Get-FieldSimulatorSlot, Get-FieldOnboardSnapshot, Wait-FieldCondition, Wait-FieldChange, Get-FieldJourney, Get-FieldPosition,
     Get-FieldStopDemand, Get-FieldOperation, Get-FieldProgress, Get-FieldPhaseCounts, Invoke-FieldCloseSlot,
     Invoke-FieldServeOperation, Start-FieldStopLoad, Invoke-FieldActReopen, Invoke-FieldActDoorLeftOpen,
     Invoke-FieldActLoad, Invoke-FieldActUnknownLoad, Invoke-FieldActCompensate, Invoke-FieldActUnload,

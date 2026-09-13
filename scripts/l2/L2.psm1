@@ -94,6 +94,45 @@ function Wait-L2Condition {
 }
 
 <#
+Reads a baseline, performs the action it is a baseline for, then waits for the change, and returns both:
+Baseline, and Value -- the probed value that satisfied Until. Until is handed the baseline first and the
+probed value second.
+
+The baseline is read in here, immediately before the action, because a caller reading it anywhere else is
+the failure this exists for. README item 14's fourth case took "UNLOCKING before the compensation" after a
+few hundred milliseconds of other criteria; the vehicle had pulsed 106 ms after the command, so the baseline
+already held the pulse being waited for and the wait could never end. Holding only this function, a caller
+cannot write that order.
+
+Until runs inside Wait-L2Condition, so none of the scriptblocks may use a name either function declares.
+#>
+function Wait-L2Change {
+    param(
+        [Parameter(Mandatory)][string]$Description,
+        [Parameter(Mandatory)][scriptblock]$Baseline,
+        [Parameter(Mandatory)][scriptblock]$Action,
+        [Parameter(Mandatory)][scriptblock]$Probe,
+        [Parameter(Mandatory)][scriptblock]$Until,
+        [int]$TimeoutSeconds = 60,
+        [int]$PollMilliseconds = 250,
+        [L2Journal]$Journal,
+        [string]$Criterion,
+        [object]$Component
+    )
+
+    $changeBaseline = & $Baseline
+    if ($Journal -and $Criterion) { $Journal.Observe("$Criterion-baseline", $changeBaseline, $null) }
+    $null = & $Action
+    # Distinct names: the wrapper below runs inside Wait-L2Condition, whose own $Until would shadow ours.
+    $changeUntil = $Until
+    $value = Wait-L2Condition -Description $Description -Probe $Probe `
+        -Until { param($v) & $changeUntil $changeBaseline $v } `
+        -TimeoutSeconds $TimeoutSeconds -PollMilliseconds $PollMilliseconds `
+        -Journal $Journal -Criterion $Criterion -Component $Component
+    return [pscustomobject]@{ Baseline = $changeBaseline; Value = $value }
+}
+
+<#
 Throws when a component has already exited, quoting its stderr.
 
 This exists because of how expensive the alternative was. On 2026-09-03 the first CI run of the
@@ -993,7 +1032,7 @@ WHERE d.DemandId = '$DemandId'
 }
 
 Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Assert-L2ComponentAlive,
-    Wait-L2Iterations, New-L2Double,
+    Wait-L2Change, Wait-L2Iterations, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
     Export-L2InboundProtocolLines, Invoke-L2SchemaConformance,
     Write-L2Evidence, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver,

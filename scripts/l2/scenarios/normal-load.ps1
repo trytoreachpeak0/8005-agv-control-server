@@ -103,6 +103,9 @@ $null = $riot.Command('Put', 'vehicle', @{
     orderTaskId     = $pickupIntent.OrderId
 })
 
+# 否定判据要给运行时机会（control-server#26 普查）：PUT 之后立刻读，服务端一轮都还没跑，读到的
+# AwaitingPickupArrival 只说明「还没来得及」，这条判据因此永远是绿的。
+$null = Wait-L2Iterations -Riot $riot -Count 2 -Journal $journal
 $stage = Get-Stage
 $assertions.Add(
     'L2-NL-03', '车在路上时不采信到站',

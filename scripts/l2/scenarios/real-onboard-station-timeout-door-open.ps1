@@ -325,14 +325,22 @@ $assertions.Add(
 # 而门开着告警本来就不该撤销。产品是对的，判据错了。
 $reopenPhysical = $null
 for ($round = 1; $round -le 2; $round++) {
-    $unlockingBefore = Get-PhaseCount $attemptId 'UNLOCKING'
-    $waitingBefore = Get-PhaseCount $attemptId 'WAITING_OPERATOR'
     $journal.Note("Round ${round}: operator pushes slot $slotNo shut without putting anything in it.")
-    $null = $simulator.Command('Post', "slots/$slotNo/close-door", @{})
-
-    $closed = Wait-L2Condition -Description "slot $slotNo is closed and locked with no cargo (round $round)" `
+    # 两个基线由 Wait-L2Change 紧贴关门之前读：关门之后再取，车载端应答这次关门的重开脉冲可能已经数进去了
+    # （README 第 14 条第四例）。
+    $close = Wait-L2Change -Description "slot $slotNo is closed and locked with no cargo (round $round)" `
         -Journal $journal -Criterion "door-closed-empty-$round" -TimeoutSeconds 60 `
-        -Probe { Get-SlotPhysical $slotNo } -Until { param($v) $v -eq 'CLOSED/EMPTY/1/0' }
+        -Baseline {
+            [pscustomobject]@{
+                Unlocking = Get-PhaseCount $attemptId 'UNLOCKING'
+                Waiting   = Get-PhaseCount $attemptId 'WAITING_OPERATOR'
+            }
+        } `
+        -Action { $simulator.Command('Post', "slots/$slotNo/close-door", @{}) } `
+        -Probe { Get-SlotPhysical $slotNo } -Until { param($before, $v) $v -eq 'CLOSED/EMPTY/1/0' }
+    $closed = $close.Value
+    $unlockingBefore = $close.Baseline.Unlocking
+    $waitingBefore = $close.Baseline.Waiting
     $assertions.Add(
         "L2-DT-$('{0:d2}' -f (11 + $round))",
         "第 $round 次关门：$slotNo 号仓关到位、锁反馈回到 1、货位仍是空——明确的相反态，不是 UNKNOWN",
@@ -357,7 +365,18 @@ for ($round = 1; $round -le 2; $round++) {
             "$unlockingAfter / $reopenPhysical")
 
         # 门又开了，所以告警也回来了。它名的是一个条件而不是一个事件。
-        $stillAlarmed = Get-BlockReason
+        #
+        # 要等，不能直读（control-server#26 普查）：WAITING_OPERATOR 是传输层收下就落库的，告警却是引擎每轮
+        # （2 秒）按车辆安全投影重算的，两者不是同一次写入。关门那几百毫秒里引擎若正好轮到一次，会先把告警
+        # 撤掉，下一轮看到门开才挂回来——等到 WAITING_OPERATOR 就直读，读到的可能正是那个空档。
+        $stillAlarmed = try {
+            Wait-L2Condition -Description 'the door alarm is up again on the reopened door' `
+                -Journal $journal -Criterion 'alarm-after-reopen' -TimeoutSeconds 30 `
+                -Probe { Get-BlockReason } -Until { param($v) $v -eq 'STATION_TIMEOUT_DOOR_NOT_CLOSED' }
+        } catch {
+            $journal.Note("Not reached: $($_.Exception.Message)")
+            Get-BlockReason
+        }
         $assertions.Add(
             'L2-DT-14', '门重新弹开之后告警还在——它名的是一个条件，不是一个事件',
             ($stillAlarmed -eq 'STATION_TIMEOUT_DOOR_NOT_CLOSED'),
