@@ -248,8 +248,8 @@ try {
     $expectedProtocol = (Get-Content -Raw -LiteralPath (
         Join-Path $controlSource 'src\ControlServer.Host\appsettings.json') | ConvertFrom-Json).ProtocolCandidate
     if ($null -eq $expectedProtocol) { throw 'The bound ControlServer carries no ProtocolCandidate identity.' }
-    if ($expectedProtocol.commit -ne $ProtocolCommit) {
-        throw "The bound ControlServer names protocol $($expectedProtocol.commit), not the bound $ProtocolCommit."
+    if ($expectedProtocol.repositoryCommit -ne $ProtocolCommit) {
+        throw "The bound ControlServer names protocol $($expectedProtocol.repositoryCommit), not the bound $ProtocolCommit."
     }
 
     # Tag absent, tag verified and git failing are three states; see run-staged-g3.ps1 for why the tag
