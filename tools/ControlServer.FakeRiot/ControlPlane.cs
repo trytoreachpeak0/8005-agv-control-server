@@ -302,5 +302,35 @@ public static class ControlPlane
                     ? null
                     : state with { FaultMode = mode, DelayMs = delay };
             }));
+
+        control.MapPut("/route-costs", (RouteCostsCommand command) =>
+            ControlPlaneConventions.Handle(engine, "route-costs", command, state =>
+            {
+                if (command.Costs is null)
+                {
+                    throw new CommandRefusedException(ReasonCodes.InvalidArgument);
+                }
+
+                Dictionary<string, long> costs = new(command.Costs, StringComparer.Ordinal);
+                return state.RouteCostsByStation.Count == costs.Count &&
+                       state.RouteCostsByStation.All(pair =>
+                           costs.TryGetValue(pair.Key, out long value) && value == pair.Value)
+                    ? null
+                    : state with { RouteCostsByStation = costs };
+            }));
     }
+}
+
+/// <summary>
+/// Replaces what <c>getRouteCostsBy</c> answers per <c>"mapId:stationId"</c>; a station not listed is
+/// answered with the default cost, and a negative cost is RIoT's "unreachable".
+/// </summary>
+/// <remarks>
+/// The seed could already set these, but only for a whole run. A scenario that needs the gate to
+/// refuse a departure for a while and then allow it -- holding a vehicle at AwaitingDepartureSafety
+/// with an answer in hand, so that the answer can expire under it -- has to change them mid-run.
+/// </remarks>
+public sealed record RouteCostsCommand : CommandEnvelope
+{
+    public Dictionary<string, long>? Costs { get; init; }
 }

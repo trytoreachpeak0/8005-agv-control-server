@@ -1969,8 +1969,12 @@ public sealed class JourneyRuntimeEngine(
                 JsonElement payload = document.RootElement.GetProperty("payload");
                 if (RequiredString(payload, "preDepartureSafetyCheckId") != runtime.PreDepartureSafetyCheckId)
                     continue;
-                expired |= payload.GetProperty("validUntil").GetDateTimeOffset() < now ||
-                           payload.GetProperty("safetyStateVersion").GetInt64() != currentRevision;
+                // A version change expires the check at once. A window that merely closed while the
+                // version stayed put waits out the evidence age first: that answer lapses every couple
+                // of seconds while a departure is held for another reason (the create gate refusing
+                // the gate leg), and asking again each time would fill the outbox with checks.
+                expired |= payload.GetProperty("safetyStateVersion").GetInt64() != currentRevision ||
+                           now - payload.GetProperty("validUntil").GetDateTimeOffset() >= runtimeOptions.MaximumEvidenceAge;
             }
         }
         if (!expired)

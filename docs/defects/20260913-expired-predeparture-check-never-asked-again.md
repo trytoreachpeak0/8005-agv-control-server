@@ -36,7 +36,9 @@ Peers: 车载端 `w2g/b3-on-v2`（同日另有车载端改动，见上）
 `AwaitingDepartureSafety` 找不到可用答复时，`ReissueExpiredDepartureCheckAsync` 判当前检查是否已过期：
 
 - 检查询问的 `expectedSafetyStateVersion` 已不是会话当前的安全版本（不论答没答）；或
-- 它的答复窗口已过、或答复的安全版本与会话不一致。
+- 它的答复的安全版本与会话不一致；或
+- 答复的窗口已过、且已过了不止 `MaximumEvidenceAge`（默认 30 秒）。只是窗口过期而版本没变的答复不立刻重问：
+  发车被别的原因扣住时（建单门禁拒绝去关卡的单），答复每两秒就过期一次，立刻重问会让发件箱每两三秒多一条检查。
 
 且会话此刻 `DepartureSafe = true`（车不安全时新检查只能被答 UNSAFE，且会逐轮重问）。成立时：
 
@@ -53,6 +55,7 @@ Peers: 车载端 `w2g/b3-on-v2`（同日另有车载端改动，见上）
 | --- | --- |
 | 新增 `ASafetyChangeAfterTheAnswerExpiresTheCheckAndTheServerAsksAgainUnderANewIdentity` | 修复前红（`PRE_DEPARTURE_SAFETY_NOT_VALID`，检查号不变），修复后绿：旧行作废、新检查询问版本 8、凭新答复出发、`TO_GATE` 恰好一张 |
 | 新增 `AnUnansweredCheckIsAskedAgainOnceSafetyHasMovedOnButNotWhileTheVehicleIsUnsafe` | 修复前红（安全恢复后检查号不变），修复后绿；车不安全时不重问 |
+| 新增 `AnAnswerThatOnlyRanOutOfTimeIsAskedAgainOnceItIsOlderThanTheEvidenceAge` | 节流前红（窗口一过即重问），加节流后绿：过期 10 秒不重问，过了 `MaximumEvidenceAge` 才重问 |
 | 既有 `UnknownPreDepartureSafetyCannotCreateTheGateOrder`、`DepartureSafetyAnsweredPromptlyIsJudgedWhileItIsStillValid` | 不变，绿 |
 | `JourneyRuntimeWorkerTests` | 71 passed |
 | 全量 | 718 passed |

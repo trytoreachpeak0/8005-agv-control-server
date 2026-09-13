@@ -841,6 +841,60 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
     }
 
+    /// <summary>
+    /// An answer whose own window has closed while the safety state stayed the same is also spent,
+    /// but it is only asked again once it has been stale for longer than the evidence age. The case
+    /// that produces it is a departure held for another reason -- a gate the create gate refuses --
+    /// where the answer lapses every couple of seconds; asking again each time would write a new
+    /// check to the outbox every few seconds for as long as the hold lasts.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
+    public async Task AnAnswerThatOnlyRanOutOfTimeIsAskedAgainOnceItIsOlderThanTheEvidenceAge()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = firstCheckId,
+                outcome = "SAFE",
+                observedAt = answeredAt,
+                safetyStateVersion = 7,
+                validUntil = answeredAt.AddSeconds(2),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            firstCheckId);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(firstCheckId, runtime.PreDepartureSafetyCheckId);
+        Assert.Equal("PRE_DEPARTURE_SAFETY_NOT_VALID", runtime.BlockReasonCode);
+
+        fixture.Clock.Advance(fixture.Options.MaximumEvidenceAge);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.NotEqual(firstCheckId, runtime.PreDepartureSafetyCheckId);
+        Assert.Equal("PREDEPARTURE_CHECK_EXPIRED", runtime.BlockReasonCode);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+    }
+
     private static object SafeDepartureAnswer(string checkId, long safetyStateVersion, DateTimeOffset observedAt) => new
     {
         preDepartureSafetyCheckId = checkId,
