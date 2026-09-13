@@ -77,6 +77,9 @@ jobs:
               @{ Name = 'three-vehicle-exit';          Runs = 3 }
               @{ Name = 'command-surface-order-hold';  Runs = 3 }
               @{ Name = 'route-graph-staleness';       Runs = 3 }
+              # Batch 2 ticket 19's prerequisite: the emergency stop goes out exactly once. Three
+              # consecutive runs, because what it guards against is a timing race with RIoT's latch.
+              @{ Name = 'emergency-stop-single-trigger'; Runs = 3 }
               # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
               @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
               @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }

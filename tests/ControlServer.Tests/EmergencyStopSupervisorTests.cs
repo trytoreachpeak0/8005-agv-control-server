@@ -332,6 +332,150 @@ public sealed class EmergencyStopSupervisorTests
         Assert.Empty(fixture.Gateway.EmergencyCalls);
     }
 
+    // ---- REQ-0248: a stop asked for again joins the episode already under way ----------
+
+    /// <summary>
+    /// The fault flow asks for the stop on every evaluation that cannot prove the vehicle stopped,
+    /// and RIoT's latch engages about a second after the call. A second request inside the backoff
+    /// is the same stop asked for again, not a second stop, so nothing goes out.
+    /// </summary>
+    [Fact]
+    public async Task AStopAskedForAgainInsideTheBackoffIssuesNothing()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Gateway.LatchAfterTrigger = RiotVehicleEmergencyObservation.Ok;
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null), TestContext.Current.CancellationToken);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        EmergencyStopDecision second = await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null), TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.AwaitingRetry, second.Action);
+        Assert.Equal(EmergencyStopSupervisor.StopUnconfirmedAlarm, second.AlarmCode);
+        Assert.Single(fixture.Gateway.EmergencyCalls);
+        Assert.Single(await fixture.ReadTriggersAsync());
+    }
+
+    /// <summary>
+    /// Joining the episode does not suppress REQ-0248's retry: once the backoff has run out, a
+    /// latch that still cannot be read back is tried again.
+    /// </summary>
+    [Fact]
+    public async Task AStopAskedForAgainOnceTheBackoffHasElapsedRetries()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Gateway.LatchAfterTrigger = null;
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null), TestContext.Current.CancellationToken);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(3));
+        EmergencyStopDecision second = await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null), TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.Triggered, second.Action);
+        Assert.Equal(2, fixture.Gateway.EmergencyCalls.Count);
+        Assert.Equal([1, 2], (await fixture.ReadTriggersAsync()).Select(attempt => attempt.AttemptNumber));
+    }
+
+    /// <summary>
+    /// A latch that engaged after the read-back settles the trigger that engaged it. Without this
+    /// the only record of a stop that worked says Pending for ever.
+    /// </summary>
+    [Fact]
+    public async Task AStopAskedForAgainAfterTheLatchEngagedConfirmsTheTrigger()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Gateway.LatchAfterTrigger = RiotVehicleEmergencyObservation.Ok;
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null), TestContext.Current.CancellationToken);
+
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        EmergencyStopDecision second = await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null), TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.LatchConfirmed, second.Action);
+        Assert.Single(fixture.Gateway.EmergencyCalls);
+        Assert.Equal(
+            RiotOrderCommandOutcome.Confirmed,
+            Assert.Single(await fixture.ReadTriggersAsync()).Outcome);
+    }
+
+    /// <summary>
+    /// A request that finds a confirmed latch released by something else is REQ-0248's unexpected
+    /// release, answered the same way an evaluation answers it: at once, with the alarm.
+    /// </summary>
+    [Fact]
+    public async Task AStopAskedForAgainAfterAnExternalReleaseRetriggersAtOnceAndAlarms()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null), TestContext.Current.CancellationToken);
+
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(1));
+        EmergencyStopDecision second = await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null), TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.ReTriggeredAfterUnexpectedRelease, second.Action);
+        Assert.Equal(EmergencyStopSupervisor.UnexpectedReleaseAlarm, second.AlarmCode);
+        Assert.Equal(2, fixture.Gateway.EmergencyCalls.Count);
+    }
+
+    /// <summary>
+    /// "停车宽、恢复严": asking for a stop never earns a release, even when every release fact
+    /// holds. Only an evaluation releases.
+    /// </summary>
+    [Fact]
+    public async Task AStopRequestNeverReleasesALatchEvenWhenReleaseIsEarned()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Gateway.LatchAfterRelease = RiotVehicleEmergencyObservation.Ok;
+        long generation = await fixture.EnterFaultAsync();
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, generation),
+            TestContext.Current.CancellationToken);
+        await fixture.ProveStopAsync(generation);
+        await fixture.ClearFaultAsync(generation);
+
+        EmergencyStopDecision second = await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, generation),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.LatchConfirmed, second.Action);
+        Assert.DoesNotContain(
+            fixture.Gateway.EmergencyCalls,
+            call => call.CommandType == RiotCommandTypeNames.CancelEmergency);
+    }
+
+    /// <summary>
+    /// A request for a newer fault generation is a new episode rather than a repeat of the old one,
+    /// and its trigger carries its own generation. Joined to the old episode, the release rule
+    /// would compare the old generation against the new fault for ever.
+    /// </summary>
+    [Fact]
+    public async Task AStopForANewerFaultGenerationStartsItsOwnTrigger()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Gateway.LatchAfterTrigger = RiotVehicleEmergencyObservation.Ok;
+        long first = await fixture.EnterFaultAsync();
+        await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, first),
+            TestContext.Current.CancellationToken);
+        await fixture.ClearFaultAsync(first);
+        long second = await fixture.EnterFaultAsync();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        EmergencyStopDecision decision = await fixture.Supervisor.RequestStopAsync(
+            Request(EmergencyStopRequestSource.Automatic, null, second),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EmergencyStopAction.Triggered, decision.Action);
+        Assert.Equal(2, fixture.Gateway.EmergencyCalls.Count);
+        Assert.Equal(second, (await fixture.ReadTriggersAsync())[^1].FaultGeneration);
+    }
+
     // ---- REQ-0167: releasing is strict --------------------------------------------------
 
     [Fact]

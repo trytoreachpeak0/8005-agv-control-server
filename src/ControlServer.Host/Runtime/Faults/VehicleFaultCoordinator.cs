@@ -508,6 +508,16 @@ public sealed class VehicleFaultCoordinator(
         {
             await EscalateAsync(subject, fault, proof, cancellationToken).ConfigureAwait(false);
         }
+        else if (fault.EscalatedAt is not null)
+        {
+            // Escalated earlier in this episode, and nothing this evaluation saw says the vehicle
+            // is moving, so the stop is not asked for again. The episode still needs watching: the
+            // trigger that engaged the latch has to be settled, and a latch that comes off while
+            // the cause stands has to be re-triggered (REQ-0248). The supervisor's evaluation does
+            // both, and it cannot release here -- the fault was just recorded, so its cause is not
+            // cleared.
+            await emergencyStop.EvaluateAsync(subject, cancellationToken).ConfigureAwait(false);
+        }
 
         List<string> reasons = [.. proof.MissingFacts];
         if (hold is not null && hold != RiotOrderCommandOutcome.Confirmed)

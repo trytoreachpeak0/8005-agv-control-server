@@ -700,6 +700,58 @@ public sealed class VehicleFaultIsolationTests
     }
 
     /// <summary>
+    /// The loop evaluates every two seconds and RIoT's latch engages about a second after the call
+    /// (Round 19), so the evaluation after an escalation routinely sees a vehicle still moving and a
+    /// latch not yet engaged. That is the stop already asked for, and it must not go out again —
+    /// "8005 sends exactly one call" is the W1 drill's exit criterion.
+    /// </summary>
+    [Fact]
+    public async Task AMovingVehicleEvaluatedAgainBeforeItsLatchEngagesIsTriggeredOnce()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Motion.Script = [Moving(Now)];
+        fixture.Riot.LatchAfterTrigger = RiotVehicleEmergencyObservation.Ok;
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        VehicleFaultDecision third = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.True(third.Escalated);
+        Assert.Single(fixture.Riot.EmergencyCalls);
+        Assert.Equal(
+            RiotOrderCommandOutcome.Confirmed,
+            Assert.Single(await fixture.ReadTriggersAsync()).Outcome);
+    }
+
+    /// <summary>
+    /// Once a vehicle stops escalating — it reads as stopped at a station while the window fills —
+    /// nothing asks for the stop any more, and the trigger that engaged the latch still has to be
+    /// settled. The coordinator drives the supervisor's evaluation for a fault it has escalated.
+    /// </summary>
+    [Fact]
+    public async Task AnEscalatedVehicleThatHasStoppedStillHasItsTriggerConfirmed()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Motion.Script = [Moving(Now)];
+        fixture.Riot.LatchAfterTrigger = RiotVehicleEmergencyObservation.Ok;
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [Stopped(fixture.Clock.GetUtcNow(), 4)];
+        VehicleFaultDecision stopped = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.False(stopped.Escalated);
+        Assert.Single(fixture.Riot.EmergencyCalls);
+        Assert.Equal(
+            RiotOrderCommandOutcome.Confirmed,
+            Assert.Single(await fixture.ReadTriggersAsync()).Outcome);
+    }
+
+    /// <summary>
     /// Three evaluations later the window is full and the proof is recorded on the fault fact,
     /// where the emergency supervisor reads it.
     /// </summary>
@@ -1105,6 +1157,7 @@ public sealed class VehicleFaultIsolationTests
             Riot = new FakeRiot(Clock);
             Motion = new FakeMotion(Clock);
             RiotOrderCommandAuditStore audit = new(context);
+            Audit = audit;
             RiotOrderCommandService commands = new(Riot, audit, Riot, Clock);
             Supervisor = new EmergencyStopSupervisor(
                 Riot, Riot, audit, Faults, Options.Create(new RiotCommandOptions()), Clock,
@@ -1128,6 +1181,8 @@ public sealed class VehicleFaultIsolationTests
         public EmergencyStopSupervisor Supervisor { get; }
 
         public VehicleFaultCoordinator Coordinator { get; }
+
+        public RiotOrderCommandAuditStore Audit { get; }
 
         public static async Task<Fixture> CreateAsync()
         {
@@ -1190,6 +1245,12 @@ public sealed class VehicleFaultIsolationTests
 
         public Task<VehicleFaultFact?> ReadFaultOrNullAsync() =>
             Faults.ReadAsync(Subject.AgvId, TestContext.Current.CancellationToken);
+
+        public Task<IReadOnlyList<RiotOrderCommandAttempt>> ReadTriggersAsync() =>
+            Audit.ReadAttemptsAsync(
+                RiotCommandTypeNames.TriggerEmergency,
+                $"vehicle:{Subject.DeviceKey}",
+                TestContext.Current.CancellationToken);
 
         public async ValueTask DisposeAsync()
         {

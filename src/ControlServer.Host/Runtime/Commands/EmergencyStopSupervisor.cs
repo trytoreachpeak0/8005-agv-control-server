@@ -168,9 +168,25 @@ public sealed class EmergencyStopSupervisor(
     private readonly RiotCommandOptions commandOptions = options.Value;
 
     /// <summary>
-    /// Asks for a stop and, unless the latch is already engaged, issues the first
-    /// <c>triggerEmergency</c>.
+    /// Asks for a stop and, unless the latch is already engaged or the stop is already under way,
+    /// issues the first <c>triggerEmergency</c>.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A stop asked for again is the same stop, not a second one.</b> The fault flow asks on every
+    /// evaluation that cannot prove the vehicle stopped, and RIoT's latch engages about a second
+    /// after the call (Round 19), so the next evaluation routinely finds a vehicle still moving and a
+    /// latch not yet engaged. A request for the same fault generation while its episode is open
+    /// therefore joins the episode under the rules <see cref="EvaluateAsync"/> applies — settle a
+    /// latch that has engaged, retry only when the backoff is due, re-trigger at once after an
+    /// unexpected release — instead of issuing a trigger per evaluation. Until 2026-09-13 it issued
+    /// one per evaluation, which is two real calls for one stop.
+    /// </para>
+    /// <para>
+    /// <b>A request never releases.</b> Joining the episode takes only the stopping half of the
+    /// evaluation; a release is earned by an evaluation and by nothing that asks for a stop.
+    /// </para>
+    /// </remarks>
     public async Task<EmergencyStopDecision> RequestStopAsync(
         EmergencyStopRequest request,
         CancellationToken cancellationToken)
@@ -193,18 +209,62 @@ public sealed class EmergencyStopSupervisor(
 
         RiotVehicleEmergencyObservation emergency = await emergencyFacts
             .ReadEmergencyStateAsync(request.Subject.DeviceKey, cancellationToken).ConfigureAwait(false);
+        (RiotOrderCommandAttempt Trigger, int AttemptsInEpisode)? episode =
+            await SameEpisodeAsync(request, cancellationToken).ConfigureAwait(false);
         if (emergency.IsLatched)
         {
             // Already stopped. REQ-0248 forbids re-triggering a confirmed latch, so this request
             // issues nothing and therefore writes no attempt row -- the audit table counts calls,
-            // and a call that never happened must not appear in it as one.
+            // and a call that never happened must not appear in it as one. The trigger that
+            // engaged the latch is settled, so a stop that worked is not left recorded as Pending.
+            if (episode is (RiotOrderCommandAttempt engaged, _))
+            {
+                await SettleAsync(engaged, cancellationToken).ConfigureAwait(false);
+            }
+
             return Record(request, Latched(emergency, request.Subject));
+        }
+
+        if (episode is (RiotOrderCommandAttempt trigger, int attempts))
+        {
+            return Record(
+                request,
+                await AdvanceUnlatchedAsync(request.Subject, trigger, attempts, emergency, cancellationToken)
+                    .ConfigureAwait(false));
         }
 
         return Record(
             request,
             await TriggerAsync(request, EmergencyStopAction.Triggered, cancellationToken)
                 .ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// The open episode this request is a repeat of, or null when it starts a new one.
+    /// </summary>
+    /// <remarks>
+    /// Same episode means the same fault generation as the open trigger. A request for a newer
+    /// generation is a new episode and gets its own trigger carrying its own generation: joined to
+    /// the old one, the release rule would compare the old generation against the new fault for
+    /// ever and the vehicle could never be released.
+    /// </remarks>
+    private async Task<(RiotOrderCommandAttempt Trigger, int AttemptsInEpisode)?> SameEpisodeAsync(
+        EmergencyStopRequest request,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<RiotOrderCommandAttempt> triggers = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.TriggerEmergency,
+            VehicleTarget(request.Subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<RiotOrderCommandAttempt> releases = await audit.ReadAttemptsAsync(
+            RiotCommandTypeNames.CancelEmergency,
+            VehicleTarget(request.Subject.DeviceKey),
+            cancellationToken).ConfigureAwait(false);
+
+        return OpenEpisode(triggers, releases) is (RiotOrderCommandAttempt trigger, int attempts) &&
+            trigger.FaultGeneration == request.FaultGeneration
+            ? (trigger, attempts)
+            : null;
     }
 
     /// <summary>
@@ -255,12 +315,6 @@ public sealed class EmergencyStopSupervisor(
             return new EmergencyStopDecision(EmergencyStopAction.None, emergency, []);
         }
 
-        if (!emergency.IsKnown)
-        {
-            return await RetryIfDueAsync(subject, trigger, attempts, emergency, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
         if (emergency.IsLatched)
         {
             await SettleAsync(trigger, cancellationToken).ConfigureAwait(false);
@@ -269,10 +323,29 @@ public sealed class EmergencyStopSupervisor(
                 .ConfigureAwait(false);
         }
 
+        return await AdvanceUnlatchedAsync(subject, trigger, attempts, emergency, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The stopping half of an evaluation, for an open episode whose latch is not engaged.
+    /// </summary>
+    /// <remarks>
+    /// Shared by <see cref="EvaluateAsync"/> and by a repeated <see cref="RequestStopAsync"/>, so the
+    /// two cannot come to disagree about when a trigger may go out again.
+    /// </remarks>
+    private async Task<EmergencyStopDecision> AdvanceUnlatchedAsync(
+        EmergencyStopSubject subject,
+        RiotOrderCommandAttempt trigger,
+        int attempts,
+        RiotVehicleEmergencyObservation emergency,
+        CancellationToken cancellationToken)
+    {
         // RIoT says OK. Either the latch never engaged — keep retrying — or it engaged and has
         // since been released by something that is not this server, which REQ-0248 answers by
-        // re-triggering at once rather than by waiting for the next backoff slot.
-        if (trigger.Outcome == RiotOrderCommandOutcome.Confirmed)
+        // re-triggering at once rather than by waiting for the next backoff slot. An unreadable
+        // latch is neither, and waits for the backoff like an unengaged one.
+        if (emergency.IsKnown && trigger.Outcome == RiotOrderCommandOutcome.Confirmed)
         {
             EmergencyStopRequest reTrigger = new(
                 subject,

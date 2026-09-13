@@ -435,6 +435,19 @@ try {
         $journal.Note("Route graph engine enabled for map $mapId.")
     }
 
+    # The RIoT command options, only when a scenario asks. REQ-0248 makes the emergency-retry backoff
+    # a site parameter, so this sets a value a site could set rather than switching anything off. A
+    # scenario that has to tell "the stop was asked for again inside the backoff" from "the backoff
+    # ran out and it retried" at this rig's one-second poll needs a backoff longer than the phases
+    # it watches; the retry itself is covered by the unit suite.
+    if ($setup.ContainsKey('RiotCommands')) {
+        foreach ($key in ($setup.RiotCommands.Keys | Sort-Object)) {
+            $serverEnvironment["RiotCommands__$key"] = [string]$setup.RiotCommands[$key]
+        }
+        $journal.Note('RIoT command options for this scenario: ' +
+            (($setup.RiotCommands.Keys | Sort-Object | ForEach-Object { "$_=$($setup.RiotCommands[$_])" }) -join ', '))
+    }
+
     $importEnvironment = @{}
     foreach ($key in $serverEnvironment.Keys) { $importEnvironment[$key] = $serverEnvironment[$key] }
     $importEnvironment['JourneyRuntime__enabled'] = 'false'
