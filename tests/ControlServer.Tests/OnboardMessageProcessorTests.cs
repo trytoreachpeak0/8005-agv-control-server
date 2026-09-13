@@ -556,6 +556,187 @@ public sealed class OnboardMessageProcessorTests
         }
     }
 
+    /// <summary>
+    /// CV-OPERATION-RESULT-UNKNOWN-RECONCILE: a result the vehicle could not prove is acknowledged,
+    /// reported as pending in the next session's RecoveryStateReport, replayed under that session's
+    /// generation, acknowledged again -- and reconciled without ever being taken for success.
+    /// </summary>
+    /// <remarks>
+    /// Until 2026-09-13 the replay could not happen at all: the inbox refused the same messageId with
+    /// a different wire hash, and the rebound line differs from the original in sessionGeneration
+    /// alone. Nothing noticed because the vehicle never replayed an acknowledged result, and its
+    /// pendingResults list was always empty -- which also meant the id the report named was never
+    /// taken off the session again.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-OPERATION-RESULT-UNKNOWN-RECONCILE")]
+    public async Task AnUnknownResultReportedAsPendingIsReplayedInTheNextSessionAndReconciledWithoutSuccess()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_UNKNOWN_RECONCILE_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(token);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(), configuration);
+            OnboardConnectionState firstState = new();
+            await ReachReadyAsync(processor, firstState, credential, token);
+
+            const string attemptId = "00000000-0000-4000-8000-000000000320";
+            const string demandId = "00000000-0000-4000-8000-000000000311";
+            await store.AcceptWithOrderIntentAsync(
+                new AcceptedDemandSnapshot(
+                    demandId,
+                    "SUBLOT-003|WIRE_TO_GATE",
+                    7,
+                    "00000000-0000-4000-8000-000000000399",
+                    21,
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                new OrderIntent(
+                    "00000000-0000-4000-8000-000000000398",
+                    demandId,
+                    "W2G-D-311-PICKUP-1",
+                    "TO_PICKUP",
+                    "PICKUP-01",
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                token);
+            await store.PrepareSlotOperationAsync(
+                new StationOperationPlan(
+                    attemptId,
+                    demandId,
+                    "SUBLOT-003",
+                    [1],
+                    SlotOperationType.Load,
+                    0,
+                    new string('c', 64),
+                    new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero)),
+                "00000000-0000-4000-8000-000000000319",
+                "load-command-json",
+                token);
+
+            object unknownPayload = OperationResultPayload(
+                demandId, attemptId, "LOAD", "UNKNOWN", overallOutcome: "UNKNOWN");
+            string original = Envelope("OperationResult", attemptId, firstState.SessionGeneration, unknownPayload);
+            string firstAck = (await processor.ProcessAsync(original, firstState, token))
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)[0];
+            Assert.Equal(WireContentHash(original), AcceptedContentSha256(firstAck));
+            Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations
+                .SingleAsync(row => row.SlotOperationAttemptId == attemptId, token)).Status);
+
+            // The vehicle restarts. Its report names the unsettled attempt and the result it already
+            // sent for it.
+            OnboardConnectionState secondState = new();
+            await processor.ProcessAsync(
+                Envelope("SessionHello", Guid.NewGuid().ToString("D"), null,
+                    new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = credential }),
+                secondState,
+                token);
+            long secondGeneration = secondState.SessionGeneration!.Value;
+            await processor.ProcessAsync(
+                Envelope("CapabilitySnapshot", Guid.NewGuid().ToString("D"), secondGeneration,
+                    new { capabilityVersion = 1, activeSlotConfigurationFingerprint = new string('0', 64) }),
+                secondState,
+                token);
+            await processor.ProcessAsync(
+                Envelope("SafetyStateSnapshot", Guid.NewGuid().ToString("D"), secondGeneration,
+                    new { safetyStateVersion = 1, safety = Safety(departureSafe: true) }),
+                secondState,
+                token);
+            string resultContentSha256;
+            using (JsonDocument originalDocument = JsonDocument.Parse(original))
+            {
+                resultContentSha256 = originalDocument.RootElement
+                    .GetProperty("payload").GetProperty("resultContentSha256").GetString()!;
+            }
+            string report = await processor.ProcessAsync(
+                Envelope("RecoveryStateReport", Guid.NewGuid().ToString("D"), secondGeneration,
+                    new
+                    {
+                        reportId = Guid.NewGuid().ToString("D"),
+                        unsettledSlotOperationAttemptId = attemptId,
+                        provenRecoveryCheckpoint = "SAFE_FINISH_REACHED",
+                        activeUnlockSlots = Array.Empty<int>(),
+                        forcedRecoveryGeneration = 0,
+                        pendingResults = new[]
+                        {
+                            new
+                            {
+                                messageType = "OperationResult",
+                                messageId = attemptId,
+                                businessId = attemptId,
+                                contentSha256 = resultContentSha256
+                            }
+                        }
+                    }),
+                secondState,
+                token);
+            Assert.Equal("RECOVERY_REQUIRED", ReadinessOf(report));
+            Assert.Contains(attemptId, (await context.SessionRecoveries.SingleAsync(token)).PendingResultIdsJson);
+
+            JsonNode reboundNode = JsonNode.Parse(original)!;
+            reboundNode["sessionGeneration"] = secondGeneration;
+            string rebound = reboundNode.ToJsonString();
+            string replayAck = (await processor.ProcessAsync(rebound, secondState, token))
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)[0];
+
+            using (JsonDocument acknowledgement = JsonDocument.Parse(replayAck))
+            {
+                Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());
+                Assert.Equal(secondGeneration, acknowledgement.RootElement.GetProperty("sessionGeneration").GetInt64());
+            }
+            Assert.Equal(WireContentHash(rebound), AcceptedContentSha256(replayAck));
+            SessionRecoveryRow session = await context.SessionRecoveries.SingleAsync(token);
+            Assert.Equal("[]", session.PendingResultIdsJson);
+            Assert.Equal(SessionReadiness.RecoveryRequired, session.Readiness);
+            Assert.Single(await context.OperationResults.ToListAsync(token));
+            Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations
+                .SingleAsync(row => row.SlotOperationAttemptId == attemptId, token)).Status);
+            Assert.NotEqual(DemandExecutionStatus.Succeeded, (await context.AcceptedDemands
+                .SingleAsync(row => row.DemandId == demandId, token)).Status);
+
+            // Rebinding the generation is the only difference a replay may carry.
+            JsonNode conflicting = JsonNode.Parse(rebound)!;
+            conflicting["payload"]!["overallOutcome"] = "COMPLETED";
+            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
+                conflicting.ToJsonString(), secondState, token));
+            Assert.Single(await context.OperationResults.ToListAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    private static string AcceptedContentSha256(string acknowledgementLine)
+    {
+        using JsonDocument acknowledgement = JsonDocument.Parse(acknowledgementLine);
+        return acknowledgement.RootElement.GetProperty("payload").GetProperty("acceptedContentSha256").GetString()!;
+    }
+
+    private static string ReadinessOf(string response)
+    {
+        using JsonDocument readiness = JsonDocument.Parse(
+            response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[1]);
+        return readiness.RootElement.GetProperty("payload").GetProperty("readiness").GetString()!;
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-04")]
     [Trait("IntegrationSlice", "FP-IS-06")]
@@ -1111,13 +1292,14 @@ public sealed class OnboardMessageProcessorTests
         string attemptId,
         string operationType,
         string finalPhysicalState,
-        int[]? slots = null)
+        int[]? slots = null,
+        string overallOutcome = "COMPLETED")
     {
         object[] slotResults = (slots ?? [1])
             .Select(slot => (object)new
             {
                 slotNo = slot,
-                outcome = "COMPLETED",
+                outcome = overallOutcome,
                 finalPhysicalState,
                 lockState = "LOCKED",
                 unlockOutputState = "RESET",
@@ -1133,7 +1315,7 @@ public sealed class OnboardMessageProcessorTests
             demandId,
             slotOperationAttemptId = attemptId,
             operationType,
-            overallOutcome = "COMPLETED",
+            overallOutcome,
             slotResults,
             observedAt = new DateTimeOffset(2026, 8, 25, 17, 0, 0, TimeSpan.FromHours(8)),
             journalCheckpoint = "RESULT_RECORDED"

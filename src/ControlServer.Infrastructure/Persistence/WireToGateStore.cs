@@ -153,6 +153,31 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Takes one result off the pending list the current session's RecoveryStateReport gave, once that
+    /// result has arrived in this session.
+    /// </summary>
+    /// <remarks>
+    /// Nothing did before 2026-09-13: the list was only ever replaced by the next report or emptied by
+    /// the next handshake. It stayed harmless only because the vehicle always reported it empty.
+    /// </remarks>
+    public async Task ReconcileReportedPendingResultAsync(
+        string agvId, long sessionGeneration, string resultMessageId, CancellationToken cancellationToken)
+    {
+        SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
+            .ConfigureAwait(false);
+        string[] pending = DeserializeStrings(row.PendingResultIdsJson);
+        if (!pending.Contains(resultMessageId, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        row.PendingResultIdsJson = SerializeSorted(
+            pending.Where(id => !string.Equals(id, resultMessageId, StringComparison.Ordinal)));
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<SessionReadinessDecision> DecideReadinessAsync(
         string agvId, long sessionGeneration, CancellationToken cancellationToken)
     {
@@ -1504,10 +1529,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .ConfigureAwait(false);
         if (replay is not null)
         {
+            // Not the wire hash: a result replayed in a later session is rebound to that session's
+            // generation, so its line differs from the first one while the result does not. The inbox
+            // has already refused anything else that differs (GenerationRebindReplayHash).
             bool same = replay.SlotOperationAttemptId == result.SlotOperationAttemptId &&
                         replay.AgvId == agvId &&
                         replay.ForcedRecoveryGeneration == forcedRecoveryGeneration &&
-                        replay.ContentHash == result.WireContentSha256 &&
                         replay.ResultContentSha256 == result.ResultContentSha256;
             if (!same)
             {

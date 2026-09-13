@@ -113,7 +113,7 @@ public sealed partial class OnboardMessageProcessor(
                 root, state, messageType, messageId, contentHash, cancellationToken),
             timeProvider.GetUtcNow(),
             cancellationToken,
-            messageType == "RecoveryStateReport" ? RecoveryReplayIdentityHash : null,
+            messageType is "RecoveryStateReport" or "OperationResult" ? GenerationRebindReplayHash : null,
             messageType == "RecoveryStateReport"
                 ? response => RestoreAcceptedSnapshotVersions(response, state)
                 : null).ConfigureAwait(false);
@@ -341,6 +341,10 @@ public sealed partial class OnboardMessageProcessor(
                         cancellationToken).ConfigureAwait(false);
                     await recoveryCoordinator.ObserveOperationResultAsync(
                         attemptId, disposition, cancellationToken).ConfigureAwait(false);
+                    // A result this session's RecoveryStateReport named as pending has now been seen,
+                    // whatever the verdict on it. The verdict itself stays with the operation.
+                    await store.ReconcileReportedPendingResultAsync(
+                        agvId, generation, messageId, cancellationToken).ConfigureAwait(false);
                     // Applying a result is the moment the server's own verdict changes: a result it
                     // refuses puts the operation into RecoveryRequired, and readiness has to follow.
                     // It did not until 2026-09-04 -- readiness was recomputed only on
@@ -788,10 +792,19 @@ public sealed partial class OnboardMessageProcessor(
         return Convert.ToHexString(SHA256.HashData(businessContent)).ToLowerInvariant();
     }
 
-    private static string RecoveryReplayIdentityHash(string line)
+    /// <summary>
+    /// The identity of a durable message the vehicle replays in a later session: everything but the
+    /// sessionGeneration it rebinds.
+    /// </summary>
+    /// <remarks>
+    /// OperationResult joined RecoveryStateReport here on 2026-09-13. CV-OPERATION-RESULT-UNKNOWN-RECONCILE
+    /// has the vehicle replay a result the server already acknowledged, under the new generation, and
+    /// the inbox refused every such replay as a content conflict.
+    /// </remarks>
+    private static string GenerationRebindReplayHash(string line)
     {
         JsonNode root = JsonNode.Parse(line)
-            ?? throw new InvalidDataException("RecoveryStateReport JSON cannot be empty.");
+            ?? throw new InvalidDataException("Replayed message JSON cannot be empty.");
         root["sessionGeneration"] = 0;
         return WireContentHash.Sha256(root.ToJsonString(SerializerOptions));
     }
