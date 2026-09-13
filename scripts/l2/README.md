@@ -508,8 +508,8 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     再查到的仍是握手那一刻的样子。只有在「车在某个状态下连上、之后状态被别人改掉」时才看得见，
     所以前面所有场景（车都是在旅程开始之前连上的）一次都没撞上，重启场景第一次跑修好的车载端就撞上了
     （`-002`）。当时的修法是恢复协调器读旅程时先 `ReloadAsync`。**同一类读法 `8005-agv-control-server#28` 逐条核过**，
-另有五处，其中「到站之前重连、扫码前取消」在真装置上复现为红；**#40 起每条入站消息开头清跟踪**，那处 `ReloadAsync` 已删，
-见文末 `real-onboard-reconnect-then-cancel-before-sublot` 一节。
+    另有五处，其中「到站之前重连、扫码前取消」在真装置上复现为红；**#40 起每条入站消息开头清跟踪**，那处 `ReloadAsync` 已删，
+    见文末 `real-onboard-reconnect-then-cancel-before-sublot` 一节。
 20. **重新拉起车载端之后别马上点弹窗。**`-003` 在拉起后约 1 秒点「补偿清空」，确认框已经在 UIA
     树里，按钮却还不接受输入，`Invoke` 抛 `Operation is not valid due to the current state of the
     object.`，请求没发出去。`Confirm` 现在在截止前把 `InvalidOperationException` 当「还没好」重试。

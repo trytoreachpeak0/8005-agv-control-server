@@ -758,7 +758,7 @@ public sealed class JourneyRuntimeWorkerTests
     /// 8005-agv-control-server#40, the AcceptedDemand row of the #28 census. A connection that has read a
     /// demand holds it tracked as Accepted; the runtime then ends that demand at the station deadline
     /// from its own context. An operator cancellation arriving afterwards on that connection was
-    /// authorised against the tracked copy: AUTHORIZED for a demand that was already gone, a
+    /// authorized against the tracked copy: AUTHORIZED for a demand that was already gone, a
     /// cancellation recorded that the operator never got to make, and CANCELLED_BY_OPERATOR written
     /// over the reason the journey really ended for.
     /// </summary>

@@ -29,7 +29,8 @@ public sealed partial class OnboardMessageProcessor(
         // message tracked here -- the handshake loads every active journey and its current stop -- a
         // later query would hand back as it stood then: a cancellation before load settled round 0 of
         // a stop the runtime had already asked round 1 for (8005-agv-control-server#28), and a demand
-        // the station deadline had ended was authorised for cancellation all over again (#40). Clearing
+        // the station deadline had ended was authorized for cancellation all over again
+        // (8005-agv-control-server#40). Clearing
         // here rather than before FlushDeferredOutboundAsync keeps this message's own state for its
         // deferred send. It also stops the tracked set growing for the life of the connection.
         dbContext.ChangeTracker.Clear();
