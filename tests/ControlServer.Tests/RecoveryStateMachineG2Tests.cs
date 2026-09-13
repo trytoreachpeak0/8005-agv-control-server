@@ -692,6 +692,51 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// REQ-0237：普通放错只在离站前纠正，离站后将错就错。服务端此前只看装载是否 Committed 就授权修正，
+    /// 车已经被派去关卡照样发 LoadCorrectionCommand——G3 FP-IS-02 实跑里车载端因此在车辆被判为未停稳时收到
+    /// 开门命令，只能以 VEHICLE_NOT_READY 拒绝，修正工作流就一直挂在 AwaitingResult。授权面现在以旅程是否
+    /// 仍在取货点等待离站为准。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
+    [InlineData(JourneyRuntimeStage.AwaitingStationDeparture, true)]
+    [InlineData(JourneyRuntimeStage.AwaitingDepartureSafety, false)]
+    [InlineData(JourneyRuntimeStage.AwaitingGateArrival, false)]
+    public async Task LoadCorrectionIsAuthorizedOnlyWhileTheVehicleStillWaitsAtThePickup(
+        JourneyRuntimeStage stage,
+        bool authorized)
+    {
+        const string correctionId = "b2000000-0000-4000-8000-000000000001";
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCorrectableLoadAsync(context, stage);
+        OnboardMessageProcessor processor = Processor(
+            context, new RecordingPeer(context), CancellationProofVariable);
+
+        string response = await processor.ProcessAsync(
+            CorrectionRequest(correctionId), CurrentState(), TestContext.Current.CancellationToken);
+
+        RecoveryWorkflowRow[] workflows = await context.RecoveryWorkflows
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        int commands = await context.ProtocolOutbox.CountAsync(
+            row => row.MessageType == "LoadCorrectionCommand", TestContext.Current.CancellationToken);
+        if (authorized)
+        {
+            RecoveryWorkflowRow workflow = Assert.Single(workflows);
+            Assert.Equal("LOAD_CORRECTION", workflow.WorkflowType);
+            Assert.Equal(1, commands);
+        }
+        else
+        {
+            Assert.Equal("LoadCorrectionRejected", MessageType(response));
+            Assert.Empty(workflows);
+            Assert.Equal(0, commands);
+        }
+    }
+
+    /// <summary>
     /// CV-LOAD-CANCELLATION-ALL-EMPTY 对服务端要两件事，此前只证了一件。
     /// FailedCompensationResultIsDurableReplayableAndNeverReleasesDemandOrVehicle 走的是 REJECTED
     /// 分支——补偿还没收敛时取消必须被拒——那证的是 AUTHORIZE_CANCELLATION_EXPLICITLY。
@@ -1179,6 +1224,36 @@ public sealed class RecoveryStateMachineG2Tests
             slotOperationAttemptId = AttemptId,
             @operator = Operator(),
             reason = "Operator cancelled the load before any basket entered."
+        });
+
+    /// <summary>
+    /// 修正面的起点：装载已经提交、需求仍在执行，旅程停在 <paramref name="stage"/>。
+    /// </summary>
+    private static async Task SeedCorrectableLoadAsync(ControlServerDbContext context, JourneyRuntimeStage stage)
+    {
+        await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+        (await context.AcceptedDemands.SingleAsync(TestContext.Current.CancellationToken)).Status =
+            DemandExecutionStatus.Accepted;
+        StationOperationRow load = await context.StationOperations.SingleAsync(TestContext.Current.CancellationToken);
+        load.Status = StationOperationStatus.Committed;
+        load.CommittedAt = Now.AddMinutes(-1);
+        JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
+        runtime.Stage = stage;
+        runtime.BlockReasonCode = null;
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static string CorrectionRequest(string correctionId) => Envelope(
+        "b2000000-0000-4000-8000-000000000010",
+        "LoadCorrectionRequested",
+        new
+        {
+            correctionId,
+            demandId = DemandId,
+            slotOperationAttemptId = AttemptId,
+            slots = RecoverySlots,
+            @operator = Operator(),
+            reason = "The basket in slot 1 belongs to another sublot."
         });
 
     private static string CancellationResult(

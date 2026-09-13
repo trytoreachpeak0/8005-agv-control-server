@@ -65,6 +65,29 @@ public sealed class JourneyRuntimeOptionsTests
             StringComparer.Ordinal);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public void StationDepartureWaitDefaultsToFiveMinutesAndIsEitherOffOrAtLeastFiveSeconds()
+    {
+        const string failure = "StationDepartureWaitTimeout must be zero (off) or at least 5 s.";
+        Assert.Equal(TimeSpan.FromMinutes(5), new JourneyRuntimeOptions().StationDepartureWaitTimeout);
+        JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+
+        foreach (TimeSpan accepted in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(5) })
+        {
+            options.StationDepartureWaitTimeout = accepted;
+            Microsoft.Extensions.Options.ValidateOptionsResult result = validator.Validate(null, options);
+            Assert.DoesNotContain(failure, result.Failures ?? [], StringComparer.Ordinal);
+        }
+        foreach (TimeSpan refused in new[] { TimeSpan.FromSeconds(-1), TimeSpan.FromSeconds(4) })
+        {
+            options.StationDepartureWaitTimeout = refused;
+            Microsoft.Extensions.Options.ValidateOptionsResult result = validator.Validate(null, options);
+            Assert.Contains(failure, result.Failures ?? [], StringComparer.Ordinal);
+        }
+    }
+
     private static JourneyRuntimeOptions ValidEnabledOptions() => new()
     {
         Enabled = true,

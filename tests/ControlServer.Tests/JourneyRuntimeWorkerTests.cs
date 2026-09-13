@@ -158,6 +158,113 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(1, await fixture.Context.TransportDemandCompletions.CountAsync(TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// REQ-0237 keeps ordinary mis-placement correction to the time before the vehicle leaves the
+    /// pickup, and ADR-cross-0054/0055 make that time a server-owned wait after the load commits.
+    /// Until 2026-09-13 this server asked for departure safety in the very iteration the load
+    /// committed and created the gate order a moment later, so the window did not exist: the G3
+    /// FP-IS-02 run pressed 「修正装货」 two seconds after the doors closed and the vehicle had
+    /// already been sent away (docs/defects/20260913-no-pre-departure-correction-window.md).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
+    public async Task AfterTheLoadCommitsTheVehicleWaitsOutTheStationDepartureWindowBeforeDeparting()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToLoadResultAsync();
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, runtime.Stage);
+        Assert.Equal(fixture.Clock.GetUtcNow(), runtime.StationDepartureWaitStartedAt);
+        Assert.DoesNotContain("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+        Assert.DoesNotContain("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        Assert.Null(runtime.StationDepartureWaitStartedAt);
+        Assert.Contains("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+    }
+
+    /// <summary>
+    /// ADR-cross-0054: a correction takes the vehicle out of the departure wait and stops the clock,
+    /// and once every slot it touched is safely closed again the wait starts over from its full
+    /// length. An open correction past the original deadline must therefore neither depart the
+    /// vehicle nor leave it only the remainder of the old wait.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
+    public async Task AnOpenLoadCorrectionHoldsTheVehicleAndTheWaitStartsOverWhenItCloses()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToLoadResultAsync();
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, runtime.Stage);
+
+        RecoveryWorkflowRow correction = new()
+        {
+            WorkflowId = "70000000-0000-4000-8000-000000000001",
+            WorkflowType = "LOAD_CORRECTION",
+            AgvId = runtime.AgvId,
+            DemandId = runtime.DemandId,
+            SlotOperationAttemptId = load.SlotOperationAttemptId,
+            SlotsJson = load.TargetSlotsJson,
+            State = RecoveryWorkflowState.AwaitingResult,
+            RequestMessageId = "70000000-0000-4000-8000-000000000002",
+            RequestContentHash = new string('c', 64),
+            CreatedAt = fixture.Clock.GetUtcNow(),
+            UpdatedAt = fixture.Clock.GetUtcNow()
+        };
+        fixture.Context.RecoveryWorkflows.Add(correction);
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, runtime.Stage);
+        Assert.Equal("LOAD_CORRECTION_IN_PROGRESS", runtime.BlockReasonCode);
+        Assert.DoesNotContain("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+
+        correction.State = RecoveryWorkflowState.Reconciled;
+        correction.UpdatedAt = fixture.Clock.GetUtcNow();
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, runtime.Stage);
+        Assert.Null(runtime.BlockReasonCode);
+        Assert.DoesNotContain("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.RuntimeAsync()).Stage);
+        Assert.Contains("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     [Trait("IntegrationSlice", "FP-IS-04")]
@@ -2573,7 +2680,10 @@ public sealed class JourneyRuntimeWorkerTests
             AllowedWorkTypes = ["WIRE_TO_GATE"],
             AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
             AdmissionPolicyVersion = 1,
-            AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1"
+            AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1",
+            // Off, so a journey leaves the pickup in the iteration its load commits, as every test
+            // here was written against. The tests about the wait turn it on for themselves.
+            StationDepartureWaitTimeout = TimeSpan.Zero
         };
 
         public async ValueTask DisposeAsync()

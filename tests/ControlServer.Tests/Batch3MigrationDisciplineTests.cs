@@ -36,7 +36,10 @@ public sealed class Batch3MigrationDisciplineTests
     private static readonly string[] MigrationsAfterBatch3 =
     [
         "20260910031132_AlarmSnapshotSessionGeneration",
-        "20260910063725_ReportedSlotConfigurationFingerprint"
+        "20260910063725_ReportedSlotConfigurationFingerprint",
+        // 批次 2 收尾：取货点离站等待（REQ-0237 / ADR-cross-0055）要记本轮等待从何时算起，
+        // JourneyRuntimes 加一列。docs/defects/20260913-no-pre-departure-correction-window.md。
+        "20260913131725_StationDepartureWait"
     ];
 
     private static readonly string[] Batch3Tables =

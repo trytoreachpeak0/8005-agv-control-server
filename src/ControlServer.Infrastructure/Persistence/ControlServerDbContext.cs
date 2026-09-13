@@ -595,6 +595,11 @@ public sealed class JourneyRuntimeRow
     public string? ConsumedSublotMessageId { get; set; }
     public string? ConsumedSafetyResultMessageId { get; set; }
     public string? BlockReasonCode { get; set; }
+    /// <summary>
+    /// When the current station departure wait began, by this server's clock: at the load commit,
+    /// and again whenever a load correction closes. Null outside <c>AwaitingStationDeparture</c>.
+    /// </summary>
+    public DateTimeOffset? StationDepartureWaitStartedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

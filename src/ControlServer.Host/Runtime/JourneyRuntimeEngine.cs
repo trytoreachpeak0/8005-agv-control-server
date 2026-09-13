@@ -570,30 +570,45 @@ public sealed class JourneyRuntimeEngine(
                 {
                     await store.SettleAnsweredCommandAsync(
                         runtime.LoadCommandMessageId, now, cancellationToken).ConfigureAwait(false);
-                    await publisher.PublishPreDepartureSafetyCheckAsync(
-                        runtime.PreDepartureSafetyCheckMessageId,
-                        runtime.AgvId,
-                        session.SessionGeneration,
-                        new PreDepartureSafetyCheckCommand(
-                            runtime.PreDepartureSafetyCheckId,
-                            runtime.DemandId,
-                            runtime.GateMovementLegId,
-                            session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
-                            runtime.GateStationId),
-                        cancellationToken).ConfigureAwait(false);
-                    SetStage(runtime, JourneyRuntimeStage.AwaitingDepartureSafety, now);
-                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                    // The answer arrives in tens of milliseconds and is stamped with the peer's own
-                    // short validity window. Returning here and reading it on the next poll spent
-                    // that entire window waiting, so the evidence was always expired by the time it
-                    // was judged and the journey never left this stage. Judge it while it is valid.
-                    goto case JourneyRuntimeStage.AwaitingDepartureSafety;
+                    // REQ-0237 / ADR-cross-0054: the load is committed and the vehicle is still at the
+                    // pickup, which is the only time an ordinary mis-placement may be corrected. Asking
+                    // for departure safety in this same iteration, as this server did until 2026-09-13,
+                    // left no such time at all. Not saved here: with the wait off the next case departs
+                    // at once and saves once, as before.
+                    runtime.StationDepartureWaitStartedAt = now;
+                    SetStage(runtime, JourneyRuntimeStage.AwaitingStationDeparture, now);
+                    goto case JourneyRuntimeStage.AwaitingStationDeparture;
                 }
                 else
                 {
                     return;
                 }
                 break;
+            case JourneyRuntimeStage.AwaitingStationDeparture:
+                if (!await StationDepartureWaitIsOverAsync(runtime, now, cancellationToken).ConfigureAwait(false))
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+                runtime.StationDepartureWaitStartedAt = null;
+                await publisher.PublishPreDepartureSafetyCheckAsync(
+                    runtime.PreDepartureSafetyCheckMessageId,
+                    runtime.AgvId,
+                    session.SessionGeneration,
+                    new PreDepartureSafetyCheckCommand(
+                        runtime.PreDepartureSafetyCheckId,
+                        runtime.DemandId,
+                        runtime.GateMovementLegId,
+                        session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
+                        runtime.GateStationId),
+                    cancellationToken).ConfigureAwait(false);
+                SetStage(runtime, JourneyRuntimeStage.AwaitingDepartureSafety, now);
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                // The answer arrives in tens of milliseconds and is stamped with the peer's own
+                // short validity window. Returning here and reading it on the next poll spent
+                // that entire window waiting, so the evidence was always expired by the time it
+                // was judged and the journey never left this stage. Judge it while it is valid.
+                goto case JourneyRuntimeStage.AwaitingDepartureSafety;
             case JourneyRuntimeStage.AwaitingDepartureSafety:
                 SafetyCheckObservation? safety = await AwaitSafeDepartureResultAsync(
                     runtime, session, cancellationToken).ConfigureAwait(false);
@@ -1838,6 +1853,48 @@ public sealed class JourneyRuntimeEngine(
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             return RequiredString(document.RootElement.GetProperty("payload"), "preDepartureSafetyCheckId") == checkId;
         })?.MessageId;
+    }
+
+    /// <summary>
+    /// Whether the station departure wait (ADR-cross-0055) has run out for this journey.
+    /// </summary>
+    /// <remarks>
+    /// An open load correction holds the vehicle whatever the clock says, and one that has closed
+    /// since the wait began starts the wait over from its full length (ADR-cross-0054) -- measured
+    /// from when this server recorded it closed, not from the peer's clock. Updates the runtime's
+    /// wait start and block reason; the caller saves.
+    /// </remarks>
+    private async Task<bool> StationDepartureWaitIsOverAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        RecoveryWorkflowRow[] corrections = await dbContext.RecoveryWorkflows.AsNoTracking()
+            .Where(row => row.DemandId == runtime.DemandId && row.WorkflowType == "LOAD_CORRECTION")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (corrections.Any(row => row.State is not
+                (RecoveryWorkflowState.Reconciled or RecoveryWorkflowState.HistoricalOnly)))
+        {
+            if (runtime.BlockReasonCode != "LOAD_CORRECTION_IN_PROGRESS")
+            {
+                runtime.BlockReasonCode = "LOAD_CORRECTION_IN_PROGRESS";
+                runtime.UpdatedAt = now;
+            }
+            return false;
+        }
+
+        DateTimeOffset startedAt = runtime.StationDepartureWaitStartedAt ?? now;
+        foreach (RecoveryWorkflowRow closed in corrections.Where(row => row.State == RecoveryWorkflowState.Reconciled))
+        {
+            if (closed.UpdatedAt > startedAt) startedAt = closed.UpdatedAt;
+        }
+        if (runtime.StationDepartureWaitStartedAt != startedAt || runtime.BlockReasonCode is not null)
+        {
+            runtime.StationDepartureWaitStartedAt = startedAt;
+            runtime.BlockReasonCode = null;
+            runtime.UpdatedAt = now;
+        }
+        return now - startedAt >= runtimeOptions.StationDepartureWaitTimeout;
     }
 
 

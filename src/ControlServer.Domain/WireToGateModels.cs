@@ -187,6 +187,12 @@ public enum JourneyRuntimeStage
     AwaitingPickupArrival,
     AwaitingSublot,
     AwaitingLoadResult,
+    /// <summary>
+    /// The load is committed and the vehicle is still at the pickup: the one window in which an
+    /// ordinary mis-placement may be corrected (REQ-0237, ADR-cross-0054/0055). Departure safety is
+    /// not asked for until the station departure wait has run out with no correction open.
+    /// </summary>
+    AwaitingStationDeparture,
     AwaitingDepartureSafety,
     AwaitingGateArrival,
     AwaitingUnloadResult,

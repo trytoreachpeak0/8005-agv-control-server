@@ -27,6 +27,18 @@ public sealed class JourneyRuntimeOptions
     /// answers in tens of milliseconds; this only has to cover that.
     /// </summary>
     public TimeSpan DepartureSafetyResultWait { get; set; } = TimeSpan.FromMilliseconds(1500);
+
+    /// <summary>
+    /// How long a vehicle stays at the pickup after its load commits before departure safety is
+    /// asked for (ADR-cross-0055's StationDepartureWaitTimeout). This is the window REQ-0237 keeps for
+    /// correcting an ordinary mis-placement: a correction may start only inside it, holds the vehicle
+    /// while it is open, and restarts the full wait when it closes.
+    /// </summary>
+    /// <remarks>
+    /// The project default is five minutes. <see cref="TimeSpan.Zero"/> turns the wait off, which
+    /// also takes the correction window away; any other value must be at least five seconds.
+    /// </remarks>
+    public TimeSpan StationDepartureWaitTimeout { get; set; } = TimeSpan.FromMinutes(5);
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];
@@ -129,6 +141,11 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
             options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))
         {
             failures.Add("DepartureSafetyResultWait must be positive and at most 10 s.");
+        }
+        if (options.StationDepartureWaitTimeout != TimeSpan.Zero &&
+            options.StationDepartureWaitTimeout < TimeSpan.FromSeconds(5))
+        {
+            failures.Add("StationDepartureWaitTimeout must be zero (off) or at least 5 s.");
         }
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
         if (options.MapId <= 0) failures.Add("MapId must be positive.");

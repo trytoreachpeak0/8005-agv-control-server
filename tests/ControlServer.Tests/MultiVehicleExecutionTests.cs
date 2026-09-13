@@ -1058,6 +1058,8 @@ public sealed class MultiVehicleExecutionTests
             AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
             AdmissionPolicyVersion = 1,
             AdmissionPolicyDeploymentId = "TEST-DEPLOYMENT-1",
+            // Off: these tests are about several vehicles sharing a map, not about the pickup wait.
+            StationDepartureWaitTimeout = TimeSpan.Zero,
             Fleet = [.. Enumerable.Range(0, AgvIds.Length).Select(index => new FleetVehicleOptions
             {
                 AgvId = AgvIds[index],

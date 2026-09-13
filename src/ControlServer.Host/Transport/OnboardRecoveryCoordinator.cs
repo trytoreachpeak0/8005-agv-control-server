@@ -565,9 +565,15 @@ public sealed class OnboardRecoveryCoordinator(
         StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
             row => row.SlotOperationAttemptId == attemptId && row.DemandId == demandId,
             cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? journey = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
+            row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        // REQ-0237: an ordinary mis-placement is corrected only before the vehicle leaves the pickup.
+        // A committed load alone is not enough -- until 2026-09-13 this authorized corrections for a
+        // vehicle already sent to the gate, whose onboard could only refuse to open the doors.
         if (operation is null || operation.OperationType != SlotOperationType.Load ||
             operation.Status != StationOperationStatus.Committed ||
-            !slots.All(ParseSlots(operation.TargetSlotsJson).Contains))
+            !slots.All(ParseSlots(operation.TargetSlotsJson).Contains) ||
+            journey?.Stage != JourneyRuntimeStage.AwaitingStationDeparture)
         {
             return Response(root, "LoadCorrectionRejected", new
             {
