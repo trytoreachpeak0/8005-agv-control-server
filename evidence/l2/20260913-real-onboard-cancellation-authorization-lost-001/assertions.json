@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-cancellation-authorization-lost",
+  "runId": "20260913T030358420Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260913T030358420Z",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "f840d8471a77baad2bcc377d412d9113a57850f1",
+    "controlServerCommit": "78b69e38745ba44c0dcf1914c40910b50005d9f3",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "batchId": "BATCH-3"
+  },
+  "assertions": [
+    {
+      "id": "L2-CAL-01",
+      "description": "服务端授权了第一次取消、工作流在等结果，授权应答被代理丢掉，车载端没拿到回答",
+      "outcome": "PASS",
+      "expected": "非 200 / AwaitingResult / 丢 1 条",
+      "actual": "409 The operation has timed out. / AwaitingResult / 丢 1 条"
+    },
+    {
+      "id": "L2-CAL-02",
+      "description": "授权应答丢了之后再按一次，拿到同一个授权并清空完成：自动化面回 200",
+      "outcome": "FAIL",
+      "expected": "200",
+      "actual": "409 ControlServer在旅程会话期间关闭了连接。"
+    },
+    {
+      "id": "L2-CAL-03",
+      "description": "取消工作流凭空仓证明对账 Reconciled，需求判 Cancelled",
+      "outcome": "FAIL",
+      "expected": "Reconciled / Cancelled",
+      "actual": "AwaitingResult / RecoveryRequired"
+    },
+    {
+      "id": "L2-CAL-04",
+      "description": "两次按下是两条 messageId 不同的取消请求，payload 相同（沿用首发的操作员与理由），两次都拿到 AUTHORIZED",
+      "outcome": "FAIL",
+      "expected": "2 条 / 2 个 id / payload 相同 / AUTHORIZED,AUTHORIZED",
+      "actual": "1 条 / 1 个 id / payload 不同 / AUTHORIZED"
+    },
+    {
+      "id": "L2-CAL-05",
+      "description": "从第一次按下到收尾，车载端没有重连：丢一次应答不换来一次掐连接",
+      "outcome": "FAIL",
+      "expected": "SessionHello 1 条不变",
+      "actual": "SessionHello 1 → 2 条"
+    },
+    {
+      "id": "L2-CAL-06",
+      "description": "现场收在安全状态：门关、仓空、已锁、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 47 lines, 47 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 17646 ms."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+2026-09-13T11:07:16.1577614+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+f19de9972cb3fb89e0736a6c49d03b4f9bfb0a0c。
+2026-09-13T11:07:16.8086161+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-13T11:07:16.8342914+08:00	Information	OnboardController	IO模块在线。
+2026-09-13T11:07:16.8359764+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-13T11:07:16.9682039+08:00	Information	App	车载端自动化接口已启动：http://127.0.0.1:58414。 
+2026-09-13T11:07:17.4311457+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-13T11:07:19.8111540+08:00	Information	App	服务端请求录入Sublot：demandId=c578707c-d059-4d17-9146-9c4f66b2f560，revision=1。 
+2026-09-13T11:07:20.6158397+08:00	Information	App	服务端请求录入Sublot：demandId=c578707c-d059-4d17-9146-9c4f66b2f560，revision=1。 
+2026-09-13T11:07:20.8438040+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-13T11:07:20.8994571+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-13T11:07:21.0084057+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-13T11:07:21.4217857+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-13T11:07:21.6170679+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=efe82006-9ed0-bb51-a659-4f3ab0d31229。
+2026-09-13T11:07:22.0271519+08:00	Error	WireToGateBusinessService	处理服务端业务消息失败：SlotOperationCommand。已保持物理安全阻塞。 | TaskCanceledException: A task was canceled.
+2026-09-13T11:07:25.0520606+08:00	Warning	WireToGateBusinessService	恢复向量LOAD_CANCELLATION未执行：reason=The operation has timed out.。 | TimeoutException: The operation has timed out.
+2026-09-13T11:07:25.3312215+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。

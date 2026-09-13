@@ -1,0 +1,388 @@
+{
+  "schemaVersion": 1,
+  "window": "FW-FL2",
+  "windowName": "现场窗口二：完整闭环、取消订单、两趟之间自动充电、车静止时服务重启",
+  "runId": "20260913T031515472Z",
+  "outcome": "PASS",
+  "identity": {
+    "runId": "20260913T031515472Z",
+    "windowId": "FW-FL2",
+    "checkpointLabel": "finalize",
+    "database": "local-snapshot"
+  },
+  "fieldRecord": {
+    "windowId": "FW-FL2",
+    "date": "2026-09-13",
+    "site": "L2 真装置彩排（本机）",
+    "observers": [],
+    "drivenBy": "FieldOperator.psm1 run 20260913T031233678Z",
+    "agvId": "AGV-L2-001",
+    "ioModule": "127.0.0.1:58412",
+    "ioKind": "SIMULATOR",
+    "recoveryWindowOpen": false,
+    "journeys": [
+      {
+        "role": "T/X/NE",
+        "journeyId": "c6328bb8-71cd-2f5c-a707-d2568d496cf7"
+      },
+      {
+        "role": "充电之后",
+        "journeyId": "2fb45d70-bb9e-3d51-bb03-3d3b749e9203"
+      }
+    ],
+    "journeyIds": [
+      "c6328bb8-71cd-2f5c-a707-d2568d496cf7",
+      "2fb45d70-bb9e-3d51-bb03-3d3b749e9203"
+    ],
+    "photoPointers": [],
+    "scenesOwed": [
+      "T",
+      "X",
+      "NE",
+      "N",
+      "CH",
+      "R"
+    ],
+    "scenarios": [
+      {
+        "id": "T",
+        "name": "到站不录入 SUBLOT：站点期限到期，服务端以 CANCELLED_BY_STATION_TIMEOUT 终结并永久抑制，车被释放",
+        "demandId": "eb380b39-f6a1-40f8-bea9-6077bd05f4dc",
+        "sublot": "L2-FW2-J1-N1-3-20260913T031233678Z",
+        "stopSequence": 1,
+        "serverWaitingAt": "2026-09-13T11:12:50.3673396+08:00",
+        "vehicleAskedAt": "2026-09-13T11:12:50.5586074+08:00",
+        "deadlineAt": "2026-09-13T11:13:49.8302915+08:00",
+        "settledObservedAt": "2026-09-13T11:13:52.0026692+08:00",
+        "positionAfter": "1/AwaitingDepartureSafety",
+        "settledCheckpoint": "t-settled",
+        "carriedFrom": null,
+        "carriedNote": null
+      },
+      {
+        "id": "X",
+        "name": "到站还没装货就取消：扫码前按「取消装货」，需求 Cancelled 并按 CANCELLED_BY_OPERATOR 抑制，旅程自己离站",
+        "demandId": "374b8f9b-12a4-46d9-80fb-9284333783e1",
+        "sublot": "L2-FW2-J1-N2-6-20260913T031233678Z",
+        "stopSequence": 2,
+        "commandId": "7be1d006-bf70-4c7a-8af3-323142872a93",
+        "faceAnswer": "HTTP 200",
+        "actionsOffered": [
+          "LOAD_CANCELLATION"
+        ],
+        "settledObservedAt": "2026-09-13T11:13:55.8881162+08:00",
+        "positionAfter": "2/AwaitingDepartureSafety",
+        "settledCheckpoint": "x-settled",
+        "carriedFrom": null,
+        "carriedNote": null
+      },
+      {
+        "id": "NE",
+        "name": "关卡卸货未取空：关门时货还在，车反复重开，没有取消分支，取空才提交",
+        "demandId": "e96ac77b-e343-4d1d-be78-12251af09da9",
+        "slotOperationAttemptId": "f9b0be6c-e70d-b052-80f9-00422c873733",
+        "slotNo": 3,
+        "rounds": 2,
+        "statusAtRounds": "Prepared",
+        "observedRounds": "UNLOCKING=3 WAITING_OPERATOR=3",
+        "checkpoint": "ne-reopened"
+      },
+      {
+        "id": "CH",
+        "name": "两趟之间自动充电：低于触发线自己去充电桩，接上电，到恢复线释放，接着受理下一单",
+        "chargingRunId": "383b2c40-f510-d85c-acd3-e136c44acba0",
+        "upperId": "W2G-CHARGE-383b2c40-f510-d85c-acd3-e136c44acba0-1",
+        "chargerStationRiotId": 211,
+        "triggeredAtBatteryPercent": 15,
+        "releasedAtBatteryPercent": 80,
+        "after": "2026-09-13T11:14:23.8959617+08:00",
+        "completedObservedAt": "2026-09-13T11:14:43.1528501+08:00",
+        "runsAfter": 1,
+        "seen": [
+          {
+            "ObservedAt": "2026-09-13T11:14:29.5503812+08:00",
+            "Stage": "AwaitingChargerArrival",
+            "BlockReasonCode": ""
+          },
+          {
+            "ObservedAt": "2026-09-13T11:14:32.4248489+08:00",
+            "Stage": "Charging",
+            "BlockReasonCode": ""
+          },
+          {
+            "ObservedAt": "2026-09-13T11:14:43.1497619+08:00",
+            "Stage": "Completed",
+            "BlockReasonCode": ""
+          }
+        ],
+        "checkpoints": {
+          "AwaitingChargerArrival": "charge-dispatched",
+          "Charging": "charge-charging",
+          "Completed": "charge-released"
+        },
+        "thresholdOverride": null
+      },
+      {
+        "id": "R1",
+        "name": "车静止时服务重启：新会话自己回到 Ready，不停在 RecoveryRequired",
+        "afterJourneyId": "c6328bb8-71cd-2f5c-a707-d2568d496cf7",
+        "serverStartedAt": "2026-09-13T11:14:24.0315166+08:00",
+        "generationBefore": 1,
+        "generationAfter": 2,
+        "firstNewGenerationObservedAt": "2026-09-13T11:14:26.6831482+08:00",
+        "readyObservedAt": "2026-09-13T11:14:26.6831661+08:00",
+        "series": [
+          {
+            "ObservedAt": "2026-09-13T11:14:25.1369452+08:00",
+            "Generation": 1,
+            "Readiness": "Ready",
+            "ReasonCode": "READY",
+            "UpdatedAt": "2026-09-13 03:14:22.1295396+00:00"
+          },
+          {
+            "ObservedAt": "2026-09-13T11:14:26.6816959+08:00",
+            "Generation": 2,
+            "Readiness": "Ready",
+            "ReasonCode": "READY",
+            "UpdatedAt": "2026-09-13 03:14:26.6672583+00:00"
+          }
+        ],
+        "checkpoint": "r1-ready"
+      },
+      {
+        "id": "R2",
+        "name": "车静止时服务重启：新会话自己回到 Ready，不停在 RecoveryRequired",
+        "afterJourneyId": "2fb45d70-bb9e-3d51-bb03-3d3b749e9203",
+        "serverStartedAt": "2026-09-13T11:15:07.4794541+08:00",
+        "generationBefore": 2,
+        "generationAfter": 3,
+        "firstNewGenerationObservedAt": "2026-09-13T11:15:14.1708832+08:00",
+        "readyObservedAt": "2026-09-13T11:15:14.1709017+08:00",
+        "series": [
+          {
+            "ObservedAt": "2026-09-13T11:15:08.5735392+08:00",
+            "Generation": 2,
+            "Readiness": "Ready",
+            "ReasonCode": "READY",
+            "UpdatedAt": "2026-09-13 03:15:05.1689358+00:00"
+          },
+          {
+            "ObservedAt": "2026-09-13T11:15:14.1697291+08:00",
+            "Generation": 3,
+            "Readiness": "Ready",
+            "ReasonCode": "READY",
+            "UpdatedAt": "2026-09-13 03:15:14.0222854+00:00"
+          }
+        ],
+        "checkpoint": "r2-ready"
+      }
+    ]
+  },
+  "facts": {
+    "ioKind": "SIMULATOR",
+    "minimumHoldMinutes": 20.0,
+    "drivenBy": "FieldOperator.psm1 run 20260913T031233678Z",
+    "sublotWaitMinutes": 1.0,
+    "journeyIds": "c6328bb8-71cd-2f5c-a707-d2568d496cf7, 2fb45d70-bb9e-3d51-bb03-3d3b749e9203",
+    "scenesOwed": "T, X, NE, N, CH, R",
+    "T.demand": "eb380b39-f6a1-40f8-bea9-6077bd05f4dc / L2-FW2-J1-N1-3-20260913T031233678Z / 停靠 1",
+    "X.demand": "374b8f9b-12a4-46d9-80fb-9284333783e1 / L2-FW2-J1-N2-6-20260913T031233678Z / 停靠 2",
+    "X.faceAnswer": "HTTP 200",
+    "NE.attempt": "f9b0be6c-e70d-b052-80f9-00422c873733 / 仓 3 / UNLOCKING=3 WAITING_OPERATOR=3",
+    "CH.thresholds": "出厂 30/80",
+    "CH.seen": "AwaitingChargerArrival -> Charging -> Completed",
+    "R1.series": "1/Ready(READY) -> 2/Ready(READY)",
+    "R2.series": "2/Ready(READY) -> 3/Ready(READY)"
+  },
+  "assertions": [
+    {
+      "id": "FL2-T-01",
+      "description": "到站不录入 SUBLOT：需求被服务端终结为 Cancelled，并按它的 TransportDemandKey 以 CANCELLED_BY_STATION_TIMEOUT 永久抑制",
+      "outcome": "PASS",
+      "expected": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / 抑制键 = 需求键",
+      "actual": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / 键一致"
+    },
+    {
+      "id": "FL2-T-02",
+      "description": "终结之前一次仓位操作都没有下发——没人扫码就没有装货",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "FL2-T-03",
+      "description": "站点期限是 1 分钟：车载端拿到的期限距驱动脚本看到服务端开始等 SUBLOT 不超过 1 分钟、且不短于它 60 秒以上",
+      "outcome": "PASS",
+      "expected": "0–60 秒",
+      "actual": "59.5 秒"
+    },
+    {
+      "id": "FL2-T-04",
+      "description": "到期才结算、没有无限拖着：结算被看到的时刻落在期限之后 0–180 秒",
+      "outcome": "PASS",
+      "expected": "0–180 秒",
+      "actual": "2.2 秒"
+    },
+    {
+      "id": "FL2-T-05",
+      "description": "车被释放：结算后旅程自己离开这一站，这趟旅程最终 Completed、派车租约已释放——没有停在 AwaitingSublot",
+      "outcome": "PASS",
+      "expected": "离站 / Completed / 租约已释放",
+      "actual": "1/AwaitingDepartureSafety / Completed / 已释放"
+    },
+    {
+      "id": "FL2-X-01",
+      "description": "到站还没装货就取消：需求 Cancelled，并按它的 TransportDemandKey 以 CANCELLED_BY_OPERATOR 永久抑制（判的是服务端库，不是自动化面的返回）",
+      "outcome": "PASS",
+      "expected": "Cancelled / CANCELLED_BY_OPERATOR / 抑制键 = 需求键",
+      "actual": "Cancelled / CANCELLED_BY_OPERATOR"
+    },
+    {
+      "id": "FL2-X-02",
+      "description": "取消发生在装货之前：这条需求没有任何仓位操作",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "FL2-X-03",
+      "description": "取消用的是车载端界面那一刻真的给出的按钮（availableRecoveryActions 含 LOAD_CANCELLATION），之后旅程自己离开这一站",
+      "outcome": "PASS",
+      "expected": "LOAD_CANCELLATION 在按钮里 / 离站",
+      "actual": "LOAD_CANCELLATION / 2/AwaitingDepartureSafety"
+    },
+    {
+      "id": "FL2-NE-01",
+      "description": "关门时货还在：车载端自己把这一仓重开了 2 轮（该仓 UNLOCKING 至少 3 次）",
+      "outcome": "PASS",
+      "expected": ">= 3",
+      "actual": 3
+    },
+    {
+      "id": "FL2-NE-02",
+      "description": "重开 2 轮之后卸货仍在进行（checkpoint ne-reopened）：操作 Prepared、旅程停在 AwaitingUnloadResult、需求没有被取消",
+      "outcome": "PASS",
+      "expected": "Prepared / AwaitingUnloadResult / 需求未取消",
+      "actual": "Prepared / AwaitingUnloadResult / Accepted"
+    },
+    {
+      "id": "FL2-NE-03",
+      "description": "唯一的出口是取空：卸货 Committed，这个 attempt 只有 COMPLETED 结果，需求 Succeeded",
+      "outcome": "PASS",
+      "expected": "Committed / 仅 COMPLETED / Succeeded",
+      "actual": "Committed / COMPLETED / Succeeded"
+    },
+    {
+      "id": "FL2-N-01",
+      "description": "窗口里的每一趟旅程都走到 Completed，派车租约都已释放",
+      "outcome": "PASS",
+      "expected": "全部 Completed / 已释放",
+      "actual": "c6328bb8=Completed/已释放; 2fb45d70=Completed/已释放"
+    },
+    {
+      "id": "FL2-N-02",
+      "description": "完整闭环至少走通一次：一条需求录了 SUBLOT、装货提交、过出车前安全检查、卸货提交、需求 Succeeded（装货能提交即缺陷 20260829 现场未复现）",
+      "outcome": "PASS",
+      "expected": "至少一条需求全链路走通",
+      "actual": "38725cd9: SUBLOT✓ 装Committed 安检✓ 卸Committed; 3c592033: SUBLOT✓ 装Committed 安检✓ 卸Committed; 7f76f720: SUBLOT✓ 装Committed 安检✓ 卸Committed; e96ac77b: SUBLOT✓ 装Committed 安检✓ 卸Committed"
+    },
+    {
+      "id": "FL2-N-03",
+      "description": "每一条 Succeeded 的需求都是全链路走通的——没有哪一条跳过了 SUBLOT、安全检查或卸货提交",
+      "outcome": "PASS",
+      "expected": "4 条都走通",
+      "actual": "4 条走通"
+    },
+    {
+      "id": "FL2-CH-01",
+      "description": "上一趟旅程结束之后才起充电行程，触发时电量低于当时生效的触发线",
+      "outcome": "PASS",
+      "expected": "创建于 09/13/2026 11:14:23 之后 / 触发电量 < 30",
+      "actual": "2026-09-13 03:14:28.9180361+00:00 / 15"
+    },
+    {
+      "id": "FL2-CH-02",
+      "description": "充电行程派了一条去充电桩 211 的 TO_CHARGER 单并已确认",
+      "outcome": "PASS",
+      "expected": "TO_CHARGER / 211 / CONFIRMED",
+      "actual": "TO_CHARGER / 211 / CONFIRMED"
+    },
+    {
+      "id": "FL2-CH-03",
+      "description": "车到桩并真的接上电：行程进入 Charging，驱动脚本全程没有看到 CHARGER_NOT_ENGAGED 或任何 CHARGER_* 阻塞",
+      "outcome": "PASS",
+      "expected": "进入 Charging / 无 CHARGER_* 阻塞",
+      "actual": "AwaitingChargerArrival -> Charging -> Completed"
+    },
+    {
+      "id": "FL2-CH-04",
+      "description": "充到恢复线释放：行程 Completed，释放电量 >= 80",
+      "outcome": "PASS",
+      "expected": "Completed / >= 80",
+      "actual": "Completed / 80"
+    },
+    {
+      "id": "FL2-CH-05",
+      "description": "释放之后接着受理下一单：下一趟旅程在充电行程结束之后创建，两趟之间只充了这一次电",
+      "outcome": "PASS",
+      "expected": "有下一趟旅程 / 两趟之间 1 次充电",
+      "actual": "2fb45d70 创建于 2026-09-13 03:14:42.9748784+00:00 / 1 次"
+    },
+    {
+      "id": "FL2-R-00",
+      "description": "至少观测到一次车静止时的服务重启（缺陷 20260908 的发现条件：真实服务重启加一台真车）",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 2
+    },
+    {
+      "id": "FL2-R1-01",
+      "description": "重启后新会话（generation > 重启前的 1）回到 Ready，checkpoint r1-ready 上的会话行同样是 Ready",
+      "outcome": "PASS",
+      "expected": "generation > 1 / Ready",
+      "actual": "1/Ready(READY) -> 2/Ready(READY) / checkpoint: 2/Ready"
+    },
+    {
+      "id": "FL2-R1-02",
+      "description": "从服务进程启动到会话 Ready 不超过 60 秒——缺陷现场是 6 分 36 秒不自愈，直到有人重启车载客户端",
+      "outcome": "PASS",
+      "expected": "0–60 秒",
+      "actual": "2.7 秒"
+    },
+    {
+      "id": "FL2-R1-03",
+      "description": "重启时车是静止的：重启前那趟旅程已经 Completed，这正是缺陷的发现条件",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "FL2-R2-01",
+      "description": "重启后新会话（generation > 重启前的 2）回到 Ready，checkpoint r2-ready 上的会话行同样是 Ready",
+      "outcome": "PASS",
+      "expected": "generation > 2 / Ready",
+      "actual": "2/Ready(READY) -> 3/Ready(READY) / checkpoint: 3/Ready"
+    },
+    {
+      "id": "FL2-R2-02",
+      "description": "从服务进程启动到会话 Ready 不超过 60 秒——缺陷现场是 6 分 36 秒不自愈，直到有人重启车载客户端",
+      "outcome": "PASS",
+      "expected": "0–60 秒",
+      "actual": "6.7 秒"
+    },
+    {
+      "id": "FL2-R2-03",
+      "description": "重启时车是静止的：重启前那趟旅程已经 Completed，这正是缺陷的发现条件",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "FL2-W-01",
+      "description": "现场记录由驱动脚本按实际动作写出，IO 是车上的 slots-simulator（无人到场）",
+      "outcome": "PASS",
+      "expected": "drivenBy 非空 / SIMULATOR",
+      "actual": "drivenBy=FieldOperator.psm1 run 20260913T031233678Z / SIMULATOR"
+    }
+  ]
+}

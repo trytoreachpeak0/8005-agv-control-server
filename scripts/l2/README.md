@@ -42,6 +42,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-recovery-retry-after-refusal` | **真的**，自动化面 | 旅程还没 `Blocked` 时按「补偿清空」被拒，转 `Blocked` 后同一 attempt 再按：开得出会话、补偿走完、车不被掐连接（现场旅程 54d2cf63 卡在这里，8005-agv-program#49） | `evidence/l2/20260911-real-onboard-recovery-retry-after-refusal-006`（车载端 `ab346ed`；`-004` 是修复前的红基线，见最后一节） |
 | `real-onboard-durable-ack-lost` | **真的**，协议故障代理 | 装载结果被服务端收下、`DurableAck` 在路上丢了：车重连后补发同一 messageId，服务端要确认而不是掐连接（#30）；丢一次 ack 只该重连一次（#33） | 尚无整条 PASS：`evidence/l2/20260912-real-onboard-durable-ack-lost-003`（服务端 `8822a59`）#30 的判据全绿，`L2-DA-07` 红在 #33；`-001` 是 #30 修复前的红基线，见文末那一节 |
 | `real-onboard-compensate-then-reconnect` | **真的**，自动化面，协议故障代理 | 补偿清空对账之后断线重连一次（不丢 ack）：补偿会话留下的恢复会话快照与补偿命令全部结清、一条都不重放进新会话，车照常接单（#31） | `evidence/l2/20260912-real-onboard-compensate-then-reconnect-003`（服务端 `11bee90`，车载端 `86fe0a4`；`-001` 是修复前的红基线，`-002` 绿着却带着车载端回归，见文末那一节） |
+| `real-onboard-cancellation-authorization-lost` | **真的**，自动化面，协议故障代理 | 装货途中的取消被服务端授权、授权应答在路上丢了：再按一次拿到同一个授权、清空对账，车不被掐连接（修之前这一单只能改库，onboard-hmi#39） | `evidence/l2/20260913-real-onboard-cancellation-authorization-lost-002`（车载端 `f19de99`；`-001` 是修复前的红基线，见文末那一节） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -291,8 +292,9 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。
 - `ProtocolFaultProxy` —— 只对真装置有效。车载端的 `wireToGate` 连接改经 `tools/ControlServer.ProtocolFaultProxy`
   逐行转发，场景经 `$Context.ProtocolProxy` 拿到它的控制面。代理起来时什么都不丢，场景用
-  `PUT /control/v1/drop-durable-ack` 布下「丢 N 次某类报文的 `DurableAck` 并断开」，或者用 `POST /control/v1/disconnect`
-  不挑任何一行地断开一次；快照按连接记下每一行的方向与信封身份。合成对端没有 journal、不补发，给它设这个键会直接报错。
+  `PUT /control/v1/drop-durable-ack` 布下「丢 N 次某类报文的 `DurableAck` 并断开」，用 `PUT /control/v1/drop-message`
+  布下「丢 N 条服务端写回的某类报文、链路不断」（一条应答单独丢失，车载端等满 `messageTimeoutMs` 判超时），或者用
+  `POST /control/v1/disconnect` 不挑任何一行地断开一次；快照按连接记下每一行的方向与信封身份。合成对端没有 journal、不补发，给它设这个键会直接报错。
 
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
@@ -861,3 +863,38 @@ PASS/17、`real-onboard-multi-demand-compensate-005` PASS/15、`real-onboard-res
 确认。CLOSED 生效的那件事——journal 里的恢复状态清空——在补偿结果记下时（`CompleteRecoveryVectorStateAsync`）就已落盘，早于
 CLOSED 到达，与协议向量 `CV-SNAPSHOT-REPLACE-AND-ACK` 的 `durable-before-ack` 一致。**「开着恢复会话时重启车载端」目前没有
 L2**，钉住它的是车载端 G2 `OnlyTheClosedRecoverySessionSnapshotIsAcknowledged`（OPEN 不确认）。
+
+## `real-onboard-cancellation-authorization-lost`：取消授权的应答丢了之后再按
+
+装货途中的取消已被服务端授权，授权应答却没到车上（[`8005-agv-onboard-hmi#39`](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/39)）。
+修之前车载端取消请求的 messageId 就是由需求与 attempt 算出的 `cancellationId`，每次按下却重建内容：同一个 messageId 在
+`ProtocolInbox` 判内容冲突、掐连接；换了 messageId，又会在 `UpsertSimpleWorkflowAsync` 撞整 payload 比对（`verifiedAt` 每按一次
+都是新的）。工作流停在 `AwaitingResult`，车不清空，这一单只能改库。修在车载端：messageId 每次发送新生成，取消请求发出之前把
+操作员与理由写进车载端日志，未得应答时原样沿用。
+
+**丢应答靠协议故障代理的 `drop-message`**：不转发那一条 `LoadCancellationAuthorization`，链路不断，车载端等满 `messageTimeoutMs`
+判超时。`drop-durable-ack` 做不了这件事：它丢了会连带断链，测的就成了重连。
+
+**走在途取消，不走扫码前取消**：后者授权的同一次处理就把需求判 `Cancelled` 并结束本站，录入请求随之过期、按钮也没了——结果
+已经达成，只是车以为失败。
+
+| 判据 | 讲什么 |
+| --- | --- |
+| `L2-CAL-01` | 前提：服务端授权了第一次取消、工作流 `AwaitingResult`，授权应答被代理丢掉，自动化面非 200 |
+| `L2-CAL-02` | 再按一次，自动化面回 200 |
+| `L2-CAL-03` | 取消工作流凭空仓对账 `Reconciled`，需求 `Cancelled` |
+| `L2-CAL-04` | 两次按下是两条 messageId 不同的请求，payload 相同，两次都拿到 `AUTHORIZED` |
+| `L2-CAL-05` | 从第一次按下到收尾，`SessionHello` 条数不变 |
+| `L2-CAL-06` | 现场收在 `CLOSED/EMPTY/1/0` |
+
+两个证据：
+
+1. **`-001`（服务端 `78b69e3`，车载端 `f840d84`，修复之前）是红基线**：`L2-CAL-02`～`-05` 四条红。第二次按下
+   `409 ControlServer在旅程会话期间关闭了连接。`，服务端日志 `ProtocolContentConflictException: MessageId was replayed with
+   different normalized content.`；`ProtocolInbox` 只收下一条取消请求，`SessionHello 1 → 2`，工作流停在 `AwaitingResult`。
+2. **`-002`（服务端 `78b69e3`，车载端 `f19de99`）PASS/7**：第二次按下 200，两条请求 payload 相同、都是 `AUTHORIZED`，
+   `Reconciled / Cancelled`，单需求旅程 `Completed`，车载端全程 1 条 `SessionHello`。
+
+两跑都记下一件没查的事：第一次按下超时之后，车上除了「取消装货」还亮出了 `RESUME_AFTER_REPAIR`、`COMPENSATE_LOAD_ALL_EMPTY`、
+`FAULT_CARGO_HANDOFF`（`timeline.jsonl` 的 `cancellation-offered-again`），也就是会话已是 `RecoveryRequired`。取消在请求授权之前
+先中止在途的仓位操作，那次 attempt 因此没有结果；两者是不是因果没有查，这条场景不判它。

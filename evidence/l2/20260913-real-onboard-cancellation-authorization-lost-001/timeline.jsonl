@@ -1,0 +1,40 @@
+{"at":"2026-09-13T03:03:58.4717690+00:00","note":"L2 run 20260913T030358420Z starting for scenario 'real-onboard-cancellation-authorization-lost'."}
+{"at":"2026-09-13T03:03:58.4893237+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T03:03:58.6234677+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-13T03:04:06.5211756+00:00","note":"Reusing cached onboard-hmi publish for f840d8471a77baad2bcc377d412d9113a57850f1."}
+{"at":"2026-09-13T03:04:06.6066416+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T03:04:06.6104770+00:00","note":"Peers: onboard-hmi@f840d8471a77baad2bcc377d412d9113a57850f1, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T03:04:07.5826484+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T03:04:07.7322321+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T03:04:09.9337973+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-13T03:04:13.1514510+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T03:04:14.7728275+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T03:04:15.4829374+00:00","criterion":"protocol-proxy-live","value":"live"}
+{"at":"2026-09-13T03:04:15.4861617+00:00","note":"Protocol fault proxy relaying 127.0.0.1:58416 -> 127.0.0.1:58405."}
+{"at":"2026-09-13T03:04:18.3838445+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-13T03:04:18.4244888+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-13T03:04:18.5495237+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-13T03:04:18.8249629+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T03:04:18.9017120+00:00","note":"Environment is up; entering scenario 'real-onboard-cancellation-authorization-lost'."}
+{"at":"2026-09-13T03:04:19.1252618+00:00","note":"Publishing demand 048a59413cd74240a3021bfbddbe4634 (sublot L2-CAL-20260913T030358420Z)."}
+{"at":"2026-09-13T03:04:19.2436175+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-13T03:04:20.8394247+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-888daa4f-14ad-3b51-aab9-34ea66d68ac9-S1-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-13T03:04:21.1115192+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-888daa4f-14ad-3b51-aab9-34ea66d68ac9-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T03:04:21.1295056+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-13T03:04:22.9863493+00:00","note":"field-operator: stop 1: submitted sublot L2-CAL-20260913T030358420Z (demand 048a5941-3cd7-4240-a302-1bfbddbe4634)"}
+{"at":"2026-09-13T03:04:24.4188224+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt 38e5fa9e-ea6e-1d52-a01b-b4f28818d570)"}
+{"at":"2026-09-13T03:04:24.4598516+00:00","criterion":"cancellation-offered","value":"LOAD_CANCELLATION"}
+{"at":"2026-09-13T03:04:24.4828248+00:00","note":"Arming the proxy: drop the first LoadCancellationAuthorization and keep the link up."}
+{"at":"2026-09-13T03:04:27.6365082+00:00","note":"First press: HTTP 409 reasonCode=The operation has timed out."}
+{"at":"2026-09-13T03:04:27.6635609+00:00","criterion":"authorization-dropped","value":"1"}
+{"at":"2026-09-13T03:04:27.8407069+00:00","note":"field-operator: slot 1: door closed with cargo EMPTY"}
+{"at":"2026-09-13T03:04:28.1294014+00:00","criterion":"cancellation-offered-again","value":"RESUME_AFTER_REPAIR,COMPENSATE_LOAD_ALL_EMPTY,FAULT_CARGO_HANDOFF,LOAD_CANCELLATION"}
+{"at":"2026-09-13T03:04:28.2024390+00:00","note":"Second press: HTTP 409 reasonCode=ControlServer在旅程会话期间关闭了连接。"}
+{"at":"2026-09-13T03:04:28.2324755+00:00","criterion":"cancellation-reconciled","value":"AwaitingResult / RecoveryRequired"}
+{"at":"2026-09-13T03:06:28.3583573+00:00","note":"Cancellation did not reconcile: Timed out after 120s waiting for: the cancellation reconciled and ended the demand. Last observed: \"AwaitingResult / RecoveryRequired\""}
+{"at":"2026-09-13T03:06:28.3714199+00:00","note":"Request payloads: {\"cancellationId\":\"5a4d2cca-c3fd-0b5b-b5cc-7a4a7095f8f5\",\"demandId\":\"048a5941-3cd7-4240-a302-1bfbddbe4634\",\"slotOperationAttemptId\":\"38e5fa9e-ea6e-1d52-a01b-b4f28818d570\",\"operator\":{\"operatorId\":\"L2-OPERATOR\",\"verificationMethod\":\"SESSION\",\"verifiedAt\":\"2026-09-13T03:04:24.6081343+00:00\"},\"reason\":\"【车载端自动化接口】L2：装货途中取消，第一次按下\"}"}
+{"at":"2026-09-13T03:06:28.3914368+00:00","criterion":"vehicle-reconnected","value":"2"}
+{"at":"2026-09-13T03:06:28.4186445+00:00","note":"Journey after the cancellation: 1/Blocked"}
+{"at":"2026-09-13T03:06:28.4201500+00:00","note":"Scenario finished."}
+{"at":"2026-09-13T03:06:28.5386116+00:00","note":"Exported 47 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-13T03:06:48.4944596+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 47 lines, 47 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 17646 ms."}
