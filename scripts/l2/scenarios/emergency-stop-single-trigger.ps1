@@ -49,7 +49,9 @@ function Get-HoldAttempts {
 }
 
 function Get-RiotInvocations([string]$commandType) {
-    return @(@($riot.Snapshot().body.commandInvocations) | Where-Object { [string]$_.commandType -eq $commandType })
+    # `return , @(...)`，不是 `return @(...)`：后者在只有一个元素时被管道拆成那个元素本身，严格模式下
+    # 对它取 `.Count` 直接抛错。本场景第一次运行（`-001`）就红在这里，而且正好红在「只收到一次」那一刻。
+    return , @(@($riot.Snapshot().body.commandInvocations) | Where-Object { [string]$_.commandType -eq $commandType })
 }
 
 function Set-Vehicle([hashtable]$fields) {
