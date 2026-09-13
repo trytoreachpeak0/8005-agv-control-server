@@ -93,7 +93,8 @@ internal static class Program
     /// 把 REQ-0267 的已批准八仓硬件事实入库。幂等：已经入过就返回既有那一版。
     /// </summary>
     /// <remarks>
-    /// DO1–DO8 开锁、DI1–DI8 锁反馈、DI9–DI16 仓内光幕、500 ms 脉冲复位、ACTIVE_HIGH。它们是**已批准
+    /// DO1–DO8 开锁、DI1–DI8 锁反馈、DI9–DI16 仓内光幕、500 ms 脉冲复位，极性按票据 35 逐个信号写明
+    /// （开锁写 1、锁闭为 1、光幕有物为 0）。它们是**已批准
     /// 的版本化不可改写内容**，走与别的版本同一条发布路径，因此同样产快照与审计，发布之后同样改不动。
     /// </remarks>
     private static async Task<int> SeedApprovedFactsAsync(

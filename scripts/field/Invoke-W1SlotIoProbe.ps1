@@ -25,10 +25,9 @@
       inPlace  the curtain read empty before, read object while the person held something in the slot,
                and read empty again once it was taken out
 
-    The levels are ticket 35's approved facts, not ApprovedSlotHardwareFacts.SignalPolarity: locked 1,
-    released 0, curtain object 0, curtain empty 1, unlock 1 cleared by the module's 500 ms pulse. The
-    constant says ACTIVE_HIGH for all three signals, which the light curtain is not; that is recorded as
-    a defect, and the probe measures against the approved fact.
+    The levels are ticket 35's approved facts, the same ones ApprovedSlotHardwareFacts.SignalPolarity
+    spells out per signal: unlock 1 cleared by the module's 500 ms pulse, locked 1, released 0, curtain
+    object 0, curtain empty 1.
 
     A person on site is the point. The door springing open, the object in the slot, the door closed by
     hand -- those are physical facts the IO image cannot see on its own (REQ-0263: a simulated result

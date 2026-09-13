@@ -30,13 +30,12 @@ tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.e
 ```
 
 三台车各跑一次 `bind-io`。录进去的是 REQ-0267 的**已批准**八仓事实（DO1–DO8 开锁、DI1–DI8 锁反馈、
-DI9–DI16 仓内光幕、500 ms、ACTIVE_HIGH），不是现场手抄的一份——车上报的声明只被核验、永远不被采信
-为权威（REQ-0258），所以没有「从车上读回来填进去」这条路。
+DI9–DI16 仓内光幕、500 ms，极性按票据 35 逐个信号写明：开锁写 1、锁闭为 1、光幕有物为 0），不是现场手抄的
+一份——车上报的声明只被核验、永远不被采信为权威（REQ-0258），所以没有「从车上读回来填进去」这条路。
 
-**注意 `ACTIVE_HIGH` 这一项与票据 35 不符**：票据 35 批准的光幕是检测到物体为 `0`。`seed-approved-facts`
-写进去就不可改写，所以在生产库上跑它之前先按
-[`docs/defects/20260913-approved-slot-facts-call-the-light-curtain-active-high.md`](../defects/20260913-approved-slot-facts-call-the-light-curtain-active-high.md)
-定处置。
+极性这一项在 2026-09-13 之前是笼统的 `ACTIVE_HIGH`，对光幕是错的；**在生产库上 seed 必须用这之后构建的
+FieldOps**，见
+[`docs/defects/20260913-approved-slot-facts-call-the-light-curtain-active-high.md`](../defects/20260913-approved-slot-facts-call-the-light-curtain-active-high.md)。
 
 先看一眼三台车此刻的判定：
 
