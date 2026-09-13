@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-field-continuous-mixed-rehearsal",
+  "runId": "20260913T085235295Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "onboardHmiCommit": "6b8a0b06575f40fa0e682c5d307b9ce46bbe9227",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "controlServerCommit": "fb0a8898e5fcdb70cc8e0698d690a1f0665d98f8",
+    "rig": "RealOnboard",
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260913T085235295Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-CFM-01",
+      "description": "开跑时会话 Ready、没有未完成旅程",
+      "outcome": "PASS",
+      "expected": "(无未完成旅程)",
+      "actual": "(无未完成旅程)"
+    },
+    {
+      "id": "L2-CFM-02",
+      "description": "一次连续驱动开完两趟，两趟都 Completed、都不需要续跑",
+      "outcome": "PASS",
+      "expected": "2 趟 / Completed×1",
+      "actual": "2 趟 / Completed×1,Completed×1"
+    },
+    {
+      "id": "L2-CFM-03",
+      "description": "第一趟四站按选择分派：T 被站点期限终结、X 被操作员取消，各带抑制原因；后两站照常装货提交",
+      "outcome": "PASS",
+      "expected": "1:T:Cancelled(CANCELLED_BY_STATION_TIMEOUT),2:X:Cancelled(CANCELLED_BY_OPERATOR),3:N:Committed,4:N:Committed",
+      "actual": "1:T:Cancelled(CANCELLED_BY_STATION_TIMEOUT),2:X:Cancelled(CANCELLED_BY_OPERATOR),3:N:Committed,4:N:Committed"
+    },
+    {
+      "id": "L2-CFM-04",
+      "description": "第一趟关卡：只卸真正装上的两条，都 Committed",
+      "outcome": "PASS",
+      "expected": "2 条 Committed",
+      "actual": "Committed,Committed"
+    },
+    {
+      "id": "L2-CFM-05",
+      "description": "第二趟整趟被终结（取消成功，或按钮没出现、交给站点期限）：旅程 Completed、没有卸货动作、关卡停靠没有被走到",
+      "outcome": "PASS",
+      "expected": "1:X:Cancelled(CANCELLED_BY_OPERATOR) 或 1:X-UNOFFERED:Cancelled(CANCELLED_BY_STATION_TIMEOUT) / 0 卸货 / 关卡未走",
+      "actual": "1:X-UNOFFERED:Cancelled(CANCELLED_BY_STATION_TIMEOUT) / 0 卸货 / 关卡 PLANNED"
+    },
+    {
+      "id": "L2-CFM-06",
+      "description": "选择回调每个取货站只被问一次",
+      "outcome": "PASS",
+      "expected": "1:1:T 1:2:X 1:3:N 1:4:N 2:1:X",
+      "actual": "1:1:T 1:2:X 1:3:N 1:4:N 2:1:X"
+    },
+    {
+      "id": "L2-CFM-20",
+      "description": "全程没有旅程 Blocked，会话一直是开跑时那一代、仍 Ready",
+      "outcome": "PASS",
+      "expected": "0 / generation 1 / Ready",
+      "actual": "0 / generation 1 / Ready"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 110 lines, 110 distinct, 12 message types, 0 distinct violations, 0 known; schema compilation 24207 ms."
+    }
+  ]
+}
