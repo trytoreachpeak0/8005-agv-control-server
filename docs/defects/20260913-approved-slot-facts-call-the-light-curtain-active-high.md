@@ -53,4 +53,4 @@ REQ-0267 的规范文本把极性明确交给票据 35（「500 ms 脉冲复位�
 **`fp/v2-impl` 线暂不改。**那里同一个常量参与激活下发的内容与指纹，改它会让 FP-IS-14 在发布身份上的 G2/G3 证据不再
 对应当前代码。生产切到 v2 线时，生产库里已经是正确的值，而 v2 线的常量仍是 `ACTIVE_HIGH`：届时两边必须对齐，
 否则 `EnsureApprovedHardwareFactsAsync` 之外的比对（`VerifyVehicleDeclarationAsync`、激活快照）会拿错值去比。
-这一条记在切 v2 的立项里，不在 W1 里做。
+这一条记在切 v2 的立项里，不在 W1 里做：[#44](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/44)。
