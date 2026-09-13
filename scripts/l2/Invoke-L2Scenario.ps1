@@ -696,6 +696,11 @@ try {
         SkewProxy           = $skewProxy
         Connection          = $connection
         RunId               = $runId
+        # The shipped onboard's own SQLite journal, real-onboard rig only. What the vehicle adopted is
+        # recorded there and nowhere the server can see, so a scenario that has to show the onboard
+        # applied the projection the server committed reads it -- read-only, alongside the process
+        # that owns it.
+        OnboardJournalPath  = if ($realOnboard) { Join-Path $stageRoot 'onboard-journal.db' } else { $null }
         AgvId               = $agvId
         VehicleKey          = $vehicleKey
         MapId               = $mapId
