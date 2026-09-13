@@ -1,0 +1,30 @@
+{"at":"2026-09-13T11:42:23.2027505+00:00","note":"L2 run 20260913T114223149Z starting for scenario 'g3-journey-demand-to-pickup'."}
+{"at":"2026-09-13T11:42:23.2218600+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T11:42:40.2820293+00:00","note":"Reusing cached onboard-hmi publish for c86bac5eaec57c36351f7d45b458deaa42fde22e."}
+{"at":"2026-09-13T11:42:40.4086870+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T11:42:40.4122268+00:00","note":"Peers: onboard-hmi@c86bac5eaec57c36351f7d45b458deaa42fde22e, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T11:42:40.4445590+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-13T11:42:41.4239067+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T11:42:41.5611236+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T11:42:43.8562914+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-13T11:42:48.0212191+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T11:42:50.1753771+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T11:42:50.1937261+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-13T11:42:53.3152670+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-13T11:42:53.3487488+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-13T11:42:53.4625137+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-13T11:42:53.7490544+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T11:42:53.8340392+00:00","note":"Environment is up; entering scenario 'g3-journey-demand-to-pickup'."}
+{"at":"2026-09-13T11:42:53.9187167+00:00","note":"Publishing demand f83e1b0065074b749821fb3952377325 (sublot G3-01-20260913T114223149Z)."}
+{"at":"2026-09-13T11:42:54.0673004+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-13T11:42:55.1094465+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-13T11:42:55.1501870+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-13T11:42:55.4111086+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-f83e1b00-6507-4b74-9821-fb3952377325-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T11:42:55.4490950+00:00","criterion":"dispatch-plan-acknowledged","value":"0"}
+{"at":"2026-09-13T11:42:55.7953841+00:00","criterion":"dispatch-plan-acknowledged","value":"1"}
+{"at":"2026-09-13T11:42:55.9174567+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-13T11:42:55.9709243+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-13T11:42:57.5740395+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-13T11:42:57.6020803+00:00","criterion":"pickup-snapshots-acknowledged","value":"1"}
+{"at":"2026-09-13T11:42:57.8695179+00:00","criterion":"pickup-snapshots-acknowledged","value":"3"}
+{"at":"2026-09-13T11:42:57.9777339+00:00","note":"FP-IS-01: demand accepted once, planned before the arrival, worklist and arrived plan after it, applied by the onboard as committed."}
