@@ -1,0 +1,42 @@
+{
+  "command": "status",
+  "outcome": "OK",
+  "vehicles": [
+    {
+      "agvId": "老厂前线新多仓位1",
+      "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+      "ready": true,
+      "reasonCode": "SLOT_CONFIGURATION_READY",
+      "slotsMissingBinding": [],
+      "slotsMissingVerification": [],
+      "slotsVerifiedNegative": []
+    },
+    {
+      "agvId": "老厂前线新多仓位2",
+      "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+      "ready": true,
+      "reasonCode": "SLOT_CONFIGURATION_READY",
+      "slotsMissingBinding": [],
+      "slotsMissingVerification": [],
+      "slotsVerifiedNegative": []
+    },
+    {
+      "agvId": "老厂前线新多仓位3",
+      "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+      "ready": false,
+      "reasonCode": "SLOT_CONFIGURATION_NEVER_VERIFIED",
+      "slotsMissingBinding": [],
+      "slotsMissingVerification": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "slotsVerifiedNegative": []
+    }
+  ]
+}

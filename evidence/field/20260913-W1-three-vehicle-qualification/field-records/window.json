@@ -1,0 +1,38 @@
+{
+  "windowId": "W1",
+  "date": "2026-09-13",
+  "site": "老厂现场，三台车逐台逐仓真信号核对（探针在车上直读 192.168.71.150 的仓位 IO 模块，产品负责人在车前操作仓门）",
+  "observers": [
+    "Zhengyu Shao"
+  ],
+  "photoPointers": [],
+  "photoPointersAbsentReason": "产品负责人 2026-09-13 在现场决定不拍照（现场没法拍照）；W1-06 只看证据目录形状完整与逐仓现场记录",
+  "productionContinuityObservations": [
+    {
+      "at": "2026-09-13T14:57:56.7285028+08:00",
+      "afterVehicle": "老厂前线新多仓位1",
+      "fleetStillTakingOrders": true,
+      "note": "产品负责人在现场、agv01 八仓核对完成时在对话里当时报告：产线照常，没有因核对而停；八个仓都按顺序、每次只弹开当时那一仓",
+      "photoPointer": null
+    },
+    {
+      "at": "2026-09-13T15:02:23.4525909+08:00",
+      "afterVehicle": "老厂前线新多仓位2",
+      "fleetStillTakingOrders": true,
+      "note": "产品负责人在现场、agv02 八仓核对完成时在对话里当时报告：产线照常，没有因核对而停；八个仓都按顺序、每次只弹开当时那一仓",
+      "photoPointer": null
+    },
+    {
+      "at": "2026-09-13T15:04:53.0598052+08:00",
+      "afterVehicle": "老厂前线新多仓位3",
+      "fleetStillTakingOrders": true,
+      "note": "产品负责人在现场、agv03 八仓核对完成时在对话里当时报告：产线照常，没有因核对而停；八个仓都按顺序、每次只弹开当时那一仓",
+      "photoPointer": null
+    }
+  ],
+  "notes": [
+    "14:34 产品负责人在自己的终端里跑过一次交互式探针，安全确认输入的是「确认」而不是车号，探针在读模块之前停下，没有开锁；记录留在 scripts/field/records/20260913-W1/raw/agv01/aborted.json",
+    "14:50 agv01 第一次无键盘探针开 1 号仓后，因 C2000 模块只回写事务号低 8 位而报 Modbus 应答头错误并整车停下；1 号仓门弹开过，产品负责人手动关上；记录留在 scripts/field/records/20260913-W1-run2/raw/agv01/aborted.json。修复为 aeadd667",
+    "本目录（run3）是三台车完整的一轮：agv01 14:55–14:57，agv02 15:00–15:02，agv03 15:02–15:04"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "aborted": "1 号仓开锁写入失败：ssh agv01 failed: Exception: \r\n\r\nLine |\r\n\r\n  75 |          throw \"Invalid Modbus TCP response header (transaction $respo …\r\n\r\n     |          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n\r\n     | Invalid Modbus TCP response header (transaction 0, protocol 0, unit 255, length 5).",
+  "at": "2026-09-13T14:51:04.9944822+08:00",
+  "agvId": "老厂前线新多仓位1",
+  "siteAlias": "agv01",
+  "slots": [
+    {
+      "slot": 1,
+      "raw": {
+        "agvId": "老厂前线新多仓位1",
+        "siteAlias": "agv01",
+        "physicalSlotNumber": 1,
+        "channels": {
+          "unlockOutput": "DO1 (coil 100)",
+          "lockFeedback": "DI1 (input 200)",
+          "lightCurtain": "DI9 (input 208)"
+        },
+        "expectedLevels": {
+          "source": "ticket 35 (8005-agv-program .scratch/current-requirements-baseline/issues/35)",
+          "unlockActive": 1,
+          "locked": 1,
+          "released": 0,
+          "curtainObject": 0,
+          "curtainEmpty": 1
+        },
+        "checks": {
+          "pulseAccepted": false
+        },
+        "pulseError": "ssh agv01 failed: Exception: \r\n\r\nLine |\r\n\r\n  75 |          throw \"Invalid Modbus TCP response header (transaction $respo …\r\n\r\n     |          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n\r\n     | Invalid Modbus TCP response header (transaction 0, protocol 0, unit 255, length 5)."
+      }
+    }
+  ],
+  "answers": [
+    {
+      "at": "2026-09-13T14:50:49.1904933+08:00",
+      "promptId": "vehicle-safe",
+      "slot": 0,
+      "prompt": "确认 agv01（老厂前线新多仓位1）已停稳、周边无人、车载端与模拟器都已关闭、八个仓门都关着且仓内无物、有人在车前按顺序操作仓门。输入 agv01 继续",
+      "answer": "agv01"
+    }
+  ]
+}
