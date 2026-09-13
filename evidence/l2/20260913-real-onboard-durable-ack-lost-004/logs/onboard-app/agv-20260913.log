@@ -1,0 +1,24 @@
+2026-09-13T14:32:39.1474663+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+3ecb49053eda6cac85d5b1cab4534a830f87d959。
+2026-09-13T14:32:39.9530690+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:58412，UnitId=255。
+2026-09-13T14:32:39.9765880+08:00	Information	OnboardController	IO模块在线。
+2026-09-13T14:32:39.9779157+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-13T14:32:40.4772374+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-13T14:32:43.7770721+08:00	Information	App	服务端请求录入Sublot：demandId=6c8c5ff6-7813-43cb-9516-d52dc4af1583，revision=1。 
+2026-09-13T14:32:44.4220720+08:00	Information	App	服务端请求录入Sublot：demandId=6c8c5ff6-7813-43cb-9516-d52dc4af1583，revision=1。 
+2026-09-13T14:32:44.6030837+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-13T14:32:44.6756151+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-13T14:32:44.8001582+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-13T14:32:45.1266856+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-13T14:32:45.4167025+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=337f8e4c-1dc9-e359-b818-4f0bd6b3af11。
+2026-09-13T14:32:45.6727653+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->0。
+2026-09-13T14:32:46.1785206+08:00	Warning	WireToGateBusinessService	OperationResult暂未收到DurableAck：attempt=337f8e4c-1dc9-e359-b818-4f0bd6b3af11。 | EndOfStreamException: ControlServer在旅程会话期间关闭了连接。
+2026-09-13T14:32:50.5104220+08:00	Warning	WireToGateSessionService	上层会话不可用：WIRE_TO_GATE会话尚未建立。。将在2秒后重连。
+2026-09-13T14:32:52.6165683+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=Ready。
+2026-09-13T14:32:53.4318509+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=337f8e4c-1dc9-e359-b818-4f0bd6b3af11，保留原OperationResult重放。
+2026-09-13T14:32:54.6694338+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-13T14:32:54.7705327+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->0，光幕DI 0->0。
+2026-09-13T14:32:55.2246520+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 0->0。
+2026-09-13T14:32:55.4217381+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=61c427af-c4d9-1a5f-a0ed-46ec05388116。
+2026-09-13T14:32:55.7708213+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 0->1。
+2026-09-13T14:32:55.8935651+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
+2026-09-13T14:32:56.4199727+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=61c427af-c4d9-1a5f-a0ed-46ec05388116，保留原OperationResult重放。

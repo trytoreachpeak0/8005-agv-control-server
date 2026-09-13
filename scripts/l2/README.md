@@ -40,7 +40,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-field-window-rehearsal` | **真的**，自动化面 | 现场窗口一（无人）整窗彩排：驱动脚本演 A、C 接 B、正常装，采集器在它说的那一刻打 checkpoint、在它写出的记录上 finalize；之后开去关卡卸货（`L2-FW-40`，8005-agv-program#48 修好之前红） | `evidence/l2/20260911-real-onboard-field-window-rehearsal-006`（车载端 `54772ff`，含 #48 修复；`-004`/`-005` 是 #48 的红） |
 | `real-onboard-multi-demand-compensate` | **真的**，自动化面 | 四停靠旅程里停靠 2 真的 `UNKNOWN` + 补偿清空：旅程自己离开那一站（#47 之前停在 `Blocked`），后两站照常装，关卡把三条卸完 | `evidence/l2/20260911-real-onboard-multi-demand-compensate-004`（车载端 `96c7513`，含 #48 修复；`-003` 只红 `L2-MDC-60`/`-61`，原因是 #48） |
 | `real-onboard-recovery-retry-after-refusal` | **真的**，自动化面 | 旅程还没 `Blocked` 时按「补偿清空」被拒，转 `Blocked` 后同一 attempt 再按：开得出会话、补偿走完、车不被掐连接（现场旅程 54d2cf63 卡在这里，8005-agv-program#49） | `evidence/l2/20260911-real-onboard-recovery-retry-after-refusal-006`（车载端 `ab346ed`；`-004` 是修复前的红基线，见最后一节） |
-| `real-onboard-durable-ack-lost` | **真的**，协议故障代理 | 装载结果被服务端收下、`DurableAck` 在路上丢了：车重连后补发同一 messageId，服务端要确认而不是掐连接（#30）；丢一次 ack 只该重连一次（#33） | 尚无整条 PASS：`evidence/l2/20260912-real-onboard-durable-ack-lost-003`（服务端 `8822a59`）#30 的判据全绿，`L2-DA-07` 红在 #33；`-001` 是 #30 修复前的红基线，见文末那一节 |
+| `real-onboard-durable-ack-lost` | **真的**，协议故障代理 | 装载结果被服务端收下、`DurableAck` 在路上丢了：车重连后补发同一 messageId，服务端要确认而不是掐连接（#30）；丢一次 ack 只该重连一次（#33） | `evidence/l2/20260913-real-onboard-durable-ack-lost-005`（服务端 `8ef2e18`，车载端 `a56a59d`；`-001` 是 #30 修复前的红基线，`-002`/`-003` 红在 #33，见文末那一节） |
 | `real-onboard-compensate-then-reconnect` | **真的**，自动化面，协议故障代理 | 补偿清空对账之后断线重连一次（不丢 ack）：补偿会话留下的恢复会话快照与补偿命令全部结清、一条都不重放进新会话，车照常接单（#31） | `evidence/l2/20260912-real-onboard-compensate-then-reconnect-003`（服务端 `11bee90`，车载端 `86fe0a4`；`-001` 是修复前的红基线，`-002` 绿着却带着车载端回归，见文末那一节） |
 | `real-onboard-cancellation-authorization-lost` | **真的**，自动化面，协议故障代理 | 装货途中的取消被服务端授权、授权应答在路上丢了：再按一次拿到同一个授权、清空对账，车不被掐连接（修之前这一单只能改库，onboard-hmi#39） | `evidence/l2/20260913-real-onboard-cancellation-authorization-lost-006`（服务端 `cdd1463`，车载端 `1acb018`；`-001` 是 #39 修复前的红基线，`-005` 是 `L2-CAL-07` 的红基线，见文末那一节） |
 
@@ -817,9 +817,15 @@ PASS/17、`real-onboard-multi-demand-compensate-005` PASS/15、`real-onboard-res
    确认时就数连接，第 3 条连接那时还没开，与第 21 条同一类。现在两条判据都在场景收尾判。
 3. **`-003`（`8822a59`，判据拆开之后）**：#30 的判据全绿，`L2-DA-04` 读到 `0 (#1: relay dropped …; #2: onboard closed; #3: open)`；
    `L2-DA-07` 红在 `3 connections, 1 open`，留给 #33。
+4. **`-004`（服务端 `8ef2e18`，车载端 `3ecb490`）与 `-005`（车载端 `a56a59d`，code review 之后的最终提交）PASS/9**：
+   `L2-DA-07` 读到 `2 connections, 1 open (#1: relay dropped DurableAck for OperationResult; #2: open)`。#33 修在车载端
+   （onboard-hmi `w2g/replay-then-full-handshake`）：补发之后在同一条连接上照常发两份快照和一份新的 `RecoveryStateReport`，
+   再读 readiness；未确认的旧 `RecoveryStateReport` 不再补发，由新报告取代。车载端 G2 的替身同时照真服务端改成快照 revision
+   按会话清空、补发进后一个会话的 `SafetyStateChanged` 只回 ack。
 
-**这条场景要等 #33 修好才会整条 PASS。**#33 票里记着为什么不能简单地让服务端在补发 ack 后发一条 readiness：新世代没有快照，
-能发的只有 `RecoveryRequired`，车收下就进接收循环、不再发快照，会从「超时后自愈」变成卡死。这一点目前是按代码推的，没有实测。
+服务端不改，是因为补一条 readiness 也没用：新世代没收到能力快照，readiness 里的 `acceptedCapabilityVersion` 只能是 0，
+车载端会以 `HANDSHAKE_SEQUENCE_INVALID` 拒收。握手途中服务端还会在两种补发之后多写几行（补发一条服务端没收到过的
+`SafetyStateChanged`；补发结果时还有未确认的开着的恢复会话快照），这条场景不覆盖，记在 onboard-hmi#50。
 
 ## `real-onboard-compensate-then-reconnect`：补偿会话留下的报文，车下一次重连时怎样
 

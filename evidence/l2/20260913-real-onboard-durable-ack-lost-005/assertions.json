@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-durable-ack-lost",
+  "runId": "20260913T064044912Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "BATCH-3",
+    "controlServerCommit": "8ef2e18006c67a052904a55a9cb648c48ff7ebe1",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260913T064044912Z",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "onboardHmiCommit": "a56a59d961f46e20a0208977a4ba53b11d9c79ac",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-DA-00",
+      "description": "车载端的会话经协议故障代理建立（否则丢 ack 注入不到这条链路上）",
+      "outcome": "PASS",
+      "expected": ">= 1 SessionHello through the proxy",
+      "actual": 1
+    },
+    {
+      "id": "L2-DA-01",
+      "description": "丢掉的是一份服务端已经收下的装载结果：ProtocolInbox 有这一行，装载已 Committed",
+      "outcome": "PASS",
+      "expected": "OperationResult / Committed",
+      "actual": "OperationResult / Committed"
+    },
+    {
+      "id": "L2-DA-02",
+      "description": "车重连后在新会话里补发同一 messageId 的 OperationResult，sessionGeneration 换成新的",
+      "outcome": "PASS",
+      "expected": "same messageId replayed at a newer generation",
+      "actual": "first on connection 1 at generation 1; 1 replay(s), first on connection 2 at generation 2"
+    },
+    {
+      "id": "L2-DA-03",
+      "description": "补发的 OperationResult 被服务端以 DurableAck 确认（不是掐连接）",
+      "outcome": "PASS",
+      "expected": "DurableAck for 2143d83f-eb6c-fc52-a5f0-1fe6ae767275 on a connection after 1",
+      "actual": "acknowledged"
+    },
+    {
+      "id": "L2-DA-05",
+      "description": "补发被确认之后旅程照常走完",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-DA-06",
+      "description": "装载结果只记了一次，卸载 Committed，需求 Succeeded",
+      "outcome": "PASS",
+      "expected": "1 / Committed / Succeeded",
+      "actual": "1 / Committed / Succeeded"
+    },
+    {
+      "id": "L2-DA-04",
+      "description": "补发之后服务端不再掐连接：丢 ack 之后没有一条连接是被服务端关掉的",
+      "outcome": "PASS",
+      "expected": "0 connections after the drop ended by anyone but the onboard",
+      "actual": "0 (#1: relay dropped DurableAck for OperationResult; #2: open)"
+    },
+    {
+      "id": "L2-DA-07",
+      "description": "丢一次 ack 只换来一次重连：之后只有一条连接，而且到收尾还开着",
+      "outcome": "PASS",
+      "expected": "2 connections, 1 open",
+      "actual": "2 connections, 1 open (#1: relay dropped DurableAck for OperationResult; #2: open)"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 44 lines, 44 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 16594 ms."
+    }
+  ]
+}
