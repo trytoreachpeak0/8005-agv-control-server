@@ -1,9 +1,9 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-    W1 field probe for one vehicle: fires each slot's unlock output on the vehicle's IO module, watches
-    lock feedback and light curtain while a person operates the slot, and writes the vehicle's field
-    record for ControlServer.FieldOps verify.
+    W1 field probe for one vehicle: opens each slot in turn on the vehicle's IO module, follows lock
+    feedback and light curtain while the person at the vehicle operates that slot, and writes the
+    vehicle's field record for ControlServer.FieldOps verify.
 
 .DESCRIPTION
     Why it goes around the onboard client. On the ControlServer_MVP line the onboard client pulses an
@@ -13,39 +13,45 @@
     probe talks to the module itself, with the onboard client closed, exactly the way the client does:
     FC05 to fire, FC01/FC02 to read (see W1SlotIo.ps1).
 
-    What is measured and what a person says. The three booleans in the record are derived from both,
-    and every input to the derivation is written next to it under raw/<siteAlias>/slot<n>.json:
+    Nobody at a keyboard. The person at the vehicle only operates the slots; the probe follows them on
+    the IO. For each slot in order: wait until every slot reads locked and every output idle, fire the
+    unlock, then follow the image until lock feedback has gone released and come back locked -- the
+    door closed -- while the person puts something in the slot, takes it out and closes the door. Only
+    then does the next slot open, so at most one door is ever open. There are two questions per vehicle,
+    through -Responder: before anything is fired, that the vehicle is stopped and clear; and after the
+    eighth slot, which doors did not spring open as the one and only door of the slot being fired.
 
-      open     outputs idle and slot locked before the pulse, the module accepted FC05, the unlock
-               output was seen set and cleared by the module within OutputResetTimeoutMs, lock feedback
-               went to released within UnlockFeedbackTimeoutMs, no other output and no other slot's lock
-               feedback moved, and the person saw this slot's door, and only this one, spring open
-      close    after the person closed the door, lock feedback read locked for StableMs, and every
-               output was idle
-      inPlace  the curtain read empty before, read object while the person held something in the slot,
-               and read empty again once it was taken out
+    What decides each boolean, all of it written under raw/<siteAlias>/slot<n>.json:
+
+      open     before the pulse every output idle and this slot locked; the module accepted FC05; the
+               unlock output was seen set and cleared by the module within OutputResetTimeoutMs; lock
+               feedback went released within UnlockFeedbackTimeoutMs; while the slot was open no other
+               output and no other slot's lock feedback moved; and the person did not name this slot
+               among the doors that did not open correctly
+      close    lock feedback came back locked for StableMs, and every output was idle afterwards
+      inPlace  the curtain read empty before, then read object for StableMs, then empty again for StableMs
 
     The levels are ticket 35's approved facts, the same ones ApprovedSlotHardwareFacts.SignalPolarity
     spells out per signal: unlock 1 cleared by the module's 500 ms pulse, locked 1, released 0, curtain
     object 0, curtain empty 1.
 
-    A person on site is the point. The door springing open, the object in the slot, the door closed by
-    hand -- those are physical facts the IO image cannot see on its own (REQ-0263: a simulated result
-    must never stand in for a field pass). Nothing here types true on anyone's behalf.
+    A person at the vehicle is the point. The door springing open, the object in the slot, the door
+    closed by hand -- the IO image cannot produce those by itself (REQ-0263: a simulated result must
+    never stand in for a field pass). Nothing here types true on anyone's behalf.
 
-    Safety. The probe refuses while the onboard client or the slots simulator runs on the vehicle (a
-    second Modbus master would race the client, and the simulator would make the reading meaningless),
-    asks the person to type the vehicle's alias to confirm it is stopped and clear, fires one slot at a
-    time only after the person says that slot is closed and hands are off, and clears an output the
-    module left set rather than leave a lock energised.
+    Stops for the whole vehicle, writing aborted.json and no record, when it cannot know it is safe to
+    go on: another slot not locked before a pulse, lock feedback never going released after one (there
+    is then no signal for the door closing, and firing the next slot could leave two doors open), or a
+    door not closed within DoorCloseTimeoutSeconds. An output the module left set is cleared at once and
+    the slot fails; that does not stop the vehicle.
 
-    Records are append-only. The record file and the raw directory must not exist; a second attempt on
-    the same vehicle goes to a new -RecordDirectory.
+    Refuses while the onboard client or the slots simulator runs on the vehicle. Records are
+    append-only: the record file and the raw directory must not exist.
 
 .EXAMPLE
     pwsh -File scripts/field/Invoke-W1SlotIoProbe.ps1 -SiteAlias agv01 -Order 1 -AgvId '老厂前线新多仓位1' `
         -IoModuleHost 192.168.71.150 -SlotModelVersionId <from FieldOps status> -VerifiedBy 'Zhengyu Shao' `
-        -RecordDirectory scripts/field/records/20260914-W1 -PhotoPointers 'field-photos/20260914-W1/agv01-panel.jpg'
+        -RecordDirectory scripts/field/records/20260913-W1
 #>
 [CmdletBinding(DefaultParameterSetName = 'Ssh')]
 param(
@@ -63,8 +69,7 @@ param(
     [Parameter(Mandatory)][string]$RecordDirectory,
     [string[]]$PhotoPointers = @(),
 
-    # The vehicle's real module address. Never read from a template and never guessed: agv01's is in
-    # site-agv01.json, agv02's and agv03's are measured on the day.
+    # The vehicle's real module address, measured, never guessed (remote-ops/fleet.md).
     [Parameter(ParameterSetName = 'Ssh', Mandatory)][string]$IoModuleHost,
 
     # Rehearsal only: the module is a slots simulator on this machine.
@@ -82,11 +87,12 @@ param(
     [int]$UnlockFeedbackTimeoutMs = 3000,
     [int]$OutputResetTimeoutMs = 3000,
     [int]$StableMs = 300,
-    [int]$CloseFeedbackTimeoutMs = 10000,
-    [int]$CurtainSettleTimeoutMs = 5000,
 
-    # Answers the prompts. Receives (promptId, slotNumber, text) and returns the answer. The default
-    # reads the console; the rehearsal passes one that plays the person against the simulator.
+    # How long the person has, per slot, from the door springing open to the door closed.
+    [int]$DoorCloseTimeoutSeconds = 300,
+
+    # Answers the two questions. Receives (promptId, slotNumber, text) and returns the answer. The
+    # default reads the console.
     [scriptblock]$Responder
 )
 
@@ -178,6 +184,44 @@ function Write-Json {
     $Value | ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
 }
 
+function Say {
+    param([string]$Text)
+    Write-Host "$(Get-Date -Format 'HH:mm:ss') $SiteAlias $Text"
+}
+
+$slotStates = [System.Collections.Generic.List[object]]::new()
+
+function Stop-Vehicle {
+    param([Parameter(Mandatory)][string]$Reason)
+
+    Write-Json -Value ([ordered]@{
+            aborted   = $Reason
+            at        = (Get-Date).ToString('o')
+            agvId     = $AgvId
+            siteAlias = $SiteAlias
+            slots     = $slotStates
+            answers   = $answers
+        }) -Path (Join-Path $rawDirectory 'aborted.json')
+    Say "停止：$Reason"
+    throw "W1 probe stopped on ${SiteAlias}: $Reason No record was written."
+}
+
+# Index of the first image at or after StartIndex where the channel reads Value and keeps reading it for
+# MinimumMs -- until the next image that differs, or the last image.
+function Find-StableLevel {
+    param([object[]]$Images, [int]$Channel, [int]$Value, [int]$StartIndex, [int]$MinimumMs)
+
+    for ($i = [math]::Max($StartIndex, 0); $i -lt $Images.Count; $i++) {
+        if ($Images[$i].di[$Channel] -ne $Value) { continue }
+        $end = $Images[$Images.Count - 1].elapsedMs
+        for ($j = $i + 1; $j -lt $Images.Count; $j++) {
+            if ($Images[$j].di[$Channel] -ne $Value) { $end = $Images[$j].elapsedMs; break }
+        }
+        if ($end - $Images[$i].elapsedMs -ge $MinimumMs) { return $i }
+    }
+    -1
+}
+
 # --- preflight -----------------------------------------------------------------------------------
 
 $preflight = [ordered]@{
@@ -213,7 +257,7 @@ else {
     Write-Json -Value $preflight -Path (Join-Path $rawDirectory 'preflight.json')
 }
 
-$confirmation = Ask -Id 'vehicle-safe' -Slot 0 -Text "确认 $SiteAlias（$AgvId）已停稳、周边无人、车载端与模拟器都已关闭、八个仓门都关着且仓内无物。输入 $SiteAlias 继续"
+$confirmation = Ask -Id 'vehicle-safe' -Slot 0 -Text "确认 $SiteAlias（$AgvId）已停稳、周边无人、车载端与模拟器都已关闭、八个仓门都关着且仓内无物、有人在车前按顺序操作仓门。输入 $SiteAlias 继续"
 if ($confirmation -ne $SiteAlias) {
     Write-Json -Value ([ordered]@{ aborted = 'vehicle-safe not confirmed'; answers = $answers }) -Path (Join-Path $rawDirectory 'aborted.json')
     throw "Not confirmed (expected '$SiteAlias'). Nothing was fired."
@@ -224,31 +268,10 @@ Write-Json -Value $initial -Path (Join-Path $rawDirectory 'initial-image.json')
 
 # --- per slot ------------------------------------------------------------------------------------
 
-$checkLabels = [ordered]@{
-    outputsIdleBefore      = '开锁前有输出处于置位'
-    lockedBefore           = '开锁前锁反馈不是锁闭'
-    pulseAccepted          = '模块未接受开锁写入'
-    outputObserved         = '没读到开锁输出置位'
-    outputReset            = '开锁输出没有被模块按时复位'
-    lockReleased           = '锁反馈没有按时变为打开'
-    channelUnique          = '开锁时有别的输出或别的仓锁反馈变化'
-    doorOpenedHere         = '现场人员没看到本仓（且只有本仓）弹开'
-    emptyBefore            = '开锁前光幕不是无物'
-    curtainDetectsObject   = '放入物体后光幕没有读到有物'
-    curtainClearsWhenEmpty = '取出物体后光幕没有回到无物'
-    lockReturnedOnClose    = '关门后锁反馈没有稳定回到锁闭'
-    outputsIdleAfter       = '关门后仍有输出处于置位'
-}
-
-$recordSlots = [System.Collections.Generic.List[object]]::new()
-$summaryRows = [System.Collections.Generic.List[object]]::new()
-
 foreach ($slot in 1..$slotCount) {
     $doChannel = $slot - 1
     $lockChannel = $slot - 1
     $curtainChannel = $slot - 1 + $slotCount
-    $answerStart = $answers.Count
-    $rawPath = Join-Path $rawDirectory "slot$slot.json"
     $raw = [ordered]@{
         agvId              = $AgvId
         siteAlias          = $SiteAlias
@@ -259,110 +282,149 @@ foreach ($slot in 1..$slotCount) {
             lightCurtain = "DI$($slot + $slotCount) (input $($DiStartAddress + $curtainChannel))"
         }
         expectedLevels     = [ordered]@{
-            source       = 'ticket 35 (8005-agv-program .scratch/current-requirements-baseline/issues/35)'
-            unlockActive = 1
-            locked       = $lockedLevel
-            released     = $releasedLevel
+            source        = 'ticket 35 (8005-agv-program .scratch/current-requirements-baseline/issues/35)'
+            unlockActive  = 1
+            locked        = $lockedLevel
+            released      = $releasedLevel
             curtainObject = $curtainObjectLevel
-            curtainEmpty = $curtainEmptyLevel
+            curtainEmpty  = $curtainEmptyLevel
         }
-        steps              = [ordered]@{}
         checks             = [ordered]@{}
     }
     $checks = $raw.checks
+    $state = [ordered]@{ slot = $slot; raw = $raw }
+    $slotStates.Add($state)
 
-    $begin = Ask -Id 'slot-ready' -Slot $slot -Text "[$slot/8] 确认 $slot 号仓门关着、仓内无物、手已离开，回车开锁；输入 skip 跳过本仓（本仓记为未通过）"
-    if ($begin -eq 'skip') {
-        $raw.skipped = $true
-        $raw.answers = @($answers | Select-Object -Skip $answerStart)
-        Write-Json -Value $raw -Path $rawPath
-        $recordSlots.Add([ordered]@{
-            physicalSlotNumber     = $slot
-            openSignalConfirmed    = $false
-            closeSignalConfirmed   = $false
-            inPlaceSignalConfirmed = $false
-            fieldRecordReference   = "raw/$SiteAlias/slot$slot.json"
-            note                   = '现场跳过，未核对'
-        })
-        $summaryRows.Add([pscustomobject]@{ slot = $slot; open = $false; close = $false; inPlace = $false; note = '跳过' })
-        continue
+    # 1. Nothing else open: every output idle, every slot locked. The previous door has to be shut
+    #    before this one springs.
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $closedImage = $null
+    while ($clock.Elapsed.TotalSeconds -lt $DoorCloseTimeoutSeconds) {
+        $image = (Invoke-Io -Arguments @{ Operation = 'image' }).before
+        $idle = @($image.do | Where-Object { $_ -ne 0 }).Count -eq 0
+        $allLocked = @(0..($slotCount - 1) | Where-Object { $image.di[$_] -ne $lockedLevel }).Count -eq 0
+        if ($idle -and $allLocked) { $closedImage = $image; break }
+        Start-Sleep -Seconds 2
+    }
+    if (-not $closedImage) {
+        Stop-Vehicle "开 $slot 号仓之前，车上仍有仓未锁闭或有输出置位，等了 $DoorCloseTimeoutSeconds 秒。"
     }
 
-    # 1. Fire and watch.
+    # 2. Fire, and follow the slot until its door is closed again.
+    Say "[$slot/8] 开 $slot 号仓：放一个物体进去挡住光幕，取出，再关门"
     $pulse = $null
     try {
-        $pulse = Invoke-Io -Arguments @{ Operation = 'pulse'; Channel = $doChannel; DurationMs = [math]::Max($UnlockFeedbackTimeoutMs, $OutputResetTimeoutMs) }
+        $pulse = Invoke-Io -Arguments @{
+            Operation       = 'pulse'
+            Channel         = $doChannel
+            DurationMs      = $DoorCloseTimeoutSeconds * 1000
+            IntervalMs      = 50
+            UntilDiChannel  = $lockChannel
+            ArmValue        = $releasedLevel
+            ArmTimeoutMs    = $UnlockFeedbackTimeoutMs
+            UntilValue      = $lockedLevel
+            StableMs        = $StableMs
+            ResetDeadlineMs = $OutputResetTimeoutMs
+            ChangesOnly     = $true
+        }
         $checks.pulseAccepted = $true
     }
     catch {
         $raw.pulseError = $_.Exception.Message
         $checks.pulseAccepted = $false
+        Stop-Vehicle "$slot 号仓开锁写入失败：$($_.Exception.Message)"
     }
-    $raw.steps.pulse = $pulse
+    $raw.pulse = $pulse
 
-    if ($pulse) {
-        $before = $pulse.before
-        $trace = @($pulse.trace)
-        $checks.outputsIdleBefore = @($before.do | Where-Object { $_ -ne 0 }).Count -eq 0
-        $checks.lockedBefore = $before.di[$lockChannel] -eq $lockedLevel
-        $checks.emptyBefore = $before.di[$curtainChannel] -eq $curtainEmptyLevel
+    $before = $pulse.before
+    $images = @(@($pulse.trace) + @($pulse.after))
+    $checks.outputsIdleBefore = @($before.do | Where-Object { $_ -ne 0 }).Count -eq 0
+    $checks.lockedBefore = $before.di[$lockChannel] -eq $lockedLevel
+    $checks.emptyBefore = $before.di[$curtainChannel] -eq $curtainEmptyLevel
 
-        $firstSet = $trace | Where-Object { $_.do[$doChannel] -eq 1 } | Select-Object -First 1
-        $checks.outputObserved = $null -ne $firstSet
-        $firstCleared = $firstSet ? ($trace | Where-Object { $_.elapsedMs -gt $firstSet.elapsedMs -and $_.do[$doChannel] -eq 0 } | Select-Object -First 1) : $null
-        $raw.outputResetMs = $firstCleared ? $firstCleared.elapsedMs - $pulse.pulseSentAtMs : $null
-        $checks.outputReset = $checks.outputObserved -and -not $pulse.forcedReset -and $null -ne $firstCleared -and
-            $raw.outputResetMs -le $OutputResetTimeoutMs -and $pulse.after.do[$doChannel] -eq 0
+    $firstSet = $images | Where-Object { $_.do[$doChannel] -eq 1 } | Select-Object -First 1
+    $checks.outputObserved = $null -ne $firstSet
+    $firstCleared = $firstSet ? ($images | Where-Object { $_.elapsedMs -gt $firstSet.elapsedMs -and $_.do[$doChannel] -eq 0 } | Select-Object -First 1) : $null
+    $raw.outputResetMs = $firstCleared ? $firstCleared.elapsedMs - $pulse.pulseSentAtMs : $null
+    $checks.outputReset = $checks.outputObserved -and -not $pulse.forcedReset -and $null -ne $firstCleared -and
+        $raw.outputResetMs -le $OutputResetTimeoutMs
 
-        $released = $trace | Where-Object { $_.di[$lockChannel] -eq $releasedLevel } | Select-Object -First 1
-        $raw.lockReleaseMs = $released ? $released.elapsedMs - $pulse.pulseSentAtMs : $null
-        $checks.lockReleased = $null -ne $released -and $raw.lockReleaseMs -le $UnlockFeedbackTimeoutMs
+    $releasedIndex = -1
+    for ($i = 0; $i -lt $images.Count; $i++) { if ($images[$i].di[$lockChannel] -eq $releasedLevel) { $releasedIndex = $i; break } }
+    $raw.lockReleaseMs = $releasedIndex -ge 0 ? $images[$releasedIndex].elapsedMs - $pulse.pulseSentAtMs : $null
+    $checks.lockReleased = $releasedIndex -ge 0 -and $raw.lockReleaseMs -le $UnlockFeedbackTimeoutMs
 
-        # Channel uniqueness: during the pulse nothing but this slot's own output and lock feedback may
-        # move. Other light curtains are not held to it -- a person leaning on the vehicle is not a
-        # wiring fault -- but any movement is kept in the raw record.
-        $moved = [System.Collections.Generic.SortedSet[string]]::new()
-        $curtainsMoved = [System.Collections.Generic.SortedSet[string]]::new()
-        foreach ($image in @($trace) + @($pulse.after)) {
-            for ($channel = 0; $channel -lt $ChannelCount; $channel++) {
-                if ($channel -ne $doChannel -and $image.do[$channel] -ne $before.do[$channel]) { $null = $moved.Add("DO$($channel + 1)") }
-            }
-            for ($other = 0; $other -lt $slotCount; $other++) {
-                if ($other -ne $lockChannel -and $image.di[$other] -ne $before.di[$other]) { $null = $moved.Add("DI$($other + 1)") }
-                $otherCurtain = $other + $slotCount
-                if ($otherCurtain -ne $curtainChannel -and $image.di[$otherCurtain] -ne $before.di[$otherCurtain]) { $null = $curtainsMoved.Add("DI$($otherCurtain + 1)") }
-            }
+    if (-not $checks.lockReleased) {
+        Stop-Vehicle "$slot 号仓开锁后锁反馈没有在 $UnlockFeedbackTimeoutMs ms 内变为打开：没有信号能说明门什么时候关上，为免同时开着两扇门，不再开下一仓。"
+    }
+    if (-not $pulse.untilMet) {
+        Stop-Vehicle "$slot 号仓门在 $DoorCloseTimeoutSeconds 秒内没有关上（锁反馈没有稳定回到锁闭）。"
+    }
+
+    # Channel uniqueness: while this slot was open nothing but its own output and lock feedback may
+    # move. Other light curtains are not held to it -- a person leaning on the vehicle is not a wiring
+    # fault -- but any movement is kept.
+    $moved = [System.Collections.Generic.SortedSet[string]]::new()
+    $curtainsMoved = [System.Collections.Generic.SortedSet[string]]::new()
+    foreach ($image in $images) {
+        for ($channel = 0; $channel -lt $ChannelCount; $channel++) {
+            if ($channel -ne $doChannel -and $image.do[$channel] -ne $before.do[$channel]) { $null = $moved.Add("DO$($channel + 1)") }
         }
-        $raw.otherChannelsMoved = @($moved)
-        $raw.otherCurtainsMoved = @($curtainsMoved)
-        $checks.channelUnique = $moved.Count -eq 0
+        for ($other = 0; $other -lt $slotCount; $other++) {
+            if ($other -ne $lockChannel -and $image.di[$other] -ne $before.di[$other]) { $null = $moved.Add("DI$($other + 1)") }
+            $otherCurtain = $other + $slotCount
+            if ($otherCurtain -ne $curtainChannel -and $image.di[$otherCurtain] -ne $before.di[$otherCurtain]) { $null = $curtainsMoved.Add("DI$($otherCurtain + 1)") }
+        }
     }
+    $raw.otherChannelsMoved = @($moved)
+    $raw.otherCurtainsMoved = @($curtainsMoved)
+    $checks.channelUnique = $moved.Count -eq 0
 
-    # 2. What the person saw.
-    $door = Ask -Id 'door-opened' -Slot $slot -Text "[$slot/8] 弹开的是 $slot 号仓门、而且只有它吗？(y/n)"
-    $checks.doorOpenedHere = $door -match '^(y|yes|是)$'
+    $objectIndex = Find-StableLevel -Images $images -Channel $curtainChannel -Value $curtainObjectLevel -StartIndex $releasedIndex -MinimumMs $StableMs
+    $emptyAgainIndex = $objectIndex -ge 0 ? (Find-StableLevel -Images $images -Channel $curtainChannel -Value $curtainEmptyLevel -StartIndex ($objectIndex + 1) -MinimumMs $StableMs) : -1
+    $checks.curtainDetectsObject = $objectIndex -ge 0
+    $checks.curtainClearsWhenEmpty = $emptyAgainIndex -ge 0
+    $raw.objectSeenMs = $objectIndex -ge 0 ? $images[$objectIndex].elapsedMs : $null
+    $raw.emptyAgainMs = $emptyAgainIndex -ge 0 ? $images[$emptyAgainIndex].elapsedMs : $null
+    $raw.doorClosedMs = $pulse.after.elapsedMs
 
-    # 3. Light curtain with an object in and out.
-    $null = Ask -Id 'object-in' -Slot $slot -Text "[$slot/8] 往 $slot 号仓里放一个物体挡住光幕，手离开后回车"
-    $objectIn = Invoke-Io -Arguments @{ Operation = 'watch'; DurationMs = $CurtainSettleTimeoutMs; UntilDiChannel = $curtainChannel; UntilValue = $curtainObjectLevel; StableMs = $StableMs }
-    $raw.steps.objectIn = $objectIn
-    $checks.curtainDetectsObject = $objectIn.after.di[$curtainChannel] -eq $curtainObjectLevel
+    $checks.lockReturnedOnClose = $pulse.untilMet -and $pulse.after.di[$lockChannel] -eq $lockedLevel
+    $checks.outputsIdleAfter = @($pulse.after.do | Where-Object { $_ -ne 0 }).Count -eq 0
 
-    $null = Ask -Id 'object-out' -Slot $slot -Text "[$slot/8] 把物体取出，回车"
-    $objectOut = Invoke-Io -Arguments @{ Operation = 'watch'; DurationMs = $CurtainSettleTimeoutMs; UntilDiChannel = $curtainChannel; UntilValue = $curtainEmptyLevel; StableMs = $StableMs }
-    $raw.steps.objectOut = $objectOut
-    $checks.curtainClearsWhenEmpty = $objectOut.after.di[$curtainChannel] -eq $curtainEmptyLevel
+    Say ("[$slot/8] {0} 号仓门已关（光幕有物 {1}，取出 {2}，锁反馈打开 {3} ms，DO 复位 {4} ms）" -f $slot,
+        ($checks.curtainDetectsObject ? '读到' : '没读到'), ($checks.curtainClearsWhenEmpty ? '读到' : '没读到'),
+        ($raw.lockReleaseMs ?? '-'), ($raw.outputResetMs ?? '-'))
+}
 
-    # 4. Close by hand.
-    $null = Ask -Id 'door-closed' -Slot $slot -Text "[$slot/8] 关上 $slot 号仓门，回车"
-    $closed = Invoke-Io -Arguments @{ Operation = 'watch'; DurationMs = $CloseFeedbackTimeoutMs; UntilDiChannel = $lockChannel; UntilValue = $lockedLevel; StableMs = $StableMs }
-    $raw.steps.closed = $closed
-    $checks.lockReturnedOnClose = $closed.after.di[$lockChannel] -eq $lockedLevel
-    $checks.outputsIdleAfter = @($closed.after.do | Where-Object { $_ -ne 0 }).Count -eq 0
+# --- what the person saw -------------------------------------------------------------------------
 
-    foreach ($name in $checkLabels.Keys) {
-        if (-not $checks.Contains($name)) { $checks[$name] = $false }
-    }
+$doorAnswer = Ask -Id 'doors-observed' -Slot 0 -Text "$SiteAlias 的 8 个仓是否都按 1 到 8 的顺序、每次只弹开当时那一仓的门？都对就回答 all；有不对的写出仓号，用逗号隔开（例如 3,5）"
+$wrongDoors = @($doorAnswer -split '[,，、\s]+' | Where-Object { $_ -match '^\d+$' } | ForEach-Object { [int]$_ })
+$doorAnswerUnderstood = $doorAnswer -eq 'all' -or ($wrongDoors.Count -gt 0 -and @($wrongDoors | Where-Object { $_ -lt 1 -or $_ -gt $slotCount }).Count -eq 0)
+
+$checkLabels = [ordered]@{
+    outputsIdleBefore      = '开锁前有输出处于置位'
+    lockedBefore           = '开锁前锁反馈不是锁闭'
+    pulseAccepted          = '模块未接受开锁写入'
+    outputObserved         = '没读到开锁输出置位'
+    outputReset            = '开锁输出没有被模块按时复位'
+    lockReleased           = '锁反馈没有按时变为打开'
+    channelUnique          = '开着这一仓时有别的输出或别的仓锁反馈变化'
+    doorOpenedHere         = '现场人员说这一仓的门没有正确弹开'
+    emptyBefore            = '开锁前光幕不是无物'
+    curtainDetectsObject   = '光幕没有稳定读到有物'
+    curtainClearsWhenEmpty = '取出后光幕没有稳定回到无物'
+    lockReturnedOnClose    = '关门后锁反馈没有稳定回到锁闭'
+    outputsIdleAfter       = '关门后仍有输出处于置位'
+}
+
+$recordSlots = [System.Collections.Generic.List[object]]::new()
+$summaryRows = [System.Collections.Generic.List[object]]::new()
+foreach ($state in $slotStates) {
+    $slot = $state.slot
+    $raw = $state.raw
+    $checks = $raw.checks
+    $checks.doorOpenedHere = $doorAnswerUnderstood -and $wrongDoors -notcontains $slot
 
     $open = $checks.outputsIdleBefore -and $checks.lockedBefore -and $checks.pulseAccepted -and $checks.outputObserved -and
         $checks.outputReset -and $checks.lockReleased -and $checks.channelUnique -and $checks.doorOpenedHere
@@ -373,18 +435,18 @@ foreach ($slot in 1..$slotCount) {
     $timing = 'DO 复位 {0} ms，锁反馈打开 {1} ms' -f ($raw.outputResetMs ?? '-'), ($raw.lockReleaseMs ?? '-')
     $note = $failed.Count -eq 0 ? "探针直读模块，全部检查通过；$timing" : "未通过：$($failed -join '；')；$timing"
 
+    $raw.doorObservation = [ordered]@{ answer = $doorAnswer; understood = $doorAnswerUnderstood; wrongDoors = $wrongDoors }
     $raw.derived = [ordered]@{ openSignalConfirmed = $open; closeSignalConfirmed = $close; inPlaceSignalConfirmed = $inPlace }
-    $raw.answers = @($answers | Select-Object -Skip $answerStart)
-    Write-Json -Value $raw -Path $rawPath
+    Write-Json -Value $raw -Path (Join-Path $rawDirectory "slot$slot.json")
 
     $recordSlots.Add([ordered]@{
-        physicalSlotNumber     = $slot
-        openSignalConfirmed    = $open
-        closeSignalConfirmed   = $close
-        inPlaceSignalConfirmed = $inPlace
-        fieldRecordReference   = "raw/$SiteAlias/slot$slot.json"
-        note                   = $note
-    })
+            physicalSlotNumber     = $slot
+            openSignalConfirmed    = $open
+            closeSignalConfirmed   = $close
+            inPlaceSignalConfirmed = $inPlace
+            fieldRecordReference   = "raw/$SiteAlias/slot$slot.json"
+            note                   = $note
+        })
     $summaryRows.Add([pscustomobject]@{ slot = $slot; open = $open; close = $close; inPlace = $inPlace; note = $note })
 }
 

@@ -2,19 +2,20 @@
 <#
 .SYNOPSIS
     Modbus TCP primitives for the W1 slot IO probe: read the module's output and input image, fire one
-    unlock output, and watch the image while a person operates the slot.
+    unlock output, and follow the image while a person operates the slot.
 
 .DESCRIPTION
     Plain functions, not a module. Invoke-W1SlotIoProbe.ps1 dot-sources this file when the module is
     reachable from the machine it runs on (a rehearsal against the slots simulator), and sends this
     file's text over ssh when the module sits on a vehicle's own LAN -- the HMI machine is the only
-    place the real module can be reached from. Nothing here may need a module scope, and the file
-    stays ASCII so the text survives -EncodedCommand unchanged.
+    place the real module can be reached from. Nothing here may need a module scope, the file stays
+    ASCII so the text survives -EncodedCommand unchanged, and '#' appears only in comments so the
+    sender can strip them.
 
     It speaks the subset the onboard client speaks (SQCD.Agv.Infrastructure.ModbusTcpIoModuleClient):
     FC01 for the unlock outputs, FC02 for lock feedback and light curtain inputs, FC05 0xFF00 to fire
     an unlock. The module's pulse mode clears the output by itself. FC05 0x0000 is sent only when it
-    has not, because a lock held energised burns out (ticket 35).
+    has not, and as soon as the deadline passes, because a lock held energised burns out (ticket 35).
 #>
 
 function New-W1ModbusSession {
@@ -153,10 +154,14 @@ function Set-W1Coil {
 One exchange with the module, start to finish on one connection.
 
   image  read the output and input image once
-  pulse  read the image, fire FC05 0xFF00 on one unlock output, watch for DurationMs; if the module
-         has not cleared the output by then, clear it and say so (forcedReset)
-  watch  read the image repeatedly for DurationMs, or until UntilDiChannel has read UntilValue for
-         StableMs
+  pulse  read the image, fire FC05 0xFF00 on one unlock output, then follow the image like watch; if the
+         output is still set at ResetDeadlineMs, clear it at once and say so (forcedReset)
+  watch  read the image repeatedly for DurationMs
+
+Following stops early once UntilDiChannel has read UntilValue for StableMs. With ArmValue set, that
+condition only counts after the channel has first read ArmValue -- "released, then locked again" --
+and if it has not read ArmValue by ArmTimeoutMs the operation stops there (armTimedOut). ChangesOnly
+keeps only the images that differ from the one before, so a long follow stays small.
 
 Endpoint is a hashtable: HostName, Port, UnitId, DoStart, DiStart, Channels.
 #>
@@ -169,7 +174,11 @@ function Invoke-W1IoOperation {
         [int]$IntervalMs = 20,
         [int]$UntilDiChannel = -1,
         [int]$UntilValue = -1,
-        [int]$StableMs = 300
+        [int]$StableMs = 300,
+        [int]$ArmValue = -1,
+        [int]$ArmTimeoutMs = 0,
+        [int]$ResetDeadlineMs = 3000,
+        [switch]$ChangesOnly
     )
 
     $session = New-W1ModbusSession -HostName $Endpoint.HostName -Port $Endpoint.Port -UnitId $Endpoint.UnitId
@@ -189,32 +198,60 @@ function Invoke-W1IoOperation {
             $clock.Restart()
             Set-W1Coil -Session $session -Address ($Endpoint.DoStart + $Channel) -On $true
             $result.pulseSentAtMs = [int]$clock.ElapsedMilliseconds
+            $result.forcedReset = $false
         }
 
         $trace = [System.Collections.Generic.List[object]]::new()
         $stableSince = $null
+        $armed = $ArmValue -lt 0
+        $previous = $null
+        $result.untilMet = $false
+        $result.armTimedOut = $false
         while ($clock.ElapsedMilliseconds -lt $DurationMs) {
             $image = Get-W1IoImage -Session $session -Endpoint $Endpoint -Clock $clock
-            $trace.Add($image)
+            $changed = $null -eq $previous -or ($image.do -join '') -ne ($previous.do -join '') -or ($image.di -join '') -ne ($previous.di -join '')
+            if (-not $ChangesOnly -or $changed) { $trace.Add($image) }
+            $previous = $image
+
+            if ($Operation -eq 'pulse' -and -not $result.forcedReset -and $image.elapsedMs -ge $ResetDeadlineMs -and $image.do[$Channel] -eq 1) {
+                Set-W1Coil -Session $session -Address ($Endpoint.DoStart + $Channel) -On $false
+                $result.forcedReset = $true
+                $result.forcedResetAtMs = $image.elapsedMs
+            }
+
             if ($UntilDiChannel -ge 0) {
-                if ($image.di[$UntilDiChannel] -eq $UntilValue) {
-                    $stableSince ??= $image.elapsedMs
-                    if ($image.elapsedMs - $stableSince -ge $StableMs) { break }
+                if (-not $armed) {
+                    if ($image.di[$UntilDiChannel] -eq $ArmValue) {
+                        $armed = $true
+                    }
+                    elseif ($ArmTimeoutMs -gt 0 -and $image.elapsedMs -ge $ArmTimeoutMs) {
+                        $result.armTimedOut = $true
+                        break
+                    }
                 }
-                else {
-                    $stableSince = $null
+                if ($armed) {
+                    if ($image.di[$UntilDiChannel] -eq $UntilValue) {
+                        $stableSince ??= $image.elapsedMs
+                        if ($image.elapsedMs - $stableSince -ge $StableMs) {
+                            $result.untilMet = $true
+                            break
+                        }
+                    }
+                    else {
+                        $stableSince = $null
+                    }
                 }
             }
             Start-Sleep -Milliseconds $IntervalMs
         }
         $result.trace = $trace
 
-        if ($Operation -eq 'pulse') {
-            $result.forcedReset = $false
-            $last = $trace.Count -gt 0 ? $trace[$trace.Count - 1] : $result.before
+        if ($Operation -eq 'pulse' -and -not $result.forcedReset) {
+            $last = Get-W1IoImage -Session $session -Endpoint $Endpoint -Clock $clock
             if ($last.do[$Channel] -eq 1) {
                 Set-W1Coil -Session $session -Address ($Endpoint.DoStart + $Channel) -On $false
                 $result.forcedReset = $true
+                $result.forcedResetAtMs = $last.elapsedMs
             }
         }
 

@@ -5,26 +5,28 @@
     then Invoke-W1FieldWindow.ps1 over the probe's records against a freshly migrated database.
 
 .DESCRIPTION
-    Not evidence and not a gate. The simulator stands in for the IO module and a script plays the
-    person at the vehicle, which is exactly what REQ-0263 says a field pass must never be; what this
-    shows is that the tooling carried to the plant does what it says -- the Modbus exchange, the
-    derivation of each boolean, the record FieldOps accepts, and the window script run the way it will
-    run on the factory server (prebuilt FieldOps, commit passed in, no repository).
+    Not evidence and not a gate. The simulator stands in for the IO module and a background job plays
+    the person at the vehicle -- whenever a door is open it puts something in, takes it out and closes
+    the door -- which is exactly what REQ-0263 says a field pass must never be. What this shows is that
+    the tooling carried to the plant does what it says: the Modbus exchange, following the person on the
+    IO, the derivation of each boolean, the stops, the record FieldOps accepts, and the window script run
+    the way it runs on the factory server (prebuilt FieldOps, commit passed in, no photos).
 
       R-00      bind-io leaves three vehicles SLOT_CONFIGURATION_NEVER_VERIFIED
       R-01      the read-only module check passes an idle, closed, empty module
       R-11..13  three vehicles probed, every slot passes open, close and in-place
-      R-21      slot 3 with lock feedback stuck at locked: open fails, close and in-place pass
-      R-22      slot 5 where the person says it was not that door: open fails, the rest pass
-      R-23      the other six slots of that run are unaffected
+      R-21      slot 3 with lock feedback stuck at locked: the probe stops the vehicle, writes no record
+      R-22      slot 5 named by the person as not opening correctly: open fails, close and in-place pass
+      R-23      the other seven slots of that run are unaffected
       R-30      the W1 window over the three passing records is PASS
       R-31      the evidence carries the probe's raw records
       R-32      the Chinese agvId survives into the verdict
+      R-33      W1-06 passes on a written no-photo reason and resolvable slot records, with no photo
 
     Needs an interactive desktop: the simulator is a WPF application.
 
 .EXAMPLE
-    pwsh -File scripts/field/Invoke-W1SlotIoProbeRehearsal.ps1 -StageRoot $env:TEMP\w1-rehearsal-01 `
+    pwsh -File scripts/field/Invoke-W1SlotIoProbeRehearsal.ps1 -StageRoot $env:TEMP\w1-rehearsal-03 `
         -FieldOpsExecutable <self-contained publish>\ControlServer.FieldOps.exe
 #>
 [CmdletBinding()]
@@ -75,7 +77,7 @@ $logs = Join-Path $StageRoot 'logs'
 New-Item -ItemType Directory -Path $logs | Out-Null
 
 $results = [System.Collections.Generic.List[object]]::new()
-$expectedAssertions = 11
+$expectedAssertions = 12
 function Assert-Rehearsal {
     param([string]$Id, [string]$Description, [bool]$Passed, [string]$Actual)
 
@@ -134,46 +136,57 @@ function Wait-Until {
     $false
 }
 
-# The person at the vehicle, played against the simulator. It answers door-opened from what the
-# simulator's door actually did, except where the plan says the person saw something else.
+# The person at the vehicle: whenever a door is open, put something in, take it out, close the door.
+$personScript = {
+    param($Base)
+
+    function Send-Person([string]$Method, [string]$Path, [hashtable]$Body = @{}) {
+        for ($attempt = 1; $attempt -le 8; $attempt++) {
+            $snapshot = Invoke-RestMethod -Uri "$Base/snapshot" -TimeoutSec 10 -NoProxy
+            $payload = @{} + $Body
+            $payload.runId = $snapshot.runId
+            $payload.expectedRevision = $snapshot.revision
+            $payload.commandId = [guid]::NewGuid().ToString('D')
+            $response = Invoke-WebRequest -Uri "$Base$Path" -Method $Method -Body ($payload | ConvertTo-Json -Compress) `
+                -ContentType 'application/json' -SkipHttpErrorCheck -TimeoutSec 10 -NoProxy
+            if ([int]$response.StatusCode -lt 300) { return }
+            Start-Sleep -Milliseconds 100
+        }
+    }
+
+    while ($true) {
+        try {
+            $open = @((Invoke-RestMethod -Uri "$Base/snapshot" -TimeoutSec 10 -NoProxy).slots | Where-Object { $_.doorState -ne 'CLOSED' })
+            foreach ($slot in $open) {
+                Start-Sleep -Milliseconds 700
+                Send-Person PUT "/slots/$($slot.slotNo)/cargo" @{ state = 'OCCUPIED' }
+                Start-Sleep -Milliseconds 1200
+                Send-Person PUT "/slots/$($slot.slotNo)/cargo" @{ state = 'EMPTY' }
+                Start-Sleep -Milliseconds 1200
+                Send-Person POST "/slots/$($slot.slotNo)/close-door"
+            }
+        }
+        catch {
+            "person: $($_.Exception.Message)"
+        }
+        Start-Sleep -Milliseconds 200
+    }
+}
+
 $rehearsalAlias = $null
-$rehearsalFaults = @{}
-$person = {
+$rehearsalDoorAnswer = 'all'
+$rehearsalResponder = {
     param($PromptId, $SlotNumber, $Text)
 
     switch ($PromptId) {
         'vehicle-safe' { return $rehearsalAlias }
-        'slot-ready' {
-            if ($rehearsalFaults[$SlotNumber] -eq 'stuck-lock') {
-                Send-Simulator -Method PUT -Path "/slots/$SlotNumber/lock-feedback-override" -Body @{ mode = 'FIXED_1' }
-            }
-            return ''
-        }
-        'door-opened' {
-            if ($rehearsalFaults[$SlotNumber] -eq 'wrong-door') { return 'n' }
-            $open = @((Get-Simulator -Path '/snapshot').slots | Where-Object { $_.doorState -ne 'CLOSED' })
-            return ($open.Count -eq 1 -and $open[0].slotNo -eq $SlotNumber) ? 'y' : 'n'
-        }
-        'object-in' {
-            Send-Simulator -Method PUT -Path "/slots/$SlotNumber/cargo" -Body @{ state = 'OCCUPIED' }
-            return ''
-        }
-        'object-out' {
-            Send-Simulator -Method PUT -Path "/slots/$SlotNumber/cargo" -Body @{ state = 'EMPTY' }
-            return ''
-        }
-        'door-closed' {
-            if ($rehearsalFaults[$SlotNumber] -eq 'stuck-lock') {
-                Send-Simulator -Method PUT -Path "/slots/$SlotNumber/lock-feedback-override" -Body @{ mode = 'AUTO' }
-            }
-            Send-Simulator -Method POST -Path "/slots/$SlotNumber/close-door"
-            return ''
-        }
+        'doors-observed' { return $rehearsalDoorAnswer }
         default { throw "Unexpected prompt $PromptId" }
     }
 }
 
 $simulatorProcess = $null
+$personJob = $null
 try {
     $simulatorProcess = Start-Process -FilePath (Join-Path $simulatorDirectory 'SQCD_8005AGV_Simulator.exe') `
         -WorkingDirectory $simulatorDirectory -WindowStyle Normal -PassThru `
@@ -196,16 +209,16 @@ try {
         'W1-REHEARSAL,exact,4,w1-rehearsal,active,W1 probe rehearsal fixture'
     ) | Set-Content -LiteralPath $capacityCsv -Encoding utf8NoBOM
     $hostEnvironment = @{
-        'CONTROL_SERVER_ONBOARD_CREDENTIAL'          = [guid]::NewGuid().ToString('N')
-        'ConnectionStrings__ControlServer'           = "Data Source=$database"
-        'Health__url'                                = 'http://127.0.0.1:58597'
-        'OnboardTransport__listenAddress'            = '127.0.0.1'
-        'OnboardTransport__port'                     = '58595'
-        'MesIngest__baseUrl'                         = 'http://127.0.0.1:9'
-        'RIoT__baseUrl'                              = 'http://127.0.0.1:9'
-        'RIoT__callApiKeyEnvironmentVariable'        = 'CONTROL_SERVER_W1_REHEARSAL_DUMMY_RIOT_CALL_API_KEY'
+        'CONTROL_SERVER_ONBOARD_CREDENTIAL'                   = [guid]::NewGuid().ToString('N')
+        'ConnectionStrings__ControlServer'                    = "Data Source=$database"
+        'Health__url'                                         = 'http://127.0.0.1:58597'
+        'OnboardTransport__listenAddress'                     = '127.0.0.1'
+        'OnboardTransport__port'                              = '58595'
+        'MesIngest__baseUrl'                                  = 'http://127.0.0.1:9'
+        'RIoT__baseUrl'                                       = 'http://127.0.0.1:9'
+        'RIoT__callApiKeyEnvironmentVariable'                 = 'CONTROL_SERVER_W1_REHEARSAL_DUMMY_RIOT_CALL_API_KEY'
         'CONTROL_SERVER_W1_REHEARSAL_DUMMY_RIOT_CALL_API_KEY' = 'w1-rehearsal-not-a-production-secret'
-        'JourneyRuntime__enabled'                    = 'false'
+        'JourneyRuntime__enabled'                             = 'false'
     }
     $import = Start-Process -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
         -ArgumentList @('--import-package-capacity', '--input', $capacityCsv, '--version', '1') `
@@ -246,27 +259,29 @@ try {
 
     # --- probe --------------------------------------------------------------------------------------
 
-    $probe = Join-Path $PSScriptRoot 'Invoke-W1SlotIoProbe.ps1'
-    $records = Join-Path $StageRoot 'records'
-    $probeArguments = @{
-        Local              = $true
-        Port               = $ModbusPort
-        SlotModelVersionId = $seed.slotModelVersionId
-        VerifiedBy         = 'W1 rehearsal (scripted person)'
-        PhotoPointers      = @('rehearsal-no-photo')
-        Responder          = $person
-    }
-
     Send-Simulator -Method POST -Path '/reset'
     & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Test-W1SlotIoModule.ps1') -Local -Port $ModbusPort *> (Join-Path $logs 'module-check.log')
     $checkExit = $LASTEXITCODE
     Assert-Rehearsal -Id 'R-01' -Description '只读自检：输出空闲、八仓锁闭且无物的模块判为可以开始' -Passed ($checkExit -eq 0) `
         -Actual "exit $checkExit；$((Get-Content -LiteralPath (Join-Path $logs 'module-check.log') | Select-Object -Last 1))"
 
+    $personJob = Start-ThreadJob -ScriptBlock $personScript -ArgumentList $simulatorBase
+
+    $probe = Join-Path $PSScriptRoot 'Invoke-W1SlotIoProbe.ps1'
+    $records = Join-Path $StageRoot 'records'
+    $probeArguments = @{
+        Local                   = $true
+        Port                    = $ModbusPort
+        SlotModelVersionId      = $seed.slotModelVersionId
+        VerifiedBy              = 'W1 rehearsal (scripted person)'
+        DoorCloseTimeoutSeconds = 30
+        Responder               = $rehearsalResponder
+    }
+
     foreach ($vehicle in $vehicles) {
         Send-Simulator -Method POST -Path '/reset'
         $rehearsalAlias = $vehicle.Alias
-        $rehearsalFaults = @{}
+        $rehearsalDoorAnswer = 'all'
         & $probe @probeArguments -SiteAlias $vehicle.Alias -Order $vehicle.Order -AgvId $vehicle.AgvId -RecordDirectory $records
         $record = Get-Content -LiteralPath (Join-Path $records ('{0:d2}-{1}.json' -f $vehicle.Order, $vehicle.Alias)) -Raw | ConvertFrom-Json
         $passing = @($record.slots | Where-Object { $_.openSignalConfirmed -and $_.closeSignalConfirmed -and $_.inPlaceSignalConfirmed })
@@ -277,22 +292,43 @@ try {
     }
 
     Send-Simulator -Method POST -Path '/reset'
-    $negativeRecords = Join-Path $StageRoot 'records-negative'
+    $wrongDoorRecords = Join-Path $StageRoot 'records-wrong-door'
     $rehearsalAlias = 'agv01'
-    $rehearsalFaults = @{ 3 = 'stuck-lock'; 5 = 'wrong-door' }
-    & $probe @probeArguments -SiteAlias 'agv01' -Order 1 -AgvId '老厂前线新多仓位1' -RecordDirectory $negativeRecords
-    $negative = Get-Content -LiteralPath (Join-Path $negativeRecords '01-agv01.json') -Raw | ConvertFrom-Json
+    $rehearsalDoorAnswer = '5'
+    & $probe @probeArguments -SiteAlias 'agv01' -Order 1 -AgvId '老厂前线新多仓位1' -RecordDirectory $wrongDoorRecords
+    $wrongDoor = Get-Content -LiteralPath (Join-Path $wrongDoorRecords '01-agv01.json') -Raw | ConvertFrom-Json
     $bySlot = @{}
-    foreach ($slotRecord in $negative.slots) { $bySlot[[int]$slotRecord.physicalSlotNumber] = $slotRecord }
-    Assert-Rehearsal -Id 'R-21' -Description '锁反馈卡在锁闭的 3 号仓：开不通过，关与到位通过' `
-        -Passed (-not $bySlot[3].openSignalConfirmed -and $bySlot[3].closeSignalConfirmed -and $bySlot[3].inPlaceSignalConfirmed) `
-        -Actual $bySlot[3].note
-    Assert-Rehearsal -Id 'R-22' -Description '现场人员说不是 5 号仓门弹开：开不通过，关与到位通过' `
+    foreach ($slotRecord in $wrongDoor.slots) { $bySlot[[int]$slotRecord.physicalSlotNumber] = $slotRecord }
+    Assert-Rehearsal -Id 'R-22' -Description '现场人员说 5 号仓门没有正确弹开：开不通过，关与到位通过' `
         -Passed (-not $bySlot[5].openSignalConfirmed -and $bySlot[5].closeSignalConfirmed -and $bySlot[5].inPlaceSignalConfirmed) `
         -Actual $bySlot[5].note
-    $collateral = @(1, 2, 4, 6, 7, 8 | Where-Object { -not ($bySlot[$_].openSignalConfirmed -and $bySlot[$_].closeSignalConfirmed -and $bySlot[$_].inPlaceSignalConfirmed) })
-    Assert-Rehearsal -Id 'R-23' -Description '同一轮其余六仓不受影响' -Passed ($collateral.Count -eq 0) `
-        -Actual ($collateral.Count ? "受影响：$($collateral -join '、')" : '六仓全部通过')
+    $collateral = @(1, 2, 3, 4, 6, 7, 8 | Where-Object { -not ($bySlot[$_].openSignalConfirmed -and $bySlot[$_].closeSignalConfirmed -and $bySlot[$_].inPlaceSignalConfirmed) })
+    Assert-Rehearsal -Id 'R-23' -Description '同一轮其余七仓不受影响' -Passed ($collateral.Count -eq 0) `
+        -Actual ($collateral.Count ? "受影响：$($collateral -join '、')" : '七仓全部通过')
+
+    Send-Simulator -Method POST -Path '/reset'
+    Send-Simulator -Method PUT -Path '/slots/3/lock-feedback-override' -Body @{ mode = 'FIXED_1' }
+    $stuckRecords = Join-Path $StageRoot 'records-stuck-lock'
+    $rehearsalAlias = 'agv01'
+    $rehearsalDoorAnswer = 'all'
+    $stuckError = $null
+    try {
+        & $probe @probeArguments -SiteAlias 'agv01' -Order 1 -AgvId '老厂前线新多仓位1' -RecordDirectory $stuckRecords
+    }
+    catch {
+        $stuckError = $_.Exception.Message
+    }
+    Send-Simulator -Method PUT -Path '/slots/3/lock-feedback-override' -Body @{ mode = 'AUTO' }
+    $abortedPath = Join-Path $stuckRecords 'raw/agv01/aborted.json'
+    $aborted = (Test-Path -LiteralPath $abortedPath) ? (Get-Content -LiteralPath $abortedPath -Raw | ConvertFrom-Json) : $null
+    Assert-Rehearsal -Id 'R-21' -Description '3 号仓锁反馈卡在锁闭：探针整车停下，不写记录' `
+        -Passed ($stuckError -and $aborted -and $aborted.aborted -like '3 号仓*' -and -not (Test-Path -LiteralPath (Join-Path $stuckRecords '01-agv01.json'))) `
+        -Actual ($aborted ? $aborted.aborted : "没有 aborted.json；error=$stuckError")
+
+    Stop-Job -Job $personJob
+    Receive-Job -Job $personJob -ErrorAction SilentlyContinue | Set-Content -LiteralPath (Join-Path $logs 'person-job.log') -Encoding utf8NoBOM
+    Remove-Job -Job $personJob -Force
+    $personJob = $null
 
     # --- window -------------------------------------------------------------------------------------
 
@@ -301,14 +337,15 @@ try {
         date                             = (Get-Date).ToString('yyyy-MM-dd')
         site                             = '控制端本机彩排：slots-simulator 冒充 IO 模块、脚本冒充现场人员。不是现场，不是证据'
         observers                        = @('W1 rehearsal (scripted person)')
-        photoPointers                    = @('rehearsal-no-photo')
+        photoPointers                    = @()
+        photoPointersAbsentReason        = '彩排不拍照，演练产品负责人 2026-09-13 定的无照片判法'
         productionContinuityObservations = @($vehicles | ForEach-Object {
                 [ordered]@{
                     at                     = (Get-Date).ToString('o')
                     afterVehicle           = $_.AgvId
                     fleetStillTakingOrders = $true
                     note                   = '彩排数据，不是现场观察'
-                    photoPointer           = 'rehearsal-no-photo'
+                    photoPointer           = $null
                 }
             })
     } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $records 'window.json') -Encoding utf8NoBOM
@@ -330,8 +367,16 @@ try {
     Assert-Rehearsal -Id 'R-32' -Description '判据里的中文 agvId 没被控制台编码写坏' `
         -Passed ($agvIds -contains '老厂前线新多仓位1' -and $agvIds -contains '老厂前线新多仓位3') `
         -Actual ($agvIds -join '，')
+    $w106 = $windowAssertions ? (@($windowAssertions.assertions | Where-Object { $_.id -eq 'W1-06' }) | Select-Object -First 1) : $null
+    Assert-Rehearsal -Id 'R-33' -Description '没有照片时，W1-06 靠写明的理由与证据内的逐仓记录通过' `
+        -Passed ($w106 -and $w106.outcome -eq 'PASS' -and $w106.actual -like '*照片指针 0 个*' -and $w106.actual -like '*找不到 0 条*') `
+        -Actual ($w106 ? $w106.actual : '没有 W1-06')
 }
 finally {
+    if ($personJob) {
+        Stop-Job -Job $personJob -ErrorAction SilentlyContinue
+        Remove-Job -Job $personJob -Force -ErrorAction SilentlyContinue
+    }
     if ($simulatorProcess -and -not $simulatorProcess.HasExited) {
         $simulatorProcess.Kill($true)
         $null = $simulatorProcess.WaitForExit(10000)

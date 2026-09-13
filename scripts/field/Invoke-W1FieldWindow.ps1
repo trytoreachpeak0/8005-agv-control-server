@@ -329,12 +329,25 @@ $assertions.Add((New-Assertion -Id 'W1-05' `
     -Expected "$($vehicleOutcomes.Count) 台车各有审计" `
     -Actual "$($auditedVehicles.Count) 台车留痕：$($auditedVehicles -join '、')"))
 
-$allPhotos = @($windowRecord.photoPointers) + @($vehicleOutcomes | ForEach-Object { $_.photoPointers }) | Where-Object { $_ }
+# Photos are one way to point at what was seen on site. When the product owner decided none would be
+# taken, window.json says so in photoPointersAbsentReason, and the assertion stands on its other two
+# parts: the evidence shape, and a field record behind every slot that resolves to a file in the evidence.
+$allPhotos = @(@($windowRecord.photoPointers) + @($vehicleOutcomes | ForEach-Object { $_.photoPointers }) | Where-Object { $_ })
+$photosAbsentReason = "$($windowRecord.photoPointersAbsentReason)".Trim()
+$fieldRecordsRoot = Join-Path $EvidenceRoot 'field-records'
+$slotReferences = @($vehicleRecords | ForEach-Object {
+        @((Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json -AsHashtable).slots) | ForEach-Object { $_.fieldRecordReference }
+    })
+$unresolvedReferences = @($slotReferences | Where-Object { -not $_ -or -not (Test-Path -LiteralPath (Join-Path $fieldRecordsRoot $_) -PathType Leaf) })
+$shapeComplete = (Test-Path -LiteralPath $logs) -and (Test-Path -LiteralPath $snapshots) -and
+    (Test-Path -LiteralPath $timelinePath) -and (Test-Path -LiteralPath $fieldRecordsRoot)
+$recordsBehindEverySlot = $slotReferences.Count -gt 0 -and $unresolvedReferences.Count -eq 0
 $assertions.Add((New-Assertion -Id 'W1-06' `
-    -Description '证据目录形状完整，含现场记录与照片指针' `
-    -Passed ($allPhotos.Count -gt 0) `
-    -Expected '至少一个照片指针' `
-    -Actual "$($allPhotos.Count) 个照片指针"))
+    -Description '证据目录形状完整，含现场记录；有照片指针，或产品负责人写明不拍照时每一仓都有证据内的现场记录' `
+    -Passed ($shapeComplete -and ($allPhotos.Count -gt 0 -or ($photosAbsentReason -and $recordsBehindEverySlot))) `
+    -Expected '目录形状完整；至少一个照片指针，或写明不拍照理由且每一仓的记录引用都指向证据里的文件' `
+    -Actual ("形状{0}；照片指针 {1} 个；仓位记录引用 {2} 条、找不到 {3} 条{4}" -f ($shapeComplete ? '完整' : '不完整'),
+        $allPhotos.Count, $slotReferences.Count, $unresolvedReferences.Count, ($photosAbsentReason ? "；不拍照理由：$photosAbsentReason" : ''))))
 
 $outcome = @($assertions | Where-Object { $_.outcome -eq 'FAIL' }).Count -eq 0 ? 'PASS' : 'FAIL'
 
@@ -359,6 +372,9 @@ $vehicleRows = ($vehicleOutcomes | ForEach-Object {
     "| ``$($_.agvId)`` | ``$($_.siteAlias)`` | $($_.verifyResult.slotsConfirmed) | $($_.verifyExit -eq 0 ? '通过' : '被拒') | $($_.releaseResult.ready ? '已放行' : '未放行') | ``$($_.releaseResult.reasonCode)`` |"
 }) -join "`n"
 $photoRows = ($allPhotos | ForEach-Object { "- ``$_``" }) -join "`n"
+if (-not $photoRows) {
+    $photoRows = $photosAbsentReason ? "**没有照片。**$photosAbsentReason" : '**没有照片。**'
+}
 
 $summary = @"
 # W1 现场窗口证据：三车逐仓 IO 核对与门禁逐台启用
