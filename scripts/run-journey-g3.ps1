@@ -82,6 +82,30 @@ $scenarioAssertions = [ordered]@{
         'G3-01-09' = 'finalStateOneDemandOneOrderAtPickupNoSlotOperation'
         'G3-01-10' = 'onboardNeverDiscoversSelectsOrBindsDemand'
     }
+    'g3-pickup-load-and-correction' = [ordered]@{
+        'G3-02-01' = 'sublotBoundToOperationSession'
+        'G3-02-02' = 'slotSetAuthorizedOnce'
+        'G3-02-03' = 'loadOnlyAuthorizedSlotsEachUnlockedOnce'
+        'G3-02-04' = 'loadClosedOverRealModbus'
+        'G3-02-05' = 'pickupSublotLoadSequenceMatchesVector'
+        'G3-02-06' = 'loadOutcomeCommittedOnce'
+        'G3-02-07' = 'onboardOffersLoadCorrectionAfterCompletedLoad'
+        'G3-02-08' = 'loadCorrectionSequenceMatchesVector'
+        'G3-02-09' = 'correctionAuthorizedAgainstCommittedSet'
+        'G3-02-10' = 'neverCorrectWithoutAuthorization'
+        'G3-02-11' = 'correctedSlotOutcomeReported'
+        'G3-02-12' = 'correctionCreatesNoDuplicateCommit'
+        'G3-02-13' = 'correctionOnlyBeforeDepartureAndHoldsTheVehicle'
+    }
+    'g3-load-cancellation' = [ordered]@{
+        'G3-02-21' = 'onboardOffersLoadCancellationDuringLoad'
+        'G3-02-22' = 'cancellationAuthorizedExplicitly'
+        'G3-02-23' = 'loadCancellationSequenceMatchesVector'
+        'G3-02-24' = 'cancellationProvesEmptyWithoutUnlocking'
+        'G3-02-25' = 'allSlotsProvenEmpty'
+        'G3-02-26' = 'cancellationReconciledToEmptyFinalState'
+        'G3-02-27' = 'finalStateSurvivesLateLoadResult'
+    }
 }
 
 function Get-ScriptFunction {

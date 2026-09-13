@@ -190,8 +190,16 @@ try {
     # compiler on the critical path of a timing test.
     $journal.Note('Building ControlServer and the test doubles.')
     $buildLog = Join-Path $logRoot 'build.log'
-    & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
-        Tee-Object -FilePath $buildLog | Out-Null
+    # From inside the repository, so its global.json picks the SDK. Launched from anywhere else the
+    # newest installed SDK builds it, and with AnalysisLevel=latest-recommended plus warnings as
+    # errors a newer analyzer fails a commit that builds clean in CI (CA1859 under SDK 10, 2026-09-13).
+    Push-Location -LiteralPath $Repository
+    try {
+        & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
+            Tee-Object -FilePath $buildLog | Out-Null
+    } finally {
+        Pop-Location
+    }
     if ($LASTEXITCODE -ne 0) { throw "Build failed; see $buildLog" }
 
     # The two peers come from repositories this workspace may not write to, so they are published
@@ -366,6 +374,9 @@ try {
         'RiotCreateDispatch__enabled'                     = 'true'
         'JourneyRuntime__enabled'                         = 'true'
         'JourneyRuntime__pollInterval'                    = '00:00:01'
+        # ADR-cross-0055's wait at the pickup after the load commits. Five seconds keeps a scenario
+        # that is not about it near its old timing; one about load correction asks for longer.
+        'JourneyRuntime__stationDepartureWaitTimeout'     = $(if ($setup.ContainsKey('StationDepartureWaitTimeout')) { [string]$setup.StationDepartureWaitTimeout } else { '00:00:05' })
         'JourneyRuntime__agvId'                           = $agvId
         'JourneyRuntime__vehicleKey'                      = $vehicleKey
         'JourneyRuntime__mapId'                           = [string]$mapId

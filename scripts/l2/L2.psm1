@@ -364,8 +364,15 @@ function Get-L2PeerPublish {
         Tee-Object -FilePath $log -Append | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not check out $commit in the $Name clone; see $log" }
 
-    & dotnet publish (Join-Path $clone $ProjectPath) -c Release -o $publish --nologo *>&1 |
-        Tee-Object -FilePath $log -Append | Out-Null
+    # From inside the clone, so the peer's own global.json (if it has one) picks the SDK rather than
+    # whatever directory the run was launched from.
+    Push-Location -LiteralPath $clone
+    try {
+        & dotnet publish (Join-Path $clone $ProjectPath) -c Release -o $publish --nologo *>&1 |
+            Tee-Object -FilePath $log -Append | Out-Null
+    } finally {
+        Pop-Location
+    }
     if ($LASTEXITCODE -ne 0) { throw "Publishing $Name failed; see $log" }
 
     Set-Content -LiteralPath $stamp -Value $commit -Encoding utf8NoBOM
@@ -544,10 +551,61 @@ function New-L2OnboardDriver {
         $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
     }
 
+    # The load recovery vectors -- 「取消装货」「修正装货」「补偿清空」「故障交接」 -- are bound the way
+    # 「申请恢复」 is: IsEnabled and Visibility both follow the capability, so absent and disabled read
+    # alike. Addressed by caption because that is what the operator is told to press.
+    $driver | Add-Member -MemberType ScriptMethod -Name ButtonAvailable -Value {
+        param([Parameter(Mandatory)][string]$Name)
+        $button = $this.Element('Name', $Name)
+        if (-not $button) { return $false }
+        return [bool]$button.Current.IsEnabled
+    }
+
+    $driver | Add-Member -MemberType ScriptMethod -Name InvokeButton -Value {
+        param([Parameter(Mandatory)][string]$Name)
+        $button = $this.Element('Name', $Name)
+        if (-not $button) { throw "No button named '$Name'." }
+        # Posted, like RequestRecovery: the handler's confirmation MessageBox is answered by Confirm().
+        $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+    }
+
     <#
-    Answers the modal MessageBox that MainWindow.OnWireToGateRecoveryClick puts in front of the
-    operator. It is a separate top-level window of the same process, so it is found from the root
-    rather than from the main window -- which is parked in the modal loop and answers nothing.
+    Every window of the process: its top-level windows, and the windows each of them owns.
+
+    The second half is not optional. MessageBox.Show without an owner still takes the active window
+    as its owner, and UI Automation files an owned window under its owner rather than under the
+    desktop root. Searching the root's children alone therefore never finds the confirmation a
+    recovery button raises -- which is how the first correction run, 2026-09-13, clicked 「修正装货」
+    and then timed out with only the main window "seen" while the dialog sat on screen.
+    #>
+    $driver | Add-Member -MemberType ScriptMethod -Name Windows -Value {
+        $process = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $this.ProcessId)
+        $isWindow = [System.Windows.Automation.PropertyCondition]::new(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            [System.Windows.Automation.ControlType]::Window)
+        $found = [System.Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+        foreach ($top in [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+                [System.Windows.Automation.TreeScope]::Children, $process)) {
+            $found.Add($top)
+            foreach ($owned in $top.FindAll([System.Windows.Automation.TreeScope]::Descendants, $isWindow)) {
+                $found.Add($owned)
+            }
+        }
+        return , $found.ToArray()
+    }
+
+    # Titles of every window of the process. A refused recovery request answers with a modal
+    # MessageBox (「修正装货失败」 and its siblings); a scenario names that in its evidence instead of
+    # timing out on the next thing it waits for.
+    $driver | Add-Member -MemberType ScriptMethod -Name WindowTitles -Value {
+        return , @($this.Windows() | ForEach-Object { [string]$_.Current.Name })
+    }
+
+    <#
+    Answers the modal MessageBox a recovery button puts in front of the operator. It is found among
+    every window of the process (see Windows), never through the main window's controls -- the main
+    window is parked in the modal loop behind it.
 
     The button is picked by AutomationId, not by caption: a MessageBox names its buttons after the
     Win32 control ids (IDYES = 6, IDNO = 7), which do not change with the display language, while
@@ -558,11 +616,7 @@ function New-L2OnboardDriver {
         $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
         $seen = [System.Collections.Generic.HashSet[string]]::new()
         while ($true) {
-            $condition = [System.Windows.Automation.PropertyCondition]::new(
-                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $this.ProcessId)
-            $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-                [System.Windows.Automation.TreeScope]::Children, $condition)
-            foreach ($window in $windows) {
+            foreach ($window in $this.Windows()) {
                 $null = $seen.Add($window.Current.Name)
                 if ($window.Current.Name -ne $Title) { continue }
                 $button = $window.FindFirst(

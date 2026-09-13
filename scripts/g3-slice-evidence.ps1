@@ -80,7 +80,6 @@ function Get-G3AssuranceLevelLadder {
 # assertion somebody could write against the peers as they stand.
 function Get-G3SlicesWithoutSurfaceThisBatch {
     return [ordered]@{
-        'FP-IS-02' ='CV-PICKUP-SUBLOT-LOAD, CV-LOAD-CORRECTION and CV-LOAD-CANCELLATION-ALL-EMPTY have no assertion in any G3 runner.'
         'FP-IS-03' = 'CV-PREDEPARTURE-SAFETY-EXPIRES and CV-OPERATION-RESULT-UNKNOWN-RECONCILE have no assertion in any G3 runner.'
         'FP-IS-07' = 'None of its six vectors has an assertion in any G3 runner; the staged runner records several of its accepted paths as not reachable in a staged run.'
     }
@@ -261,6 +260,31 @@ function Get-G3RunnerClaim {
                     'onboardAppliedTheCommittedProjection',
                     'finalStateOneDemandOneOrderAtPickupNoSlotOperation',
                     'onboardNeverDiscoversSelectsOrBindsDemand')
+                # CV-PICKUP-SUBLOT-LOAD and CV-LOAD-CORRECTION on one two-slot load, then
+                # CV-LOAD-CANCELLATION-ALL-EMPTY on another; the three vectors of the slice, each with
+                # its ordered messages, both owners' product assertions and its finalState. The
+                # cancellation's last judgment is taken after the cancelled load's own late result.
+                'FP-IS-02' = @(
+                    'sublotBoundToOperationSession',
+                    'slotSetAuthorizedOnce',
+                    'loadOnlyAuthorizedSlotsEachUnlockedOnce',
+                    'loadClosedOverRealModbus',
+                    'pickupSublotLoadSequenceMatchesVector',
+                    'loadOutcomeCommittedOnce',
+                    'onboardOffersLoadCorrectionAfterCompletedLoad',
+                    'loadCorrectionSequenceMatchesVector',
+                    'correctionAuthorizedAgainstCommittedSet',
+                    'neverCorrectWithoutAuthorization',
+                    'correctedSlotOutcomeReported',
+                    'correctionCreatesNoDuplicateCommit',
+                    'correctionOnlyBeforeDepartureAndHoldsTheVehicle',
+                    'onboardOffersLoadCancellationDuringLoad',
+                    'cancellationAuthorizedExplicitly',
+                    'loadCancellationSequenceMatchesVector',
+                    'cancellationProvesEmptyWithoutUnlocking',
+                    'allSlotsProvenEmpty',
+                    'cancellationReconciledToEmptyFinalState',
+                    'finalStateSurvivesLateLoadResult')
             }
         }
     }
