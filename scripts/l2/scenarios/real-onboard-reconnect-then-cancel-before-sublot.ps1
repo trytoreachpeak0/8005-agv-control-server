@@ -130,12 +130,13 @@ $null = Wait-L2Condition -Description 'the onboard reconnected and said SessionH
     } `
     -Until { param($v) $v -ge 1 }
 
-$sessionAfter = Wait-L2Condition -Description 'the session was Ready again in a newer generation' -Journal $journal `
-    -Criterion 'session-ready-after-reconnect' -TimeoutSeconds 60 `
+# 等的是握手落库，不是 Ready：车有一张在途的取货单、还没到站时，车载端的安全快照报 departureSafe=false /
+# VEHICLE_NOT_READY，新世代如实停在 RecoveryRequired / DEPARTURE_SAFETY_NOT_READY，到站停稳才回到 Ready。
+# -002 就红在等 Ready。握手读 stop 的是 BeginSessionRecoveryAsync，新世代的会话行一写下它就已经读过了。
+$sessionAfter = Wait-L2Condition -Description 'the handshake of a newer generation reached the server' -Journal $journal `
+    -Criterion 'session-after-reconnect' -TimeoutSeconds 60 `
     -Probe { Get-SessionRow } `
-    -Until { param($v)
-        [long]$v.SessionGeneration -gt [long]$sessionBefore.SessionGeneration -and
-            [string]$v.Readiness -eq 'Ready' -and [string]$v.ReasonCode -eq 'READY' }
+    -Until { param($v) [long]$v.SessionGeneration -gt [long]$sessionBefore.SessionGeneration }
 $reconnection = [int]@((Get-Traffic).lines | Where-Object {
     $_.direction -eq 'onboard->server' -and $_.messageType -eq 'SessionHello' -and [int]$_.connection -gt $lastBefore
 })[0].connection
@@ -143,9 +144,9 @@ $reconnection = [int]@((Get-Traffic).lines | Where-Object {
 # 车还没动过：RIoT 没报到站，引擎推不了 stop。握手读进连接的就是这一刻的 stop。
 $atHandshake = Get-JourneyAtFirstStop $demandId
 $assertions.Add(
-    'L2-RCS-01', '重连握手时旅程已受理、车还没到站：新世代 Ready，stop 仍是第 0 轮',
+    'L2-RCS-01', '重连握手时旅程已受理、车还没到站：新世代的握手已落库，stop 仍是第 0 轮',
     ([string]$atHandshake.Stage -eq 'AwaitingPickupArrival' -and [int]$atHandshake.LoadRound -eq 0),
-    "$(Format-Session $sessionAfter) / AwaitingPickupArrival / LoadRound 0",
+    "gen > $($sessionBefore.SessionGeneration) / AwaitingPickupArrival / LoadRound 0",
     "$(Format-Session $sessionAfter) / $($atHandshake.Stage) / LoadRound $($atHandshake.LoadRound)")
 
 # --- 3. 到站，引擎发出第 1 轮条码录入请求 -----------------------------------------------------------------
