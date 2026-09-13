@@ -705,11 +705,12 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     /// <summary>
-    /// 8005-agv-control-server#28. One DbContext serves a whole TCP connection, and SessionHello loads
-    /// the current stop of every active journey into it, tracked. A vehicle that reconnects on its way
-    /// to the pickup is seen there at LoadRound 0; the runtime then arrives and asks for the sublot as
-    /// round 1 from its own context. An operator who cancels before scanning, on that same connection,
-    /// is settled against the stop the connection is holding -- and round 0 has no request to settle.
+    /// 8005-agv-control-server#28, fixed in #40. One DbContext serves a whole TCP connection, and
+    /// SessionHello loads the current stop of every active journey into it, tracked. A vehicle that
+    /// reconnects on its way to the pickup is seen there at LoadRound 0; the runtime then arrives and
+    /// asks for the sublot as round 1 from its own context. An operator who cancelled before scanning,
+    /// on that same connection, was settled against the stop the connection was holding -- and round 0
+    /// has no request to settle. L2 evidence real-onboard-reconnect-then-cancel-before-sublot-003.
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
@@ -746,13 +747,58 @@ public sealed class JourneyRuntimeWorkerTests
         string sublotRequest = WireToGateStore.SublotRequestId(asked.JourneyId, asked.Sequence, asked.LoadRound);
         Assert.Contains(sublotRequest, await fixture.PendingOutboxMessageIdsAsync());
 
-        Assert.True(await connectionStore.CancelDemandBeforeLoadAsync(
-            demandId,
-            "CANCELLED_BY_OPERATOR",
-            fixture.Clock.GetUtcNow(),
-            TestContext.Current.CancellationToken));
+        // The operator cancels before scanning, on the connection that ran the handshake.
+        string answer = await fixture.CancelBeforeLoadOnConnectionAsync(connection, 2, demandId);
 
+        Assert.Equal("AUTHORIZED", AuthorizationDecision(answer));
         Assert.DoesNotContain(sublotRequest, await fixture.PendingOutboxMessageIdsAsync());
+    }
+
+    /// <summary>
+    /// 8005-agv-control-server#40, the AcceptedDemand row of the #28 census. A connection that has read a
+    /// demand holds it tracked as Accepted; the runtime then ends that demand at the station deadline
+    /// from its own context. An operator cancellation arriving afterwards on that connection was
+    /// authorised against the tracked copy: AUTHORIZED for a demand that was already gone, a
+    /// cancellation recorded that the operator never got to make, and CANCELLED_BY_OPERATOR written
+    /// over the reason the journey really ended for.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task AnOperatorCancellationAfterTheStationDeadlineIsJudgedOnTheDemandAsStored()
+    {
+        const string demandId = "10000000-0000-4000-8000-000000000001";
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        SingleDemandJourneyView runtime = await fixture.AdvanceToSublotWaitAsync(demandId, "SUBLOT-001");
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+
+        // An earlier message on this connection read the demand, and the connection's context kept it
+        // as it stood then.
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        Assert.Equal(DemandExecutionStatus.Accepted, (await connection.AcceptedDemands.SingleAsync(
+            row => row.DemandId == demandId, TestContext.Current.CancellationToken)).Status);
+
+        // Nobody scans, and the runtime ends the demand at the station deadline.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.HeartbeatAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+
+        string answer = await fixture.CancelBeforeLoadOnConnectionAsync(connection, 1, demandId);
+
+        Assert.Equal("REJECTED", AuthorizationDecision(answer));
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", (await fixture.RuntimeAsync()).BlockReasonCode);
+        Assert.Empty(await fixture.Context.RecoveryWorkflows
+            .Where(row => row.WorkflowType == "LOAD_CANCELLATION")
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    private static string AuthorizationDecision(string loadCancellationAuthorization)
+    {
+        using JsonDocument document = JsonDocument.Parse(loadCancellationAuthorization);
+        Assert.Equal("LoadCancellationAuthorization", document.RootElement.GetProperty("messageType").GetString());
+        return document.RootElement.GetProperty("payload").GetProperty("decision").GetString()!;
     }
 
     /// <summary>
@@ -4689,7 +4735,48 @@ public sealed class JourneyRuntimeWorkerTests
             Context.ChangeTracker.Clear();
         }
 
-        private string PeerEnvelope(string messageType, object payload) => JsonSerializer.Serialize(
+        /// <summary>
+        /// The operator's 取消装货 before any sublot is scanned, sent on a connection whose context is
+        /// <paramref name="connection"/> and entering through OnboardMessageProcessor, the way every
+        /// message on a TCP connection does. Returns the server's LoadCancellationAuthorization.
+        /// </summary>
+        public async Task<string> CancelBeforeLoadOnConnectionAsync(
+            ControlServerDbContext connection,
+            long sessionGeneration,
+            string demandId)
+        {
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                connection, new WireToGateStore(connection), Clock, new ConfigurationBuilder().Build());
+            OnboardConnectionState state = new()
+            {
+                AgvId = Options.AgvId,
+                SessionGeneration = sessionGeneration,
+                CapabilityRevision = 1,
+                SafetyRevision = 7,
+                Readiness = SessionReadiness.Ready
+            };
+            return await processor.ProcessAsync(
+                PeerEnvelope(
+                    "LoadCancellationStartRequested",
+                    new
+                    {
+                        cancellationId = Guid.NewGuid().ToString("D"),
+                        demandId,
+                        slotOperationAttemptId = (string?)null,
+                        @operator = new
+                        {
+                            operatorId = "OP-001",
+                            verificationMethod = "BADGE",
+                            verifiedAt = Clock.GetUtcNow()
+                        },
+                        reason = "Nothing to load at this stop."
+                    },
+                    sessionGeneration),
+                state,
+                TestContext.Current.CancellationToken);
+        }
+
+        private string PeerEnvelope(string messageType, object payload, long sessionGeneration = 1) => JsonSerializer.Serialize(
             new
             {
                 protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
@@ -4700,7 +4787,7 @@ public sealed class JourneyRuntimeWorkerTests
                 messageId = Guid.NewGuid().ToString("D"),
                 correlationId = (string?)null,
                 agvId = Options.AgvId,
-                sessionGeneration = 1,
+                sessionGeneration,
                 sentAt = Clock.GetUtcNow(),
                 payload = JsonSerializer.SerializeToElement(payload, SerializerOptions)
             },

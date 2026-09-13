@@ -965,19 +965,11 @@ public sealed class OnboardRecoveryCoordinator(
         JourneyDemandRow? membership = await dbContext.JourneyDemands.SingleOrDefaultAsync(
             row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
         if (membership is null) return null;
-        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
+        // Read as stored: OnboardMessageProcessor clears this connection's context before every message,
+        // so the copy the handshake tracked is gone by the time a recovery request or result gets here
+        // (8005-agv-program#40, 8005-agv-control-server#40).
+        return await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
             row => row.JourneyId == membership.JourneyId, cancellationToken).ConfigureAwait(false);
-        // Re-read it. This coordinator shares one DbContext with the whole TCP connection, and the
-        // handshake has usually already loaded this journey into it, tracked; a query then hands back
-        // that tracked copy, not the row. The journey's stage is written by the runtime worker from
-        // its own context, so a vehicle that reconnected mid-load and then got blocked was refused
-        // RECOVERY_DEMAND_NOT_BLOCKED against a journey the database held as Blocked
-        // (8005-agv-program#40). Every caller here decides on the stage or rewrites it.
-        if (runtime is not null)
-        {
-            await dbContext.Entry(runtime).ReloadAsync(cancellationToken).ConfigureAwait(false);
-        }
-        return runtime;
     }
 
     private async Task<RecoveryWorkflowRow> UpsertSimpleWorkflowAsync(
