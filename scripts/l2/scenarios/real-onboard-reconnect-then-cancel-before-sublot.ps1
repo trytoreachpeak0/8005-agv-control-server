@@ -146,6 +146,7 @@ $reconnect = Wait-L2Change -Description 'the onboard reconnected and its handsha
             [long]$now.Session.SessionGeneration -gt $before.Generation }
 $lastBefore = $reconnect.Baseline.LastConnection
 $reconnection = @($reconnect.Value.HelloConnections | Where-Object { $_ -gt $lastBefore })[0]
+$sessionAfter = $reconnect.Value.Session
 
 # 车还没动过：RIoT 没报到站，引擎推不了 stop。握手读进连接的就是这一刻的 stop。
 $atHandshake = Get-JourneyAtFirstStop $demandId
