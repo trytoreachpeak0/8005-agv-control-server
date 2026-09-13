@@ -379,8 +379,11 @@ $command = Wait-L2Condition -Description 'the server authorized the correction, 
     -Journal $journal -Criterion 'correction-command' -TimeoutSeconds 60 `
     -Probe {
         $issued = @((Get-Outbound 'LoadCorrectionCommand') | Where-Object { [string]$_.Payload.correctionId -eq $correctionId })
+        # 拒绝是对请求的直接应答，落在收件箱那一行的 FirstResponseJson，不进发件箱。首跑（corr-004）
+        # 在发件箱里找它，服务端早已拒绝，场景却等满了 60 秒。
+        $answered = @((Get-Inbound 'LoadCorrectionRequested') | Where-Object { [string]$_.Payload.correctionId -eq $correctionId })
         if ($issued.Count -ge 1) { $issued[0] }
-        elseif (@((Get-Outbound 'LoadCorrectionRejected') | Where-Object { [string]$_.Payload.correctionId -eq $correctionId }).Count -ge 1) { 'REJECTED_BY_SERVER' }
+        elseif ($answered.Count -ge 1 -and $answered[0].Response -eq 'LoadCorrectionRejected') { 'REJECTED_BY_SERVER' }
         else { $null }
     } `
     -Until { param($v) $null -ne $v }
