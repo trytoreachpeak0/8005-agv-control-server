@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-field-continuous-rehearsal",
+  "runId": "20260913T063904789Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260913T063904789Z",
+    "onboardHmiCommit": "6b8a0b06575f40fa0e682c5d307b9ce46bbe9227",
+    "batchId": "BATCH-3",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "controlServerCommit": "9f12f25f44b16ca9ea22bee7b65477910b7777aa",
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-CFD-01",
+      "description": "开跑时会话 Ready、没有未完成旅程",
+      "outcome": "PASS",
+      "expected": "(无未完成旅程)",
+      "actual": "(无未完成旅程)"
+    },
+    {
+      "id": "L2-CFD-02",
+      "description": "一次 Invoke-FieldContinuousDrive 调用开完两趟，两趟都 Completed、都不需要续跑",
+      "outcome": "PASS",
+      "expected": "2 趟 / Completed / 1 次",
+      "actual": "2 趟 / Completed×1,Completed×1"
+    },
+    {
+      "id": "L2-CFD-03",
+      "description": "两趟共三次装货全部 Committed（第一趟两站、第二趟一站）",
+      "outcome": "PASS",
+      "expected": "3 条 Committed",
+      "actual": "1:Committed,2:Committed,1:Committed"
+    },
+    {
+      "id": "L2-CFD-04",
+      "description": "两趟共三次卸货全部 Committed",
+      "outcome": "PASS",
+      "expected": "3 条 Committed",
+      "actual": "Committed,Committed,Committed"
+    },
+    {
+      "id": "L2-CFD-05",
+      "description": "两趟之间车自己去充电并被释放，驱动空转等过了它，第二趟在充电行程之后才建",
+      "outcome": "PASS",
+      "expected": "1 次充电 Completed，第二趟晚于它",
+      "actual": "1 次 Completed / 第二趟 2026-09-13 06:39:57.365692+00:00"
+    },
+    {
+      "id": "L2-CFD-10",
+      "description": "再起的驱动从装货半路接手第三趟（停靠 1 已扫码、车等在仓位上）并开完",
+      "outcome": "PASS",
+      "expected": "1 趟 / 接手于 1/AwaitingLoadResult / Completed",
+      "actual": "1 趟 / 接手于 1/AwaitingLoadResult / Completed"
+    },
+    {
+      "id": "L2-CFD-11",
+      "description": "第三趟：停靠 1 那次接手的装货与停靠 2 的照常装货都 Committed",
+      "outcome": "PASS",
+      "expected": "1:N-RESUMED:Committed,2:N:Committed",
+      "actual": "1:N-RESUMED:Committed,2:N:Committed"
+    },
+    {
+      "id": "L2-CFD-12",
+      "description": "第三趟关卡：两条卸货 Committed",
+      "outcome": "PASS",
+      "expected": "2 条 Committed",
+      "actual": "Committed,Committed"
+    },
+    {
+      "id": "L2-CFD-20",
+      "description": "全程没有旅程 Blocked，会话一直是开跑时那一代（没有重连）、仍 Ready",
+      "outcome": "PASS",
+      "expected": "0 / generation 1 / Ready",
+      "actual": "0 / generation 1 / Ready"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 167 lines, 167 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 20997 ms."
+    }
+  ]
+}

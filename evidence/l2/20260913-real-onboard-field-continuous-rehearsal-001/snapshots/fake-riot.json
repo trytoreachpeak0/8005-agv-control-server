@@ -1,0 +1,260 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-6d5945b7",
+  "revision": 48,
+  "observedAt": "2026-09-13T14:40:37.9046994+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 39,
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 210,
+        "battery": 80,
+        "batteryState": "CHARGING",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-48f75236-c862-b15f-8af9-1e27fc8cc7fe-S1-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          }
+        ]
+      },
+      {
+        "id": 488002,
+        "orderId": "ORDER-000002",
+        "upperId": "W2G-48f75236-c862-b15f-8af9-1e27fc8cc7fe-S2-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 13,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 13,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          }
+        ]
+      },
+      {
+        "id": 488003,
+        "orderId": "ORDER-000003",
+        "upperId": "W2G-48f75236-c862-b15f-8af9-1e27fc8cc7fe-S9-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 210,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 210,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          }
+        ]
+      },
+      {
+        "id": 488004,
+        "orderId": "ORDER-000004",
+        "upperId": "W2G-CHARGE-172208d1-f86d-c357-9877-d80928ac3e61-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 211,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 211,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          },
+          {
+            "type": "act",
+            "mapId": null,
+            "destination": null,
+            "actionId": 78,
+            "actionParam1": 1,
+            "actionParam2": 0,
+            "startsCharging": true
+          }
+        ]
+      },
+      {
+        "id": 488005,
+        "orderId": "ORDER-000005",
+        "upperId": "W2G-29c05812-8b36-485b-bd1f-b36e304a4633-S1-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 14,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 14,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          }
+        ]
+      },
+      {
+        "id": 488006,
+        "orderId": "ORDER-000006",
+        "upperId": "W2G-29c05812-8b36-485b-bd1f-b36e304a4633-S9-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 210,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 210,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          }
+        ]
+      },
+      {
+        "id": 488007,
+        "orderId": "ORDER-000007",
+        "upperId": "W2G-765ef606-0ed4-6751-9971-c54bc18af452-S1-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 15,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 15,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          }
+        ]
+      },
+      {
+        "id": 488008,
+        "orderId": "ORDER-000008",
+        "upperId": "W2G-765ef606-0ed4-6751-9971-c54bc18af452-S2-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          }
+        ]
+      },
+      {
+        "id": 488009,
+        "orderId": "ORDER-000009",
+        "upperId": "W2G-765ef606-0ed4-6751-9971-c54bc18af452-S9-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 210,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 210,
+            "actionId": null,
+            "actionParam1": null,
+            "actionParam2": null,
+            "startsCharging": false
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13"
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7"
+          },
+          {
+            "id": 13,
+            "name": "N2-6"
+          },
+          {
+            "id": 14,
+            "name": "N3-4"
+          },
+          {
+            "id": 15,
+            "name": "N4-2"
+          },
+          {
+            "id": 210,
+            "name": "关卡"
+          },
+          {
+            "id": 211,
+            "name": "充电点1"
+          }
+        ]
+      }
+    ]
+  }
+}
