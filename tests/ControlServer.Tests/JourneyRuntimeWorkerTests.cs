@@ -758,6 +758,117 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_GATE"));
     }
 
+    /// <summary>
+    /// CV-PREDEPARTURE-SAFETY-EXPIRES: PreDepartureSafetyCheck, its SAFE result, then a
+    /// SafetyStateChanged. The answer was true of a safety state that no longer holds, so it may
+    /// not authorize the departure (NEVER_DEPART_ON_EXPIRED_CHECK) -- and the check it answered is
+    /// spent (EXPIRE_CHECK_ON_SAFETY_STATE_CHANGE). This server used to stop there: one check id per
+    /// journey, judged invalid on every later poll, and the journey waited at the pickup for ever
+    /// with PRE_DEPARTURE_SAFETY_NOT_VALID. The check is now retired and asked again under a new
+    /// identity against the current safety state, and that answer departs the vehicle.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
+    public async Task ASafetyChangeAfterTheAnswerExpiresTheCheckAndTheServerAsksAgainUnderANewIdentity()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        string expiredCheckId = runtime.PreDepartureSafetyCheckId;
+        string expiredMessageId = runtime.PreDepartureSafetyCheckMessageId;
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            SafeDepartureAnswer(expiredCheckId, 7, fixture.Clock.GetUtcNow()), expiredCheckId);
+        await fixture.AddSafetyStateChangedAsync(8, departureSafe: true, vehicleStopped: true);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
+        Assert.Equal("PREDEPARTURE_CHECK_EXPIRED", runtime.BlockReasonCode);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+        Assert.NotEqual(expiredCheckId, runtime.PreDepartureSafetyCheckId);
+        Assert.NotEqual(expiredMessageId, runtime.PreDepartureSafetyCheckMessageId);
+        Assert.NotNull((await fixture.Context.ProtocolOutbox.SingleAsync(
+            row => row.MessageId == expiredMessageId, TestContext.Current.CancellationToken)).FencedAt);
+        Assert.Equal(8, await ExpectedSafetyStateVersionAsync(fixture, runtime));
+
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            SafeDepartureAnswer(runtime.PreDepartureSafetyCheckId, 8, fixture.Clock.GetUtcNow()),
+            runtime.PreDepartureSafetyCheckId);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, runtime.Stage);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_GATE"));
+    }
+
+    /// <summary>
+    /// The other way a check expires: the safety state moves on before any answer arrives, so the
+    /// check itself names a version that is no longer current. It is asked again -- but not while
+    /// the vehicle is unsafe, where a new check could only be answered UNSAFE and would be asked
+    /// again on every poll.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
+    public async Task AnUnansweredCheckIsAskedAgainOnceSafetyHasMovedOnButNotWhileTheVehicleIsUnsafe()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+
+        await fixture.AddSafetyStateChangedAsync(8, departureSafe: false, vehicleStopped: true);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(firstCheckId, runtime.PreDepartureSafetyCheckId);
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+
+        await fixture.AddSafetyStateChangedAsync(9, departureSafe: true, vehicleStopped: true);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.NotEqual(firstCheckId, runtime.PreDepartureSafetyCheckId);
+        Assert.Equal("PREDEPARTURE_CHECK_EXPIRED", runtime.BlockReasonCode);
+        Assert.Equal(9, await ExpectedSafetyStateVersionAsync(fixture, runtime));
+        Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
+    }
+
+    private static object SafeDepartureAnswer(string checkId, long safetyStateVersion, DateTimeOffset observedAt) => new
+    {
+        preDepartureSafetyCheckId = checkId,
+        outcome = "SAFE",
+        observedAt,
+        safetyStateVersion,
+        validUntil = observedAt.AddMinutes(1),
+        safety = new
+        {
+            departureSafe = true,
+            vehicleStopped = true,
+            allTargetSlotsLocked = true,
+            allUnlockOutputsReset = true,
+            unknownPresent = false,
+            reasonCodes = Array.Empty<string>()
+        }
+    };
+
+    private static async Task<long> ExpectedSafetyStateVersionAsync(RuntimeFixture fixture, JourneyRuntimeRow runtime)
+    {
+        ProtocolOutboxRow check = await fixture.Context.ProtocolOutbox.SingleAsync(
+            row => row.MessageId == runtime.PreDepartureSafetyCheckMessageId, TestContext.Current.CancellationToken);
+        using JsonDocument document = JsonDocument.Parse(check.PayloadJson);
+        JsonElement payload = document.RootElement.GetProperty("payload");
+        Assert.Equal(runtime.PreDepartureSafetyCheckId, payload.GetProperty("preDepartureSafetyCheckId").GetString());
+        return payload.GetProperty("expectedSafetyStateVersion").GetInt64();
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task HardAdmissionFiltersBeforeStableBacklogOrderingAndRemoteSideEffects()

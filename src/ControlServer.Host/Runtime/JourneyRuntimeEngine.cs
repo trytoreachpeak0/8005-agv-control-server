@@ -513,6 +513,9 @@ public sealed class JourneyRuntimeEngine(
             RuntimeMessageIds(runtime),
             cancellationToken).ConfigureAwait(false);
 
+        // Set when this iteration has already asked a pre-departure check again, so the judgment that
+        // follows neither asks a third time nor forgets why the vehicle is still waiting.
+        bool reissuedDepartureCheck = false;
         switch (runtime.Stage)
         {
             case JourneyRuntimeStage.AwaitingPickupArrival:
@@ -615,6 +618,19 @@ public sealed class JourneyRuntimeEngine(
                 now = timeProvider.GetUtcNow();
                 if (safety is null)
                 {
+                    if (!reissuedDepartureCheck &&
+                        await ReissueExpiredDepartureCheckAsync(runtime, session, now, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        reissuedDepartureCheck = true;
+                        // The new check is answered within its peer's short window, so it is judged
+                        // now, the way the first check is judged in the iteration that asks it.
+                        goto case JourneyRuntimeStage.AwaitingDepartureSafety;
+                    }
+                    if (reissuedDepartureCheck && runtime.BlockReasonCode is null)
+                    {
+                        runtime.BlockReasonCode = "PREDEPARTURE_CHECK_EXPIRED";
+                    }
                     if (runtime.BlockReasonCode is not null)
                     {
                         runtime.UpdatedAt = now;
@@ -1895,6 +1911,95 @@ public sealed class JourneyRuntimeEngine(
             runtime.UpdatedAt = now;
         }
         return now - startedAt >= runtimeOptions.StationDepartureWaitTimeout;
+    }
+
+    /// <summary>
+    /// CV-PREDEPARTURE-SAFETY-EXPIRES: retires the current pre-departure check once it no longer
+    /// speaks for the vehicle's safety, and asks again under a new identity.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A check expires when the safety state has moved past the version it asked about -- whether or
+    /// not it was answered -- or when its answer's own window has closed. Either way the answer
+    /// cannot authorize a departure, and before 2026-09-13 nothing replaced it: one check id per
+    /// journey, judged invalid on every later poll, so the vehicle waited at the pickup for ever.
+    /// </para>
+    /// <para>
+    /// Not asked again while the vehicle is unsafe: that check could only be answered UNSAFE, and it
+    /// would be asked again on every poll. The next SafetyStateChanged that makes it safe moves the
+    /// version on and expires the check then. The new identity is derived from the old one, so a
+    /// restart mid-way derives the same ids and needs no column to remember a counter.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> ReissueExpiredDepartureCheckAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (session.DepartureSafe != true || session.SafetyRevision is not long currentRevision)
+        {
+            return false;
+        }
+
+        ProtocolOutboxRow? check = await dbContext.ProtocolOutbox
+            .SingleOrDefaultAsync(row => row.MessageId == runtime.PreDepartureSafetyCheckMessageId, cancellationToken)
+            .ConfigureAwait(false);
+        if (check is null)
+        {
+            return false;
+        }
+
+        long askedRevision;
+        using (JsonDocument document = JsonDocument.Parse(check.PayloadJson))
+        {
+            askedRevision = document.RootElement.GetProperty("payload")
+                .GetProperty("expectedSafetyStateVersion").GetInt64();
+        }
+
+        bool expired = askedRevision != currentRevision;
+        if (!expired)
+        {
+            ProtocolInboxRow[] answers = await dbContext.ProtocolInbox.AsNoTracking()
+                .Where(row => row.MessageType == "PreDepartureSafetyCheckResult")
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+            foreach (ProtocolInboxRow answer in answers)
+            {
+                using JsonDocument document = JsonDocument.Parse(answer.RequestJson);
+                JsonElement payload = document.RootElement.GetProperty("payload");
+                if (RequiredString(payload, "preDepartureSafetyCheckId") != runtime.PreDepartureSafetyCheckId)
+                    continue;
+                expired |= payload.GetProperty("validUntil").GetDateTimeOffset() < now ||
+                           payload.GetProperty("safetyStateVersion").GetInt64() != currentRevision;
+            }
+        }
+        if (!expired)
+        {
+            return false;
+        }
+
+        if (check.AcknowledgedAt is null && check.FencedAt is null)
+        {
+            check.FencedAt = now;
+        }
+        runtime.PreDepartureSafetyCheckId = StableGuid(runtime.PreDepartureSafetyCheckId, "reissued-after-expiry");
+        runtime.PreDepartureSafetyCheckMessageId =
+            StableGuid(runtime.PreDepartureSafetyCheckMessageId, "reissued-after-expiry");
+        await publisher.PublishPreDepartureSafetyCheckAsync(
+            runtime.PreDepartureSafetyCheckMessageId,
+            runtime.AgvId,
+            session.SessionGeneration,
+            new PreDepartureSafetyCheckCommand(
+                runtime.PreDepartureSafetyCheckId,
+                runtime.DemandId,
+                runtime.GateMovementLegId,
+                currentRevision,
+                runtime.GateStationId),
+            cancellationToken).ConfigureAwait(false);
+        runtime.BlockReasonCode = "PREDEPARTURE_CHECK_EXPIRED";
+        runtime.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
 
