@@ -1,0 +1,301 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-protocol-fault-proxy",
+  "runId": "run-78645db2",
+  "revision": 1,
+  "observedAt": "2026-09-13T15:26:28.4557423+08:00",
+  "body": {
+    "listen": "127.0.0.1:58416",
+    "target": "127.0.0.1:58405",
+    "plan": {
+      "dropAckForMessageType": null,
+      "dropMessageType": null,
+      "dropCount": 0,
+      "planId": null
+    },
+    "traffic": {
+      "connections": [
+        {
+          "connection": 1,
+          "openedAt": "2026-09-13T15:26:20.8895577+08:00",
+          "closedAt": "2026-09-13T15:26:22.9750048+08:00",
+          "closedBy": "relay disconnected on request"
+        },
+        {
+          "connection": 2,
+          "openedAt": "2026-09-13T15:26:28.3413219+08:00",
+          "closedAt": null,
+          "closedBy": null
+        }
+      ],
+      "drops": [],
+      "lines": [
+        {
+          "connection": 1,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:20.9129463+08:00",
+          "messageType": "SessionHello",
+          "messageId": "fa7a672e-75cd-4d4a-b8de-b54fc597efcd",
+          "correlationId": null,
+          "sessionGeneration": null,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:21.1233367+08:00",
+          "messageType": "SessionAccepted",
+          "messageId": "11ccec24-85c6-479d-bfbe-779528c740c9",
+          "correlationId": "fa7a672e-75cd-4d4a-b8de-b54fc597efcd",
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:21.1395899+08:00",
+          "messageType": "CapabilitySnapshot",
+          "messageId": "35b960b2-7beb-4468-8ecc-dcfa447e9006",
+          "correlationId": null,
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:21.1778186+08:00",
+          "messageType": "SnapshotAppliedAck",
+          "messageId": "6faea876-8f86-4ed4-9484-962c19dcce46",
+          "correlationId": "35b960b2-7beb-4468-8ecc-dcfa447e9006",
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:21.18433+08:00",
+          "messageType": "SafetyStateSnapshot",
+          "messageId": "80fd3a6a-7771-45e9-aee8-5461c33888cc",
+          "correlationId": null,
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:21.1969966+08:00",
+          "messageType": "SnapshotAppliedAck",
+          "messageId": "6f0173c2-5e5f-4a61-b718-b5b07c772c82",
+          "correlationId": "80fd3a6a-7771-45e9-aee8-5461c33888cc",
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:21.2203866+08:00",
+          "messageType": "RecoveryStateReport",
+          "messageId": "a9305005-0ce3-4093-8dce-e7aa03df87a2",
+          "correlationId": null,
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:21.2825116+08:00",
+          "messageType": "DurableAck",
+          "messageId": "bbf4b572-18ac-4367-8b4d-14adfa79e2fb",
+          "correlationId": "a9305005-0ce3-4093-8dce-e7aa03df87a2",
+          "sessionGeneration": 1,
+          "acceptedMessageType": "RecoveryStateReport",
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:21.2826265+08:00",
+          "messageType": "SessionReadiness",
+          "messageId": "456bdb27-ec91-4d59-8256-057da50487e3",
+          "correlationId": null,
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:21.315745+08:00",
+          "messageType": "SafetyStateChanged",
+          "messageId": "b45ddd4a-a0ff-8f51-84ea-7d0f299c0fc8",
+          "correlationId": null,
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:21.3294295+08:00",
+          "messageType": "DurableAck",
+          "messageId": "1de30d49-26e9-4d8a-9f80-2299d653556c",
+          "correlationId": "b45ddd4a-a0ff-8f51-84ea-7d0f299c0fc8",
+          "sessionGeneration": 1,
+          "acceptedMessageType": "SafetyStateChanged",
+          "dropped": false
+        },
+        {
+          "connection": 1,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:21.3295272+08:00",
+          "messageType": "SessionReadiness",
+          "messageId": "4c75c548-08bd-466f-b598-6490f705de48",
+          "correlationId": null,
+          "sessionGeneration": 1,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:28.3438293+08:00",
+          "messageType": "SessionHello",
+          "messageId": "962339a3-510a-465f-a1e1-d44d31b4ae47",
+          "correlationId": null,
+          "sessionGeneration": null,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:28.353887+08:00",
+          "messageType": "SessionAccepted",
+          "messageId": "d5101b2f-7830-4d66-9392-0f5b19230fec",
+          "correlationId": "962339a3-510a-465f-a1e1-d44d31b4ae47",
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:28.3570802+08:00",
+          "messageType": "CapabilitySnapshot",
+          "messageId": "cf4520b6-9550-41f9-b0e4-54528a8c6b48",
+          "correlationId": null,
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:28.3624015+08:00",
+          "messageType": "SnapshotAppliedAck",
+          "messageId": "9489fa2e-199e-4c7b-b749-d97b46f7d703",
+          "correlationId": "cf4520b6-9550-41f9-b0e4-54528a8c6b48",
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:28.3630109+08:00",
+          "messageType": "SafetyStateSnapshot",
+          "messageId": "e220ac25-fda6-4a5a-b6c7-8ad7579b9327",
+          "correlationId": null,
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:28.3667965+08:00",
+          "messageType": "SnapshotAppliedAck",
+          "messageId": "73cad403-8bc0-4462-b1a6-a1222b4d3451",
+          "correlationId": "e220ac25-fda6-4a5a-b6c7-8ad7579b9327",
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:28.375458+08:00",
+          "messageType": "RecoveryStateReport",
+          "messageId": "5a2e4f3e-4543-4fac-8419-d4ce104bf96f",
+          "correlationId": null,
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:28.3849868+08:00",
+          "messageType": "DurableAck",
+          "messageId": "b127772a-8910-4586-9277-587bcda4479b",
+          "correlationId": "5a2e4f3e-4543-4fac-8419-d4ce104bf96f",
+          "sessionGeneration": 2,
+          "acceptedMessageType": "RecoveryStateReport",
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:28.3850876+08:00",
+          "messageType": "SessionReadiness",
+          "messageId": "1201c520-b96a-4d83-a748-445d16b87615",
+          "correlationId": null,
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "onboard->server",
+          "at": "2026-09-13T15:26:28.4009289+08:00",
+          "messageType": "SafetyStateChanged",
+          "messageId": "61217456-2d48-e057-9883-49fdbb912792",
+          "correlationId": null,
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:28.4092052+08:00",
+          "messageType": "DurableAck",
+          "messageId": "f092c130-c29e-4196-a631-50de1d61d9a9",
+          "correlationId": "61217456-2d48-e057-9883-49fdbb912792",
+          "sessionGeneration": 2,
+          "acceptedMessageType": "SafetyStateChanged",
+          "dropped": false
+        },
+        {
+          "connection": 2,
+          "direction": "server->onboard",
+          "at": "2026-09-13T15:26:28.409336+08:00",
+          "messageType": "SessionReadiness",
+          "messageId": "55361856-1dff-47bc-a4cb-9d921362b444",
+          "correlationId": null,
+          "sessionGeneration": 2,
+          "acceptedMessageType": null,
+          "dropped": false
+        }
+      ],
+      "overflowedLines": 0
+    }
+  }
+}

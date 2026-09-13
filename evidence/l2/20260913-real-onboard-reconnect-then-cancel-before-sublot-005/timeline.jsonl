@@ -1,0 +1,29 @@
+{"at":"2026-09-13T07:26:06.8614518+00:00","note":"L2 run 20260913T072606829Z starting for scenario 'real-onboard-reconnect-then-cancel-before-sublot'."}
+{"at":"2026-09-13T07:26:06.8888854+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T07:26:07.0284632+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-13T07:26:12.2404783+00:00","note":"Reusing cached onboard-hmi publish for 336a105720f8570eeaf6d48e43a80325634ac540."}
+{"at":"2026-09-13T07:26:12.3416306+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T07:26:12.3464006+00:00","note":"Peers: onboard-hmi@336a105720f8570eeaf6d48e43a80325634ac540, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T07:26:13.2574309+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T07:26:13.3637623+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T07:26:15.1102317+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-13T07:26:17.1808188+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T07:26:18.2836501+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T07:26:18.9313368+00:00","criterion":"protocol-proxy-live","value":"live"}
+{"at":"2026-09-13T07:26:18.9344777+00:00","note":"Protocol fault proxy relaying 127.0.0.1:58416 -> 127.0.0.1:58405."}
+{"at":"2026-09-13T07:26:21.0329880+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-13T07:26:21.0483633+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-13T07:26:21.1663714+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-13T07:26:21.4354778+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T07:26:21.4927585+00:00","note":"Environment is up; entering scenario 'real-onboard-reconnect-then-cancel-before-sublot'."}
+{"at":"2026-09-13T07:26:21.6681534+00:00","criterion":"proxy-session","value":"1"}
+{"at":"2026-09-13T07:26:21.7491548+00:00","criterion":"session-ready","value":"@{SessionGeneration=1; Readiness=Ready; ReasonCode=READY}"}
+{"at":"2026-09-13T07:26:21.7775113+00:00","note":"Publishing demand f640ec5991ca4677ba1800fe8745faa9."}
+{"at":"2026-09-13T07:26:21.8576207+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-13T07:26:22.8727547+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-b5ae16b6-5e3a-a15a-9a62-d2438ac7d0ec-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T07:26:22.9255838+00:00","criterion":"reconnected-baseline","value":"@{LastConnection=1; Generation=1}"}
+{"at":"2026-09-13T07:26:22.9767753+00:00","note":"Disconnected the relay before arrival; it closed connection(s) 1."}
+{"at":"2026-09-13T07:26:23.0051383+00:00","criterion":"reconnected","value":"@{HelloConnections=System.Object[]; Session=}"}
+{"at":"2026-09-13T07:26:28.3968464+00:00","note":"Run failed: The variable '$sessionAfter' cannot be retrieved because it has not been set."}
+{"at":"2026-09-13T07:26:28.5031923+00:00","note":"Exported 10 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-13T07:26:41.1560460+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 10 lines, 10 distinct, 5 message types, 0 distinct violations, 0 known; schema compilation 11482 ms."}

@@ -82,7 +82,10 @@ public sealed class OnboardJourneyPublisherTests
             TestContext.Current.CancellationToken);
 
         Assert.Empty(response);
-        Assert.Equal(clock.LastReturned, row.AcknowledgedAt);
+        // Read back rather than off the instance loaded above: the processor starts every message from a
+        // cleared context, so it acknowledges a row of its own (8005-agv-control-server#40).
+        Assert.Equal(clock.LastReturned, (await context.ProtocolOutbox.AsNoTracking().SingleAsync(
+            item => item.MessageId == messageId, TestContext.Current.CancellationToken)).AcknowledgedAt);
 
         await publisher.PublishVehicleBusinessStateAsync(
             messageId,
@@ -452,7 +455,10 @@ public sealed class OnboardJourneyPublisherTests
             TestContext.Current.CancellationToken);
 
         Assert.Empty(response);
-        Assert.NotNull(row.AcknowledgedAt);
+        // Read back rather than off the instance loaded above: the processor starts every message from a
+        // cleared context, so it acknowledges a row of its own (8005-agv-control-server#40).
+        Assert.NotNull((await context.ProtocolOutbox.AsNoTracking().SingleAsync(
+            item => item.MessageId == messageId, TestContext.Current.CancellationToken)).AcknowledgedAt);
         await publisher.PublishSublotEntryRequestAsync(
             messageId, "AGV-001", 12, request, TestContext.Current.CancellationToken);
         Assert.Equal(2, peer.Lines.Count);
@@ -561,7 +567,10 @@ public sealed class OnboardJourneyPublisherTests
             TestContext.Current.CancellationToken);
 
         Assert.Empty(response);
-        Assert.NotNull(row.AcknowledgedAt);
+        // Read back rather than off the instance loaded above: the processor starts every message from a
+        // cleared context, so it acknowledges a row of its own (8005-agv-control-server#40).
+        Assert.NotNull((await context.ProtocolOutbox.AsNoTracking().SingleAsync(
+            item => item.MessageId == messageId, TestContext.Current.CancellationToken)).AcknowledgedAt);
     }
 
     [Fact]

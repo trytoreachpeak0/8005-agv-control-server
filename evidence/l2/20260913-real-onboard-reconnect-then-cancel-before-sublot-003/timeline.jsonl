@@ -1,0 +1,39 @@
+{"at":"2026-09-13T07:06:57.1693841+00:00","note":"L2 run 20260913T070657137Z starting for scenario 'real-onboard-reconnect-then-cancel-before-sublot'."}
+{"at":"2026-09-13T07:06:57.1970574+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T07:06:57.3297468+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-13T07:07:03.0784007+00:00","note":"Reusing cached onboard-hmi publish for 336a105720f8570eeaf6d48e43a80325634ac540."}
+{"at":"2026-09-13T07:07:03.1745680+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T07:07:03.1805100+00:00","note":"Peers: onboard-hmi@336a105720f8570eeaf6d48e43a80325634ac540, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T07:07:04.0502511+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T07:07:04.1808036+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T07:07:05.9365610+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-13T07:07:08.0193448+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T07:07:09.6017760+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T07:07:10.2626711+00:00","criterion":"protocol-proxy-live","value":"live"}
+{"at":"2026-09-13T07:07:10.2662728+00:00","note":"Protocol fault proxy relaying 127.0.0.1:58416 -> 127.0.0.1:58405."}
+{"at":"2026-09-13T07:07:12.0466549+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-13T07:07:12.0641146+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-13T07:07:12.1510814+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-13T07:07:12.4321845+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T07:07:12.4915963+00:00","note":"Environment is up; entering scenario 'real-onboard-reconnect-then-cancel-before-sublot'."}
+{"at":"2026-09-13T07:07:12.6441158+00:00","criterion":"proxy-session","value":"1"}
+{"at":"2026-09-13T07:07:12.7207296+00:00","criterion":"session-ready","value":"@{SessionGeneration=1; Readiness=Ready; ReasonCode=READY}"}
+{"at":"2026-09-13T07:07:12.7475220+00:00","note":"Publishing demand ea743df23f4748dcaa62bf33557fbd42."}
+{"at":"2026-09-13T07:07:12.8208565+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-13T07:07:13.6089796+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-0cf97c3f-0be1-6455-90b6-644b58f79eaf-S1-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-13T07:07:13.8725072+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-0cf97c3f-0be1-6455-90b6-644b58f79eaf-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T07:07:13.8864427+00:00","note":"Disconnecting the relay before arrival (1 connection(s) so far, last #1)."}
+{"at":"2026-09-13T07:07:13.9091804+00:00","note":"The relay closed connection(s) 1."}
+{"at":"2026-09-13T07:07:13.9201538+00:00","criterion":"reconnected","value":"0"}
+{"at":"2026-09-13T07:07:19.4879423+00:00","criterion":"reconnected","value":"1"}
+{"at":"2026-09-13T07:07:19.4918343+00:00","criterion":"session-after-reconnect","value":"@{SessionGeneration=2; Readiness=RecoveryRequired; ReasonCode=DEPARTURE_SAFETY_NOT_READY}"}
+{"at":"2026-09-13T07:07:19.5457104+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-13T07:07:21.9395135+00:00","note":"field-operator: stop 1: pressed LOAD_CANCELLATION for demand ea743df2-3f47-48dc-aa62-bf33557fbd42: HTTP 200"}
+{"at":"2026-09-13T07:07:21.9981713+00:00","note":"field-operator: stop 1: demand ea743df2-3f47-48dc-aa62-bf33557fbd42 Cancelled (CANCELLED_BY_OPERATOR); journey now at 1/Completed"}
+{"at":"2026-09-13T07:07:22.0961837+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-13T07:07:23.1664282+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-13T07:07:24.2271851+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-13T07:07:25.2885688+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-13T07:07:25.3123580+00:00","note":"Scenario finished."}
+{"at":"2026-09-13T07:07:25.4122483+00:00","note":"Exported 16 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-13T07:07:40.1713567+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 16 lines, 16 distinct, 8 message types, 0 distinct violations, 0 known; schema compilation 13532 ms."}

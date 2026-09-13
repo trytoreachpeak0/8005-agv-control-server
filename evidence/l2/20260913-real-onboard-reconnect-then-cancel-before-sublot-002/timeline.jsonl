@@ -1,0 +1,31 @@
+{"at":"2026-09-13T07:03:37.9179571+00:00","note":"L2 run 20260913T070337886Z starting for scenario 'real-onboard-reconnect-then-cancel-before-sublot'."}
+{"at":"2026-09-13T07:03:37.9437509+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T07:03:38.0791815+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-13T07:03:44.8042102+00:00","note":"Reusing cached onboard-hmi publish for 336a105720f8570eeaf6d48e43a80325634ac540."}
+{"at":"2026-09-13T07:03:44.9388665+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T07:03:44.9435030+00:00","note":"Peers: onboard-hmi@336a105720f8570eeaf6d48e43a80325634ac540, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T07:03:45.8496551+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T07:03:45.9755169+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T07:03:47.7476906+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-13T07:03:49.9915759+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T07:03:51.0807306+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T07:03:51.7489256+00:00","criterion":"protocol-proxy-live","value":"live"}
+{"at":"2026-09-13T07:03:51.7521339+00:00","note":"Protocol fault proxy relaying 127.0.0.1:58416 -> 127.0.0.1:58405."}
+{"at":"2026-09-13T07:03:53.7592042+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-13T07:03:53.7748524+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-13T07:03:53.8760893+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-13T07:03:54.1481820+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T07:03:54.1926324+00:00","note":"Environment is up; entering scenario 'real-onboard-reconnect-then-cancel-before-sublot'."}
+{"at":"2026-09-13T07:03:54.3365467+00:00","criterion":"proxy-session","value":"1"}
+{"at":"2026-09-13T07:03:54.4101177+00:00","criterion":"session-ready","value":"@{SessionGeneration=1; Readiness=Ready; ReasonCode=READY}"}
+{"at":"2026-09-13T07:03:54.4351078+00:00","note":"Publishing demand 26edca96e5a14245b2cf8e583e37c166."}
+{"at":"2026-09-13T07:03:54.5062911+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-13T07:03:55.8193407+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-87d56cc9-955b-b058-b01b-497233e31ef0-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T07:03:55.8363963+00:00","note":"Disconnecting the relay before arrival (1 connection(s) so far, last #1)."}
+{"at":"2026-09-13T07:03:55.8586582+00:00","note":"The relay closed connection(s) 1."}
+{"at":"2026-09-13T07:03:55.8988046+00:00","criterion":"reconnected","value":"0"}
+{"at":"2026-09-13T07:04:01.1892740+00:00","criterion":"reconnected","value":"1"}
+{"at":"2026-09-13T07:04:01.1925318+00:00","criterion":"session-ready-after-reconnect","value":"@{SessionGeneration=2; Readiness=RecoveryRequired; ReasonCode=DEPARTURE_SAFETY_NOT_READY}"}
+{"at":"2026-09-13T07:05:01.4011122+00:00","note":"Run failed: Timed out after 60s waiting for: the session was Ready again in a newer generation. Last observed: {\"SessionGeneration\":2,\"Readiness\":\"RecoveryRequired\",\"ReasonCode\":\"DEPARTURE_SAFETY_NOT_READY\"}"}
+{"at":"2026-09-13T07:05:01.4845797+00:00","note":"Exported 22 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-13T07:05:13.9006421+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 22 lines, 22 distinct, 6 message types, 0 distinct violations, 0 known; schema compilation 11422 ms."}

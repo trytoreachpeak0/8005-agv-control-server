@@ -42,6 +42,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-recovery-retry-after-refusal` | **真的**，自动化面 | 旅程还没 `Blocked` 时按「补偿清空」被拒，转 `Blocked` 后同一 attempt 再按：开得出会话、补偿走完、车不被掐连接（现场旅程 54d2cf63 卡在这里，8005-agv-program#49） | `evidence/l2/20260911-real-onboard-recovery-retry-after-refusal-006`（车载端 `ab346ed`；`-004` 是修复前的红基线，见最后一节） |
 | `real-onboard-durable-ack-lost` | **真的**，协议故障代理 | 装载结果被服务端收下、`DurableAck` 在路上丢了：车重连后补发同一 messageId，服务端要确认而不是掐连接（#30）；丢一次 ack 只该重连一次（#33） | `evidence/l2/20260913-real-onboard-durable-ack-lost-005`（服务端 `8ef2e18`，车载端 `a56a59d`；`-001` 是 #30 修复前的红基线，`-002`/`-003` 红在 #33，见文末那一节） |
 | `real-onboard-compensate-then-reconnect` | **真的**，自动化面，协议故障代理 | 补偿清空对账之后断线重连一次（不丢 ack）：补偿会话留下的恢复会话快照与补偿命令全部结清、一条都不重放进新会话，车照常接单（#31） | `evidence/l2/20260912-real-onboard-compensate-then-reconnect-003`（服务端 `11bee90`，车载端 `86fe0a4`；`-001` 是修复前的红基线，`-002` 绿着却带着车载端回归，见文末那一节） |
+| `real-onboard-reconnect-then-cancel-before-sublot` | **真的**，自动化面，协议故障代理 | 车在到取货站之前断线重连一次，到站后扫码前取消：这次取消要结算引擎在重连之后才发出的第 1 轮条码录入请求（修之前连接里握手读进来的旧 stop 让它漏掉，#40） | `evidence/l2/20260913-real-onboard-reconnect-then-cancel-before-sublot-006`（服务端 `404a74e`，车载端 `336a105`；`-003` 是修复前的红基线，`-004` 是审查前的场景，`-001`/`-002`/`-005` 红在场景自己，见文末那一节） |
 | `real-onboard-cancellation-authorization-lost` | **真的**，自动化面，协议故障代理 | 装货途中的取消被服务端授权、授权应答在路上丢了：再按一次拿到同一个授权、清空对账，车不被掐连接（修之前这一单只能改库，onboard-hmi#39） | `evidence/l2/20260913-real-onboard-cancellation-authorization-lost-006`（服务端 `cdd1463`，车载端 `1acb018`；`-001` 是 #39 修复前的红基线，`-005` 是 `L2-CAL-07` 的红基线，见文末那一节） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
@@ -506,7 +507,9 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
     `WireToGateStore` 把这台车的活动旅程带跟踪读进去，之后引擎用自己的上下文改 stage，同一连接上
     再查到的仍是握手那一刻的样子。只有在「车在某个状态下连上、之后状态被别人改掉」时才看得见，
     所以前面所有场景（车都是在旅程开始之前连上的）一次都没撞上，重启场景第一次跑修好的车载端就撞上了
-    （`-002`）。恢复协调器现在读旅程时先 `ReloadAsync`；**同一类读法在别处还有没有，没有逐条核**。
+    （`-002`）。当时的修法是恢复协调器读旅程时先 `ReloadAsync`。**同一类读法 `8005-agv-control-server#28` 逐条核过**，
+    另有五处，其中「到站之前重连、扫码前取消」在真装置上复现为红；**#40 起每条入站消息开头清跟踪**，那处 `ReloadAsync` 已删，
+    见文末 `real-onboard-reconnect-then-cancel-before-sublot` 一节。
 20. **重新拉起车载端之后别马上点弹窗。**`-003` 在拉起后约 1 秒点「补偿清空」，确认框已经在 UIA
     树里，按钮却还不接受输入，`Invoke` 抛 `Operation is not valid due to the current state of the
     object.`，请求没发出去。`Confirm` 现在在截止前把 `InvalidOperationException` 当「还没好」重试。
@@ -929,3 +932,53 @@ L2**，钉住它的是车载端 G2 `OnlyTheClosedRecoverySessionSnapshotIsAcknow
 两条都违反 ADR-cross-0046「原 SlotOperationCommand 没有被撤回或改写」「等待授权期间……车载端不得自行改变原装货语义」，也违反
 ADR-cross-0058 决策 2、6（读数已知却报 `UNKNOWN`）。修在车载端 `w2g/cancel-no-reexecute-aborted-attempt`：执行器拒绝再执行日志里已开始
 未结算的 attempt；日志里有未得应答的装货取消时，中断结算不接手。
+
+## `real-onboard-reconnect-then-cancel-before-sublot`：到站之前重连，扫码前取消
+
+服务端每条 TCP 连接只有一个 `DbContext`（第 19 条）。[`8005-agv-control-server#28`](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/28)
+普查出六处「握手或本连接更早的消息带跟踪读进来、之后被引擎在自己的上下文里改写」的读法，最危险的一处是这一格：车在开往
+取货站途中重连，握手把 `LoadRound = 0` 的 stop 读进连接；到站后引擎发出第 1 轮 `SublotEntryRequested`；同一条连接上扫码前
+取消，`CancelDemandBeforeLoadAsync` 按连接里那份旧 stop 判轮次，第 0 轮没有请求可结算，第 1 轮那条于是一直挂着。旅程照样
+`Completed`、需求照样 `Cancelled`，**症状只在发件箱里**：单需求旅程里那条请求永远不结；旅程还带着别的需求时，引擎每轮都会
+把它补发给车。
+
+此前所有真装置场景的车都在旅程开始之前连上，握手时没有活动旅程可读，所以一次都没撞上。这一条用协议故障代理的
+`POST /control/v1/disconnect` 在车到站之前断一次（不丢 ack），再经驱动脚本的 `Invoke-FieldActCancelBeforeSublot` 在重连之后的
+那条连接上按「取消装货」（[`8005-agv-control-server#40`](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/40)）。
+
+| 判据 | 讲什么 |
+| --- | --- |
+| `L2-RCS-00` | 前提：车经代理建会话 |
+| `L2-RCS-01` | 前提：重连握手落库时旅程 `AwaitingPickupArrival`、stop 仍是第 0 轮 |
+| `L2-RCS-02` | 前提：到站后引擎发出第 1 轮条码录入请求，取消之前它未被结算 |
+| `L2-RCS-03` | 取消请求落在重连握手的那条连接上（换了连接就换了上下文，这一幕就问不出东西），需求 `Cancelled` 并以 `CANCELLED_BY_OPERATOR` 抑制 |
+| `L2-RCS-04` | 单需求旅程 `Completed / CANCELLED_BY_OPERATOR` |
+| `L2-RCS-05` | 第 1 轮条码录入请求被这次取消结算 |
+| `L2-RCS-06` | 断开一次只换来一次重连，到收尾连接还开着 |
+
+证据：
+
+1. **`-001`（服务端 `bf20b38`）红在场景**：把 `SublotRequestMessageId` 当成 `JourneyRuntimes` 的列去读，断开之前就停了。它是
+   `Get-L2Journey` 用 `Get-L2DeterministicId` 按停靠与轮次算出来的，表里没有这一列。
+2. **`-002`（`321e612`）红在场景**：重连之后等新世代 `Ready`。车有一张在途取货单、还没到站时，车载端的安全快照如实报
+   `departureSafe=false` / `VEHICLE_NOT_READY`，会话停在 `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY`，到站停稳才回到 `Ready`——
+   与「`real-onboard-field-window2-rehearsal`」一节里「去充电桩的路上会话是 `RecoveryRequired`」是同一件事，不是缺陷。这一幕要的
+   只是握手落库，现在等的是新世代的会话行。
+3. **`-003`（`dff5e7e`，产品代码与 `ControlServer_MVP` `6a8a688` 相同）是红基线**：前提与其余判据全绿，`L2-RCS-05` 读到
+   `SublotEntryRequested unacknowledged`。
+4. **`-004`（服务端 `8f3b6fe`，车载端 `336a105`）PASS/8**：同一段流程，`L2-RCS-05` 读到 `AcknowledgedAt` 已写，全程仍只重连一次。
+5. **`-005`（`6064005`）红在场景自己**：code review 之后把第 2 步改成 `Wait-L2Change`（第二条读取纪律），删掉了
+   `$sessionAfter` 的赋值，`L2-RCS-01` 的实际值还在读它，StrictMode 下抛出。重连本身已按新写法等到。
+6. **`-006`（服务端 `404a74e`，车载端 `336a105`）PASS/8**：审查之后的最终场景。
+
+**修法是每条入站消息开头清跟踪**：`OnboardMessageProcessor.ProcessAsync` 第一行 `ChangeTracker.Clear()`。不按消息开 scope
+（`_serverInstanceId` 每个 scope 生成一次、握手时下发，改动面大而对 EF 的效果相同）；不逐处 `Reload`（普查出的六处之外，以后新写的
+读法还会再踩，跟踪集也仍随连接存活只增不减）。清在 `ProcessAsync` 开头而不是它与 `FlushDeferredOutboundAsync` 之间，延迟发送
+仍能用到这条消息自己读进来的东西。恢复协调器里为 `8005-agv-program#40` 加的那处 `ReloadAsync` 随之删掉，那条回归测试
+（`RecoveryStateMachineG2Tests.ARecoverySessionIsJudgedOnTheJourneyAsStoredNotAsThisConnectionFirstSawIt`）照旧绿，当初撞出它的
+真装置场景也照旧绿：`real-onboard-restart-while-waiting-operator-010`（服务端 `8f3b6fe`，车载端 `336a105`）PASS/13。
+
+同一个修复由两条 L1 钉住：`JourneyRuntimeWorkerTests.ACancellationBeforeLoadSettlesTheSublotRequestAskedAfterTheVehicleConnected`
+是本场景的形状；`AnOperatorCancellationAfterTheStationDeadlineIsJudgedOnTheDemandAsStored` 是普查里 `AcceptedDemand.Status` 那一行——
+连接读过的需求已被站点超时取消，同一连接上再来的操作员取消修前拿到 `AUTHORIZED`，还把旅程原因码改写成 `CANCELLED_BY_OPERATOR`。
+两条都走 `OnboardMessageProcessor.ProcessAsync`，#28 时那条直接调 store 的复现修不绿，因为清跟踪的位置不在 store 里。
