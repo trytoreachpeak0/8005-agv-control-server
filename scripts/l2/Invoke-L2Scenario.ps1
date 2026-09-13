@@ -167,6 +167,10 @@ $databasePath = Join-Path $stageRoot 'controlserver.db'
 $journal = New-L2Journal -Path (Join-Path $EvidenceRoot 'timeline.jsonl')
 $assertions = New-L2Assertions
 $handles = @()
+# Processes a scenario starts again (Context.RestartOnboard). A list rather than more entries in
+# $handles: the scriptblocks on Context run in the scenario's scope, where assigning $handles would
+# only create a local, while adding to this list changes the one teardown stops.
+$restartedHandles = [System.Collections.Generic.List[object]]::new()
 $connection = $null
 $outcome = 'FAIL'
 $failureReason = $null
@@ -754,6 +758,37 @@ try {
             $journal.Note("Stopping component '$Name'.")
             Stop-L2Process -Handles $matched
         }
+        # A vehicle power cycle, real-onboard rig only: the onboard process is killed and started again
+        # from the same stage copy, settings, journal and environment -- nothing about the restart is
+        # staged, so what the onboard reports afterwards is what it recovered from its own journal.
+        # The new UI Automation driver replaces Context.Onboard and is also returned.
+        RestartOnboard      = {
+            if (-not $realOnboard) { throw 'RestartOnboard needs the real onboard rig.' }
+            $journal.Note('Restarting the onboard HMI (power cycle).')
+            $running = @(@($handles) + @($restartedHandles) | Where-Object { $_.Name -eq 'onboard-hmi' })
+            Stop-L2Process -Handles $running
+            # Start-L2Process redirects into <name>.out.log / .err.log afresh; keep what the process
+            # before the restart wrote, which is the half a failed replay would be diagnosed from.
+            $generation = $restartedHandles.Count + 1
+            foreach ($log in @($running | ForEach-Object { $_.OutLog; $_.ErrLog } | Select-Object -Unique)) {
+                if (Test-Path -LiteralPath $log) {
+                    $kept = $log -replace '\.(out|err)\.log$', ".before-restart-$generation.`$1.log"
+                    try { Move-Item -LiteralPath $log -Destination $kept -Force -ErrorAction Stop }
+                    catch { $journal.Note("Could not keep $log before the restart: $($_.Exception.Message)") }
+                }
+            }
+            $restarted = Start-L2Process -Name 'onboard-hmi' -Gui `
+                -FilePath (Join-Path $onboardStageDirectory 'SQCD.Agv.Wpf.exe') `
+                -WorkingDirectory $onboardStageDirectory `
+                -Environment $onboardEnvironment `
+                -LogRoot $logRoot |
+                ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 6 -PassThru }
+            $restartedHandles.Add($restarted)
+            $driver = New-L2OnboardDriver -ProcessId $restarted.Process.Id
+            $journal.Note("Onboard window after restart: $($driver.Attach(120))")
+            $context.Onboard = $driver
+            return $driver
+        }
     }
 
     $journal.Note("Environment is up; entering scenario '$Scenario'.")
@@ -824,7 +859,7 @@ try {
         try { $connection.Close(); $connection.Dispose() } catch { }
     }
 
-    Stop-L2Process -Handles $handles
+    Stop-L2Process -Handles @(@($handles) + @($restartedHandles))
 
     $identity = @{
         controlServerCommit = (& git -C $Repository rev-parse HEAD 2>$null)

@@ -52,4 +52,6 @@ Peers: 车载端 `w2g/b3-on-v2`（同日车载端改动，见上）
 | `OnboardMessageProcessorTests` | 12 passed |
 | 全量 | 720 passed |
 
-真车载端上的完整顺序在 G3 `FP-IS-03` 里核对，那份证据出来后补进本表。
+| L2 `g3-operation-result-unknown-reconcile`（真车载端 `w2g/b3-on-v2@8c83265`，产品代码同 `3fb8a6e`；调试运行 `unknown-002`，证据未入库） | 5/5 PASS：关空门等满 120 秒得 `UNKNOWN` 结果并确认（会话代 1）→ 重启车载端 → 会话代 2 的报告列出该结果 → 同号结果按代 2 补发并确认；结果仍一行、装载与需求仍 `RecoveryRequired`、无关卡单；`PendingResultIdsJson` 为 `[]`、会话仍 `RecoveryRequired`；重启后未再开锁 |
+
+真车载端上的完整顺序由 G3 `FP-IS-03`（`run-journey-g3.ps1`，断言 G3-03-08..12）在统一身份上正式核对。

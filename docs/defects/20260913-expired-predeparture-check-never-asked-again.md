@@ -60,4 +60,6 @@ Peers: 车载端 `w2g/b3-on-v2`（同日另有车载端改动，见上）
 | `JourneyRuntimeWorkerTests` | 71 passed |
 | 全量 | 718 passed |
 
-真车载端上的完整顺序在 G3 `FP-IS-03` 里核对，那份证据出来后补进本表。
+| L2 `g3-predeparture-check-expires`（真车载端 `w2g/b3-on-v2@04d0088`；调试运行 `expiry-001`，证据未入库） | 7/7 PASS：去关卡路线不可达扣住发车 → 8 号仓锁反馈两次变化 → 车载端回 `PREDEPARTURE_CHECK_EXPIRED` → 旧检查作废、新身份按新版本重问 → 凭新答复出发，关卡单恰好一张，会话代不变 |
+
+真车载端上的完整顺序由 G3 `FP-IS-03`（`run-journey-g3.ps1`，断言 G3-03-01..07）在统一身份上正式核对。

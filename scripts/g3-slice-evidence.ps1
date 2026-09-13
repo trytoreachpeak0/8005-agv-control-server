@@ -71,7 +71,8 @@ function Get-G3AssuranceLevelLadder {
 # The user reversed that ruling on 2026-09-13 for FP-IS-01/02/03/07: all four are to get a G3 surface,
 # through run-journey-g3.ps1. A slice leaves this table when that runner actually claims assertions
 # for it, not before -- ticket 23 forbids naming a slice in a claim with nothing behind it. FP-IS-01
-# left on 2026-09-13 with the demand-to-pickup scenario.
+# left on 2026-09-13 with the demand-to-pickup scenario, FP-IS-02 the same day with the load, correction
+# and cancellation scenarios, and FP-IS-03 with the check-expiry and unknown-result scenarios.
 #
 # FP-IS-14 was listed here on 2026-09-10 as a gap of a different kind -- not a missing assertion but a
 # slice that could not be asserted at all, because nothing outside the process could start an
@@ -80,7 +81,6 @@ function Get-G3AssuranceLevelLadder {
 # assertion somebody could write against the peers as they stand.
 function Get-G3SlicesWithoutSurfaceThisBatch {
     return [ordered]@{
-        'FP-IS-03' = 'CV-PREDEPARTURE-SAFETY-EXPIRES and CV-OPERATION-RESULT-UNKNOWN-RECONCILE have no assertion in any G3 runner.'
         'FP-IS-07' = 'None of its six vectors has an assertion in any G3 runner; the staged runner records several of its accepted paths as not reachable in a staged run.'
     }
 }
@@ -285,6 +285,22 @@ function Get-G3RunnerClaim {
                     'allSlotsProvenEmpty',
                     'cancellationReconciledToEmptyFinalState',
                     'finalStateSurvivesLateLoadResult')
+                # CV-PREDEPARTURE-SAFETY-EXPIRES on a departure held by an unreachable gate route, then
+                # CV-OPERATION-RESULT-UNKNOWN-RECONCILE across an onboard restart. Both halves of both
+                # vectors were added on 2026-09-13 at the user's ruling; neither end produced them before.
+                'FP-IS-03' = @(
+                    'predepartureExpirySequenceMatchesVector',
+                    'neverDepartOnExpiredCheck',
+                    'checkExpiresOnSafetyStateChange',
+                    'safetyStateChangeReportedPromptly',
+                    'checkAskedAgainAfterExpiry',
+                    'expiredCheckRefusalKeepsTheSession',
+                    'expiryLeavesNoDuplicateCommitOrUnprovenState',
+                    'unknownResultReconcileSequenceMatchesVector',
+                    'unknownReportedAsUnknownAndReplayedFromJournal',
+                    'unknownNeverTreatedAsSuccess',
+                    'reconciledFromReportedJournalBeforeReadiness',
+                    'replayTouchesNoSlot')
             }
         }
     }

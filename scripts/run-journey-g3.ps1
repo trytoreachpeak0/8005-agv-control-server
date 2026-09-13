@@ -106,6 +106,22 @@ $scenarioAssertions = [ordered]@{
         'G3-02-26' = 'cancellationReconciledToEmptyFinalState'
         'G3-02-27' = 'finalStateSurvivesLateLoadResult'
     }
+    'g3-predeparture-check-expires' = [ordered]@{
+        'G3-03-01' = 'predepartureExpirySequenceMatchesVector'
+        'G3-03-02' = 'neverDepartOnExpiredCheck'
+        'G3-03-03' = 'checkExpiresOnSafetyStateChange'
+        'G3-03-04' = 'safetyStateChangeReportedPromptly'
+        'G3-03-05' = 'checkAskedAgainAfterExpiry'
+        'G3-03-06' = 'expiredCheckRefusalKeepsTheSession'
+        'G3-03-07' = 'expiryLeavesNoDuplicateCommitOrUnprovenState'
+    }
+    'g3-operation-result-unknown-reconcile' = [ordered]@{
+        'G3-03-08' = 'unknownResultReconcileSequenceMatchesVector'
+        'G3-03-09' = 'unknownReportedAsUnknownAndReplayedFromJournal'
+        'G3-03-10' = 'unknownNeverTreatedAsSuccess'
+        'G3-03-11' = 'reconciledFromReportedJournalBeforeReadiness'
+        'G3-03-12' = 'replayTouchesNoSlot'
+    }
 }
 
 function Get-ScriptFunction {
