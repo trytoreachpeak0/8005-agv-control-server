@@ -128,6 +128,7 @@ Wait-CancellationOffered 'cancellation-offered'
 $journal.Note('Arming the proxy: drop the first LoadCancellationAuthorization and keep the link up.')
 $null = $proxy.Command('Put', 'drop-message', @{ messageType = 'LoadCancellationAuthorization'; count = 1 })
 $hellosBefore = Get-SessionHelloCount
+$pressedAtTicks = [DateTimeOffset]::UtcNow.UtcTicks
 
 $first = Invoke-CancellationPress 'L2：装货途中取消，第一次按下'
 $firstCode = [string](Get-FieldProperty $first.body 'reasonCode')
@@ -221,6 +222,39 @@ $reading = "$($slot.doorState)/$($slot.cargoState)/$($slot.lockFeedbackRaw)/$($s
 $assertions.Add(
     'L2-CAL-06', '现场收在安全状态：门关、仓空、已锁、开锁输出复位',
     ($reading -eq 'CLOSED/EMPTY/1/0'), 'CLOSED/EMPTY/1/0', $reading)
+
+# --- 6. 取消期间车没有替原命令编结果，会话一次都没被判需要恢复 -------------------------------------------------
+
+# The cancellation settles the attempt (ADR-cross-0046: the original SlotOperationCommand is neither
+# withdrawn nor rewritten). -001..-004 passed every criterion above while the vehicle still reported the
+# aborted attempt on its own -- first the server's resend re-executed into FAILED/NOT_STARTED/UNKNOWN
+# (LOCK_NOT_CLOSED), then, with that fixed, interrupted settlement (#40) turned it into UNKNOWN the
+# moment the door closed -- and each time the session went RECOVERY_REQUIRED with three administrator
+# actions on the vehicle. Nothing above looked at it.
+$sincePress = Invoke-L2Query -Connection $connection `
+    -Sql "SELECT MessageType, RequestJson, FirstResponseJson FROM ProtocolInbox WHERE ReceivedAtUtcTicks >= $pressedAtTicks ORDER BY ReceivedAtUtcTicks"
+$results = @()
+$recoveryRequired = @()
+foreach ($row in $sincePress) {
+    if ([string]$row.MessageType -eq 'OperationResult') {
+        $payload = ([string]$row.RequestJson | ConvertFrom-Json -DateKind String).payload
+        if ([string]$payload.slotOperationAttemptId -eq $load.AttemptId) {
+            $results += "$($payload.overallOutcome)/$(@($payload.slotResults | ForEach-Object { "$($_.outcome):$(@($_.reasonCodes) -join '+')" }) -join ',')"
+        }
+    }
+    foreach ($line in ([string]$row.FirstResponseJson -split "`n")) {
+        if (-not $line) { continue }
+        $answer = $line | ConvertFrom-Json -DateKind String
+        if ([string]$answer.messageType -eq 'SessionReadiness' -and [string]$answer.payload.readiness -eq 'RECOVERY_REQUIRED') {
+            $recoveryRequired += (@($answer.payload.reasonCodes) -join '+')
+        }
+    }
+}
+$assertions.Add(
+    'L2-CAL-07', '从第一次按下到收尾，车没有替这次 attempt 报 OperationResult，服务端一次都没回 RECOVERY_REQUIRED',
+    ($results.Count -eq 0 -and $recoveryRequired.Count -eq 0),
+    'OperationResult 0 条 / RECOVERY_REQUIRED 0 次',
+    "OperationResult $($results.Count) 条$($results ? "（$($results -join '; ')）" : '') / RECOVERY_REQUIRED $($recoveryRequired.Count) 次$($recoveryRequired ? "（$($recoveryRequired -join '; ')）" : '')")
 
 $journal.Note("Journey after the cancellation: $((Get-FieldDemandSettlement -Field $field -JourneyId $journeyId -DemandId $demandId).Position)")
 $journal.Note('Scenario finished.')
