@@ -1,0 +1,38 @@
+{"at":"2026-09-13T03:58:01.4303982+00:00","note":"L2 run 20260913T035801392Z starting for scenario 'real-onboard-cancellation-authorization-lost'."}
+{"at":"2026-09-13T03:58:01.4684261+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T03:58:01.6118729+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-13T03:58:04.1478034+00:00","note":"Building onboard-hmi at 1acb0181cbb7d4ad7a2351b064167f4e4875b1e7 from a throwaway clone."}
+{"at":"2026-09-13T03:58:04.8822382+00:00","note":"dotnet SDK resolved for onboard-hmi publish: 8.0.425"}
+{"at":"2026-09-13T03:58:08.4038803+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T03:58:08.4078976+00:00","note":"Peers: onboard-hmi@1acb0181cbb7d4ad7a2351b064167f4e4875b1e7, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-13T03:58:09.2037906+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T03:58:09.3197022+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T03:58:11.0957208+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-13T03:58:12.9009308+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T03:58:14.0039467+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T03:58:14.6296233+00:00","criterion":"protocol-proxy-live","value":"live"}
+{"at":"2026-09-13T03:58:14.6327276+00:00","note":"Protocol fault proxy relaying 127.0.0.1:58416 -> 127.0.0.1:58405."}
+{"at":"2026-09-13T03:58:17.5281177+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-13T03:58:17.5444491+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-13T03:58:17.6100061+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-13T03:58:17.8923876+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T03:58:17.9649243+00:00","note":"Environment is up; entering scenario 'real-onboard-cancellation-authorization-lost'."}
+{"at":"2026-09-13T03:58:18.0963071+00:00","note":"Publishing demand f701214352f54cb39e4cb35448c4ff4b (sublot L2-CAL-20260913T035801392Z)."}
+{"at":"2026-09-13T03:58:18.2066635+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-13T03:58:19.5448131+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-c908ba33-c7e3-2756-9050-fb0432d06249-S1-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-13T03:58:19.8099807+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-c908ba33-c7e3-2756-9050-fb0432d06249-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T03:58:19.8273661+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-13T03:58:21.5420784+00:00","note":"field-operator: stop 1: submitted sublot L2-CAL-20260913T035801392Z (demand f7012143-52f5-4cb3-9e4c-b35448c4ff4b)"}
+{"at":"2026-09-13T03:58:23.1595367+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt fea5b86d-f499-a95c-8883-4889ba8a18a2)"}
+{"at":"2026-09-13T03:58:23.1829030+00:00","criterion":"cancellation-offered","value":"LOAD_CANCELLATION"}
+{"at":"2026-09-13T03:58:23.1891853+00:00","note":"Arming the proxy: drop the first LoadCancellationAuthorization and keep the link up."}
+{"at":"2026-09-13T03:58:26.3233209+00:00","note":"First press: HTTP 409 reasonCode=The operation has timed out."}
+{"at":"2026-09-13T03:58:26.3363862+00:00","criterion":"authorization-dropped","value":"1"}
+{"at":"2026-09-13T03:58:26.4345259+00:00","note":"field-operator: slot 1: door closed with cargo EMPTY"}
+{"at":"2026-09-13T03:58:26.7169493+00:00","criterion":"cancellation-offered-again","value":"LOAD_CANCELLATION"}
+{"at":"2026-09-13T03:58:27.0857000+00:00","note":"Second press: HTTP 200 reasonCode="}
+{"at":"2026-09-13T03:58:27.1010830+00:00","criterion":"cancellation-reconciled","value":"Reconciled / Cancelled"}
+{"at":"2026-09-13T03:58:27.1431108+00:00","note":"Journey after the cancellation: 1/Completed"}
+{"at":"2026-09-13T03:58:27.1448195+00:00","note":"Scenario finished."}
+{"at":"2026-09-13T03:58:27.2514882+00:00","note":"Exported 24 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-13T03:58:46.1063919+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 24 lines, 24 distinct, 11 message types, 0 distinct violations, 0 known; schema compilation 17202 ms."}

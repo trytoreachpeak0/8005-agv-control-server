@@ -42,7 +42,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-recovery-retry-after-refusal` | **真的**，自动化面 | 旅程还没 `Blocked` 时按「补偿清空」被拒，转 `Blocked` 后同一 attempt 再按：开得出会话、补偿走完、车不被掐连接（现场旅程 54d2cf63 卡在这里，8005-agv-program#49） | `evidence/l2/20260911-real-onboard-recovery-retry-after-refusal-006`（车载端 `ab346ed`；`-004` 是修复前的红基线，见最后一节） |
 | `real-onboard-durable-ack-lost` | **真的**，协议故障代理 | 装载结果被服务端收下、`DurableAck` 在路上丢了：车重连后补发同一 messageId，服务端要确认而不是掐连接（#30）；丢一次 ack 只该重连一次（#33） | 尚无整条 PASS：`evidence/l2/20260912-real-onboard-durable-ack-lost-003`（服务端 `8822a59`）#30 的判据全绿，`L2-DA-07` 红在 #33；`-001` 是 #30 修复前的红基线，见文末那一节 |
 | `real-onboard-compensate-then-reconnect` | **真的**，自动化面，协议故障代理 | 补偿清空对账之后断线重连一次（不丢 ack）：补偿会话留下的恢复会话快照与补偿命令全部结清、一条都不重放进新会话，车照常接单（#31） | `evidence/l2/20260912-real-onboard-compensate-then-reconnect-003`（服务端 `11bee90`，车载端 `86fe0a4`；`-001` 是修复前的红基线，`-002` 绿着却带着车载端回归，见文末那一节） |
-| `real-onboard-cancellation-authorization-lost` | **真的**，自动化面，协议故障代理 | 装货途中的取消被服务端授权、授权应答在路上丢了：再按一次拿到同一个授权、清空对账，车不被掐连接（修之前这一单只能改库，onboard-hmi#39） | `evidence/l2/20260913-real-onboard-cancellation-authorization-lost-003`（车载端 `5e29f58`；`-001` 是修复前的红基线，见文末那一节） |
+| `real-onboard-cancellation-authorization-lost` | **真的**，自动化面，协议故障代理 | 装货途中的取消被服务端授权、授权应答在路上丢了：再按一次拿到同一个授权、清空对账，车不被掐连接（修之前这一单只能改库，onboard-hmi#39） | `evidence/l2/20260913-real-onboard-cancellation-authorization-lost-006`（服务端 `cdd1463`，车载端 `1acb018`；`-001` 是 #39 修复前的红基线，`-005` 是 `L2-CAL-07` 的红基线，见文末那一节） |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。十二个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）、
@@ -52,6 +52,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 `real-onboard-recovery-compensate-load` 的 `-001`（第 12 条）/`-002`（第 16 条）/`-004`（第 14
 条的第四例），以及 `schema-conformance-normal-load-001`（合成对端的 `Heartbeat` 违反 schema，见
 「车载端报文的 schema 校验」一节）。**除头两条之外全都红在场景、驱动或替身自己身上，不是产品**——`real-onboard-station-timeout-door-open-001` 那一条连诊断都跟着错了一半。
+`real-onboard-cancellation-authorization-lost` 的 `-001`（#39 修复前）与 `-005`（`L2-CAL-07` 那两条路修复前）**红在产品**，
+`-004` 绿着却带着第二条路，见最后一节。
 另有 `real-onboard-restart-while-waiting-operator` 的 `-001`/`-002`/`-003` 三个，前两个**红在产品**、
 第三个红在驱动，见最后一节。`real-onboard-field-window-rehearsal-001` 红在现场驱动脚本自己（第 21 条），`-002` 红在场景拷活库
 （`Copy-Item` 读不了被 SQLite 字节区间锁住的 `-shm`，改为只读连接上 `VACUUM INTO`），`-003` 红在场景
@@ -886,8 +888,9 @@ L2**，钉住它的是车载端 G2 `OnlyTheClosedRecoverySessionSnapshotIsAcknow
 | `L2-CAL-04` | 两次按下是两条 messageId 不同的请求，payload 相同，两次都拿到 `AUTHORIZED` |
 | `L2-CAL-05` | 从第一次按下到收尾，`SessionHello` 条数不变 |
 | `L2-CAL-06` | 现场收在 `CLOSED/EMPTY/1/0` |
+| `L2-CAL-07` | 从第一次按下到收尾，`ProtocolInbox` 里没有这次 attempt 的 `OperationResult`，应答里没有一条 `SessionReadiness` 是 `RECOVERY_REQUIRED` |
 
-三个证据：
+六个证据（`-001`～`-004` 跑的是只有前六条判据的场景）：
 
 1. **`-001`（服务端 `78b69e3`，车载端 `f840d84`，修复之前）是红基线**：`L2-CAL-02`～`-05` 四条红。第二次按下
    `409 ControlServer在旅程会话期间关闭了连接。`，服务端日志 `ProtocolContentConflictException: MessageId was replayed with
@@ -895,7 +898,28 @@ L2**，钉住它的是车载端 G2 `OnlyTheClosedRecoverySessionSnapshotIsAcknow
 2. **`-002`（服务端 `78b69e3`，车载端 `f19de99`）PASS/7**：第二次按下 200，两条请求 payload 相同、都是 `AUTHORIZED`，
    `Reconciled / Cancelled`，单需求旅程 `Completed`，车载端全程 1 条 `SessionHello`。
 3. **`-003`（服务端 `c7f67d1`，车载端 `5e29f58`，code review 之后的最终提交）PASS/7**，结论与 `-002` 相同。
+4. **`-004`（服务端 `50d7f4e`，车载端 `1086c4a`，只修了下面第一条路）PASS/7，但带着同一个症状**：见下文。
+5. **`-005`（服务端 `cdd1463`，车载端 `bad47b6`，两条路都没修）是 `L2-CAL-07` 的红基线**：前七条全绿，
+   `L2-CAL-07` 读到 `OperationResult 1 条（FAILED/NOT_STARTED:LOCK_NOT_CLOSED） / RECOVERY_REQUIRED 2 次（DEPARTURE_UNSAFE; SESSION_RECOVERY_REQUIRED）`。
+6. **`-006`（服务端 `cdd1463`，车载端 `1acb018`）PASS/8**：`OperationResult 0 条 / RECOVERY_REQUIRED 0 次`，车载端日志里服务端重发的
+   四条命令都是「忽略重复SlotOperationCommand……未再次执行仓门IO」，`cancellation-offered-again` 只剩 `LOAD_CANCELLATION`。
 
-两跑都记下一件没查的事：第一次按下超时之后，车上除了「取消装货」还亮出了 `RESUME_AFTER_REPAIR`、`COMPENSATE_LOAD_ALL_EMPTY`、
-`FAULT_CARGO_HANDOFF`（`timeline.jsonl` 的 `cancellation-offered-again`），也就是会话已是 `RecoveryRequired`。取消在请求授权之前
-先中止在途的仓位操作，那次 attempt 因此没有结果；两者是不是因果没有查，这条场景不判它。
+### 取消期间的 `RECOVERY_REQUIRED` 是车载端替原命令编的结果
+
+`-001`～`-003` 都记下过：第一次按下超时之后，车上除了「取消装货」还亮出 `RESUME_AFTER_REPAIR`、`COMPENSATE_LOAD_ALL_EMPTY`、
+`FAULT_CARGO_HANDOFF`，会话已是 `RecoveryRequired`。当时没查，前六条判据也不看它。查明是**服务端照章判、输入是假的**：
+
+- **不是授权本身**：`LoadCancellationAuthorization` 后面不跟 `SessionReadiness`；`RECOVERY_REQUIRED` 只出现在车发来的一份
+  `OperationResult` 的 `DurableAck` 后面。
+- **第一条路（`-001`～`-003`）**：取消先 `AbortActiveOperation()` 再请求授权，业务服务的在途集合随之释放；服务端发件箱在收到结果之前约每秒
+  重发一次同一条 `SlotOperationCommand`（代理流量里 03.637、04.502、05.492）。05.492 那条被当成新命令执行：门开着，`ValidateBeforeOperation`
+  判 `LOCK_NOT_CLOSED`，`CreateRejectedResult` 报 `FAILED`、`NOT_STARTED`、三个物理字段 `UNKNOWN`——那一仓明明开过锁、读数清楚。
+  `ApplyOperationResultAsync` 见到 `UNKNOWN` 不走确定失败，判 `StationOperation RecoveryRequired`，会话随之 `RECOVERY_REQUIRED`、旅程
+  `LOAD_RESULT_REQUIRES_RECOVERY`。
+- **第二条路（`-004`）**：只堵住重发之后，门一关，`SafetyStateChanged` 引出的会话快照变化触发中断结算（8005-agv-program#40），同一个
+  attempt 被交成 `UNKNOWN / RECOVERY_CHECKPOINT_NOT_UNIQUE`，服务端回 `RECOVERY_REQUIRED [SESSION_RECOVERY_REQUIRED]`。中断结算本来只该接手
+  死进程留下的孤儿，而取消中止的 attempt 在日志里看起来一模一样。
+
+两条都违反 ADR-cross-0046「原 SlotOperationCommand 没有被撤回或改写」「等待授权期间……车载端不得自行改变原装货语义」，也违反
+ADR-cross-0058 决策 2、6（读数已知却报 `UNKNOWN`）。修在车载端 `w2g/cancel-no-reexecute-aborted-attempt`：执行器拒绝再执行日志里已开始
+未结算的 attempt；日志里有未得应答的装货取消时，中断结算不接手。
