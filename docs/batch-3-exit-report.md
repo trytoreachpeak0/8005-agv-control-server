@@ -227,5 +227,5 @@ Passed!  - Failed:     0, Passed:   420, Skipped:     0, Total:   420, Duration:
 | 两切片各四道门禁 `G1` / `CONTROL_SERVER_G2` / `ONBOARD_HMI_G2` / `G3` | 以上全部 |
 | #15／#16 的 L2 场景与三连跑 | 同上 |
 | `real-onboard` 真装置三连跑（v0.3.0 基线） | **已完成，三次全 PASS** |
-| W1 现场窗口实跑 | 现场安排；代码与证据目录已就绪（#17） |
+| W1 现场窗口实跑 | **2026-09-13 已做，W1 PASS**（`evidence/field/20260913-W1-three-vehicle-qualification/`）：在生产现有的这条 v0.3.0 库上，三台车 24 仓逐仓真信号核对全部通过、逐台放行、门禁启用时刻留审计。探针在车上直读仓位 IO 模块 `192.168.71.150`、产品负责人在车前操作仓门；现场不拍照（产品负责人决定），W1-06 按目录形状与逐仓记录判定。当天修了三件事：光幕极性常量改按票据 35 逐信号写明（seed 之前）、窗口脚本在服务器上跑的三处问题、C2000 模块只回写 8 位事务号（`aeadd667`，车载端同一问题另开 issue）。两次中途停下的尝试原样保留在 `evidence/field/20260913-W1-aborted-attempts/`。`Governance:slotConfigurationReadinessGate` 仍是 `Off`，且生产代码没有调用点读它 |
 | 车载端两个分支合入 `OnboardHmi_MVP` | 开 PR，需先经你同意 |

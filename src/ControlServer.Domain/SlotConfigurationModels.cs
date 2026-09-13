@@ -61,10 +61,18 @@ public sealed record VehicleDeclarationVerdict(
 /// 8005 三台现有车已批准的八仓硬件事实（REQ-0267）。
 /// </summary>
 /// <remarks>
+/// <para>
 /// <c>DO1</c>～<c>DO8</c> 对应 1～8 号物理仓位开锁，<c>DI1</c>～<c>DI8</c> 对应锁反馈，
 /// <c>DI9</c>～<c>DI16</c> 对应仓内光幕，500 ms 脉冲复位。这些是**已批准的版本化不可改写内容**，
 /// 不是可随手编辑的初始数据：它们和别的版本走同一条发布路径，因此同样产出快照与审计，发布之后
 /// 同样改不动。
+/// </para>
+/// <para>
+/// 极性按票据 35 逐个信号写明，因为三种信号的有效电平不一样：开锁输出写 <c>1</c> 开锁；锁反馈锁闭为
+/// <c>1</c>、打开为 <c>0</c>；光幕**检测到物体为 <c>0</c>**、未检测到为 <c>1</c>。这里曾是一个笼统的
+/// <c>ACTIVE_HIGH</c>，对光幕是错的，并且会被 W1 的 <c>seed-approved-facts</c> 写进生产库后改不动
+/// （<c>docs/defects/20260913-approved-slot-facts-call-the-light-curtain-active-high.md</c>）。
+/// </para>
 /// </remarks>
 public static class ApprovedSlotHardwareFacts
 {
@@ -72,7 +80,7 @@ public static class ApprovedSlotHardwareFacts
     public const string TemplateKey = "8005-standard-slot";
     public const int SlotCount = 8;
     public const int PulseResetMilliseconds = 500;
-    public const string SignalPolarity = "ACTIVE_HIGH";
+    public const string SignalPolarity = "UNLOCK_OUTPUT_ACTIVE_HIGH;LOCK_FEEDBACK_LOCKED_HIGH;LIGHT_CURTAIN_OBJECT_LOW";
 
     public static IReadOnlyList<SlotIoBindingSpecification> IoBindings { get; } =
     [

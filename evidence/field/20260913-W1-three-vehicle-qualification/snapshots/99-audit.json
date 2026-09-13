@@ -1,0 +1,51 @@
+{
+  "command": "audit",
+  "outcome": "OK",
+  "count": 4,
+  "records": [
+    {
+      "AuditRecordId": "5c7158a7884549cebad1c1d97a03419f",
+      "RecordedAtUtcTicks": 639248794807013278,
+      "ActorIdentity": "deployment:8005-controlserver@WIN-0HD72AV4K31",
+      "ActorAttribution": "NOT_ATTRIBUTABLE_TO_NATURAL_PERSON",
+      "Action": "SLOT_CONFIGURATION_VERIFICATION_RECORDED",
+      "ObjectId": "老厂前线新多仓位1",
+      "Outcome": "Succeeded",
+      "SnapshotId": null,
+      "DetailJson": "{\"slotModelVersionId\":\"0bc6f84a2a4149dc83337430b93cd9cd\",\"slots\":[1,2,3,4,5,6,7,8],\"negative\":[]}"
+    },
+    {
+      "AuditRecordId": "d3bfabf712694a49a9be4f02845df8e8",
+      "RecordedAtUtcTicks": 639248797468314795,
+      "ActorIdentity": "deployment:8005-controlserver@WIN-0HD72AV4K31",
+      "ActorAttribution": "NOT_ATTRIBUTABLE_TO_NATURAL_PERSON",
+      "Action": "SLOT_CONFIGURATION_VERIFICATION_RECORDED",
+      "ObjectId": "老厂前线新多仓位2",
+      "Outcome": "Succeeded",
+      "SnapshotId": null,
+      "DetailJson": "{\"slotModelVersionId\":\"0bc6f84a2a4149dc83337430b93cd9cd\",\"slots\":[1,2,3,4,5,6,7,8],\"negative\":[]}"
+    },
+    {
+      "AuditRecordId": "1448eafe6bb74954a721cdb06dbc0cea",
+      "RecordedAtUtcTicks": 639248798975246460,
+      "ActorIdentity": "deployment:8005-controlserver@WIN-0HD72AV4K31",
+      "ActorAttribution": "NOT_ATTRIBUTABLE_TO_NATURAL_PERSON",
+      "Action": "SLOT_CONFIGURATION_VERIFICATION_RECORDED",
+      "ObjectId": "老厂前线新多仓位3",
+      "Outcome": "Succeeded",
+      "SnapshotId": null,
+      "DetailJson": "{\"slotModelVersionId\":\"0bc6f84a2a4149dc83337430b93cd9cd\",\"slots\":[1,2,3,4,5,6,7,8],\"negative\":[]}"
+    },
+    {
+      "AuditRecordId": "09c0d8ded92d437bbf7eca149fab6a62",
+      "RecordedAtUtcTicks": 639248801208433980,
+      "ActorIdentity": "deployment:8005-controlserver@WIN-0HD72AV4K31",
+      "ActorAttribution": "NOT_ATTRIBUTABLE_TO_NATURAL_PERSON",
+      "Action": "SLOT_CONFIGURATION_READINESS_GATE_ENABLED",
+      "ObjectId": "fleet",
+      "Outcome": "Succeeded",
+      "SnapshotId": null,
+      "DetailJson": "{\"mode\":\"Enforcing\",\"configurationKey\":\"Governance:slotConfigurationReadinessGate\",\"note\":\"W1 2026-09-13 after 老厂前线新多仓位1 released\"}"
+    }
+  ]
+}

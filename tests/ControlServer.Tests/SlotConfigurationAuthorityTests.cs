@@ -15,6 +15,8 @@ public sealed class SlotConfigurationAuthorityTests
 
     private static readonly string[] BasketTypes = ["PDFN5", "TOLL"];
     private static readonly string[] WiderBasketTypes = ["PDFN5", "TOLL", "EURO"];
+    private static readonly string[] Ticket35Polarity =
+        ["UNLOCK_OUTPUT_ACTIVE_HIGH", "LOCK_FEEDBACK_LOCKED_HIGH", "LIGHT_CURTAIN_OBJECT_LOW"];
 
     [Fact]
     public async Task BothLayersVersionSeparatelyAndAPublishedVersionCannotBeRewritten()
@@ -104,6 +106,17 @@ public sealed class SlotConfigurationAuthorityTests
         Assert.Equal(
             SlotConfigurationChangeRoute.WholeVehicleMaintenance,
             SlotConfigurationChangeClassification.ClassifyModelChange(current, proposed));
+    }
+
+    [Fact]
+    public void TheApprovedPolarityNamesEachSignalTheWayTicket35ApprovedIt()
+    {
+        // 票据 35：开锁写 1；锁闭为 1、打开为 0；光幕检测到物体为 0、未检测到为 1。三种信号的有效电平不一样，
+        // 笼统一个 ACTIVE_HIGH 对光幕是错的——而这份事实一经 seed 进生产库就改不动，所以钉在这里。
+        Assert.Equal(Ticket35Polarity, ApprovedSlotHardwareFacts.SignalPolarity.Split(';'));
+        Assert.All(
+            ApprovedSlotHardwareFacts.IoBindings,
+            binding => Assert.Equal(ApprovedSlotHardwareFacts.SignalPolarity, binding.SignalPolarity));
     }
 
     [Theory]

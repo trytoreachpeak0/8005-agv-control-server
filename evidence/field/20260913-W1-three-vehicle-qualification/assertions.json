@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "window": "W1",
+  "runId": "20260913T070835318Z",
+  "outcome": "PASS",
+  "identity": {
+    "runId": "20260913T070835318Z",
+    "windowId": "W1",
+    "batchId": "BATCH-3",
+    "site": "老厂现场，三台车逐台逐仓真信号核对（探针在车上直读 192.168.71.150 的仓位 IO 模块，产品负责人在车前操作仓门）",
+    "observers": [
+      "Zhengyu Shao"
+    ],
+    "database": "C:\\ProgramData\\8005\\ControlServer\\data\\controlserver.db",
+    "controlServerCommit": "240352e5",
+    "fieldOpsSdkVersion": null,
+    "controlServerCommitSource": "parameter",
+    "fieldRecords": "field-records",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    }
+  },
+  "vehicles": [
+    {
+      "releaseExit": 0,
+      "agvId": "老厂前线新多仓位1",
+      "releaseResult": {
+        "command": "release",
+        "outcome": "OK",
+        "agvId": "老厂前线新多仓位1",
+        "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+        "ready": true,
+        "reasonCode": "SLOT_CONFIGURATION_READY",
+        "slotsMissingBinding": [],
+        "slotsMissingVerification": [],
+        "slotsVerifiedNegative": [],
+        "releasedAt": "2026-09-13T15:08:38.2956893+08:00"
+      },
+      "slotsSubmitted": 8,
+      "verifyExit": 0,
+      "photoPointers": [],
+      "verifyResult": {
+        "command": "verify",
+        "outcome": "OK",
+        "agvId": "老厂前线新多仓位1",
+        "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+        "verifiedBy": "Zhengyu Shao",
+        "slotsConfirmed": 8,
+        "photoPointers": [],
+        "ready": true,
+        "reasonCode": "SLOT_CONFIGURATION_READY"
+      },
+      "siteAlias": "agv01"
+    },
+    {
+      "releaseExit": 0,
+      "agvId": "老厂前线新多仓位2",
+      "releaseResult": {
+        "command": "release",
+        "outcome": "OK",
+        "agvId": "老厂前线新多仓位2",
+        "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+        "ready": true,
+        "reasonCode": "SLOT_CONFIGURATION_READY",
+        "slotsMissingBinding": [],
+        "slotsMissingVerification": [],
+        "slotsVerifiedNegative": [],
+        "releasedAt": "2026-09-13T15:08:43.3739101+08:00"
+      },
+      "slotsSubmitted": 8,
+      "verifyExit": 0,
+      "photoPointers": [],
+      "verifyResult": {
+        "command": "verify",
+        "outcome": "OK",
+        "agvId": "老厂前线新多仓位2",
+        "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+        "verifiedBy": "Zhengyu Shao",
+        "slotsConfirmed": 8,
+        "photoPointers": [],
+        "ready": true,
+        "reasonCode": "SLOT_CONFIGURATION_READY"
+      },
+      "siteAlias": "agv02"
+    },
+    {
+      "releaseExit": 0,
+      "agvId": "老厂前线新多仓位3",
+      "releaseResult": {
+        "command": "release",
+        "outcome": "OK",
+        "agvId": "老厂前线新多仓位3",
+        "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+        "ready": true,
+        "reasonCode": "SLOT_CONFIGURATION_READY",
+        "slotsMissingBinding": [],
+        "slotsMissingVerification": [],
+        "slotsVerifiedNegative": [],
+        "releasedAt": "2026-09-13T15:08:47.3076813+08:00"
+      },
+      "slotsSubmitted": 8,
+      "verifyExit": 0,
+      "photoPointers": [],
+      "verifyResult": {
+        "command": "verify",
+        "outcome": "OK",
+        "agvId": "老厂前线新多仓位3",
+        "slotModelVersionId": "0bc6f84a2a4149dc83337430b93cd9cd",
+        "verifiedBy": "Zhengyu Shao",
+        "slotsConfirmed": 8,
+        "photoPointers": [],
+        "ready": true,
+        "reasonCode": "SLOT_CONFIGURATION_READY"
+      },
+      "siteAlias": "agv03"
+    }
+  ],
+  "gate": {
+    "command": "enable-gate",
+    "outcome": "OK",
+    "auditRecordId": "09c0d8ded92d437bbf7eca149fab6a62",
+    "enabledAt": "2026-09-13T15:08:40.843398+08:00",
+    "configurationKey": "Governance:slotConfigurationReadinessGate",
+    "requiredValue": "Enforcing"
+  },
+  "fieldRecord": {
+    "windowId": "W1",
+    "date": "2026-09-13",
+    "site": "老厂现场，三台车逐台逐仓真信号核对（探针在车上直读 192.168.71.150 的仓位 IO 模块，产品负责人在车前操作仓门）",
+    "observers": [
+      "Zhengyu Shao"
+    ],
+    "photoPointers": [],
+    "photoPointersAbsentReason": "产品负责人 2026-09-13 在现场决定不拍照（现场没法拍照）；W1-06 只看证据目录形状完整与逐仓现场记录",
+    "productionContinuityObservations": [
+      {
+        "at": "2026-09-13T14:57:56.7285028+08:00",
+        "afterVehicle": "老厂前线新多仓位1",
+        "fleetStillTakingOrders": true,
+        "note": "产品负责人在现场、agv01 八仓核对完成时在对话里当时报告：产线照常，没有因核对而停；八个仓都按顺序、每次只弹开当时那一仓",
+        "photoPointer": null
+      },
+      {
+        "at": "2026-09-13T15:02:23.4525909+08:00",
+        "afterVehicle": "老厂前线新多仓位2",
+        "fleetStillTakingOrders": true,
+        "note": "产品负责人在现场、agv02 八仓核对完成时在对话里当时报告：产线照常，没有因核对而停；八个仓都按顺序、每次只弹开当时那一仓",
+        "photoPointer": null
+      },
+      {
+        "at": "2026-09-13T15:04:53.0598052+08:00",
+        "afterVehicle": "老厂前线新多仓位3",
+        "fleetStillTakingOrders": true,
+        "note": "产品负责人在现场、agv03 八仓核对完成时在对话里当时报告：产线照常，没有因核对而停；八个仓都按顺序、每次只弹开当时那一仓",
+        "photoPointer": null
+      }
+    ],
+    "notes": [
+      "14:34 产品负责人在自己的终端里跑过一次交互式探针，安全确认输入的是「确认」而不是车号，探针在读模块之前停下，没有开锁；记录留在 scripts/field/records/20260913-W1/raw/agv01/aborted.json",
+      "14:50 agv01 第一次无键盘探针开 1 号仓后，因 C2000 模块只回写事务号低 8 位而报 Modbus 应答头错误并整车停下；1 号仓门弹开过，产品负责人手动关上；记录留在 scripts/field/records/20260913-W1-run2/raw/agv01/aborted.json。修复为 aeadd667",
+      "本目录（run3）是三台车完整的一轮：agv01 14:55–14:57，agv02 15:00–15:02，agv03 15:02–15:04"
+    ]
+  },
+  "assertions": [
+    {
+      "id": "W1-01",
+      "description": "三台车各自完成 8 仓逐仓核对，无抽样",
+      "outcome": "PASS",
+      "expected": "3 台车 × 8 仓",
+      "actual": "3 台车，逐仓数 8/8/8"
+    },
+    {
+      "id": "W1-02",
+      "description": "每台车在自己核对通过之后才取得 readiness",
+      "outcome": "PASS",
+      "expected": "3 台车逐台放行",
+      "actual": "3 台车 ready=true"
+    },
+    {
+      "id": "W1-03",
+      "description": "门禁上线时点晚于第一台车核对通过",
+      "outcome": "PASS",
+      "expected": "先核对，后启用门禁",
+      "actual": "第一台车通过后启用于 2026-09-13T15:08:41.7379222+08:00"
+    },
+    {
+      "id": "W1-04",
+      "description": "全程零停产：门禁上线后任一时刻至少一台车已放行，且现场逐台观察到车队仍在接单",
+      "outcome": "PASS",
+      "expected": "每次观测 ready >= 1，且每台车一条正面的现场连续性观察",
+      "actual": "ready 序列 0,1,2,3,3；现场观察 3 条"
+    },
+    {
+      "id": "W1-05",
+      "description": "三台车各自的核对与放行都有不可改写审计",
+      "outcome": "PASS",
+      "expected": "3 台车各有审计",
+      "actual": "3 台车留痕：老厂前线新多仓位1、老厂前线新多仓位2、老厂前线新多仓位3"
+    },
+    {
+      "id": "W1-06",
+      "description": "证据目录形状完整，含现场记录；有照片指针，或产品负责人写明不拍照时每一仓都有证据内的现场记录",
+      "outcome": "PASS",
+      "expected": "目录形状完整；至少一个照片指针，或写明不拍照理由且每一仓的记录引用都指向证据里的文件",
+      "actual": "形状完整；照片指针 0 个；仓位记录引用 24 条、找不到 0 条；不拍照理由：产品负责人 2026-09-13 在现场决定不拍照（现场没法拍照）；W1-06 只看证据目录形状完整与逐仓现场记录"
+    }
+  ]
+}
