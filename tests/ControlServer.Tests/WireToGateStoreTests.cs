@@ -237,6 +237,86 @@ public sealed class WireToGateStoreTests
         Assert.False((await fixture.Context.OperationResults.SingleAsync(fixture.CancellationToken)).HistoricalOnly);
     }
 
+    /// <summary>
+    /// 装载进行中被操作员取消：取消授权、全部仓位证空、取消收敛——需求 Cancelled、装载 Cancelled。原装载的
+    /// 执行器此时仍在等放货，等满车载端的操作超时才交出一份 UNKNOWN 结果。这份结果晚于取消的收敛，它说的
+    /// 那次装载已经被一个证过全空的取消终结了。服务端此前照常把它判为不安全，把装载和需求都改回
+    /// RecoveryRequired，会话随之 RECOVERY_REQUIRED，车被一次早已结清的装载扣住
+    /// （G3 FP-IS-02 调试运行 cancel-002 的 G3-02-27；docs/defects/20260913-late-load-result-reopens-cancelled-load.md）。
+    /// 结果照样落库、照样确认，只是作为历史记录，不再改动已经终结的事实。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CANCELLATION-ALL-EMPTY")]
+    public async Task ALateResultForALoadAlreadyCancelledIsKeptButReopensNothing()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.Store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                "D-001",
+                "SUBLOT-001|WIRE_TO_GATE",
+                7,
+                "history-1",
+                21,
+                fixture.Now),
+            new OrderIntent(
+                "LEG-001",
+                "D-001",
+                "W2G-D-001-PICKUP-1",
+                "TO_PICKUP",
+                "ST-PICKUP",
+                fixture.Now),
+            fixture.CancellationToken);
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-001",
+                "D-001",
+                "SUBLOT-001",
+                [1, 2],
+                SlotOperationType.Load,
+                0,
+                "plan-hash",
+                fixture.Now),
+            "MSG-CMD-001",
+            "command-json",
+            fixture.CancellationToken);
+        (await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken)).Status =
+            StationOperationStatus.Cancelled;
+        (await fixture.Context.AcceptedDemands.SingleAsync(fixture.CancellationToken)).Status =
+            DemandExecutionStatus.Cancelled;
+        await fixture.Context.SaveChangesAsync(fixture.CancellationToken);
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-LATE",
+                "ATTEMPT-001",
+                "D-001",
+                SlotOperationType.Load,
+                "UNKNOWN",
+                [
+                    new SlotPhysicalEvidence(1, SlotBusinessState.Empty, true, true),
+                    new SlotPhysicalEvidence(2, SlotBusinessState.Empty, true, true)
+                ],
+                false,
+                fixture.Now.AddSeconds(120),
+                "result-hash",
+                "wire-hash"),
+            "AGV-001",
+            0,
+            fixture.CancellationToken);
+
+        Assert.Equal(OperationResultDisposition.HistoricalOnly, disposition);
+        Assert.Equal(
+            StationOperationStatus.Cancelled,
+            (await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.Cancelled,
+            (await fixture.Context.AcceptedDemands.SingleAsync(fixture.CancellationToken)).Status);
+        OperationResultRow kept = await fixture.Context.OperationResults.SingleAsync(fixture.CancellationToken);
+        Assert.Equal("UNKNOWN", kept.OverallOutcome);
+        Assert.True(kept.HistoricalOnly);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-03")]
     [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]

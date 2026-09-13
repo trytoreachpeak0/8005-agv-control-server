@@ -1545,7 +1545,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? 0;
         bool historicalOnly = forcedRecoveryGeneration < currentGeneration;
         string evidenceJson = JsonSerializer.Serialize(result.SlotEvidence.OrderBy(item => item.SlotNumber));
-        dbContext.OperationResults.Add(new OperationResultRow
+        OperationResultRow resultRow = new()
         {
             ResultId = result.ResultId,
             SlotOperationAttemptId = result.SlotOperationAttemptId,
@@ -1558,7 +1558,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             ObservedAt = result.ObservedAt,
             HistoricalOnly = historicalOnly,
             ReceivedAt = result.ObservedAt
-        });
+        };
+        dbContext.OperationResults.Add(resultRow);
         if (historicalOnly)
         {
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -1574,6 +1575,19 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             throw new BusinessIdentityConflictException(
                 "OperationResult does not match the persisted slot operation identity.");
+        }
+
+        // An operation a reconciled cancellation, compensation or fault handoff already terminated is
+        // settled by that proof, not by this result. The load executor of a load cancelled mid-way
+        // still gives up on its own timeout and reports UNKNOWN afterwards; judging that as an unsafe
+        // result reopened the operation and the demand as RecoveryRequired and held the vehicle over
+        // a load that had been proven empty (G3 FP-IS-02, 2026-09-13). Kept and acknowledged as the
+        // record of what the vehicle said, changing nothing.
+        if (operation.Status == StationOperationStatus.Cancelled)
+        {
+            resultRow.HistoricalOnly = true;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return OperationResultDisposition.HistoricalOnly;
         }
 
         int[] expectedSlots = JsonSerializer.Deserialize<int[]>(operation.TargetSlotsJson) ?? [];
