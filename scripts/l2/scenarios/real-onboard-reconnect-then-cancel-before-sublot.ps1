@@ -50,7 +50,7 @@ function Format-Session($row) {
 # 旅程与它第 1 个停靠在同一次查询里读：阶段与轮次要一起判。
 function Get-JourneyAtFirstStop([string]$demandId) {
     $rows = Invoke-L2Query -Connection $connection -Sql (
-        "SELECT r.JourneyId, r.Stage, r.BlockReasonCode, r.CurrentStopSequence, r.SublotRequestMessageId, s.LoadRound " +
+        "SELECT r.JourneyId, r.Stage, r.BlockReasonCode, r.CurrentStopSequence, s.Sequence AS StopSequence, s.LoadRound " +
         "FROM JourneyDemands d JOIN JourneyRuntimes r ON r.JourneyId = d.JourneyId " +
         "LEFT JOIN JourneyStops s ON s.JourneyId = r.JourneyId AND s.Sequence = d.StopSequence " +
         "WHERE d.DemandId = '$demandId'")
@@ -164,9 +164,10 @@ $null = $riot.Command('Put', "orders/$($intent.UpperId)", @{ orderState = 5 })
 
 # 服务端到 AwaitingSublot、车上亮出这张单的录入请求。
 $request = Wait-FieldSublotRequest -Field $field -JourneyId $journeyId -Sequence 1 -ArrivalTimeoutSeconds 120
-# 阶段、轮次与请求编号是引擎同一次提交写下的（README 第 14 条的写入边界），等到阶段之后读是安全的。
+# 阶段、轮次与请求是引擎同一次提交写下的（README 第 14 条的写入边界），等到阶段之后读是安全的。
+# 请求编号由服务端按停靠与轮次派生（WireToGateStore.SublotRequestId），表里没有这一列：-001 就红在当成列去读。
 $asked = Get-JourneyAtFirstStop $demandId
-$requestId = [string]$asked.SublotRequestMessageId
+$requestId = Get-L2DeterministicId -Value "$journeyId|stop-$($asked.StopSequence)|sublot-request-$($asked.LoadRound)"
 $pendingBefore = Get-OutboxRow $requestId
 $assertions.Add(
     'L2-RCS-02', '到站之后引擎发出第 1 轮条码录入请求，取消之前它还没被结算',
