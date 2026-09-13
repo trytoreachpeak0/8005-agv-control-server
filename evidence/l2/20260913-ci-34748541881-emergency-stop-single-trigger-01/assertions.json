@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "scenario": "emergency-stop-single-trigger",
+  "runId": "20260913T085644693Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260913T085644693Z",
+    "controlServerCommit": "95294f9e0c36cea2bd48fc46b29c8a91e77a0f03",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-2",
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-ES-01",
+      "description": "车在正常行驶、没有任何故障时，一次急停都没发",
+      "outcome": "PASS",
+      "expected": "0 行 / 0 次",
+      "actual": "0 行 / 0 次"
+    },
+    {
+      "id": "L2-ES-02",
+      "description": "该发时发了：单被报 FAILED 且车证不出停住，服务端发出 triggerEmergency，记在这台车名下",
+      "outcome": "PASS",
+      "expected": "AGV-L2-001 / vehicle:BROKERX-L2-0001",
+      "actual": "AGV-L2-001 / vehicle:BROKERX-L2-0001"
+    },
+    {
+      "id": "L2-ES-03",
+      "description": "线上收到的是 triggerEmergency，打在这台车的 deviceKey 上",
+      "outcome": "PASS",
+      "expected": "triggerEmergency @ BROKERX-L2-0001",
+      "actual": "1 次，首次打在 BROKERX-L2-0001"
+    },
+    {
+      "id": "L2-ES-04",
+      "description": "回读时闩锁还没锁上，这一行记为 Pending，没有被当成已停住",
+      "outcome": "PASS",
+      "expected": "Pending",
+      "actual": "Pending"
+    },
+    {
+      "id": "L2-ES-05",
+      "description": "只发一次：闩锁还没锁上、车仍在动，又评估了 4 轮，审计表仍只有一行 triggerEmergency，RIoT 侧也只收到一次",
+      "outcome": "PASS",
+      "expected": "1 行 / 1 次",
+      "actual": "1 行 / 1 次"
+    },
+    {
+      "id": "L2-ES-06",
+      "description": "只发一次：闩锁读不到（不是 OK，也不是锁上），又评估了 4 轮，审计表仍只有一行 triggerEmergency，RIoT 侧也只收到一次",
+      "outcome": "PASS",
+      "expected": "1 行 / 1 次",
+      "actual": "1 行 / 1 次"
+    },
+    {
+      "id": "L2-ES-07",
+      "description": "闩锁锁上之后，发出它的那一行被改记为 Confirmed，不再永远停在 Pending",
+      "outcome": "PASS",
+      "expected": "Confirmed",
+      "actual": "Confirmed"
+    },
+    {
+      "id": "L2-ES-08",
+      "description": "只发一次：闩锁已确认，又评估了 4 轮，审计表仍只有一行 triggerEmergency，RIoT 侧也只收到一次",
+      "outcome": "PASS",
+      "expected": "1 行 / 1 次",
+      "actual": "1 行 / 1 次"
+    },
+    {
+      "id": "L2-ES-09",
+      "description": "故障事实停在 SuspectedBlocked，证据码 VEHICLE_ORDER_FAILED，并记下了升级时刻",
+      "outcome": "PASS",
+      "expected": "SuspectedBlocked / VEHICLE_ORDER_FAILED / 有升级时刻",
+      "actual": "SuspectedBlocked / VEHICLE_ORDER_FAILED / 2026-09-13 08:57:12.5111685+00:00"
+    },
+    {
+      "id": "L2-ES-10",
+      "description": "OrderHold 也只发了一次：单已经是 FAILED，重发改变不了什么",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-ES-11",
+      "description": "只发一次：车停下来不再升级，又评估了 5 轮，审计表仍只有一行 triggerEmergency，RIoT 侧也只收到一次",
+      "outcome": "PASS",
+      "expected": "1 行 / 1 次",
+      "actual": "1 行 / 1 次"
+    },
+    {
+      "id": "L2-ES-12",
+      "description": "恢复严：故障原因（单 FAILED）还在，服务端一次 cancelEmergency 都没发",
+      "outcome": "PASS",
+      "expected": "0 行 / 0 次",
+      "actual": "0 行 / 0 次"
+    },
+    {
+      "id": "L2-ES-13",
+      "description": "原因消除前闩锁意外恢复 OK：服务端重触发，第二行的原因写的是 EMERGENCY_LATCH_RELEASED_EXTERNALLY（REQ-0248）",
+      "outcome": "PASS",
+      "expected": "AttemptNumber 2 / EMERGENCY_LATCH_RELEASED_EXTERNALLY",
+      "actual": "AttemptNumber 2 / {\"source\":\"Automatic\",\"requesterIdentity\":null,\"agvId\":\"AGV-L2-001\",\"deviceKey\":\"BROKERX-L2-0001\",\"Reason\":\"EMERGENCY_LATCH_RELEASED_EXTERNALLY\",\"call\":{\"disposition\":\"Accepted\",\"Operation\":\"triggerEmergency\",\"Classification\":\"SdkAccepted\",\"HttpStatusCode\":null,\"BusinessCode\":null,\"FailureCategory\":null,\"observedAt\":\"2026-09-13T08:57:18.51314+00:00\"},\"emergencyState\":\"OK\"}"
+    },
+    {
+      "id": "L2-ES-14",
+      "description": "全程两次 triggerEmergency：一次升级、一次外部解除后的重触发；两行都已确认，RIoT 侧计数一致，没有 cancelEmergency",
+      "outcome": "PASS",
+      "expected": "2 行（均 Confirmed） / 2 次 / 0 次 cancelEmergency",
+      "actual": "2 行（Confirmed 2） / 2 次 / 0 次 cancelEmergency"
+    }
+  ]
+}

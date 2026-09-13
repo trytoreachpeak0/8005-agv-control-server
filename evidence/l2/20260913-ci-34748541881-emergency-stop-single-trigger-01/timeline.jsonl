@@ -1,0 +1,60 @@
+{"at":"2026-09-13T08:56:44.7340718+00:00","note":"L2 run 20260913T085644693Z starting for scenario 'emergency-stop-single-trigger'."}
+{"at":"2026-09-13T08:56:44.7484514+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T08:56:47.8836076+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T08:56:48.0621086+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T08:56:48.0984709+00:00","note":"RIoT command options for this scenario: EmergencyRetryInitialDelay=00:00:20"}
+{"at":"2026-09-13T08:56:50.9174288+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T08:56:53.0820194+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T08:56:53.1335460+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-13T08:56:53.7996463+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-13T08:56:54.0762046+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-13T08:56:54.1096202+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T08:56:54.1702764+00:00","note":"Environment is up; entering scenario 'emergency-stop-single-trigger'."}
+{"at":"2026-09-13T08:56:54.2620150+00:00","note":"Publishing demand 01f3c06451254915af62615bbc7f69ce."}
+{"at":"2026-09-13T08:56:54.4143212+00:00","criterion":"journey-dispatched","value":"(null)"}
+{"at":"2026-09-13T08:56:55.4389796+00:00","criterion":"journey-dispatched","value":"@{DemandId=01f3c064-5125-4915-af62-615bbc7f69ce}"}
+{"at":"2026-09-13T08:56:55.4649542+00:00","criterion":"pickup-intent","value":"(null)"}
+{"at":"2026-09-13T08:56:55.7155814+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-01f3c064-5125-4915-af62-615bbc7f69ce-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T08:56:55.8238961+00:00","criterion":"runtime-iterations","value":"4"}
+{"at":"2026-09-13T08:56:56.6038130+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-13T08:56:57.6279885+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-13T08:56:58.6412488+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-13T08:56:58.6885978+00:00","note":"RIoT reports W2G-01f3c064-5125-4915-af62-615bbc7f69ce-PICKUP-1 FAILED while AGV-L2-001 is still moving."}
+{"at":"2026-09-13T08:56:58.7306933+00:00","criterion":"trigger-issued","value":"0"}
+{"at":"2026-09-13T08:56:59.7572043+00:00","criterion":"trigger-issued","value":"1"}
+{"at":"2026-09-13T08:56:59.8048740+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-13T08:57:00.5616963+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-13T08:57:01.5837036+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-13T08:57:02.5947849+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-13T08:57:03.6105679+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-13T08:57:03.6241521+00:00","note":"RIoT stops reporting emergencyState for the vehicle."}
+{"at":"2026-09-13T08:57:04.6582852+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-13T08:57:05.6775926+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-13T08:57:06.4532048+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-13T08:57:07.5070703+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-13T08:57:07.5148017+00:00","note":"The latch engages: RIoT reports CAN_RECOVER."}
+{"at":"2026-09-13T08:57:07.5499423+00:00","criterion":"trigger-confirmed","value":"Pending"}
+{"at":"2026-09-13T08:57:08.5944917+00:00","criterion":"trigger-confirmed","value":"Confirmed"}
+{"at":"2026-09-13T08:57:08.6088437+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-13T08:57:09.6327038+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-13T08:57:10.6512518+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-09-13T08:57:11.6821029+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-09-13T08:57:12.6980675+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-09-13T08:57:12.7149950+00:00","note":"The vehicle comes to rest at its current station."}
+{"at":"2026-09-13T08:57:13.4984013+00:00","criterion":"runtime-iterations","value":"22"}
+{"at":"2026-09-13T08:57:14.5150863+00:00","criterion":"runtime-iterations","value":"23"}
+{"at":"2026-09-13T08:57:15.5320999+00:00","criterion":"runtime-iterations","value":"24"}
+{"at":"2026-09-13T08:57:16.5472541+00:00","criterion":"runtime-iterations","value":"25"}
+{"at":"2026-09-13T08:57:17.5523898+00:00","criterion":"runtime-iterations","value":"26"}
+{"at":"2026-09-13T08:57:17.5667821+00:00","note":"Something outside the server releases the latch while the cause still stands."}
+{"at":"2026-09-13T08:57:17.5773338+00:00","criterion":"retrigger-issued","value":"1"}
+{"at":"2026-09-13T08:57:18.6300693+00:00","criterion":"retrigger-issued","value":"2"}
+{"at":"2026-09-13T08:57:18.6467566+00:00","note":"The latch engages again."}
+{"at":"2026-09-13T08:57:18.6725505+00:00","criterion":"retrigger-confirmed","value":"Pending"}
+{"at":"2026-09-13T08:57:19.7100245+00:00","criterion":"retrigger-confirmed","value":"Confirmed"}
+{"at":"2026-09-13T08:57:19.7444080+00:00","criterion":"runtime-iterations","value":"28"}
+{"at":"2026-09-13T08:57:20.5153582+00:00","criterion":"runtime-iterations","value":"29"}
+{"at":"2026-09-13T08:57:21.5313684+00:00","criterion":"runtime-iterations","value":"30"}
+{"at":"2026-09-13T08:57:22.5639406+00:00","criterion":"runtime-iterations","value":"31"}
+{"at":"2026-09-13T08:57:23.5837215+00:00","criterion":"runtime-iterations","value":"32"}
+{"at":"2026-09-13T08:57:23.6352782+00:00","note":"急停：该发时发了一次；闩锁晚锁、读不到、锁上都不重发；外部解除只重触发一次；原因还在就不解除。"}

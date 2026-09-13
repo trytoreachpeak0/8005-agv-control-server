@@ -1,0 +1,31 @@
+{"at":"2026-09-13T08:54:55.0806184+00:00","note":"L2 run 20260913T085455040Z starting for scenario 'route-graph-staleness'."}
+{"at":"2026-09-13T08:54:55.0951258+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T08:54:58.3616078+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T08:54:58.5382053+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T08:54:58.5676143+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-13T08:55:01.4797040+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T08:55:03.6520531+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T08:55:03.7066957+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-13T08:55:04.3823235+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-13T08:55:04.6440749+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-13T08:55:04.6660638+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T08:55:04.7316416+00:00","note":"Environment is up; entering scenario 'route-graph-staleness'."}
+{"at":"2026-09-13T08:55:04.8804340+00:00","criterion":"route-graph-baseline","value":"ready"}
+{"at":"2026-09-13T08:55:04.8947427+00:00","note":"Slowing the fake RIoT so one refresh outlives the runtime budget."}
+{"at":"2026-09-13T08:55:04.9977980+00:00","criterion":"stale-reason","value":""}
+{"at":"2026-09-13T08:55:13.4273387+00:00","criterion":"stale-reason","value":"ROUTE_GRAPH_RUNTIME_STATE_EXPIRED"}
+{"at":"2026-09-13T08:55:13.4372552+00:00","note":"Publishing demand 2e5aa73b929441299c83ba06a8550cf1 against a stale graph."}
+{"at":"2026-09-13T08:55:13.5018212+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-13T08:55:17.5971489+00:00","criterion":"backlog-reason","value":"ROUTE_GRAPH_RUNTIME_STATE_EXPIRED"}
+{"at":"2026-09-13T08:55:17.6003899+00:00","note":"RIoT starts reporting a dynamic route cost."}
+{"at":"2026-09-13T08:55:25.5443814+00:00","criterion":"stale-reason","value":"ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED"}
+{"at":"2026-09-13T08:55:25.5483688+00:00","note":"Removing the delay; the dynamic-cost block is not the kind that waiting fixes."}
+{"at":"2026-09-13T08:55:25.5990756+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-13T08:55:27.6421849+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-13T08:55:28.4105085+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-13T08:55:29.1836134+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-13T08:55:29.1918023+00:00","criterion":"backlog-reason","value":"ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED"}
+{"at":"2026-09-13T08:55:29.2059791+00:00","note":"An edge group appears on the Map under the graph."}
+{"at":"2026-09-13T08:55:30.2461931+00:00","criterion":"stale-reason","value":"ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED"}
+{"at":"2026-09-13T08:55:30.2544241+00:00","criterion":"backlog-reason","value":"ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED"}
+{"at":"2026-09-13T08:55:30.2698530+00:00","note":"三种陈旧触发各取到一次，每一次都能追到具体哪一条，且三次都没派出任何一趟。"}

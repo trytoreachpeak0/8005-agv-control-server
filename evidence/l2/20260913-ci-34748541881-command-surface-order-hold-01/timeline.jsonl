@@ -1,0 +1,37 @@
+{"at":"2026-09-13T08:53:35.2173663+00:00","note":"L2 run 20260913T085335153Z starting for scenario 'command-surface-order-hold'."}
+{"at":"2026-09-13T08:53:35.2324625+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T08:53:38.3955941+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T08:53:38.5730674+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T08:53:38.5883897+00:00","note":"Fleet of 3: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002, AGV-L2-003/BROKERX-L2-0003"}
+{"at":"2026-09-13T08:53:41.4684035+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T08:53:43.6175552+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T08:53:43.6786277+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-13T08:53:44.3722651+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-13T08:53:44.6442261+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-13T08:53:46.0060602+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T08:53:46.0623069+00:00","note":"Environment is up; entering scenario 'command-surface-order-hold'."}
+{"at":"2026-09-13T08:53:46.1232940+00:00","note":"Publishing demand f2b8c984b1d141c39ce4976637001dfc."}
+{"at":"2026-09-13T08:53:46.1949524+00:00","note":"Publishing demand fbfa9dfc51504b3b86fc94035eb24863."}
+{"at":"2026-09-13T08:53:46.2111823+00:00","note":"Publishing demand bf755d4c80754dca9570837b205894ed."}
+{"at":"2026-09-13T08:53:46.2528616+00:00","criterion":"journeys-dispatched","value":"0"}
+{"at":"2026-09-13T08:53:48.0402199+00:00","criterion":"journeys-dispatched","value":"1"}
+{"at":"2026-09-13T08:53:48.2814870+00:00","criterion":"journeys-dispatched","value":"2"}
+{"at":"2026-09-13T08:53:48.5350095+00:00","criterion":"journeys-dispatched","value":"3"}
+{"at":"2026-09-13T08:53:48.5591282+00:00","criterion":"faulted-intent","value":"@{UpperId=W2G-fbfa9dfc-5150-4b3b-86fc-94035eb24863-PICKUP-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-13T08:53:48.6156244+00:00","note":"RIoT reports W2G-fbfa9dfc-5150-4b3b-86fc-94035eb24863-PICKUP-1 FAILED on AGV-L2-002."}
+{"at":"2026-09-13T08:53:48.6743384+00:00","criterion":"hold-attempts","value":"0"}
+{"at":"2026-09-13T08:53:49.1868469+00:00","criterion":"hold-attempts","value":"1"}
+{"at":"2026-09-13T08:53:49.2617834+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-13T08:53:50.0630687+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-13T08:53:51.1012391+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-13T08:53:52.1483982+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-13T08:53:53.1661407+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-13T08:53:54.1850541+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-13T08:53:55.2191832+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-13T08:53:56.2379859+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-13T08:53:57.0095570+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-13T08:53:57.1295313+00:00","criterion":"bystander-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-13T08:53:58.4298756+00:00","criterion":"bystander-stage","value":"AwaitingSublot"}
+{"at":"2026-09-13T08:53:59.1923495+00:00","criterion":"bystander-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-13T08:54:00.1987067+00:00","criterion":"bystander-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-13T08:54:00.2079276+00:00","note":"命令面：该调用时调用了、参数正确、只调一次，且只作用于出事的那一台车。"}
