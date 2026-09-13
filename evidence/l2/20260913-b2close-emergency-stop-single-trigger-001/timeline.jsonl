@@ -1,0 +1,23 @@
+{"at":"2026-09-13T08:38:43.0625011+00:00","note":"L2 run 20260913T083843000Z starting for scenario 'emergency-stop-single-trigger'."}
+{"at":"2026-09-13T08:38:43.0800368+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T08:38:51.0030486+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T08:38:51.1326769+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T08:38:51.1594718+00:00","note":"RIoT command options for this scenario: EmergencyRetryInitialDelay=00:00:20"}
+{"at":"2026-09-13T08:38:54.8987444+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T08:38:56.5419537+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T08:38:56.5612855+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-13T08:38:57.2906869+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-13T08:38:57.5773104+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-13T08:38:57.5959093+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T08:38:57.6439859+00:00","note":"Environment is up; entering scenario 'emergency-stop-single-trigger'."}
+{"at":"2026-09-13T08:38:57.6877271+00:00","note":"Publishing demand 1fbabc01a9374988aa041dd336e5632e."}
+{"at":"2026-09-13T08:38:57.7771485+00:00","criterion":"journey-dispatched","value":"(null)"}
+{"at":"2026-09-13T08:38:58.5790598+00:00","criterion":"journey-dispatched","value":"@{DemandId=1fbabc01-a937-4988-aa04-1dd336e5632e}"}
+{"at":"2026-09-13T08:38:58.6055684+00:00","criterion":"pickup-intent","value":"(null)"}
+{"at":"2026-09-13T08:38:58.8637815+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-1fbabc01-a937-4988-aa04-1dd336e5632e-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T08:38:58.9540465+00:00","criterion":"runtime-iterations","value":"3"}
+{"at":"2026-09-13T08:38:59.2252330+00:00","criterion":"runtime-iterations","value":"4"}
+{"at":"2026-09-13T08:39:00.2845353+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-13T08:39:01.0788479+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-13T08:39:01.0949682+00:00","note":"Run failed: The property 'Count' cannot be found on this object. Verify that the property exists."}
+{"at":"2026-09-13T08:39:01.0985550+00:00","note":"Failure at: at <ScriptBlock>, C:\\Users\\szy\\8005-b3\\b2c\\scripts\\l2\\scenarios\\emergency-stop-single-trigger.ps1: line 107\r\nat <ScriptBlock>, C:\\Users\\szy\\8005-b3\\b2c\\scripts\\l2\\Invoke-L2Scenario.ps1: line 744"}

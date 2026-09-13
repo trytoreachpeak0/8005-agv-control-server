@@ -1,0 +1,38 @@
+{"at":"2026-09-13T08:42:06.4161978+00:00","note":"L2 run 20260913T084206345Z starting for scenario 'emergency-stop-single-trigger'."}
+{"at":"2026-09-13T08:42:06.4405220+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-13T08:42:18.3228391+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-13T08:42:18.6516621+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-13T08:42:18.6855431+00:00","note":"RIoT command options for this scenario: EmergencyRetryInitialDelay=00:00:20"}
+{"at":"2026-09-13T08:42:23.9823032+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-13T08:42:26.0542966+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-13T08:42:26.5107188+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-13T08:42:26.5473927+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-13T08:42:28.0625858+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-13T08:42:28.3414918+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-13T08:42:28.3691408+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-13T08:42:28.4364144+00:00","note":"Environment is up; entering scenario 'emergency-stop-single-trigger'."}
+{"at":"2026-09-13T08:42:28.4711902+00:00","note":"Publishing demand b85049094f0b4b788168eabbeb17a53d."}
+{"at":"2026-09-13T08:42:28.5896008+00:00","criterion":"journey-dispatched","value":"(null)"}
+{"at":"2026-09-13T08:42:30.1930300+00:00","criterion":"journey-dispatched","value":"@{DemandId=b8504909-4f0b-4b78-8168-eabbeb17a53d}"}
+{"at":"2026-09-13T08:42:30.2067947+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-b8504909-4f0b-4b78-8168-eabbeb17a53d-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-13T08:42:30.3211123+00:00","criterion":"runtime-iterations","value":"5"}
+{"at":"2026-09-13T08:42:31.1209548+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-13T08:42:32.3773791+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-13T08:42:33.1744830+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-13T08:42:33.2022127+00:00","note":"RIoT reports W2G-b8504909-4f0b-4b78-8168-eabbeb17a53d-PICKUP-1 FAILED while AGV-L2-001 is still moving."}
+{"at":"2026-09-13T08:42:33.2197736+00:00","criterion":"trigger-issued","value":"0"}
+{"at":"2026-09-13T08:42:34.5305640+00:00","criterion":"trigger-issued","value":"1"}
+{"at":"2026-09-13T08:42:34.5509970+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-13T08:42:35.0775440+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-13T08:42:36.1381573+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-13T08:42:36.9394733+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-13T08:42:37.9928250+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-13T08:42:38.0021594+00:00","note":"RIoT stops reporting emergencyState for the vehicle."}
+{"at":"2026-09-13T08:42:39.0968142+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-13T08:42:40.1463276+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-13T08:42:40.9413319+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-13T08:42:42.0060772+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-13T08:42:42.0217696+00:00","note":"The latch engages: RIoT reports CAN_RECOVER."}
+{"at":"2026-09-13T08:42:42.0354062+00:00","criterion":"trigger-confirmed","value":"Pending"}
+{"at":"2026-09-13T08:43:12.2002050+00:00","note":"Run failed: Timed out after 30s waiting for: the trigger was settled as confirmed. Last observed: \"Pending\""}
+{"at":"2026-09-13T08:43:12.2089585+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\8005-b3\\es-red\\scripts\\l2\\L2.psm1: line 90\r\nat <ScriptBlock>, C:\\Users\\szy\\8005-b3\\es-red\\scripts\\l2\\scenarios\\emergency-stop-single-trigger.ps1: line 165\r\nat <ScriptBlock>, C:\\Users\\szy\\8005-b3\\es-red\\scripts\\l2\\Invoke-L2Scenario.ps1: line 744"}
