@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-multi-demand-compensate",
+  "runId": "20260913T013902553Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260913T013902553Z",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "e83c3aaf1b68c7c0f31c3dedacc6cc6babb4bc9a",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "f840d8471a77baad2bcc377d412d9113a57850f1",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "batchId": "BATCH-3",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "assertions": [
+    {
+      "id": "L2-MDC-01",
+      "description": "四条需求凑成一趟旅程：四个取货停靠加一个关卡",
+      "outcome": "PASS",
+      "expected": 5,
+      "actual": 5
+    },
+    {
+      "id": "L2-MDC-10",
+      "description": "停靠 1：驱动脚本照常装载提交",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-MDC-20",
+      "description": "停靠 2：驱动脚本钉死锁反馈之后车报回真的 UNKNOWN，仓位操作 RecoveryRequired、旅程 Blocked",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired / LOAD_RESULT_REQUIRES_RECOVERY / CLOSED/OCCUPIED/1/0",
+      "actual": "RecoveryRequired / LOAD_RESULT_REQUIRES_RECOVERY / CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-MDC-21",
+      "description": "补偿之前：停靠 1 的货在车上（Loaded），停靠 3、4 还没装（Planned）——旅程不止这一条需求",
+      "outcome": "PASS",
+      "expected": "1=Loaded 2=Planned 3=Planned 4=Planned",
+      "actual": "1=Loaded/Accepted 2=Planned/RecoveryRequired 3=Planned/Accepted 4=Planned/Accepted"
+    },
+    {
+      "id": "L2-MDC-22",
+      "description": "停靠 2：补偿清空对账 Reconciled、结论 ALL_EMPTY，车开的就是那一仓，需求判 Cancelled",
+      "outcome": "PASS",
+      "expected": "Reconciled / ALL_EMPTY / Cancelled / [2]",
+      "actual": "Reconciled / ALL_EMPTY / Cancelled / [2]"
+    },
+    {
+      "id": "L2-MDC-30",
+      "description": "停靠 2：补偿对账之后旅程自己离开这一站、去停靠 3，不需要再按任何按钮",
+      "outcome": "PASS",
+      "expected": "3/*（离开停靠 2）",
+      "actual": "3/AwaitingPickupArrival / "
+    },
+    {
+      "id": "L2-MDC-31",
+      "description": "停靠 2 这条需求本身的结局不变：CANCELLED_BY_LOAD_COMPENSATION 永久抑制，悬空的 LoadBatch 命令已结算",
+      "outcome": "PASS",
+      "expected": "CANCELLED_BY_LOAD_COMPENSATION / 已结算",
+      "actual": "CANCELLED_BY_LOAD_COMPENSATION / 已结算"
+    },
+    {
+      "id": "L2-MDC-32",
+      "description": "补偿对账那一刻服务端会话回到 Ready 并告诉了车：LoadCompensationResult 的首个应答里带 SessionReadiness READY（#46）",
+      "outcome": "PASS",
+      "expected": "READY",
+      "actual": "READY / 现在 Ready / READY"
+    },
+    {
+      "id": "L2-MDC-43",
+      "description": "停靠 3：补偿之后照常装载提交",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-MDC-44",
+      "description": "停靠 4：补偿之后照常装载提交",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-MDC-50",
+      "description": "三站装完、一站补偿之后旅程进入去关卡那一段，理由 NO_FURTHER_CARGO",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival / NO_FURTHER_CARGO",
+      "actual": "AwaitingGateArrival / NO_FURTHER_CARGO"
+    },
+    {
+      "id": "L2-MDC-60",
+      "description": "关卡：三条装上车的需求逐条取空，每条卸货都提交，旅程 Completed（车载端拒收多项关卡清单时红，见 8005-agv-program#48）",
+      "outcome": "PASS",
+      "expected": "Completed / 3 条卸货 Committed",
+      "actual": "Completed / Committed,Committed,Committed / 会话 Ready / READY"
+    },
+    {
+      "id": "L2-MDC-61",
+      "description": "收尾：停靠 1、3、4 的需求卸下成功，停靠 2 的需求是补偿判死的那一条",
+      "outcome": "PASS",
+      "expected": "1=Unloaded/Succeeded 2=Cancelled/Cancelled 3=Unloaded/Succeeded 4=Unloaded/Succeeded",
+      "actual": "1=Unloaded/Succeeded 2=Cancelled/Cancelled 3=Unloaded/Succeeded 4=Unloaded/Succeeded"
+    },
+    {
+      "id": "L2-MDC-62",
+      "description": "补偿对账之后没有任何仓位操作再进 RecoveryRequired，也没有第二个恢复会话",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired 0 / 恢复会话 1",
+      "actual": "RecoveryRequired 0 / 恢复会话 1"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 131 lines, 131 distinct, 15 message types, 0 distinct violations, 0 known; schema compilation 19949 ms."
+    }
+  ]
+}
