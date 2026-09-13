@@ -352,9 +352,16 @@ function Get-L2PeerPublish {
     $clone = Join-Path $target 'clone'
     $log = Join-Path $LogRoot "build-$Name.log"
 
-    & git clone --quiet --no-hardlinks $SourceRepository $clone *>&1 | Tee-Object -FilePath $log | Out-Null
+    # core.longpaths on both commands. The onboard repository commits its G2 evidence under paths like
+    # evidence/g2/<run>/protocol-v1.0.0/FP-IS-00/<timestamp>-<hash>/..., and below this cache root
+    # (%LOCALAPPDATA%\8005-l2-peers\onboard-hmi-<40 hex>\clone\) that runs past MAX_PATH: on
+    # 2026-09-13 the clone of c86bac5 "succeeded" and its checkout failed with "Filename too long".
+    # The G3 runners never hit it because they clone under a short StageRoot.
+    & git -c core.longpaths=true clone --quiet --no-hardlinks $SourceRepository $clone *>&1 |
+        Tee-Object -FilePath $log | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not clone $Name; see $log" }
-    & git -C $clone checkout --quiet --detach $commit *>&1 | Tee-Object -FilePath $log -Append | Out-Null
+    & git -c core.longpaths=true -C $clone checkout --quiet --detach $commit *>&1 |
+        Tee-Object -FilePath $log -Append | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not check out $commit in the $Name clone; see $log" }
 
     & dotnet publish (Join-Path $clone $ProjectPath) -c Release -o $publish --nologo *>&1 |
