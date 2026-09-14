@@ -1,0 +1,41 @@
+{"at":"2026-09-14T07:34:34.5600948+00:00","note":"L2 run 20260914T073434520Z starting for scenario 'three-vehicle-exit'."}
+{"at":"2026-09-14T07:34:34.5982342+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-14T07:34:34.5997265+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-14T07:34:37.8039570+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-14T07:34:38.0733484+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-14T07:34:38.1385286+00:00","note":"Fleet of 3: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002, AGV-L2-003/BROKERX-L2-0003"}
+{"at":"2026-09-14T07:34:38.1509931+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-14T07:34:41.1638238+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-14T07:34:43.3564013+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-14T07:34:43.4609559+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-14T07:34:44.1453719+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-14T07:34:44.4275777+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-14T07:34:45.9226490+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-14T07:34:45.9662034+00:00","note":"Environment is up; entering scenario 'three-vehicle-exit'."}
+{"at":"2026-09-14T07:34:46.0924660+00:00","note":"Publishing demand 5c528517255a49248f31a5134a3fbb77 (sublot L2-3V-20260914T073434520Z-0)."}
+{"at":"2026-09-14T07:34:46.1657740+00:00","note":"Publishing demand df9482b4713f4e76a9d0e5e738699cc7 (sublot L2-3V-20260914T073434520Z-1)."}
+{"at":"2026-09-14T07:34:46.1778046+00:00","note":"Publishing demand efe1a05cbda2408a9c0b1b26b8b7d548 (sublot L2-3V-20260914T073434520Z-2)."}
+{"at":"2026-09-14T07:34:46.2343721+00:00","criterion":"journeys-dispatched","value":"0"}
+{"at":"2026-09-14T07:34:47.7668716+00:00","criterion":"journeys-dispatched","value":"1"}
+{"at":"2026-09-14T07:34:48.0153780+00:00","criterion":"journeys-dispatched","value":"2"}
+{"at":"2026-09-14T07:34:48.2669637+00:00","criterion":"journeys-dispatched","value":"3"}
+{"at":"2026-09-14T07:34:48.3010978+00:00","criterion":"to-pickup-AGV-L2-001","value":"CONFIRMED"}
+{"at":"2026-09-14T07:34:48.3048846+00:00","criterion":"to-pickup-AGV-L2-002","value":"CONFIRMED"}
+{"at":"2026-09-14T07:34:48.3169931+00:00","criterion":"to-pickup-AGV-L2-003","value":"CONFIRMED"}
+{"at":"2026-09-14T07:34:48.3218230+00:00","note":"All three vehicles depart for their pickup stations."}
+{"at":"2026-09-14T07:34:48.5146476+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingPickupArrival"}
+{"at":"2026-09-14T07:34:49.2622806+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingSublot"}
+{"at":"2026-09-14T07:34:50.5361057+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingLoadResult"}
+{"at":"2026-09-14T07:34:51.0405962+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingStationDeparture"}
+{"at":"2026-09-14T07:34:55.9002346+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-14T07:34:56.1535139+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingGateArrival"}
+{"at":"2026-09-14T07:34:56.1580596+00:00","criterion":"stage-AGV-L2-002","value":"AwaitingGateArrival"}
+{"at":"2026-09-14T07:34:56.1760642+00:00","criterion":"stage-AGV-L2-003","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-14T07:34:56.4396320+00:00","criterion":"stage-AGV-L2-003","value":"AwaitingGateArrival"}
+{"at":"2026-09-14T07:34:56.4506881+00:00","note":"All three vehicles depart for the gate."}
+{"at":"2026-09-14T07:34:57.5524414+00:00","criterion":"stage-AGV-L2-001","value":"AwaitingUnloadResult"}
+{"at":"2026-09-14T07:34:59.1051060+00:00","criterion":"stage-AGV-L2-001","value":"Completed"}
+{"at":"2026-09-14T07:34:59.1110253+00:00","criterion":"stage-AGV-L2-002","value":"Completed"}
+{"at":"2026-09-14T07:34:59.1380961+00:00","criterion":"stage-AGV-L2-003","value":"Completed"}
+{"at":"2026-09-14T07:34:59.1701435+00:00","note":"三台车在同一次运行里各自完成一趟 WIRE_TO_GATE（本轮共派出 3 趟）。"}
+{"at":"2026-09-14T07:34:59.7673899+00:00","note":"L2 port block lock released."}

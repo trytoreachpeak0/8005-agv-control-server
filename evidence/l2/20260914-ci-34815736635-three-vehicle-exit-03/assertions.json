@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 1,
+  "scenario": "three-vehicle-exit",
+  "runId": "20260914T073500557Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "batchId": "batch-2",
+    "stageRoot": "C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260914T073500557Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002",
+      "AGV-L2-003/BROKERX-L2-0003"
+    ],
+    "controlServerCommit": "7327ef3adaf6b6ae053cccbf274cb12eb01fcc04"
+  },
+  "assertions": [
+    {
+      "id": "L2-3V-01",
+      "description": "三台车各自拿到一趟 journey",
+      "outcome": "PASS",
+      "expected": "AGV-L2-001,AGV-L2-002,AGV-L2-003",
+      "actual": "AGV-L2-001,AGV-L2-002,AGV-L2-003"
+    },
+    {
+      "id": "L2-3V-02",
+      "description": "三趟 journey 落在三个互不相同的需求上",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-3V-03",
+      "description": "三趟 journey 落在三把互不相同的 vehicleKey 上",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-3V-04-AGV-L2-001",
+      "description": "AGV-L2-001 的 TO_PICKUP 单已建并确认",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-3V-04-AGV-L2-002",
+      "description": "AGV-L2-002 的 TO_PICKUP 单已建并确认",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-3V-04-AGV-L2-003",
+      "description": "AGV-L2-003 的 TO_PICKUP 单已建并确认",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-3V-05-AGV-L2-001",
+      "description": "AGV-L2-001 到站取货、装载提交、出发前安全检查通过，进入关卡段",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-3V-05-AGV-L2-002",
+      "description": "AGV-L2-002 到站取货、装载提交、出发前安全检查通过，进入关卡段",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-3V-05-AGV-L2-003",
+      "description": "AGV-L2-003 到站取货、装载提交、出发前安全检查通过，进入关卡段",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-3V-06-AGV-L2-001",
+      "description": "AGV-L2-001 的装载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-3V-06-AGV-L2-002",
+      "description": "AGV-L2-002 的装载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-3V-06-AGV-L2-003",
+      "description": "AGV-L2-003 的装载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-3V-07-AGV-L2-001",
+      "description": "AGV-L2-001 的 journey 走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-3V-07-AGV-L2-002",
+      "description": "AGV-L2-002 的 journey 走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-3V-07-AGV-L2-003",
+      "description": "AGV-L2-003 的 journey 走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-3V-08-AGV-L2-001",
+      "description": "AGV-L2-001 的卸载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-3V-08-AGV-L2-002",
+      "description": "AGV-L2-002 的卸载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-3V-08-AGV-L2-003",
+      "description": "AGV-L2-003 的卸载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-3V-09",
+      "description": "三个需求全部终态 Succeeded",
+      "outcome": "PASS",
+      "expected": "3 / 3",
+      "actual": "3 / 3"
+    },
+    {
+      "id": "L2-3V-10",
+      "description": "全程只建了六张 RIoT 单（三台车各取货一张、关卡一张）",
+      "outcome": "PASS",
+      "expected": 6,
+      "actual": 6
+    },
+    {
+      "id": "L2-3V-11",
+      "description": "六张单绑在三把 vehicleKey 上，没有一张落到别的车头上",
+      "outcome": "PASS",
+      "expected": "BROKERX-L2-0001,BROKERX-L2-0002,BROKERX-L2-0003",
+      "actual": "BROKERX-L2-0001,BROKERX-L2-0002,BROKERX-L2-0003"
+    },
+    {
+      "id": "L2-3V-12",
+      "description": "路网快照全程不是陈旧态（引擎在三车链路里真的工作）",
+      "outcome": "PASS",
+      "expected": "(无陈旧原因)",
+      "actual": "(null)"
+    }
+  ]
+}

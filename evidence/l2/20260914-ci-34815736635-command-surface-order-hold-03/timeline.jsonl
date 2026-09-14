@@ -1,0 +1,41 @@
+{"at":"2026-09-14T07:36:32.6241673+00:00","note":"L2 run 20260914T073632582Z starting for scenario 'command-surface-order-hold'."}
+{"at":"2026-09-14T07:36:32.6626480+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-14T07:36:32.6641212+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-14T07:36:35.8441595+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-14T07:36:36.0875450+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-14T07:36:36.1385528+00:00","note":"Fleet of 3: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002, AGV-L2-003/BROKERX-L2-0003"}
+{"at":"2026-09-14T07:36:39.1177509+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-14T07:36:41.2790738+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-14T07:36:41.3750049+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-14T07:36:42.0685454+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-14T07:36:42.3505775+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-14T07:36:43.8394105+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-14T07:36:43.8817839+00:00","note":"Environment is up; entering scenario 'command-surface-order-hold'."}
+{"at":"2026-09-14T07:36:43.9225797+00:00","note":"Publishing demand 59cb8f39e9ec4b8c92b9a796ed7c165a."}
+{"at":"2026-09-14T07:36:43.9939818+00:00","note":"Publishing demand f845f42feea149d4b9f44f538a2a927e."}
+{"at":"2026-09-14T07:36:44.0069464+00:00","note":"Publishing demand 8b669669b2af4838a2de027b5412b098."}
+{"at":"2026-09-14T07:36:44.0629049+00:00","criterion":"journeys-dispatched","value":"0"}
+{"at":"2026-09-14T07:36:45.6130925+00:00","criterion":"journeys-dispatched","value":"1"}
+{"at":"2026-09-14T07:36:45.8609328+00:00","criterion":"journeys-dispatched","value":"2"}
+{"at":"2026-09-14T07:36:46.1148381+00:00","criterion":"journeys-dispatched","value":"3"}
+{"at":"2026-09-14T07:36:46.1324975+00:00","criterion":"faulted-intent","value":"@{UpperId=W2G-f845f42f-eea1-49d4-b9f4-4f538a2a927e-PICKUP-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-14T07:36:46.1806746+00:00","note":"RIoT reports W2G-f845f42f-eea1-49d4-b9f4-4f538a2a927e-PICKUP-1 FAILED on AGV-L2-002."}
+{"at":"2026-09-14T07:36:46.2169042+00:00","criterion":"hold-attempts","value":"0"}
+{"at":"2026-09-14T07:36:46.4625644+00:00","criterion":"hold-attempts","value":"1"}
+{"at":"2026-09-14T07:36:46.5134572+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-14T07:36:46.7665950+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-14T07:36:47.7754601+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-14T07:36:48.7844321+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-14T07:36:49.8276511+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-14T07:36:50.8474634+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-14T07:36:51.8599172+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-14T07:36:52.8792224+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-14T07:36:53.9071010+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-14T07:36:53.9871134+00:00","criterion":"bystander-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-14T07:36:55.0174733+00:00","criterion":"bystander-stage","value":"AwaitingSublot"}
+{"at":"2026-09-14T07:36:56.0340703+00:00","criterion":"bystander-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-14T07:36:56.8023143+00:00","criterion":"bystander-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-09-14T07:37:02.7005512+00:00","criterion":"bystander-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-14T07:37:02.9535736+00:00","criterion":"bystander-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-14T07:37:02.9622585+00:00","note":"命令面：该调用时调用了、参数正确、只调一次，且只作用于出事的那一台车。"}
+{"at":"2026-09-14T07:37:03.5374549+00:00","note":"L2 port block lock released."}

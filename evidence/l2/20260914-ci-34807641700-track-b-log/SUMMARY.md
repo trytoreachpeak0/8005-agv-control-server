@@ -1,5 +1,7 @@
 # L2 CI：`fp/b2-close@2f7433b8` 上合成场景 26 次运行全部 **`PASS`**，轨 B 出口三连全过（只有运行日志，场景证据目录没能上传）
 
+> **已被取代（2026-09-14 15:43）**：同日 run `34815736635` 第 2 次尝试在 `7327ef3a` 上重跑，上传成功，逐场景证据已入库，见 `../20260914-ci-34815736635-run/SUMMARY.md`。本目录原样保留。
+
 GitHub Actions run [`34807641700`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/34807641700)（`l2.yml`，`workflow_dispatch`，runner `win11-01` headless）。
 `headSha` 为 `2f7433b8`：服务端产品代码与 G3 共享绑定 `052759bc` 相同（其后只有 G3 绑定与证据提交）。
 
