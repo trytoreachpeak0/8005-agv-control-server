@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-restart-with-open-recovery-session",
+  "runId": "20260914T085457826Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "rig": "RealOnboard",
+    "controlServerCommit": "2b2aa51cd57f1eff0e76158eaab7fc8687e3f5a7",
+    "batchId": "batch-2",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260914T085457826Z",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "onboardHmiCommit": "b96010825d43aeee3b861cb3b4716f4d0873c8a0",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-ROS-01",
+      "description": "前提：真车载端报 overallOutcome=UNKNOWN，服务端判装载 RecoveryRequired、旅程 Blocked",
+      "outcome": "PASS",
+      "expected": "UNKNOWN / RecoveryRequired / Blocked",
+      "actual": "UNKNOWN / RecoveryRequired / Blocked/LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-ROS-02",
+      "description": "重启前服务端有一个开着的恢复会话：SessionRequested → Opened；RESUME_AFTER_REPAIR 因没有已证实断点被拒（PROVEN_RECOVERY_CHECKPOINT_REQUIRED）；这辆车只有这一个会话行，OPEN、未选动作、revision 1、没有工作流",
+      "outcome": "PASS",
+      "expected": "Opened / RESUME_AFTER_REPAIR→RecoveryActionRejected(PROVEN_RECOVERY_CHECKPOINT_REQUIRED) / 会话行 1：OPEN、无动作、r1 / 工作流 0",
+      "actual": "ExceptionRecoverySessionOpened / RESUME_AFTER_REPAIR→RecoveryActionRejected(PROVEN_RECOVERY_CHECKPOINT_REQUIRED) / 会话行 1：OPEN、动作=''、r1 / 工作流 0"
+    },
+    {
+      "id": "L2-ROS-03",
+      "description": "重启前那份 OPEN 快照可重放：这个会话在发件箱只有一份快照，OPEN、r1、允许 COMPENSATE_LOAD_ALL_EMPTY、绑在当前会话代次，未确认、未 fence",
+      "outcome": "PASS",
+      "expected": "1 份：r1 OPEN g1 ack=False fenced=False，允许动作含 COMPENSATE_LOAD_ALL_EMPTY",
+      "actual": "1 份：r1 OPEN g1 ack=False fenced=False，允许动作 RESUME_AFTER_REPAIR,COMPENSATE_LOAD_ALL_EMPTY,FAULT_CARGO_HANDOFF,FORCED_MECHANICAL_RECOVERY"
+    },
+    {
+      "id": "L2-ROS-04",
+      "description": "服务端在重启后的恢复状态报告之后把那份 OPEN 快照重放进新会话：同一 messageId 的发件箱行改绑到新代次，载荷不变（仍 OPEN r1），仍未确认、未 fence，没有另起快照（ReplayPendingCommandsAsync）",
+      "outcome": "PASS",
+      "expected": "RecoveryStateReport g>1 在重启之后 / 同一行 g=报告代次、r1 OPEN、载荷相同、ack=False fenced=False / 快照 1 份",
+      "actual": "RecoveryStateReport g2 重启后=True / 同一行 g2 r1 OPEN 载荷相同=True ack=False fenced=False / 快照 1 份"
+    },
+    {
+      "id": "L2-ROS-05",
+      "description": "重启后的恢复入口可用：第一次按「补偿清空」就走到补偿结果（没有「补偿清空失败」即没有 RECOVERY_SESSION_STATE_PENDING 一类的拒绝）；重启后没有再申请会话、没有 ALREADY_OPEN 一类的会话拒绝；COMPENSATE_LOAD_ALL_EMPTY 挂在重启前那个会话上、在新代次里被 Accepted；这辆车始终只有一个恢复会话",
+      "outcome": "FAIL",
+      "expected": "第一次按下即有 LoadCompensationResult / 重启后 SessionRequested 0 / 会话行 1 / COMPENSATE×1 → Accepted，会话 49264f0e-00f7-3d51-a883-80e62b3b53ad，g≥2",
+      "actual": "第一次按下：REFUSED；再按一次：REFUSED / 重启后 SessionRequested 0 / 会话行 1 / COMPENSATE×0"
+    },
+    {
+      "id": "L2-ROS-06",
+      "description": "未到达：重启后「补偿清空」没有走到 LoadCompensationResult（REFUSED；再按一次：REFUSED）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 重启后「补偿清空」没有走到 LoadCompensationResult（REFUSED；再按一次：REFUSED）"
+    },
+    {
+      "id": "L2-ROS-07",
+      "description": "未到达：重启后「补偿清空」没有走到 LoadCompensationResult（REFUSED；再按一次：REFUSED）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 重启后「补偿清空」没有走到 LoadCompensationResult（REFUSED；再按一次：REFUSED）"
+    },
+    {
+      "id": "L2-ROS-08",
+      "description": "未到达：重启后「补偿清空」没有走到 LoadCompensationResult（REFUSED；再按一次：REFUSED）",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 重启后「补偿清空」没有走到 LoadCompensationResult（REFUSED；再按一次：REFUSED）"
+    }
+  ]
+}
