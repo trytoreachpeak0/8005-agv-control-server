@@ -345,6 +345,8 @@ public sealed partial class OnboardMessageProcessor(
                     // whatever the verdict on it. The verdict itself stays with the operation.
                     await store.ReconcileReportedPendingResultAsync(
                         agvId, generation, messageId, cancellationToken).ConfigureAwait(false);
+                    await store.SettleReportedAttemptsAsync(agvId, generation, cancellationToken)
+                        .ConfigureAwait(false);
                     // Applying a result is the moment the server's own verdict changes: a result it
                     // refuses puts the operation into RecoveryRequired, and readiness has to follow.
                     // It did not until 2026-09-04 -- readiness was recomputed only on
@@ -354,18 +356,15 @@ public sealed partial class OnboardMessageProcessor(
                     SessionReadinessDecision resultDecision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
                     string resultAck = DurableAck(messageType, messageId, agvId, generation, contentHash);
-                    // Only the transition INTO RecoveryRequired, and only when it is new. The gap
-                    // being closed is that the vehicle was never told it needs recovery; the way
-                    // back to READY already has owners (the handshake, RecoveryStateReport,
-                    // SafetyStateChanged), and announcing it here too would change the wire shape of
-                    // the ordinary path — a completed unload would start answering with two lines.
+                    // Only when readiness actually changes, so the ordinary path keeps its one-line
+                    // answer: a completed unload on a ready session is still just its DurableAck.
                     //
-                    // OPEN: after a recovery completes, nothing on this path tells the vehicle the
-                    // session is READY again. Today the onboard learns it from its own next
-                    // RecoveryStateReport. If that turns out not to happen, widen this rather than
-                    // adding a second announcement somewhere else.
-                    if (resultDecision.Readiness != SessionReadiness.RecoveryRequired ||
-                        state.Readiness == SessionReadiness.RecoveryRequired)
+                    // Into RecoveryRequired since 2026-09-04 (the vehicle was never told it needed
+                    // recovery). Back to READY since 2026-09-14: the onboard does not send another
+                    // RecoveryStateReport after a resume commits, so the READY a settled attempt
+                    // produces reached nobody and the vehicle stayed out of work (G3 FP-IS-07
+                    // resume-007). This is the widening the earlier note here asked for.
+                    if (resultDecision.Readiness == state.Readiness)
                     {
                         return resultAck;
                     }
@@ -385,8 +384,24 @@ public sealed partial class OnboardMessageProcessor(
             case "LoadCancellationResult":
             case "LoadCompensationResult":
             case "LoadCorrectionResult":
-                return await recoveryCoordinator.ProcessResultAsync(root, contentHash, cancellationToken)
-                    .ConfigureAwait(false);
+                {
+                    string recoveryAck = await recoveryCoordinator.ProcessResultAsync(root, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+                    // A reconciled recovery settles the operation it was about. Until 2026-09-14 no
+                    // recovery result decided readiness, so after a compensation the session still read
+                    // OPERATION_RECOVERY_REQUIRED (G3 FP-IS-07 compensate-001). Announced the same way,
+                    // and only on a change, as an OperationResult is.
+                    await store.SettleReportedAttemptsAsync(agvId, generation, cancellationToken)
+                        .ConfigureAwait(false);
+                    SessionReadinessDecision recoveryDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    if (recoveryDecision.Readiness == state.Readiness)
+                    {
+                        return recoveryAck;
+                    }
+                    state.Readiness = recoveryDecision.Readiness;
+                    return $"{recoveryAck}\n{SessionReadinessLine(recoveryDecision, agvId, generation, state)}";
+                }
             case "ManualChargingReturnToServiceRequested":
                 {
                     // Not a recovery request despite the administrator context it carries: the

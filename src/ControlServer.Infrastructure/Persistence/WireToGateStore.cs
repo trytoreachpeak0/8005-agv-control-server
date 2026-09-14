@@ -178,6 +178,50 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Takes off the current session every attempt its RecoveryStateReport named as unsettled whose
+    /// operation this server has since settled -- committed by a result or a resume, or cancelled by a
+    /// reconciled cancellation, compensation or fault handoff.
+    /// </summary>
+    /// <remarks>
+    /// The report is the vehicle's view at its handshake. Nothing changed it afterwards, so a session
+    /// whose attempt a resume had just committed still read PENDING_FACT_RECONCILIATION_REQUIRED until
+    /// the vehicle reconnected, and the journey waited on ONBOARD_SESSION_NOT_READY over a committed
+    /// load (G3 FP-IS-07 resume-007, 2026-09-14). An attempt whose operation is still Prepared or
+    /// RecoveryRequired stays pending.
+    /// </remarks>
+    public async Task SettleReportedAttemptsAsync(
+        string agvId, long sessionGeneration, CancellationToken cancellationToken)
+    {
+        SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
+            .ConfigureAwait(false);
+        string[] pending = DeserializeStrings(row.PendingAttemptIdsJson);
+        if (pending.Length == 0)
+        {
+            return;
+        }
+
+        string[] settled = await dbContext.StationOperations
+            .Where(operation => pending.Contains(operation.SlotOperationAttemptId) &&
+                                (operation.Status == StationOperationStatus.Committed ||
+                                 operation.Status == StationOperationStatus.Cancelled))
+            .Select(operation => operation.SlotOperationAttemptId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (settled.Length == 0)
+        {
+            return;
+        }
+
+        row.PendingAttemptIdsJson = SerializeSorted(pending.Except(settled, StringComparer.Ordinal));
+        if (row.UnsettledSlotOperationAttemptId is not null &&
+            settled.Contains(row.UnsettledSlotOperationAttemptId, StringComparer.Ordinal))
+        {
+            row.UnsettledSlotOperationAttemptId = null;
+        }
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<SessionReadinessDecision> DecideReadinessAsync(
         string agvId, long sessionGeneration, CancellationToken cancellationToken)
     {
