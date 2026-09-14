@@ -42,5 +42,12 @@ GitHub 账号的 artifact 存储配额已满（仓库里大量 130 MB 的 `WireT
 
 ## 同一时刻的单元测试
 
-`test.yml` run `34807639494` 第一次在 NuGet 还原阶段失败（runner 连不上 `api.nuget.org` 取包漏洞数据，`NU1900` 被 `TreatWarningsAsErrors` 升为错误），与代码无关；
-结果见批次 2 记录的补记。本地同一产品代码全量 722 passed，十片 `CONTROL_SERVER_G2` 全 `PASS`（`../../g2/20260914-protocol-v1.0.0-052759bc/`）。
+`test.yml` run [`34807639494`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/34807639494)，同一 `headSha` `2f7433b8`：
+
+| attempt | Test 步骤 | 说明 |
+| --- | --- | --- |
+| 1 | `failure` | NuGet 还原阶段 runner 连不上 `api.nuget.org` 取包漏洞数据，`NU1900` 被 `TreatWarningsAsErrors` 升为错误；没有编译、没有跑测试，与代码无关 |
+| 2（只重跑失败任务） | **`success`** | `已通过! - 失败: 0，通过: 722，已跳过: 0，总计: 722`；run 结论仍是 `failure`，只因「Upload test results」撞同一个 artifact 配额 |
+
+第 2 次的日志与 run 元数据存在本目录的 `test-run-34807639494-attempt2.log`、`test-run-34807639494.json`。
+与本地同一产品代码的全量结果（722 passed）一致；十片 `CONTROL_SERVER_G2` 见 `../../g2/20260914-protocol-v1.0.0-052759bc/`。
