@@ -145,7 +145,9 @@ $assertions.Add(
 $activationRows = Get-Count "SELECT COUNT(*) AS N FROM SlotConfigurationActivations WHERE AgvId = '$agvId'"
 $assertions.Add('L2-SCA-10', '一次下发只有一行激活，补报没有产生第二次激活', ($activationRows -eq 1), 1, $activationRows)
 
-$active = @(Invoke-L2Query -Connection $connection `
+# 不要写成 @(Invoke-L2Query ...)：它以 `return , $rows` 返回，外面再包一层 @() 得到的是「一个元素、那个元素
+# 是整张结果集」，`.Count` 恒为 1，「写了一行」这半句就没在判。
+$active = (Invoke-L2Query -Connection $connection `
     -Sql "SELECT ActivationId, Fingerprint, ConfigurationVersion FROM ActiveSlotConfigurations WHERE AgvId = '$agvId'")
 $assertions.Add(
     'L2-SCA-11', '生效配置写了一行，就是这次激活、就是它的目标指纹',
@@ -153,7 +155,7 @@ $assertions.Add(
     "1 / $activationId / $($issue.fingerprint)",
     $(if ($active.Count -eq 0) { '(无行)' } else { "$($active.Count) / $($active[0].ActivationId) / $($active[0].Fingerprint)" }))
 
-$session = @(Invoke-L2Query -Connection $connection `
+$session = (Invoke-L2Query -Connection $connection `
     -Sql "SELECT Readiness, ReasonCode FROM SessionRecoveries WHERE AgvId = '$agvId'")
 $assertions.Add(
     'L2-SCA-12', '车重连后报的正是生效那一版，会话就绪，没有被判成指纹不符',

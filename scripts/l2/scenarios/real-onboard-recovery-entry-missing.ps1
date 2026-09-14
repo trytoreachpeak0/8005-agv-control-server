@@ -122,10 +122,14 @@ function Get-OutboxCount([string]$messageType) {
 
 # 同一 attempt 的所有结果，按到达顺序。恢复之后应当有两行，第一行的 SupersededByResultId 指向
 # 第二行——这正是服务端「一次替换」在库里的样子。
+#
+# `return Invoke-L2Query`，让 `return , $rows` 的包装原样穿出去，调用方赋值时拿到的就是结果集。
+# `return @(...)` 结果相同但读起来像多包了一层；`return (...)` 会把结果集在 return 处拆开，零行时
+# 调用方拿到 $null，严格模式下取 `.Count` 直接抛错。
 function Get-Results([string]$attemptId) {
-    return @(Invoke-L2Query -Connection $connection -Sql (
+    return Invoke-L2Query -Connection $connection -Sql (
         "SELECT ResultId, OverallOutcome, SupersededByResultId FROM OperationResults " +
-        "WHERE SlotOperationAttemptId = '$attemptId' ORDER BY ReceivedAt"))
+        "WHERE SlotOperationAttemptId = '$attemptId' ORDER BY ReceivedAt")
 }
 
 # 等车载端把门开到「在等操作员」为止。绝不能一看到 UNLOCKING 就动手：车载端要求锁反馈稳定
