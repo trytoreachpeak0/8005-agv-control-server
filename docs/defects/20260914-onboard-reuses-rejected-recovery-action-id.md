@@ -1,11 +1,11 @@
 # 缺陷：「申请恢复」被拒之后，车载端「补偿清空」复用被拒动作的 id 与 messageId，服务端判内容冲突断开连接，补偿入口永久不可用
 
-Status: open（修复移植中：`8005-agv-onboard-hmi` 分支 `w2g/b3-on-v2`，移植自 MVP 线 `ab346ed`）
+Status: fixed（车载端，v2 线）：`8005-agv-onboard-hmi` `w2g/b3-on-v2@372186f`，移植自 MVP 线 `ab346ed`
 Owner repository: `8005-agv-onboard-hmi`（`src/SQCD.Agv.Wpf/WireToGateBusinessService.cs`、`WireToGateBusinessService.RecoveryVectors.cs`）
 Found by: 2026-09-14 L2 `real-onboard-restart-with-open-recovery-session` 首跑 `ros-001`（为 `8005-agv-control-server#36` 新写的场景）；
 证据 `evidence/l2/20260914-real-onboard-restart-with-open-recovery-session-001/`
 Product at discovery: 服务端 `fp/b2-close@2b2aa51c`（= `fp/v2-impl`）；车载端 `w2g/b3-on-v2@b960108`（产品代码同 `w2g/fp-v2-impl@8dee1c3f`）
-Fixed in: 未修（修复提交落地后在此补上）
+Fixed in: 车载端 `372186f`（`w2g/b3-on-v2`，已推送；十片 `ONBOARD_HMI_G2` 证据 `19a740c`）。服务端未改
 
 **红在车载端产品。服务端把开着的恢复会话重放给重启后的车这一半是对的；车载端自己把一个被拒动作的身份留了下来，之后换了动作还拿它发。**
 
@@ -54,13 +54,23 @@ MVP 线车载端 `ab346ed`（2026-09-11，「fix(w2g): 恢复请求每次发送�
 
 ## 修复
 
-- **车载端（用户 2026-09-14 裁定，进行中）**：把 `ab346ed` 移植到 `w2g/b3-on-v2`，G2 测试先红后绿，再重跑本场景（新证据目录，本目录的红证据原样保留）与车载端十片 `ONBOARD_HMI_G2`。
+- **车载端（用户 2026-09-14 裁定）**：`ab346ed` 移植为 `w2g/b3-on-v2@372186f`。`src/` 两个文件与原提交逐行相同：
+  会话请求没有开着的会话时每次按下生成新 requestId；恢复动作的 `recoveryActionId` 跨按下保留（服务端按它去重、被拒不落行），
+  messageId 每次发送新生成；补偿清空申请同理。与原提交的差异只在测试侧（v2 没有自动化面恢复端点，两条测试放进 `RecoveryVectorG2Tests`，
+  替身照原提交把恢复请求的 messageId 绑到首次到达的整行字节）。
+  - 修复前（只放测试）：`RecoveryCanBeRequestedAgainAfterTheServerRefusedTheSession`、`ARequestIdTheServerAlreadyHoldsIsNotSentAgain` 两条红，冲突的正是被复用的 messageId。
+  - 修复后：同批 7/7，车载端单元 200/200，G2 全量 56/56，`dotnet format` 0；十片 `ONBOARD_HMI_G2` 全 `PASS`（`FP-IS-07` 23 → 25）。
+- 场景随修复调整了一处判据写法（`8bf65925`）：修复后被拒的 `RESUME_AFTER_REPAIR` 与之后的补偿带同一个 `recoveryActionId`、不同 messageId，
+  L2-ROS-06 改为按「id + 动作」挑补偿动作，并要求同 id 的其它动作只能是重启前被拒的那次。判据没有放松。
 - 服务端可选配套（未做，未定）：同号不同内容时回协议错误而不是断开连接。只让失败不那么粗暴，本身不修复问题。
+- MVP 线其余没带进 v2 的修复（含同源的 `a696add`、`86fe0a4`、服务端 `219b033`）归 `8005-agv-program#61` 逐条处理。
 
 ## 证据
 
 | 项 | 位置 |
 | --- | --- |
 | L2 红基线 `ros-001` | `evidence/l2/20260914-real-onboard-restart-with-open-recovery-session-001/`（`SUMMARY.md`、`assertions.json`、`timeline.jsonl`、各组件日志与库快照） |
+| 修复后调试 `ros-002`／`ros-003`（未入库） | `ros-002`（服务端 `c261e8e6`，车载端 `372186f`）7/8，只 ROS-06 因场景写法挑出两行；`ros-003` 带判据修正在工作树上 8/8 |
+| **L2 绿 `ros-004`** | `evidence/l2/20260914-real-onboard-restart-with-open-recovery-session-004/`：服务端 `8bf65925`、车载端 `19a740c`，均为已提交的干净工作树，**8/8 PASS**——重启后恢复入口可用、没有再开会话、补偿走到对账、车回到 Ready、开着的快照都没被确认 |
 | 场景 | `scripts/l2/scenarios/real-onboard-restart-with-open-recovery-session.ps1`（不属于任何 G3 片） |
 | 运行时的库 | 本机 `C:\Users\szy\AppData\Local\Temp\l2-20260914T085457826Z`，未入库 |
