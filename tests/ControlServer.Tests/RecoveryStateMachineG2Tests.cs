@@ -79,6 +79,16 @@ public sealed class RecoveryStateMachineG2Tests
                     row => row.MessageType == "SlotOperationResumeCommand",
                     TestContext.Current.CancellationToken);
                 Assert.Equal(outbox.PayloadJson + "\n", firstCommand);
+                // The vehicle resumes the exact command it journaled and refuses anything else, so the
+                // resume authorization names that command by its own content hash. Until 2026-09-14 it
+                // carried a hash of the recovery action instead, which no vehicle could match: the
+                // real onboard answered every resume with RECOVERY_STATE_MISMATCH (G3 resume-004).
+                using (JsonDocument commandDocument = JsonDocument.Parse(firstCommand))
+                {
+                    Assert.Equal(
+                        (await firstContext.StationOperations.SingleAsync(TestContext.Current.CancellationToken)).ContentHash,
+                        commandDocument.RootElement.GetProperty("payload").GetProperty("commandContentSha256").GetString());
+                }
                 ProtocolOutboxRow recoverySnapshot = await firstContext.ProtocolOutbox.SingleAsync(
                     row => row.MessageType == "ExceptionRecoverySessionSnapshot" && row.FencedAt == null,
                     TestContext.Current.CancellationToken);

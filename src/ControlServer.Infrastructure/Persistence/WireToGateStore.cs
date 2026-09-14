@@ -1727,15 +1727,22 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             throw new BusinessIdentityConflictException(
                 "Replacement OperationResult was authorized at a different forced recovery generation.");
         }
-        // The hash the resume command carried to the vehicle covers the demand, the attempt and the
-        // exact slot set. Recomputing it from what came back is one check for all three: a
-        // replacement that widens, narrows or redirects its scope cannot reproduce it.
-        if (RecoveryCommandHash.ForRecoveryAction(
-                authorization.WorkflowId,
-                result.DemandId,
-                result.SlotOperationAttemptId,
-                JsonSerializer.Serialize(actualSlots),
-                authorization.ForcedRecoveryGeneration) != authorization.CommandContentHash)
+        // The replacement has to settle exactly what was authorized: the same demand and attempt, the
+        // exact slot set, and the command the resume named. A replacement that widens, narrows or
+        // redirects its scope is refused outright. Checked field by field since 2026-09-14, when the
+        // resume command started carrying the resumed SlotOperationCommand's own content hash (the
+        // vehicle refuses any other); before that this recomputed an action-scoped hash from the same
+        // three facts.
+        string? resumedCommandHash = await dbContext.StationOperations
+            .Where(row => row.SlotOperationAttemptId == result.SlotOperationAttemptId)
+            .Select(row => row.ContentHash)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        int[] authorizedSlots = (JsonSerializer.Deserialize<int[]>(authorization.SlotsJson) ?? [])
+            .Distinct().Order().ToArray();
+        if (authorization.DemandId != result.DemandId ||
+            !authorizedSlots.SequenceEqual(actualSlots) ||
+            resumedCommandHash is null ||
+            authorization.CommandContentHash != resumedCommandHash)
         {
             throw new BusinessIdentityConflictException(
                 "Replacement OperationResult falls outside its RESUME_AFTER_REPAIR authorization.");

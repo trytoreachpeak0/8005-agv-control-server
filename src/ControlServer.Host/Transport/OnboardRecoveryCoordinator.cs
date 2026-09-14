@@ -624,6 +624,12 @@ public sealed class OnboardRecoveryCoordinator(
                 if (operation is null) throw new InvalidDataException("Resume requires a persisted slot operation.");
                 SessionRecoveryRow recovery = await dbContext.SessionRecoveries.SingleAsync(
                     row => row.AgvId == session.AgvId, cancellationToken).ConfigureAwait(false);
+                // A resume carries the content hash of the very SlotOperationCommand it resumes, not a
+                // hash of the recovery action: the vehicle resumes only the command it journaled and
+                // refuses a resume naming any other. The action-scoped hash the other recovery commands
+                // use was sent here until 2026-09-14, and the real onboard refused every resume with
+                // RECOVERY_STATE_MISMATCH (G3 FP-IS-07 resume-004). The replacement result is checked
+                // against the authorized scope directly (WireToGateStore.RequireResumeAuthorizationAsync).
                 await publisher.QueueSlotOperationResumeCommandAsync(
                     commandId, session.AgvId, sessionGeneration,
                     new SlotOperationResumeAuthorization(
@@ -633,8 +639,8 @@ public sealed class OnboardRecoveryCoordinator(
                         operation.SlotOperationAttemptId,
                         recovery.ProvenRecoveryCheckpoint!,
                         slots,
-                        hash), cancellationToken).ConfigureAwait(false);
-                BindCommand(workflow, commandId, "SlotOperationResumeCommand", hash);
+                        operation.ContentHash), cancellationToken).ConfigureAwait(false);
+                BindCommand(workflow, commandId, "SlotOperationResumeCommand", operation.ContentHash);
                 break;
             case "FAULT_CARGO_HANDOFF":
                 if (operation is null) throw new InvalidDataException("Cargo handoff requires a persisted slot operation.");
