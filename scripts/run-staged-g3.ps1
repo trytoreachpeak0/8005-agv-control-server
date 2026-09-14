@@ -41,8 +41,16 @@ param(
     #     shows every alarm of a vehicle, REQ-0270).
     #   $OnboardCommit -> f9efa30, the w2g/b3-on-v2 tip: the onboard end on that identity (e30d421),
     #     the alarm sources wired (a98679f), the G2 script fix (ad0e507) and its G2 evidence.
-    [string]$ControlServerCommit = '6b21662c60a2e13aaf86043b146d3d886cf91dd1',
-    [string]$OnboardCommit = 'c86bac5eaec57c36351f7d45b458deaa42fde22e',
+    #
+    # 2026-09-14, batch 2 close (FP-IS-01/02/03/07 get their journey G3 surface):
+    #   $ControlServerCommit -> 1b1f3dd7: the station departure wait, the late-result, expiry, unknown-result,
+    #     resume-hash and recovery-readiness fixes, the machine-wide L2 port lock (c36174bf), and every
+    #     g3-* scenario the journey runner drives, FP-IS-07's five included.
+    #   $OnboardCommit -> b960108, the w2g/b3-on-v2 tip: the FP-IS-03 onboard halves (04d0088, 3fb8a6e), the
+    #     FP-IS-07 operator entries (f14f8af) and the ten-slice G2 evidence taken on 8d19fee, whose product
+    #     code b960108 carries unchanged.
+    [string]$ControlServerCommit = '1b1f3dd7a5d23ca3e2adab521aec8b74c92f649a',
+    [string]$OnboardCommit = 'b96010825d43aeee3b861cb3b4716f4d0873c8a0',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '9f22db825d52ad86c1d803bd0c1925dcc58d6793',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
