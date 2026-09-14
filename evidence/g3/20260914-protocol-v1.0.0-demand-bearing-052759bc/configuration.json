@@ -1,0 +1,34 @@
+{
+  "loopbackOnly": true,
+  "tls": false,
+  "temporaryTrustRootInstalled": false,
+  "unattended": true,
+  "storeProvenance": {
+    "fieldRunRoot": "C:\\Users\\szy\\w2g-stage\\run\\fullloop-20260829T131549Z",
+    "fieldDatabaseSha256": "b620d734496f6aa45908db988f0071399c85f9a225ecaad9c1b3f194ce0b2c25",
+    "note": "Restored from an authorised field run. The store is real state produced by a real demand; the build under test is the bound ControlServer commit, which is not necessarily the build that wrote it."
+  },
+  "commitBinding": {
+    "source": "scripts/run-staged-g3.ps1",
+    "sourceSha256": "728b7c4798033fd0ee7fabbfbe9efa000c1a6c14016089cc523ed7f6503c122f",
+    "functionSource": "scripts/run-staged-g3-restart.ps1",
+    "functionSourceSha256": "dc5d02c4e58f95beca4c79e55bf47bf0b0113d2783ad6f5b51e48feacf4ae53a",
+    "readFrom": "param-block-defaults",
+    "controlServer": "052759bca58a04316dfda260249b3b5697f2cf8e",
+    "onboardHmi": "b96010825d43aeee3b861cb3b4716f4d0873c8a0",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "9f22db825d52ad86c1d803bd0c1925dcc58d6793"
+  },
+  "ports": {
+    "controlPlaintext": 58305,
+    "controlHealth": 58307
+  },
+  "journeyRuntimeEnabled": false,
+  "riotCreateDispatchEnabled": false,
+  "mesIngestBaseUrl": "http://127.0.0.1:1",
+  "riotBaseUrl": "http://127.0.0.1:1",
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "movementCommandSent": false,
+  "stationOperationRowFabricated": false
+}

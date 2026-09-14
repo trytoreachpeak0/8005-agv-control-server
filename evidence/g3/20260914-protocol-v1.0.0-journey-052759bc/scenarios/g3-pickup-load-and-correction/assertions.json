@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-pickup-load-and-correction",
+  "runId": "20260914T041635936Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "b96010825d43aeee3b861cb3b4716f4d0873c8a0",
+    "controlServerCommit": "052759bca58a04316dfda260249b3b5697f2cf8e",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260914T041635936Z",
+    "batchId": "batch-2",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+  },
+  "assertions": [
+    {
+      "id": "G3-02-01",
+      "description": "sublot 绑定到操作会话：UIA 录入的 sublot 经真车载端只提交一次、回的是服务端请求录入的那个 operationSessionId，服务端为这条需求只建一笔装载，记的就是这个 sublot（SUBLOT_BOUND_TO_OPERATION_SESSION / BIND_SUBLOT_TO_OPERATION_SESSION / SUBMIT_SCANNED_SUBLOT）",
+      "outcome": "PASS",
+      "expected": "提交 1 次 / 会话一致 / 操作 1 笔 / G3-02-20260914T041635936Z",
+      "actual": "提交 1 次 / 会话一致=True / 操作 1 笔 / G3-02-20260914T041635936Z"
+    },
+    {
+      "id": "G3-02-02",
+      "description": "仓位集合只授权一次：这条需求恰好一条 SlotOperationCommand，指向这笔装载，仓位就是服务端选定的 2 个（SLOT_SET_AUTHORIZED_ONCE / AUTHORIZE_SLOT_SET_ONCE）",
+      "outcome": "PASS",
+      "expected": "1 条 / 2 仓 1,2",
+      "actual": "1 条 / 2 仓 1,2"
+    },
+    {
+      "id": "G3-02-03",
+      "description": "只开授权的仓、每仓只开一次：装载期间车载端报的开锁逐条只含一个仓，合起来恰好是授权集合、无重复；其余仓门始终关着、空着（LOAD_ONLY_AUTHORIZED_SLOTS；forbidden: duplicate-slot-unlock、expanded-active-unlock-set）",
+      "outcome": "PASS",
+      "expected": "开锁 1,2 各一次 / 其余仓未动",
+      "actual": "开锁 1,2 / 其余仓未动=True"
+    },
+    {
+      "id": "G3-02-04",
+      "description": "装载走的是真 Modbus 闭环：车载端在等操作员时那个仓门确实开着；装完每个授权仓都关着、有货、锁反馈 1、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "等待时 OPEN / 装完 1=CLOSED/OCCUPIED/1/0 2=CLOSED/OCCUPIED/1/0",
+      "actual": "等待时 1=OPEN/EMPTY/0/0 2=OPEN/EMPTY/0/0 / 装完 1=CLOSED/OCCUPIED/1/0 2=CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "G3-02-05",
+      "description": "消息顺序与向量一致：SublotEntryRequested → SublotSubmitted → SlotOperationCommand → OperationResult → DurableAck，各一次，服务端发的两条都被车载端确认（CV-PICKUP-SUBLOT-LOAD orderedExpectedMessages）",
+      "outcome": "PASS",
+      "expected": "SublotEntryRequested(ack) < SublotSubmitted < SlotOperationCommand(ack) < OperationResult → DurableAck，各 1",
+      "actual": "SublotEntryRequested×1(ack=True) / SublotSubmitted×1 / SlotOperationCommand×1(ack=True) / OperationResult×1→DurableAck / 有序=True"
+    },
+    {
+      "id": "G3-02-06",
+      "description": "装载结果只提交一次：操作 Committed，结果一份且 COMPLETED，需求仍在执行，旅程没有停摆（RECONCILE_LOAD_OUTCOME；forbidden: duplicate-business-commit、unknown-as-success）",
+      "outcome": "PASS",
+      "expected": "Committed / 1 份 COMPLETED / Accepted / 未停摆",
+      "actual": "Committed / 1 份 COMPLETED / Accepted / AwaitingStationDeparture"
+    },
+    {
+      "id": "G3-02-07",
+      "description": "装载完成后，车载端界面上出现可用的「修正装货」入口",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "G3-02-08",
+      "description": "消息顺序与向量一致：LoadCorrectionRequested → LoadCorrectionCommand → LoadCorrectionResult → DurableAck，各一次；命令是修正工作流绑定的那一条，工作流由这份结果收敛（CV-LOAD-CORRECTION orderedExpectedMessages）",
+      "outcome": "PASS",
+      "expected": "Requested < Command < Result → DurableAck，各 1 / 工作流绑定该命令并由该结果收敛",
+      "actual": "Requested×1 / Command×1 / Result×1→DurableAck / 工作流绑定并收敛=True（Reconciled）"
+    },
+    {
+      "id": "G3-02-09",
+      "description": "修正对着已提交的仓位集合授权：命令指向这条需求、这笔装载，仓位就是提交时的集合；修正工作流收敛为 Reconciled（AUTHORIZE_CORRECTION_AGAINST_COMMITTED_SET）",
+      "outcome": "PASS",
+      "expected": "bb5516a6-9566-4fe8-b34a-249c35a50cb5 / a0e4b884-01ae-0453-b821-c0dec4766f10 / 1,2 / Reconciled",
+      "actual": "bb5516a6-9566-4fe8-b34a-249c35a50cb5 / a0e4b884-01ae-0453-b821-c0dec4766f10 / 1,2 / Reconciled"
+    },
+    {
+      "id": "G3-02-10",
+      "description": "没有授权不动仓门：车载端的修正进度全部晚于服务端发出修正命令；修正期间只开授权集合里的仓、每仓一次（NEVER_CORRECT_WITHOUT_AUTHORIZATION；forbidden: duplicate-slot-unlock、expanded-active-unlock-set）",
+      "outcome": "PASS",
+      "expected": "命令前 0 条进度 / 开锁 1,2 各一次",
+      "actual": "命令前 0 条进度（共 8 条）/ 开锁 1,2"
+    },
+    {
+      "id": "G3-02-11",
+      "description": "车载端如实上报修正后的仓位结果：COMPLETED，每个授权仓都是有货、锁上、开锁输出复位（REPORT_CORRECTED_SLOT_OUTCOME）",
+      "outcome": "PASS",
+      "expected": "COMPLETED 1=COMPLETED/OCCUPIED/LOCKED/RESET 2=COMPLETED/OCCUPIED/LOCKED/RESET",
+      "actual": "COMPLETED 1=COMPLETED/OCCUPIED/LOCKED/RESET 2=COMPLETED/OCCUPIED/LOCKED/RESET"
+    },
+    {
+      "id": "G3-02-12",
+      "description": "修正不产生第二次业务提交：仍是一笔装载、一份结果、一条仓位命令，需求仍在执行、旅程没有停摆；仓位物理上仍是关着、有货、锁上、输出复位（forbidden: duplicate-business-commit；finalState NO_DUPLICATE_COMMIT / NO_UNPROVEN_STATE）",
+      "outcome": "PASS",
+      "expected": "1 笔 Committed / 1 份结果 / 1 条命令 / Accepted / 未停摆 / 1=CLOSED/OCCUPIED/1/0 2=CLOSED/OCCUPIED/1/0",
+      "actual": "1 笔 Committed / 1 份结果 / 1 条命令 / Accepted / AwaitingStationDeparture / 1=CLOSED/OCCUPIED/1/0 2=CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "G3-02-13",
+      "description": "修正只在离站前、并把车留在取货点：点「修正装货」时旅程在 AwaitingStationDeparture，修正结果到达前没有建出去关卡的单，修正收敛后等满离站期限（20s）才建单出发（REQ-0237 / ADR-cross-0054）",
+      "outcome": "PASS",
+      "expected": "AwaitingStationDeparture / 结果前 0 单 / AwaitingGateArrival / 收敛后 ≥ 20s 建单",
+      "actual": "AwaitingStationDeparture / 结果前建单=False / AwaitingGateArrival / 收敛后 21.1s 建单"
+    }
+  ]
+}

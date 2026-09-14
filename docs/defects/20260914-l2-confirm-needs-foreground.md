@@ -34,4 +34,4 @@ Invoke 成功的路径行为不变，只多了「确认关掉」这一步。
 | --- | --- |
 | 修复后调试运行 `g3-load-cancellation`（证据 `C:\g3dbg\confirm-fallback-cancel-001`，未入库） | 7/7 `PASS`；车载端窗口在前台，Invoke 直接成功，没有走到 `BM_CLICK`——证明正常路径没被「等对话框关掉」改坏 |
 | 投递 `BM_CLICK` 这条路径 | 与 `G3RecoveryCommon.ps1` 的 `Invoke-G3DialogButton` 同一个做法，那边在 `resume-008` 等运行里真实走到过并通过 |
-| 正式 journey G3 | 共享绑定挪到含本修复的提交后重跑，结果记在 `evidence/g3/` 的 SUMMARY |
+| 正式 journey G3（服务端 `052759bc`，runner `6532ec13`） | `JOURNEY_G3_PASS`，十条场景无一中止，80 条断言全绿，`FP-IS-01`／`02`／`03`／`07` 均 `formalSlicePass=true`；证据 `evidence/g3/20260914-protocol-v1.0.0-journey-052759bc/` |

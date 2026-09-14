@@ -1,0 +1,1339 @@
+[12:16:26 INF] Executed DbCommand (8ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[12:16:26 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT COUNT(*) FROM "sqlite_master" WHERE "name" = '__EFMigrationsHistory' AND "type" = 'table';
+[12:16:26 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "MigrationId", "ProductVersion"
+FROM "__EFMigrationsHistory"
+ORDER BY "MigrationId";
+[12:16:26 INF] No migrations were applied. The database is already up to date.
+[12:16:26 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AuditRecordId", "a"."Action", "a"."ActorAttribution", "a"."ActorIdentity", "a"."ClaimedAdministratorRole", "a"."DetailJson", "a"."ObjectId", "a"."ObjectKind", "a"."Outcome", "a"."RecordedAt", "a"."RecordedAtUtcTicks", "a"."SnapshotId", "a"."Version"
+FROM "AdministratorAuditRecords" AS "a"
+WHERE "a"."Action" = 'AUDIT_RETENTION_POLICY_CONFIGURED'
+ORDER BY "a"."RecordedAtUtcTicks" DESC, "a"."AuditRecordId" DESC
+LIMIT 1
+[12:16:26 INF] Onboard NDJSON listener started on 127.0.0.1:48405; transport=plaintext
+[12:16:26 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:26 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:26 INF] Now listening on: http://127.0.0.1:48407
+[12:16:26 INF] Application started. Press Ctrl+C to shut down.
+[12:16:26 INF] Hosting environment: Production
+[12:16:26 INF] Content root path: C:\s3\jy-052759bc\sources\control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[12:16:26 INF] Received HTTP response headers after 51.8026ms - 200
+[12:16:26 INF] End processing HTTP request after 58.7646ms - 200
+[12:16:26 INF] Executed DbCommand (2ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:26 INF] Executed DbCommand (6ms) [Parameters=[@p0='?' (DbType = Int32), @p1='?' (DbType = Int32), @p2='?' (DbType = Int32), @p3='?' (DbType = Int64), @p4='?' (DbType = DateTimeOffset), @p5='?' (DbType = DateTimeOffset), @p6='?', @p7='?' (Size = 5), @p8='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "MapStationCatalogStates" ("MapId", "ApprovedMaxUnconfirmedSeconds", "ApprovedSyncPeriodSeconds", "CatalogRevision", "LastAttemptAt", "LastCompleteConfirmationAt", "LastFailureReason", "State", "UpdatedAt")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8);
+[12:16:26 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:26 INF] HTTP GET /health/live responded 200 in 5.8549 ms
+[12:16:26 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = Int64), @p1='?' (Size = 64), @p2='?' (Size = 22), @p3='?' (DbType = DateTimeOffset), @p4='?', @p5='?' (Size = 102)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "AdmissionPolicyAudit" ("Version", "ContentHash", "DeploymentId", "ImportedAt", "PreviousContentHash", "RelationsJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:26 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (DbType = Int32), @p1='?' (Size = 64), @p2='?' (Size = 22), @p3='?' (DbType = DateTimeOffset), @p4='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "AdmissionPolicyState" ("Id", "ContentHash", "DeploymentId", "ImportedAt", "Version")
+VALUES (@p0, @p1, @p2, @p3, @p4);
+[12:16:26 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 6), @p1='?' (Size = 12), @p2='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "StationTaskTypeAdmissions" ("StationId", "TaskType", "PolicyVersion")
+VALUES (@p0, @p1, @p2);
+[12:16:26 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 9), @p1='?' (Size = 12), @p2='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "StationTaskTypeAdmissions" ("StationId", "TaskType", "PolicyVersion")
+VALUES (@p0, @p1, @p2);
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled')
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId"
+FROM "JourneyRuntimes" AS "j"
+[12:16:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:27 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:27 INF] Received HTTP response headers after 18.6322ms - 200
+[12:16:27 INF] End processing HTTP request after 19.7622ms - 200
+[12:16:27 INF] HTTP GET /version responded 200 in 3.3645 ms
+[12:16:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:27 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:27 INF] Received HTTP response headers after 8.1677ms - 200
+[12:16:27 INF] End processing HTTP request after 9.165ms - 200
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AcceptedAt", "j"."DecisionFingerprint", "j"."DemandCreatedAt", "j"."FirstSeenAt", "j"."LastSeenAt", "j"."ReasonCode", "j"."TransportDemandKey"
+FROM "JourneyBacklog" AS "j"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."TaskType", "v"."Allowed", "v"."ConfigurationVersion", "v"."UpdatedAt"
+FROM "VehicleTaskTypeAdmissions" AS "v"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."ConfigurationVersion", "v"."RoundTimeoutMilliseconds", "v"."UpdatedAt"
+FROM "VehicleDispatchBudgets" AS "v"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "d"."Zone", "d"."AgvId", "d"."ConfigurationVersion", "d"."UpdatedAt"
+FROM "DispatchZoneVehicles" AS "d"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."TaskType", "v"."Allowed", "v"."ConfigurationVersion", "v"."UpdatedAt"
+FROM "VehicleTaskTypeAdmissions" AS "v"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."ConfigurationVersion", "v"."RoundTimeoutMilliseconds", "v"."UpdatedAt"
+FROM "VehicleDispatchBudgets" AS "v"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "d"."Zone", "d"."AgvId", "d"."ConfigurationVersion", "d"."UpdatedAt"
+FROM "DispatchZoneVehicles" AS "d"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 10), @p1='?' (Size = 19), @p2='?' (Size = 64), @p3='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "DispatchZoneVehicles" ("AgvId", "Zone", "ConfigurationVersion", "UpdatedAt")
+VALUES (@p0, @p1, @p2, @p3);
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 10), @p1='?' (Size = 64), @p2='?' (DbType = Int32), @p3='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "VehicleDispatchBudgets" ("AgvId", "ConfigurationVersion", "RoundTimeoutMilliseconds", "UpdatedAt")
+VALUES (@p0, @p1, @p2, @p3);
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 10), @p1='?' (Size = 12), @p2='?' (DbType = Boolean), @p3='?' (Size = 64), @p4='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "VehicleTaskTypeAdmissions" ("AgvId", "TaskType", "Allowed", "ConfigurationVersion", "UpdatedAt")
+VALUES (@p0, @p1, @p2, @p3, @p4);
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:27 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:27 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:27 INF] Received HTTP response headers after 13.3786ms - 200
+[12:16:27 INF] End processing HTTP request after 14.1882ms - 200
+[12:16:27 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:27 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:27 INF] Received HTTP response headers after 2.6824ms - 200
+[12:16:27 INF] End processing HTTP request after 4.3041ms - 200
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (DbType = Int32), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "MapStationCatalogStates" SET "LastAttemptAt" = @p0, "LastCompleteConfirmationAt" = @p1, "UpdatedAt" = @p2
+WHERE "MapId" = @p3
+RETURNING 1;
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled')
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId"
+FROM "JourneyRuntimes" AS "j"
+[12:16:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:27 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:27 INF] Received HTTP response headers after 1.2255ms - 200
+[12:16:27 INF] End processing HTTP request after 2.316ms - 200
+[12:16:27 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:27 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:27 INF] Received HTTP response headers after 1.0153ms - 200
+[12:16:27 INF] End processing HTTP request after 1.9834ms - 200
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AcceptedAt", "j"."DecisionFingerprint", "j"."DemandCreatedAt", "j"."FirstSeenAt", "j"."LastSeenAt", "j"."ReasonCode", "j"."TransportDemandKey"
+FROM "JourneyBacklog" AS "j"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."TaskType", "v"."Allowed", "v"."ConfigurationVersion", "v"."UpdatedAt"
+FROM "VehicleTaskTypeAdmissions" AS "v"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."ConfigurationVersion", "v"."RoundTimeoutMilliseconds", "v"."UpdatedAt"
+FROM "VehicleDispatchBudgets" AS "v"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "d"."Zone", "d"."AgvId", "d"."ConfigurationVersion", "d"."UpdatedAt"
+FROM "DispatchZoneVehicles" AS "d"
+[12:16:27 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:27 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:27 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:27 INF] Received HTTP response headers after 1.9272ms - 200
+[12:16:27 INF] End processing HTTP request after 2.9771ms - 200
+[12:16:28 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:28 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:28 INF] Received HTTP response headers after 1.6065ms - 200
+[12:16:28 INF] End processing HTTP request after 4.0781ms - 200
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (DbType = Int32), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "MapStationCatalogStates" SET "LastAttemptAt" = @p0, "LastCompleteConfirmationAt" = @p1, "UpdatedAt" = @p2
+WHERE "MapId" = @p3
+RETURNING 1;
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled')
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId"
+FROM "JourneyRuntimes" AS "j"
+[12:16:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:28 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:28 INF] Received HTTP response headers after 1.38ms - 200
+[12:16:28 INF] End processing HTTP request after 2.3301ms - 200
+[12:16:28 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:28 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:28 INF] Received HTTP response headers after 0.9919ms - 200
+[12:16:28 INF] End processing HTTP request after 2.2339ms - 200
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AcceptedAt", "j"."DecisionFingerprint", "j"."DemandCreatedAt", "j"."FirstSeenAt", "j"."LastSeenAt", "j"."ReasonCode", "j"."TransportDemandKey"
+FROM "JourneyBacklog" AS "j"
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."TaskType", "v"."Allowed", "v"."ConfigurationVersion", "v"."UpdatedAt"
+FROM "VehicleTaskTypeAdmissions" AS "v"
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."ConfigurationVersion", "v"."RoundTimeoutMilliseconds", "v"."UpdatedAt"
+FROM "VehicleDispatchBudgets" AS "v"
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "d"."Zone", "d"."AgvId", "d"."ConfigurationVersion", "d"."UpdatedAt"
+FROM "DispatchZoneVehicles" AS "d"
+[12:16:28 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:28 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:28 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:28 INF] Received HTTP response headers after 1.3374ms - 200
+[12:16:28 INF] End processing HTTP request after 2.4743ms - 200
+[12:16:29 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:29 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:29 INF] Received HTTP response headers after 0.8869ms - 200
+[12:16:29 INF] End processing HTTP request after 2.0628ms - 200
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (DbType = Int32), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "MapStationCatalogStates" SET "LastAttemptAt" = @p0, "LastCompleteConfirmationAt" = @p1, "UpdatedAt" = @p2
+WHERE "MapId" = @p3
+RETURNING 1;
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled')
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId"
+FROM "JourneyRuntimes" AS "j"
+[12:16:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:29 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:29 INF] Received HTTP response headers after 0.8613ms - 200
+[12:16:29 INF] End processing HTTP request after 1.5599ms - 200
+[12:16:29 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:29 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:29 INF] Received HTTP response headers after 0.5149ms - 200
+[12:16:29 INF] End processing HTTP request after 1.0619ms - 200
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AcceptedAt", "j"."DecisionFingerprint", "j"."DemandCreatedAt", "j"."FirstSeenAt", "j"."LastSeenAt", "j"."ReasonCode", "j"."TransportDemandKey"
+FROM "JourneyBacklog" AS "j"
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."TaskType", "v"."Allowed", "v"."ConfigurationVersion", "v"."UpdatedAt"
+FROM "VehicleTaskTypeAdmissions" AS "v"
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."ConfigurationVersion", "v"."RoundTimeoutMilliseconds", "v"."UpdatedAt"
+FROM "VehicleDispatchBudgets" AS "v"
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "d"."Zone", "d"."AgvId", "d"."ConfigurationVersion", "d"."UpdatedAt"
+FROM "DispatchZoneVehicles" AS "d"
+[12:16:29 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:29 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:29 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:29 INF] Received HTTP response headers after 0.7857ms - 200
+[12:16:29 INF] End processing HTTP request after 1.3901ms - 200
+[12:16:29 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:29 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:29 INF] Received HTTP response headers after 6.1791ms - 200
+[12:16:29 INF] End processing HTTP request after 7.5276ms - 200
+[12:16:29 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:29 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:29 INF] Received HTTP response headers after 6.0145ms - 200
+[12:16:29 INF] End processing HTTP request after 7.4119ms - 200
+[12:16:29 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 48.8500 ms
+[12:16:30 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:30 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:30 INF] Received HTTP response headers after 1.4126ms - 200
+[12:16:30 INF] End processing HTTP request after 3.3758ms - 200
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (DbType = Int32), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "MapStationCatalogStates" SET "LastAttemptAt" = @p0, "LastCompleteConfirmationAt" = @p1, "UpdatedAt" = @p2
+WHERE "MapId" = @p3
+RETURNING 1;
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled')
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId"
+FROM "JourneyRuntimes" AS "j"
+[12:16:30 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:30 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:30 INF] Received HTTP response headers after 1.367ms - 200
+[12:16:30 INF] End processing HTTP request after 2.3587ms - 200
+[12:16:30 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:30 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:30 INF] Received HTTP response headers after 2.1695ms - 200
+[12:16:30 INF] End processing HTTP request after 3.1798ms - 200
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AcceptedAt", "j"."DecisionFingerprint", "j"."DemandCreatedAt", "j"."FirstSeenAt", "j"."LastSeenAt", "j"."ReasonCode", "j"."TransportDemandKey"
+FROM "JourneyBacklog" AS "j"
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."TaskType", "v"."Allowed", "v"."ConfigurationVersion", "v"."UpdatedAt"
+FROM "VehicleTaskTypeAdmissions" AS "v"
+[12:16:30 INF] Executed DbCommand (1ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."ConfigurationVersion", "v"."RoundTimeoutMilliseconds", "v"."UpdatedAt"
+FROM "VehicleDispatchBudgets" AS "v"
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "d"."Zone", "d"."AgvId", "d"."ConfigurationVersion", "d"."UpdatedAt"
+FROM "DispatchZoneVehicles" AS "d"
+[12:16:30 INF] Executed DbCommand (1ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:30 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:30 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:30 INF] Received HTTP response headers after 2.7647ms - 200
+[12:16:30 INF] End processing HTTP request after 3.9393ms - 200
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."SessionGeneration"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__identity_AgvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__identity_AgvId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (21ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "SessionRecoveries" AS "s"
+    WHERE "s"."Readiness" = 'Ready')
+[12:16:30 ERR] HTTP GET /health/ready responded 503 in 49.0151 ms
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 10), @p1='?' (Size = 2), @p2='?', @p3='?' (DbType = Int64), @p4='?' (DbType = Boolean), @p5='?' (DbType = Int64), @p6='?' (Size = 64), @p7='?' (Size = 2), @p8='?' (Size = 2), @p9='?' (Size = 16), @p10='?' (Size = 40), @p11='?' (DbType = Int32), @p12='?', @p13='?' (Size = 16), @p14='?' (Size = 20), @p15='?', @p16='?' (DbType = Int64), @p17='?', @p18='?', @p19='?', @p20='?' (DbType = Int64), @p21='?' (DbType = Boolean), @p22='?' (DbType = Int64), @p23='?', @p24='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "SessionRecoveries" ("AgvId", "ActiveUnlockSlotsJson", "CapabilityHash", "CapabilityRevision", "DepartureSafe", "ForcedRecoveryGeneration", "ManifestSha256", "PendingAttemptIdsJson", "PendingResultIdsJson", "ProfileId", "ProtocolCommit", "ProtocolVersion", "ProvenRecoveryCheckpoint", "Readiness", "ReasonCode", "RecoveryReportId", "ReportedForcedRecoveryGeneration", "ReportedSlotConfigurationFingerprint", "SafetyHash", "SafetyReasonCodesJson", "SafetyRevision", "SafetyUnknownPresent", "SessionGeneration", "UnsettledSlotOperationAttemptId", "UpdatedAt")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18, @p19, @p20, @p21, @p22, @p23, @p24);
+[12:16:30 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:30 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:30 INF] Received HTTP response headers after 1.476ms - 200
+[12:16:30 INF] End processing HTTP request after 3.1119ms - 200
+[12:16:30 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:30 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:30 INF] Received HTTP response headers after 2.1594ms - 200
+[12:16:30 INF] End processing HTTP request after 3.0426ms - 200
+[12:16:30 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 8.9968 ms
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1064), @p3='?' (Size = 12), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1075)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AgvId", "a"."ActivatedAt", "a"."ActivationId", "a"."ConfigurationVersion", "a"."Fingerprint", "a"."SlotModelVersionId", "a"."SnapshotId"
+FROM "ActiveSlotConfigurations" AS "a"
+WHERE "a"."AgvId" = @__agvId_0
+LIMIT 1
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AgvId", "a"."ArchiveReason", "a"."ArchivedActiveSlotConfigurationFingerprint", "a"."ArchivedAt", "a"."ArchivedLifecycleGeneration"
+FROM "AgvArchives" AS "a"
+WHERE "a"."AgvId" = @__agvId_0
+LIMIT 1
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p4='?' (Size = 10), @p0='?' (Size = 64), @p1='?' (DbType = Int64), @p2='?' (Size = 64), @p3='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "CapabilityHash" = @p0, "CapabilityRevision" = @p1, "ReportedSlotConfigurationFingerprint" = @p2, "UpdatedAt" = @p3
+WHERE "AgvId" = @p4
+RETURNING 1;
+[12:16:30 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 622), @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 2070)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p6='?' (Size = 10), @p0='?' (DbType = Boolean), @p1='?' (Size = 64), @p2='?' (Size = 2), @p3='?' (DbType = Int64), @p4='?' (DbType = Boolean), @p5='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "DepartureSafe" = @p0, "SafetyHash" = @p1, "SafetyReasonCodesJson" = @p2, "SafetyRevision" = @p3, "SafetyUnknownPresent" = @p4, "UpdatedAt" = @p5
+WHERE "AgvId" = @p6
+RETURNING 1;
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 624), @p3='?' (Size = 19), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 1971)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__snapshot_AgvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."AgvId", "o"."AlarmsJson", "o"."CapturedAt", "o"."ReceivedAt", "o"."SessionGeneration", "o"."SnapshotSequence"
+FROM "OnboardAlarmSnapshots" AS "o"
+WHERE "o"."AgvId" = @__snapshot_AgvId_0
+LIMIT 1
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 10), @p1='?' (Size = 2), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (DbType = Int64), @p5='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "OnboardAlarmSnapshots" ("AgvId", "AlarmsJson", "CapturedAt", "ReceivedAt", "SessionGeneration", "SnapshotSequence")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 625), @p3='?' (Size = 20), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 485)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "v"."ForcedRecoveryGeneration"
+FROM "VehicleRecoveryGenerations" AS "v"
+WHERE "v"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p4='?' (Size = 10), @p0='?' (Size = 4), @p1='?' (Size = 31), @p2='?' (Size = 36), @p3='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "ProvenRecoveryCheckpoint" = @p0, "ReasonCode" = @p1, "RecoveryReportId" = @p2, "UpdatedAt" = @p3
+WHERE "AgvId" = @p4
+RETURNING 1;
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "SessionRecoveries" AS "s"
+    WHERE "s"."Readiness" = 'Ready')
+[12:16:30 ERR] HTTP GET /health/ready responded 503 in 2.7624 ms
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "StationOperations" AS "s"
+    INNER JOIN "JourneyRuntimes" AS "j" ON "s"."DemandId" = "j"."DemandId"
+    WHERE "j"."AgvId" = @__agvId_0 AND "s"."Status" = 'RecoveryRequired')
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AgvId", "a"."ActivatedAt", "a"."ActivationId", "a"."ConfigurationVersion", "a"."Fingerprint", "a"."SlotModelVersionId", "a"."SnapshotId"
+FROM "ActiveSlotConfigurations" AS "a"
+WHERE "a"."AgvId" = @__agvId_0
+LIMIT 1
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 10), @p0='?' (Size = 5), @p1='?' (Size = 5), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "Readiness" = @p0, "ReasonCode" = @p1, "UpdatedAt" = @p2
+WHERE "AgvId" = @p3
+RETURNING 1;
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1236), @p3='?' (Size = 19), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 729)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:30 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "r"."CommandMessageId"
+FROM "RecoveryWorkflows" AS "r"
+WHERE "r"."AgvId" = @__agvId_0 AND "r"."CommandMessageId" IS NOT NULL AND "r"."State" <> 'Reconciled' AND "r"."State" <> 'HistoricalOnly'
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageType" = 'ExceptionRecoverySessionSnapshot' AND "p"."AcknowledgedAt" IS NULL AND "p"."FencedAt" IS NULL
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."ActivationId", "s"."AgvId", "s"."CommandMessageId", "s"."ConfigurationVersion", "s"."Fingerprint", "s"."IssuedAt", "s"."Kind", "s"."RecoveryRole", "s"."ResultJson", "s"."ResultReceivedAt", "s"."RolledBackToVersion", "s"."SlotModelVersionId", "s"."SnapshotId", "s"."State"
+FROM "SlotConfigurationActivations" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."State" = 'PENDING_RESULT' AND "s"."RecoveryRole" = 'SLOT_CONFIGURATION'
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@p5='?' (Size = 10), @p0='?' (Size = 16), @p1='?' (Size = 20), @p2='?' (Size = 64), @p3='?' (DbType = Int64), @p4='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "Readiness" = @p0, "ReasonCode" = @p1, "SafetyHash" = @p2, "SafetyRevision" = @p3, "UpdatedAt" = @p4
+WHERE "AgvId" = @p5
+RETURNING 1;
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "StationOperations" AS "s"
+    INNER JOIN "JourneyRuntimes" AS "j" ON "s"."DemandId" = "j"."DemandId"
+    WHERE "j"."AgvId" = @__agvId_0 AND "s"."Status" = 'RecoveryRequired')
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AgvId", "a"."ActivatedAt", "a"."ActivationId", "a"."ConfigurationVersion", "a"."Fingerprint", "a"."SlotModelVersionId", "a"."SnapshotId"
+FROM "ActiveSlotConfigurations" AS "a"
+WHERE "a"."AgvId" = @__agvId_0
+LIMIT 1
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 10), @p0='?' (Size = 5), @p1='?' (Size = 5), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "Readiness" = @p0, "ReasonCode" = @p1, "UpdatedAt" = @p2
+WHERE "AgvId" = @p3
+RETURNING 1;
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1235), @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 652)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "SessionRecoveries" AS "s"
+    WHERE "s"."Readiness" = 'Ready')
+[12:16:31 INF] HTTP GET /health/ready responded 200 in 4.7198 ms
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:31 INF] Received HTTP response headers after 1.355ms - 200
+[12:16:31 INF] End processing HTTP request after 2.7772ms - 200
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (DbType = Int32), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "MapStationCatalogStates" SET "LastAttemptAt" = @p0, "LastCompleteConfirmationAt" = @p1, "UpdatedAt" = @p2
+WHERE "MapId" = @p3
+RETURNING 1;
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."Status" NOT IN ('Succeeded', 'Cancelled')
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId"
+FROM "JourneyRuntimes" AS "j"
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:31 INF] Received HTTP response headers after 0.8479ms - 200
+[12:16:31 INF] End processing HTTP request after 1.6153ms - 200
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:31 INF] Received HTTP response headers after 4.8388ms - 200
+[12:16:31 INF] End processing HTTP request after 5.6488ms - 200
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AcceptedAt", "j"."DecisionFingerprint", "j"."DemandCreatedAt", "j"."FirstSeenAt", "j"."LastSeenAt", "j"."ReasonCode", "j"."TransportDemandKey"
+FROM "JourneyBacklog" AS "j"
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId"
+FROM "AcceptedDemands" AS "a"
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."TaskType", "v"."Allowed", "v"."ConfigurationVersion", "v"."UpdatedAt"
+FROM "VehicleTaskTypeAdmissions" AS "v"
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."ConfigurationVersion", "v"."RoundTimeoutMilliseconds", "v"."UpdatedAt"
+FROM "VehicleDispatchBudgets" AS "v"
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "d"."Zone", "d"."AgvId", "d"."ConfigurationVersion", "d"."UpdatedAt"
+FROM "DispatchZoneVehicles" AS "d"
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__messageType_0='?' (Size = 18)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = @__messageType_0
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__messageType_0='?' (Size = 19)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = @__messageType_0
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" IN ('SafetyStateSnapshot', 'SafetyStateChanged')
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:31 INF] Received HTTP response headers after 0.9368ms - 200
+[12:16:31 INF] End processing HTTP request after 1.809ms - 200
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "v"."AgvId", "v"."ClearedAt", "v"."ClearedReason", "v"."EnteredAt", "v"."EscalatedAt", "v"."EvidenceCode", "v"."EvidenceOnAutoConfirmWhitelist", "v"."FaultGeneration", "v"."LastEvaluatedAt", "v"."Level", "v"."StopProven", "v"."StopProvenAt"
+FROM "VehicleFaultStates" AS "v"
+WHERE "v"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."RuleId", "p"."EffectiveAt", "p"."MatchType", "p"."MaxBoxesPerBasket", "p"."Pattern", "p"."Source", "p"."SupersededAt", "p"."Version"
+FROM "PackageCapacityRules" AS "p"
+WHERE "p"."SupersededAt" IS NULL
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__package_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."Package", "m"."FirstSeenAt", "m"."LastSeenAt", "m"."Status"
+FROM "MissingPackages" AS "m"
+WHERE "m"."Package" = @__package_0
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__stationId_0='?' (Size = 9), @__taskType_1='?' (Size = 12)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "StationTaskTypeAdmissions" AS "s"
+    WHERE "s"."StationId" = @__stationId_0 AND "s"."TaskType" = @__taskType_1)
+[12:16:31 INF] Start processing HTTP request POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy
+[12:16:31 INF] Sending HTTP request POST http://127.0.0.1:48408/api/task/v1/route/getRouteCostsBy
+[12:16:31 INF] Received HTTP response headers after 19.1357ms - 200
+[12:16:31 INF] End processing HTTP request after 20.1745ms - 200
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__demandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "c"."GateAuditId", "c"."AgvId", "c"."ConflictDetail", "c"."DemandId", "c"."EvaluatedAt", "c"."GraphReachable", "c"."GraphTraversalCostMm", "c"."MapId", "c"."RiotRouteCostMm", "c"."TargetStationId", "c"."TransportDemandKey", "c"."Verdict"
+FROM "CreateGateAudit" AS "c"
+WHERE "c"."DemandId" = @__demandId_0
+[12:16:31 INF] Executed DbCommand (2ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 10), @p2='?', @p3='?' (Size = 36), @p4='?' (DbType = DateTimeOffset), @p5='?' (DbType = Boolean), @p6='?' (DbType = Int64), @p7='?' (DbType = Int32), @p8='?' (DbType = Int64), @p9='?' (DbType = Int32), @p10='?' (Size = 38), @p11='?' (Size = 7)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "CreateGateAudit" ("GateAuditId", "AgvId", "ConflictDetail", "DemandId", "EvaluatedAt", "GraphReachable", "GraphTraversalCostMm", "MapId", "RiotRouteCostMm", "TargetStationId", "TransportDemandKey", "Verdict")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11);
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=G3-01-20260914T041543585Z
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/sublot-box-count?sublot=G3-01-20260914T041543585Z
+[12:16:31 INF] Received HTTP response headers after 9.5348ms - 200
+[12:16:31 INF] End processing HTTP request after 10.6165ms - 200
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:31 INF] Received HTTP response headers after 0.8991ms - 200
+[12:16:31 INF] End processing HTTP request after 2.2842ms - 200
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:31 INF] Received HTTP response headers after 0.8001ms - 200
+[12:16:31 INF] End processing HTTP request after 1.6221ms - 200
+[12:16:31 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 6.4238 ms
+[12:16:31 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (Size = 64), @p3='?' (DbType = DateTimeOffset), @p4='?' (DbType = DateTimeOffset), @p5='?' (DbType = DateTimeOffset), @p6='?' (Size = 8), @p7='?' (Size = 38)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "JourneyBacklog" ("DemandId", "AcceptedAt", "DecisionFingerprint", "DemandCreatedAt", "FirstSeenAt", "LastSeenAt", "ReasonCode", "TransportDemandKey")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7);
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__vehicleKey_0='?' (Size = 15)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "VehicleDispatchLeases" AS "v"
+    WHERE "v"."VehicleKey" = @__vehicleKey_0 AND "v"."ReleasedAt" IS NULL)
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__messageType_0='?' (Size = 18)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = @__messageType_0
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__messageType_0='?' (Size = 19)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = @__messageType_0
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" IN ('SafetyStateSnapshot', 'SafetyStateChanged')
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:31 INF] Received HTTP response headers after 0.98ms - 200
+[12:16:31 INF] End processing HTTP request after 1.8403ms - 200
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__demandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "f"."DemandId", "f"."Role", "f"."CatalogRevision", "f"."FrozenAt", "f"."MapId", "f"."StationId", "f"."StationName", "f"."TransportDemandKey"
+FROM "FrozenDemandStations" AS "f"
+WHERE "f"."DemandId" = @__demandId_0
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 6), @p2='?' (DbType = Int64), @p3='?' (DbType = DateTimeOffset), @p4='?' (DbType = Int32), @p5='?' (DbType = Int32), @p6='?' (Size = 9), @p7='?' (Size = 38)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "FrozenDemandStations" ("DemandId", "Role", "CatalogRevision", "FrozenAt", "MapId", "StationId", "StationName", "TransportDemandKey")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7);
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 7), @p2='?' (DbType = Int64), @p3='?' (DbType = DateTimeOffset), @p4='?' (DbType = Int32), @p5='?' (DbType = Int32), @p6='?' (Size = 2), @p7='?' (Size = 38)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "FrozenDemandStations" ("DemandId", "Role", "CatalogRevision", "FrozenAt", "MapId", "StationId", "StationName", "TransportDemandKey")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7);
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/contract
+[12:16:31 INF] Received HTTP response headers after 0.8644ms - 200
+[12:16:31 INF] End processing HTTP request after 1.6622ms - 200
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48409/api/v2/externally-readable-demand-catalog
+[12:16:31 INF] Received HTTP response headers after 0.8495ms - 200
+[12:16:31 INF] End processing HTTP request after 1.762ms - 200
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__messageType_0='?' (Size = 18)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = @__messageType_0
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__messageType_0='?' (Size = 19)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = @__messageType_0
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" IN ('SafetyStateSnapshot', 'SafetyStateChanged')
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+[12:16:31 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:31 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:31 INF] Received HTTP response headers after 1.1163ms - 200
+[12:16:31 INF] End processing HTTP request after 2.111ms - 200
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__snapshot_DemandId_0='?' (Size = 36), @__snapshot_TransportDemandKey_1='?' (Size = 38)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId", "a"."AcceptedAt", "a"."CatalogRevision", "a"."CreatedAt", "a"."DemandRevision", "a"."Generation", "a"."HistoryEpoch", "a"."LiveMesFieldsJson", "a"."SeriesId", "a"."Status", "a"."Sublot", "a"."TransportDemandKey", "a"."ValueObservedAt", "a"."ValuePollTraceId", "a"."ValueProjectionCommitId", "a"."WorkType"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."DemandId" = @__snapshot_DemandId_0 OR "a"."TransportDemandKey" = @__snapshot_TransportDemandKey_1
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__orderIntent_VehicleKey_0='?' (Size = 15)], CommandType='Text', CommandTimeout='30']
+SELECT "v"."DemandId", "v"."AcquiredAt", "v"."ReleasedAt", "v"."VehicleKey"
+FROM "VehicleDispatchLeases" AS "v"
+WHERE "v"."VehicleKey" = @__orderIntent_VehicleKey_0 AND "v"."ReleasedAt" IS NULL
+LIMIT 2
+[12:16:31 INF] Executed DbCommand (0ms) [Parameters=[@__runtime_AgvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT MAX("j"."VehicleBusinessRevision") AS "VehicleBusiness", MAX("j"."WorklistRevision") AS "Worklist", MAX("j"."PlanRevision") AS "Plan"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."AgvId" = @__runtime_AgvId_0
+GROUP BY "j"."AgvId"
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__snapshot_DemandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AcceptedAt", "j"."DecisionFingerprint", "j"."DemandCreatedAt", "j"."FirstSeenAt", "j"."LastSeenAt", "j"."ReasonCode", "j"."TransportDemandKey"
+FROM "JourneyBacklog" AS "j"
+WHERE "j"."DemandId" = @__snapshot_DemandId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = Int64), @p3='?' (DbType = DateTimeOffset), @p4='?' (DbType = Int64), @p5='?' (DbType = Int32), @p6='?' (Size = 36), @p7='?' (Size = 89), @p8='?' (Size = 39), @p9='?' (Size = 8), @p10='?' (Size = 25), @p11='?' (Size = 38), @p12='?' (DbType = DateTimeOffset), @p13='?' (Size = 38), @p14='?' (Size = 39), @p15='?' (Size = 12)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "AcceptedDemands" ("DemandId", "AcceptedAt", "CatalogRevision", "CreatedAt", "DemandRevision", "Generation", "HistoryEpoch", "LiveMesFieldsJson", "SeriesId", "Status", "Sublot", "TransportDemandKey", "ValueObservedAt", "ValuePollTraceId", "ValueProjectionCommitId", "WorkType")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 36), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (Size = 8)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyBacklog" SET "AcceptedAt" = @p0, "LastSeenAt" = @p1, "ReasonCode" = @p2
+WHERE "DemandId" = @p3
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 10), @p2='?' (DbType = Int64), @p3='?', @p4='?', @p5='?', @p6='?' (DbType = DateTimeOffset), @p7='?' (DbType = Int64), @p8='?' (Size = 19), @p9='?' (DbType = Int32), @p10='?' (Size = 36), @p11='?' (Size = 36), @p12='?' (Size = 2), @p13='?' (DbType = Int32), @p14='?' (Size = 47), @p15='?' (Size = 36), @p16='?' (Size = 36), @p17='?' (Size = 36), @p18='?' (Size = 36), @p19='?' (DbType = Int32), @p20='?' (Size = 6), @p21='?' (Size = 36), @p22='?' (Size = 36), @p23='?' (Size = 9), @p24='?' (DbType = Int32), @p25='?' (Size = 49), @p26='?' (Size = 36), @p27='?' (DbType = Int64), @p28='?' (Size = 36), @p29='?' (Size = 36), @p30='?' (Size = 71), @p31='?' (Size = 21), @p32='?' (DbType = DateTimeOffset), @p33='?' (Size = 36), @p34='?' (Size = 3), @p35='?' (Size = 36), @p36='?' (Size = 36), @p37='?' (DbType = DateTimeOffset), @p38='?' (Size = 36), @p39='?' (DbType = Int64), @p40='?' (Size = 15), @p41='?' (Size = 36), @p42='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "JourneyRuntimes" ("DemandId", "AgvId", "AgvLifecycleGeneration", "BlockReasonCode", "ConsumedSafetyResultMessageId", "ConsumedSublotMessageId", "CreatedAt", "DispatchGeneration", "DispatchZone", "ExpectedBasketCount", "GateMovementLegId", "GatePlanMessageId", "GateStationId", "GateStationRiotId", "GateUpperId", "GateVehicleBusinessMessageId", "GateWorklistMessageId", "LoadCommandMessageId", "LoadSlotOperationAttemptId", "MapId", "MapIdentity", "OperationSessionId", "PickupMovementLegId", "PickupStationId", "PickupStationRiotId", "PickupUpperId", "PlanMessageId", "PlanRevision", "PreDepartureSafetyCheckId", "PreDepartureSafetyCheckMessageId", "RouteEvidenceId", "Stage", "StationDepartureWaitStartedAt", "SublotRequestMessageId", "TargetSlotsJson", "UnloadCommandMessageId", "UnloadSlotOperationAttemptId", "UpdatedAt", "VehicleBusinessMessageId", "VehicleBusinessRevision", "VehicleKey", "WorklistMessageId", "WorklistRevision")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18, @p19, @p20, @p21, @p22, @p23, @p24, @p25, @p26, @p27, @p28, @p29, @p30, @p31, @p32, @p33, @p34, @p35, @p36, @p37, @p38, @p39, @p40, @p41, @p42);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = Int64), @p2='?' (DbType = Int32), @p3='?', @p4='?' (DbType = DateTimeOffset), @p5='?' (DbType = DateTimeOffset), @p6='?' (Size = 36), @p7='?' (DbType = Int32), @p8='?' (DbType = Int64), @p9='?' (DbType = Int32), @p10='?' (DbType = Int64), @p11='?', @p12='?', @p13='?' (DbType = DateTimeOffset), @p14='?', @p15='?', @p16='?' (DbType = DateTimeOffset), @p17='?', @p18='?' (DbType = Int32), @p19='?', @p20='?' (Size = 9), @p21='?' (Size = 22), @p22='?' (Size = 9), @p23='?' (Size = 49), @p24='?' (Size = 15), @p25='?' (DbType = DateTimeOffset), @p26='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "OrderIntents" ("MovementLegId", "AgvLifecycleGeneration", "CreateAttemptCount", "CreateAttemptId", "CreateDispatchArmedAt", "CreatedAt", "DemandId", "DestinationStationId", "DispatchAuditSequence", "DispatchAuditVersion", "DispatchGeneration", "ExperimentalCreateAuthorizationId", "LastCreateOutcome", "LastCreateOutcomeAt", "LastCreateReceiptJson", "LastReconciliationOutcome", "LastReconciliationOutcomeAt", "LastReconciliationReceiptJson", "MapId", "OrderId", "Purpose", "Status", "TargetStationId", "UpperId", "VehicleKey", "VehicleOccupancyClaimedAt", "VehicleOccupancyReleasedAt")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18, @p19, @p20, @p21, @p22, @p23, @p24, @p25, @p26);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (Size = 15)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "VehicleDispatchLeases" ("DemandId", "AcquiredAt", "ReleasedAt", "VehicleKey")
+VALUES (@p0, @p1, @p2, @p3);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "e"."AuthorizationId", "e"."AgvLifecycleGeneration", "e"."AuthorizationVersion", "e"."ConsumedAt", "e"."ConsumedByAttemptId", "e"."DemandId", "e"."DispatchGeneration", "e"."ExpiresAt", "e"."MovementLegId", "e"."PersistedAt", "e"."UpperId"
+FROM "ExperimentalRiotCreateAuthorizations" AS "e"
+WHERE 0
+LIMIT 2
+[12:16:32 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1
+[12:16:32 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1
+[12:16:32 INF] Received HTTP response headers after 7.331ms - 404
+[12:16:32 INF] End processing HTTP request after 8.2245ms - 404
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (1ms) [Parameters=[@p4='?' (Size = 36), @p5='?' (DbType = Int32), @p0='?' (DbType = Int64), @p6='?' (DbType = Int64), @p8='?', @p1='?' (Size = 31), @p2='?' (DbType = DateTimeOffset), @p3='?' (Size = 188), @p7='?' (Size = 22)], CommandType='Text', CommandTimeout='30']
+UPDATE "OrderIntents" SET "DispatchAuditSequence" = @p0, "LastReconciliationOutcome" = @p1, "LastReconciliationOutcomeAt" = @p2, "LastReconciliationReceiptJson" = @p3
+WHERE "MovementLegId" = @p4 AND "CreateAttemptCount" = @p5 AND "DispatchAuditSequence" = @p6 AND "ExperimentalCreateAuthorizationId" IS NULL AND "Status" = @p7
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?', @p2='?' (DbType = Int32), @p3='?', @p4='?' (Size = 36), @p5='?' (DbType = Int64), @p6='?', @p7='?', @p8='?', @p9='?' (DbType = Int32), @p10='?' (Size = 36), @p11='?' (DbType = DateTimeOffset), @p12='?' (Size = 9), @p13='?' (Size = 25), @p14='?' (Size = 8), @p15='?' (DbType = DateTimeOffset), @p16='?' (Size = 9), @p17='?', @p18='?' (DbType = Boolean), @p19='?', @p20='?' (DbType = Int64), @p21='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "RiotDispatchAuditEvents" ("AuditEventId", "AttemptId", "AttemptNumber", "BusinessCode", "DemandId", "DispatchGeneration", "EligibilityBasis", "ExperimentalAuthorizationId", "FailureCategory", "HttpStatusCode", "MovementLegId", "OccurredAt", "Outcome", "Phase", "ReceiptClassification", "ReceiptObservedAt", "ReceiptOperation", "RequestSemanticSha256", "ResultPresent", "ReturnedOrderId", "Sequence", "UpperId")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18, @p19, @p20, @p21);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p7='?' (Size = 36), @p0='?' (DbType = Int32), @p8='?' (DbType = Int32), @p1='?' (Size = 36), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = Int64), @p9='?' (DbType = Int64), @p11='?', @p4='?' (Size = 13), @p5='?' (DbType = DateTimeOffset), @p6='?' (Size = 16), @p10='?' (Size = 22)], CommandType='Text', CommandTimeout='30']
+UPDATE "OrderIntents" SET "CreateAttemptCount" = @p0, "CreateAttemptId" = @p1, "CreateDispatchArmedAt" = @p2, "DispatchAuditSequence" = @p3, "LastCreateOutcome" = @p4, "LastCreateOutcomeAt" = @p5, "Status" = @p6
+WHERE "MovementLegId" = @p7 AND "CreateAttemptCount" = @p8 AND "DispatchAuditSequence" = @p9 AND "ExperimentalCreateAuthorizationId" IS NULL AND "Status" = @p10
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 36), @p2='?' (DbType = Int32), @p3='?', @p4='?' (Size = 36), @p5='?' (DbType = Int64), @p6='?', @p7='?', @p8='?', @p9='?' (DbType = Int32), @p10='?' (Size = 36), @p11='?' (DbType = DateTimeOffset), @p12='?' (Size = 5), @p13='?' (Size = 15), @p14='?', @p15='?' (DbType = DateTimeOffset), @p16='?', @p17='?' (Size = 64), @p18='?' (DbType = Boolean), @p19='?', @p20='?' (DbType = Int64), @p21='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "RiotDispatchAuditEvents" ("AuditEventId", "AttemptId", "AttemptNumber", "BusinessCode", "DemandId", "DispatchGeneration", "EligibilityBasis", "ExperimentalAuthorizationId", "FailureCategory", "HttpStatusCode", "MovementLegId", "OccurredAt", "Outcome", "Phase", "ReceiptClassification", "ReceiptObservedAt", "ReceiptOperation", "RequestSemanticSha256", "ResultPresent", "ReturnedOrderId", "Sequence", "UpperId")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18, @p19, @p20, @p21);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 36), @p4='?' (DbType = Int32), @p0='?' (DbType = Int64), @p5='?' (DbType = Int64), @p7='?', @p1='?' (Size = 20), @p2='?' (DbType = DateTimeOffset), @p6='?' (Size = 16)], CommandType='Text', CommandTimeout='30']
+UPDATE "OrderIntents" SET "DispatchAuditSequence" = @p0, "LastCreateOutcome" = @p1, "LastCreateOutcomeAt" = @p2
+WHERE "MovementLegId" = @p3 AND "CreateAttemptCount" = @p4 AND "DispatchAuditSequence" = @p5 AND "ExperimentalCreateAuthorizationId" IS NULL AND "Status" = @p6
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 36), @p2='?' (DbType = Int32), @p3='?', @p4='?' (Size = 36), @p5='?' (DbType = Int64), @p6='?', @p7='?', @p8='?', @p9='?' (DbType = Int32), @p10='?' (Size = 36), @p11='?' (DbType = DateTimeOffset), @p12='?' (Size = 7), @p13='?' (Size = 14), @p14='?', @p15='?' (DbType = DateTimeOffset), @p16='?', @p17='?' (Size = 64), @p18='?' (DbType = Boolean), @p19='?', @p20='?' (DbType = Int64), @p21='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "RiotDispatchAuditEvents" ("AuditEventId", "AttemptId", "AttemptNumber", "BusinessCode", "DemandId", "DispatchGeneration", "EligibilityBasis", "ExperimentalAuthorizationId", "FailureCategory", "HttpStatusCode", "MovementLegId", "OccurredAt", "Outcome", "Phase", "ReceiptClassification", "ReceiptObservedAt", "ReceiptOperation", "RequestSemanticSha256", "ResultPresent", "ReturnedOrderId", "Sequence", "UpperId")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18, @p19, @p20, @p21);
+[12:16:32 INF] Start processing HTTP request POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions
+[12:16:32 INF] Sending HTTP request POST http://127.0.0.1:48408/api/order/v1/add/byDefaultMissions
+[12:16:32 INF] Received HTTP response headers after 7.347ms - 200
+[12:16:32 INF] End processing HTTP request after 8.3648ms - 200
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p4='?' (Size = 36), @p5='?' (DbType = Int32), @p0='?' (DbType = Int64), @p6='?' (DbType = Int64), @p8='?', @p1='?' (Size = 22), @p2='?' (DbType = DateTimeOffset), @p3='?' (Size = 188), @p7='?' (Size = 16)], CommandType='Text', CommandTimeout='30']
+UPDATE "OrderIntents" SET "DispatchAuditSequence" = @p0, "LastCreateOutcome" = @p1, "LastCreateOutcomeAt" = @p2, "LastCreateReceiptJson" = @p3
+WHERE "MovementLegId" = @p4 AND "CreateAttemptCount" = @p5 AND "DispatchAuditSequence" = @p6 AND "ExperimentalCreateAuthorizationId" IS NULL AND "Status" = @p7
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 36), @p2='?' (DbType = Int32), @p3='?', @p4='?' (Size = 36), @p5='?' (DbType = Int64), @p6='?', @p7='?', @p8='?', @p9='?' (DbType = Int32), @p10='?' (Size = 36), @p11='?' (DbType = DateTimeOffset), @p12='?' (Size = 8), @p13='?' (Size = 15), @p14='?' (Size = 11), @p15='?' (DbType = DateTimeOffset), @p16='?' (Size = 6), @p17='?', @p18='?' (DbType = Boolean), @p19='?' (Size = 12), @p20='?' (DbType = Int64), @p21='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "RiotDispatchAuditEvents" ("AuditEventId", "AttemptId", "AttemptNumber", "BusinessCode", "DemandId", "DispatchGeneration", "EligibilityBasis", "ExperimentalAuthorizationId", "FailureCategory", "HttpStatusCode", "MovementLegId", "OccurredAt", "Outcome", "Phase", "ReceiptClassification", "ReceiptObservedAt", "ReceiptOperation", "RequestSemanticSha256", "ResultPresent", "ReturnedOrderId", "Sequence", "UpperId")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18, @p19, @p20, @p21);
+[12:16:32 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1
+[12:16:32 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1
+[12:16:32 INF] Received HTTP response headers after 4.4994ms - 200
+[12:16:32 INF] End processing HTTP request after 5.3037ms - 200
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p6='?' (Size = 36), @p7='?' (DbType = Int32), @p0='?' (DbType = Int64), @p8='?' (DbType = Int64), @p10='?', @p1='?' (Size = 33), @p2='?' (DbType = DateTimeOffset), @p3='?' (Size = 184), @p4='?' (Size = 12), @p5='?' (Size = 9), @p9='?' (Size = 16)], CommandType='Text', CommandTimeout='30']
+UPDATE "OrderIntents" SET "DispatchAuditSequence" = @p0, "LastReconciliationOutcome" = @p1, "LastReconciliationOutcomeAt" = @p2, "LastReconciliationReceiptJson" = @p3, "OrderId" = @p4, "Status" = @p5
+WHERE "MovementLegId" = @p6 AND "CreateAttemptCount" = @p7 AND "DispatchAuditSequence" = @p8 AND "ExperimentalCreateAuthorizationId" IS NULL AND "Status" = @p9
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 36), @p2='?' (DbType = Int32), @p3='?', @p4='?' (Size = 36), @p5='?' (DbType = Int64), @p6='?', @p7='?', @p8='?', @p9='?' (DbType = Int32), @p10='?' (Size = 36), @p11='?' (DbType = DateTimeOffset), @p12='?' (Size = 9), @p13='?' (Size = 26), @p14='?' (Size = 5), @p15='?' (DbType = DateTimeOffset), @p16='?' (Size = 9), @p17='?', @p18='?' (DbType = Boolean), @p19='?' (Size = 12), @p20='?' (DbType = Int64), @p21='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "RiotDispatchAuditEvents" ("AuditEventId", "AttemptId", "AttemptNumber", "BusinessCode", "DemandId", "DispatchGeneration", "EligibilityBasis", "ExperimentalAuthorizationId", "FailureCategory", "HttpStatusCode", "MovementLegId", "OccurredAt", "Outcome", "Phase", "ReceiptClassification", "ReceiptObservedAt", "ReceiptOperation", "RequestSemanticSha256", "ResultPresent", "ReturnedOrderId", "Sequence", "UpperId")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17, @p18, @p19, @p20, @p21);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p2='?' (DbType = Int32), @p3='?' (DbType = Int64), @p5='?', @p4='?' (Size = 9), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "OrderIntents" SET "VehicleOccupancyClaimedAt" = @p0
+WHERE "MovementLegId" = @p1 AND "CreateAttemptCount" = @p2 AND "DispatchAuditSequence" = @p3 AND "ExperimentalCreateAuthorizationId" IS NULL AND "Status" = @p4
+RETURNING 1;
+[12:16:32 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:32 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:32 INF] Received HTTP response headers after 0.932ms - 200
+[12:16:32 INF] End processing HTTP request after 2.2036ms - 200
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (DbType = Int32), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "MapStationCatalogStates" SET "LastAttemptAt" = @p0, "LastCompleteConfirmationAt" = @p1, "UpdatedAt" = @p2
+WHERE "MapId" = @p3
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."AcknowledgedAt" IS NULL AND "p"."FencedAt" IS NULL
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "ProtocolOutbox" AS "p"
+    WHERE "p"."MessageId" = @__messageId_0)
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (9ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 24), @p5='?' (Size = 952)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolOutbox" ("MessageId", "AcknowledgedAt", "CreatedAt", "FencedAt", "MessageType", "PayloadJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__runtime_DemandId_0='?' (Size = 36), @__purpose_1='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."DemandId" = @__runtime_DemandId_0 AND "o"."Purpose" = @__purpose_1
+LIMIT 2
+[12:16:32 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1
+[12:16:32 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1
+[12:16:32 INF] Received HTTP response headers after 0.8887ms - 200
+[12:16:32 INF] End processing HTTP request after 1.6367ms - 200
+[12:16:32 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:32 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:32 INF] Received HTTP response headers after 0.9445ms - 200
+[12:16:32 INF] End processing HTTP request after 2.2429ms - 200
+[12:16:32 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:32 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:32 INF] Received HTTP response headers after 0.8468ms - 200
+[12:16:32 INF] End processing HTTP request after 2.5015ms - 200
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "ProtocolOutbox" SET "AcknowledgedAt" = @p0
+WHERE "MessageId" = @p1
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?', @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 630)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:32 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:32 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:32 INF] Received HTTP response headers after 0.8698ms - 200
+[12:16:32 INF] End processing HTTP request after 2.1624ms - 200
+[12:16:32 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:32 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:32 INF] Received HTTP response headers after 2.2052ms - 200
+[12:16:32 INF] End processing HTTP request after 3.0182ms - 200
+[12:16:32 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 10.3012 ms
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p8='?' (Size = 10), @p0='?' (DbType = Boolean), @p1='?' (Size = 16), @p2='?' (Size = 20), @p3='?' (Size = 64), @p4='?' (Size = 21), @p5='?' (DbType = Int64), @p6='?' (DbType = Boolean), @p7='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "DepartureSafe" = @p0, "Readiness" = @p1, "ReasonCode" = @p2, "SafetyHash" = @p3, "SafetyReasonCodesJson" = @p4, "SafetyRevision" = @p5, "SafetyUnknownPresent" = @p6, "UpdatedAt" = @p7
+WHERE "AgvId" = @p8
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "StationOperations" AS "s"
+    INNER JOIN "JourneyRuntimes" AS "j" ON "s"."DemandId" = "j"."DemandId"
+    WHERE "j"."AgvId" = @__agvId_0 AND "s"."Status" = 'RecoveryRequired')
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AgvId", "a"."ActivatedAt", "a"."ActivationId", "a"."ConfigurationVersion", "a"."Fingerprint", "a"."SlotModelVersionId", "a"."SnapshotId"
+FROM "ActiveSlotConfigurations" AS "a"
+WHERE "a"."AgvId" = @__agvId_0
+LIMIT 1
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p2='?' (Size = 10), @p0='?' (Size = 26), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "ReasonCode" = @p0, "UpdatedAt" = @p1
+WHERE "AgvId" = @p2
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1265), @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 673)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@__snapshot_AgvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."AgvId", "o"."AlarmsJson", "o"."CapturedAt", "o"."ReceivedAt", "o"."SessionGeneration", "o"."SnapshotSequence"
+FROM "OnboardAlarmSnapshots" AS "o"
+WHERE "o"."AgvId" = @__snapshot_AgvId_0
+LIMIT 1
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p4='?' (Size = 10), @p0='?' (Size = 427), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+UPDATE "OnboardAlarmSnapshots" SET "AlarmsJson" = @p0, "CapturedAt" = @p1, "ReceivedAt" = @p2, "SnapshotSequence" = @p3
+WHERE "AgvId" = @p4
+RETURNING 1;
+[12:16:32 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 625), @p3='?' (Size = 20), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 844)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:33 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:33 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:33 INF] Received HTTP response headers after 0.9718ms - 200
+[12:16:33 INF] End processing HTTP request after 2.4665ms - 200
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (DbType = Int32), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "MapStationCatalogStates" SET "LastAttemptAt" = @p0, "LastCompleteConfirmationAt" = @p1, "UpdatedAt" = @p2
+WHERE "MapId" = @p3
+RETURNING 1;
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@p2='?' (Size = 36), @p0='?' (Size = 25), @p1='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyRuntimes" SET "BlockReasonCode" = @p0, "UpdatedAt" = @p1
+WHERE "DemandId" = @p2
+RETURNING 1;
+[12:16:33 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:33 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/v1/task/getVehicleInfo/BROKERX-L2-0001
+[12:16:33 INF] Received HTTP response headers after 0.7457ms - 200
+[12:16:33 INF] End processing HTTP request after 2.1825ms - 200
+[12:16:33 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:33 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord?pageNum=1&pageSize=100&filterByState=1&filterByState=3&filterByState=7&filterByState=9
+[12:16:33 INF] Received HTTP response headers after 0.8001ms - 200
+[12:16:33 INF] End processing HTTP request after 1.5936ms - 200
+[12:16:33 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 5.7264 ms
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@p7='?' (Size = 10), @p0='?' (DbType = Boolean), @p1='?' (Size = 20), @p2='?' (Size = 64), @p3='?' (Size = 2), @p4='?' (DbType = Int64), @p5='?' (DbType = Boolean), @p6='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "DepartureSafe" = @p0, "ReasonCode" = @p1, "SafetyHash" = @p2, "SafetyReasonCodesJson" = @p3, "SafetyRevision" = @p4, "SafetyUnknownPresent" = @p5, "UpdatedAt" = @p6
+WHERE "AgvId" = @p7
+RETURNING 1;
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0
+LIMIT 2
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "StationOperations" AS "s"
+    INNER JOIN "JourneyRuntimes" AS "j" ON "s"."DemandId" = "j"."DemandId"
+    WHERE "j"."AgvId" = @__agvId_0 AND "s"."Status" = 'RecoveryRequired')
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."AgvId", "a"."ActivatedAt", "a"."ActivationId", "a"."ConfigurationVersion", "a"."Fingerprint", "a"."SlotModelVersionId", "a"."SnapshotId"
+FROM "ActiveSlotConfigurations" AS "a"
+WHERE "a"."AgvId" = @__agvId_0
+LIMIT 1
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 10), @p0='?' (Size = 5), @p1='?' (Size = 5), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "SessionRecoveries" SET "Readiness" = @p0, "ReasonCode" = @p1, "UpdatedAt" = @p2
+WHERE "AgvId" = @p3
+RETURNING 1;
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 1234), @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 653)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@__snapshot_AgvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."AgvId", "o"."AlarmsJson", "o"."CapturedAt", "o"."ReceivedAt", "o"."SessionGeneration", "o"."SnapshotSequence"
+FROM "OnboardAlarmSnapshots" AS "o"
+WHERE "o"."AgvId" = @__snapshot_AgvId_0
+LIMIT 1
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@p4='?' (Size = 10), @p0='?' (Size = 2), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = Int64)], CommandType='Text', CommandTimeout='30']
+UPDATE "OnboardAlarmSnapshots" SET "AlarmsJson" = @p0, "CapturedAt" = @p1, "ReceivedAt" = @p2, "SnapshotSequence" = @p3
+WHERE "AgvId" = @p4
+RETURNING 1;
+[12:16:33 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?' (Size = 625), @p3='?' (Size = 20), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 484)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:34 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:34 INF] Sending HTTP request GET http://127.0.0.1:48408/api/imap/v1/mapInfo/stations/25
+[12:16:34 INF] Received HTTP response headers after 0.7911ms - 200
+[12:16:34 INF] End processing HTTP request after 2.2237ms - 200
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__mapId_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+SELECT "m"."MapId", "m"."ApprovedMaxUnconfirmedSeconds", "m"."ApprovedSyncPeriodSeconds", "m"."CatalogRevision", "m"."LastAttemptAt", "m"."LastCompleteConfirmationAt", "m"."LastFailureReason", "m"."State", "m"."UpdatedAt"
+FROM "MapStationCatalogStates" AS "m"
+WHERE "m"."MapId" = @__mapId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (DbType = Int32), @p0='?' (DbType = DateTimeOffset), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "MapStationCatalogStates" SET "LastAttemptAt" = @p0, "LastCompleteConfirmationAt" = @p1, "UpdatedAt" = @p2
+WHERE "MapId" = @p3
+RETURNING 1;
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "a"."Id", "a"."ContentHash", "a"."DeploymentId", "a"."ImportedAt", "a"."Version"
+FROM "AdmissionPolicyState" AS "a"
+WHERE "a"."Id" = 1
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "j"."DemandId", "j"."AgvId", "j"."AgvLifecycleGeneration", "j"."BlockReasonCode", "j"."ConsumedSafetyResultMessageId", "j"."ConsumedSublotMessageId", "j"."CreatedAt", "j"."DispatchGeneration", "j"."DispatchZone", "j"."ExpectedBasketCount", "j"."GateMovementLegId", "j"."GatePlanMessageId", "j"."GateStationId", "j"."GateStationRiotId", "j"."GateUpperId", "j"."GateVehicleBusinessMessageId", "j"."GateWorklistMessageId", "j"."LoadCommandMessageId", "j"."LoadSlotOperationAttemptId", "j"."MapId", "j"."MapIdentity", "j"."OperationSessionId", "j"."PickupMovementLegId", "j"."PickupStationId", "j"."PickupStationRiotId", "j"."PickupUpperId", "j"."PlanMessageId", "j"."PlanRevision", "j"."PreDepartureSafetyCheckId", "j"."PreDepartureSafetyCheckMessageId", "j"."RouteEvidenceId", "j"."Stage", "j"."StationDepartureWaitStartedAt", "j"."SublotRequestMessageId", "j"."TargetSlotsJson", "j"."UnloadCommandMessageId", "j"."UnloadSlotOperationAttemptId", "j"."UpdatedAt", "j"."VehicleBusinessMessageId", "j"."VehicleBusinessRevision", "j"."VehicleKey", "j"."WorklistMessageId", "j"."WorklistRevision"
+FROM "JourneyRuntimes" AS "j"
+WHERE "j"."Stage" <> 'Completed'
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."AcknowledgedAt" IS NULL AND "p"."FencedAt" IS NULL
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__upperId_0='?' (Size = 49)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."UpperId" = @__upperId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT EXISTS (
+    SELECT 1
+    FROM "ProtocolOutbox" AS "p"
+    WHERE "p"."MessageId" = @__messageId_0)
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__runtime_DemandId_0='?' (Size = 36), @__purpose_1='?' (Size = 9)], CommandType='Text', CommandTimeout='30']
+SELECT "o"."MovementLegId", "o"."AgvLifecycleGeneration", "o"."CreateAttemptCount", "o"."CreateAttemptId", "o"."CreateDispatchArmedAt", "o"."CreatedAt", "o"."DemandId", "o"."DestinationStationId", "o"."DispatchAuditSequence", "o"."DispatchAuditVersion", "o"."DispatchGeneration", "o"."ExperimentalCreateAuthorizationId", "o"."LastCreateOutcome", "o"."LastCreateOutcomeAt", "o"."LastCreateReceiptJson", "o"."LastReconciliationOutcome", "o"."LastReconciliationOutcomeAt", "o"."LastReconciliationReceiptJson", "o"."MapId", "o"."OrderId", "o"."Purpose", "o"."Status", "o"."TargetStationId", "o"."UpperId", "o"."VehicleKey", "o"."VehicleOccupancyClaimedAt", "o"."VehicleOccupancyReleasedAt"
+FROM "OrderIntents" AS "o"
+WHERE "o"."DemandId" = @__runtime_DemandId_0 AND "o"."Purpose" = @__purpose_1
+LIMIT 2
+[12:16:34 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1
+[12:16:34 INF] Sending HTTP request GET http://127.0.0.1:48408/api/order/v1/orderRecord/detailByUpperId/W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1
+[12:16:34 INF] Received HTTP response headers after 0.6712ms - 200
+[12:16:34 INF] End processing HTTP request after 1.4244ms - 200
+[12:16:34 INF] Start processing HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:34 INF] Sending HTTP request GET http://127.0.0.1:48408/api/task/vehicles/getVehicleInfoByDeviceKey?key=BROKERX-L2-0001
+[12:16:34 INF] Received HTTP response headers after 0.5199ms - 200
+[12:16:34 INF] End processing HTTP request after 1.2722ms - 200
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__agvId_0='?' (Size = 10)], CommandType='Text', CommandTimeout='30']
+SELECT "s"."AgvId", "s"."ActiveUnlockSlotsJson", "s"."CapabilityHash", "s"."CapabilityRevision", "s"."DepartureSafe", "s"."ForcedRecoveryGeneration", "s"."ManifestSha256", "s"."PendingAttemptIdsJson", "s"."PendingResultIdsJson", "s"."ProfileId", "s"."ProtocolCommit", "s"."ProtocolVersion", "s"."ProvenRecoveryCheckpoint", "s"."Readiness", "s"."ReasonCode", "s"."RecoveryReportId", "s"."ReportedForcedRecoveryGeneration", "s"."ReportedSlotConfigurationFingerprint", "s"."SafetyHash", "s"."SafetyReasonCodesJson", "s"."SafetyRevision", "s"."SafetyUnknownPresent", "s"."SessionGeneration", "s"."UnsettledSlotOperationAttemptId", "s"."UpdatedAt"
+FROM "SessionRecoveries" AS "s"
+WHERE "s"."AgvId" = @__agvId_0 AND "s"."Readiness" = 'Ready'
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageType_0='?' (Size = 18)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = @__messageType_0
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageType_0='?' (Size = 19)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" = @__messageType_0
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageType" IN ('SafetyStateSnapshot', 'SafetyStateChanged')
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__runtime_DemandId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "a"."DemandId", "a"."AcceptedAt", "a"."CatalogRevision", "a"."CreatedAt", "a"."DemandRevision", "a"."Generation", "a"."HistoryEpoch", "a"."LiveMesFieldsJson", "a"."SeriesId", "a"."Status", "a"."Sublot", "a"."TransportDemandKey", "a"."ValueObservedAt", "a"."ValuePollTraceId", "a"."ValueProjectionCommitId", "a"."WorkType"
+FROM "AcceptedDemands" AS "a"
+WHERE "a"."DemandId" = @__runtime_DemandId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 28), @p5='?' (Size = 610)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolOutbox" ("MessageId", "AcknowledgedAt", "CreatedAt", "FencedAt", "MessageType", "PayloadJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 27), @p5='?' (Size = 736)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolOutbox" ("MessageId", "AcknowledgedAt", "CreatedAt", "FencedAt", "MessageType", "PayloadJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "ProtocolOutbox" SET "AcknowledgedAt" = @p0
+WHERE "MessageId" = @p1
+RETURNING 1;
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?', @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 634)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0 AND "p"."AcknowledgedAt" IS NULL AND "p"."FencedAt" IS NULL
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 24), @p5='?' (Size = 953)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolOutbox" ("MessageId", "AcknowledgedAt", "CreatedAt", "FencedAt", "MessageType", "PayloadJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "ProtocolOutbox" SET "AcknowledgedAt" = @p0
+WHERE "MessageId" = @p1
+RETURNING 1;
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?', @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 633)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (1ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (DbType = DateTimeOffset), @p2='?' (DbType = DateTimeOffset), @p3='?' (DbType = DateTimeOffset), @p4='?' (Size = 20), @p5='?' (Size = 662)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolOutbox" ("MessageId", "AcknowledgedAt", "CreatedAt", "FencedAt", "MessageType", "PayloadJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@p3='?' (Size = 36), @p0='?', @p1='?' (Size = 14), @p2='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "JourneyRuntimes" SET "BlockReasonCode" = @p0, "Stage" = @p1, "UpdatedAt" = @p2
+WHERE "DemandId" = @p3
+RETURNING 1;
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."ContentHash", "p"."FirstResponseJson", "p"."MessageType", "p"."ReceivedAt", "p"."RequestJson"
+FROM "ProtocolInbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@__messageId_0='?' (Size = 36)], CommandType='Text', CommandTimeout='30']
+SELECT "p"."MessageId", "p"."AcknowledgedAt", "p"."CreatedAt", "p"."FencedAt", "p"."MessageType", "p"."PayloadJson"
+FROM "ProtocolOutbox" AS "p"
+WHERE "p"."MessageId" = @__messageId_0
+LIMIT 2
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@p1='?' (Size = 36), @p0='?' (DbType = DateTimeOffset)], CommandType='Text', CommandTimeout='30']
+UPDATE "ProtocolOutbox" SET "AcknowledgedAt" = @p0
+WHERE "MessageId" = @p1
+RETURNING 1;
+[12:16:34 INF] Executed DbCommand (0ms) [Parameters=[@p0='?' (Size = 36), @p1='?' (Size = 64), @p2='?', @p3='?' (Size = 18), @p4='?' (DbType = DateTimeOffset), @p5='?' (Size = 629)], CommandType='Text', CommandTimeout='30']
+INSERT INTO "ProtocolInbox" ("MessageId", "ContentHash", "FirstResponseJson", "MessageType", "ReceivedAt", "RequestJson")
+VALUES (@p0, @p1, @p2, @p3, @p4, @p5);
+[12:16:34 WRN] Onboard connection ended with a protocol or transport error.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\s3\jy-052759bc\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 108
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\s3\jy-052759bc\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 141
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\s3\jy-052759bc\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 141
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\s3\jy-052759bc\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 141
+   at ControlServer.Host.Transport.OnboardTcpServer.ServeAsync(TcpClient client, SemaphoreSlim slots, CancellationToken cancellationToken) in C:\s3\jy-052759bc\sources\control-server\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 78

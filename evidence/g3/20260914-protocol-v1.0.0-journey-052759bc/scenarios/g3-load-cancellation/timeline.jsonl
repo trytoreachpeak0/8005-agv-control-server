@@ -1,0 +1,55 @@
+{"at":"2026-09-14T04:17:33.8892553+00:00","note":"L2 run 20260914T041733853Z starting for scenario 'g3-load-cancellation'."}
+{"at":"2026-09-14T04:17:33.9348811+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-14T04:17:33.9363291+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-14T04:17:39.0169647+00:00","note":"Reusing cached onboard-hmi publish for b96010825d43aeee3b861cb3b4716f4d0873c8a0."}
+{"at":"2026-09-14T04:17:39.1192485+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-14T04:17:39.1234011+00:00","note":"Peers: onboard-hmi@b96010825d43aeee3b861cb3b4716f4d0873c8a0, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-14T04:17:39.1365591+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-14T04:17:39.9687452+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-14T04:17:40.1815347+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-14T04:17:42.0525041+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-14T04:17:44.2320880+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-14T04:17:45.8442688+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-14T04:17:45.9691329+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-14T04:17:48.0971428+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-14T04:17:48.1160360+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-14T04:17:48.2061570+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-14T04:17:48.7484832+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-14T04:17:48.8114949+00:00","note":"Environment is up; entering scenario 'g3-load-cancellation'."}
+{"at":"2026-09-14T04:17:48.9018629+00:00","note":"Publishing demand 6ab8a1611e6f4064a44b340165de1cf8 (sublot G3-02C-20260914T041733853Z, 8 boxes)."}
+{"at":"2026-09-14T04:17:49.0320312+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-14T04:17:50.3595021+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-14T04:17:50.3669720+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-14T04:17:50.6429320+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6ab8a161-1e6f-4064-a44b-340165de1cf8-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-14T04:17:50.6465624+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-14T04:17:50.7390124+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-14T04:17:50.7929341+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-14T04:17:51.8876757+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-14T04:17:51.8887384+00:00","note":"Typing sublot G3-02C-20260914T041733853Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-14T04:17:51.9415427+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-14T04:17:51.9885191+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-14T04:17:51.9927938+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-14T04:17:52.5472540+00:00","criterion":"load-attempt","value":"84edfb52-38ec-0a5d-aeca-227cd39298fc"}
+{"at":"2026-09-14T04:17:52.5557818+00:00","note":"Load 84edfb52-38ec-0a5d-aeca-227cd39298fc targets slots 1, 2."}
+{"at":"2026-09-14T04:17:52.5783067+00:00","criterion":"load-waiting-operator-1","value":"(null)"}
+{"at":"2026-09-14T04:17:53.6663106+00:00","criterion":"load-waiting-operator-1","value":"@{At=09/14/2026 04:17:53 +00:00; Phase=WAITING_OPERATOR; Active=System.Object[]}"}
+{"at":"2026-09-14T04:17:53.7073850+00:00","note":"Slot 1 is open (OPEN/EMPTY/0/0); the operator decides not to load and closes it empty."}
+{"at":"2026-09-14T04:17:53.7452062+00:00","criterion":"opened-slot-closed-empty","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-14T04:17:54.0069607+00:00","criterion":"opened-slot-closed-empty","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-14T04:17:54.0483160+00:00","criterion":"onboard-cancellation-entry","value":"True"}
+{"at":"2026-09-14T04:17:54.0634482+00:00","note":"Operator presses 取消装货 and confirms."}
+{"at":"2026-09-14T04:17:54.4284829+00:00","criterion":"cancellation-requested","value":"@{MessageId=e873d7b3-67ea-da53-927f-b282dce62429; At=09/14/2026 04:17:54 +00:00; Payload=; Response=LoadCancellationAuthorization; ResponsePayload=}"}
+{"at":"2026-09-14T04:17:54.5834376+00:00","criterion":"cancellation-result","value":"(null)"}
+{"at":"2026-09-14T04:17:54.8521419+00:00","criterion":"cancellation-result","value":"@{MessageId=61801045-7992-2b54-ac7e-145d19df3769; At=09/14/2026 04:17:54 +00:00; Payload=; Response=DurableAck; ResponsePayload=}"}
+{"at":"2026-09-14T04:17:54.8658551+00:00","criterion":"cancellation-workflow","value":"Reconciled"}
+{"at":"2026-09-14T04:17:54.9320530+00:00","note":"Waiting for the original load executor to give up (onboard operation timeout, about 120s)."}
+{"at":"2026-09-14T04:17:54.9368107+00:00","criterion":"late-load-result","value":"0"}
+{"at":"2026-09-14T04:19:53.0418845+00:00","criterion":"late-load-result","value":"1"}
+{"at":"2026-09-14T04:19:53.0436831+00:00","note":"Original load: 迟到结果 UNKNOWN→DurableAck."}
+{"at":"2026-09-14T04:19:53.0782888+00:00","criterion":"runtime-iterations","value":"128"}
+{"at":"2026-09-14T04:19:53.6022816+00:00","criterion":"runtime-iterations","value":"129"}
+{"at":"2026-09-14T04:19:54.6597363+00:00","criterion":"runtime-iterations","value":"130"}
+{"at":"2026-09-14T04:19:55.4510733+00:00","criterion":"runtime-iterations","value":"131"}
+{"at":"2026-09-14T04:19:56.5088599+00:00","criterion":"runtime-iterations","value":"132"}
+{"at":"2026-09-14T04:19:56.5318043+00:00","note":"FP-IS-02: load cancelled mid-operation with explicit authorization, every slot proven empty, final state checked after the late load result."}
+{"at":"2026-09-14T04:19:57.1810081+00:00","note":"L2 port block lock released."}

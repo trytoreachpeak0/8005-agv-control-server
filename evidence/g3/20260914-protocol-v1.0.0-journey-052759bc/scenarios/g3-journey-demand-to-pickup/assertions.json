@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-journey-demand-to-pickup",
+  "runId": "20260914T041543585Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "onboardHmiCommit": "b96010825d43aeee3b861cb3b4716f4d0873c8a0",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260914T041543585Z",
+    "controlServerCommit": "052759bca58a04316dfda260249b3b5697f2cf8e",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "batch-2",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "G3-01-01",
+      "description": "需求只受理一次：AcceptedDemands 里这条需求恰好一行（EXACTLY_ONE_ACCEPTED_DEMAND_SNAPSHOT）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "G3-01-02",
+      "description": "取货意图只建一条且已确认（EXACTLY_ONE_TO_PICKUP_INTENT）",
+      "outcome": "PASS",
+      "expected": "1 / CONFIRMED",
+      "actual": "1 / CONFIRMED"
+    },
+    {
+      "id": "G3-01-03",
+      "description": "RIoT 侧只有一张单，就是这条取货意图的那张（EXACTLY_ONE_RIOT_ORDER）",
+      "outcome": "PASS",
+      "expected": "1 / W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1",
+      "actual": "1 / W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1"
+    },
+    {
+      "id": "G3-01-04",
+      "description": "到站前恰好发出一份计划：revision 为旅程的计划起点，取货段 ACTIVE、送货段 PLANNED，已被真车载端确认；工作清单一份都还没发（向量第 3～4 步）",
+      "outcome": "PASS",
+      "expected": "计划 1 份 rev 1 TO_PICKUP:ACTIVE,TO_DROPOFF:PLANNED 已确认 / 清单 0 份",
+      "actual": "计划 1 份 rev 1 TO_PICKUP:ACTIVE,TO_DROPOFF:PLANNED 确认=True / 清单 0 份"
+    },
+    {
+      "id": "G3-01-05",
+      "description": "到站前没有任何仓位操作，也没有发录入请求或仓位命令（forbidden: slot-operation-before-pickup-arrival）",
+      "outcome": "PASS",
+      "expected": "0 / 0",
+      "actual": "0 / 0"
+    },
+    {
+      "id": "G3-01-06",
+      "description": "服务端采纳了可信到站：旅程进入 AwaitingSublot（TRUSTED_PICKUP_ARRIVAL）",
+      "outcome": "PASS",
+      "expected": "AwaitingSublot",
+      "actual": "AwaitingSublot"
+    },
+    {
+      "id": "G3-01-07",
+      "description": "消息顺序与向量一致：到站前计划、到站后工作清单、下一 revision 的到站计划，三份都被真车载端确认、没有一份被作废（向量第 3～9 步）",
+      "outcome": "PASS",
+      "expected": "plan r1 TO_PICKUP:ACTIVE,TO_DROPOFF:PLANNED | worklist | plan r2 TO_PICKUP:ARRIVED,TO_DROPOFF:PLANNED，全部 ack=True fenced=False",
+      "actual": "plan r1 TO_PICKUP:ACTIVE,TO_DROPOFF:PLANNED ack=True fenced=False | worklist r1 ack=True fenced=False | plan r2 TO_PICKUP:ARRIVED,TO_DROPOFF:PLANNED ack=True fenced=False"
+    },
+    {
+      "id": "G3-01-08",
+      "description": "车载端日志库里采纳的计划与工作清单，消息号与 revision 就是服务端提交的那两份（DISPLAY_COMMITTED_DEMAND_JOURNEY / DISPLAY_CURRENT_STOP）",
+      "outcome": "PASS",
+      "expected": "plan 7f9dc677-60c4-a159-808f-a29c6b0075a3 r2 / worklist 37d63e4e-209a-865b-9cdd-f350c1106eaf r1",
+      "actual": "plan 7f9dc677-60c4-a159-808f-a29c6b0075a3 r2 / worklist 37d63e4e-209a-865b-9cdd-f350c1106eaf r1"
+    },
+    {
+      "id": "G3-01-09",
+      "description": "终态 ONE_ACCEPTED_DEMAND_ONE_TO_PICKUP_ORDER_AT_PICKUP / NO_SLOT_OPERATION_STARTED：全程一条需求、一条意图、一张 RIoT 单，没有仓位操作（forbidden: duplicate-demand-acceptance、duplicate-riot-order）",
+      "outcome": "PASS",
+      "expected": "1 单 / 1 意图 / 1 需求 / 0 操作",
+      "actual": "1 单 / 1 意图 / 1 需求 / 0 操作"
+    },
+    {
+      "id": "G3-01-10",
+      "description": "车载端没有发过任何涉及需求发现、选择或绑定的消息（NEVER_DISCOVER_SELECT_OR_BIND_DEMAND）",
+      "outcome": "PASS",
+      "expected": "(none)",
+      "actual": "(none)；车载端发来的类型：CapabilitySnapshot, OnboardAlarmSnapshot, RecoveryStateReport, SafetyStateChanged, SafetyStateSnapshot, SessionHello, SnapshotAppliedAck"
+    }
+  ]
+}

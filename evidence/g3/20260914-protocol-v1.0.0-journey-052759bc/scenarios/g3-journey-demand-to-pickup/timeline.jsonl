@@ -1,0 +1,31 @@
+{"at":"2026-09-14T04:15:43.6225325+00:00","note":"L2 run 20260914T041543585Z starting for scenario 'g3-journey-demand-to-pickup'."}
+{"at":"2026-09-14T04:15:43.6748125+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-14T04:15:43.6767507+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-14T04:16:00.7978031+00:00","note":"Building onboard-hmi at b96010825d43aeee3b861cb3b4716f4d0873c8a0 from a throwaway clone."}
+{"at":"2026-09-14T04:16:09.8264394+00:00","note":"Building slots-simulator at fb5f7c593742bf98bc3957b8729a38aad5321f28 from a throwaway clone."}
+{"at":"2026-09-14T04:16:17.7776465+00:00","note":"Peers: onboard-hmi@b96010825d43aeee3b861cb3b4716f4d0873c8a0, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-14T04:16:17.7844549+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-14T04:16:18.6856456+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-14T04:16:18.8726824+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-14T04:16:21.0589015+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-14T04:16:25.2672750+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-14T04:16:26.9411216+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-14T04:16:27.0799955+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-14T04:16:30.5501033+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-14T04:16:30.5687278+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-14T04:16:30.6538316+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-14T04:16:31.1985079+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-14T04:16:31.2493339+00:00","note":"Environment is up; entering scenario 'g3-journey-demand-to-pickup'."}
+{"at":"2026-09-14T04:16:31.3133679+00:00","note":"Publishing demand a7bf8a67191447aab32124e604788ec5 (sublot G3-01-20260914T041543585Z)."}
+{"at":"2026-09-14T04:16:31.4635433+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-14T04:16:32.2649780+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-14T04:16:32.2722088+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-14T04:16:32.5337708+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-a7bf8a67-1914-47aa-b321-24e604788ec5-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-14T04:16:32.5739713+00:00","criterion":"dispatch-plan-acknowledged","value":"0"}
+{"at":"2026-09-14T04:16:32.8419680+00:00","criterion":"dispatch-plan-acknowledged","value":"1"}
+{"at":"2026-09-14T04:16:32.9203274+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-14T04:16:32.9721324+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-14T04:16:34.5688886+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-14T04:16:34.5839219+00:00","criterion":"pickup-snapshots-acknowledged","value":"3"}
+{"at":"2026-09-14T04:16:34.6272428+00:00","note":"FP-IS-01: demand accepted once, planned before the arrival, worklist and arrived plan after it, applied by the onboard as committed."}
+{"at":"2026-09-14T04:16:35.3406668+00:00","note":"L2 port block lock released."}

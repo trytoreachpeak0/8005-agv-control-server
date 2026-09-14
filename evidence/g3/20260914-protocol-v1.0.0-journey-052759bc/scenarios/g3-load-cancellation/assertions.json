@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-load-cancellation",
+  "runId": "20260914T041733853Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "batch-2",
+    "onboardHmiCommit": "b96010825d43aeee3b861cb3b4716f4d0873c8a0",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "052759bca58a04316dfda260249b3b5697f2cf8e",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260914T041733853Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "G3-02-21",
+      "description": "装载进行中（命令已下、结果未出），车载端界面上出现可用的「取消装货」入口",
+      "outcome": "PASS",
+      "expected": true,
+      "actual": true
+    },
+    {
+      "id": "G3-02-22",
+      "description": "取消经服务端显式授权：应答是 LoadCancellationAuthorization AUTHORIZED，指向这条需求、这笔装载，范围就是全部授权仓位（AUTHORIZE_CANCELLATION_EXPLICITLY）",
+      "outcome": "PASS",
+      "expected": "LoadCancellationAuthorization AUTHORIZED 1,2",
+      "actual": "LoadCancellationAuthorization AUTHORIZED 1,2"
+    },
+    {
+      "id": "G3-02-23",
+      "description": "消息顺序与向量一致：LoadCancellationStartRequested → LoadCancellationAuthorization → LoadCancellationResult → DurableAck，各一次；车载端没有在授权之前单方面报取消结果（CV-LOAD-CANCELLATION-ALL-EMPTY orderedExpectedMessages / NEVER_CANCEL_UNILATERALLY）",
+      "outcome": "PASS",
+      "expected": "StartRequested → Authorization < Result → DurableAck，各 1",
+      "actual": "StartRequested×1→LoadCancellationAuthorization / Result×1→DurableAck / 有序=True"
+    },
+    {
+      "id": "G3-02-24",
+      "description": "证空不靠开门：取消请求之后车载端没有再开任何仓；整个 attempt 只开过装载时的第 1 仓一次，没开过的仓始终没开（forbidden: duplicate-slot-unlock、expanded-active-unlock-set）",
+      "outcome": "PASS",
+      "expected": "取消后开锁 0 次 / 全程开锁 1",
+      "actual": "取消后开锁 0 次 / 全程开锁 1"
+    },
+    {
+      "id": "G3-02-25",
+      "description": "车载端证明全部授权仓位为空：ALL_EMPTY，每个仓都是空、锁上、开锁输出复位；模拟器上的物理状态与之一致（PROVE_ALL_SLOTS_EMPTY）",
+      "outcome": "PASS",
+      "expected": "ALL_EMPTY 1=COMPLETED/EMPTY/LOCKED/RESET 2=COMPLETED/EMPTY/LOCKED/RESET / 1=CLOSED/EMPTY/1/0 2=CLOSED/EMPTY/1/0",
+      "actual": "ALL_EMPTY 1=COMPLETED/EMPTY/LOCKED/RESET 2=COMPLETED/EMPTY/LOCKED/RESET / 1=CLOSED/EMPTY/1/0 2=CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "G3-02-26",
+      "description": "取消收敛：工作流 Reconciled，需求 Cancelled，装载 Cancelled，车辆租约释放，旅程以 CANCELLED_BY_OPERATOR 收尾、没有去关卡（RECONCILE_EMPTY_FINAL_STATE）",
+      "outcome": "PASS",
+      "expected": "工作流 Reconciled / 需求 Cancelled / 装载 Cancelled / 租约释放=True / 旅程 Completed/CANCELLED_BY_OPERATOR / TO_GATE 0",
+      "actual": "工作流 Reconciled / 需求 Cancelled / 装载 Cancelled / 租约释放=True / 旅程 Completed/CANCELLED_BY_OPERATOR / TO_GATE 0"
+    },
+    {
+      "id": "G3-02-27",
+      "description": "终态经得起原装载的迟到结果：取消的收敛一项都没被改回去，没有任何操作落到 RecoveryRequired、没有需求完成记录，RIoT 上只有那一张取货单，仓位物理上全空、锁上（finalState NO_DUPLICATE_COMMIT / NO_UNPROVEN_STATE；forbidden: duplicate-business-commit、unknown-as-success）",
+      "outcome": "PASS",
+      "expected": "工作流 Reconciled / 需求 Cancelled / 装载 Cancelled / 租约释放=True / 旅程 Completed/CANCELLED_BY_OPERATOR / TO_GATE 0 / RecoveryRequired 0 / 完成记录 0 / RIoT 单 1 / 1=CLOSED/EMPTY/1/0 2=CLOSED/EMPTY/1/0",
+      "actual": "工作流 Reconciled / 需求 Cancelled / 装载 Cancelled / 租约释放=True / 旅程 Completed/CANCELLED_BY_OPERATOR / TO_GATE 0 / RecoveryRequired 0 / 完成记录 0 / RIoT 单 1 / 1=CLOSED/EMPTY/1/0 2=CLOSED/EMPTY/1/0 / 迟到结果 UNKNOWN→DurableAck"
+    }
+  ]
+}
