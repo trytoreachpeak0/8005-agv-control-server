@@ -73,7 +73,12 @@ function Wait-L2Condition {
         # The Start-L2Process handle of the component this condition depends on, when there is one.
         # A component that has already exited will never satisfy the condition, so waiting out the
         # timeout only delays the failure and reports "(nothing)" in place of its cause.
-        [object]$Component
+        [object]$Component,
+        # The ports $Component must be listening on once the condition holds. When given, a satisfied
+        # condition is only accepted after Assert-L2PortOwner has confirmed the ports are the
+        # component's own: a probe answered by some other process on the same port looks exactly like
+        # success, and on 2026-09-14 that is what it was.
+        [int[]]$Port
     )
 
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -81,7 +86,12 @@ function Wait-L2Condition {
     while ($true) {
         try { $last = & $Probe } catch { $last = $null }
         if ($Journal -and $Criterion) { $Journal.Observe($Criterion, $last, $null) }
-        if ($null -ne $last -and (& $Until $last)) { return $last }
+        if ($null -ne $last -and (& $Until $last)) {
+            if ($Component -and $Port) {
+                Assert-L2PortOwner -Component $Component -Port $Port -Description $Description
+            }
+            return $last
+        }
         # After Until, not before: a component that exits having already satisfied the condition
         # did its job, and the import step is exactly that shape.
         if ($Component) { Assert-L2ComponentAlive -Component $Component -Description $Description }
@@ -127,6 +137,94 @@ function Assert-L2ComponentAlive {
     }
     throw ("Component '$($Component.Name)' exited with code $($Component.Process.ExitCode) while " +
         "waiting for: $Description.$detail")
+}
+
+<#
+Throws unless every port in $Port is listened on by $Component's own process and by nothing else.
+
+A probe that answers proves only that *something* listens on the port. On 2026-09-14 two L2 runs
+overlapped: the G3 run's fake RIoT died on SocketException 10048 because the other run already held
+48408, and its 'fake RIoT is live' wait passed on the first poll anyway -- the other run's fake RIoT
+answered it. Wait-L2Condition looks at a component's liveness only while the probe is failing, and
+no later wait looked at that handle again, so the run spent four minutes against a dead double
+before timing out on something unrelated. The same morning a synthetic run's ControlServer died on
+48405, its /health/live wait was answered by the G3 run's server, and the failure surfaced one step
+later as the fake onboard's SessionRejected -- naming the wrong component.
+
+The port lock (L2PortLock.psm1) keeps two runs that both take it from overlapping. This check covers
+everything else that can hold a port: a checkout that predates the lock, the surviving children of a
+killed run, an unrelated program.
+
+A port nobody listens on yet is polled for, because a component's ports need not open together:
+ControlServer can answer /health/live before its protocol listener is bound.
+#>
+function Assert-L2PortOwner {
+    param(
+        [Parameter(Mandatory)][object]$Component,
+        [Parameter(Mandatory)][int[]]$Port,
+        [Parameter(Mandatory)][string]$Description,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    foreach ($candidate in $Port) {
+        while ($true) {
+            $owners = @(Get-L2ListeningProcess -Port $candidate)
+            $foreign = @($owners | Where-Object { $_ -ne $Component.Process.Id })
+            if ($foreign.Count -gt 0) {
+                $holders = ($foreign | ForEach-Object { Format-L2ProcessIdentity -ProcessId $_ }) -join '; '
+                # A component that lost the port dies of it within a second or two, and its stderr --
+                # "address already in use" -- is the better half of the diagnosis, so it is worth a
+                # short wait before reporting.
+                $null = $Component.Process.WaitForExit(5000)
+                Assert-L2ComponentAlive -Component $Component `
+                    -Description "$Description (port $candidate is held by $holders)"
+                throw ("Port $candidate is held by $holders, not only by '$($Component.Name)' " +
+                    "(pid $($Component.Process.Id)), while waiting for: $Description. Something other " +
+                    "than this run is on the L2 port block.")
+            }
+            if ($owners.Count -gt 0) { break }
+            Assert-L2ComponentAlive -Component $Component -Description $Description
+            if ([DateTimeOffset]::UtcNow -ge $deadline) {
+                throw ("Nothing listens on port $candidate ${TimeoutSeconds}s after '$($Component.Name)' " +
+                    "(pid $($Component.Process.Id)) satisfied: $Description.")
+            }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+}
+
+<#
+The ids of the processes listening on a local TCP port, IPv4 or IPv6.
+
+Parsed from `netstat -ano` rather than asked of Get-NetTCPConnection, for speed: on LAB-WIN-01 the
+CIM query costs about 450 ms a call and netstat about 30 ms, and the orchestrator asks several times
+per run in a layer whose point is taking fifteen seconds. The parse never reads the state column,
+whose text Windows may localise. It does not need to: a listening socket is the only kind whose
+foreign address is 0.0.0.0:0 or [::]:0.
+#>
+function Get-L2ListeningProcess {
+    param([Parameter(Mandatory)][int]$Port)
+
+    $ids = [System.Collections.Generic.HashSet[int]]::new()
+    foreach ($line in @(& netstat.exe -ano)) {
+        if ($line -match '^\s*TCP\s+\S+:(\d+)\s+(?:0\.0\.0\.0|\[::\]):0\s+\S+\s+(\d+)\s*$' -and
+            [int]$Matches[1] -eq $Port) {
+            $null = $ids.Add([int]$Matches[2])
+        }
+    }
+    return [int[]]@($ids)
+}
+
+function Format-L2ProcessIdentity {
+    param([Parameter(Mandatory)][int]$ProcessId)
+
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $process) { return "pid $ProcessId (already gone)" }
+    # The path says which checkout a leftover double came from; it is unreadable for another
+    # account's process, and then the name has to do.
+    $path = try { $process.Path } catch { $null }
+    return "pid $ProcessId $($process.ProcessName)" + $(if ($path) { " ($path)" } else { '' })
 }
 
 <#
@@ -830,6 +928,6 @@ function Write-L2Evidence {
 }
 
 Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Assert-L2ComponentAlive,
-    Wait-L2Iterations, New-L2Double,
+    Assert-L2PortOwner, Get-L2ListeningProcess, Wait-L2Iterations, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
     Write-L2Evidence, Format-L2IdentityRows, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver

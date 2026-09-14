@@ -143,6 +143,20 @@ change touches the journey runtime's cross-end timing, which the unit suite cove
 inside one process. `-EvidenceRoot` must be a new directory. See `scripts/l2/README.md`; a PASS
 there proves nothing about real hardware.
 
+**Every L2 run, on every rig, takes a machine-wide port lock and queues behind any other L2 run.**
+All rigs bind the same fixed port block (48405–48414, synthetic peers from 48420), so two runs at
+once talk to each other's processes — on 2026-09-14 that sent a G3 run into its scenario with two
+dead doubles. `Invoke-L2Scenario.ps1` takes the named mutex `Global\W2G-L2PortBlock`
+(`scripts/l2/L2PortLock.psm1`) before its build and holds it through teardown; a queued run prints
+`L2_PORT_LOCK_WAITING` then `L2_PORT_LOCK_ACQUIRED` and may wait up to an hour. **Lock order is port
+lock first, desktop lock second, released in reverse — never take the port lock while holding the
+desktop lock**; that order is what keeps the two from deadlocking. A checkout older than the lock
+takes none, and that includes `run-journey-g3.ps1` until its ControlServer binding reaches a commit
+that has it. What the lock cannot stop, the startup waits catch: `Wait-L2Condition -Port` fails
+unless the port is held by the component this run started, and names whoever holds it instead.
+Anything new that binds this block must take the lock the same way, inside the script. The self-check
+is `scripts/l2/Test-L2PortLockQueueing.ps1` (about a minute; it runs two real orchestrators).
+
 A scenario whose sibling `scenarios/<name>.setup.psd1` says `Onboard = 'Real'` runs a second rig
 instead: the shipped onboard WPF from `8005-agv-onboard-hmi` driven through UI Automation, plus
 the real `slots-simulator` over Modbus. `real-onboard-normal-load` is its baseline, about 23
@@ -158,7 +172,8 @@ seconds. Three things to know before running one:
   contract, the code is not** — the two repositories are independent clones with no shared package,
   and `Test-DesktopLockQueueing.ps1` on each side asserts the literal so it cannot drift into two
   locks that never meet. A queued run prints `DESKTOP_LOCK_WAITING` and then
-  `DESKTOP_LOCK_ACQUIRED`; silence is a hang, not a queue. The other three holders here are
+  `DESKTOP_LOCK_ACQUIRED`; silence is a hang, not a queue. The rig takes it after the port lock
+  above, so a run queued here keeps synthetic runs queued behind it. The other three holders here are
   `run-staged-g3.ps1`, `run-staged-g3-restart.ps1` and
   `Invoke-AuthorizedAbsentObservationShadow.ps1` — **anything new that starts a WPF peer must take
   it too**, acquired inside the script rather than in a wrapper, because these scripts are run by

@@ -254,6 +254,7 @@ $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外�
 | 模拟器 HTTP 控制面（真装置） | 48411 |
 | 模拟器 Modbus TCP（真装置） | 48412 |
 | 时钟偏差代理（`ClockSkewMs` 场景） | 48413 |
+| 看板（`Dashboard` 场景） | 48414 |
 
 刻意避开现场运行（58105/58107）、staged G3（58205/58207）与 demand-bearing G3（58305/58307）：
 撞上了要的是绑不上端口直接失败，而不是悄悄连到另一台服务器上去。模拟器同理不用它自己的默认
@@ -268,6 +269,58 @@ $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外�
 假车载端单独占一块，而不是紧挨着别的组件：对端数量是唯一不固定的那个，旧布局下第二、第三台
 车的端口正好压在模拟器的两个端口上。两套装置今天互斥，所以那是一处潜在冲突而不是现行冲突
 ——正是哪天有人放宽这条互斥时才会炸的那种。
+
+### 同一时刻只能有一个 L2 占着这组端口
+
+所有装置、所有场景用的都是上表**同一组固定端口**，所以两个 L2 同时跑不是「偶尔撞一下」，而是必然
+互相串台（2026-09-14 真出过，见文末第 13 条）。`Invoke-L2Scenario.ps1` 因此在**构建之前**先拿一把
+机器级命名 mutex `Global\W2G-L2PortBlock`（`L2PortLock.psm1`），一直拿到收尾把所有组件停掉之后才放。
+拿不到就排队，最长等一小时，排队时会打印：
+
+```
+L2_PORT_LOCK_WAITING: another L2 run owns this machine's L2 port block (Global\W2G-L2PortBlock); queueing up to 3600s for: ...
+L2_PORT_LOCK_ACQUIRED: the L2 port block is now ours for: ...
+```
+
+打出 WAITING 之后迟迟没有 ACQUIRED，是前面那一趟还没跑完；什么都没打，说明根本没排队。
+
+几件要知道的事：
+
+- **放在构建之前，不只是为了端口。**构建会覆盖 `bin/` 下的 exe，而同一工作树里正在跑的那一趟正是从
+  那里启动的这些 exe。
+- **锁在脚本里面拿，不在外面包一层。**手工直接跑、CI、`run-journey-g3.ps1` 调它，三种入口都要被
+  保护到；包在外面的话，直接敲命令那一种就漏了。和桌面锁的理由一样。
+- **和桌面锁的顺序：先端口锁，后桌面锁，释放时反过来。**只有真装置场景两把都拿，其它持有者只拿
+  其中一把（staged G3 的三个脚本和 `8005-mes-ingest` 只拿桌面锁），所以等待关系成不了环，不会死锁。
+  代价是一趟真装置场景在排桌面锁时手里握着端口锁，合成场景只能排在它后面。反过来先拿桌面锁不行：
+  那样构建和发布对端的整段时间都占着桌面，`8005-mes-ingest` 的桌面测试得等我们的编译器。
+- **这把锁对所有已登录账户开放，这一点和桌面锁不同。**`win11-01` 上 CI 的合成场景以 NetworkService
+  身份在 session 0 里跑，真装置场景是人在交互账户下跑，用的是同一组端口。默认 DACL 的命名 mutex
+  只有创建它的账户打得开，另一个账户会直接抛 `UnauthorizedAccessException` 而不是排队，所以 DACL
+  给了 Authenticated Users 完全控制。**跨账户这一条目前只验证了 DACL 确实写上了，还没有在两个账户
+  之间真跑过。**
+- **比这把锁更早的检出不拿锁，锁管不到它们。**`run-journey-g3.ps1` 也在其中：它从**绑定提交**的
+  克隆里跑编排器，所以在 ControlServer 绑定挪到含这把锁的提交之前，journey G3 仍然不拿锁。
+- **其它 G3 runner 不用这组端口，所以不拿这把锁。**`run-staged-g3.ps1` 用 58205/58207/58215/58216，
+  `run-staged-g3-restart.ps1` 用 58105/58107，`Invoke-AuthorizedAbsentObservationShadow.ps1` 用
+  58888/59005/59007，这三个还共用模拟器默认的 1502/58006，彼此之间靠桌面锁串行；
+  `run-demand-bearing-g3-vectors.ps1` 用 58305/58307。
+
+**锁拦不住的，由启动等待的端口归属检查兜底。**每个启动等待在探针成立之后，还要确认那个端口上
+监听的**就是这一趟自己起的那个进程**（`Wait-L2Condition -Port` → `Assert-L2PortOwner`，读的是
+`netstat -ano`）。不是的话立刻失败，并点名占着端口的进程和它的路径：比锁更早的检出在跑的 L2、被杀掉
+那一趟遗留下来的替身、不相干的程序，都会这样被报出来，而不是跑出一份测的其实是别人进程的证据。
+进入场景之前还会把所有启动过的组件再确认一遍都还活着。
+
+自检：
+
+```powershell
+pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
+```
+
+前七条只测锁本身和编排器里的拿锁顺序，几秒钟；第八条真起两个编排器跑 `normal-load`，证明第二个
+在第一个跑完之前一直排着、放锁之后才开始构建，而且两个都 PASS，大约一分钟（`-SkipOrchestrators`
+跳过这一条）。锁正被占着、或者端口上已经有监听时，它拒绝开始，免得红在别人的运行上。
 
 ## 第一次跑出来的坑
 
@@ -325,3 +378,15 @@ $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外�
     主窗口这时正停在模态循环里，什么都不答。按钮用 `AutomationId` 认：`MessageBox` 的按钮沿用
     Win32 控件 id（IDYES = 6、IDNO = 7），不随显示语言变，而标题只有中文 Windows 上才是「是(Y)」。
     驱动里是 `$onboard.Confirm('申请恢复原操作')`。
+13. **两个 L2 同时跑会互相串台，而启动等待看不出来。**2026-09-14 10:28，一个会话在跑真装置的
+    `g3-exception-resume`，另一个会话几乎同一秒起了 `three-synthetic-peers` 和
+    `slot-configuration-activation-replay`。合成那边先绑上了 48408/48409，G3 这趟自己的假 RIoT、
+    假 MesIngest 启动即死（`SocketException 10048`，address already in use），可是「fake RIoT is
+    live」第一次探测就成立了——答话的是**对方**的假 RIoT。`Wait-L2Condition` 只在探针**不成立**时
+    才看组件死没死，之后也再没有哪个等待看过这两个句柄，于是这趟带着两个死掉的替身跑进了场景，四分钟
+    后在一个毫不相干的判据上超时。另一边是对称的：合成那趟自己的 ControlServer 绑 48405 失败退出，
+    `/health/live` 却由 G3 那趟的服务端答了，最后报出来的是假车载端握手收到 `SessionRejected`，
+    点名点错了组件。「开跑前看看端口有没有人监听」救不了这件事：检查的那一刻对方还一个端口都没绑。
+    修法是上面「同一时刻只能有一个 L2 占着这组端口」那一节的端口锁，加上启动等待的端口归属检查。
+    两份红证据在仓库之外：`C:\g3dbg\resume-002`、
+    `C:\g3dbg\20260914-l2query-slot-configuration-activation-replay-001`。

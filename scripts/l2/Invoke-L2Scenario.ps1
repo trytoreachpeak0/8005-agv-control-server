@@ -81,6 +81,9 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 Import-Module (Join-Path $PSScriptRoot 'L2.psm1') -Force
+# Every rig takes the port lock. L2PortLock.psm1 also states the order it is taken in relative to the
+# desktop lock, which is what keeps the two from deadlocking.
+Import-Module (Join-Path $PSScriptRoot 'L2PortLock.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
@@ -186,9 +189,25 @@ $protocolReleaseIdentity = $null
 # Held only by the real-onboard rig, and released in `finally` after teardown. Declared here so that
 # release is unconditional even when the run dies before acquiring it.
 $desktopLock = $null
+# Held by every rig, from before the build until after teardown; released after the desktop lock.
+$portLock = $null
 
 try {
     $journal.Note("L2 run $runId starting for scenario '$Scenario'.")
+
+    # The port block, before anything in this run touches a port or the build output. Every run binds
+    # the same fixed ports (the parameter block above), so two runs at once is not a race that
+    # sometimes loses: on 2026-09-14 it put a G3 run against another run's fake RIoT and a synthetic
+    # run's peer against another run's ControlServer. Before the build rather than just before the
+    # first process, because the build overwrites the executables a run in progress in this worktree
+    # is executing.
+    #
+    # Inside this script, not in a wrapper: it is run by hand as often as from CI or
+    # run-journey-g3.ps1, and a wrapper would leave the bare invocation unprotected. It is the first
+    # of the two locks; the desktop lock a real-onboard run takes below always comes second
+    # (L2PortLock.psm1 explains why that order cannot deadlock).
+    $portLock = Enter-L2PortLock -Reason "L2 scenario '$Scenario' (evidence $EvidenceRoot)"
+    $journal.Note('L2 port block lock acquired.')
 
     # Build once, run the built output. `dotnet run` would rebuild under the scenario and put a
     # compiler on the critical path of a timing test.
@@ -226,8 +245,10 @@ try {
         # two. See scripts/DesktopLock.psm1.
         #
         # Acquired here rather than at the top of the run on purpose: building the server and
-        # publishing the peers touches neither the desktop nor a port, so a run that queues for the
-        # lock queues holding nothing. Everything after this line does hold something.
+        # publishing the peers do not touch the desktop, so 8005-mes-ingest's suites never wait on
+        # this run's compiler. A run queued here does hold the port lock while it waits. That is the
+        # fixed order -- port lock first, desktop lock second, never the other way round -- and it is
+        # what keeps the two locks from deadlocking; see L2PortLock.psm1.
         $desktopLock = Enter-DesktopLock -Reason "L2 scenario '$Scenario' (real onboard rig)"
         $journal.Note('Interactive desktop lock acquired.')
     }
@@ -311,11 +332,13 @@ try {
     $riot = New-L2Double -Name 'fake-riot' -BaseUrl "http://127.0.0.1:$FakeRiotPort"
     $mes = New-L2Double -Name 'fake-mes-ingest' -BaseUrl "http://127.0.0.1:$FakeMesIngestPort"
 
+    # -Port on every startup wait: a health answer only says something is listening, and on
+    # 2026-09-14 the thing answering 48408 was another run's fake RIoT while this run's lay dead.
     $null = Wait-L2Condition -Description 'fake RIoT is live' -Journal $journal -Criterion 'fake-riot-live' `
-        -Component $riotHandle `
+        -Component $riotHandle -Port $FakeRiotPort `
         -Probe { $riot.Health().body.status } -Until { param($v) $v -eq 'live' }
     $null = Wait-L2Condition -Description 'fake MesIngest is live' -Journal $journal -Criterion 'fake-mes-live' `
-        -Component $mesHandle `
+        -Component $mesHandle -Port $FakeMesIngestPort `
         -Probe { $mes.Health().body.status } -Until { param($v) $v -eq 'live' }
 
     # 1b. The slots simulator, when the scenario asked for the real onboard. It has to be listening
@@ -343,6 +366,7 @@ try {
             -Prefix 'api/v1' -RequireExpectedRevision
         $null = Wait-L2Condition -Description 'the slots simulator is serving Modbus' -Journal $journal `
             -Criterion 'simulator-ready' -TimeoutSeconds 120 -Component $simulatorHandle `
+            -Port @($SimulatorHttpPort, $SimulatorModbusPort) `
             -Probe { $h = $simulator.Health(); "$($h.status)/$($h.modbus.isRunning)" } `
             -Until { param($v) $v -eq 'READY/True' }
     }
@@ -487,7 +511,7 @@ try {
     # and the peer cannot connect until the server is listening. Waiting on readiness here would
     # deadlock the startup order against itself.
     $null = Wait-L2Condition -Description 'ControlServer is listening' -Journal $journal -Criterion 'control-server-live' `
-        -TimeoutSeconds 120 -Component $serverHandle `
+        -TimeoutSeconds 120 -Component $serverHandle -Port @($HealthPort, $ControlPort) `
         -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
         -Until { param($v) $v -eq 'live' }
 
@@ -524,7 +548,7 @@ try {
 
         $skewProxy = New-L2Double -Name 'clock-skew-proxy' -BaseUrl "http://127.0.0.1:$ClockSkewProxyPort"
         $null = Wait-L2Condition -Description 'the clock skew proxy is live' -Journal $journal `
-            -Criterion 'skew-proxy-live' -TimeoutSeconds 60 -Component $skewProxyHandle `
+            -Criterion 'skew-proxy-live' -TimeoutSeconds 60 -Component $skewProxyHandle -Port $ClockSkewProxyPort `
             -Probe { $skewProxy.Health().body.status } -Until { param($v) $v -eq 'live' }
         $journal.Note("Clock skew proxy forwarding vehicle-safety with observedAt +${clockSkewMs}ms.")
     }
@@ -655,9 +679,13 @@ try {
             $waitForReady = if ($spec.ContainsKey('WaitForReady')) { [bool]$spec.WaitForReady } else { $true }
             if ($waitForReady) {
                 $null = Wait-L2Condition -Description "the synthetic peer $peerAgvId reached READY" -Journal $journal -Criterion 'onboard-readiness' `
-                    -TimeoutSeconds 60 -Component $onboardHandle `
+                    -TimeoutSeconds 60 -Component $onboardHandle -Port $peerPort `
                     -Probe { $peerDouble.Snapshot().body.readiness } -Until { param($v) $v -eq 'READY' }
             } else {
+                # No wait to hang the port check on, and the control plane is still this run's only
+                # way to drive the peer, so it is checked on its own.
+                Assert-L2PortOwner -Component $onboardHandle -Port $peerPort `
+                    -Description "the synthetic peer $peerAgvId's control plane"
                 $journal.Note("Peer $peerAgvId started; not waiting for READY (WaitForReady = false).")
             }
         }
@@ -687,7 +715,7 @@ try {
             ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 7 -PassThru }
         $handles += $dashboardHandle
         $null = Wait-L2Condition -Description 'the dashboard is serving its page' -Journal $journal `
-            -Criterion 'dashboard-live' -TimeoutSeconds 60 -Component $dashboardHandle `
+            -Criterion 'dashboard-live' -TimeoutSeconds 60 -Component $dashboardHandle -Port $DashboardPort `
             -Probe { (Invoke-WebRequest -Uri $dashboardUrl -TimeoutSec 5).StatusCode } `
             -Until { param($v) $v -eq 200 }
     }
@@ -791,6 +819,12 @@ try {
         }
     }
 
+    # Everything started above must still be running before the scenario starts. Each startup wait
+    # watches only its own component, and only while its probe is failing, so a double that died
+    # after its own wait passed would otherwise surface minutes into the scenario as something else.
+    foreach ($handle in $handles) {
+        Assert-L2ComponentAlive -Component $handle -Description 'the environment to come up'
+    }
     $journal.Note("Environment is up; entering scenario '$Scenario'.")
     & $scenarioPath -Context $context
     $outcome = if ($assertions.AllPassed()) { 'PASS' } else { 'FAIL' }
@@ -894,6 +928,13 @@ try {
     # Last, after the peers are stopped. Releasing earlier would hand the desktop to another
     # repository while this run's WPF windows were still closing.
     Exit-DesktopLock -Handle $desktopLock
+    # Then the port block: the reverse of the order the two were taken in, and after teardown for the
+    # same reason as the desktop -- the next run must not start binding while this run's processes
+    # still hold the ports. The note is what Test-L2PortLockQueueing.ps1 orders the next run against.
+    if ($portLock) {
+        Exit-L2PortLock -Handle $portLock
+        $journal.Note('L2 port block lock released.')
+    }
 }
 
 Write-Host "L2 $Scenario -> $outcome (evidence: $EvidenceRoot)"
