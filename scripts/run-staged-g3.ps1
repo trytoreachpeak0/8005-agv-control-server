@@ -49,7 +49,10 @@ param(
     #   $OnboardCommit -> b960108, the w2g/b3-on-v2 tip: the FP-IS-03 onboard halves (04d0088, 3fb8a6e), the
     #     FP-IS-07 operator entries (f14f8af) and the ten-slice G2 evidence taken on 8d19fee, whose product
     #     code b960108 carries unchanged.
-    [string]$ControlServerCommit = '1b1f3dd7a5d23ca3e2adab521aec8b74c92f649a',
+    #   Same day, $ControlServerCommit -> 052759bc: the L2 driver's Confirm() posts BM_CLICK when the
+    #     dialog is not in the foreground (the journey run on 1b1f3dd7 lost two FP-IS-02 scenarios to
+    #     it), on top of 05a43920 (two non-G3 scenarios). src/ and tests/ are unchanged from 1b1f3dd7.
+    [string]$ControlServerCommit = '052759bca58a04316dfda260249b3b5697f2cf8e',
     [string]$OnboardCommit = 'b96010825d43aeee3b861cb3b4716f4d0873c8a0',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '9f22db825d52ad86c1d803bd0c1925dcc58d6793',
