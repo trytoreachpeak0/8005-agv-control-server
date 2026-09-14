@@ -708,7 +708,21 @@ function New-L2OnboardDriver {
     The button is picked by AutomationId, not by caption: a MessageBox names its buttons after the
     Win32 control ids (IDYES = 6, IDNO = 7), which do not change with the display language, while
     the caption is 「是(Y)」 only on a Chinese Windows.
+
+    UIA Invoke on a MessageBox button needs the dialog to be in the foreground. When another
+    application holds the foreground it throws "Operation is not valid due to the current state of
+    the object" and the onboard end receives nothing -- the formal journey G3 run of 2026-09-14
+    (evidence C:\g3dbg\formal-journey-1b1f3dd7) lost 「修正装货」 and 「取消装货」 that way while a
+    prompt on another window had focus. So a failed Invoke falls back to posting BM_CLICK to the
+    button's Win32 window, which is asynchronous and needs no foreground, and the press only counts
+    once the dialog has actually closed.
     #>
+    if (-not ('L2.DialogNative' -as [type])) {
+        Add-Type -Namespace 'L2' -Name 'DialogNative' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+public static extern bool PostMessage(System.IntPtr hWnd, uint msg, System.IntPtr wParam, System.IntPtr lParam);
+'@
+    }
     $driver | Add-Member -MemberType ScriptMethod -Name Confirm -Value {
         param([Parameter(Mandatory)][string]$Title, [string]$ButtonAutomationId = '6', [int]$TimeoutSeconds = 30)
         $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -723,7 +737,22 @@ function New-L2OnboardDriver {
                         [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
                         $ButtonAutomationId))
                 if (-not $button) { throw "Dialog '$Title' has no button with AutomationId '$ButtonAutomationId'." }
-                $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                try {
+                    $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+                } catch {
+                    $handle = [IntPtr]$button.Current.NativeWindowHandle
+                    if ($handle -eq [IntPtr]::Zero -or
+                        -not [L2.DialogNative]::PostMessage($handle, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)) {
+                        throw "Could not press '$Title' button ${ButtonAutomationId}: Invoke failed ($($_.Exception.Message)) and there is no window handle to post BM_CLICK to."
+                    }
+                }
+                $closeDeadline = [DateTimeOffset]::UtcNow.AddSeconds(15)
+                while (@($this.Windows() | Where-Object { $_.Current.Name -eq $Title }).Count -gt 0) {
+                    if ([DateTimeOffset]::UtcNow -ge $closeDeadline) {
+                        throw "Dialog '$Title' is still open 15s after its button $ButtonAutomationId was pressed."
+                    }
+                    Start-Sleep -Milliseconds 250
+                }
                 return $true
             }
             if ([DateTimeOffset]::UtcNow -ge $deadline) {
