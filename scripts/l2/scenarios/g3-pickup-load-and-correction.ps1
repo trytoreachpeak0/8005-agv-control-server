@@ -425,7 +425,7 @@ $correctionResults = @((Get-Inbound 'LoadCorrectionResult') | Where-Object { [st
 # 所以这里判的是「命令就是工作流绑定的那一条，工作流由这份结果收敛」，而不是发件箱行的 AcknowledgedAt——
 # 调试运行 corr-005 里后者为空，工作流却已 Reconciled、命令不会再被补发。仓位命令不同，它由旅程运行时
 # 结清，G3-02-05 照旧要求它被确认。
-$workflowRows = @(Invoke-L2Query -Connection $connection `
+$workflowRows = (Invoke-L2Query -Connection $connection `
     -Sql "SELECT CommandMessageId, ResultMessageId, State FROM RecoveryWorkflows WHERE WorkflowId = '$correctionId'")
 $settledByResult = $workflowRows.Count -eq 1 -and $correctionCommands.Count -eq 1 -and $correctionResults.Count -eq 1 -and
     [string]$workflowRows[0].CommandMessageId -eq $correctionCommands[0].MessageId -and
@@ -499,7 +499,7 @@ while ($departedStage -notin @('AwaitingGateArrival', 'Blocked') -and [DateTimeO
     Start-Sleep -Milliseconds 500
     $departedStage = Get-Stage
 }
-$gateIntents = @(Invoke-L2Query -Connection $connection `
+$gateIntents = (Invoke-L2Query -Connection $connection `
     -Sql "SELECT CreatedAt FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'")
 $gateCreatedAt = if ($gateIntents.Count -ge 1) { ConvertTo-Instant $gateIntents[0].CreatedAt } else { $null }
 $heldBeforeResult = $null -eq $gateCreatedAt -or $gateCreatedAt -gt $correctionResult.At

@@ -202,7 +202,7 @@ $assertions.Add(
     "UNKNOWN / unsettled=$attemptId / pendingResults 含该结果 / 载荷相同",
     "$($first.Payload.overallOutcome) / unsettled=$(if ($report) { $report.Payload.unsettledSlotOperationAttemptId } else { '(no report)' }) / pendingResults $($pending.Count) 条、含该结果 $($named.Count) / 载荷相同=$($replayed.PayloadJson -eq $first.PayloadJson)")
 
-$results = @(Invoke-L2Query -Connection $connection -Sql "SELECT OverallOutcome FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'")
+$results = (Invoke-L2Query -Connection $connection -Sql "SELECT OverallOutcome FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'")
 $loadStatus = Get-Scalar "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
 $demandStatus = Get-Scalar "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $gateIntents = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"

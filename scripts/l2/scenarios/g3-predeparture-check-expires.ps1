@@ -220,7 +220,7 @@ $runtimeRow = (Invoke-L2Query -Connection $connection -Sql (
     "SELECT PreDepartureSafetyCheckId, PreDepartureSafetyCheckMessageId, ConsumedSafetyResultMessageId FROM JourneyRuntimes WHERE DemandId = '$demandId'"))[0]
 $reissuedCheck = @($checks | Where-Object { $_.MessageId -eq [string]$runtimeRow.PreDepartureSafetyCheckMessageId })[0]
 $reissuedResult = @($results | Where-Object { [string]$_.Payload.preDepartureSafetyCheckId -eq [string]$runtimeRow.PreDepartureSafetyCheckId -and [string]$_.Payload.outcome -eq 'SAFE' })[0]
-$gateIntents = @(Invoke-L2Query -Connection $connection -Sql "SELECT CreatedAt FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'")
+$gateIntents = (Invoke-L2Query -Connection $connection -Sql "SELECT CreatedAt FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'")
 $gateCreatedAt = if ($gateIntents.Count -ge 1) { ConvertTo-Instant $gateIntents[0].CreatedAt } else { $null }
 
 $orderOk = $null -ne $expiredCheck -and $null -ne $expiredResult -and $problems.Count -ge 1 -and

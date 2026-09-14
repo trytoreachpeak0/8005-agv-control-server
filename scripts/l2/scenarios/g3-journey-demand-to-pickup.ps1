@@ -271,7 +271,7 @@ $assertions.Add(
 
 # 车载端发来的每一类消息里，没有一类涉及需求的发现、选择或绑定。协议给车载端的需求权限只有「读服务端提交的
 # 投影」（authorityModel.onboardMode = READ_ONLY_COMMITTED_PROJECTION）。
-$inboundTypes = @(Invoke-L2Query -Connection $connection -Sql 'SELECT DISTINCT MessageType FROM ProtocolInbox ORDER BY MessageType' |
+$inboundTypes = @((Invoke-L2Query -Connection $connection -Sql 'SELECT DISTINCT MessageType FROM ProtocolInbox ORDER BY MessageType') |
     ForEach-Object { [string]$_.MessageType })
 $demandTypes = @($inboundTypes | Where-Object { $_ -match 'Demand' })
 $assertions.Add(
