@@ -1,0 +1,299 @@
+scenarios	Set up job	﻿2026-09-14T04:54:11.9012990Z Current runner version: '2.337.0'
+scenarios	Set up job	2026-09-14T04:54:11.9026504Z Runner name: 'win11-01-control-server'
+scenarios	Set up job	2026-09-14T04:54:11.9027413Z Runner group name: 'Default'
+scenarios	Set up job	2026-09-14T04:54:11.9028256Z Machine name: 'DESKTOP-F9HC40O'
+scenarios	Set up job	2026-09-14T04:54:11.9032069Z ##[group]GITHUB_TOKEN Permissions
+scenarios	Set up job	2026-09-14T04:54:11.9034794Z Contents: read
+scenarios	Set up job	2026-09-14T04:54:11.9035870Z Metadata: read
+scenarios	Set up job	2026-09-14T04:54:11.9036459Z Packages: read
+scenarios	Set up job	2026-09-14T04:54:11.9037044Z ##[endgroup]
+scenarios	Set up job	2026-09-14T04:54:11.9039519Z Secret source: Actions
+scenarios	Set up job	2026-09-14T04:54:11.9040482Z Cache mode: write
+scenarios	Set up job	2026-09-14T04:54:11.9041592Z Runner is running behind proxy server 'http://172.19.162.241:7890' for all HTTP requests.
+scenarios	Set up job	2026-09-14T04:54:11.9043076Z Runner is running behind proxy server 'http://172.19.162.241:7890' for all HTTPS requests.
+scenarios	Set up job	2026-09-14T04:54:11.9044171Z Prepare workflow directory
+scenarios	Set up job	2026-09-14T04:54:11.9684646Z Prepare all required actions
+scenarios	Set up job	2026-09-14T04:54:11.9747555Z Getting action download info
+scenarios	Set up job	2026-09-14T04:54:13.0920364Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+scenarios	Set up job	2026-09-14T04:54:15.0405446Z Download action repository 'actions/upload-artifact@v7' (SHA:043fb46d1a93c77aae656e7c1c64a875d1fc6a0a)
+scenarios	Set up job	2026-09-14T04:54:17.4049594Z Complete job name: scenarios
+scenarios	Run actions/checkout@v7	﻿2026-09-14T04:54:17.5883707Z ##[group]Run actions/checkout@v7
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5884706Z with:
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5885083Z   repository: trytoreachpeak0/8005-agv-control-server
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5889078Z   token: ***
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5889359Z   ssh-strict: true
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5889796Z   ssh-user: git
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5890115Z   persist-credentials: true
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5890437Z   clean: true
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5890727Z   sparse-checkout-cone-mode: true
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5891081Z   fetch-depth: 1
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5891362Z   fetch-tags: false
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5891652Z   show-progress: true
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5891955Z   lfs: false
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5892221Z   submodules: false
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5892546Z   set-safe-directory: true
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5892896Z   allow-unsafe-pr-checkout: false
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.5893607Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.9729776Z Syncing repository: trytoreachpeak0/8005-agv-control-server
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.9731885Z ##[group]Getting Git version info
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.9732917Z Working directory is 'C:\actions-runner\win11-01-control-server\_work\8005-agv-control-server\8005-agv-control-server'
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:17.9761275Z [command]"C:\Program Files\Git\cmd\git.exe" version
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.0366956Z git version 2.55.0.windows.5
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.0452352Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.0492232Z Temporarily overriding HOME='C:\actions-runner\win11-01-control-server\_work\_temp\b9f47260-3706-4c02-a3b7-7d35a3c79482' before making global git config changes
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.0493558Z Adding repository directory to the temporary git global config as a safe directory
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.0507764Z [command]"C:\Program Files\Git\cmd\git.exe" config --global --add safe.directory C:\actions-runner\win11-01-control-server\_work\8005-agv-control-server\8005-agv-control-server
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.1351139Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --get remote.origin.url
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.2060162Z https://github.com/trytoreachpeak0/8005-agv-control-server
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.2176872Z ##[group]Removing previously created refs, to avoid conflicts
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.2195723Z [command]"C:\Program Files\Git\cmd\git.exe" rev-parse --symbolic-full-name --verify --quiet HEAD
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.2918745Z refs/heads/fp/b2-close
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.3017498Z [command]"C:\Program Files\Git\cmd\git.exe" checkout --detach
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.6408575Z HEAD is now at 2f7433b evidence(g2,g3): 052759bc 上 CONTROL_SERVER_G2 十片与四个 G3 runner 全 PASS，FP-IS-01/02/03/07 第一次有 G3 面
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.8107438Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:18.8125185Z [command]"C:\Program Files\Git\cmd\git.exe" submodule status
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.0483885Z ##[group]Cleaning the repository
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.0487125Z [command]"C:\Program Files\Git\cmd\git.exe" clean -ffdx
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1681891Z Removing src/ControlServer.Application/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1683639Z Removing src/ControlServer.Dashboard/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1685366Z Removing src/ControlServer.Domain/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1687046Z Removing src/ControlServer.Host/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1688504Z Removing src/ControlServer.Infrastructure/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1689988Z Removing tests/ControlServer.Tests/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1691474Z Removing tools/ControlServer.ClockSkewProxy/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1693010Z Removing tools/ControlServer.FakeRiot/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1694489Z Removing tools/ControlServer.TestDoubles/obj/
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.1816410Z [command]"C:\Program Files\Git\cmd\git.exe" reset --hard HEAD
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.7309523Z HEAD is now at 2f7433b evidence(g2,g3): 052759bc 上 CONTROL_SERVER_G2 十片与四个 G3 runner 全 PASS，FP-IS-01/02/03/07 第一次有 G3 面
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.7411021Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.7425305Z ##[group]Disabling automatic garbage collection
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.7444039Z [command]"C:\Program Files\Git\cmd\git.exe" config --local gc.auto 0
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.8176068Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.8177836Z ##[group]Setting up auth
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.8184298Z Removing SSH command configuration
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.8191640Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp core\.sshCommand
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:20.8865702Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:22.1387781Z Removing HTTP extra header
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:22.1404441Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:22.2235114Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:23.4142900Z Removing includeIf entries pointing to credentials config files
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:23.4166582Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:23.4945702Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:24.6793533Z [command]"C:\Program Files\Git\cmd\git.exe" config --file C:\actions-runner\win11-01-control-server\_work\_temp\git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:24.7716685Z [command]"C:\Program Files\Git\cmd\git.exe" config --local includeIf.gitdir:C:/actions-runner/win11-01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git.path C:\actions-runner\win11-01-control-server\_work\_temp\git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:24.8464185Z [command]"C:\Program Files\Git\cmd\git.exe" config --local includeIf.gitdir:C:/actions-runner/win11-01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git/worktrees/*.path C:\actions-runner\win11-01-control-server\_work\_temp\git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:24.9331019Z [command]"C:\Program Files\Git\cmd\git.exe" config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:25.0094186Z [command]"C:\Program Files\Git\cmd\git.exe" config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:25.0853545Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:25.0855743Z ##[group]Fetching the repository
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:25.0865403Z [command]"C:\Program Files\Git\cmd\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2f7433b8981ebecc695bddcb817a384c10ef8f07:refs/remotes/origin/fp/b2-close
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:26.7610807Z [command]"C:\Program Files\Git\cmd\git.exe" branch --list --remote origin/fp/b2-close
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:26.8251936Z   origin/fp/b2-close
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:26.8343890Z [command]"C:\Program Files\Git\cmd\git.exe" rev-parse refs/remotes/origin/fp/b2-close
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:26.9067082Z 2f7433b8981ebecc695bddcb817a384c10ef8f07
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:26.9154728Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:26.9156406Z ##[group]Determining the checkout info
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:26.9158190Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:26.9163787Z [command]"C:\Program Files\Git\cmd\git.exe" sparse-checkout disable
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.0427450Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --unset-all extensions.worktreeConfig
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.1313089Z ##[group]Checking out the ref
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.1330490Z [command]"C:\Program Files\Git\cmd\git.exe" checkout --progress --force -B fp/b2-close refs/remotes/origin/fp/b2-close
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.2810019Z Switched to and reset branch 'fp/b2-close'
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.2858112Z branch 'fp/b2-close' set up to track 'origin/fp/b2-close'.
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.2862176Z Your branch is up to date with 'origin/fp/b2-close'.
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.2976607Z ##[endgroup]
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.3941335Z [command]"C:\Program Files\Git\cmd\git.exe" log -1 --format=%H
+scenarios	Run actions/checkout@v7	2026-09-14T04:54:27.4832096Z 2f7433b8981ebecc695bddcb817a384c10ef8f07
+scenarios	Run synthetic L2 scenarios	﻿2026-09-14T04:54:27.5638824Z ##[group]Run $scenarios = @(
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5639395Z ^[[36;1m$scenarios = @(^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5639757Z ^[[36;1m    @{ Name = 'normal-load';                 Runs = 1 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5640255Z ^[[36;1m    @{ Name = 'session-established-while-moving'; Runs = 1 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5640782Z ^[[36;1m    @{ Name = 'load-result-requires-recovery';    Runs = 1 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5641314Z ^[[36;1m    @{ Name = 'load-command-never-answered';      Runs = 1 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5641810Z ^[[36;1m    @{ Name = 'route-graph-engine';          Runs = 1 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5642260Z ^[[36;1m    @{ Name = 'create-gate';                 Runs = 1 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5642855Z ^[[36;1m    # FP-C13's negative evidence: the two REQ-0302 values unapproved, and nothing built.^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5643629Z ^[[36;1m    @{ Name = 'create-gate-unapproved';      Runs = 1 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5644103Z ^[[36;1m    @{ Name = 'three-synthetic-peers';       Runs = 1 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5644651Z ^[[36;1m    # The batch-2 track-B exit, three consecutive runs each.^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5645139Z ^[[36;1m    @{ Name = 'three-vehicle-exit';          Runs = 3 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5645600Z ^[[36;1m    @{ Name = 'command-surface-order-hold';  Runs = 3 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5646062Z ^[[36;1m    @{ Name = 'route-graph-staleness';       Runs = 3 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5646662Z ^[[36;1m    # Batch 2 ticket 19's prerequisite: the emergency stop goes out exactly once. Three^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5647429Z ^[[36;1m    # consecutive runs, because what it guards against is a timing race with RIoT's latch.^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5648075Z ^[[36;1m    @{ Name = 'emergency-stop-single-trigger'; Runs = 3 }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5648647Z ^[[36;1m    # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5649366Z ^[[36;1m    @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5650130Z ^[[36;1m    @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5650656Z ^[[36;1m)^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5651124Z ^[[36;1m$evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5651679Z ^[[36;1m$failed = @()^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5651969Z ^[[36;1mforeach ($scenario in $scenarios) {^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5652744Z ^[[36;1m    for ($run = 1; $run -le $scenario.Runs; $run++) {^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5653570Z ^[[36;1m        $label = if ($scenario.Runs -eq 1) { $scenario.Name } else { "$($scenario.Name) ($run/$($scenario.Runs))" }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5654424Z ^[[36;1m        # -EvidenceRoot must not exist; the run id, the attempt and the run number keep a^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5655162Z ^[[36;1m        # re-run from colliding with the directory its predecessor wrote, and keep the^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5655828Z ^[[36;1m        # three consecutive runs' evidence separate from each other.^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5656474Z ^[[36;1m        $evidence = Join-Path $evidenceRoot "$($scenario.Name)-$('{0:d2}' -f $run)"^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5657006Z ^[[36;1m        Write-Host "::group::$label"^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5657560Z ^[[36;1m        & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 `^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5658326Z ^[[36;1m            -Scenario $scenario.Name -EvidenceRoot $evidence -BatchId ($scenario.BatchId ?? 'batch-2')^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5658947Z ^[[36;1m        $code = $LASTEXITCODE^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5659281Z ^[[36;1m        Write-Host '::endgroup::'^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5659611Z ^[[36;1m        if ($code -ne 0) {^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5659912Z ^[[36;1m            $failed += $label^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5660386Z ^[[36;1m            Write-Host "::error title=L2 scenario failed::$label exited with $code"^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5661068Z ^[[36;1m            # Stop this scenario's remaining runs but not the other scenarios': three^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5661757Z ^[[36;1m            # consecutive passes is the criterion, so once one run is red the rest of^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5664022Z ^[[36;1m            # that scenario's runs cannot establish it and only cost minutes.^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5664491Z ^[[36;1m            break^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5664747Z ^[[36;1m        }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5664970Z ^[[36;1m    }^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5665188Z ^[[36;1m}^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5665658Z ^[[36;1m"L2_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5666260Z ^[[36;1mif ($failed.Count -gt 0) {^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5666648Z ^[[36;1m    throw "L2 scenarios failed: $($failed -join ', ')"^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5667026Z ^[[36;1m}^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5701009Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:27.5701464Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:54:28.3015082Z ##[group]normal-load
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:55:15.2797700Z L2 normal-load -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\normal-load-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:55:15.3327263Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:55:15.3391498Z ##[group]session-established-while-moving
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:55:34.7006157Z L2 session-established-while-moving -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\session-established-while-moving-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:55:34.7481504Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:55:34.7503415Z ##[group]load-result-requires-recovery
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:03.9233188Z ^[[33;1mWARNING: Could not snapshot fake-onboard: 由于目标计算机积极拒绝，无法连接。^[[0m
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:04.2608559Z L2 load-result-requires-recovery -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\load-result-requires-recovery-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:04.3099481Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:04.3143155Z ##[group]load-command-never-answered
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:22.9832682Z L2 load-command-never-answered -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\load-command-never-answered-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:23.0401825Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:23.0419807Z ##[group]route-graph-engine
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:35.2851984Z L2 route-graph-engine -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\route-graph-engine-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:35.4309811Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:35.4332798Z ##[group]create-gate
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:48.1202193Z L2 create-gate -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\create-gate-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:48.1784158Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:56:48.1803148Z ##[group]create-gate-unapproved
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:04.8860538Z L2 create-gate-unapproved -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\create-gate-unapproved-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:04.9375298Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:04.9394822Z ##[group]three-synthetic-peers
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:17.9920887Z L2 three-synthetic-peers -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\three-synthetic-peers-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:18.0440882Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:18.0501845Z ##[group]three-vehicle-exit (1/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:45.0320115Z L2 three-vehicle-exit -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\three-vehicle-exit-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:45.0927337Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:57:45.0946195Z ##[group]three-vehicle-exit (2/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:58:11.9420870Z L2 three-vehicle-exit -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\three-vehicle-exit-02)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:58:11.9977956Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:58:11.9995319Z ##[group]three-vehicle-exit (3/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:58:39.0785741Z L2 three-vehicle-exit -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\three-vehicle-exit-03)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:58:39.1291475Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:58:39.1309300Z ##[group]command-surface-order-hold (1/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:59:10.8845749Z L2 command-surface-order-hold -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\command-surface-order-hold-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:59:10.9277078Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:59:10.9294675Z ##[group]command-surface-order-hold (2/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:59:42.6003158Z L2 command-surface-order-hold -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\command-surface-order-hold-02)
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:59:42.6576359Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T04:59:42.6593330Z ##[group]command-surface-order-hold (3/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:00:14.2834966Z L2 command-surface-order-hold -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\command-surface-order-hold-03)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:00:14.3320027Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:00:14.3336383Z ##[group]route-graph-staleness (1/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:00:51.0112054Z L2 route-graph-staleness -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\route-graph-staleness-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:00:51.0603939Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:00:51.0619666Z ##[group]route-graph-staleness (2/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:01:27.8244713Z L2 route-graph-staleness -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\route-graph-staleness-02)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:01:27.8879115Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:01:27.8896903Z ##[group]route-graph-staleness (3/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:02:04.3508579Z L2 route-graph-staleness -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\route-graph-staleness-03)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:02:04.4088770Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:02:04.4098815Z ##[group]emergency-stop-single-trigger (1/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:02:44.9545041Z L2 emergency-stop-single-trigger -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\emergency-stop-single-trigger-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:02:45.0105926Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:02:45.0121835Z ##[group]emergency-stop-single-trigger (2/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:03:25.4169900Z L2 emergency-stop-single-trigger -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\emergency-stop-single-trigger-02)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:03:25.4722384Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:03:25.4731104Z ##[group]emergency-stop-single-trigger (3/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:05.8593437Z L2 emergency-stop-single-trigger -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\emergency-stop-single-trigger-03)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:05.9108307Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:05.9126154Z ##[group]slot-configuration-activation-replay (1/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:26.0640452Z L2 slot-configuration-activation-replay -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\slot-configuration-activation-replay-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:26.1158500Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:26.1159639Z ##[group]slot-configuration-activation-replay (2/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:45.3239513Z L2 slot-configuration-activation-replay -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\slot-configuration-activation-replay-02)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:45.3899963Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:04:45.3904284Z ##[group]slot-configuration-activation-replay (3/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:04.6588419Z L2 slot-configuration-activation-replay -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\slot-configuration-activation-replay-03)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:04.7103100Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:04.7118370Z ##[group]onboard-alarm-snapshot-dashboard (1/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:23.8711173Z L2 onboard-alarm-snapshot-dashboard -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\onboard-alarm-snapshot-dashboard-01)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:23.9248949Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:23.9261964Z ##[group]onboard-alarm-snapshot-dashboard (2/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:42.9145929Z L2 onboard-alarm-snapshot-dashboard -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\onboard-alarm-snapshot-dashboard-02)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:42.9658977Z ##[endgroup]
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:05:42.9672667Z ##[group]onboard-alarm-snapshot-dashboard (3/3)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:06:01.6006558Z L2 onboard-alarm-snapshot-dashboard -> PASS (evidence: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1\onboard-alarm-snapshot-dashboard-03)
+scenarios	Run synthetic L2 scenarios	2026-09-14T05:06:01.6484733Z ##[endgroup]
+scenarios	Upload L2 evidence	﻿2026-09-14T05:06:01.7618725Z ##[group]Run actions/upload-artifact@v7
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7619365Z with:
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7619859Z   name: l2-evidence
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7620461Z   path: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7621148Z   if-no-files-found: warn
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7621541Z   compression-level: 6
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7621894Z   overwrite: false
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7622245Z   include-hidden-files: false
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7622647Z   archive: true
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7622949Z env:
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7623523Z   L2_EVIDENCE_ROOT: C:\actions-runner\win11-01-control-server\_work\_temp\l2-34807641700-1
+scenarios	Upload L2 evidence	2026-09-14T05:06:01.7624249Z ##[endgroup]
+scenarios	Upload L2 evidence	2026-09-14T05:06:02.9928391Z With the provided path, there will be 935 files uploaded
+scenarios	Upload L2 evidence	2026-09-14T05:06:02.9934719Z Artifact name is valid!
+scenarios	Upload L2 evidence	2026-09-14T05:06:02.9935818Z Root directory input is valid!
+scenarios	Upload L2 evidence	2026-09-14T05:06:04.1046905Z ##[error]Failed to CreateArtifact: Artifact storage quota has been hit. Unable to upload any new artifacts. Usage is recalculated every 6-12 hours.
+scenarios	Upload L2 evidence	More info on storage limits: https://docs.github.com/en/billing/managing-billing-for-github-actions/about-billing-for-github-actions#calculating-minute-and-storage-spending
+scenarios	Post Run actions/checkout@v7	﻿2026-09-14T05:06:04.1758061Z Post job cleanup.
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:04.3529567Z [command]"C:\Program Files\Git\cmd\git.exe" version
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:04.4099263Z git version 2.55.0.windows.5
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:04.4259652Z Temporarily overriding HOME='C:\actions-runner\win11-01-control-server\_work\_temp\e213195e-d3ca-44e8-a44a-d57c58358988' before making global git config changes
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:04.4263585Z Adding repository directory to the temporary git global config as a safe directory
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:04.4282869Z [command]"C:\Program Files\Git\cmd\git.exe" config --global --add safe.directory C:\actions-runner\win11-01-control-server\_work\8005-agv-control-server\8005-agv-control-server
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:04.5013238Z Removing SSH command configuration
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:04.5040520Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp core\.sshCommand
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:04.5830410Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:05.8970016Z Removing HTTP extra header
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:05.8988681Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:05.9755780Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.2418822Z Removing includeIf entries pointing to credentials config files
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.2447012Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.3174801Z includeif.gitdir:C:/actions-runner/win11-01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git.path
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.3176704Z includeif.gitdir:C:/actions-runner/win11-01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git/worktrees/*.path
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.3178155Z includeif.gitdir:/github/workspace/.git.path
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.3178864Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.3252186Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --get-all includeif.gitdir:C:/actions-runner/win11-01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git.path
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.3967764Z C:\actions-runner\win11-01-control-server\_work\_temp\git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.4054931Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --unset includeif.gitdir:C:/actions-runner/win11-01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git.path C\:\\actions\-runner\\win11\-01\-control\-server\\_work\\_temp\\git\-credentials\-a92c3740\-0274\-4169\-8277\-9c1f9a614c6c\.config
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.5016407Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --get-all includeif.gitdir:C:/actions-runner/win11-01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git/worktrees/*.path
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.5702871Z C:\actions-runner\win11-01-control-server\_work\_temp\git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.5816939Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --unset includeif.gitdir:C:/actions-runner/win11-01-control-server/_work/8005-agv-control-server/8005-agv-control-server/.git/worktrees/*.path C\:\\actions\-runner\\win11\-01\-control\-server\\_work\\_temp\\git\-credentials\-a92c3740\-0274\-4169\-8277\-9c1f9a614c6c\.config
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.6590200Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git.path
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.7298819Z /github/runner_temp/git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.7408484Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-a92c3740\-0274\-4169\-8277\-9c1f9a614c6c\.config
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.8239233Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.8959980Z /github/runner_temp/git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.9066297Z [command]"C:\Program Files\Git\cmd\git.exe" config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-a92c3740\-0274\-4169\-8277\-9c1f9a614c6c\.config
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:07.9837842Z [command]"C:\Program Files\Git\cmd\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+scenarios	Post Run actions/checkout@v7	2026-09-14T05:06:09.2314109Z Removing credentials config 'C:\actions-runner\win11-01-control-server\_work\_temp\git-credentials-a92c3740-0274-4169-8277-9c1f9a614c6c.config'
+scenarios	Complete job	﻿2026-09-14T05:06:09.2672051Z Cleaning up orphan processes
+scenarios	Complete job	2026-09-14T05:06:09.2994105Z Terminate orphan process: pid (7164) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.3158591Z Terminate orphan process: pid (11968) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.3300649Z Terminate orphan process: pid (13268) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.3455654Z Terminate orphan process: pid (13736) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.3714713Z Terminate orphan process: pid (3820) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.3855638Z Terminate orphan process: pid (12172) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.3989504Z Terminate orphan process: pid (12332) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.4150014Z Terminate orphan process: pid (8004) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.4363201Z Terminate orphan process: pid (3076) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.4498366Z Terminate orphan process: pid (11988) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.4559220Z Terminate orphan process: pid (14272) (dotnet)
+scenarios	Complete job	2026-09-14T05:06:09.4761575Z Terminate orphan process: pid (6460) (dotnet)
