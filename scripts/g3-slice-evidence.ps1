@@ -72,7 +72,8 @@ function Get-G3AssuranceLevelLadder {
 # through run-journey-g3.ps1. A slice leaves this table when that runner actually claims assertions
 # for it, not before -- ticket 23 forbids naming a slice in a claim with nothing behind it. FP-IS-01
 # left on 2026-09-13 with the demand-to-pickup scenario, FP-IS-02 the same day with the load, correction
-# and cancellation scenarios, and FP-IS-03 with the check-expiry and unknown-result scenarios.
+# and cancellation scenarios, FP-IS-03 with the check-expiry and unknown-result scenarios, and FP-IS-07
+# on 2026-09-14 with the five recovery scenarios. The table below is empty for this batch.
 #
 # FP-IS-14 was listed here on 2026-09-10 as a gap of a different kind -- not a missing assertion but a
 # slice that could not be asserted at all, because nothing outside the process could start an
@@ -81,7 +82,6 @@ function Get-G3AssuranceLevelLadder {
 # assertion somebody could write against the peers as they stand.
 function Get-G3SlicesWithoutSurfaceThisBatch {
     return [ordered]@{
-        'FP-IS-07' = 'None of its six vectors has an assertion in any G3 runner; the staged runner records several of its accepted paths as not reachable in a staged run.'
     }
 }
 
@@ -301,6 +301,42 @@ function Get-G3RunnerClaim {
                     'unknownNeverTreatedAsSuccess',
                     'reconciledFromReportedJournalBeforeReadiness',
                     'replayTouchesNoSlot')
+                # All six vectors on the shipped onboard HMI. CV-OPERATION-RESULT-UNKNOWN-RECONCILE is
+                # also FP-IS-03's; it is asserted again under names of its own in the resume scenario,
+                # because one assertion cannot be attributed to two slices of one claim. The forced
+                # mechanical and manual charging entries were added to the HMI on 2026-09-14 at the
+                # user's ruling; before that neither vector could be reached from the vehicle.
+                'FP-IS-07' = @(
+                    'recoveryUnknownResultSequenceMatchesVector',
+                    'recoveryUnknownReportedAsUnknownAndReplayedFromJournal',
+                    'recoveryUnknownNeverTreatedAsSuccess',
+                    'recoveryUnknownReconciledBeforeReadiness',
+                    'recoveryUnknownReplayTouchesNoSlot',
+                    'exceptionResumeSequenceMatchesVector',
+                    'recoverySessionOpenedForVerifiedAdministrator',
+                    'resumeOnlyTheAuthorizedScope',
+                    'resumedOutcomeReportedAndSupersedesUnknown',
+                    'resumeReconciledWithOneCommit',
+                    'resumeFinalPhysicalStateProven',
+                    'exceptionCompensateSequenceMatchesVector',
+                    'compensationAuthorizedAgainstRecoverySession',
+                    'compensationExecutedOnceWithoutUnlocking',
+                    'compensatedSlotStateReported',
+                    'compensationReconciledWithoutDuplicateCommit',
+                    'faultCargoHandoffSequenceMatchesVector',
+                    'faultCargoHandoffRecorded',
+                    'handoffOnlyOnAuthorizedCommand',
+                    'handoffOutcomeReported',
+                    'handoffTerminatesWithoutDuplicateCommit',
+                    'forcedMechanicalRecoverySequenceMatchesVector',
+                    'forcedRecoveryFencedByGeneration',
+                    'forcedRecoveryOutcomeReportedWithoutProof',
+                    'forcedRecoveryLeavesVehicleToReconcile',
+                    'forcedRecoveryPerformsNoElectronicAction',
+                    'manualChargingReturnSequenceMatchesVector',
+                    'manualChargingReturnRequiresVerifiedAdministrator',
+                    'eligibilityReevaluatedAfterReturn',
+                    'manualChargingReturnHasNoSideEffects')
             }
         }
     }

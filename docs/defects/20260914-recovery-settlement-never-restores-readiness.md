@@ -49,4 +49,6 @@ Fixed in: 见提交记录（本单与修复同一提交）
 | 新增 `RecoveryStateMachineG2Tests.ACompensationThatProvesEverySlotEmptyTellsTheVehicleItIsReadyAgain` | 修复前红（同上）；修复后绿：补偿对账、装载取消、会话 `Ready` 并通知 |
 | 全量 | 722 passed |
 
-真车载端上恢复之后旅程继续，由 G3 `FP-IS-07`（`g3-exception-resume`，断言 G3-07-10）核对，证据出来后补进本表。
+| L2 `g3-exception-resume`（服务端 `e6b92ee3`，车载端 `b960108`；调试运行 `resume-008`，证据未入库） | 11/11 PASS：恢复收尾后旅程离开 `AwaitingLoadResult`，进入 `AwaitingStationDeparture`（修复前 `resume-007` 停在 `AwaitingLoadResult / ONBOARD_SESSION_NOT_READY`） |
+
+真车载端上恢复之后旅程继续，由 G3 `FP-IS-07`（`g3-exception-resume`，断言 G3-07-10）在统一身份上正式核对。

@@ -122,6 +122,46 @@ $scenarioAssertions = [ordered]@{
         'G3-03-11' = 'reconciledFromReportedJournalBeforeReadiness'
         'G3-03-12' = 'replayTouchesNoSlot'
     }
+    'g3-exception-resume' = [ordered]@{
+        'G3-07-01' = 'recoveryUnknownResultSequenceMatchesVector'
+        'G3-07-02' = 'recoveryUnknownReportedAsUnknownAndReplayedFromJournal'
+        'G3-07-03' = 'recoveryUnknownNeverTreatedAsSuccess'
+        'G3-07-04' = 'recoveryUnknownReconciledBeforeReadiness'
+        'G3-07-05' = 'recoveryUnknownReplayTouchesNoSlot'
+        'G3-07-06' = 'exceptionResumeSequenceMatchesVector'
+        'G3-07-07' = 'recoverySessionOpenedForVerifiedAdministrator'
+        'G3-07-08' = 'resumeOnlyTheAuthorizedScope'
+        'G3-07-09' = 'resumedOutcomeReportedAndSupersedesUnknown'
+        'G3-07-10' = 'resumeReconciledWithOneCommit'
+        'G3-07-11' = 'resumeFinalPhysicalStateProven'
+    }
+    'g3-exception-compensate' = [ordered]@{
+        'G3-07-21' = 'exceptionCompensateSequenceMatchesVector'
+        'G3-07-22' = 'compensationAuthorizedAgainstRecoverySession'
+        'G3-07-23' = 'compensationExecutedOnceWithoutUnlocking'
+        'G3-07-24' = 'compensatedSlotStateReported'
+        'G3-07-25' = 'compensationReconciledWithoutDuplicateCommit'
+    }
+    'g3-fault-cargo-handoff' = [ordered]@{
+        'G3-07-31' = 'faultCargoHandoffSequenceMatchesVector'
+        'G3-07-32' = 'faultCargoHandoffRecorded'
+        'G3-07-33' = 'handoffOnlyOnAuthorizedCommand'
+        'G3-07-34' = 'handoffOutcomeReported'
+        'G3-07-35' = 'handoffTerminatesWithoutDuplicateCommit'
+    }
+    'g3-forced-mechanical-recovery' = [ordered]@{
+        'G3-07-41' = 'forcedMechanicalRecoverySequenceMatchesVector'
+        'G3-07-42' = 'forcedRecoveryFencedByGeneration'
+        'G3-07-43' = 'forcedRecoveryOutcomeReportedWithoutProof'
+        'G3-07-44' = 'forcedRecoveryLeavesVehicleToReconcile'
+        'G3-07-45' = 'forcedRecoveryPerformsNoElectronicAction'
+    }
+    'g3-manual-charging-return' = [ordered]@{
+        'G3-07-51' = 'manualChargingReturnSequenceMatchesVector'
+        'G3-07-52' = 'manualChargingReturnRequiresVerifiedAdministrator'
+        'G3-07-53' = 'eligibilityReevaluatedAfterReturn'
+        'G3-07-54' = 'manualChargingReturnHasNoSideEffects'
+    }
 }
 
 function Get-ScriptFunction {

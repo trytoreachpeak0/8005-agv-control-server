@@ -50,4 +50,6 @@ Warning  WireToGateBusinessService  恢复命令未执行：attempt=7461d1d9-…
 | 既有 `ResumeAdmitsExactlyOneReplacementResultForTheOperationThatAlreadyFailedItsFirstResult`、`ResumeRejectsAReplacementResultReportedOutsideTheAuthorizedSlotScope` | 修复后仍绿：只放行一份替换结果；只报 1 号仓的替换结果仍被拒 |
 | `RecoveryStateMachineG2Tests` | 15 passed |
 
-真车载端上的完整顺序由 G3 `FP-IS-07`（`g3-exception-resume`，断言 G3-07-06..11）核对，证据出来后补进本表。
+| L2 `g3-exception-resume`（服务端 `e6b92ee3`，车载端 `b960108`；调试运行 `resume-008`，证据未入库） | 11/11 PASS：车载端接受恢复命令，按授权只重开 1 号仓一次，放货后报 `COMPLETED` 替换 `UNKNOWN`，工作流 `Reconciled`、恢复会话 `CLOSED`、装载只提交一次 |
+
+真车载端上的完整顺序由 G3 `FP-IS-07`（`g3-exception-resume`，断言 G3-07-06..11）在统一身份上正式核对。
