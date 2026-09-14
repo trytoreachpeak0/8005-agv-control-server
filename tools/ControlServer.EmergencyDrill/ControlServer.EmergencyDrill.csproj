@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ControlServer.EmergencyDrill</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- The product's own RIoT adapters (HttpRiotMovementGateway, HttpRiotOrderCommandGateway), so the
+         drill exercises the request shapes and state mapping the server relies on rather than a
+         hand-written copy of them. -->
+    <ProjectReference Include="..\..\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Deliberately no appsettings.json: every command takes the RIoT address and the evidence
+         directory on the command line, and the device key is fixed in drill-state.json by init, so
+         the operator sees what is being addressed, on the machine, at the time. -->
+  </ItemGroup>
+</Project>
