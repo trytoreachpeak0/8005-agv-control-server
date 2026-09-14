@@ -335,7 +335,11 @@ $readySession = Wait-RosValue 'session-readiness-ready' 60 {
     if ([string]$current.Readiness -eq 'Ready') { $current } else { $null }
 }
 
-$actions = @((Get-G3Inbound $connection 'RecoveryActionSubmitted') | Where-Object { [string]$_.Payload.recoveryActionId -eq $actionId })
+# 按 recoveryActionId 与动作一起选。车载端的动作 id 跨按下保留（服务端按它去重、被拒时不落任何行），所以重启前被拒的
+# 那次 RESUME_AFTER_REPAIR 与这次补偿带着同一个 recoveryActionId，只是 messageId 不同（ros-002，2026-09-14）。
+$sameIdActions = @((Get-G3Inbound $connection 'RecoveryActionSubmitted') | Where-Object { [string]$_.Payload.recoveryActionId -eq $actionId })
+$actions = @($sameIdActions | Where-Object { [string]$_.Payload.action -eq 'COMPENSATE_LOAD_ALL_EMPTY' })
+$otherSameIdActions = @($sameIdActions | Where-Object { [string]$_.Payload.action -ne 'COMPENSATE_LOAD_ALL_EMPTY' })
 $compensationRequests = @((Get-G3Inbound $connection 'LoadCompensationRequested') | Where-Object { [string]$_.Payload.recoveryActionId -eq $actionId })
 $commands = @((Get-G3Outbound $connection 'LoadCompensationCommand') | Where-Object { [string]$_.Payload.recoveryActionId -eq $actionId })
 $results = @((Get-G3Inbound $connection 'LoadCompensationResult') | Where-Object { [string]$_.Payload.recoveryActionId -eq $actionId })
@@ -346,12 +350,14 @@ $orderOk = $actions.Count -eq 1 -and $compensationRequests.Count -eq 1 -and $com
     [string]$commands[0].Payload.exceptionRecoverySessionId -eq $sessionId -and [string]$commands[0].Payload.slotOperationAttemptId -eq $attemptId -and
     (Format-G3Slots $commands[0].Payload.slots) -eq (Format-G3Slots $load.TargetSlots) -and
     [string]$results[0].Payload.overallOutcome -eq 'ALL_EMPTY' -and
-    $actions[0].Generation -ge $report.Generation -and $compensationRequests[0].Generation -ge $report.Generation -and $results[0].Generation -ge $report.Generation
+    $actions[0].Generation -ge $report.Generation -and $compensationRequests[0].Generation -ge $report.Generation -and $results[0].Generation -ge $report.Generation -and
+    @($otherSameIdActions | Where-Object { $_.Response -ne 'RecoveryActionRejected' -or $_.At -gt $restartAt }).Count -eq 0
 $assertions.Add(
     'L2-ROS-06',
-    '补偿在重启后的新会话里按向量走完，各一次：ActionSubmitted(COMPENSATE_LOAD_ALL_EMPTY) → Accepted → LoadCompensationRequested → LoadCompensationCommand（指向重启前那个会话、这笔装载与装载仓）→ LoadCompensationResult(ALL_EMPTY) → DurableAck',
+    '补偿在重启后的新会话里按向量走完，各一次：ActionSubmitted(COMPENSATE_LOAD_ALL_EMPTY) → Accepted → LoadCompensationRequested → LoadCompensationCommand（指向重启前那个会话、这笔装载与装载仓）→ LoadCompensationResult(ALL_EMPTY) → DurableAck；同一 recoveryActionId 下别的动作只能是重启前被拒的那次',
     $orderOk,
-    "各 1，重启之后按序，代次 ≥ $($report.Generation)，命令会话 $sessionId / attempt $attemptId / 仓 $(Format-G3Slots $load.TargetSlots)，ALL_EMPTY",
+    "各 1，重启之后按序，代次 ≥ $($report.Generation)，命令会话 $sessionId / attempt $attemptId / 仓 $(Format-G3Slots $load.TargetSlots)，ALL_EMPTY；同 id 其它动作全是重启前的 RecoveryActionRejected",
+    "同 id 其它动作：$(if ($otherSameIdActions.Count -eq 0) { '无' } else { (@($otherSameIdActions | ForEach-Object { "$($_.Payload.action)→$($_.Response)(g$($_.Generation)，重启前=$($_.At -lt $restartAt))" }) -join '，') }) / " +
     "Action×$($actions.Count) / CompensationRequested×$($compensationRequests.Count) / Command×$($commands.Count) / Result×$($results.Count)" +
     "$(if ($results.Count -ge 1) { " $($results[0].Payload.overallOutcome)→$($results[0].Response)" })" +
     "$(if ($commands.Count -ge 1) { " / 命令会话 $($commands[0].Payload.exceptionRecoverySessionId) 仓 $(Format-G3Slots $commands[0].Payload.slots)" }) / 有序=$orderOk")
