@@ -169,6 +169,109 @@ public sealed class SlotConfigurationAuthorityTests
     }
 
     [Fact]
+    public async Task ADeclarationIsVerifiedAgainstTheMostRecentlyBoundModelNotTheHighestVersionNumberOfAnyModel()
+    {
+        // IO 绑定的版本号按「车 + 车型版本」各自从 1 数起：同一台车先在车型 A 下绑两次（A 的 v2），
+        // 再换到车型 B 绑一次（B 的 v1）。整台车里最大的版本号是 A 的 2，但车现在接的是 B 的线。
+        await using AuthorityFixture fixture = await AuthorityFixture.CreateAsync();
+        SlotModelVersionRow modelA = await fixture.Store.EnsureApprovedHardwareFactsAsync(
+            Now, TestContext.Current.CancellationToken);
+        SlotModelVersionRow modelB = await fixture.Store.PublishModelVersionAsync(
+            "8005-eight-slot-rewired",
+            ModelSlots(ApprovedSlotHardwareFacts.TemplateKey, 1),
+            Now,
+            TestContext.Current.CancellationToken);
+        await fixture.Store.PublishIoBindingsAsync(
+            "AGV-01", modelA.SlotModelVersionId, ApprovedSlotHardwareFacts.IoBindings, Now,
+            TestContext.Current.CancellationToken);
+        await fixture.Store.PublishIoBindingsAsync(
+            "AGV-01", modelA.SlotModelVersionId, ApprovedSlotHardwareFacts.IoBindings, Now.AddHours(1),
+            TestContext.Current.CancellationToken);
+        await fixture.Store.PublishIoBindingsAsync(
+            "AGV-01", modelB.SlotModelVersionId, RewiredIoBindings(), Now.AddHours(2),
+            TestContext.Current.CancellationToken);
+
+        VehicleDeclarationVerdict wiredAsB = await fixture.Store.VerifyVehicleDeclarationAsync(
+            "AGV-01", RewiredIoBindings(), TestContext.Current.CancellationToken);
+        Assert.True(wiredAsB.Matches);
+        Assert.Empty(wiredAsB.MismatchedFields);
+
+        VehicleDeclarationVerdict wiredAsA = await fixture.Store.VerifyVehicleDeclarationAsync(
+            "AGV-01", ApprovedSlotHardwareFacts.IoBindings, TestContext.Current.CancellationToken);
+        Assert.False(wiredAsA.Matches);
+        Assert.Equal(EveryUnlockOutputPoint(), wiredAsA.MismatchedFields);
+    }
+
+    [Fact]
+    public async Task TwoModelsThatShareAVersionNumberAreNeverMixedIntoOneBindingSet()
+    {
+        // 车型 A 与车型 B 各绑一次，两套都是 v1。按版本号挑会把两个车型的行混成一套，同一个仓号出现两次。
+        await using AuthorityFixture fixture = await AuthorityFixture.CreateAsync();
+        SlotModelVersionRow modelA = await fixture.Store.EnsureApprovedHardwareFactsAsync(
+            Now, TestContext.Current.CancellationToken);
+        SlotModelVersionRow modelB = await fixture.Store.PublishModelVersionAsync(
+            "8005-eight-slot-rewired",
+            ModelSlots(ApprovedSlotHardwareFacts.TemplateKey, 1),
+            Now,
+            TestContext.Current.CancellationToken);
+        await fixture.Store.PublishIoBindingsAsync(
+            "AGV-01", modelA.SlotModelVersionId, ApprovedSlotHardwareFacts.IoBindings, Now,
+            TestContext.Current.CancellationToken);
+        await fixture.Store.PublishIoBindingsAsync(
+            "AGV-01", modelB.SlotModelVersionId, RewiredIoBindings(), Now.AddHours(1),
+            TestContext.Current.CancellationToken);
+
+        VehicleDeclarationVerdict wiredAsB = await fixture.Store.VerifyVehicleDeclarationAsync(
+            "AGV-01", RewiredIoBindings(), TestContext.Current.CancellationToken);
+        Assert.True(wiredAsB.Matches);
+
+        VehicleDeclarationVerdict wiredAsA = await fixture.Store.VerifyVehicleDeclarationAsync(
+            "AGV-01", ApprovedSlotHardwareFacts.IoBindings, TestContext.Current.CancellationToken);
+        Assert.Equal(EveryUnlockOutputPoint(), wiredAsA.MismatchedFields);
+    }
+
+    [Fact]
+    public async Task TheActivatedConfigurationOutranksABindingPublishedLaterForAnotherModel()
+    {
+        // 车上生效的是车型 A；之后给车型 B 发了绑定（两次），但还没激活。车此刻跑的仍是 A，核验就按 A 比，
+        // 与派车读仓位分组时认的车型是同一个。
+        await using AuthorityFixture fixture = await AuthorityFixture.CreateAsync();
+        SlotModelVersionRow modelA = await fixture.Store.EnsureApprovedHardwareFactsAsync(
+            Now, TestContext.Current.CancellationToken);
+        SlotModelVersionRow modelB = await fixture.Store.PublishModelVersionAsync(
+            "8005-eight-slot-rewired",
+            ModelSlots(ApprovedSlotHardwareFacts.TemplateKey, 1),
+            Now,
+            TestContext.Current.CancellationToken);
+        await fixture.Store.PublishIoBindingsAsync(
+            "AGV-01", modelA.SlotModelVersionId, ApprovedSlotHardwareFacts.IoBindings, Now,
+            TestContext.Current.CancellationToken);
+        SlotConfigurationActivationCoordinator coordinator = new(
+            fixture.Context,
+            new GovernedConfigurationPublisher(fixture.Governance, fixture.Governance),
+            fixture.Governance);
+        SlotConfigurationActivationRow activation = await coordinator.IssueActivationAsync(
+            "AGV-01", modelA.SlotModelVersionId, Now, TestContext.Current.CancellationToken);
+        await coordinator.RecordResultAsync(
+            new ActivationResultReport(activation.ActivationId, Succeeded: true, null, Now.AddMinutes(5)),
+            TestContext.Current.CancellationToken);
+        await fixture.Store.PublishIoBindingsAsync(
+            "AGV-01", modelB.SlotModelVersionId, RewiredIoBindings(), Now.AddHours(1),
+            TestContext.Current.CancellationToken);
+        await fixture.Store.PublishIoBindingsAsync(
+            "AGV-01", modelB.SlotModelVersionId, RewiredIoBindings(), Now.AddHours(2),
+            TestContext.Current.CancellationToken);
+
+        VehicleDeclarationVerdict wiredAsA = await fixture.Store.VerifyVehicleDeclarationAsync(
+            "AGV-01", ApprovedSlotHardwareFacts.IoBindings, TestContext.Current.CancellationToken);
+        Assert.True(wiredAsA.Matches);
+
+        VehicleDeclarationVerdict wiredAsB = await fixture.Store.VerifyVehicleDeclarationAsync(
+            "AGV-01", RewiredIoBindings(), TestContext.Current.CancellationToken);
+        Assert.Equal(EveryUnlockOutputPoint(), wiredAsB.MismatchedFields);
+    }
+
+    [Fact]
     public async Task TheApprovedEightSlotHardwareFactsAreStoredAsAnImmutableApprovedVersion()
     {
         await using AuthorityFixture fixture = await AuthorityFixture.CreateAsync();
@@ -245,6 +348,22 @@ public sealed class SlotConfigurationAuthorityTests
 
     private static SlotTemplateSpecification Specification(int heightMm) =>
         new(600, 400, heightMm, BasketTypes);
+
+    /// <summary>另一套接线：每个仓的解锁输出挪到 DO9～DO16，其余与已批准事实相同。</summary>
+    private static SlotIoBindingSpecification[] RewiredIoBindings() =>
+    [
+        .. ApprovedSlotHardwareFacts.IoBindings.Select(binding => binding with
+        {
+            UnlockOutputPoint = FormattableString.Invariant($"DO{binding.PhysicalSlotNumber + 8}")
+        })
+    ];
+
+    private static string[] EveryUnlockOutputPoint() =>
+    [
+        .. Enumerable.Range(1, 8)
+            .Select(slot => FormattableString.Invariant($"slot{slot}.unlockOutputPoint"))
+            .Order(StringComparer.Ordinal)
+    ];
 
     private static IReadOnlyList<SlotModelSlotSpecification> ModelSlots(string templateKey, long templateVersion) =>
     [
