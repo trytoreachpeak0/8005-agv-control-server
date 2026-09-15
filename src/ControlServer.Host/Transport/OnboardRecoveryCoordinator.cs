@@ -218,8 +218,10 @@ public sealed class OnboardRecoveryCoordinator(
             if (workflow?.CommandMessageId is not null)
                 await publisher.SendPersistedAsync(workflow.CommandMessageId, cancellationToken).ConfigureAwait(false);
         }
-        await SendPendingSessionSnapshotsAsync(
-            RequiredString(root, "agvId"), cancellationToken).ConfigureAwait(false);
+        string agvId = RequiredString(root, "agvId");
+        await SendPendingSessionSnapshotsAsync(agvId, cancellationToken).ConfigureAwait(false);
+        foreach (string id in await PendingStopClosedSnapshotIdsAsync(agvId, cancellationToken).ConfigureAwait(false))
+            await publisher.SendPersistedAsync(id, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ReplayPendingCommandsAsync(
@@ -235,11 +237,78 @@ public sealed class OnboardRecoveryCoordinator(
             .Select(row => row.CommandMessageId!)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         string[] snapshotIds = await PendingSessionSnapshotIdsAsync(agvId, cancellationToken).ConfigureAwait(false);
-        string[] pendingIds = commandIds.Concat(snapshotIds).ToArray();
+        string[] stopClosedIds = await PendingStopClosedSnapshotIdsAsync(agvId, cancellationToken).ConfigureAwait(false);
+        string[] pendingIds = commandIds.Concat(snapshotIds).Concat(stopClosedIds).ToArray();
         if (pendingIds.Length > 0)
             await publisher.ReplayPendingForSessionAsync(
                 agvId, sessionGeneration, pendingIds.ToHashSet(StringComparer.Ordinal), cancellationToken)
                 .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The stop-closed snapshots the vehicle has not acknowledged, for the one journey they can still
+    /// be true of: its latest, and only while no journey is running.
+    /// </summary>
+    /// <remarks>
+    /// The runtime replays a journey's messages only while the journey is active, and a stop is closed
+    /// exactly as its journey completes -- so a closing snapshot lost to a dropped connection was never
+    /// sent again, and the vehicle kept the ended stop. Any older journey's snapshot would carry a
+    /// revision below what the vehicle has adopted since and be refused as a regression, and a running
+    /// journey's own snapshots already supersede it. The latest journey is the one holding the highest
+    /// cursor: each is seeded past every earlier one (WireToGateStore.SeedSnapshotRevisionsAsync).
+    /// </remarks>
+    private async Task<string[]> PendingStopClosedSnapshotIdsAsync(
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        if (await dbContext.JourneyRuntimes.AsNoTracking()
+                .AnyAsync(row => row.AgvId == agvId && row.Stage != JourneyRuntimeStage.Completed, cancellationToken)
+                .ConfigureAwait(false))
+            return [];
+        string? journeyId = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == agvId)
+            .OrderByDescending(row => row.WorklistRevision)
+            .Select(row => row.JourneyId)
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (journeyId is null) return [];
+        int[] sequences = await dbContext.JourneyStops.AsNoTracking()
+            .Where(row => row.JourneyId == journeyId)
+            .Select(row => row.Sequence)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        string[] candidates = sequences
+            .Select(sequence => OnboardJourneyPublisher.StopClosedMessageIds(journeyId, sequence))
+            .SelectMany(ids => new[] { ids.WorklistId, ids.PlanId })
+            .ToArray();
+        ProtocolOutboxRow[] rows = await dbContext.ProtocolOutbox.AsNoTracking()
+            .Where(row => candidates.Contains(row.MessageId) && row.AcknowledgedAt == null && row.FencedAt == null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return rows.OrderBy(row => row.CreatedAt)
+            .ThenBy(row => row.MessageType == "CurrentStopWorklistSnapshot" ? 0 : 1)
+            .Select(row => row.MessageId)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Queues the stop-closed snapshots when a demand's termination has just completed its journey.
+    /// Sending is left to <see cref="SendTriggeredCommandAsync"/>, which runs after the response to the
+    /// request that ended it has been written.
+    /// </summary>
+    private async Task QueueStopClosedIfJourneyEndedAsync(
+        JourneyRuntimeRow? runtime,
+        string? demandId,
+        long sessionGeneration,
+        CancellationToken cancellationToken)
+    {
+        if (runtime?.Stage != JourneyRuntimeStage.Completed || demandId is null) return;
+        JourneyDemandRow? membership = await dbContext.JourneyDemands.SingleOrDefaultAsync(
+            row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        if (membership is null) return;
+        JourneyStopRow? stop = await dbContext.JourneyStops.SingleOrDefaultAsync(
+            row => row.JourneyId == runtime.JourneyId && row.Sequence == membership.StopSequence,
+            cancellationToken).ConfigureAwait(false);
+        if (stop is null) return;
+        await publisher.QueueStopClosedAsync(runtime, stop, sessionGeneration, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<string> OpenSessionAsync(
@@ -520,6 +589,12 @@ public sealed class OnboardRecoveryCoordinator(
                 workflow.UpdatedAt = now;
                 await store.CancelDemandBeforeLoadAsync(
                     demandId, "CANCELLED_BY_OPERATOR", now, cancellationToken)
+                    .ConfigureAwait(false);
+                await QueueStopClosedIfJourneyEndedAsync(
+                        await JourneyForDemandAsync(demandId, cancellationToken).ConfigureAwait(false),
+                        demandId,
+                        root.GetProperty("sessionGeneration").GetInt64(),
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -919,6 +994,15 @@ public sealed class OnboardRecoveryCoordinator(
                 membership.LoadCommandMessageId, observedAt, cancellationToken).ConfigureAwait(false);
             await store.SettleAnsweredCommandAsync(
                 membership.UnloadCommandMessageId, observedAt, cancellationToken).ConfigureAwait(false);
+        }
+        // A compensation or a fault-cargo handoff that ends the last demand ends the journey where the
+        // vehicle stands, and the vehicle has to be told that as much as for any other ending.
+        if (journeyComplete)
+        {
+            long sessionGeneration = await dbContext.SessionRecoveries.Where(row => row.AgvId == workflow.AgvId)
+                .Select(row => row.SessionGeneration).SingleAsync(cancellationToken).ConfigureAwait(false);
+            await QueueStopClosedIfJourneyEndedAsync(runtime, workflow.DemandId, sessionGeneration, cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

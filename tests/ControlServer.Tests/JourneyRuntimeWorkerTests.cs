@@ -1102,6 +1102,14 @@ public sealed class JourneyRuntimeWorkerTests
         JourneyDemandRow failed = Assert.Single(await fixture.DemandRowsAsync());
         Assert.Equal(JourneyDemandState.Cancelled, failed.State);
         Assert.DoesNotContain(failed.LoadCommandMessageId, await fixture.PendingOutboxMessageIdsAsync());
+
+        // Ending the journey there closes the stop at the vehicle too, or it goes on showing it.
+        (string closedWorklistId, string closedPlanId) =
+            OnboardJourneyPublisher.StopClosedMessageIds(journey.JourneyId, failed.StopSequence);
+        Assert.NotNull(await fixture.Context.ProtocolOutbox.AsNoTracking().SingleOrDefaultAsync(
+            row => row.MessageId == closedWorklistId, TestContext.Current.CancellationToken));
+        Assert.NotNull(await fixture.Context.ProtocolOutbox.AsNoTracking().SingleOrDefaultAsync(
+            row => row.MessageId == closedPlanId, TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -1821,6 +1829,38 @@ public sealed class JourneyRuntimeWorkerTests
             .SingleAsync(row => row.MessageType == "SublotEntryRequested", TestContext.Current.CancellationToken);
         Assert.NotNull(request.AcknowledgedAt);
 
+        // And the vehicle is told the stop is over. Nothing else it receives says so, and a vehicle
+        // still showing the stop kept offering 取消装货 for the ended demand (2026-09-15, agv01).
+        JourneyRuntimeRow ended = await fixture.JourneyRowAsync();
+        JourneyStopRow pickup = await fixture.Context.JourneyStops.AsNoTracking().SingleAsync(
+            row => row.JourneyId == ended.JourneyId && row.Role == JourneyStopRole.Pickup,
+            TestContext.Current.CancellationToken);
+        (string closedWorklistId, string closedPlanId) =
+            OnboardJourneyPublisher.StopClosedMessageIds(ended.JourneyId, pickup.Sequence);
+        ProtocolOutboxRow closedWorklist = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == closedWorklistId, TestContext.Current.CancellationToken);
+        ProtocolOutboxRow closedPlan = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == closedPlanId, TestContext.Current.CancellationToken);
+        string[] sentLines = fixture.Peer.Lines.Select(line => System.Text.Encoding.UTF8.GetString(line)).ToArray();
+        Assert.Contains(closedWorklist.PayloadJson + "\n", sentLines);
+        Assert.Contains(closedPlan.PayloadJson + "\n", sentLines);
+        long closedRevision;
+        using (JsonDocument document = JsonDocument.Parse(closedWorklist.PayloadJson))
+        {
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            Assert.Equal(pickup.StationId, payload.GetProperty("stationId").GetString());
+            Assert.Empty(payload.GetProperty("items").EnumerateArray());
+            Assert.Equal(JsonValueKind.Null, payload.GetProperty("stationDepartureDeadlineAt").ValueKind);
+            closedRevision = payload.GetProperty("worklistRevision").GetInt64();
+            Assert.True(closedRevision > pickup.WorklistRevision);
+        }
+        using (JsonDocument document = JsonDocument.Parse(closedPlan.PayloadJson))
+        {
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            Assert.Empty(payload.GetProperty("legs").EnumerateArray());
+            Assert.Equal(JsonValueKind.Null, payload.GetProperty("demandId").ValueKind);
+        }
+
         // The point of ending it: the vehicle takes the next demand rather than holding the stop.
         AcceptedDemandSnapshot next = fixture.Demand(
             "10000000-0000-4000-8000-000000000002",
@@ -1837,6 +1877,11 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal("ACCEPTED", nextBacklog.ReasonCode);
         SingleDemandJourneyView second = await fixture.RuntimeAsync("10000000-0000-4000-8000-000000000002");
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, second.Stage);
+        // The next journey never publishes at the closing revision: the vehicle has adopted it, and a
+        // second snapshot there with other content tears the session down.
+        JourneyRuntimeRow nextJourney = await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .SingleAsync(row => row.JourneyId != ended.JourneyId, TestContext.Current.CancellationToken);
+        Assert.True(nextJourney.WorklistRevision > closedRevision);
     }
 
     [Fact]
