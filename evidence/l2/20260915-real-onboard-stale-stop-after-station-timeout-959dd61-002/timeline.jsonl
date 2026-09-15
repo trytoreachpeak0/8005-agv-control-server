@@ -1,0 +1,29 @@
+{"at":"2026-09-15T07:41:44.3321244+00:00","note":"L2 run 20260915T074144296Z starting for scenario 'real-onboard-stale-stop-after-station-timeout'."}
+{"at":"2026-09-15T07:41:44.3495036+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-15T07:41:44.4875457+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-15T07:41:47.5229009+00:00","note":"Reusing cached onboard-hmi publish for 959dd615df84496bd654641d87d9df929ce28698."}
+{"at":"2026-09-15T07:41:47.6793100+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-15T07:41:47.6896859+00:00","note":"Peers: onboard-hmi@959dd615df84496bd654641d87d9df929ce28698, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-15T07:41:48.7077071+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-15T07:41:48.8612493+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-15T07:41:51.0249513+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-15T07:41:51.0602344+00:00","note":"Server settings from real-onboard-stale-stop-after-station-timeout.setup.psd1: JourneyRuntime__pollInterval=00:00:02, JourneyRuntime__sublotWaitTimeout=00:00:45"}
+{"at":"2026-09-15T07:41:54.3492559+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-15T07:41:55.9818308+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-15T07:41:58.7556673+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-15T07:41:58.7821390+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-15T07:41:58.9029336+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-15T07:41:59.1730825+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-15T07:41:59.2462257+00:00","note":"Environment is up; entering scenario 'real-onboard-stale-stop-after-station-timeout'."}
+{"at":"2026-09-15T07:41:59.4324779+00:00","note":"Publishing demand 34730f7e1fe2412d9815864ddb5887d9 (sublot L2-SST-20260915T074144296Z)."}
+{"at":"2026-09-15T07:41:59.5564019+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-15T07:42:01.9199089+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-abc797ed-ab80-7159-83c4-69c36c571b40-S1-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-15T07:42:02.1961439+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-abc797ed-ab80-7159-83c4-69c36c571b40-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-15T07:42:02.2143713+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-15T07:42:03.9705920+00:00","criterion":"entry-offered","value":"@{CanSubmitSublot=True; OffersCancel=True; StationId=N1-3_N1-7; DeadlineAt=09/15/2026 15:42:48; WorklistHasDemand=True; PlanLegs=2}"}
+{"at":"2026-09-15T07:42:04.0140802+00:00","note":"Nobody scans. Station deadline 2026-09-15T15:42:48.3256963+08:00; waiting up to 134 s."}
+{"at":"2026-09-15T07:42:04.0376605+00:00","criterion":"station-timeout-settled","value":"@{Status=Accepted; Suppression=; Operations=0; Position=1/AwaitingSublot}"}
+{"at":"2026-09-15T07:42:49.4365551+00:00","criterion":"station-timeout-settled","value":"@{Status=Cancelled; Suppression=CANCELLED_BY_STATION_TIMEOUT; Operations=0; Position=1/Completed}"}
+{"at":"2026-09-15T07:42:49.4480527+00:00","note":"Run failed: Cannot convert the \"System.Object[]\" value of type \"System.Object[]\" to type \"System.Int32\"."}
+{"at":"2026-09-15T07:42:49.5332466+00:00","note":"Exported 20 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-15T07:43:08.5506969+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 20 lines, 20 distinct, 7 message types, 0 distinct violations, 0 known; schema compilation 16311 ms."}
