@@ -1160,6 +1160,29 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal("CANCELLED_BEFORE_LOAD", workflow.Outcome);
             Assert.Empty(await context.StationOperations.ToArrayAsync(TestContext.Current.CancellationToken));
 
+            // The authorization ended the journey at the stop, and after the response the vehicle is
+            // told the stop is over. Without that it kept showing the stop and offering 取消装货 for a
+            // demand already ended (2026-09-15, agv01).
+            (string closedWorklistId, string closedPlanId) = OnboardJourneyPublisher.StopClosedMessageIds(JourneyId, 1);
+            ProtocolOutboxRow closedWorklist = await context.ProtocolOutbox.AsNoTracking().SingleAsync(
+                row => row.MessageId == closedWorklistId, TestContext.Current.CancellationToken);
+            ProtocolOutboxRow closedPlan = await context.ProtocolOutbox.AsNoTracking().SingleAsync(
+                row => row.MessageId == closedPlanId, TestContext.Current.CancellationToken);
+            Assert.Contains(closedWorklist.PayloadJson + "\n", peer.Lines);
+            Assert.Contains(closedPlan.PayloadJson + "\n", peer.Lines);
+            using (JsonDocument document = JsonDocument.Parse(closedWorklist.PayloadJson))
+            {
+                JsonElement payload = document.RootElement.GetProperty("payload");
+                Assert.Equal("PICKUP", payload.GetProperty("stationId").GetString());
+                Assert.Empty(payload.GetProperty("items").EnumerateArray());
+                Assert.Equal(JsonValueKind.Null, payload.GetProperty("stationDepartureDeadlineAt").ValueKind);
+                Assert.True(payload.GetProperty("worklistRevision").GetInt64() > 1);
+            }
+            using (JsonDocument document = JsonDocument.Parse(closedPlan.PayloadJson))
+            {
+                Assert.Empty(document.RootElement.GetProperty("payload").GetProperty("legs").EnumerateArray());
+            }
+
             // The peer keeps asking until it sees an answer, and the answer cannot change. Deciding
             // afresh from the demand status would now read Cancelled and refuse the very
             // cancellation that produced it.

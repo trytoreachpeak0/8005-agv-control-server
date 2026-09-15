@@ -491,22 +491,7 @@ public sealed class OnboardJourneyPublisher(
             messageId,
             agvId,
             sessionGeneration,
-            new
-            {
-                projection.StationId,
-                worklistRevision = projection.Revision,
-                projection.OperationSessionId,
-                projection.StationDepartureDeadlineAt,
-                items = projection.Items.Select(item => new
-                {
-                    item.DemandId,
-                    item.TransportDemandKey,
-                    item.Sublot,
-                    item.WorkType,
-                    item.StopRole,
-                    item.ExpectedBasketCount
-                })
-            },
+            WorklistPayload(projection),
             cancellationToken);
 
     public Task PublishUpcomingStopPlanAsync(
@@ -520,21 +505,122 @@ public sealed class OnboardJourneyPublisher(
             messageId,
             agvId,
             sessionGeneration,
-            new
-            {
-                planRevision = projection.Revision,
-                projection.DemandId,
-                legs = projection.Legs.Select(leg => new
-                {
-                    leg.MovementLegId,
-                    leg.LegType,
-                    leg.Sequence,
-                    leg.StationId,
-                    leg.MapId,
-                    leg.State
-                })
-            },
+            PlanPayload(projection),
             cancellationToken);
+
+    /// <summary>
+    /// The ids of the two snapshots that tell the vehicle a stop has nothing left to do. Fixed per
+    /// stop, so the same stop can only ever be closed once.
+    /// </summary>
+    public static (string WorklistId, string PlanId) StopClosedMessageIds(string journeyId, int sequence) =>
+        (WireToGateStore.StopId(journeyId, sequence, "worklist-closed"),
+            WireToGateStore.StopId(journeyId, sequence, "plan-closed"));
+
+    /// <summary>
+    /// Queues the snapshots that tell the vehicle the stop it stands at is over: a worklist with no
+    /// items and no deadline, and a plan with no legs, each at a revision past every one this vehicle
+    /// has adopted. Queued only; <see cref="PublishStopClosedAsync"/> also sends them.
+    /// </summary>
+    /// <remarks>
+    /// The server ends a journey at a pickup stop on its own -- the station wait expires, an operator
+    /// cancels before loading, a recovery terminates the last demand -- and until this existed nothing
+    /// it sent said so. The vehicle journals every snapshot it applies and restores them on each
+    /// connection, so the ended stop outlived reconnects and restarts, still offering sublot entry
+    /// and 取消装货 for a demand already over (2026-09-15, agv01). A newer worklist revision is also
+    /// what the entry request's expiresOnRevisionChange promises will withdraw it.
+    ///
+    /// Each message is decided once. A revision is taken from the journey's cursors only when its row
+    /// does not exist yet, so calling this again changes nothing and a replay stays byte-identical.
+    /// Taking it advances the cursor on the tracked runtime row that the queueing save commits with the
+    /// row itself, which is what keeps a later journey from reusing it
+    /// (WireToGateStore.SeedSnapshotRevisionsAsync).
+    /// </remarks>
+    public async Task<IReadOnlyList<string>> QueueStopClosedAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        long sessionGeneration,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(stop);
+        (string worklistId, string planId) = StopClosedMessageIds(stop.JourneyId, stop.Sequence);
+        if (await store.FindOutboundEnvelopeAsync(worklistId, cancellationToken).ConfigureAwait(false) is null)
+        {
+            CurrentStopWorklistProjection worklist = new(
+                stop.StationId,
+                runtime.WorklistRevision++,
+                runtime.OperationSessionId,
+                StationDepartureDeadlineAt: null,
+                Items: []);
+            await QueueEnvelopeAsync(
+                "CurrentStopWorklistSnapshot",
+                worklistId,
+                correlationId: null,
+                runtime.AgvId,
+                sessionGeneration,
+                WorklistPayload(worklist),
+                cancellationToken).ConfigureAwait(false);
+        }
+        if (await store.FindOutboundEnvelopeAsync(planId, cancellationToken).ConfigureAwait(false) is null)
+        {
+            UpcomingStopPlanProjection plan = new(runtime.PlanRevision++, DemandId: null, Legs: []);
+            await QueueEnvelopeAsync(
+                "UpcomingStopPlanSnapshot",
+                planId,
+                correlationId: null,
+                runtime.AgvId,
+                sessionGeneration,
+                PlanPayload(plan),
+                cancellationToken).ConfigureAwait(false);
+        }
+        return [worklistId, planId];
+    }
+
+    /// <summary>Queues the stop-closed snapshots and sends whichever the vehicle has not acknowledged.</summary>
+    public async Task PublishStopClosedAsync(
+        JourneyRuntimeRow runtime,
+        JourneyStopRow stop,
+        long sessionGeneration,
+        CancellationToken cancellationToken)
+    {
+        foreach (string messageId in await QueueStopClosedAsync(runtime, stop, sessionGeneration, cancellationToken)
+                     .ConfigureAwait(false))
+        {
+            await SendPersistedAsync(messageId, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static object WorklistPayload(CurrentStopWorklistProjection projection) => new
+    {
+        projection.StationId,
+        worklistRevision = projection.Revision,
+        projection.OperationSessionId,
+        projection.StationDepartureDeadlineAt,
+        items = projection.Items.Select(item => new
+        {
+            item.DemandId,
+            item.TransportDemandKey,
+            item.Sublot,
+            item.WorkType,
+            item.StopRole,
+            item.ExpectedBasketCount
+        })
+    };
+
+    private static object PlanPayload(UpcomingStopPlanProjection projection) => new
+    {
+        planRevision = projection.Revision,
+        projection.DemandId,
+        legs = projection.Legs.Select(leg => new
+        {
+            leg.MovementLegId,
+            leg.LegType,
+            leg.Sequence,
+            leg.StationId,
+            leg.MapId,
+            leg.State
+        })
+    };
 
     private async Task PublishSnapshotAsync(
         string messageType,

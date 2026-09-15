@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-stale-stop-after-station-timeout",
+  "runId": "20260915T074144296Z",
+  "outcome": "FAIL",
+  "failureReason": "Cannot convert the \"System.Object[]\" value of type \"System.Object[]\" to type \"System.Int32\".",
+  "identity": {
+    "rig": "RealOnboard",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260915T074144296Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "f24663b54cfabfa0981a428929deda4faefbe8f3",
+    "onboardHmiCommit": "959dd615df84496bd654641d87d9df929ce28698",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-SST-01",
+      "description": "车到站后要子批、给「取消装货」，当前站清单挂着这单（前提）",
+      "outcome": "PASS",
+      "expected": "canSubmitSublot / offersCancel / worklistHasDemand 均为 True",
+      "actual": "canSubmitSublot=True offersCancel=True station=N1-3_N1-7 deadline=09/15/2026 15:42:48 worklistHasDemand=True planLegs=2"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 20 lines, 20 distinct, 7 message types, 0 distinct violations, 0 known; schema compilation 16311 ms."
+    }
+  ]
+}

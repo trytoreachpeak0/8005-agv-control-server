@@ -2378,6 +2378,11 @@ public sealed class JourneyRuntimeEngine(
         if (remaining.All(row =>
                 row.State is JourneyDemandState.Cancelled or JourneyDemandState.Unloaded))
         {
+            // The journey ended here without the vehicle taking part, and nothing else it will receive
+            // says so: it went on offering sublot entry and 取消装货 for the demand just ended, and a
+            // press was refused (2026-09-15, agv01).
+            await publisher.PublishStopClosedAsync(runtime, stop, session.SessionGeneration, cancellationToken)
+                .ConfigureAwait(false);
             return true;
         }
 
@@ -2925,9 +2930,12 @@ public sealed class JourneyRuntimeEngine(
                 row.State is JourneyDemandState.Planned or JourneyDemandState.Loaded))
         {
             // Nothing aboard and nothing left to load: there is nothing for the gate to receive, so
-            // the journey ends here rather than driving an empty vehicle to it.
+            // the journey ends here rather than driving an empty vehicle to it. The vehicle is told the
+            // stop is over; no other message would, and it would go on showing it.
             stop.State = JourneyStopState.Completed;
             SetStage(runtime, JourneyRuntimeStage.Completed, now, stop);
+            await publisher.PublishStopClosedAsync(runtime, stop, session.SessionGeneration, cancellationToken)
+                .ConfigureAwait(false);
             return;
         }
 

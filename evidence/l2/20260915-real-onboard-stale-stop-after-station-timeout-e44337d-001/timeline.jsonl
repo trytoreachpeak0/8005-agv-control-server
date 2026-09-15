@@ -1,0 +1,56 @@
+{"at":"2026-09-15T07:47:33.4176635+00:00","note":"L2 run 20260915T074733379Z starting for scenario 'real-onboard-stale-stop-after-station-timeout'."}
+{"at":"2026-09-15T07:47:33.4313134+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-15T07:47:33.5745232+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-15T07:47:36.3262860+00:00","note":"Building onboard-hmi at e44337d793758c80f238fdc00cb873703bad73c3 from a throwaway clone."}
+{"at":"2026-09-15T07:47:38.1814259+00:00","note":"dotnet SDK resolved for onboard-hmi publish: 8.0.425"}
+{"at":"2026-09-15T07:47:41.9024164+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-15T07:47:41.9138293+00:00","note":"Peers: onboard-hmi@e44337d793758c80f238fdc00cb873703bad73c3, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-15T07:47:42.7021943+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-15T07:47:42.8102919+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-15T07:47:44.5538446+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-15T07:47:44.5703764+00:00","note":"Server settings from real-onboard-stale-stop-after-station-timeout.setup.psd1: JourneyRuntime__pollInterval=00:00:02, JourneyRuntime__sublotWaitTimeout=00:00:45"}
+{"at":"2026-09-15T07:47:46.4846544+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-15T07:47:48.1029930+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-15T07:47:51.3713031+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-15T07:47:51.3861559+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-15T07:47:51.4552102+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-15T07:47:51.7299868+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-15T07:47:51.7771821+00:00","note":"Environment is up; entering scenario 'real-onboard-stale-stop-after-station-timeout'."}
+{"at":"2026-09-15T07:47:51.8471227+00:00","note":"Publishing demand 657807e516214c95b33c79591e1970de (sublot L2-SST-20260915T074733379Z)."}
+{"at":"2026-09-15T07:47:51.9151078+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-15T07:47:53.9830129+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-94e30d9c-f743-7b58-9c07-cc95aa7ffb90-S1-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-15T07:47:54.2519431+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-94e30d9c-f743-7b58-9c07-cc95aa7ffb90-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-15T07:47:54.2744681+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-15T07:47:56.1255731+00:00","criterion":"entry-offered","value":"@{CanSubmitSublot=True; OffersCancel=True; StationId=N1-3_N1-7; DeadlineAt=09/15/2026 15:48:40; WorklistHasDemand=True; PlanLegs=2}"}
+{"at":"2026-09-15T07:47:56.1471147+00:00","note":"Nobody scans. Station deadline 2026-09-15T15:48:40.5430304+08:00; waiting up to 134 s."}
+{"at":"2026-09-15T07:47:56.1705994+00:00","criterion":"station-timeout-settled","value":"@{Status=Accepted; Suppression=; Operations=0; Position=1/AwaitingSublot}"}
+{"at":"2026-09-15T07:48:41.8007024+00:00","criterion":"station-timeout-settled","value":"@{Status=Cancelled; Suppression=CANCELLED_BY_STATION_TIMEOUT; Operations=0; Position=1/Completed}"}
+{"at":"2026-09-15T07:48:41.8266194+00:00","criterion":"runtime-iterations","value":"28"}
+{"at":"2026-09-15T07:48:43.6777381+00:00","criterion":"runtime-iterations","value":"29"}
+{"at":"2026-09-15T07:48:45.7850707+00:00","criterion":"runtime-iterations","value":"30"}
+{"at":"2026-09-15T07:48:47.6378889+00:00","criterion":"runtime-iterations","value":"31"}
+{"at":"2026-09-15T07:48:49.7552834+00:00","criterion":"runtime-iterations","value":"32"}
+{"at":"2026-09-15T07:48:51.6095462+00:00","criterion":"runtime-iterations","value":"33"}
+{"at":"2026-09-15T07:48:53.7175253+00:00","criterion":"runtime-iterations","value":"34"}
+{"at":"2026-09-15T07:48:55.5664802+00:00","criterion":"runtime-iterations","value":"35"}
+{"at":"2026-09-15T07:48:57.6837438+00:00","criterion":"runtime-iterations","value":"36"}
+{"at":"2026-09-15T07:48:59.7902539+00:00","criterion":"runtime-iterations","value":"37"}
+{"at":"2026-09-15T07:49:01.6403520+00:00","criterion":"runtime-iterations","value":"38"}
+{"at":"2026-09-15T07:49:01.6517159+00:00","note":"Vehicle ten rounds after Completed: canSubmitSublot=True offersCancel=True station=N1-3_N1-7 deadline=09/15/2026 15:48:40 worklistHasDemand=True planLegs=2"}
+{"at":"2026-09-15T07:49:01.6530477+00:00","note":"Server queued for the vehicle after Completed: (nothing)"}
+{"at":"2026-09-15T07:49:01.7991229+00:00","note":"first press of LOAD_CANCELLATION: HTTP 409 reasonCode=ACTION_NOT_ALLOWED_IN_STATE error="}
+{"at":"2026-09-15T07:49:01.8765919+00:00","note":"second press of LOAD_CANCELLATION: HTTP 409 reasonCode=ACTION_NOT_ALLOWED_IN_STATE error="}
+{"at":"2026-09-15T07:49:03.7158759+00:00","criterion":"runtime-iterations","value":"39"}
+{"at":"2026-09-15T07:49:05.5580837+00:00","criterion":"runtime-iterations","value":"40"}
+{"at":"2026-09-15T07:49:07.6639735+00:00","criterion":"runtime-iterations","value":"41"}
+{"at":"2026-09-15T07:49:09.7893028+00:00","criterion":"runtime-iterations","value":"42"}
+{"at":"2026-09-15T07:49:11.6467031+00:00","criterion":"runtime-iterations","value":"43"}
+{"at":"2026-09-15T07:49:13.7447857+00:00","criterion":"runtime-iterations","value":"44"}
+{"at":"2026-09-15T07:49:15.6044528+00:00","criterion":"runtime-iterations","value":"45"}
+{"at":"2026-09-15T07:49:17.7279347+00:00","criterion":"runtime-iterations","value":"46"}
+{"at":"2026-09-15T07:49:17.7372532+00:00","note":"Vehicle after both presses: canSubmitSublot=True offersCancel=True station=N1-3_N1-7 deadline=09/15/2026 15:48:40 worklistHasDemand=True planLegs=2"}
+{"at":"2026-09-15T07:49:17.7527748+00:00","note":"LoadCancellationStartRequested rows on the server: 2"}
+{"at":"2026-09-15T07:49:17.7562971+00:00","note":"  messageId=8ed44981-ab86-46aa-b776-6a5d859c4ec3 cancellationId=aa90d9ad-bf0a-f15a-972b-e82fa84e184b verifiedAt= -> REJECTED ACTION_NOT_ALLOWED_IN_STATE"}
+{"at":"2026-09-15T07:49:17.7618357+00:00","note":"  messageId=5304a7c5-d14f-4041-9930-e6bf7c313703 cancellationId=aa90d9ad-bf0a-f15a-972b-e82fa84e184b verifiedAt= -> REJECTED ACTION_NOT_ALLOWED_IN_STATE"}
+{"at":"2026-09-15T07:49:17.8274005+00:00","note":"Exported 27 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-15T07:49:32.8035249+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 27 lines, 27 distinct, 8 message types, 0 distinct violations, 0 known; schema compilation 14064 ms."}
