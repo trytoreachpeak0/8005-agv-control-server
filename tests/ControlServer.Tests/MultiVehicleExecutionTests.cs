@@ -895,6 +895,7 @@ public sealed class MultiVehicleExecutionTests
                 new EmergencyStopSupervisor(
                     Riot,
                     Riot,
+                    Riot,
                     audit,
                     faults,
                     Microsoft.Extensions.Options.Options.Create(new RiotCommandOptions()),
@@ -1125,7 +1126,7 @@ public sealed class MultiVehicleExecutionTests
     /// </summary>
     private sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
         : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts,
-          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts
+          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
     {
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
 
@@ -1287,6 +1288,14 @@ public sealed class MultiVehicleExecutionTests
             _ = cancellationToken;
             return Task.FromResult(new RiotVehicleEmergencyObservation(
                 deviceKey, RiotVehicleEmergencyObservation.Ok, clock.GetUtcNow()));
+        }
+
+        public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
+            string deviceKey,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, false, [], clock.GetUtcNow()));
         }
     }
 

@@ -2666,6 +2666,7 @@ public sealed class JourneyRuntimeWorkerTests
                 new EmergencyStopSupervisor(
                     gateway,
                     gateway,
+                    gateway,
                     audit,
                     faults,
                     Microsoft.Extensions.Options.Options.Create(new RiotCommandOptions()),
@@ -2690,8 +2691,16 @@ public sealed class JourneyRuntimeWorkerTests
         /// unable to answer.
         /// </summary>
         private sealed class SilentCommandGateway(TimeProvider clock)
-            : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts
+            : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
         {
+            public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
+                string deviceKey,
+                CancellationToken cancellationToken)
+            {
+                _ = cancellationToken;
+                return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, false, [], clock.GetUtcNow()));
+            }
+
             public Task<RiotCommandCallResult> IssueOrderCommandAsync(
                 RiotOrderCommandKind kind,
                 string orderId,

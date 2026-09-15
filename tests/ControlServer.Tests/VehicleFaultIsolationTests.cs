@@ -441,17 +441,19 @@ public sealed class VehicleFaultIsolationTests
     }
 
     /// <summary>
-    /// REQ-0247's second and third negatives, together. An order in HELD and an engaged emergency
-    /// latch are both true here and neither is read: the movement state is unknown, so the proof
-    /// fails. A stop proof that could be satisfied by those two would be satisfied by every vehicle
-    /// this server has just commanded.
+    /// REQ-0247's HELD negative, which CP-0003 kept. The order is HELD and is not read: the movement
+    /// state is unknown, so the proof fails. A stop proof that could be satisfied by a HELD order
+    /// would be satisfied by every vehicle this server has just commanded.
     /// </summary>
+    /// <remarks>
+    /// Until 2026-09-15 this also held an engaged latch and asserted it did not count either; CP-0003
+    /// revised REQ-0247 so that it does, and that half is now the test after this one.
+    /// </remarks>
     [Fact]
-    public async Task AHeldOrderAndAnEngagedLatchDoNotProveTheStop()
+    public async Task AHeldOrderDoesNotProveTheStop()
     {
         await using Fixture fixture = await Fixture.CreateAsync();
         fixture.Riot.HoldWorks = true;
-        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
         fixture.Motion.Script = [Unreadable(Now)];
 
         VehicleFaultDecision decision = await fixture.ObserveAsync(
@@ -461,6 +463,58 @@ public sealed class VehicleFaultIsolationTests
         Assert.False(decision.StopProof.Proven);
         Assert.Contains(StopProof.MotionUnknown, decision.StopProof.MissingFacts);
         Assert.False((await fixture.ReadFaultAsync()).StopProven);
+    }
+
+    /// <summary>
+    /// REQ-0247 as revised by CP-0003: an engaged latch proves the stop on its own, with the motion
+    /// unreadable, the position unknown and a single sample — none of which is read.
+    /// </summary>
+    [Fact]
+    public async Task AnEngagedLatchProvesTheStopWhateverTheSamplesSay()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.CanRecover;
+        fixture.Motion.Script = [Unreadable(Now)];
+
+        VehicleFaultDecision decision = await fixture.ObserveAsync(
+            VehicleFaultEvidence.NavigationFailed, WithOrder());
+
+        Assert.True(decision.StopProof.Proven);
+        Assert.False(decision.Escalated);
+        Assert.True((await fixture.ReadFaultAsync()).StopProven);
+        Assert.Empty(fixture.Riot.EmergencyCalls);
+    }
+
+    [Theory]
+    [InlineData(RiotVehicleEmergencyObservation.CanRecover)]
+    [InlineData(RiotVehicleEmergencyObservation.CanNotRecover)]
+    public void EitherLatchedStateIsTheStopProof(string latched)
+    {
+        VehicleMotionSample[] samples = [Moving(Now)];
+
+        StopProofVerdict verdict = StopProof.Evaluate(
+            samples, new RiotVehicleEmergencyObservation(Subject.DeviceKey, latched, Now), Now, ProofOptions());
+
+        Assert.True(verdict.Proven);
+        Assert.Empty(verdict.MissingFacts);
+    }
+
+    /// <summary>
+    /// Only an engaged latch stands in for the evidence. <c>OK</c> and an unreadable latch fall back
+    /// to the combined evidence, which one moving sample defeats.
+    /// </summary>
+    [Theory]
+    [InlineData(RiotVehicleEmergencyObservation.Ok)]
+    [InlineData(null)]
+    public void AnUnengagedOrUnreadableLatchLeavesTheCombinedEvidenceToDecide(string? state)
+    {
+        VehicleMotionSample[] samples = [Moving(Now)];
+
+        StopProofVerdict verdict = StopProof.Evaluate(
+            samples, new RiotVehicleEmergencyObservation(Subject.DeviceKey, state, Now), Now, ProofOptions());
+
+        Assert.False(verdict.Proven);
+        Assert.Contains(StopProof.MotionObserved, verdict.MissingFacts);
     }
 
     // ---- REQ-0247: every way the proof fails, by name -----------------------------------
@@ -719,7 +773,9 @@ public sealed class VehicleFaultIsolationTests
         fixture.Clock.Advance(TimeSpan.FromSeconds(1));
         VehicleFaultDecision third = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
 
-        Assert.True(third.Escalated);
+        // Not escalated once the latch has engaged: the latch is the stop proof (CP-0003), so the
+        // third evaluation watches the latch instead of asking for the stop again.
+        Assert.False(third.Escalated);
         Assert.Single(fixture.Riot.EmergencyCalls);
         Assert.Equal(
             RiotOrderCommandOutcome.Confirmed,
@@ -749,6 +805,127 @@ public sealed class VehicleFaultIsolationTests
         Assert.Equal(
             RiotOrderCommandOutcome.Confirmed,
             Assert.Single(await fixture.ReadTriggersAsync()).Outcome);
+    }
+
+    /// <summary>
+    /// REQ-0247 as revised by CP-0003: once the latch reads back engaged the vehicle is stopped,
+    /// whatever its motion sample says, and nothing asks for the stop again.
+    /// </summary>
+    /// <remarks>
+    /// The sample is the one agv02 gave on 2026-09-15 after a stop issued while its order was still
+    /// executing: <c>MT_RUNNING</c> at speed 0, between stations. It reads as moving with no
+    /// position, so the combined evidence can never hold for it, and until this was fixed the
+    /// vehicle was escalated on every evaluation for as long as it stood there.
+    /// </remarks>
+    [Fact]
+    public async Task ALatchedVehicleStillReportingRunningBetweenStationsIsProvenStopped()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Motion.Script = [Moving(Now)];
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [LatchedStillRunning(fixture.Clock.GetUtcNow())];
+        VehicleFaultDecision latched = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.True(latched.StopProof.Proven);
+        Assert.Empty(latched.StopProof.MissingFacts);
+        Assert.False(latched.Escalated);
+        Assert.True((await fixture.ReadFaultAsync()).StopProven);
+        Assert.Single(fixture.Riot.EmergencyCalls);
+    }
+
+    // ---- REQ-0356: after a release on a person's confirmation -------------------------------
+
+    /// <summary>
+    /// The user's 2026-09-15 ruling: released on a person's confirmation, a vehicle standing between
+    /// stations is not stopped again merely because RIoT reports no station there. Before the ruling
+    /// the position rule re-escalated it on the next evaluation, and the confirmation was undone.
+    /// </summary>
+    [Fact]
+    public async Task AVehicleReleasedOnConfirmationStandingBetweenStationsIsNotStoppedAgain()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        EmergencyStopDecision released = await fixture.LatchThenReleaseOnConfirmationAsync();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        fixture.Motion.Script = [StandingBetweenStations(fixture.Clock.GetUtcNow())];
+        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        VehicleFaultDecision later = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.Equal(EmergencyStopAction.Recovered, released.Action);
+        Assert.False(next.Escalated);
+        Assert.False(later.Escalated);
+        Assert.Single(fixture.Riot.EmergencyCalls, call => call.CommandType == RiotCommandTypeNames.TriggerEmergency);
+        // The release ended the stop and nothing more: the fault still blocks dispatch.
+        Assert.Equal(VehicleFaultLevel.SuspectedBlocked, (await fixture.ReadFaultAsync()).Level);
+    }
+
+    /// <summary>
+    /// The field's order of events: the release's own read-back still sees the latch, and RIoT clears
+    /// it seconds later. The evaluation that first reads <c>OK</c> must see the release, not a vehicle
+    /// nobody released standing between stations.
+    /// </summary>
+    [Fact]
+    public async Task AReleaseOnConfirmationThatTakesEffectLaterIsSeenBeforeTheEscalationIsDecided()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Motion.Script = [Moving(Now)];
+        await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        EmergencyStopDecision issued = await fixture.Supervisor.ReleaseOnConfirmationAsync(
+            new EmergencyStopReleaseConfirmation(
+                Subject, "operator-7", CauseCleared: true, VehicleEmpty: true, AllDoorsClosed: true, Note: null),
+            TestContext.Current.CancellationToken);
+
+        fixture.Riot.Latch = RiotVehicleEmergencyObservation.Ok;
+        fixture.Clock.Advance(TimeSpan.FromMilliseconds(3600));
+        fixture.Motion.Script = [StandingBetweenStations(fixture.Clock.GetUtcNow())];
+        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.Equal(EmergencyStopAction.RecoveryUnconfirmed, issued.Action);
+        Assert.False(next.Escalated);
+        Assert.Single(await fixture.ReadTriggersAsync());
+        Assert.True(await fixture.Supervisor.WasReleasedOnConfirmationAsync(
+            Subject, next.FaultGeneration, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// The other half of the ruling: after the release, a reading that shows motion, or that cannot
+    /// be read at all, stops the vehicle again as a new episode.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AVehicleReleasedOnConfirmationIsStoppedAgainOnMotionOrAFailedWatch(bool moving)
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.LatchThenReleaseOnConfirmationAsync();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        DateTimeOffset at = fixture.Clock.GetUtcNow();
+        fixture.Motion.Script = [moving ? Moving(at) : Unreadable(at)];
+        VehicleFaultDecision next = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.True(next.Escalated);
+        Assert.Equal(2, (await fixture.ReadTriggersAsync()).Count);
+    }
+
+    /// <summary>
+    /// The relaxation belongs to a release on confirmation, not to any release: a vehicle whose
+    /// latch came off with no such release behind it is escalated for want of a position as before.
+    /// </summary>
+    [Fact]
+    public async Task WithoutAReleaseOnConfirmationStandingBetweenStationsStillEscalates()
+    {
+        await using Fixture fixture = await Fixture.CreateAsync();
+        fixture.Motion.Script = [StandingBetweenStations(Now)];
+
+        VehicleFaultDecision decision = await fixture.ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+        Assert.True(decision.Escalated);
+        Assert.Contains(StopProof.PositionUnknown, decision.StopProof.MissingFacts);
     }
 
     /// <summary>
@@ -1014,6 +1191,14 @@ public sealed class VehicleFaultIsolationTests
     private static VehicleMotionSample Moving(DateTimeOffset at) => new(
         Subject.DeviceKey, VehicleMotionReading.Moving, "MT_RUNNING", 0.6, "map14", null, at);
 
+    /// <summary>A vehicle at rest between two stations, where RIoT reports station 0.</summary>
+    private static VehicleMotionSample StandingBetweenStations(DateTimeOffset at) => new(
+        Subject.DeviceKey, VehicleMotionReading.NotMoving, "MT_FINISHED", 0, "map14", 0, at);
+
+    /// <summary>What RIoT reports for a vehicle latched while its order was executing.</summary>
+    private static VehicleMotionSample LatchedStillRunning(DateTimeOffset at) => new(
+        Subject.DeviceKey, VehicleMotionReading.Moving, "MT_RUNNING", 0, "map14", 0, at);
+
     private static VehicleMotionSample Unreadable(DateTimeOffset at) => new(
         Subject.DeviceKey, VehicleMotionReading.Unknown, null, null, null, null, at);
 
@@ -1031,9 +1216,25 @@ public sealed class VehicleFaultIsolationTests
     /// about reading them back after commanding them.
     /// </summary>
     private sealed class FakeRiot(TimeProvider clock)
-        : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotMovementGateway
+        : IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotMovementGateway, IRiotVehicleOrderFacts
     {
         public string? Latch { get; set; } = RiotVehicleEmergencyObservation.Ok;
+
+        /// <summary>
+        /// Whether RIoT reports an unfinished order for the vehicle. Separate from
+        /// <see cref="OrderState"/> on purpose: that is the order this project has in flight, and
+        /// RIoT's answer is about every order on the vehicle.
+        /// </summary>
+        public bool? HasUnfinishedOrder { get; set; } = false;
+
+        public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
+            string deviceKey,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new RiotVehicleOrderObservation(
+                deviceKey,
+                HasUnfinishedOrder,
+                HasUnfinishedOrder == true ? [Order.OrderId] : [],
+                clock.GetUtcNow()));
 
         public string? LatchAfterTrigger { get; set; } = RiotVehicleEmergencyObservation.CanRecover;
 
@@ -1160,7 +1361,7 @@ public sealed class VehicleFaultIsolationTests
             Audit = audit;
             RiotOrderCommandService commands = new(Riot, audit, Riot, Clock);
             Supervisor = new EmergencyStopSupervisor(
-                Riot, Riot, audit, Faults, Options.Create(new RiotCommandOptions()), Clock,
+                Riot, Riot, Riot, audit, Faults, Options.Create(new RiotCommandOptions()), Clock,
                 NullLogger<EmergencyStopSupervisor>.Instance);
             IOptions<VehicleFaultOptions> faultOptions = Options.Create(new VehicleFaultOptions());
             Coordinator = new VehicleFaultCoordinator(
@@ -1221,6 +1422,23 @@ public sealed class VehicleFaultIsolationTests
             }
 
             return decision;
+        }
+
+        /// <summary>
+        /// Escalates a moving vehicle, lets its latch engage, and releases it on a person's
+        /// confirmation that RIoT reads back <c>OK</c> at once.
+        /// </summary>
+        public async Task<EmergencyStopDecision> LatchThenReleaseOnConfirmationAsync()
+        {
+            Motion.Script = [Moving(Clock.GetUtcNow())];
+            await ObserveAsync(VehicleFaultEvidence.OrderFailed, WithOrder());
+
+            Clock.Advance(TimeSpan.FromSeconds(1));
+            Riot.LatchAfterRelease = RiotVehicleEmergencyObservation.Ok;
+            return await Supervisor.ReleaseOnConfirmationAsync(
+                new EmergencyStopReleaseConfirmation(
+                    Subject, "operator-7", CauseCleared: true, VehicleEmpty: true, AllDoorsClosed: true, Note: null),
+                TestContext.Current.CancellationToken);
         }
 
         public Task<VehicleFaultResumeDecision> ResumeAsync(

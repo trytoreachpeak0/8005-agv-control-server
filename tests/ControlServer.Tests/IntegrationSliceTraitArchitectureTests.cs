@@ -59,6 +59,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["Batch3MigrationDisciplineTests"] = "cross-cutting migration and startup guard; hanging it off a slice would defer the guard with the slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
+            ["EmergencyStopReleaseEndpointsTests"] = "REQ-0356 release-on-confirmation HTTP entry point (control-server#63); single-ended server-to-RIoT, no wire message",
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateGateTests"] = "RIoT create experiment; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateMigrationTests"] = "RIoT create experiment migration; server-internal",
@@ -111,7 +112,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         new(StringComparer.Ordinal)
         {
             ["FakeRiotTests"] = (8, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
-            ["HttpRiotMovementGatewayTests"] = (20, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
+            ["HttpRiotMovementGatewayTests"] = (23, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
             ["JourneyRuntimeOptionsTests"] = (2, "option defaults; the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };

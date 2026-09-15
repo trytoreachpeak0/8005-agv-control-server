@@ -224,3 +224,33 @@ public interface IRiotVehicleEmergencyFacts
         string deviceKey,
         CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Whether RIoT holds any order for a vehicle that has not reached a terminal state.
+/// </summary>
+/// <remarks>
+/// <paramref name="HasUnfinishedOrder"/> is <c>null</c> when RIoT could not be asked, or answered
+/// with a page that does not cover every record. That is not "no order": REQ-0356 refuses a release
+/// while the vehicle still has an unfinished order, and an unanswered question refuses it the same
+/// way.
+/// </remarks>
+/// <param name="UnfinishedOrderIds">RIoT's <c>orderId</c> of each unfinished order found, for the refusal to name.</param>
+public sealed record RiotVehicleOrderObservation(
+    string DeviceKey,
+    bool? HasUnfinishedOrder,
+    IReadOnlyList<string> UnfinishedOrderIds,
+    DateTimeOffset ObservedAt)
+{
+    /// <summary>Whether RIoT gave a complete answer.</summary>
+    public bool IsKnown => HasUnfinishedOrder is not null;
+}
+
+/// <summary>
+/// Reads the orders RIoT holds for one vehicle, from <c>GET /api/order/v1/orderRecord</c> by state.
+/// </summary>
+public interface IRiotVehicleOrderFacts
+{
+    Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
+        string deviceKey,
+        CancellationToken cancellationToken);
+}

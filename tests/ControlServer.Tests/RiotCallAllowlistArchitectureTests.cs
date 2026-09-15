@@ -44,11 +44,13 @@ public sealed class RiotCallAllowlistArchitectureTests
 {
     /// <summary>
     /// SHA-256 of the approved allowlist document, over the file's bytes. Taken from
-    /// <c>8005-agv-program</c> commit <c>3bc055c450c8a1d8d395d7d036042d1c890e383f</c> on
-    /// 2026-09-08.
+    /// <c>8005-agv-program</c> commit <c>70bf4d449477436b1ccfeb5f12091f484f5e772f</c> on
+    /// 2026-09-15: section 1.5's release rules brought in line with requirements baseline v1.3.0
+    /// (CP-0003, control-server#63). The approved-call rows are unchanged from the 2026-09-08
+    /// document (<c>3bc055c4</c>).
     /// </summary>
     private const string ApprovedAllowlistSha256 =
-        "dec0bc1046f3f7c969ca53bd332708fe4668ded5370aa308c584305222d7bcee";
+        "ad15dd9b04a8b18ac1119b32a7e8ad05c1a57e216e575bfb3ea8e87c816c838f";
 
     private const string FacadeAssembly = "RIoT.Sdk.Facade";
     private const string GeneratedAssembly = "RIoT.Sdk.Generated";
