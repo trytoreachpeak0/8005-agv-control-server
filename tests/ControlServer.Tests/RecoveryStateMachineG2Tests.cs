@@ -1204,6 +1204,61 @@ public sealed class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// A sublot entered against a journey the server has already ended is refused explicitly, not
+    /// acknowledged and left unanswered. While the journey still waits at the stop the submission is the
+    /// runtime's to judge, and nothing here refuses it (8005-agv-program#86).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task ASublotEnteredAfterTheJourneyEndedIsRefusedRatherThanLeftUnanswered()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedPickupStopAwaitingSublotAsync(context);
+        RecordingPeer peer = new(context);
+        OnboardMessageProcessor processor = Processor(context, peer, "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_SUBLOT");
+        OnboardConnectionState state = CurrentState();
+        state.Readiness = SessionReadiness.Ready;
+        object submission = new
+        {
+            demandId = DemandId,
+            operationSessionId = "c0000000-0000-4000-8000-000000000001",
+            stationId = "PICKUP",
+            worklistRevision = 1,
+            sublot = "SUBLOT-001",
+            entryMethod = "SCANNER",
+            @operator = Operator()
+        };
+
+        string whileWaiting = await processor.ProcessAsync(
+            Envelope("e0000000-0000-4000-8000-000000000020", "SublotSubmitted", submission),
+            state,
+            TestContext.Current.CancellationToken);
+        Assert.Contains("\"DurableAck\"", whileWaiting, StringComparison.Ordinal);
+        Assert.DoesNotContain(peer.Lines, line => line.Contains("\"SublotRejected\"", StringComparison.Ordinal));
+
+        Assert.True(await new WireToGateStore(context).CancelDemandBeforeLoadAsync(
+            DemandId, "CANCELLED_BY_STATION_TIMEOUT", Now, TestContext.Current.CancellationToken));
+
+        const string lateSubmissionId = "e0000000-0000-4000-8000-000000000021";
+        string afterEnd = await processor.ProcessAsync(
+            Envelope(lateSubmissionId, "SublotSubmitted", submission),
+            state,
+            TestContext.Current.CancellationToken);
+        Assert.Contains("\"DurableAck\"", afterEnd, StringComparison.Ordinal);
+        string rejection = Assert.Single(
+            peer.Lines, line => line.Contains("\"SublotRejected\"", StringComparison.Ordinal));
+        using JsonDocument document = JsonDocument.Parse(rejection);
+        JsonElement root = document.RootElement;
+        Assert.Equal(lateSubmissionId, root.GetProperty("correlationId").GetString());
+        JsonElement payload = root.GetProperty("payload");
+        Assert.Equal(DemandId, payload.GetProperty("demandId").GetString());
+        Assert.Equal("c0000000-0000-4000-8000-000000000001", payload.GetProperty("operationSessionId").GetString());
+        Assert.Equal("WORKLIST_REVISION_STALE", payload.GetProperty("problem").GetProperty("reasonCode").GetString());
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     public async Task CancellingBeforeLoadRefusesADemandWhoseSlotOperationWasAlreadyCommanded()

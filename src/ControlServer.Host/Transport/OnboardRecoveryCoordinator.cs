@@ -218,10 +218,59 @@ public sealed class OnboardRecoveryCoordinator(
             if (workflow?.CommandMessageId is not null)
                 await publisher.SendPersistedAsync(workflow.CommandMessageId, cancellationToken).ConfigureAwait(false);
         }
+        if (messageType == "SublotSubmitted")
+        {
+            await RejectSublotForEndedJourneyAsync(root, cancellationToken).ConfigureAwait(false);
+        }
         string agvId = RequiredString(root, "agvId");
         await SendPendingSessionSnapshotsAsync(agvId, cancellationToken).ConfigureAwait(false);
         foreach (string id in await PendingStopClosedSnapshotIdsAsync(agvId, cancellationToken).ConfigureAwait(false))
             await publisher.SendPersistedAsync(id, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Refuses a sublot entered against a journey that has already ended, instead of acknowledging it
+    /// and never answering.
+    /// </summary>
+    /// <remarks>
+    /// The runtime matches submissions only to the stop a running journey is waiting at. One answering a
+    /// journey the server has since ended -- the station wait expired, a cancellation was authorised, a
+    /// recovery ended the last demand -- was acknowledged and left in the inbox for good, and the vehicle
+    /// sat on 「已提交，等待服务端下发仓位操作」. The stop-closed snapshots withdraw the entry at the vehicle,
+    /// but a scan can still land before they arrive, or while a dropped connection holds them back
+    /// (8005-agv-program#86). BR-013 wants a refusal to be explicit.
+    ///
+    /// Only an operation session whose every journey is Completed is judged. A running journey belongs to
+    /// the runtime, the one party that knows which revision is open at its stop.
+    /// </remarks>
+    private async Task RejectSublotForEndedJourneyAsync(JsonElement root, CancellationToken cancellationToken)
+    {
+        JsonElement payload = root.GetProperty("payload");
+        string agvId = RequiredString(root, "agvId");
+        string operationSessionId = RequiredString(payload, "operationSessionId");
+        JourneyRuntimeRow[] journeys = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == agvId && row.OperationSessionId == operationSessionId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (journeys.Length == 0 || journeys.Any(row => row.Stage != JourneyRuntimeStage.Completed))
+        {
+            return;
+        }
+
+        string submittedMessageId = RequiredString(root, "messageId");
+        await publisher.PublishSublotRejectedAsync(
+            StableGuid(submittedMessageId, "sublot-rejected-journey-ended"),
+            submittedMessageId,
+            agvId,
+            root.GetProperty("sessionGeneration").GetInt64(),
+            new SublotRejection(
+                RequiredString(payload, "demandId"),
+                operationSessionId,
+                // The last revision the journey published: its cursor is the next one to take.
+                Math.Max(0, journeys.Max(row => row.WorklistRevision) - 1),
+                "WORKLIST_REVISION_STALE",
+                "payload.worklistRevision",
+                "本站已结束，这次录入不再处理。"),
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ReplayPendingCommandsAsync(
