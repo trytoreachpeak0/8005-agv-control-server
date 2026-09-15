@@ -2,7 +2,8 @@
 
 Status: fixed，未上线（修复分支 `fix/admission-policy-drift`，PR 进 `ControlServer_MVP`）
 Found by: 代码审读，2026-09-15；红测试 `AStationAddedToTheSharedMapDoesNotStrandCargoAlreadyBoundForTheGate`
-（提交 `78241ad1`，只含测试）。没有在现场或 L2 里观测到，生产上是否已经发生过未查。
+（提交 `78241ad1`，只含测试）。现场没有观测到，生产上是否已经发生过未查；L2 里 2026-09-08 已出现过一次，
+当时没有认出来，见下文「其实 2026-09-08 就在 L2 里出现过」。
 Product at discovery: 服务端 `ControlServer_MVP` `6a8a688c`。同样的写法自 `9c0d5309`（2026-08-26，
 `feat: run durable production journeys`）起就在，`fp/v2-impl` 上也一样。
 
@@ -52,6 +53,13 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
 
 `scripts/l2/README.md` 第 145 行原先总结为「改地图只能增，不能换」，这对区号站点并不成立，多一个也会变。
 那条经验来自追加充电桩，而充电桩名字不是区号格式，本来就不进准入集合。
+
+## 其实 2026-09-08 就在 L2 里出现过
+
+`evidence/l2/20260908-auto-charge-endurance-001`（FAIL）的 `logs/control-server.out.log` 里有 90 条
+`Journey runtime iteration failed closed; no stage is inferred from memory.`，正是这个停摆：场景当时整张换掉了
+站点表，少了一个区号站点。那次的结论是「场景不该换地图」，改的是场景写法，服务端没动。现场的地图是别人在改，
+场景能守住的规矩现场守不住。
 
 ## 修法
 
