@@ -14,6 +14,8 @@ namespace ControlServer.EmergencyDrill;
 /// The wind-down order is trigger → cancel-order → release, enforced by guards on both ends (user
 /// ruling, 2026-09-14). Released first, the latch would clear under a still-active drill order and
 /// RIoT could drive the vehicle on to its destination while staff stand beside it.
+/// For issue control-server#63 a run may put one hold (CMD_ORDER_HELD) before the trigger; a hold that
+/// RIoT confirmed as HELD is the only thing that lets that trigger go out on a vehicle no longer driving.
 /// </remarks>
 internal static class DrillCommands
 {
@@ -418,6 +420,173 @@ internal static class DrillCommands
         }
     }
 
+    // ---- hold -------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// CMD_ORDER_HELD for the drill order while the vehicle drives between stations, then an observation of
+    /// what RIoT reports for the HELD order (issue control-server#63).
+    /// </summary>
+    /// <remarks>
+    /// The product stops a vehicle with OrderHold first and escalates to triggerEmergency only when the stop
+    /// is not proven, and nobody knows what RIoT reports for a HELD order. So the window runs to its end
+    /// even once the order is HELD and the vehicle still -- the steady-state readings are the point -- and
+    /// ends early only if the order goes terminal. No waiver: the vehicle must be driving between stations.
+    /// </remarks>
+    internal static async Task<CommandOutcome> HoldAsync(DrillContext context, DrillRiot riot)
+    {
+        CommandOutcome outcome = new("hold");
+        DrillState state = context.State;
+        string key = state.DeviceKey;
+        if (!TryReadSeconds(context.Args, "observe-seconds", 20, 3, 120, out int observeSeconds))
+        {
+            return outcome.Usage("--observe-seconds must be a whole number of seconds between 3 and 120");
+        }
+
+        outcome.Guard(
+            "no hold recorded in this run (at most one CMD_ORDER_HELD per run)",
+            state.Hold is null,
+            state.Hold is null ? "none" : Inv($"already attempted at {state.Hold.AttemptedAt:O} ({state.Hold.Disposition}); never sent twice"));
+        outcome.Guard(
+            "no trigger recorded in this run (the hold comes before the emergency stop)",
+            state.Trigger is null,
+            state.Trigger is null ? "none" : Inv($"trigger {state.Trigger.Disposition} at {state.Trigger.AttemptedAt:O}"));
+        outcome.Guard(
+            "no cancel-order recorded in this run",
+            state.CancelOrder is null,
+            state.CancelOrder is null ? "none" : Inv($"cancel-order {state.CancelOrder.Disposition} at {state.CancelOrder.AttemptedAt:O}"));
+        outcome.Guard(
+            "no release recorded in this run",
+            state.Release is null,
+            state.Release is null ? "none" : Inv($"release {state.Release.Disposition} at {state.Release.AttemptedAt:O}"));
+        string? keyRefusal = DrillGuards.RefuseDeviceKey(key, state.FakeRiot, context.BaseUrl);
+        outcome.Guard("device key is the approved one", keyRefusal is null, keyRefusal ?? state.VehicleAlias + " " + key);
+        PreflightGuard(outcome, state);
+        outcome.Guard(
+            "drill order recorded with an orderId",
+            state.Order?.OrderId is not null,
+            state.Order is null ? "no order" : Inv($"{state.Order.UpperId} orderId={state.Order.OrderId ?? "-"}"));
+        if (!outcome.AllGuardsPassed || state.Order?.OrderId is not string orderId)
+        {
+            return outcome.Refuse("hold refused; nothing was sent");
+        }
+        string upperId = state.Order.UpperId;
+
+        RiotVehicleEmergencyObservation? before = await riot.ReadEmergencyAsync(key);
+        Observe(context, "emergency", before);
+        VehicleMotionSample? pre = await riot.SampleAsync(key);
+        Observe(context, "motion", pre);
+        Remember(state, pre, before);
+        outcome.Guard(
+            "latch reads OK before the hold",
+            before?.EmergencyState == Ok,
+            "emergencyState=" + (before?.EmergencyState ?? "unread"));
+        outcome.Guard(
+            Inv($"fresh sample: moving between stations (speed > {Motion.MinimumMovingSpeed}, no station)"),
+            pre is not null && Motion.IsMovingBetweenStations(pre),
+            Motion.Describe(pre));
+        if (!outcome.AllGuardsPassed)
+        {
+            context.Evidence.SaveState(state);
+            return outcome.Refuse("hold refused; nothing was sent");
+        }
+
+        HoldRecord hold = new()
+        {
+            AttemptedAt = DateTimeOffset.Now,
+            OrderId = orderId,
+            PreSample = pre is null ? null : Motion.ToRecord(pre),
+            ObserveSeconds = observeSeconds
+        };
+        // Written and flushed before the call, as for trigger: a crash, a timeout or a refusal by RIoT all
+        // still read as "this run's one hold has been used".
+        state.Hold = hold;
+        context.Evidence.SaveState(state);
+        context.Evidence.AppendCallIntent("CMD_ORDER_HELD", orderId);
+
+        DateTimeOffset calledAt = DateTimeOffset.Now;
+        long started = Stopwatch.GetTimestamp();
+        RiotCommandCallResult result = await riot.Commands.IssueOrderCommandAsync(
+            RiotOrderCommandKind.Hold, orderId, "W1-DRILL hold", CancellationToken.None);
+        hold.Receipt = Motion.ToReceipt("CMD_ORDER_HELD", result, Stopwatch.GetElapsedTime(started));
+        hold.Disposition = result.Disposition.ToString();
+        context.Evidence.SaveState(state);
+        Observe(context, "holdOrderResult", hold.Receipt);
+
+        List<StopSample> samples = [];
+        StopVerdict? lastStop = null;
+        DateTimeOffset deadline = calledAt.AddSeconds(observeSeconds);
+        while (DateTimeOffset.Now < deadline)
+        {
+            RiotOrderObservation? order = await riot.ReconcileAsync(upperId);
+            DateTimeOffset orderReadAt = DateTimeOffset.Now;
+            Observe(context, "order", order);
+            // Latch before motion, as in trigger: a sample's latch flag is the reading taken just before it.
+            // The latch should stay OK here, so MT_RUNNING never counts as still.
+            RiotVehicleEmergencyObservation? latch = await riot.ReadEmergencyAsync(key);
+            Observe(context, "emergency", latch);
+            VehicleMotionSample? sample = await riot.SampleAsync(key);
+            Observe(context, "motion", sample);
+            Remember(state, sample, latch);
+            samples.Add(new StopSample(sample, latch is { IsLatched: true }));
+            hold.Samples++;
+            if (order is null or { Kind: RiotOrderObservationKind.Unknown } || latch?.EmergencyState is null || sample is null)
+            {
+                hold.ReadFailures++;
+            }
+            hold.OrderStateAfter = order?.OrderState ?? hold.OrderStateAfter;
+            if (!hold.HeldObserved && order?.OrderState == RiotOrderState.Paused)
+            {
+                hold.HeldObserved = true;
+                hold.MsToHeld = Math.Round((orderReadAt - calledAt).TotalMilliseconds, 0);
+            }
+            if (sample?.MovementState is string movementState && !hold.MovementStatesSeen.Contains(movementState))
+            {
+                hold.MovementStatesSeen.Add(movementState);
+            }
+
+            StopVerdict stop = Motion.EvaluateStop(samples);
+            lastStop = stop;
+            if (stop.Stopped && !hold.Stopped)
+            {
+                hold.Stopped = true;
+                hold.MsToStop = stop.Since is DateTimeOffset since ? Math.Round((since - calledAt).TotalMilliseconds, 0) : null;
+                hold.StopStreakProductReadingNotMoving = stop.ProductReadingNotMoving;
+                Observe(context, "stopVerdict", stop);
+            }
+            if (order is { Kind: RiotOrderObservationKind.Terminal })
+            {
+                hold.OrderTerminalObserved = true;
+                break;
+            }
+            // No early exit once HELD and stopped: what RIoT keeps reporting afterwards is what #63 needs.
+            await Task.Delay(FastPollIntervalMs);
+        }
+        VehicleMotionSample? lastSample = samples.LastOrDefault(entry => entry.Motion is not null).Motion;
+        hold.StoppedAtEnd = lastStop?.Stopped == true;
+        hold.ProductReadingNotMovingAtEnd = lastSample is null ? null : lastSample.Reading == VehicleMotionReading.NotMoving;
+        if (lastStop is not null)
+        {
+            Observe(context, "stopVerdict", new { atWindowEnd = true, stop = lastStop });
+        }
+
+        hold.CompletedAt = DateTimeOffset.Now;
+        context.Evidence.SaveState(state);
+        outcome.Data["hold"] = hold;
+        outcome.Lines.Add(Inv($"CMD_ORDER_HELD {orderId} sent once: {hold.Disposition} ({hold.Receipt.Classification}, {hold.Receipt.ElapsedMs:F0} ms)"));
+        outcome.Lines.Add(Inv($"held={hold.HeldObserved} (orderState {RiotOrderState.Paused}) after {Motion.Number(hold.MsToHeld)} ms; latest orderState {Motion.Number(hold.OrderStateAfter)}") +
+            (hold.OrderTerminalObserved ? " -- the order went terminal, observation ended early" : string.Empty));
+        outcome.Lines.Add(Inv($"stopped={hold.Stopped} after {Motion.Number(hold.MsToStop)} ms (product reading NotMoving: {hold.StopStreakProductReadingNotMoving?.ToString() ?? "-"}); at window end stopped={hold.StoppedAtEnd}, product reading NotMoving: {hold.ProductReadingNotMovingAtEnd?.ToString() ?? "-"}"));
+        outcome.Lines.Add("movementState after the call: [" + string.Join(", ", hold.MovementStatesSeen) + "]");
+        outcome.Lines.Add(Inv($"{hold.Samples} samples, {hold.ReadFailures} with a failed read; last motion {Motion.Describe(lastSample)}; latest latch {state.LatestEmergency?.State ?? "unread"}"));
+
+        bool refused = result.Disposition == RiotCommandCallDisposition.Failed;
+        string notSeen = refused ? "refused it" : Inv($"did not show orderState {RiotOrderState.Paused} within {observeSeconds} s");
+        return !refused && hold.HeldObserved
+            ? outcome.Set("OK", 0, Inv($"drill order {orderId} is HELD (orderState {RiotOrderState.Paused}); next: status, then trigger (authorised separately)"))
+            : outcome.NotConfirmed("CMD_ORDER_HELD was sent once and will not be sent again; RIoT " + notSeen +
+                ". Run status and report to the user. trigger still requires the vehicle to be moving between stations in this run.");
+    }
+
     // ---- trigger ----------------------------------------------------------------------------------
 
     internal static async Task<CommandOutcome> TriggerAsync(DrillContext context, DrillRiot riot)
@@ -469,11 +638,25 @@ internal static class DrillCommands
             before?.EmergencyState == Ok,
             "emergencyState=" + (before?.EmergencyState ?? "unread"));
         bool moving = pre is not null && Motion.IsMovingBetweenStations(pre);
+        // Hold-then-emergency (issue control-server#63): once this run's hold has read the order back as
+        // HELD the vehicle is expected to stand, so that confirmed hold stands in for the moving sample. A
+        // hold that was sent but never read back HELD does not.
+        bool heldEarlier = state.Hold is { HeldObserved: true };
+        string movingGuard = Inv($"fresh sample: moving between stations (speed > {Motion.MinimumMovingSpeed}, no station)");
+        if (state.Hold is not null)
+        {
+            movingGuard += " -- or: drill order confirmed HELD earlier in this run (hold-then-emergency)";
+        }
+        if (allowStationary && !moving && !heldEarlier)
+        {
+            movingGuard += " -- waived by --allow-stationary";
+        }
         outcome.Guard(
-            Inv($"fresh sample: moving between stations (speed > {Motion.MinimumMovingSpeed}, no station)") +
-                (allowStationary && !moving ? " -- waived by --allow-stationary" : string.Empty),
-            moving || allowStationary,
-            Motion.Describe(pre));
+            movingGuard,
+            moving || heldEarlier || allowStationary,
+            Motion.Describe(pre) + (state.Hold is null
+                ? string.Empty
+                : Inv($"; hold {state.Hold.Disposition}, HELD observed {state.Hold.HeldObserved} after {Motion.Number(state.Hold.MsToHeld)} ms")));
         if (!outcome.AllGuardsPassed)
         {
             context.Evidence.SaveState(state);
@@ -483,7 +666,8 @@ internal static class DrillCommands
         TriggerRecord trigger = new()
         {
             AttemptedAt = DateTimeOffset.Now,
-            AllowStationary = allowStationary && !moving,
+            AllowStationary = allowStationary && !moving && !heldEarlier,
+            AfterHold = heldEarlier,
             PreSample = pre is null ? null : Motion.ToRecord(pre),
             ObserveSeconds = observeSeconds
         };
@@ -516,6 +700,10 @@ internal static class DrillCommands
             // latch is not an engaged one, so MT_RUNNING next to it does not count as still.
             samples.Add(new StopSample(sample, latch is { IsLatched: true }));
             trigger.Samples++;
+            if (sample?.MovementState is string movementState && !trigger.MovementStatesSeen.Contains(movementState))
+            {
+                trigger.MovementStatesSeen.Add(movementState);
+            }
             if (latch?.EmergencyState is null || sample is null)
             {
                 trigger.ReadFailures++;
@@ -556,6 +744,11 @@ internal static class DrillCommands
         outcome.Lines.Add(Inv($"latched={trigger.Latched} {trigger.LatchState ?? "-"} after {Motion.Number(trigger.MsToLatch)} ms"));
         outcome.Lines.Add(Inv($"stopped={trigger.Stopped} after {Motion.Number(trigger.MsToStop)} ms (trailing still streak {trigger.StopStreak}, product reading NotMoving: {trigger.StopStreakProductReadingNotMoving?.ToString() ?? "-"}, stillWhileLatchedRunning: {trigger.StillWhileLatchedRunning?.ToString() ?? "-"})"));
         outcome.Lines.Add(Inv($"{trigger.Samples} samples, {trigger.ReadFailures} with a failed read; latest latch {state.LatestEmergency?.State ?? "unread"}"));
+        outcome.Lines.Add("movementState after the call: [" + string.Join(", ", trigger.MovementStatesSeen) + "]");
+        if (trigger.AfterHold)
+        {
+            outcome.Lines.Add("sent on the drill order this run confirmed HELD (hold-then-emergency)");
+        }
         if (state.CanNotRecoverObserved)
         {
             outcome.Lines.Add("CAN_NOT_RECOVER observed: cancel-order is still allowed; release will refuse -- hand over to RIoT staff");
@@ -901,7 +1094,7 @@ internal static class DrillCommands
         : Inv($"{upperId} {order.Kind} orderId={order.OrderId ?? "-"} orderState={Motion.Number(order.OrderState)} vehicle={order.VehicleKey ?? "-"} map={Motion.Number(order.MapId)} destination={Motion.Number(order.DestinationStationId)}");
 
     private static string DescribeRun(DrillState state) => Inv(
-        $"preflight={(state.Preflight is null ? "-" : state.Preflight.Passed ? "passed" : "FAILED")} order={state.Order?.OrderId ?? "-"} trigger={state.Trigger?.Disposition ?? "-"} cancelOrder={state.CancelOrder?.Disposition ?? "-"} release={state.Release?.Disposition ?? "-"} canNotRecoverObserved={state.CanNotRecoverObserved}");
+        $"preflight={(state.Preflight is null ? "-" : state.Preflight.Passed ? "passed" : "FAILED")} order={state.Order?.OrderId ?? "-"} hold={state.Hold?.Disposition ?? "-"} trigger={state.Trigger?.Disposition ?? "-"} cancelOrder={state.CancelOrder?.Disposition ?? "-"} release={state.Release?.Disposition ?? "-"} canNotRecoverObserved={state.CanNotRecoverObserved}");
 
     private static string Inv(FormattableString text) => FormattableString.Invariant(text);
 }

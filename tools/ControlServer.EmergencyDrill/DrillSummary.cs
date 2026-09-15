@@ -25,6 +25,11 @@ internal static class DrillSummary
         "解除后 RIoT 可能让车接着开往终点，而现场人员此时正在车旁。工具以守卫强制这个顺序。\n\n" +
         "会让车移动、发急停、取消订单或解除急停的每一条命令，运行前都在对话中逐次单独授权。白名单文档本身不改。";
 
+    private const string HoldApproval =
+        "2026-09-15，产品负责人（用户）在对话中为 issue control-server#63 批准 agv02 的一次后续运行（同样仅限 agv02）：" +
+        "一张移动单；车在两站之间行驶时发一次 `CMD_ORDER_HELD`；对已 HELD 的订单发一次 `triggerEmergency`；" +
+        "之后照上面的顺序 `CMD_ORDER_CANCEL`、`cancelEmergency`。`hold` 与 `trigger` 各自逐次单独授权。";
+
     private static readonly string[] L2EvidenceDirectories =
     [
         "evidence/l2/20260914-ci-34815736635-emergency-stop-single-trigger-01",
@@ -47,12 +52,15 @@ internal static class DrillSummary
         CallCount trigger = Count(commands, wire, "triggerEmergency", path => path.EndsWith("/triggerEmergency", StringComparison.Ordinal));
         CallCount cancelEmergency = Count(commands, wire, "cancelEmergency", path => path.EndsWith("/cancelEmergency", StringComparison.Ordinal));
         CallCount create = Count(commands, wire, "byDefaultMissions", path => path.StartsWith("/api/order/v1/add/byDefaultMissions", StringComparison.Ordinal));
+        // CMD_ORDER_HELD and CMD_ORDER_CANCEL share one endpoint and differ only in the body, which wire.jsonl
+        // does not keep: both counts carry the endpoint's total POSTs.
         CallCount cancelOrder = Count(commands, wire, "CMD_ORDER_CANCEL", path => path.StartsWith("/api/task/v1/order/command/", StringComparison.Ordinal));
+        CallCount hold = Count(commands, wire, "CMD_ORDER_HELD", path => path.StartsWith("/api/task/v1/order/command/", StringComparison.Ordinal));
 
         TriggerRecord? triggerRecord = state.Trigger;
         bool stopProven = triggerRecord is { Latched: true, Stopped: true };
         bool sentOnce = trigger.Intents == 1 && trigger.Posts == 1;
-        List<string> abnormal = Abnormalities(state, commands, wire, trigger, cancelEmergency, create, cancelOrder);
+        List<string> abnormal = Abnormalities(state, commands, wire, trigger, cancelEmergency, create, cancelOrder, hold);
 
         StringBuilder text = new();
         text.AppendLine(CultureInfo.InvariantCulture, $"# W1 空载急停演练（缩减版）证据摘要 `{state.RunId}`");
@@ -73,6 +81,10 @@ internal static class DrillSummary
         Row(text, "演练单", state.Order is null
             ? "未建"
             : $"{Code(state.Order.UpperId)} → orderId {Code(state.Order.OrderId ?? "-")}，站 {state.Order.StartStationId.ToString(CultureInfo.InvariantCulture)} → {state.Order.DestinationStationId.ToString(CultureInfo.InvariantCulture)}");
+        if (state.Hold is not null)
+        {
+            Row(text, "流程", "先暂停再急停（issue control-server#63）：建单 → `CMD_ORDER_HELD` → `triggerEmergency`（对已 HELD 的订单）→ 取消演练单 → 解除急停");
+        }
         Row(text, "收尾顺序", "发令 → 取消演练单 → 解除急停（解除前演练单必须已是终态）");
         Row(text, "摘要生成时刻", Time(DateTimeOffset.Now));
         text.AppendLine();
@@ -81,6 +93,11 @@ internal static class DrillSummary
         text.AppendLine();
         text.AppendLine("| 判据 | 结论 | 依据 |");
         text.AppendLine("| --- | --- | --- |");
+        if (state.Hold is { } holdRecord)
+        {
+            Row(text, "OrderHold 受理且订单进入 HELD", HoldVerdict(holdRecord), HoldBasis(holdRecord));
+            Row(text, "HELD 后车辆停稳", holdRecord.Stopped ? "**PASS**（RIoT 侧读数）" : "**未证实**", HoldStopBasis(holdRecord));
+        }
         Row(text, "RIoT 侧确实停车",
             stopProven ? "**PASS**（RIoT 侧证据；现场目视结论见第三节）" : "**未证实**",
             StopBasis(triggerRecord));
@@ -105,6 +122,11 @@ internal static class DrillSummary
         text.AppendLine();
         text.AppendLine(ExceptionApproval);
         text.AppendLine();
+        if (state.Hold is not null)
+        {
+            text.AppendLine(HoldApproval);
+            text.AppendLine();
+        }
 
         text.AppendLine("## 三、现场记录（现场填写）");
         text.AppendLine();
@@ -119,15 +141,22 @@ internal static class DrillSummary
         text.AppendLine();
         text.AppendLine("| 时刻 | 事件 | 记录人 |");
         text.AppendLine("| --- | --- | --- |");
-        foreach (string happening in new[]
-                 {
-                     "空载确认：车上无货、仓内无产品",
-                     "发令前目视：车在两站之间行驶",
-                     "目视确认停车（停车位置）",
-                     "取消演练单后车辆状态（应仍停着）",
-                     "确认车辆停稳、无货、仓门全部关闭（`release --field-confirmed` 的依据）",
-                     "解除后车辆状态（应不再移动：演练单已是终态）"
-                 })
+        List<string> happenings = ["空载确认：车上无货、仓内无产品"];
+        if (state.Hold is null)
+        {
+            happenings.Add("发令前目视：车在两站之间行驶");
+        }
+        else
+        {
+            happenings.Add("暂停前目视：车在两站之间行驶");
+            happenings.Add("暂停后目视：车是否停下、停在哪里（`hold`）");
+            happenings.Add("发令前目视：车仍停着（订单 HELD）");
+        }
+        happenings.Add("目视确认停车（停车位置）");
+        happenings.Add("取消演练单后车辆状态（应仍停着）");
+        happenings.Add("确认车辆停稳、无货、仓门全部关闭（`release --field-confirmed` 的依据）");
+        happenings.Add("解除后车辆状态（应不再移动：演练单已是终态）");
+        foreach (string happening in happenings)
         {
             text.AppendLine(CultureInfo.InvariantCulture, $"|  | {happening} |  |");
         }
@@ -168,8 +197,22 @@ internal static class DrillSummary
         text.AppendLine("| 调用 | 发令前记录（SENDING） | 线上 POST（wire.jsonl） |");
         text.AppendLine("| --- | --- | --- |");
         CountRow(text, "`byDefaultMissions`（建单）", create);
+        bool holdInRun = state.Hold is not null || hold.Intents > 0;
+        if (holdInRun)
+        {
+            Row(text, "`CMD_ORDER_HELD`（订单命令端点）", hold.Intents.ToString(CultureInfo.InvariantCulture), "与 `CMD_ORDER_CANCEL` 同一端点，见合计行");
+        }
         CountRow(text, "`triggerEmergency`", trigger);
-        CountRow(text, "`CMD_ORDER_CANCEL`（订单命令端点）", cancelOrder);
+        if (holdInRun)
+        {
+            Row(text, "`CMD_ORDER_CANCEL`（订单命令端点）", cancelOrder.Intents.ToString(CultureInfo.InvariantCulture), "见合计行");
+            Row(text, "订单命令端点合计（`CMD_ORDER_HELD` + `CMD_ORDER_CANCEL`）",
+                (hold.Intents + cancelOrder.Intents).ToString(CultureInfo.InvariantCulture), cancelOrder.Posts.ToString(CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            CountRow(text, "`CMD_ORDER_CANCEL`（订单命令端点）", cancelOrder);
+        }
         CountRow(text, "`cancelEmergency`", cancelEmergency);
         text.AppendLine();
 
@@ -208,7 +251,7 @@ internal static class DrillSummary
 
         text.AppendLine("## 八、本目录文件");
         text.AppendLine();
-        text.AppendLine("- `drill-state.json`：本 run 做过什么；每次改写前的版本都追加在 `state-history.jsonl`。建单、发令、取消单、解除之前先写这里再调用。");
+        text.AppendLine("- `drill-state.json`：本 run 做过什么；每次改写前的版本都追加在 `state-history.jsonl`。建单、暂停、发令、取消单、解除之前先写这里再调用。");
         text.AppendLine("- `commands.jsonl`：每条命令一行（参数、守卫逐项结果、结论），每次 RIoT 写调用发出前另有一行 `phase=SENDING`。");
         text.AppendLine("- `timeline.jsonl`：全部观测（车辆卡片、运动采样、闩锁、订单、站点、预检）。");
         text.AppendLine("- `wire.jsonl`：每个 HTTP 请求的方法、路径、状态码与耗时；不记请求头，API key 不进证据。");
@@ -222,11 +265,18 @@ internal static class DrillSummary
         outcome.Data["sentOnce"] = sentOnce;
         outcome.Data["triggerIntents"] = trigger.Intents;
         outcome.Data["triggerPosts"] = trigger.Posts;
+        outcome.Data["holdIntents"] = hold.Intents;
+        outcome.Data["holdConfirmed"] = state.Hold is null ? null : HoldVerdict(state.Hold) == "**PASS**";
         outcome.Data["cancelOrderIntents"] = cancelOrder.Intents;
         outcome.Data["cancelOrderPosts"] = cancelOrder.Posts;
         outcome.Data["cancelEmergencyIntents"] = cancelEmergency.Intents;
         outcome.Data["cancelEmergencyPosts"] = cancelEmergency.Posts;
         outcome.Data["abnormal"] = abnormal;
+        if (state.Hold is { } heldRun)
+        {
+            outcome.Lines.Add($"OrderHold 受理且订单进入 HELD: {(HoldVerdict(heldRun) == "**PASS**" ? "PASS" : "未证实")}");
+            outcome.Lines.Add($"HELD 后车辆停稳: {(heldRun.Stopped ? "PASS" : "未证实")}");
+        }
         outcome.Lines.Add($"RIoT 侧确实停车: {(stopProven ? "PASS" : "未证实")}");
         outcome.Lines.Add($"8005 只发一次: {(sentOnce ? "PASS" : "FAIL")} (SENDING {trigger.Intents}, POST {trigger.Posts})");
         outcome.Lines.Add($"abnormal items: {abnormal.Count}");
@@ -246,7 +296,8 @@ internal static class DrillSummary
         CallCount trigger,
         CallCount cancelEmergency,
         CallCount create,
-        CallCount cancelOrder)
+        CallCount cancelOrder,
+        CallCount hold)
     {
         List<string> items = [];
         if (state.FakeRiot)
@@ -291,6 +342,32 @@ internal static class DrillSummary
         else if (state.Order is not null)
         {
             items.Add("建了演练单但本 run 没有发令。");
+        }
+        if (state.Hold is { } holdRecord)
+        {
+            items.Add($"`CMD_ORDER_HELD` 之后观察到的 `movementState` 依次为 {MovementSequence(holdRecord.MovementStatesSeen)}；停稳：{YesNo(holdRecord.Stopped)}；" +
+                $"窗口结束时产品 `ReadMotion` 读数 NotMoving：{YesNo(holdRecord.ProductReadingNotMovingAtEnd)}（issue control-server#63 要的读数）。");
+            if (holdRecord.Disposition != "Accepted")
+            {
+                items.Add($"`CMD_ORDER_HELD` 调用结果为 `{holdRecord.Disposition}`（{holdRecord.Receipt?.FailureCategory ?? "-"}），不是 Accepted。");
+            }
+            if (!holdRecord.HeldObserved)
+            {
+                items.Add($"`CMD_ORDER_HELD` 之后 {holdRecord.ObserveSeconds.ToString(CultureInfo.InvariantCulture)} 秒观察窗内没有读到 `orderState=7`：本 run 的 `trigger` 仍要求车在两站之间行驶。");
+            }
+            if (holdRecord.OrderTerminalObserved)
+            {
+                items.Add($"`CMD_ORDER_HELD` 之后观察窗内订单进入终态（`orderState={Motion.Number(holdRecord.OrderStateAfter)}`），观察提前结束。");
+            }
+            if (holdRecord.ReadFailures > 0)
+            {
+                items.Add($"`CMD_ORDER_HELD` 之后观察期间有 {holdRecord.ReadFailures.ToString(CultureInfo.InvariantCulture)} 次读数失败。");
+            }
+        }
+        if (state.Trigger is { AfterHold: true } afterHold)
+        {
+            items.Add($"对已 HELD 的订单发 `triggerEmergency` 之后观察到的 `movementState` 依次为 {MovementSequence(afterHold.MovementStatesSeen)}" +
+                $"（闩锁 `{afterHold.LatchState ?? "未读到"}`；停稳：{YesNo(afterHold.Stopped)}；停稳那段产品读数 NotMoving：{YesNo(afterHold.StopStreakProductReadingNotMoving)}）。");
         }
         List<string> latchedRunningStops = [];
         if (state.Trigger is { StillWhileLatchedRunning: true })
@@ -347,7 +424,9 @@ internal static class DrillSummary
         {
             items.Add($"`cancelEmergency` 计数异常：SENDING {cancelEmergency.Intents.ToString(CultureInfo.InvariantCulture)} 条，POST {cancelEmergency.Posts.ToString(CultureInfo.InvariantCulture)} 次。");
         }
-        if (create.Intents > 1 || create.Posts > 1 || cancelOrder.Intents > 1 || cancelOrder.Posts > 1)
+        // One POST each for the hold and the cancel that this run recorded; at least one is always allowed, as before.
+        int allowedOrderCommandPosts = Math.Max(1, Math.Min(hold.Intents, 1) + Math.Min(cancelOrder.Intents, 1));
+        if (create.Intents > 1 || create.Posts > 1 || cancelOrder.Intents > 1 || hold.Intents > 1 || cancelOrder.Posts > allowedOrderCommandPosts)
         {
             items.Add("建单或订单命令的发出次数多于一次。");
         }
@@ -385,8 +464,47 @@ internal static class DrillSummary
         string before = trigger.PreSample is null
             ? "发令前采样缺失"
             : $"发令前 `speed={Motion.Number(trigger.PreSample.Speed)}`、`movementState={trigger.PreSample.MovementState ?? "-"}`、`currentStationId={Motion.Number(trigger.PreSample.CurrentStationId)}`";
-        return $"{before}；调用结果 `{trigger.Disposition}`；{latch}；{stop}；共 {trigger.Samples.ToString(CultureInfo.InvariantCulture)} 个采样。";
+        string afterHold = trigger.AfterHold
+            ? "在订单已 HELD（`orderState=7`）之后发出（先暂停再急停：发令前「两站之间行驶」守卫由本 run 已证实的 HELD 放行）；"
+            : string.Empty;
+        return $"{afterHold}{before}；调用结果 `{trigger.Disposition}`；{latch}；{stop}；共 {trigger.Samples.ToString(CultureInfo.InvariantCulture)} 个采样。";
     }
+
+    private static string HoldVerdict(HoldRecord hold) =>
+        hold.Disposition != "Failed" && hold.HeldObserved ? "**PASS**" : "**未证实**";
+
+    private static string HoldBasis(HoldRecord hold)
+    {
+        string before = hold.PreSample is null
+            ? "暂停前采样缺失"
+            : $"暂停前 `speed={Motion.Number(hold.PreSample.Speed)}`、`movementState={hold.PreSample.MovementState ?? "-"}`、`currentStationId={Motion.Number(hold.PreSample.CurrentStationId)}`";
+        string held = hold.HeldObserved
+            ? $"发出后 {Motion.Number(hold.MsToHeld)} ms 读到 `orderState=7`（HELD／PAUSED）"
+            : "观察窗内没有读到 `orderState=7`";
+        string terminal = hold.OrderTerminalObserved ? "，窗口内订单进入终态、观察提前结束" : string.Empty;
+        return $"{before}；`CMD_ORDER_HELD` {Code(hold.OrderId)} 调用结果 `{hold.Disposition}`（{hold.Receipt?.Classification ?? "-"}）；{held}；" +
+            $"最后读到 `orderState={Motion.Number(hold.OrderStateAfter)}`{terminal}；观察 {hold.ObserveSeconds.ToString(CultureInfo.InvariantCulture)} 秒，" +
+            $"共 {hold.Samples.ToString(CultureInfo.InvariantCulture)} 个采样（{hold.ReadFailures.ToString(CultureInfo.InvariantCulture)} 个读数失败）。";
+    }
+
+    private static string HoldStopBasis(HoldRecord hold)
+    {
+        string stop = hold.Stopped
+            ? $"发出后 {Motion.Number(hold.MsToStop)} ms 起连续静止采样（产品读数 NotMoving：{YesNo(hold.StopStreakProductReadingNotMoving)}）"
+            : "观察窗内没有停稳证据";
+        return $"{stop}；窗口结束时停稳：{YesNo(hold.StoppedAtEnd)}，产品 `ReadMotion` 读数 NotMoving：{YesNo(hold.ProductReadingNotMovingAtEnd)}；" +
+            $"发出后 `movementState` 依次出现：{MovementSequence(hold.MovementStatesSeen)}。此时闩锁应为 `OK`，`speed=0` + `MT_RUNNING` 不计为静止。";
+    }
+
+    private static string MovementSequence(List<string> states) =>
+        states.Count == 0 ? "（未读到）" : string.Join(" → ", states.Select(Code));
+
+    private static string YesNo(bool? value) => value switch
+    {
+        true => "是",
+        false => "否",
+        null => "未读到"
+    };
 
     private static string CancelVerdict(DrillState state) => state.CancelOrder switch
     {

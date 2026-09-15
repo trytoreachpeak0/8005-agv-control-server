@@ -38,6 +38,7 @@ internal static class Program
         ["preflight"] = ["evidence", "riot-base-url", "accept-tun"],
         ["create-move"] = ["evidence", "riot-base-url", "to"],
         ["watch-moving"] = ["evidence", "riot-base-url", "timeout"],
+        ["hold"] = ["evidence", "riot-base-url", "observe-seconds"],
         ["trigger"] = ["evidence", "riot-base-url", "allow-stationary", "observe-seconds"],
         ["release"] = ["evidence", "riot-base-url", "field-confirmed", "observe-seconds"],
         ["cancel-order"] = ["evidence", "riot-base-url"],
@@ -140,6 +141,7 @@ internal static class Program
             "preflight" => await DrillCommands.PreflightAsync(context, riot),
             "create-move" => await DrillCommands.CreateMoveAsync(context, riot),
             "watch-moving" => await DrillCommands.WatchMovingAsync(context, riot),
+            "hold" => await DrillCommands.HoldAsync(context, riot),
             "trigger" => await DrillCommands.TriggerAsync(context, riot),
             "release" => await DrillCommands.ReleaseAsync(context, riot),
             "cancel-order" => await DrillCommands.CancelOrderAsync(context, riot),
@@ -190,7 +192,8 @@ internal static class Program
         Console.Error.WriteLine("  status        [--stations]                                   read-only");
         Console.Error.WriteLine("  create-move   --to <riotStationId>                           MOVES THE VEHICLE");
         Console.Error.WriteLine("  watch-moving  [--timeout <s>]                                read-only");
-        Console.Error.WriteLine("  trigger       [--observe-seconds <s>] [--allow-stationary]   SENDS triggerEmergency (once per run); --allow-stationary is self-test only (--fake-riot run)");
+        Console.Error.WriteLine("  hold          [--observe-seconds <s>]                        SENDS CMD_ORDER_HELD (once per run; while the drill order drives between stations)");
+        Console.Error.WriteLine("  trigger     [--observe-seconds <s>] [--allow-stationary]   SENDS triggerEmergency (once per run); --allow-stationary is self-test only (--fake-riot run)");
         Console.Error.WriteLine("  cancel-order                                                 SENDS CMD_ORDER_CANCEL (once per run; after trigger, before release)");
         Console.Error.WriteLine("  release       --field-confirmed \"<name> stopped,empty,doors-closed\" [--observe-seconds <s>]   SENDS cancelEmergency (once per run; only after the order is terminal)");
         Console.Error.WriteLine("  summarize                                                    writes SUMMARY.md");

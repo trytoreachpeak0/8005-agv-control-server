@@ -16,6 +16,9 @@ internal static class DrillGuards
     /// empty vehicle travels between two stations on map 25, then CMD_ORDER_CANCEL for the drill order,
     /// and only once that order is terminal, cancelEmergency from CAN_RECOVER after on-site staff
     /// confirm stopped / empty / doors closed.
+    /// On 2026-09-15 the product owner approved in chat, for issue control-server#63 and agv02 only, a
+    /// follow-up run: one move order, one CMD_ORDER_HELD while driving between stations, then one
+    /// triggerEmergency on the HELD order, then CMD_ORDER_CANCEL and cancelEmergency as before.
     /// Pointing this tool at another vehicle is a new approval, not an edit to this line.
     /// </remarks>
     internal const string ApprovedDeviceKey = "BROKERX-f38975561adf46ccb1d2f23833c7d0e4";

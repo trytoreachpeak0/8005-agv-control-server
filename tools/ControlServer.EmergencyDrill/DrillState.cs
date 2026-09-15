@@ -20,6 +20,7 @@ internal sealed class DrillState
     public PreflightRecord? Preflight { get; set; }
     public OrderRecord? Order { get; set; }
     public WatchRecord? LastWatch { get; set; }
+    public HoldRecord? Hold { get; set; }
     public TriggerRecord? Trigger { get; set; }
     public ReleaseRecord? Release { get; set; }
     public CancelOrderRecord? CancelOrder { get; set; }
@@ -74,10 +75,46 @@ internal sealed class CallReceiptRecord
     public double ElapsedMs { get; set; }
 }
 
+/// <summary>
+/// CMD_ORDER_HELD for the drill order while the vehicle drives between stations (issue
+/// control-server#63): what RIoT reports for a HELD order, before any emergency stop.
+/// </summary>
+internal sealed class HoldRecord
+{
+    public DateTimeOffset AttemptedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public string OrderId { get; set; } = string.Empty;
+    public MotionRecord? PreSample { get; set; }
+    public int ObserveSeconds { get; set; }
+    public string Disposition { get; set; } = "IN_FLIGHT";
+    public CallReceiptRecord? Receipt { get; set; }
+    /// <summary>The latest orderState read back in the window.</summary>
+    public int? OrderStateAfter { get; set; }
+    /// <summary>orderState 7 (<c>RiotOrderState.Paused</c>, where CMD_ORDER_HELD lands) was read back.</summary>
+    public bool HeldObserved { get; set; }
+    public double? MsToHeld { get; set; }
+    /// <summary>The order went terminal in the window, which ends the observation early.</summary>
+    public bool OrderTerminalObserved { get; set; }
+    /// <summary>A stop was observed (latch flag from the same round; with the latch OK, MT_RUNNING is never still).</summary>
+    public bool Stopped { get; set; }
+    public double? MsToStop { get; set; }
+    /// <summary>Set when the stop was first observed: whether the product's ReadMotion also read that streak as NotMoving.</summary>
+    public bool? StopStreakProductReadingNotMoving { get; set; }
+    /// <summary>The verdict over the samples at the end of the window (the steady state).</summary>
+    public bool StoppedAtEnd { get; set; }
+    public bool? ProductReadingNotMovingAtEnd { get; set; }
+    /// <summary>Distinct movementState values read after the call, in order of first appearance.</summary>
+    public List<string> MovementStatesSeen { get; set; } = [];
+    public int Samples { get; set; }
+    public int ReadFailures { get; set; }
+}
+
 internal sealed class TriggerRecord
 {
     public DateTimeOffset AttemptedAt { get; set; }
     public bool AllowStationary { get; set; }
+    /// <summary>Sent on an order this run had confirmed HELD (hold-then-emergency); the moving guard passed on that.</summary>
+    public bool AfterHold { get; set; }
     public MotionRecord? PreSample { get; set; }
     public string Disposition { get; set; } = "IN_FLIGHT";
     public CallReceiptRecord? Receipt { get; set; }
@@ -93,6 +130,8 @@ internal sealed class TriggerRecord
     public bool? StopStreakProductReadingNotMoving { get; set; }
     /// <summary>Set when the stop was first observed: whether it rested on speed 0 + MT_RUNNING under an engaged latch.</summary>
     public bool? StillWhileLatchedRunning { get; set; }
+    /// <summary>Distinct movementState values read after the call, in order of first appearance.</summary>
+    public List<string> MovementStatesSeen { get; set; } = [];
     public DateTimeOffset? CompletedAt { get; set; }
 }
 

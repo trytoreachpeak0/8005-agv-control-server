@@ -7,7 +7,7 @@ ControlServer.EmergencyDrill 对本机回环上的 ControlServer.FakeRiot 走完
 .DESCRIPTION
 **只连本机回环上本脚本自己起的 FakeRiot，永远不连真实 RIoT（172.19.206.222），不碰任何车。**
 
-收尾顺序是「先取消演练单、再解除急停」（用户 2026-09-14 裁定）。跑四段：
+收尾顺序是「先取消演练单、再解除急停」（用户 2026-09-14 裁定）。跑以下各段：
 
 - A 正向：init → status → create-move（先证没有 preflight 时拒绝）→ preflight → create-move → cancel-order
   （先证发令前拒绝）→（控制面：单进入执行、车离站在两站之间行驶）→ watch-moving → trigger →（控制面：约 0.8 秒后
@@ -15,15 +15,20 @@ ControlServer.EmergencyDrill 对本机回环上的 ControlServer.FakeRiot 走完
   release →（控制面：闩锁回 OK）→ summarize。
 - B 反向：闩锁一直不锁上时 trigger 只发一次、第二次被拒；闩锁 OK 时 cancel-order 被拒；CAN_NOT_RECOVER 时
   release 在取消单之前被拒、cancel-order 被允许、取消后 release 仍被拒且不发 cancelEmergency。
-  B 段另证：闩锁 OK 时 speed=0 + MT_RUNNING 不算停稳（DRILL-B11）。
+  B 段另证：闩锁 OK 时 speed=0 + MT_RUNNING 不算停稳（DRILL-B11）；发令之后 hold 拒绝（DRILL-B12）。
 - D 取消单迟迟不到终态：cancel-order 发一次后报 NOT_CONFIRMED 并提示停下回报用户；此后 release 在 CAN_RECOVER 下仍拒绝。
 - E 2026-09-15 现场形态：车接单后在起点站原地旋转，RIoT 报 MT_RUNNING、speed=0、currentStationId=0——watch-moving 不报
   READY（speed 恰为 0.05 也不报）、trigger 拒绝；speed 0.06 才 READY。发令后先降速（闩锁仍 OK）再锁闩锁、movementState
   一直是 MT_RUNNING：trigger 只从闩锁锁上之后的采样算停稳；cancel-order、release 在 CAN_RECOVER 下接受 speed=0 +
   MT_RUNNING 为停稳，并记下 stillWhileLatchedRunning=true，摘要写明。
+- F 先暂停再急停（issue control-server#63）：车没在两站之间行驶时 hold 拒绝、没有 hold 时停着的车 trigger 拒绝；车行驶中
+  hold →（控制面：订单 orderState=7，车 speed=0 + MT_PAUSED）→ hold OK，记下 HELD、停稳与 movementState 序列 → status 显示
+  hold=Accepted → 第二次 hold 拒绝 → 停着的车 trigger 因已证实 HELD 放行（afterHold=true）→（控制面：闩锁 CAN_RECOVER，车保持
+  MT_PAUSED、speed=0）→ cancel-order → release → summarize 带两条暂停判定。
+- H hold 未证实：RIoT 接受 CMD_ORDER_HELD 但订单一直不是 7 → hold NOT_CONFIRMED；此后停着的车 trigger 仍拒绝。
 - C 离线守卫：init 拒绝 agv01、其它 key、不带 --fake-riot 的自测 key、非回环地址、map 26、复用已用目录；
   已删除的 --force-after-can-not-recover 是用法错误；--allow-stationary 在非自测 run（agv02 key、回环地址、无 --fake-riot）
-  上被拒，不发任何请求、不记发令。
+  上被拒，不发任何请求、不记发令；hold 不接受 --allow-stationary（没有放行选项，DRILL-C11）。
 
 **FakeRiot 不替工具锁闩锁、不让车停**（它的一贯设计：命令只记录），所以闩锁、停车、取消单、解除的后果都由
 本脚本在看到对应调用落到 FakeRiot 之后，照真实 RIoT 的样子在控制面上写出来。
@@ -457,6 +462,15 @@ try {
     Add-Assertion 'DRILL-B04' '闩锁没观察到时第二次 trigger 仍拒绝，FakeRiot 仍只 1 次 triggerEmergency' `
         ($r.ExitCode -eq 1 -and (Get-Invocations 'triggerEmergency').Count -eq 1) 'exit 1 / 1 次' "exit $($r.ExitCode) / $((Get-Invocations 'triggerEmergency').Count) 次"
 
+    # A trigger is recorded (NOT_CONFIRMED) and the vehicle still drives between stations with the latch OK:
+    # "no trigger recorded" is the only guard between hold and a CMD_ORDER_HELD.
+    $r = Invoke-Drill 'B04a-hold-after-trigger' @('hold', '--evidence', $runB)
+    Add-Assertion 'DRILL-B12' '发令之后 hold 拒绝（车仍在两站之间行驶、闩锁 OK，只有「no trigger recorded」一项 [NO]），0 次 CMD_ORDER_HELD，不记 hold' `
+        ($r.ExitCode -eq 1 -and $r.Stdout -match '\[NO\] no trigger recorded in this run' -and
+            [regex]::Matches($r.Stdout, '\[NO\]').Count -eq 1 -and
+            (Get-Invocations 'CMD_ORDER_HELD').Count -eq 0 -and $null -eq (Read-DrillState $runB).hold) `
+        'exit 1 / 仅 1 个 [NO] / 0 次 / 无 hold 记录' "exit $($r.ExitCode) / $([regex]::Matches($r.Stdout, '\[NO\]').Count) 个 [NO] / $((Get-Invocations 'CMD_ORDER_HELD').Count) 次"
+
     # Speed drops to 0 but RIoT still says MT_RUNNING, and the latch reads OK: that is not still (2026-09-15 rule).
     Set-Vehicle @{ speed = 0 }
     $r = Invoke-Drill 'B04b-cancel-order-unlatched-running' @('cancel-order', '--evidence', $runB)
@@ -630,6 +644,154 @@ try {
         'exit 0 / PASS / 规则写明 / 三条各一次' "exit $($r.ExitCode) / $($r.Json.data.stopProven) / $($sequenceE -join ',')"
     Get-Riot | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'fake-riot-snapshot-run-e.json') -Encoding utf8NoBOM
 
+    # ===== F: hold, then emergency stop (issue control-server#63) ======================================
+    # The product stops a vehicle with OrderHold first and escalates to triggerEmergency only when the stop is
+    # not proven. FakeRiot records CMD_ORDER_HELD and changes nothing, so this script writes HELD (orderState 7)
+    # and a vehicle at rest (speed 0, MT_PAUSED) once the call lands. Modelled choice: under the latch that
+    # follows, the vehicle keeps MT_PAUSED at speed 0 (latched MT_RUNNING at speed 0 is run E's shape).
+    Write-Host "`n== F: hold, then emergency stop (issue control-server#63)"
+    Reset-Riot
+    $runF = Join-Path $EvidenceRoot 'run-f-hold-then-emergency'
+    $f = Start-MovingRun $runF 'F00' 12
+    Set-Riot "orders/$($f.UpperId)" @{ orderState = 3; executeVehicleKey = $selfTestKey }
+    # Order taken, vehicle rotating in place at the start station: not moving between stations.
+    Set-Vehicle @{ procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0; currentPosition = 0; orderTaskId = $f.OrderId; processingOrder = $true }
+
+    $r = Invoke-Drill 'F01-hold-not-moving' @('hold', '--evidence', $runF)
+    Add-Assertion 'DRILL-F01' '车没有在两站之间行驶（MT_RUNNING、speed=0、站 0）时 hold 拒绝：[NO] fresh sample，0 次 CMD_ORDER_HELD，不记 hold' `
+        ((($f.ExitCodes -join ',') -eq '0,0,0') -and $r.ExitCode -eq 1 -and
+            $r.Stdout -match '\[NO\] fresh sample: moving between stations \(speed > 0\.05' -and
+            (Get-Invocations 'CMD_ORDER_HELD').Count -eq 0 -and $null -eq (Read-DrillState $runF).hold) `
+        'setup 0,0,0 / exit 1 / [NO] fresh sample / 0 次 / 无 hold 记录' `
+        "setup $($f.ExitCodes -join ',') / exit $($r.ExitCode) / $((Get-Invocations 'CMD_ORDER_HELD').Count) 次 / hold $(if ($null -eq (Read-DrillState $runF).hold) { '无' } else { '有' })"
+
+    $r = Invoke-Drill 'F02-trigger-stationary-without-hold' @('trigger', '--evidence', $runF)
+    Add-Assertion 'DRILL-F02' '本 run 还没有 hold 时，车不在两站之间行驶 trigger 仍拒绝（守卫不带 hold 放行），0 次 triggerEmergency，不记发令' `
+        ($r.ExitCode -eq 1 -and $r.Stdout -match '\[NO\] fresh sample: moving between stations' -and $r.Stdout -notmatch 'confirmed HELD earlier' -and
+            (Get-Invocations 'triggerEmergency').Count -eq 0 -and $null -eq (Read-DrillState $runF).trigger) `
+        'exit 1 / [NO] / 0 次 / 无 trigger 记录' "exit $($r.ExitCode) / $((Get-Invocations 'triggerEmergency').Count) 次"
+
+    # Now driving between stations. RIoT holds the order 0.6 s after the call and the vehicle is at rest 0.5 s
+    # later, so the first rounds still read MT_RUNNING.
+    Set-Vehicle @{ movementState = 'MT_RUNNING'; speed = 0.3; currentPosition = 0 }
+    $h = Start-Drill 'F03-hold' @('hold', '--evidence', $runF, '--observe-seconds', '6')
+    if (Wait-Invocation 'CMD_ORDER_HELD' 1 $h) {
+        Start-Sleep -Milliseconds 600
+        Set-Riot "orders/$($f.UpperId)" @{ orderState = 7 }
+        Start-Sleep -Milliseconds 500
+        Set-Vehicle @{ speed = 0; movementState = 'MT_PAUSED' }
+    }
+    $r = Wait-Drill $h
+    $stateF = Read-DrillState $runF
+    $holds = Get-Invocations 'CMD_ORDER_HELD'
+    $holdSpan = if ($stateF.hold -and $stateF.hold.completedAt) { ([datetimeoffset]$stateF.hold.completedAt - [datetimeoffset]$stateF.hold.attemptedAt).TotalSeconds } else { 0 }
+    $holdSequence = if ($stateF.hold) { @($stateF.hold.movementStatesSeen) -join ',' } else { '' }
+    Add-Assertion 'DRILL-F03' '车在两站之间行驶时 hold 发一次 CMD_ORDER_HELD（打在演练单 orderId 上），读到 orderState=7 与停稳（产品读数 NotMoving），movementState 序列 MT_RUNNING,MT_PAUSED，看满观察窗；0 次 triggerEmergency' `
+        ($r.ExitCode -eq 0 -and $holds.Count -eq 1 -and [string]$holds[0].target -eq $f.OrderId -and
+            [string]$stateF.hold.disposition -eq 'Accepted' -and $stateF.hold.heldObserved -eq $true -and [int]$stateF.hold.orderStateAfter -eq 7 -and
+            $null -ne $stateF.hold.msToHeld -and $stateF.hold.stopped -eq $true -and $stateF.hold.stopStreakProductReadingNotMoving -eq $true -and
+            $stateF.hold.stoppedAtEnd -eq $true -and $stateF.hold.productReadingNotMovingAtEnd -eq $true -and
+            $holdSequence -eq 'MT_RUNNING,MT_PAUSED' -and $r.Stdout -match 'movementState after the call: \[MT_RUNNING, MT_PAUSED\]' -and
+            [double]$stateF.hold.preSample.speed -eq 0.3 -and $holdSpan -ge 5.5 -and (Get-Invocations 'triggerEmergency').Count -eq 0) `
+        'exit 0 / 1 次 @ orderId / Accepted / held 7 / stopped / NotMoving / MT_RUNNING,MT_PAUSED / ≥5.5 s' `
+        "exit $($r.ExitCode) / $($holds.Count) 次 / $(if ($stateF.hold) { "$($stateF.hold.disposition) / held $($stateF.hold.heldObserved) after $($stateF.hold.msToHeld) ms, orderState $($stateF.hold.orderStateAfter) / stopped $($stateF.hold.stopped) after $($stateF.hold.msToStop) ms / NotMoving $($stateF.hold.stopStreakProductReadingNotMoving) / $holdSequence / $([math]::Round($holdSpan, 1)) s" } else { 'no hold record' })"
+
+    $r = Invoke-Drill 'F04-status-after-hold' @('status', '--evidence', $runF)
+    Add-Assertion 'DRILL-F04' 'hold 之后 status 的 run 行显示 hold=Accepted' `
+        ($r.ExitCode -eq 0 -and $r.Stdout -match 'run\s+.*hold=Accepted') 'exit 0 / hold=Accepted' "exit $($r.ExitCode) / $([regex]::Match($r.Stdout, 'hold=\S+').Value)"
+
+    $r = Invoke-Drill 'F05-hold-again' @('hold', '--evidence', $runF)
+    Add-Assertion 'DRILL-F05' '第二次 hold 拒绝，FakeRiot 仍只 1 次 CMD_ORDER_HELD' `
+        ($r.ExitCode -eq 1 -and $r.Stdout -match '\[NO\] no hold recorded in this run' -and (Get-Invocations 'CMD_ORDER_HELD').Count -eq 1) `
+        'exit 1 / [NO] no hold recorded / 1 次' "exit $($r.ExitCode) / $((Get-Invocations 'CMD_ORDER_HELD').Count) 次"
+
+    $h = Start-Drill 'F06-trigger-after-hold' @('trigger', '--evidence', $runF, '--observe-seconds', '20')
+    if (Wait-Invocation 'triggerEmergency' 1 $h) {
+        Start-Sleep -Milliseconds 800
+        Set-Vehicle @{ emergencyState = 'CAN_RECOVER' }
+    }
+    $r = Wait-Drill $h
+    $stateF = Read-DrillState $runF
+    Add-Assertion 'DRILL-F06' '订单已证实 HELD、车停着（speed=0、MT_PAUSED）时 trigger 放行：[ok] 带 hold-then-emergency 说明，afterHold=true、allowStationary=false，发一次 triggerEmergency，读到 CAN_RECOVER 与停稳' `
+        ($r.ExitCode -eq 0 -and
+            $r.Stdout -match '\[ok\] fresh sample: moving between stations \(speed > 0\.05, no station\) -- or: drill order confirmed HELD earlier in this run \(hold-then-emergency\)' -and
+            $stateF.trigger.afterHold -eq $true -and $stateF.trigger.allowStationary -eq $false -and
+            [double]$stateF.trigger.preSample.speed -eq 0 -and $stateF.trigger.preSample.movingBetweenStations -eq $false -and
+            $stateF.trigger.latched -and [string]$stateF.trigger.latchState -eq 'CAN_RECOVER' -and $stateF.trigger.stopped -and
+            (@($stateF.trigger.movementStatesSeen) -join ',') -eq 'MT_PAUSED' -and (Get-Invocations 'triggerEmergency').Count -eq 1) `
+        'exit 0 / [ok] hold-then-emergency / afterHold / CAN_RECOVER / stopped / 1 次' `
+        "exit $($r.ExitCode) / afterHold $($stateF.trigger.afterHold) / allowStationary $($stateF.trigger.allowStationary) / latched $($stateF.trigger.latched) $($stateF.trigger.latchState) / stopped $($stateF.trigger.stopped) / $(@($stateF.trigger.movementStatesSeen) -join ',') / $((Get-Invocations 'triggerEmergency').Count) 次"
+
+    $h = Start-Drill 'F07-cancel-order' @('cancel-order', '--evidence', $runF)
+    if (Wait-Invocation 'CMD_ORDER_CANCEL' 1 $h) {
+        Start-Sleep -Milliseconds 300
+        Set-Riot "orders/$($f.UpperId)" @{ orderState = 2 }
+        Set-Vehicle @{ clearOrderTaskId = $true; processingOrder = $false }
+    }
+    $r = Wait-Drill $h
+    $cancels = Get-Invocations 'CMD_ORDER_CANCEL'
+    $stateF = Read-DrillState $runF
+    Add-Assertion 'DRILL-F07' '取消已 HELD 且急停锁着的演练单：cancel-order 发一次 CMD_ORDER_CANCEL（打在 orderId 上），读回终态' `
+        ($r.ExitCode -eq 0 -and $cancels.Count -eq 1 -and [string]$cancels[0].target -eq $f.OrderId -and $stateF.cancelOrder.terminalObserved) `
+        'exit 0 / 1 次 / 终态' "exit $($r.ExitCode) / $($cancels.Count) 次 / 终态 $($stateF.cancelOrder.terminalObserved)"
+
+    $h = Start-Drill 'F08-release' @('release', '--evidence', $runF, '--field-confirmed', $confirmation, '--observe-seconds', '15')
+    if (Wait-Invocation 'cancelEmergency' 1 $h) {
+        Start-Sleep -Milliseconds 500
+        Set-Vehicle @{ emergencyState = 'OK'; procState = 'IDLE'; movementState = 'MT_FINISHED' }
+    }
+    $r = Wait-Drill $h
+    $stateF = Read-DrillState $runF
+    Add-Assertion 'DRILL-F08' 'hold-then-emergency 之后 release 照旧：发一次 cancelEmergency 并读回 OK' `
+        ($r.ExitCode -eq 0 -and $stateF.release.okObserved -and (Get-Invocations 'cancelEmergency').Count -eq 1) `
+        'exit 0 / OK / 1 次' "exit $($r.ExitCode) / okObserved $($stateF.release.okObserved) / $((Get-Invocations 'cancelEmergency').Count) 次"
+
+    $r = Invoke-Drill 'F09-summarize' @('summarize', '--evidence', $runF)
+    $summaryF = Get-Content -LiteralPath (Join-Path $runF 'SUMMARY.md') -Raw
+    Add-Assertion 'DRILL-F09' 'F 段摘要：「OrderHold 受理且订单进入 HELD」「HELD 后车辆停稳」两行 PASS，停车行写明在 HELD 之后发出，异常一节记下 HELD 后与急停后的 movementState；只发一次 PASS，订单命令端点 2 次 POST 不算异常' `
+        ($r.ExitCode -eq 0 -and $r.Json.data.stopProven -and $r.Json.data.sentOnce -and [int]$r.Json.data.holdIntents -eq 1 -and
+            [int]$r.Json.data.cancelOrderPosts -eq 2 -and $r.Json.data.holdConfirmed -eq $true -and
+            $summaryF -match '\| OrderHold 受理且订单进入 HELD \| \*\*PASS\*\* \|' -and
+            $summaryF -match '\| HELD 后车辆停稳 \| \*\*PASS\*\*' -and
+            $summaryF.Contains('在订单已 HELD（`orderState=7`）之后发出') -and
+            $summaryF.Contains('`CMD_ORDER_HELD` 之后观察到的 `movementState` 依次为 `MT_RUNNING` → `MT_PAUSED`') -and
+            $summaryF.Contains('对已 HELD 的订单发 `triggerEmergency` 之后观察到的 `movementState` 依次为 `MT_PAUSED`') -and
+            $summaryF.Contains('issue control-server#63') -and $summaryF -notmatch '建单或订单命令的发出次数多于一次') `
+        'exit 0 / 两行 PASS / HELD 之后发出 / movementState 序列 / 无计数异常' `
+        "exit $($r.ExitCode) / stopProven $($r.Json.data.stopProven) / sentOnce $($r.Json.data.sentOnce) / holdIntents $($r.Json.data.holdIntents) / orderCommandPosts $($r.Json.data.cancelOrderPosts) / holdConfirmed $($r.Json.data.holdConfirmed)"
+
+    $sequenceF = @(@((Get-Riot).body.commandInvocations) | ForEach-Object { [string]$_.commandType })
+    Add-Assertion 'DRILL-F10' 'F 全程 FakeRiot 依次收到 CMD_ORDER_HELD、triggerEmergency、CMD_ORDER_CANCEL、cancelEmergency 各一次，建单 1 张' `
+        (($sequenceF -join ',') -eq 'CMD_ORDER_HELD,triggerEmergency,CMD_ORDER_CANCEL,cancelEmergency' -and (Get-Orders).Count -eq 1) `
+        'CMD_ORDER_HELD,triggerEmergency,CMD_ORDER_CANCEL,cancelEmergency / 1 单' "$($sequenceF -join ',') / $((Get-Orders).Count) 单"
+    Get-Riot | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'fake-riot-snapshot-run-f.json') -Encoding utf8NoBOM
+
+    # ===== H: the hold is accepted but never reads HELD ================================================
+    Write-Host "`n== H: CMD_ORDER_HELD accepted but the order never reads HELD"
+    Reset-Riot
+    $runH = Join-Path $EvidenceRoot 'run-h-hold-not-confirmed'
+    $holdRun = Start-MovingRun $runH 'H00' 11
+    Set-Riot "orders/$($holdRun.UpperId)" @{ orderState = 3; executeVehicleKey = $selfTestKey }
+    Set-Vehicle @{ procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.3; currentPosition = 0; orderTaskId = $holdRun.OrderId; processingOrder = $true }
+    # Nothing reacts to the hold: the order stays EXECUTING and the vehicle keeps driving.
+    $r = Invoke-Drill 'H01-hold-never-held' @('hold', '--evidence', $runH, '--observe-seconds', '3')
+    $stateH = Read-DrillState $runH
+    Add-Assertion 'DRILL-H01' 'RIoT 接受 CMD_ORDER_HELD 但订单一直不是 7：hold 发一次后报 NOT_CONFIRMED（exit 3），heldObserved=false，提示不会再发、回报用户' `
+        ((($holdRun.ExitCodes -join ',') -eq '0,0,0') -and $r.ExitCode -eq 3 -and (Get-Invocations 'CMD_ORDER_HELD').Count -eq 1 -and
+            $null -ne $stateH.hold -and $stateH.hold.heldObserved -eq $false -and $stateH.hold.stopped -eq $false -and
+            (@($stateH.hold.movementStatesSeen) -join ',') -eq 'MT_RUNNING' -and
+            $r.Message -match 'CMD_ORDER_HELD was sent once and will not be sent again' -and $r.Message -match 'report to the user') `
+        'setup 0,0,0 / exit 3 / 1 次 / heldObserved false' `
+        "setup $($holdRun.ExitCodes -join ',') / exit $($r.ExitCode) / $((Get-Invocations 'CMD_ORDER_HELD').Count) 次 / heldObserved $(if ($stateH.hold) { $stateH.hold.heldObserved }) / $($r.Message)"
+
+    Set-Vehicle @{ speed = 0; movementState = 'MT_PAUSED' }
+    $r = Invoke-Drill 'H02-trigger-stationary-after-unconfirmed-hold' @('trigger', '--evidence', $runH)
+    Add-Assertion 'DRILL-H02' 'hold 发了但没证实 HELD 时，停着的车（speed=0、MT_PAUSED）trigger 拒绝：[NO] 带 hold-then-emergency 说明，0 次 triggerEmergency，不记发令' `
+        ($r.ExitCode -eq 1 -and
+            $r.Stdout -match '\[NO\] fresh sample: moving between stations \(speed > 0\.05, no station\) -- or: drill order confirmed HELD earlier in this run \(hold-then-emergency\)' -and
+            (Get-Invocations 'triggerEmergency').Count -eq 0 -and $null -eq (Read-DrillState $runH).trigger) `
+        'exit 1 / [NO] hold-then-emergency / 0 次 / 无 trigger 记录' "exit $($r.ExitCode) / $((Get-Invocations 'triggerEmergency').Count) 次"
+
     # ===== C: offline init guards -- no RIoT contact at all ============================================
     Write-Host "`n== C: init guards"
     $refusedRuns = @(
@@ -692,10 +854,13 @@ try {
         'exit 1 / [NO] self-test only / 0 请求 / 无 trigger 记录 / A13 [ok]' `
         "exit $($r.ExitCode) / [NO] $($r.Stdout -match ('\[NO\] ' + [regex]::Escape($selfTestOnlyGuard))) / $wireC10Count 请求 / trigger $(if ($null -eq (Read-DrillState $runAgv02).trigger) { '无' } else { '有' }) / A13 [ok] $($a13Log -match ('\[ok\] ' + [regex]::Escape($selfTestOnlyGuard)))"
 
+    $r = Invoke-Drill 'C11-hold-no-waiver' @('hold', '--evidence', $runA, '--allow-stationary')
+    Add-Assertion 'DRILL-C11' 'hold 没有放行选项：hold --allow-stationary 是用法错误' ($r.ExitCode -eq 2) 'exit 2' "exit $($r.ExitCode)"
+
     # ===== global =====================================================================================
     # @() around the whole pipeline: one unique host would otherwise come back as a bare string, and
     # strict mode has no .Count on that. The first self-test run (drill-selftest-001) aborted here.
-    $wireHosts = @(@(foreach ($run in @($runA, $runB, $runD, $runE)) {
+    $wireHosts = @(@(foreach ($run in @($runA, $runB, $runD, $runE, $runF, $runH)) {
                 Get-Content -LiteralPath (Join-Path $run 'wire.jsonl') | ForEach-Object { ($_ | ConvertFrom-Json).host }
             }) | Sort-Object -Unique)
     Add-Assertion 'DRILL-G01' '各段 run 的每个 HTTP 请求都只发往本脚本起的回环 FakeRiot' `
