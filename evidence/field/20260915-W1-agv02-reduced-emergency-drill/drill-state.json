@@ -1,0 +1,90 @@
+{
+  "schema": "w1-emergency-drill-state/1",
+  "runId": "20260915T063522Z-0760",
+  "createdAt": "2026-09-15T14:35:22.8495485+08:00",
+  "createdOnHost": "LAB-WIN-01",
+  "riotBaseUrl": "http://172.19.206.222:8888",
+  "deviceKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+  "vehicleAlias": "agv02",
+  "mapId": 25,
+  "mapIdentity": "老厂前线new",
+  "fakeRiot": false,
+  "preflight": {
+    "at": "2026-09-15T14:42:14.9768708+08:00",
+    "host": "LAB-WIN-01",
+    "passed": true,
+    "routeVerdict": "DIRECT",
+    "acceptedRouteReason": null,
+    "latencyMedianMs": 17.1,
+    "latencyMaxMs": 87.5,
+    "failures": []
+  },
+  "order": {
+    "upperId": "W1-DRILL-20260915T063522Z-0760",
+    "startStationId": 210,
+    "destinationStationId": 212,
+    "attemptedAt": "2026-09-15T14:42:15.8465034+08:00",
+    "disposition": "Active",
+    "createReceipt": "SdkAccepted",
+    "orderId": "order-2099750634810114048",
+    "orderState": 1,
+    "observationKind": "Active"
+  },
+  "lastWatch": {
+    "at": "2026-09-15T14:48:57.7464457+08:00",
+    "outcome": "READY",
+    "samples": 370
+  },
+  "trigger": {
+    "attemptedAt": "2026-09-15T14:48:58.1213743+08:00",
+    "allowStationary": false,
+    "preSample": {
+      "at": "2026-09-15T06:48:58.1100321+00:00",
+      "reading": "Moving",
+      "movementState": "MT_RUNNING",
+      "speed": 0,
+      "currentMap": "老厂前线new",
+      "currentStationId": 0,
+      "movingBetweenStations": true
+    },
+    "disposition": "Accepted",
+    "receipt": {
+      "operation": "triggerEmergency",
+      "disposition": "Accepted",
+      "classification": "SdkAccepted",
+      "httpStatusCode": null,
+      "businessCode": null,
+      "failureCategory": null,
+      "elapsedMs": 98.3
+    },
+    "observeSeconds": 20,
+    "samples": 59,
+    "readFailures": 0,
+    "latched": true,
+    "latchState": "CAN_RECOVER",
+    "msToLatch": 2157,
+    "stopped": false,
+    "msToStop": null,
+    "stopStreak": 0,
+    "stopStreakProductReadingNotMoving": null,
+    "completedAt": "2026-09-15T14:49:18.3827642+08:00"
+  },
+  "release": null,
+  "cancelOrder": null,
+  "latestMotion": {
+    "at": "2026-09-15T07:00:42.3436668+00:00",
+    "reading": "NotMoving",
+    "movementState": "MT_FINISHED",
+    "speed": 0,
+    "currentMap": "老厂前线new",
+    "currentStationId": 210,
+    "movingBetweenStations": false
+  },
+  "latestEmergency": {
+    "at": "2026-09-15T07:00:42.3599046+00:00",
+    "state": "OK"
+  },
+  "canNotRecoverObserved": false,
+  "summarizedAt": "2026-09-15T15:00:43.928262+08:00",
+  "upperId": "W1-DRILL-20260915T063522Z-0760"
+}

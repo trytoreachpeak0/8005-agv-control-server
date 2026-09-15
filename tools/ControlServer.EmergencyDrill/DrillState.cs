@@ -91,6 +91,8 @@ internal sealed class TriggerRecord
     public double? MsToStop { get; set; }
     public int StopStreak { get; set; }
     public bool? StopStreakProductReadingNotMoving { get; set; }
+    /// <summary>Set when the stop was first observed: whether it rested on speed 0 + MT_RUNNING under an engaged latch.</summary>
+    public bool? StillWhileLatchedRunning { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
 }
 
@@ -101,6 +103,8 @@ internal sealed class ReleaseRecord
     public string FieldConfirmation { get; set; } = string.Empty;
     public string? PreLatch { get; set; }
     public int? OrderStateAtRelease { get; set; }
+    /// <summary>Whether the stillness guard passed on speed 0 + MT_RUNNING under the engaged latch.</summary>
+    public bool StillWhileLatchedRunning { get; set; }
     public string Disposition { get; set; } = "IN_FLIGHT";
     public CallReceiptRecord? Receipt { get; set; }
     public bool OkObserved { get; set; }
@@ -114,6 +118,8 @@ internal sealed class CancelOrderRecord
     public DateTimeOffset AttemptedAt { get; set; }
     public string OrderId { get; set; } = string.Empty;
     public string? LatchAtCancel { get; set; }
+    /// <summary>Whether the stillness guard passed on speed 0 + MT_RUNNING under the engaged latch.</summary>
+    public bool StillWhileLatchedRunning { get; set; }
     public bool AlreadyTerminal { get; set; }
     public string Disposition { get; set; } = "IN_FLIGHT";
     public CallReceiptRecord? Receipt { get; set; }

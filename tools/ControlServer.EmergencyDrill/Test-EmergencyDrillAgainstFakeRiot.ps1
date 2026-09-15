@@ -15,9 +15,15 @@ ControlServer.EmergencyDrill 对本机回环上的 ControlServer.FakeRiot 走完
   release →（控制面：闩锁回 OK）→ summarize。
 - B 反向：闩锁一直不锁上时 trigger 只发一次、第二次被拒；闩锁 OK 时 cancel-order 被拒；CAN_NOT_RECOVER 时
   release 在取消单之前被拒、cancel-order 被允许、取消后 release 仍被拒且不发 cancelEmergency。
+  B 段另证：闩锁 OK 时 speed=0 + MT_RUNNING 不算停稳（DRILL-B11）。
 - D 取消单迟迟不到终态：cancel-order 发一次后报 NOT_CONFIRMED 并提示停下回报用户；此后 release 在 CAN_RECOVER 下仍拒绝。
+- E 2026-09-15 现场形态：车接单后在起点站原地旋转，RIoT 报 MT_RUNNING、speed=0、currentStationId=0——watch-moving 不报
+  READY（speed 恰为 0.05 也不报）、trigger 拒绝；speed 0.06 才 READY。发令后先降速（闩锁仍 OK）再锁闩锁、movementState
+  一直是 MT_RUNNING：trigger 只从闩锁锁上之后的采样算停稳；cancel-order、release 在 CAN_RECOVER 下接受 speed=0 +
+  MT_RUNNING 为停稳，并记下 stillWhileLatchedRunning=true，摘要写明。
 - C 离线守卫：init 拒绝 agv01、其它 key、不带 --fake-riot 的自测 key、非回环地址、map 26、复用已用目录；
-  已删除的 --force-after-can-not-recover 是用法错误。
+  已删除的 --force-after-can-not-recover 是用法错误；--allow-stationary 在非自测 run（agv02 key、回环地址、无 --fake-riot）
+  上被拒，不发任何请求、不记发令。
 
 **FakeRiot 不替工具锁闩锁、不让车停**（它的一贯设计：命令只记录），所以闩锁、停车、取消单、解除的后果都由
 本脚本在看到对应调用落到 FakeRiot 之后，照真实 RIoT 的样子在控制面上写出来。
@@ -175,6 +181,30 @@ function Wait-Invocation {
         Start-Sleep -Milliseconds 100
     }
     return $true
+}
+
+# The motion samples a run's timeline holds for one command; failed reads (no movementState field) skipped.
+function Get-MotionSamples([string]$Run, [string]$Command) {
+    Get-Content -LiteralPath (Join-Path $Run 'timeline.jsonl') | ForEach-Object { $_ | ConvertFrom-Json } |
+        Where-Object { $_.command -eq $Command -and $_.kind -eq 'motion' -and $_.data.PSObject.Properties['movementState'] } |
+        ForEach-Object { $_.data }
+}
+
+# Samples of speed 0 + MT_RUNNING taken while the latest latch reading before them was OK (trigger reads the
+# latch, then the motion, each round). These must never count towards a stop.
+function Get-UnlatchedRunningZeroSpeedCount([string]$Run, [string]$Command) {
+    $latch = $null
+    $count = 0
+    foreach ($entry in @(Get-Content -LiteralPath (Join-Path $Run 'timeline.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })) {
+        if ($entry.command -ne $Command) { continue }
+        if ($entry.kind -eq 'emergency') {
+            $latch = if ($entry.data.PSObject.Properties['emergencyState']) { $entry.data.emergencyState } else { $null }
+        } elseif ($entry.kind -eq 'motion' -and $entry.data.PSObject.Properties['movementState'] -and
+            $entry.data.movementState -eq 'MT_RUNNING' -and $null -ne $entry.data.speed -and [double]$entry.data.speed -eq 0 -and $latch -eq 'OK') {
+            $count++
+        }
+    }
+    return $count
 }
 
 function Get-FreeLoopbackPort {
@@ -427,6 +457,17 @@ try {
     Add-Assertion 'DRILL-B04' '闩锁没观察到时第二次 trigger 仍拒绝，FakeRiot 仍只 1 次 triggerEmergency' `
         ($r.ExitCode -eq 1 -and (Get-Invocations 'triggerEmergency').Count -eq 1) 'exit 1 / 1 次' "exit $($r.ExitCode) / $((Get-Invocations 'triggerEmergency').Count) 次"
 
+    # Speed drops to 0 but RIoT still says MT_RUNNING, and the latch reads OK: that is not still (2026-09-15 rule).
+    Set-Vehicle @{ speed = 0 }
+    $r = Invoke-Drill 'B04b-cancel-order-unlatched-running' @('cancel-order', '--evidence', $runB)
+    $stopB = $r.Json.data.stop
+    Add-Assertion 'DRILL-B11' '闩锁 OK 时 speed=0 + MT_RUNNING 不算停稳：cancel-order 的闩锁守卫与停稳守卫都是 [NO]（streak 0），0 次 CMD_ORDER_CANCEL' `
+        ($r.ExitCode -eq 1 -and (Get-Invocations 'CMD_ORDER_CANCEL').Count -eq 0 -and
+            $r.Stdout -match '\[NO\] latch is engaged' -and $r.Stdout -match '\[NO\] latest 3 samples over >= 1 s show the vehicle stopped' -and
+            $null -ne $stopB -and -not $stopB.stopped -and [int]$stopB.streak -eq 0 -and
+            @(Get-MotionSamples $runB 'cancel-order' | Where-Object { $_.movementState -eq 'MT_RUNNING' -and [double]$_.speed -eq 0 }).Count -ge 3) `
+        'exit 1 / 0 次 / 两个 [NO] / streak 0' "exit $($r.ExitCode) / $((Get-Invocations 'CMD_ORDER_CANCEL').Count) 次 / stopped $(if ($stopB) { $stopB.stopped }) streak $(if ($stopB) { $stopB.streak })"
+
     # The vehicle is at rest but the latch still reads OK: cancel-order needs the latch engaged.
     Set-Vehicle @{ speed = 0; movementState = 'MT_PAUSED' }
     $r = Invoke-Drill 'B05-cancel-order-unlatched' @('cancel-order', '--evidence', $runB)
@@ -496,6 +537,99 @@ try {
             (Get-Invocations 'cancelEmergency').Count -eq 0 -and (Get-Invocations 'CMD_ORDER_CANCEL').Count -eq 1) `
         'exit 1 / exit 1 / 0 / 1' "exit $($r.ExitCode) / exit $($r2.ExitCode) / $((Get-Invocations 'cancelEmergency').Count) / $((Get-Invocations 'CMD_ORDER_CANCEL').Count)"
 
+    # ===== E: the 2026-09-15 field shape ==============================================================
+    # On site agv02 took the drill order by rotating in place at station 210 without leaving it, and RIoT
+    # reported MT_RUNNING, speed 0 and currentStationId 0 throughout. After triggerEmergency, latched with
+    # the order still active, it kept reporting MT_RUNNING at speed 0.
+    Write-Host "`n== E: 2026-09-15 field shape (in-place rotation; latched MT_RUNNING at speed 0)"
+    Reset-Riot
+    $runE = Join-Path $EvidenceRoot 'run-e-field-20260915'
+    $e = Start-MovingRun $runE 'E00' 12
+    Set-Riot "orders/$($e.UpperId)" @{ orderState = 3; executeVehicleKey = $selfTestKey }
+    Set-Vehicle @{ procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0; currentPosition = 0; orderTaskId = $e.OrderId; processingOrder = $true }
+
+    $r = Invoke-Drill 'E01-watch-rotating-in-place' @('watch-moving', '--evidence', $runE, '--timeout', '3')
+    $rotating = @(Get-MotionSamples $runE 'watch-moving' | Where-Object {
+            $_.movementState -eq 'MT_RUNNING' -and $null -ne $_.speed -and [double]$_.speed -eq 0 -and [int]$_.currentStationId -eq 0 })
+    Add-Assertion 'DRILL-E01' '车在起点站原地旋转（MT_RUNNING、speed=0、currentStationId=0）时 watch-moving 不报 READY：3 秒超时 WINDOW_MISSED，期间 ≥2 个这样的采样' `
+        ((($e.ExitCodes -join ',') -eq '0,0,0') -and $r.ExitCode -eq 1 -and $r.Outcome -eq 'WINDOW_MISSED' -and
+            $r.Stdout -notmatch 'READY TO TRIGGER' -and $rotating.Count -ge 2) `
+        'setup 0,0,0 / exit 1 / WINDOW_MISSED / ≥2 采样' "setup $($e.ExitCodes -join ',') / exit $($r.ExitCode) / $($r.Outcome) / $($rotating.Count) 采样"
+
+    Set-Vehicle @{ speed = 0.05 }
+    $r = Invoke-Drill 'E02-watch-at-threshold' @('watch-moving', '--evidence', $runE, '--timeout', '3')
+    $atThreshold = @(Get-MotionSamples $runE 'watch-moving' | Where-Object { $null -ne $_.speed -and [double]$_.speed -eq 0.05 })
+    Add-Assertion 'DRILL-E02' '速度恰为 0.05（MinimumMovingSpeed，须严格大于）、MT_RUNNING、站 0 时 watch-moving 仍不报 READY' `
+        ($r.ExitCode -eq 1 -and $r.Outcome -eq 'WINDOW_MISSED' -and $r.Stdout -notmatch 'READY TO TRIGGER' -and $atThreshold.Count -ge 2) `
+        'exit 1 / WINDOW_MISSED / ≥2 采样' "exit $($r.ExitCode) / $($r.Outcome) / $($atThreshold.Count) 采样"
+
+    Set-Vehicle @{ speed = 0 }
+    $r = Invoke-Drill 'E03-trigger-rotating-in-place' @('trigger', '--evidence', $runE)
+    Add-Assertion 'DRILL-E03' '原地旋转（MT_RUNNING、speed=0、站 0）时 trigger 的现采样守卫拒绝，0 次 triggerEmergency，没有记下发令' `
+        ($r.ExitCode -eq 1 -and $r.Stdout -match '\[NO\] fresh sample: moving between stations \(speed > 0\.05' -and
+            (Get-Invocations 'triggerEmergency').Count -eq 0 -and $null -eq (Read-DrillState $runE).trigger) `
+        'exit 1 / [NO] fresh sample / 0 次' "exit $($r.ExitCode) / $((Get-Invocations 'triggerEmergency').Count) 次"
+
+    Set-Vehicle @{ speed = 0.06 }
+    $r = Invoke-Drill 'E04-watch-driving' @('watch-moving', '--evidence', $runE, '--timeout', '10')
+    Add-Assertion 'DRILL-E04' '速度 0.06（> 0.05）、站 0 时 watch-moving 连续 2 个采样后报 READY TO TRIGGER' `
+        ($r.ExitCode -eq 0 -and $r.Stdout -match 'READY TO TRIGGER') 'exit 0 + READY TO TRIGGER' "exit $($r.ExitCode) $($r.Outcome)"
+
+    # Speed drops first while the latch still reads OK, then the latch engages; movementState stays MT_RUNNING.
+    $h = Start-Drill 'E05-trigger' @('trigger', '--evidence', $runE, '--observe-seconds', '20')
+    if (Wait-Invocation 'triggerEmergency' 1 $h) {
+        Start-Sleep -Milliseconds 300
+        Set-Vehicle @{ speed = 0 }
+        Start-Sleep -Milliseconds 1500
+        Set-Vehicle @{ emergencyState = 'CAN_RECOVER' }
+    }
+    $r = Wait-Drill $h
+    $stateE = Read-DrillState $runE
+    $unlatchedStills = Get-UnlatchedRunningZeroSpeedCount $runE 'trigger'
+    Add-Assertion 'DRILL-E05' 'trigger：闩锁锁上后的 speed=0 + MT_RUNNING 采样算停稳（stillWhileLatchedRunning=true）；闩锁仍 OK 时的同样采样（≥1 个）不算，停稳起点不早于闩锁' `
+        ($r.ExitCode -eq 0 -and $stateE.trigger.latched -and $stateE.trigger.stopped -and $stateE.trigger.stillWhileLatchedRunning -eq $true -and
+            $stateE.trigger.stopStreakProductReadingNotMoving -eq $false -and $unlatchedStills -ge 1 -and
+            [double]$stateE.trigger.msToStop -ge [double]$stateE.trigger.msToLatch -and [double]$stateE.trigger.preSample.speed -eq 0.06) `
+        'exit 0 / latched / stopped / stillWhileLatchedRunning / 闩锁前采样 ≥1 / msToStop ≥ msToLatch' `
+        "exit $($r.ExitCode) / latched $($stateE.trigger.latched) after $($stateE.trigger.msToLatch) ms / stopped $($stateE.trigger.stopped) after $($stateE.trigger.msToStop) ms / stillWhileLatchedRunning $($stateE.trigger.stillWhileLatchedRunning) / 闩锁前 $unlatchedStills 个"
+
+    $h = Start-Drill 'E06-cancel-order-latched-running' @('cancel-order', '--evidence', $runE)
+    if (Wait-Invocation 'CMD_ORDER_CANCEL' 1 $h) {
+        Start-Sleep -Milliseconds 300
+        # The order goes; RIoT keeps reporting MT_RUNNING at speed 0 under the latch, so release meets the same shape.
+        Set-Riot "orders/$($e.UpperId)" @{ orderState = 2 }
+        Set-Vehicle @{ clearOrderTaskId = $true; processingOrder = $false }
+    }
+    $r = Wait-Drill $h
+    $stateE = Read-DrillState $runE
+    Add-Assertion 'DRILL-E06' '闩锁 CAN_RECOVER 时 speed=0 + MT_RUNNING 算停稳：cancel-order 放行，发一次 CMD_ORDER_CANCEL、读回终态，记下 stillWhileLatchedRunning=true' `
+        ($r.ExitCode -eq 0 -and (Get-Invocations 'CMD_ORDER_CANCEL').Count -eq 1 -and $stateE.cancelOrder.terminalObserved -and
+            $stateE.cancelOrder.stillWhileLatchedRunning -eq $true -and [string]$stateE.cancelOrder.latchAtCancel -eq 'CAN_RECOVER' -and
+            $r.Stdout -match '\[ok\] latest 3 samples over >= 1 s show the vehicle stopped -- stopped=True streak=3 stillWhileLatchedRunning=True') `
+        'exit 0 / 1 次 / 终态 / stillWhileLatchedRunning true' "exit $($r.ExitCode) / $((Get-Invocations 'CMD_ORDER_CANCEL').Count) 次 / 终态 $($stateE.cancelOrder.terminalObserved) / $($stateE.cancelOrder.stillWhileLatchedRunning)"
+
+    $h = Start-Drill 'E07-release-latched-running' @('release', '--evidence', $runE, '--field-confirmed', $confirmation, '--observe-seconds', '15')
+    if (Wait-Invocation 'cancelEmergency' 1 $h) {
+        Start-Sleep -Milliseconds 500
+        Set-Vehicle @{ emergencyState = 'OK'; procState = 'IDLE'; movementState = 'MT_FINISHED' }
+    }
+    $r = Wait-Drill $h
+    $stateE = Read-DrillState $runE
+    Add-Assertion 'DRILL-E07' 'release：演练单已终态、CAN_RECOVER、speed=0 + MT_RUNNING 算停稳，发一次 cancelEmergency 并读回 OK，记下 stillWhileLatchedRunning=true' `
+        ($r.ExitCode -eq 0 -and $stateE.release.okObserved -and $stateE.release.stillWhileLatchedRunning -eq $true -and
+            (Get-Invocations 'cancelEmergency').Count -eq 1) `
+        'exit 0 / OK / true / 1 次' "exit $($r.ExitCode) / okObserved $($stateE.release.okObserved) / $($stateE.release.stillWhileLatchedRunning) / $((Get-Invocations 'cancelEmergency').Count) 次"
+
+    $r = Invoke-Drill 'E08-summarize' @('summarize', '--evidence', $runE)
+    $summaryE = Get-Content -LiteralPath (Join-Path $runE 'SUMMARY.md') -Raw
+    $sequenceE = @(@((Get-Riot).body.commandInvocations) | ForEach-Object { [string]$_.commandType })
+    Add-Assertion 'DRILL-E08' 'E 段摘要：停车 PASS，依据写 stillWhileLatchedRunning=true，异常一节点名 trigger、cancel-order、release 用了 2026-09-15 规则；FakeRiot 三条写命令各一次' `
+        ($r.ExitCode -eq 0 -and $r.Json.data.stopProven -and $summaryE -match 'stillWhileLatchedRunning=true' -and
+            $summaryE -match '`trigger`、`cancel-order`、`release` 的停稳证据用到了 2026-09-15' -and
+            ($sequenceE -join ',') -eq 'triggerEmergency,CMD_ORDER_CANCEL,cancelEmergency') `
+        'exit 0 / PASS / 规则写明 / 三条各一次' "exit $($r.ExitCode) / $($r.Json.data.stopProven) / $($sequenceE -join ',')"
+    Get-Riot | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $EvidenceRoot 'fake-riot-snapshot-run-e.json') -Encoding utf8NoBOM
+
     # ===== C: offline init guards -- no RIoT contact at all ============================================
     Write-Host "`n== C: init guards"
     $refusedRuns = @(
@@ -535,7 +669,7 @@ try {
 
     $runAgv02 = Join-Path $EvidenceRoot 'run-c07-init-agv02-offline'
     $r = Invoke-Drill 'C07-init-agv02' @('init', '--evidence', $runAgv02, '--device-key', $agv02Key, '--map-id', '25', '--riot-base-url', $riotBase)
-    Add-Assertion 'DRILL-C07' 'init 接受 agv02 的 key（只建目录与状态文件，init 不连 RIoT，本 run 之后不再使用）' `
+    Add-Assertion 'DRILL-C07' 'init 接受 agv02 的 key（只建目录与状态文件，init 不连 RIoT，本 run 之后只用于 DRILL-C10 的离线拒绝）' `
         ($r.ExitCode -eq 0 -and [string](Read-DrillState $runAgv02).vehicleAlias -eq 'agv02') 'exit 0 / agv02' "exit $($r.ExitCode)"
 
     $r = Invoke-Drill 'C08-unknown-option' @('trigger', '--evidence', $runA, '--allow-stationery')
@@ -544,10 +678,24 @@ try {
     $r = Invoke-Drill 'C09-removed-force-option' @('cancel-order', '--evidence', $runA, '--force-after-can-not-recover', 'x')
     Add-Assertion 'DRILL-C09' '已删除的 --force-after-can-not-recover 是用法错误' ($r.ExitCode -eq 2) 'exit 2' "exit $($r.ExitCode)"
 
+    # The C07 run (agv02 key, loopback address, no --fake-riot) is the non-self-test run: the guard block
+    # refuses before any RIoT read, so nothing reaches FakeRiot. A13 on the self-test run A shows the same guard [ok].
+    $r = Invoke-Drill 'C10-trigger-allow-stationary-not-selftest' @('trigger', '--evidence', $runAgv02, '--allow-stationary')
+    $wireC10 = Join-Path $runAgv02 'wire.jsonl'
+    $wireC10Count = if (Test-Path -LiteralPath $wireC10) { @(Get-Content -LiteralPath $wireC10 | Where-Object { $_ }).Count } else { 0 }
+    $a13Log = Get-Content -LiteralPath (Join-Path $logRoot 'A13-trigger-again.out.log') -Raw
+    $selfTestOnlyGuard = '--allow-stationary is self-test only'
+    Add-Assertion 'DRILL-C10' '非自测 run（agv02 key、回环地址、无 --fake-riot）上 trigger --allow-stationary 拒绝：exit 1、[NO] 仅限自测、不发请求、不记发令；自测 run A13 上同一守卫为 [ok]' `
+        ($r.ExitCode -eq 1 -and $r.Stdout -match ('\[NO\] ' + [regex]::Escape($selfTestOnlyGuard)) -and
+            $wireC10Count -eq 0 -and $null -eq (Read-DrillState $runAgv02).trigger -and
+            $a13Log -match ('\[ok\] ' + [regex]::Escape($selfTestOnlyGuard))) `
+        'exit 1 / [NO] self-test only / 0 请求 / 无 trigger 记录 / A13 [ok]' `
+        "exit $($r.ExitCode) / [NO] $($r.Stdout -match ('\[NO\] ' + [regex]::Escape($selfTestOnlyGuard))) / $wireC10Count 请求 / trigger $(if ($null -eq (Read-DrillState $runAgv02).trigger) { '无' } else { '有' }) / A13 [ok] $($a13Log -match ('\[ok\] ' + [regex]::Escape($selfTestOnlyGuard)))"
+
     # ===== global =====================================================================================
     # @() around the whole pipeline: one unique host would otherwise come back as a bare string, and
     # strict mode has no .Count on that. The first self-test run (drill-selftest-001) aborted here.
-    $wireHosts = @(@(foreach ($run in @($runA, $runB, $runD)) {
+    $wireHosts = @(@(foreach ($run in @($runA, $runB, $runD, $runE)) {
                 Get-Content -LiteralPath (Join-Path $run 'wire.jsonl') | ForEach-Object { ($_ | ConvertFrom-Json).host }
             }) | Sort-Object -Unique)
     Add-Assertion 'DRILL-G01' '各段 run 的每个 HTTP 请求都只发往本脚本起的回环 FakeRiot' `

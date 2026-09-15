@@ -364,6 +364,9 @@ internal static class DrillCommands
             else
             {
                 last = sample;
+                // Needs a reported speed above Motion.MinimumMovingSpeed: MT_RUNNING at speed 0 with no
+                // station is also what RIoT reports while the vehicle rotates in place at the start
+                // station (2026-09-15), and that rotation is not the window.
                 if (Motion.IsMovingBetweenStations(sample))
                 {
                     sawMoving = true;
@@ -407,7 +410,7 @@ internal static class DrillCommands
                 {
                     outcome.Lines.Add("(a trigger is already recorded in this run; trigger will refuse)");
                 }
-                return outcome.Set("READY", 0, "the vehicle is moving between stations");
+                return outcome.Set("READY", 0, Inv($"the vehicle is moving between stations (2 consecutive samples with speed > {Motion.MinimumMovingSpeed} and no station)"));
             case "ARRIVED":
                 return outcome.Set("WINDOW_MISSED", 1, Inv($"the vehicle reached station {destination} without a trigger window; do not trigger -- report to the user before anything else"));
             default:
@@ -426,7 +429,11 @@ internal static class DrillCommands
         {
             return outcome.Usage("--observe-seconds must be a whole number of seconds between 3 and 120");
         }
-        bool allowStationary = context.Args.Has("allow-stationary");
+        // The approved field exception allows triggerEmergency only while the empty vehicle drives between
+        // two stations; waiving that is for the FakeRiot self-test and never for a real RIoT or vehicle.
+        bool allowStationaryRequested = context.Args.Has("allow-stationary");
+        bool selfTestRun = DrillGuards.IsSelfTestRun(key, state.FakeRiot, context.BaseUrl);
+        bool allowStationary = allowStationaryRequested && selfTestRun;
 
         outcome.Guard(
             "no trigger recorded in this run (at most one triggerEmergency per run)",
@@ -434,6 +441,14 @@ internal static class DrillCommands
             state.Trigger is null ? "none" : Inv($"already attempted at {state.Trigger.AttemptedAt:O} ({state.Trigger.Disposition}); never sent twice, even without a latch"));
         string? keyRefusal = DrillGuards.RefuseDeviceKey(key, state.FakeRiot, context.BaseUrl);
         outcome.Guard("device key is the approved one", keyRefusal is null, keyRefusal ?? state.VehicleAlias + " " + key);
+        if (allowStationaryRequested)
+        {
+            outcome.Guard(
+                "--allow-stationary is self-test only (self-test device key, --fake-riot, literal loopback RIoT address)",
+                selfTestRun,
+                Inv($"this run: {state.VehicleAlias}, fakeRiot={state.FakeRiot}, RIoT {state.RiotBaseUrl}") +
+                    (selfTestRun ? string.Empty : "; on a real run trigger only while the vehicle drives between two stations"));
+        }
         PreflightGuard(outcome, state);
         outcome.Guard(
             "drill order recorded",
@@ -455,7 +470,8 @@ internal static class DrillCommands
             "emergencyState=" + (before?.EmergencyState ?? "unread"));
         bool moving = pre is not null && Motion.IsMovingBetweenStations(pre);
         outcome.Guard(
-            "fresh sample: moving between stations" + (allowStationary && !moving ? " -- waived by --allow-stationary" : string.Empty),
+            Inv($"fresh sample: moving between stations (speed > {Motion.MinimumMovingSpeed}, no station)") +
+                (allowStationary && !moving ? " -- waived by --allow-stationary" : string.Empty),
             moving || allowStationary,
             Motion.Describe(pre));
         if (!outcome.AllGuardsPassed)
@@ -486,7 +502,8 @@ internal static class DrillCommands
         context.Evidence.SaveState(state);
         Observe(context, "triggerEmergencyResult", trigger.Receipt);
 
-        List<VehicleMotionSample?> samples = [];
+        List<StopSample> samples = [];
+        StopVerdict? lastStop = null;
         DateTimeOffset deadline = calledAt.AddSeconds(observeSeconds);
         while (DateTimeOffset.Now < deadline)
         {
@@ -495,7 +512,9 @@ internal static class DrillCommands
             VehicleMotionSample? sample = await riot.SampleAsync(key);
             Observe(context, "motion", sample);
             Remember(state, sample, latch);
-            samples.Add(sample);
+            // The latch read just above is the latest one taken at or before this sample. An unread
+            // latch is not an engaged one, so MT_RUNNING next to it does not count as still.
+            samples.Add(new StopSample(sample, latch is { IsLatched: true }));
             trigger.Samples++;
             if (latch?.EmergencyState is null || sample is null)
             {
@@ -509,11 +528,14 @@ internal static class DrillCommands
             }
 
             StopVerdict stop = Motion.EvaluateStop(samples);
+            lastStop = stop;
             if (stop.Stopped && !trigger.Stopped)
             {
                 trigger.Stopped = true;
                 trigger.MsToStop = stop.Since is DateTimeOffset since ? Math.Round((since - calledAt).TotalMilliseconds, 0) : null;
                 trigger.StopStreakProductReadingNotMoving = stop.ProductReadingNotMoving;
+                trigger.StillWhileLatchedRunning = stop.StillWhileLatchedRunning;
+                Observe(context, "stopVerdict", stop);
             }
             trigger.StopStreak = stop.Streak;
             if (trigger.Latched && trigger.Stopped)
@@ -522,13 +544,17 @@ internal static class DrillCommands
             }
             await Task.Delay(FastPollIntervalMs);
         }
+        if (!trigger.Stopped && lastStop is not null)
+        {
+            Observe(context, "stopVerdict", lastStop);
+        }
 
         trigger.CompletedAt = DateTimeOffset.Now;
         context.Evidence.SaveState(state);
         outcome.Data["trigger"] = trigger;
         outcome.Lines.Add(Inv($"triggerEmergency sent once: {trigger.Disposition} ({trigger.Receipt.Classification}, {trigger.Receipt.ElapsedMs:F0} ms)"));
         outcome.Lines.Add(Inv($"latched={trigger.Latched} {trigger.LatchState ?? "-"} after {Motion.Number(trigger.MsToLatch)} ms"));
-        outcome.Lines.Add(Inv($"stopped={trigger.Stopped} after {Motion.Number(trigger.MsToStop)} ms (trailing still streak {trigger.StopStreak}, product reading NotMoving: {trigger.StopStreakProductReadingNotMoving?.ToString() ?? "-"})"));
+        outcome.Lines.Add(Inv($"stopped={trigger.Stopped} after {Motion.Number(trigger.MsToStop)} ms (trailing still streak {trigger.StopStreak}, product reading NotMoving: {trigger.StopStreakProductReadingNotMoving?.ToString() ?? "-"}, stillWhileLatchedRunning: {trigger.StillWhileLatchedRunning?.ToString() ?? "-"})"));
         outcome.Lines.Add(Inv($"{trigger.Samples} samples, {trigger.ReadFailures} with a failed read; latest latch {state.LatestEmergency?.State ?? "unread"}"));
         if (state.CanNotRecoverObserved)
         {
@@ -580,16 +606,18 @@ internal static class DrillCommands
 
         RiotVehicleEmergencyObservation? latch = await riot.ReadEmergencyAsync(key);
         Observe(context, "emergency", latch);
-        (List<VehicleMotionSample?> samples, StopVerdict stop) = await SampleStillnessAsync(context, riot, key);
+        bool latchEngaged = latch is { IsLatched: true };
+        (List<VehicleMotionSample?> samples, StopVerdict stop) = await SampleStillnessAsync(context, riot, key, latchEngaged);
         Remember(state, samples[^1], latch);
+        outcome.Data["stop"] = stop;
         outcome.Guard(
             "latch is engaged (CAN_RECOVER or CAN_NOT_RECOVER)",
-            latch is { IsLatched: true },
+            latchEngaged,
             "emergencyState=" + (latch?.EmergencyState ?? "unread"));
         outcome.Guard(
             "latest 3 samples over >= 1 s show the vehicle stopped",
             stop.Stopped,
-            string.Join(" | ", samples.Select(Motion.Describe)));
+            StillnessDetail(stop, samples));
         if (!outcome.AllGuardsPassed)
         {
             context.Evidence.SaveState(state);
@@ -600,7 +628,8 @@ internal static class DrillCommands
         {
             AttemptedAt = DateTimeOffset.Now,
             OrderId = orderId,
-            LatchAtCancel = latch?.EmergencyState
+            LatchAtCancel = latch?.EmergencyState,
+            StillWhileLatchedRunning = stop.StillWhileLatchedRunning
         };
         RiotOrderObservation? before = await riot.ReconcileAsync(state.Order.UpperId);
         Observe(context, "order", before);
@@ -717,12 +746,14 @@ internal static class DrillCommands
                 _ => latch
             });
 
-        (List<VehicleMotionSample?> samples, StopVerdict stop) = await SampleStillnessAsync(context, riot, key);
+        (List<VehicleMotionSample?> samples, StopVerdict stop) = await SampleStillnessAsync(
+            context, riot, key, latchBefore is { IsLatched: true });
         Remember(state, samples[^1], latchBefore);
+        outcome.Data["stop"] = stop;
         outcome.Guard(
             "latest 3 samples over >= 1 s show the vehicle stopped",
             stop.Stopped,
-            string.Join(" | ", samples.Select(Motion.Describe)));
+            StillnessDetail(stop, samples));
 
         RiotOrderObservation? order = state.Order is null ? null : await riot.ReconcileAsync(state.Order.UpperId);
         Observe(context, "order", order);
@@ -740,7 +771,8 @@ internal static class DrillCommands
             FieldConfirmedBy = confirmedBy ?? string.Empty,
             FieldConfirmation = confirmation.Trim(),
             PreLatch = latch,
-            OrderStateAtRelease = order?.OrderState
+            OrderStateAtRelease = order?.OrderState,
+            StillWhileLatchedRunning = stop.StillWhileLatchedRunning
         };
         state.Release = release;
         context.Evidence.SaveState(state);
@@ -787,11 +819,16 @@ internal static class DrillCommands
         ? "The latch is CAN_NOT_RECOVER: do not release -- hand over to RIoT staff, then summarize"
         : "Next: field staff confirm stopped / empty / doors closed, then release";
 
-    /// <summary>Three fresh samples spanning more than a second, not whatever an earlier command saw.</summary>
+    /// <summary>
+    /// Three fresh samples spanning more than a second, not whatever an earlier command saw.
+    /// <paramref name="latchEngaged"/> is the latch read just before sampling: only with it engaged
+    /// does speed 0 + MT_RUNNING count as still (2026-09-15 field finding).
+    /// </summary>
     private static async Task<(List<VehicleMotionSample?> Samples, StopVerdict Stop)> SampleStillnessAsync(
         DrillContext context,
         DrillRiot riot,
-        string key)
+        string key,
+        bool latchEngaged)
     {
         List<VehicleMotionSample?> samples = [];
         for (int index = 0; index < 3; index++)
@@ -804,8 +841,13 @@ internal static class DrillCommands
                 await Task.Delay(PollIntervalMs + 50);
             }
         }
-        return (samples, Motion.EvaluateStop(samples));
+        StopVerdict stop = Motion.EvaluateStop(samples, latchEngaged);
+        Observe(context, "stopVerdict", new { latchEngaged, stop });
+        return (samples, stop);
     }
+
+    private static string StillnessDetail(StopVerdict stop, List<VehicleMotionSample?> samples) =>
+        stop.Describe() + ": " + string.Join(" | ", samples.Select(Motion.Describe));
 
     private static void PreflightGuard(CommandOutcome outcome, DrillState state)
     {

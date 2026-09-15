@@ -67,8 +67,8 @@
 | 所有命令 | 未知选项／重复选项（用法错误，退出码 2）；同一证据目录已有另一条命令在跑（`drill.lock`）；`--riot-base-url` 与 init 时不一致；状态文件里的 key 不是 agv02、map 不是 25 |
 | `init` | key 不是 agv02（agv01、agv03 及其它一律拒）；自测 key 未带 `--fake-riot`，或带了但地址不是字面回环 IP；map 不是 25；目录已存在且非空（已用过的 run 目录永不复用） |
 | `create-move` | 本 run 已建过单或已发过令；预检未通过／不是本机／超过 60 分钟；车未连接、未启用、`procState≠IDLE`、不在 `老厂前线new`、速度非 0、运动读数不是 `NotMoving`、卡片上有 `orderTaskId`、RIoT 有该车的非终态单（或查不清）、电量 < 30、不在站点上（`currentStationId≤0`）；终点等于当前站或不在实时站点目录里；`emergencyState≠OK` |
-| `watch-moving` | 只读，不拒；连续 2 个采样「运动中且 `currentStationId` 为 0／空」才报 `READY TO TRIGGER`；到站或超时报 `WINDOW_MISSED` |
-| `trigger` | 本 run 已记下发令（**先写状态文件再调用**，崩溃也算用掉）；key 不是批准的；预检不合格；没有演练单；发令前闩锁不是 `OK`；发令前现采样不是「两站之间运动中」（`--allow-stationary` 可放行，并记入证据） |
+| `watch-moving` | 只读，不拒；连续 2 个采样「两站之间运动中」才报 `READY TO TRIGGER`：运动读数 `Moving`、**上报速度严格大于 `MinimumMovingSpeed`=0.05**（RIoT 自己的速度单位）、`currentStationId` 为 0／空；到站或超时报 `WINDOW_MISSED`。接单起步时车在起点站原地旋转，这段会一直等过去 |
+| `trigger` | 本 run 已记下发令（**先写状态文件再调用**，崩溃也算用掉）；key 不是批准的；预检不合格；没有演练单；发令前闩锁不是 `OK`；发令前现采样不是「两站之间运动中」（判法同 `watch-moving`，含速度 > 0.05；`--allow-stationary` 可放行，并记入证据）；**`--allow-stationary` 仅限自测**：run 不是「自测 key + `--fake-riot` + 字面回环地址」时带它即拒绝，什么都不发、不记发令 |
 | `cancel-order` | 本 run 已取消过；**没有发令记录**；**本 run 已解除过**；没有 orderId；现读闩锁没有锁着（不是 `CAN_RECOVER`／`CAN_NOT_RECOVER`）；现采 3 个样本（跨度 ≥1 s）不能证明停稳。订单已是终态则不发命令。拒绝文案固定带 `CMD_ORDER_CANCEL is cleanup after the stop, never a substitute for it` |
 | `release` | 本 run 已解除过；没有发令记录；**本 run 没有 cancel-order，或演练单没有观察到终态**（提示先 cancel-order）；`--field-confirmed` 不是 `"<姓名> stopped,empty,doors-closed"`；现读闩锁不是 `CAN_RECOVER`（`CAN_NOT_RECOVER` 明确提示转 RIoT 人工）；现采 3 个样本不能证明停稳 |
 | `summarize` | `SUMMARY.md` 已存在（现场记录是手填的，不覆盖） |
@@ -77,10 +77,25 @@
 `NOT_CONFIRMED`（退出码 3），文案是「STOP: report to the user. Do NOT switch to releasing the emergency stop first」。
 此时 `release` 一直拒绝——**停下回报用户，不要改用先解除的顺序**。
 
-**停稳判据**：连续至少 3 个采样、跨度至少 1 秒，每个采样 `speed=0`、`movementState` 已上报且不是
-`MT_RUNNING`、`currentMap` 与 `currentStationId` 不变，读数失败打断连续。这比产品 `ReadMotion` 的 `NotMoving`
-（只认 `MT_FINISHED`／`MT_PAUSED`）宽，因为没人实测过急停后 RIoT 报哪个 `movementState`；产品是否也读成
-`NotMoving` 另记一栏。车辆卡片不带坐标，「位置不变」只能按站点号判。
+**停稳判据**：连续至少 3 个采样、跨度至少 1 秒，每个采样 `speed=0`、`movementState` 已上报，且满足下面一条；
+`currentMap` 与 `currentStationId` 不变，读数失败打断连续：
+
+- `movementState` 不是 `MT_RUNNING`；或
+- `movementState` 是 `MT_RUNNING`，但**该采样时急停闩锁已知锁着**（`CAN_RECOVER`／`CAN_NOT_RECOVER`）。`cancel-order`、`release`
+  用采样前刚读的那次闩锁；`trigger` 的观察循环每轮先读闩锁再采样，用本轮那次读数。闩锁 `OK` 或没读到时 `MT_RUNNING` 一律不算静止。
+  证据里记 `stillWhileLatchedRunning`（`drill-state.json` 的发令／取消单／解除记录、`timeline.jsonl` 的 `stopVerdict` 行、守卫明细），
+  用到这一条时 `SUMMARY.md` 的判定依据与异常一节都会写明。
+
+这比产品 `ReadMotion` 的 `NotMoving`（只认 `MT_FINISHED`／`MT_PAUSED`）宽；产品是否也读成 `NotMoving` 另记一栏。
+车辆卡片不带坐标，「位置不变」只能按站点号判。
+
+**2026-09-15 现场发现**（`evidence\field\20260915-W1-agv02-reduced-emergency-drill`），上面两处判法因此修改：
+
+- agv02 接单后**没有离开 210 站，只是在站上原地旋转**，RIoT 却一直报 `movementState=MT_RUNNING`、`speed=0`、`currentStationId=0`。
+  旧判法据此报了 `READY TO TRIGGER` 并发了令。所以 `MT_RUNNING` 不等于在走，`currentStationId=0` 也不等于已离站，真正的判别是速度
+  （手动驾驶时读到过 0.349）。现在 `watch-moving` 会一直等过起步旋转，直到速度 > 0.05。
+- 发令后 2.2 秒闩锁 `CAN_RECOVER`，此后 20 多秒每个采样都是 `speed=0`、`MT_RUNNING`、站 0、订单仍在执行：急停锁着、单还没取消的车
+  持续报 `MT_RUNNING`。旧判法要求非 `MT_RUNNING`，`trigger` 报不出停稳，`cancel-order`／`release` 也永远过不了停稳守卫，于是加了上面第二条。
 
 ## 输出、退出码与证据
 
@@ -134,6 +149,6 @@ pwsh .\tools\ControlServer.EmergencyDrill\Test-EmergencyDrillAgainstFakeRiot.ps1
 
 在本机回环的空闲端口（避开 L2 端口段）起 `ControlServer.FakeRiot`，只对它跑正向全流程
 （`trigger → cancel-order → release → summarize`）、「闩锁不来 → CAN_NOT_RECOVER」反向流程、「取消单迟迟不到终态」
-流程与 `init` 离线守卫，断言写到 `-EvidenceRoot`（默认 `%TEMP%` 下新目录）的 `assertions.json`。FakeRiot 只记录急停与
+流程、2026-09-15 现场形态（原地旋转不算窗口；闩锁锁着时 `speed=0` + `MT_RUNNING` 算停稳，闩锁 `OK` 时不算）与 `init` 离线守卫，断言写到 `-EvidenceRoot`（默认 `%TEMP%` 下新目录）的 `assertions.json`。FakeRiot 只记录急停与
 订单命令、不模拟后果，闩锁、停车、取消单、解除的状态由脚本在看到调用落地后从控制面写出来。
 **自测 PASS 不代表现场合格**，也永远不连真实 RIoT。

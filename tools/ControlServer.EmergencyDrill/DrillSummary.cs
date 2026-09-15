@@ -94,9 +94,11 @@ internal static class DrillSummary
         Row(text, "急停解除生效", ReleaseVerdict(state), ReleaseBasis(state));
         text.AppendLine();
         text.AppendLine("票 19 要求停车事实由**现场观察与 RIoT 侧证据双向确认**：上表只是 RIoT 侧证据，现场目视结论填在第三节。");
-        text.AppendLine("停稳判据：连续至少 3 个采样、跨度至少 1 秒，每个采样 `speed=0`、`movementState` 已上报且不是 `MT_RUNNING`、`currentMap` 与 " +
+        text.AppendLine("停稳判据：连续至少 3 个采样、跨度至少 1 秒，每个采样 `speed=0`、`movementState` 已上报，且要么不是 `MT_RUNNING`，要么是 `MT_RUNNING` " +
+            "但当时急停闩锁已知锁着（取该采样之前最近一次闩锁读数为 `CAN_RECOVER`／`CAN_NOT_RECOVER`；闩锁 `OK` 或未读到时 `MT_RUNNING` 不算静止）；`currentMap` 与 " +
             "`currentStationId` 不变；读数失败会打断连续。车辆卡片不带坐标，「位置不变」只能按站点号判定。同时记下产品 `ReadMotion` 是否也会把这段读成 " +
-            "`NotMoving`（它只认 `MT_FINISHED`／`MT_PAUSED`）。");
+            "`NotMoving`（它只认 `MT_FINISHED`／`MT_PAUSED`），以及停稳是否用到了「闩锁锁着 + `MT_RUNNING` + `speed=0`」这一条（`stillWhileLatchedRunning`）。" +
+            "后一条来自 2026-09-15 现场：闩锁锁着、演练单未取消时 RIoT 持续报 `MT_RUNNING`、`speed=0`。");
         text.AppendLine();
 
         text.AppendLine("## 二、白名单破例（2026-09-14 用户批准）");
@@ -290,6 +292,23 @@ internal static class DrillSummary
         {
             items.Add("建了演练单但本 run 没有发令。");
         }
+        List<string> latchedRunningStops = [];
+        if (state.Trigger is { StillWhileLatchedRunning: true })
+        {
+            latchedRunningStops.Add("`trigger`");
+        }
+        if (state.CancelOrder is { StillWhileLatchedRunning: true })
+        {
+            latchedRunningStops.Add("`cancel-order`");
+        }
+        if (state.Release is { StillWhileLatchedRunning: true })
+        {
+            latchedRunningStops.Add("`release`");
+        }
+        if (latchedRunningStops.Count > 0)
+        {
+            items.Add($"{string.Join("、", latchedRunningStops)} 的停稳证据用到了 2026-09-15 现场补充的规则（`stillWhileLatchedRunning=true`）：闩锁锁着时 `speed=0` + `movementState=MT_RUNNING` 计为静止。");
+        }
         if (state.CanNotRecoverObserved)
         {
             items.Add("观察到 `CAN_NOT_RECOVER`：按白名单 1.5 节不调用 `cancelEmergency`，转 RIoT 人工处理。");
@@ -360,7 +379,8 @@ internal static class DrillSummary
             ? $"发令后 {Motion.Number(trigger.MsToLatch)} ms 读到 `emergencyState={trigger.LatchState}`"
             : "观察窗内没有读到闩锁";
         string stop = trigger.Stopped
-            ? $"发令后 {Motion.Number(trigger.MsToStop)} ms 起连续静止采样（结束时连续 {trigger.StopStreak.ToString(CultureInfo.InvariantCulture)} 个；产品读数 NotMoving：{(trigger.StopStreakProductReadingNotMoving == true ? "是" : "否")}）"
+            ? $"发令后 {Motion.Number(trigger.MsToStop)} ms 起连续静止采样（结束时连续 {trigger.StopStreak.ToString(CultureInfo.InvariantCulture)} 个；产品读数 NotMoving：{(trigger.StopStreakProductReadingNotMoving == true ? "是" : "否")}；" +
+              $"`stillWhileLatchedRunning={(trigger.StillWhileLatchedRunning == true ? "true" : "false")}`{(trigger.StillWhileLatchedRunning == true ? "，即停稳用到了闩锁锁着时 `speed=0` + `MT_RUNNING` 计为静止" : string.Empty)}）"
             : "观察窗内没有停稳证据";
         string before = trigger.PreSample is null
             ? "发令前采样缺失"
@@ -379,7 +399,7 @@ internal static class DrillSummary
         ? "本 run 没有取消演练单。"
         : cancel.AlreadyTerminal
             ? $"取消时闩锁 `{cancel.LatchAtCancel ?? "-"}`；订单 {Code(cancel.OrderId)} 已是终态（`orderState={Motion.Number(cancel.OrderStateAfter)}`），没有发出命令。"
-            : $"取消时闩锁 `{cancel.LatchAtCancel ?? "-"}`、车辆停稳；`CMD_ORDER_CANCEL` {Code(cancel.OrderId)} 调用结果 `{cancel.Disposition}`；回读 `orderState={Motion.Number(cancel.OrderStateAfter)}`，终态：{(cancel.TerminalObserved ? "是" : "否")}。";
+            : $"取消时闩锁 `{cancel.LatchAtCancel ?? "-"}`、车辆停稳（`stillWhileLatchedRunning={(cancel.StillWhileLatchedRunning ? "true" : "false")}`）；`CMD_ORDER_CANCEL` {Code(cancel.OrderId)} 调用结果 `{cancel.Disposition}`；回读 `orderState={Motion.Number(cancel.OrderStateAfter)}`，终态：{(cancel.TerminalObserved ? "是" : "否")}。";
 
     private static string ReleaseVerdict(DrillState state) => state.Release switch
     {
@@ -391,7 +411,7 @@ internal static class DrillSummary
 
     private static string ReleaseBasis(DrillState state) => state.Release is not { } release
         ? "本 run 没有调用 `cancelEmergency`。"
-        : $"解除前演练单已是终态（`orderState={Motion.Number(release.OrderStateAtRelease)}`）；现场确认人 {release.FieldConfirmedBy}（`{release.FieldConfirmation}`）；解除前闩锁 `{release.PreLatch ?? "-"}`；调用结果 `{release.Disposition}`；" +
+        : $"解除前演练单已是终态（`orderState={Motion.Number(release.OrderStateAtRelease)}`）；现场确认人 {release.FieldConfirmedBy}（`{release.FieldConfirmation}`）；解除前闩锁 `{release.PreLatch ?? "-"}`、车辆停稳（`stillWhileLatchedRunning={(release.StillWhileLatchedRunning ? "true" : "false")}`）；调用结果 `{release.Disposition}`；" +
           (release.OkObserved ? $"发出后 {Motion.Number(release.MsToOk)} ms 读到 `emergencyState=OK`。" : $"没有读到 OK，最后 `{release.LastLatch ?? "未读到"}`。");
 
     private static void Row(StringBuilder text, params string[] cells) =>

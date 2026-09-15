@@ -199,28 +199,101 @@ internal sealed class WireLogHandler : DelegatingHandler
         });
 }
 
-internal sealed record StopVerdict(bool Stopped, DateTimeOffset? Since, int Streak, bool ProductReadingNotMoving);
+/// <summary>
+/// The trailing still streak. <paramref name="LatchedRunningSamples"/> counts the samples in it that
+/// were still only by the latched-running rule (<see cref="StillRule.LatchedRunning"/>).
+/// </summary>
+internal sealed record StopVerdict(
+    bool Stopped,
+    DateTimeOffset? Since,
+    int Streak,
+    bool ProductReadingNotMoving,
+    int LatchedRunningSamples)
+{
+    /// <summary>Stopped, and the stop rests at least partly on speed 0 + MT_RUNNING under an engaged latch.</summary>
+    public bool StillWhileLatchedRunning => Stopped && LatchedRunningSamples > 0;
+
+    internal string Describe() => FormattableString.Invariant(
+        $"stopped={Stopped} streak={Streak} stillWhileLatchedRunning={StillWhileLatchedRunning} (latched MT_RUNNING samples in streak: {LatchedRunningSamples})");
+}
+
+/// <summary>Whether one motion sample counts as still, and by which rule.</summary>
+internal enum StillRule
+{
+    /// <summary>Not still: moving, speed or movementState unreported, a read failed, or MT_RUNNING without an engaged latch.</summary>
+    NotStill,
+
+    /// <summary>A reported speed of exactly 0 with a reported movementState other than MT_RUNNING.</summary>
+    NotRunning,
+
+    /// <summary>
+    /// A reported speed of exactly 0 with movementState MT_RUNNING, while the emergency latch was known
+    /// to be engaged (CAN_RECOVER or CAN_NOT_RECOVER). 2026-09-15 field finding: an emergency-latched
+    /// vehicle that still holds its order keeps reporting MT_RUNNING with speed 0.
+    /// </summary>
+    LatchedRunning
+}
+
+/// <summary>
+/// A motion sample (null when the read failed) with whether the latest latch reading taken at or
+/// before it showed the latch engaged. An unread latch is not an engaged one.
+/// </summary>
+internal readonly record struct StopSample(VehicleMotionSample? Motion, bool LatchEngaged);
 
 /// <summary>What the drill reads out of a motion sample.</summary>
 internal static class Motion
 {
     /// <summary>
-    /// Moving (the product's own <see cref="HttpRiotMovementGateway.ReadMotion"/>: non-zero speed or
-    /// MT_RUNNING) and not standing at a station.
+    /// The lowest reported speed that counts as actually moving, compared strictly (speed must be
+    /// greater). In RIoT's own speed unit, the <c>speed</c> field of getVehicleInfo / the vehicle card,
+    /// which RIoT does not document; 0.349 was read while agv02 was driven by hand on 2026-09-15, which
+    /// fits m/s. 0.05 sits well above a reported 0 and well below any real driving speed.
     /// </summary>
-    internal static bool IsMovingBetweenStations(VehicleMotionSample sample) =>
-        sample.Reading == VehicleMotionReading.Moving && sample.CurrentStationId is null or 0;
+    internal const double MinimumMovingSpeed = 0.05;
+
+    private const string MovementRunning = "MT_RUNNING";
 
     /// <summary>
-    /// A reported zero speed with a reported movementState that is not MT_RUNNING. Deliberately
-    /// wider than the product's NotMoving (MT_FINISHED / MT_PAUSED only): nobody has observed which
-    /// state RIoT reports for an emergency-stopped vehicle, and the drill exists partly to find out.
-    /// Whether the product would also have read the streak as NotMoving is recorded alongside.
+    /// Actually driving between stations: the product's own <see cref="HttpRiotMovementGateway.ReadMotion"/>
+    /// reads Moving (non-zero speed or MT_RUNNING), the reported speed is above
+    /// <see cref="MinimumMovingSpeed"/>, and no station is reported.
     /// </summary>
-    internal static bool IsStill(VehicleMotionSample sample) =>
-        sample.Speed is double speed && speed == 0 &&
-        sample.MovementState is not null &&
-        !string.Equals(sample.MovementState, "MT_RUNNING", StringComparison.Ordinal);
+    /// <remarks>
+    /// The speed is the discriminator; neither of the other two conditions is enough. 2026-09-15 on
+    /// site: when agv02 took the drill order it rotated in place at station 210 without leaving it, and
+    /// throughout RIoT reported movementState=MT_RUNNING, speed=0 and currentStationId=0. So MT_RUNNING
+    /// does not mean the vehicle is driving, and currentStationId 0 does not mean it has left the
+    /// station. watch-moving therefore waits through the start-of-order rotation.
+    /// </remarks>
+    internal static bool IsMovingBetweenStations(VehicleMotionSample sample) =>
+        sample.Reading == VehicleMotionReading.Moving &&
+        sample.Speed is double speed && speed > MinimumMovingSpeed &&
+        sample.CurrentStationId is null or 0;
+
+    /// <summary>
+    /// Which rule, if any, makes a sample still. Speed must be reported as exactly 0 and movementState
+    /// must be reported. A state other than MT_RUNNING is still (<see cref="StillRule.NotRunning"/>):
+    /// deliberately wider than the product's NotMoving (MT_FINISHED / MT_PAUSED only), and whether the
+    /// product would also have read the streak as NotMoving is recorded alongside. MT_RUNNING is still
+    /// only while the latch is known to be engaged (<see cref="StillRule.LatchedRunning"/>); without an
+    /// engaged latch it stays not still.
+    /// </summary>
+    internal static StillRule ClassifyStill(VehicleMotionSample sample, bool latchEngaged)
+    {
+        if (sample.Speed is not double speed || speed != 0 || sample.MovementState is null)
+        {
+            return StillRule.NotStill;
+        }
+        if (!string.Equals(sample.MovementState, MovementRunning, StringComparison.Ordinal))
+        {
+            return StillRule.NotRunning;
+        }
+        return latchEngaged ? StillRule.LatchedRunning : StillRule.NotStill;
+    }
+
+    /// <summary>For samples all taken under one latch reading (cancel-order, release).</summary>
+    internal static StopVerdict EvaluateStop(IReadOnlyList<VehicleMotionSample?> samples, bool latchEngaged) =>
+        EvaluateStop([.. samples.Select(sample => new StopSample(sample, latchEngaged))]);
 
     /// <summary>
     /// The trailing run of still samples at one unchanged place. Stopped means at least three of
@@ -228,16 +301,22 @@ internal static class Motion
     /// of stillness. The vehicle card carries no coordinates, so "no position change" can only be
     /// judged on currentMap and currentStationId.
     /// </summary>
-    internal static StopVerdict EvaluateStop(IReadOnlyList<VehicleMotionSample?> samples)
+    internal static StopVerdict EvaluateStop(IReadOnlyList<StopSample> samples)
     {
         VehicleMotionSample? latest = null;
         VehicleMotionSample? earliest = null;
         int streak = 0;
+        int latchedRunning = 0;
         bool productNotMoving = true;
         for (int index = samples.Count - 1; index >= 0; index--)
         {
-            VehicleMotionSample? sample = samples[index];
-            if (sample is null || !IsStill(sample))
+            StopSample entry = samples[index];
+            if (entry.Motion is not VehicleMotionSample sample)
+            {
+                break;
+            }
+            StillRule rule = ClassifyStill(sample, entry.LatchEngaged);
+            if (rule == StillRule.NotStill)
             {
                 break;
             }
@@ -252,12 +331,13 @@ internal static class Motion
             }
             earliest = sample;
             streak++;
+            latchedRunning += rule == StillRule.LatchedRunning ? 1 : 0;
             productNotMoving &= sample.Reading == VehicleMotionReading.NotMoving;
         }
 
         bool stopped = streak >= 3 && latest is not null && earliest is not null &&
             latest.ObservedAt - earliest.ObservedAt >= TimeSpan.FromSeconds(1);
-        return new StopVerdict(stopped, stopped ? earliest?.ObservedAt : null, streak, stopped && productNotMoving);
+        return new StopVerdict(stopped, stopped ? earliest?.ObservedAt : null, streak, stopped && productNotMoving, latchedRunning);
     }
 
     internal static MotionRecord ToRecord(VehicleMotionSample sample) => new()

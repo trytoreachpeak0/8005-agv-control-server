@@ -190,7 +190,7 @@ internal static class Program
         Console.Error.WriteLine("  status        [--stations]                                   read-only");
         Console.Error.WriteLine("  create-move   --to <riotStationId>                           MOVES THE VEHICLE");
         Console.Error.WriteLine("  watch-moving  [--timeout <s>]                                read-only");
-        Console.Error.WriteLine("  trigger       [--observe-seconds <s>] [--allow-stationary]   SENDS triggerEmergency (once per run)");
+        Console.Error.WriteLine("  trigger       [--observe-seconds <s>] [--allow-stationary]   SENDS triggerEmergency (once per run); --allow-stationary is self-test only (--fake-riot run)");
         Console.Error.WriteLine("  cancel-order                                                 SENDS CMD_ORDER_CANCEL (once per run; after trigger, before release)");
         Console.Error.WriteLine("  release       --field-confirmed \"<name> stopped,empty,doors-closed\" [--observe-seconds <s>]   SENDS cancelEmergency (once per run; only after the order is terminal)");
         Console.Error.WriteLine("  summarize                                                    writes SUMMARY.md");

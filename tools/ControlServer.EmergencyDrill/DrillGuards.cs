@@ -69,6 +69,13 @@ internal static class DrillGuards
         return "only agv02 (" + ApprovedDeviceKey + ") is covered by the 2026-09-14 exception";
     }
 
+    /// <summary>
+    /// A FakeRiot self-test run: the self-test key, <c>--fake-riot</c> and a literal loopback address.
+    /// Self-test-only waivers (<c>trigger --allow-stationary</c>) are honoured on nothing else.
+    /// </summary>
+    internal static bool IsSelfTestRun(string deviceKey, bool fakeRiot, Uri baseUrl) =>
+        string.Equals(deviceKey, SelfTestDeviceKey, StringComparison.Ordinal) && fakeRiot && IsLiteralLoopback(baseUrl);
+
     internal static bool IsLiteralLoopback(Uri baseUrl) =>
         IPAddress.TryParse(baseUrl.DnsSafeHost, out IPAddress? address) && IPAddress.IsLoopback(address);
 
