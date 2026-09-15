@@ -148,10 +148,19 @@ public sealed class SlotConfigurationAuthorityStore(
         ArgumentException.ThrowIfNullOrWhiteSpace(slotModelVersionId);
         ArgumentNullException.ThrowIfNull(bindings);
 
+        // 绑定发布、激活与回滚冻结的是同一个治理对象（这台车在这一版车型下的仓位配置），共用一条版本线，
+        // 所以版本号要越过这条线上已有的每一版快照，不能只看绑定行：激活或回滚占掉的版本号，冻结时会原样
+        // 拿回那一版既有快照，新绑定行与它的发布审计就指到了别人的内容上。绑定行也算进来，是为了越过发布
+        // 到一半、行已落地而快照没冻上的那一版。
+        string objectId = FormattableString.Invariant($"{agvId}:{slotModelVersionId}");
         long version = await NextVersionAsync(
             _context.Set<SlotIoBindingRow>()
                 .Where(row => row.AgvId == agvId && row.SlotModelVersionId == slotModelVersionId)
-                .Select(row => row.Version),
+                .Select(row => row.Version)
+                .Concat(_context.Set<GovernedConfigurationSnapshotRow>()
+                    .Where(row => row.ObjectKind == GovernedObjectKind.ActiveSlotConfiguration
+                        && row.ObjectId == objectId)
+                    .Select(row => row.Version)),
             cancellationToken);
         List<SlotIoBindingRow> rows = [];
         foreach (SlotIoBindingSpecification binding in bindings)
@@ -178,7 +187,7 @@ public sealed class SlotConfigurationAuthorityStore(
 
         GovernedConfigurationSnapshot snapshot = await _publisher.PublishVersionAsync(
             GovernedObjectKind.ActiveSlotConfiguration,
-            $"{agvId}:{slotModelVersionId}",
+            objectId,
             version,
             JsonSerializer.Serialize(bindings),
             "SLOT_IO_BINDING_VERSION_PUBLISHED",

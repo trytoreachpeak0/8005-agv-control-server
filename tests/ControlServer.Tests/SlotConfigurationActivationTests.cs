@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
@@ -158,6 +159,66 @@ public sealed class SlotConfigurationActivationTests
         Assert.Single(await fixture.Context.Set<BusinessAuditRecordRow>().AsNoTracking()
             .Where(row => row.Action == "SLOT_CONFIGURATION_ACTIVATION_RESULT_RECORDED")
             .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// 激活之后重新发布的绑定，冻结的是它自己那一版快照，不是激活的那一版。
+    /// </summary>
+    /// <remarks>
+    /// 绑定发布、激活与回滚冻结的是同一个治理对象（这台车在这一版车型下的仓位配置），共用一条版本线。
+    /// 顺序是：发布绑定（v1）→ 下发激活（v2）→ 再发布一次绑定。第二次发布若只按绑定行数版本号，拿到的
+    /// 是 2，而 v2 已经是那次激活的快照；冻结一个已存在的版本会原样返回既有快照，于是新绑定行和它的发布
+    /// 审计都指向一份装着激活内容的快照。
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-14")]
+    public async Task ABindingRepublishedAfterAnActivationFreezesItsOwnSnapshotRatherThanTheActivations()
+    {
+        await using ActivationFixture fixture = await ActivationFixture.CreateAsync();
+        string model = await fixture.PublishApprovedModelAsync();
+        await fixture.BindAllSlotsAsync("AGV-01", model);
+        SlotConfigurationActivationRow activation = await fixture.Coordinator.IssueActivationAsync(
+            "AGV-01", model, Now, TestContext.Current.CancellationToken);
+
+        SlotIoBindingSpecification[] rewired =
+        [
+            .. ApprovedSlotHardwareFacts.IoBindings.Select(binding => binding with { PulseResetMilliseconds = 800 })
+        ];
+        IReadOnlyList<SlotIoBindingRow> republished = await fixture.Authority.PublishIoBindingsAsync(
+            "AGV-01", model, rewired, Now.AddHours(1), TestContext.Current.CancellationToken);
+
+        string snapshotId = Assert.Single(republished.Select(row => row.SnapshotId).Distinct())!;
+        Assert.NotEqual(activation.SnapshotId, snapshotId);
+
+        // 新绑定行记的那个版本上冻结的，就是这次发布自己的接线。
+        long version = Assert.Single(republished.Select(row => row.Version).Distinct());
+        GovernedConfigurationSnapshot frozen = await fixture.RequireSnapshotAsync($"AGV-01:{model}", version);
+        Assert.Equal(snapshotId, frozen.SnapshotId);
+        Assert.All(
+            JsonSerializer.Deserialize<SlotIoBindingSpecification[]>(frozen.ContentJson)!,
+            binding => Assert.Equal(800, binding.PulseResetMilliseconds));
+
+        // 激活那一版原封不动，仍是重新发布之前的接线。
+        GovernedConfigurationSnapshot activated = await fixture.RequireSnapshotAsync(
+            $"AGV-01:{model}", activation.ConfigurationVersion);
+        Assert.Equal(activation.SnapshotId, activated.SnapshotId);
+        Assert.All(
+            JsonSerializer.Deserialize<SlotIoBindingSpecification[]>(activated.ContentJson)!,
+            binding => Assert.Equal(500, binding.PulseResetMilliseconds));
+
+        // 发布审计指向这次发布自己的快照。
+        BusinessAuditRecordRow[] publishedAudit = await fixture.Context.Set<BusinessAuditRecordRow>().AsNoTracking()
+            .Where(row => row.Action == "SLOT_IO_BINDING_VERSION_PUBLISHED")
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        BusinessAuditRecordRow latestPublish = publishedAudit.OrderBy(row => row.RecordedAtUtcTicks).Last();
+        Assert.Equal(version, latestPublish.Version);
+        Assert.Equal(snapshotId, latestPublish.SnapshotId);
+
+        // 之后再下发一次激活，版本号接着往后数，下发的是这次发布的接线。
+        SlotConfigurationActivationRow next = await fixture.Coordinator.IssueActivationAsync(
+            "AGV-01", model, Now.AddHours(2), TestContext.Current.CancellationToken);
+        Assert.True(next.ConfigurationVersion > version);
+        Assert.Equal(SlotConfigurationFingerprint.Compute(rewired), next.Fingerprint);
     }
 
     [Fact]
