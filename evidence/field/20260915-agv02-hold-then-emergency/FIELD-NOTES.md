@@ -44,3 +44,15 @@
 - **暂停后再急停，仍报 `MT_PAUSED`**：急停锁住后没有变回 `MT_RUNNING`，产品读数保持 `NotMoving`。
 - 所以产品「先 `OrderHold`、再急停」这条路径上，停稳证明在真车上**可以成立**；#63 描述的 `MT_RUNNING` 加 `speed=0` 只出现在「订单仍在执行时直接急停」的情况。
 - 本次没有验证的：产品在 `OrderHold` 未被 RIoT 接受或未确认时直接急停的情况（那时订单仍在执行，按票 19 第二次运行的观察，会报 `MT_RUNNING` 加 `speed=0`）。
+
+## 更正（2026-09-15 当日追加）
+
+上面结论第三条「产品先 `OrderHold` 再急停这条路径上，停稳证明在真车上可以成立」**不成立**，以本节为准。
+
+- 产品的停稳证明（`StopProof`，`REQ-0247`）要求每个采样位置已知，而 `VehicleMotionSample.HasKnownPosition` 只在
+  `currentStationId > 0` 时为真。车停在两站之间时位置一律未知，证明缺 `STOP_PROOF_POSITION_UNKNOWN`。
+  本次 `timeline.jsonl` 里站点 0 的 73 个运动采样 `hasKnownPosition` 全为 false。
+- 所以本次测到的只是「暂停后、以及暂停后再急停时，`movementState` 为 `MT_PAUSED`，`ReadMotion` 读成 `NotMoving`」这一项读数。
+  在两站之间停下的车，不论是否先暂停，产品都证不出停稳。
+- `VehicleFaultCoordinator.RequiresEscalation` 在位置未知时一律升级，因此在途停车时产品总会发急停；
+  `EmergencyStopSupervisor.ReleaseObstacles` 会一直给出 `EMERGENCY_STOP_NOT_PROVEN`，服务端不会自动解除。
