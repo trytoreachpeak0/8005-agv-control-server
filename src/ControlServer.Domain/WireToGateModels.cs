@@ -220,7 +220,9 @@ public sealed record JourneyExecutionPlan(
     string GateMovementLegId,
     string GateUpperId,
     long DispatchGeneration,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    long? AreaAssignmentVersion = null,
+    string? RequiredSlotPosition = null);
 
 public enum ConnectionRecoveryStatus
 {

@@ -2638,9 +2638,25 @@ public sealed class JourneyRuntimeWorkerTests
                 Riot,
                 CheckpointWaits,
                 CreateFaultCoordinator(),
+                new AreaAssignmentStore(Context, CreateGovernedPublisher()),
+                new VehicleSlotPositionReader(Context),
+                new NoDispatchRoundOutcomeSink(),
                 options,
                 Clock,
                 NullLogger<JourneyRuntimeEngine>.Instance);
+        }
+
+        /// <summary>
+        /// The governed-configuration publisher over this fixture's database: what the batch 4 area assignment
+        /// store needs to be built at all, although no runtime test imports a table.
+        /// </summary>
+        private GovernedConfigurationPublisher CreateGovernedPublisher()
+        {
+            GovernanceStore governance = new(
+                Context,
+                new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+                AuditRetentionPolicy.Default);
+            return new GovernedConfigurationPublisher(governance, governance);
         }
 
         /// <summary>

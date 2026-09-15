@@ -459,7 +459,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes
                     .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                     .ConfigureAwait(false);
-                if (runtime is null || !Matches(runtime, journey))
+                if (runtime is null || !Matches(runtime, journey) ||
+                    !await AreaAssignmentFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false))
                 {
                     throw new BusinessIdentityConflictException(
                         "Accepted demand replay does not match its persisted journey runtime.");
@@ -2091,6 +2092,55 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.GateMovementLegId == journey.GateMovementLegId &&
         row.GateUpperId == journey.GateUpperId &&
         row.DispatchGeneration == journey.DispatchGeneration;
+
+    /// <summary>
+    /// Whether a plan's area assignment version and slot group are what the demand durably froze.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>JourneyRuntimes</c> has no column for either, deliberately: batch 7 rewrites that table's key, so
+    /// control-server#66 put the frozen version in <c>ConfigurationConsumerBindings</c>, and control-server#72
+    /// writes it in the same transaction as the journey row. That binding is the journey's record of
+    /// <see cref="JourneyExecutionPlan.AreaAssignmentVersion"/>, and the slot group is recovered from it: a
+    /// table version is immutable once written, so the group it assigns the demand's AREA is the group the
+    /// plan was built with.
+    /// </para>
+    /// <para>
+    /// No binding means nothing was frozen, and only a plan carrying neither field matches that. Until #72
+    /// writes the binding, a replayed plan that does carry a version is refused: nothing durable vouches
+    /// for the version it names, and refusing is the fail-closed side.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> AreaAssignmentFreezeMatchesAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyExecutionPlan journey,
+        CancellationToken cancellationToken)
+    {
+        long? frozenVersion = await dbContext.Set<ConfigurationConsumerBindingRow>()
+            .AsNoTracking()
+            .Where(row => row.ConsumerKind == DispatchZoneAreaAssignmentGovernance.DemandConsumerKind &&
+                          row.ConsumerId == snapshot.DemandId &&
+                          row.ObjectKind == GovernedObjectKind.DispatchZoneAreaAssignment &&
+                          row.ObjectId == DispatchZoneAreaAssignmentGovernance.ObjectId)
+            .Select(row => (long?)row.FrozenVersion)
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (frozenVersion != journey.AreaAssignmentVersion)
+        {
+            return false;
+        }
+
+        string? area = snapshot.LiveMesFields?.Area;
+        string? frozenSlotPosition = frozenVersion is null || area is null
+            ? null
+            : await dbContext.Set<DispatchZoneAreaAssignmentRow>()
+                .AsNoTracking()
+                .Where(row => row.Version == frozenVersion.Value && row.Area == area)
+                .Select(row => row.SlotPosition)
+                .SingleOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        return string.Equals(frozenSlotPosition, journey.RequiredSlotPosition, StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// Carries every snapshot revision on from the highest this vehicle has already published.
