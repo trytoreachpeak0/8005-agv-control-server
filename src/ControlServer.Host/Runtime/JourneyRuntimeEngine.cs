@@ -77,6 +77,14 @@ public sealed class JourneyRuntimeEngine(
             new EventId(2107, nameof(LogOrderFailedSymptom)),
             "RIoT reports order {UpperId} FAILED on vehicle {AgvId}; journey {DemandId} recorded the " +
             "symptom with the fault model and stopped advancing on its own.");
+    private static readonly Action<ILogger, long, int, string, string, Exception?> LogAdmissionPolicyDrift =
+        LoggerMessage.Define<long, int, string, string>(
+            LogLevel.Warning,
+            new EventId(2108, nameof(LogAdmissionPolicyDrift)),
+            "Admission policy version {AdmissionPolicyVersion} is bound to other area-named stations than " +
+            "map {MapId} now carries (added: {AddedStations}; removed: {RemovedStations}). Journeys already " +
+            "under way continue on the bound policy; no further demand is taken on until " +
+            "admissionPolicyVersion is raised.");
 
     /// <summary>The journey is not arriving because the vehicle is holding at a traffic checkpoint.</summary>
     public const string CheckpointWaitReason = "VEHICLE_WAITING_AT_CHECKPOINT";
@@ -128,16 +136,50 @@ public sealed class JourneyRuntimeEngine(
         await catalogAvailability.RecordConfirmationAsync(currentMap, cancellationToken)
             .ConfigureAwait(false);
 
-        await store.ApplyAdmissionPolicyAsync(
-            new AdmissionPolicyDefinition(
+        // The policy is re-derived from the live map every iteration, and map 25 is shared: RIoT's
+        // other users add, rename and remove stations on it. Any such edit to an area-named station
+        // arrives here as a different set under the version this deployment names, and the store
+        // refuses to rebind it. That refusal used to escape this method, so every iteration failed
+        // before AdvanceAsync -- a loaded vehicle already bound for the gate was never given its
+        // unload until someone raised the version and restarted. ADR-cross-0050 and 0051 confine a
+        // policy change to what is not yet committed: the bound policy stays in force for every
+        // journey under way, and only taking on a further demand waits for the version, which
+        // AdmissionPolicyDriftCriterion enforces for every vehicle this round serves.
+        string[] liveStationNames = machineStations.Select(station => station.StationName)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        bool admissionPolicyDrifted = false;
+        try
+        {
+            await store.ApplyAdmissionPolicyAsync(
+                new AdmissionPolicyDefinition(
+                    runtimeOptions.AdmissionPolicyVersion,
+                    runtimeOptions.AdmissionPolicyDeploymentId,
+                    liveStationNames
+                        .Select(stationName => new StationTaskTypeAdmission(stationName, "WIRE_TO_GATE"))
+                        .ToArray(),
+                    timeProvider.GetUtcNow()),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (BusinessIdentityConflictException error)
+        {
+            admissionPolicyDrifted = true;
+            string[] boundStationNames = await dbContext.StationTaskTypeAdmissions.AsNoTracking()
+                .Select(row => row.StationId)
+                .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+            LogAdmissionPolicyDrift(
+                logger,
                 runtimeOptions.AdmissionPolicyVersion,
-                runtimeOptions.AdmissionPolicyDeploymentId,
-                machineStations.Select(station => station.StationName)
-                    .Distinct(StringComparer.Ordinal)
-                    .Select(stationName => new StationTaskTypeAdmission(stationName, "WIRE_TO_GATE"))
-                    .ToArray(),
-                timeProvider.GetUtcNow()),
-            cancellationToken).ConfigureAwait(false);
+                runtimeOptions.MapId,
+                Describe(liveStationNames.Except(boundStationNames, StringComparer.Ordinal)),
+                Describe(boundStationNames.Except(liveStationNames, StringComparer.Ordinal)),
+                error);
+
+            static string Describe(IEnumerable<string> stationNames) =>
+                string.Join(", ", stationNames.Order(StringComparer.Ordinal)) is { Length: > 0 } names
+                    ? names
+                    : "none";
+        }
 
         JourneyRuntimeRow[] active = await dbContext.JourneyRuntimes
             .Where(row => row.Stage != JourneyRuntimeStage.Completed)
@@ -192,13 +234,15 @@ public sealed class JourneyRuntimeEngine(
                 $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
         }
 
-        await DiscoverAndAcceptAsync(currentMap, gate, free, cancellationToken).ConfigureAwait(false);
+        await DiscoverAndAcceptAsync(currentMap, gate, free, admissionPolicyDrifted, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task DiscoverAndAcceptAsync(
         RiotMapStationCatalogSnapshot currentMap,
         RiotMapStation gate,
         IReadOnlyList<FleetVehicle> vehicles,
+        bool admissionPolicyDrifted,
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = timeProvider.GetUtcNow();
@@ -236,7 +280,8 @@ public sealed class JourneyRuntimeEngine(
 
         VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken)
             .ConfigureAwait(false);
-        DispatchRoundFacts round = new(snapshot, currentMap, gate, acceptedDemandIds, now, policy);
+        DispatchRoundFacts round = new(
+            snapshot, currentMap, gate, acceptedDemandIds, now, policy, admissionPolicyDrifted);
 
         // One worker, vehicles in series -- not one worker per vehicle. Serial iteration is what
         // keeps a round's snapshot fresh: two workers would each decide against their own read of

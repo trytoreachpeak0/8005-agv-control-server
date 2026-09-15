@@ -1527,6 +1527,80 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Null(iterationError);
     }
 
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AStationAddedToTheSharedMapTakesOnNoNewDemandUntilThePolicyVersionIsRaised()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // Binds version 1 to the map as it stands.
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Riot.SetMapStations(MapWithAStationAdded());
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            AdmissionPolicyDriftCriterion.Reason,
+            (await fixture.BacklogAsync("10000000-0000-4000-8000-000000000001")).ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        // The live map is not an import (ADR-cross-0051): version 1 still binds what it was imported with.
+        Assert.Equal(
+            ["N1-1", "N1-2_N1-3"],
+            await fixture.Context.StationTaskTypeAdmissions.AsNoTracking()
+                .Select(row => row.StationId)
+                .OrderBy(stationId => stationId)
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await fixture.Context.AdmissionPolicyAudit
+            .CountAsync(TestContext.Current.CancellationToken));
+
+        // Raising the version is the deliberate re-import, and it is all that intake waits for.
+        fixture.Options.AdmissionPolicyVersion = 2;
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(2, await fixture.Context.AdmissionPolicyAudit
+            .CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
+    public async Task AStationAddedToTheSharedMapBeforeArrivalLoadsTheJourneysOwnDemandAndTakesOnNoOther()
+    {
+        const string first = "10000000-0000-4000-8000-000000000001";
+        const string second = "10000000-0000-4000-8000-000000000002";
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(first, "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+
+        // A second demand at the same station turns up while the vehicle is on its way. A journey
+        // here carries one demand and a vehicle on a journey is offered none, so the second one is
+        // first scored in the round after this journey completes -- and must be refused there.
+        fixture.Riot.SetMapStations(MapWithAStationAdded());
+        fixture.Catalog.Set(
+            fixture.Demand(first, "SUBLOT-001", Now.AddMinutes(-10)),
+            fixture.Demand(second, "SUBLOT-002", Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+
+        // The demand the journey already carries loads under the bound policy, gets its gate leg
+        // created, and completes at the gate.
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RunToCompletionAsync()).Stage);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_GATE"));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(first, (await fixture.DemandRowAsync()).DemandId);
+        Assert.Equal(AdmissionPolicyDriftCriterion.Reason, (await fixture.BacklogAsync(second)).ReasonCode);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
     /// <summary>The fixture's default map with one more area-named station, the way another RIoT user adds one.</summary>
     private static RiotMapStation[] MapWithAStationAdded() =>
     [
