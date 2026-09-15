@@ -5,16 +5,21 @@ agent's instructions for working here.
 
 ## Write authority
 
-This repository is writable. The others in the workspace are not, each in its
-own way:
+This repository is writable. The workspace `CLAUDE.md` is the authority on write
+access and wins where this file differs; the two restrictions an agent here is
+most likely to meet:
 
 - `8005-agv-onboard-hmi` and `slots-simulator` — **writable on `w2g/*` branches
   only** (changed 2026-09-04; they were read-only for agents before). The
-  development work on both is now ours, but their working branches
-  (`OnboardHmi_MVP` and `main`) are not: changes reach Kun Wang as a pull request
-  he decides on, and **we never merge it ourselves**.
-- `8005-agv-protocol` — writable, but every push there must be announced to Kun
-  Wang in an issue that `@SocialKKKK`.
+  development work on both is ours. A change reaches their working branches
+  (`OnboardHmi_MVP` and `main`) only as a pull request, and **since 2026-09-09
+  both the agreement and the merge are ours**. Never push to those branches
+  directly, never force-push, never delete or rewrite a branch that is not ours,
+  never tag or release there.
+- `8005-agv-protocol` — writable, with **no announcement duty since 2026-09-08**:
+  do not open announcement issues and do not `@SocialKKKK`. A push still voids
+  gate evidence — ours — so its commit message states which `FP-IS-*` slices it
+  touches and which evidence it voids.
 
 Reaching a machine, or routing a problem to a repository, never grants write
 access to it.
@@ -47,53 +52,52 @@ Installed as the `mattpocock-skills` plugin (user-level). Invoke them namespaced
 it. `code-review` collides with the bundled `/code-review`; use
 `/mattpocock-skills:code-review` for the Standards+Spec review.
 
-### Deciding what to work on
-
-The workspace ships a `w2g-next` skill. When the next step is unclear, it reads
-the real state — working tree, the slice board issue, `integration-slices/index.json`,
-open issues, gate evidence — and applies a fixed priority ladder to name one
-action. Prefer it over guessing.
-
 ## Collaboration workflow
 
-Two people drive this project. Kun Wang (GitHub `SocialKKKK`) owns
-`8005-agv-onboard-hmi` and `slots-simulator`; Zhengyu Shao owns this repository;
-`8005-agv-protocol` is jointly maintained. The full account, written for humans
-and in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
+Zhengyu Shao is the sole developer. Kun Wang (GitHub `SocialKKKK`) no longer
+works on the project: development of `8005-agv-onboard-hmi` and `slots-simulator`
+moved to us on 2026-09-04, and this repository and `8005-agv-protocol` are ours
+too. The workspace `CLAUDE.md` is the authority on these rules; the account
+written for humans, in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
 
 What an agent must follow:
 
 - **The unit of collaboration is the integration slice.** Do not invent another
   one. `8005-agv-protocol/integration-slices/index.json` defines `FP-IS-00`
   through `FP-IS-15`, each with a `sequence` and `prerequisites`. Each slice's
-  `gates` array *is* the division of labour: `G1` shared, `CONTROL_SERVER_G2`
-  this repository, `ONBOARD_HMI_G2` theirs, `G3` together.
+  `gates` array names who proves what: `G1` the protocol, `CONTROL_SERVER_G2`
+  this repository, `ONBOARD_HMI_G2` the onboard HMI (run by us since
+  2026-09-04), `G3` both ends together.
   **The family replaced `W2G-IS-00` through `07` rather than joining them**
   (scope specification 7.1); `FP-IS-00` through `07` correspond to the old eight
   one for one, but as *recertification under v2* — there is no passing verdict to
   carry over, and section 12 of `docs/RELEASE-CANDIDATE.md` says so in as many
   words. Existing evidence directories keep the `W2G-IS-NN` ids they were written
   with; nothing renames them.
-- **The two G2 gates have no dependency and run in parallel.** G3 needs both
-  people present and is the most expensive resource, so do not propose it while
-  the other side's G2 is not green.
+- **The two G2 gates have no dependency and run in parallel.** G3 has been run by
+  one person since 2026-09-08, but it is still the most expensive gate: do not
+  propose it while either G2 is not green, and before entering it say what it
+  costs and ask.
 - **Cross-repository feedback takes one of three routes.** A contract ambiguity
   or error goes to an issue in `8005-agv-protocol` carrying the `vectorId` that
-  triggered it. The other side failing the contract goes to an issue in *their*
-  repository — **run G3 for evidence first** and attach the evidence directory.
+  triggered it. A peer (`8005-agv-onboard-hmi`, `slots-simulator`) failing the
+  contract goes to an issue in *that* repository — **run G3 for evidence first**
+  and attach the evidence directory.
   Work inside this repository stays in this repository's issues.
   **A cross-repository claim must carry reproducible gate evidence; "it does not
   work on my side" is not a report.** Follow the shape already used in
   `docs/defects/`: a `Found by:` line linking the G3 evidence `SUMMARY.md`.
 - **`8005-agv-protocol` needs no advance approval** — Zhengyu Shao decides its
-  content alone — **but every push must be announced in an issue that
-  `@SocialKKKK`**, stating what changed, which `FP-IS-*` slices it touches, and
-  whether their `ONBOARD_HMI_G2` evidence is now void, in the same task as the
-  push. Tagging a release still needs the two-owner attestation; **AI and CI
-  cannot approve.**
+  content alone — **and since 2026-09-08 no announcement either**: do not open
+  announcement issues and do not `@SocialKKKK`. A push still voids gate evidence,
+  now ours, so its commit message states which `FP-IS-*` slices it touches and
+  which evidence it voids. Tagging a release needs an attestation with **exactly
+  one approval** (two before 2026-09-08): the product owner, or since 2026-09-12
+  an AI agent the user authorized for that specific release, recorded as
+  `approverKind: AI_AGENT` with `authorizedBy`. **CI cannot approve.**
 - **Batch protocol changes.** A patch release voids the affected G1/G2/G3
-  evidence on both sides, so every small change costs the other side a full gate
-  re-run.
+  evidence on both ends — all of it ours now — so every small change costs a full
+  gate re-run.
 
 ## Language
 
