@@ -242,6 +242,11 @@ public sealed class SlotConfigurationAuthorityStore(
     /// <summary>
     /// 核验车载端报上来的配置声明。**只核验，不采信**：这个方法不写任何权威表。
     /// </summary>
+    /// <remarks>
+    /// 比对的对象是这台车**一个车型版本下的一版**绑定，不是全车最大的版本号——版本号按「车 + 车型版本」
+    /// 各自从 1 数起，跨车型比大小没有意义。车型先认生效配置（车此刻跑的就是它）；还没激活过的车，认
+    /// 最近一次发布的绑定所属的车型。这与派车读仓位分组时认车型的顺序相同。车型定下之后取其中最新一版。
+    /// </remarks>
     public async Task<VehicleDeclarationVerdict> VerifyVehicleDeclarationAsync(
         string agvId,
         IReadOnlyList<SlotIoBindingSpecification> declared,
@@ -250,10 +255,21 @@ public sealed class SlotConfigurationAuthorityStore(
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         ArgumentNullException.ThrowIfNull(declared);
 
-        SlotIoBindingRow[] authoritative = await _context.Set<SlotIoBindingRow>()
+        SlotIoBindingRow[] published = await _context.Set<SlotIoBindingRow>()
             .AsNoTracking()
             .Where(row => row.AgvId == agvId && row.Status == PublishedStatus)
             .ToArrayAsync(cancellationToken);
+        string? activeModel = await _context.Set<ActiveSlotConfigurationRow>()
+            .AsNoTracking()
+            .Where(row => row.AgvId == agvId)
+            .Select(row => row.SlotModelVersionId)
+            .SingleOrDefaultAsync(cancellationToken);
+        // SQLite 不能对 DateTimeOffset 做 ORDER BY，所以在内存里排。
+        string? model = activeModel ?? published
+            .OrderByDescending(row => row.CreatedAt)
+            .ThenByDescending(row => row.Version)
+            .FirstOrDefault()?.SlotModelVersionId;
+        SlotIoBindingRow[] authoritative = [.. published.Where(row => row.SlotModelVersionId == model)];
         long latest = authoritative.Length == 0 ? 0 : authoritative.Max(row => row.Version);
         Dictionary<int, SlotIoBindingRow> bySlot = authoritative
             .Where(row => row.Version == latest)
