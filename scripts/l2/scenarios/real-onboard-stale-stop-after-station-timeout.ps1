@@ -54,7 +54,7 @@ $field = New-FieldOperator -Connection $connection -AgvId $Context.AgvId `
 
 # Every connection the vehicle opens starts with one SessionHello, so this counts connections.
 function Get-SessionHelloCount {
-    $rows = @(Invoke-L2Query -Connection $connection `
+    $rows = (Invoke-L2Query -Connection $connection `
         -Sql "SELECT COUNT(*) AS N FROM ProtocolInbox WHERE MessageType = 'SessionHello'")
     return [int]$rows[0].N
 }
@@ -87,7 +87,7 @@ function Format-VehicleView([object]$View) {
 
 function Get-OutboxCounts {
     $counts = @{}
-    foreach ($row in @(Invoke-L2Query -Connection $connection `
+    foreach ($row in (Invoke-L2Query -Connection $connection `
             -Sql 'SELECT MessageType, COUNT(*) AS N FROM ProtocolOutbox GROUP BY MessageType')) {
         $counts[[string]$row.MessageType] = [int]$row.N
     }
@@ -226,7 +226,7 @@ $journal.Note("Vehicle after both presses: $(Format-VehicleView $afterPresses)")
 
 # foreach, not a pipeline: piping Invoke-L2Query rows joins their string columns (README item 22).
 $received = @()
-foreach ($row in @(Invoke-L2Query -Connection $connection `
+foreach ($row in (Invoke-L2Query -Connection $connection `
         -Sql "SELECT MessageId, RequestJson, FirstResponseJson FROM ProtocolInbox WHERE MessageType = 'LoadCancellationStartRequested' ORDER BY ReceivedAt")) {
     $requestPayload = ([string]$row.RequestJson | ConvertFrom-Json -Depth 32).payload
     $decision = '(no response)'
@@ -246,8 +246,8 @@ $assertions.Add(
     "SessionHello 次数不变（$hellosBefore）",
     "按前 $hellosBefore / 按后 $hellosAfter；第一下 $firstAnswer；第二下 $secondAnswer")
 
-$workflowRows = @(Invoke-L2Query -Connection $connection -Sql 'SELECT COUNT(*) AS N FROM RecoveryWorkflows')
-$demandRows = @(Invoke-L2Query -Connection $connection -Sql "SELECT Status FROM AcceptedDemands WHERE DemandId = '$demandId'")
+$workflowRows = (Invoke-L2Query -Connection $connection -Sql 'SELECT COUNT(*) AS N FROM RecoveryWorkflows')
+$demandRows = (Invoke-L2Query -Connection $connection -Sql "SELECT Status FROM AcceptedDemands WHERE DemandId = '$demandId'")
 $workflowCount = [int]$workflowRows[0].N
 $demandStatus = ($demandRows.Count -eq 1) ? [string]$demandRows[0].Status : '(no demand row)'
 $assertions.Add(
