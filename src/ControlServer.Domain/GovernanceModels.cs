@@ -14,7 +14,10 @@ public enum GovernedObjectKind
     PublicStationBinding,
 
     /// <summary>审计保留期本身（REQ-0271 后半句：它的变更是一次管理员操作）。</summary>
-    AuditRetention
+    AuditRetention,
+
+    /// <summary>分区归属表（含开门侧列），整张表一个版本（REQ-0350，program#68 决议 2）。</summary>
+    DispatchZoneAreaAssignment
 }
 
 /// <summary>

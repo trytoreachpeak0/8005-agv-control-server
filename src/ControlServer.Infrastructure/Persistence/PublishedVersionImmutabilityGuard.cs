@@ -61,6 +61,8 @@ internal static class PublishedVersionImmutabilityGuard
         SlotModelVersionRow => WasPublished(entry, nameof(SlotModelVersionRow.Status)),
         SlotIoBindingRow => WasPublished(entry, nameof(SlotIoBindingRow.Status)),
         SlotModelSlotRow => IsSlotOfPublishedModel(entry),
+        // 分区归属表没有草稿态：一个版本写入的那一刻就已发布，回滚是把旧内容再导入成新版本（REQ-0350）。
+        DispatchZoneAreaAssignmentVersionRow or DispatchZoneAreaAssignmentRow => true,
         _ => false,
     };
 

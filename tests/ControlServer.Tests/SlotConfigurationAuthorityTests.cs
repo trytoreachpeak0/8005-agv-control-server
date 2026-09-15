@@ -206,6 +206,26 @@ public sealed class SlotConfigurationAuthorityTests
     }
 
     [Fact]
+    public async Task TheApprovedEightSlotModelPutsSlotsOneToFourInFrontAndFiveToEightInRear()
+    {
+        // REQ-0349：八仓车型取 FRONT（1～4 号，前侧仓门）与 REAR（5～8 号，后侧仓门）。这是已批准硬件事实
+        // （REQ-0267）的数据录入，不是派车规则。批次 4 之前这里写的是 LEFT／RIGHT，指的是同一侧仓门。
+        await using AuthorityFixture fixture = await AuthorityFixture.CreateAsync();
+        SlotModelVersionRow model = await fixture.Store.EnsureApprovedHardwareFactsAsync(
+            Now, TestContext.Current.CancellationToken);
+
+        string[] positions = await fixture.Context.Set<SlotModelSlotRow>().AsNoTracking()
+            .Where(row => row.SlotModelVersionId == model.SlotModelVersionId)
+            .OrderBy(row => row.PhysicalSlotNumber)
+            .Select(row => row.SlotPosition)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            ["FRONT", "FRONT", "FRONT", "FRONT", "REAR", "REAR", "REAR", "REAR"],
+            positions);
+    }
+
+    [Fact]
     public async Task EveryPublishedVersionCarriesItsOwnFrozenSnapshotAndAudit()
     {
         await using AuthorityFixture fixture = await AuthorityFixture.CreateAsync();
@@ -229,7 +249,7 @@ public sealed class SlotConfigurationAuthorityTests
     private static IReadOnlyList<SlotModelSlotSpecification> ModelSlots(string templateKey, long templateVersion) =>
     [
         .. Enumerable.Range(1, 8).Select(number => new SlotModelSlotSpecification(
-            number, number <= 4 ? "LEFT" : "RIGHT", templateKey, templateVersion))
+            number, number <= 4 ? "FRONT" : "REAR", templateKey, templateVersion))
     ];
 
     private sealed class AuthorityFixture : IAsyncDisposable

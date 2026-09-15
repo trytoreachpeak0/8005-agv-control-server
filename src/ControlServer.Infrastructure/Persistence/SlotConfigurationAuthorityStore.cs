@@ -220,7 +220,9 @@ public sealed class SlotConfigurationAuthorityStore(
             .. Enumerable.Range(1, ApprovedSlotHardwareFacts.SlotCount).Select(number =>
                 new SlotModelSlotSpecification(
                     number,
-                    number <= 4 ? "LEFT" : "RIGHT",
+                    // 已批准硬件事实（REQ-0267）的数据录入，不是派车规则：分组从这里进整车模板，派车只读模板
+                    // （REQ-0349 不许在派车或装卸规则里按仓号区间写死）。批次 4 之前写 LEFT／RIGHT，指同一侧仓门。
+                    number <= 4 ? "FRONT" : "REAR",
                     template.TemplateKey,
                     template.Version))
         ];
