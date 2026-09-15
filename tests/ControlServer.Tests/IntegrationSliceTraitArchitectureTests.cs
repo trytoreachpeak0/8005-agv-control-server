@@ -54,11 +54,14 @@ public sealed class IntegrationSliceTraitArchitectureTests
         new(StringComparer.Ordinal)
         {
             ["AgvRestorationTests"] = "batch 3 FP-C5 archive-and-restore lifecycle; server-internal, no wire message",
+            ["AreaAssignmentStoreTests"] = "batch 4 FP-C15 REQ-0350 area assignment table versions; the side is decided on the server only (spec 5.1 #10), no wire message",
             ["AuditExportTests"] = "batch 3 FP-C14 REQ-0271 audit query and export; server-internal, no wire message",
             ["Batch2CapabilityStoresTests"] = "batch 2 track B persistence foundation; server-internal, no wire message",
             ["Batch3MigrationDisciplineTests"] = "cross-cutting migration and startup guard; hanging it off a slice would defer the guard with the slice",
+            ["Batch4MigrationDisciplineTests"] = "cross-cutting migration guard for batch 4's one migration; hanging it off a slice would defer the guard with the slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
+            ["DemandAreaAssignmentFreezeTests"] = "batch 4 FP-C15 REQ-0350 demand freeze of the area assignment version; server-internal, no wire message",
             ["EmergencyStopReleaseEndpointsTests"] = "REQ-0356 release-on-confirmation HTTP entry point (control-server#63); single-ended server-to-RIoT, no wire message",
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateGateTests"] = "RIoT create experiment; single-ended server-to-RIoT",
@@ -86,7 +89,9 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",
             ["SlotConfigurationGateModeTests"] = "readiness gate mode validation; no wire message",
             ["SlotConfigurationReadinessGateTests"] = "batch 3 per-vehicle IO integrity gate; a server-side readiness predicate, no wire message",
-            ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT"
+            ["StructuralDispatchBlockStoreTests"] = "batch 4 REQ-0210 structural dispatch block storage; server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
+            ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
+            ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"
         };
 
     /// <summary>
