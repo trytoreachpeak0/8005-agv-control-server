@@ -1,0 +1,51 @@
+{"at":"2026-09-15T03:07:06.7364811+00:00","note":"L2 run 20260915T030706706Z starting for scenario 'auto-charge-endurance'."}
+{"at":"2026-09-15T03:07:06.7493016+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-15T03:07:06.8898167+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-15T03:07:11.1551954+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-15T03:07:11.3856852+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-15T03:07:11.4389497+00:00","note":"Server settings from auto-charge-endurance.setup.psd1: JourneyRuntime__autoChargingEnabled=true, JourneyRuntime__chargeResumeBatteryPercent=80, JourneyRuntime__chargerStationId=充电点1, JourneyRuntime__chargerStationRiotId=211, JourneyRuntime__chargeTriggerBatteryPercent=30"}
+{"at":"2026-09-15T03:07:13.4752368+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-15T03:07:15.0765326+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-15T03:07:15.7267995+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-15T03:07:16.0010566+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-15T03:07:16.0160733+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-15T03:07:16.0476294+00:00","note":"Environment is up; entering scenario 'auto-charge-endurance'."}
+{"at":"2026-09-15T03:07:16.0919820+00:00","note":"Adding charger station 211 (充电点1) to map 25."}
+{"at":"2026-09-15T03:07:16.2162207+00:00","note":"Publishing demand 1126908dccac4462b63d80edf1c4f85b (L2-SUBLOT-20260915T030706706Z-A)."}
+{"at":"2026-09-15T03:07:16.2861154+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-15T03:07:17.0834726+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-15T03:07:17.1019757+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-f139e1fa-64e8-a953-b279-ea1a2697d086-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-15T03:07:17.9752127+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-15T03:07:18.7715683+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-15T03:07:19.5676768+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-15T03:07:21.1749575+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-15T03:07:21.4407235+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-15T03:07:21.4491180+00:00","note":"Battery drops below the trigger level; the vehicle must take itself to the charger."}
+{"at":"2026-09-15T03:07:21.4667998+00:00","criterion":"charging-run","value":"(null)"}
+{"at":"2026-09-15T03:07:22.5188475+00:00","criterion":"charging-run","value":"@{ChargingRunId=5ca023e7-c69d-2f56-9e8e-17d5a11151a2; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=AwaitingChargerArrival; ChargerStationId=充电点1; ChargerStationRiotId=211; MovementLegId=2b4da79a-0092-5558-aa0d-3e992e44b15d; UpperId=W2G-CHARGE-5ca023e7-c69d-2f56-9e8e-17d5a11151a2-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-15 03:07:22.4304641+00:00; UpdatedAt=2026-09-15 03:07:22.4816945+00:00}"}
+{"at":"2026-09-15T03:07:22.5447195+00:00","criterion":"to-charger-intent","value":"@{UpperId=W2G-CHARGE-5ca023e7-c69d-2f56-9e8e-17d5a11151a2-1; OrderId=ORDER-000003; Status=CONFIRMED; DestinationStationId=211}"}
+{"at":"2026-09-15T03:07:22.5621605+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-15T03:07:23.6122598+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-15T03:07:24.6683852+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-15T03:07:25.4637697+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-15T03:07:26.5166760+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-15T03:07:26.5181553+00:00","note":"Vehicle arrives at the charger and starts drawing current."}
+{"at":"2026-09-15T03:07:27.6411894+00:00","criterion":"charging-run","value":"@{ChargingRunId=5ca023e7-c69d-2f56-9e8e-17d5a11151a2; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=Charging; ChargerStationId=充电点1; ChargerStationRiotId=211; MovementLegId=2b4da79a-0092-5558-aa0d-3e992e44b15d; UpperId=W2G-CHARGE-5ca023e7-c69d-2f56-9e8e-17d5a11151a2-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=; BlockReasonCode=; CreatedAt=2026-09-15 03:07:22.4304641+00:00; UpdatedAt=2026-09-15 03:07:27.4328387+00:00}"}
+{"at":"2026-09-15T03:07:27.6441485+00:00","note":"Battery passes the demand floor but not the resume level; the vehicle must stay put."}
+{"at":"2026-09-15T03:07:27.6661715+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-15T03:07:28.4541883+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-15T03:07:29.5106617+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-15T03:07:30.5724306+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-15T03:07:31.6337057+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-15T03:07:31.6396789+00:00","note":"Battery reaches the resume level; the vehicle stays plugged in but becomes available."}
+{"at":"2026-09-15T03:07:32.4618320+00:00","criterion":"charging-run","value":"@{ChargingRunId=5ca023e7-c69d-2f56-9e8e-17d5a11151a2; VehicleKey=BROKERX-L2-0001; AgvId=AGV-L2-001; Stage=Completed; ChargerStationId=充电点1; ChargerStationRiotId=211; MovementLegId=2b4da79a-0092-5558-aa0d-3e992e44b15d; UpperId=W2G-CHARGE-5ca023e7-c69d-2f56-9e8e-17d5a11151a2-1; TriggeredAtBatteryPercent=15; ReleasedAtBatteryPercent=80; BlockReasonCode=; CreatedAt=2026-09-15 03:07:22.4304641+00:00; UpdatedAt=2026-09-15 03:07:32.4359095+00:00}"}
+{"at":"2026-09-15T03:07:32.4811832+00:00","criterion":"second-journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-15T03:07:32.4920391+00:00","criterion":"second-to-pickup-intent","value":"@{UpperId=W2G-39cd48b7-6f9b-585b-ba83-a367e0665815-S1-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-15T03:07:32.7564126+00:00","criterion":"second-to-pickup-intent","value":"@{UpperId=W2G-39cd48b7-6f9b-585b-ba83-a367e0665815-S1-1; OrderId=ORDER-000004; Status=CONFIRMED}"}
+{"at":"2026-09-15T03:07:33.5519597+00:00","criterion":"second-journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-15T03:07:34.6016164+00:00","criterion":"second-journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-15T03:07:35.6644192+00:00","criterion":"second-journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-15T03:07:36.7256592+00:00","criterion":"second-journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-15T03:07:37.5251565+00:00","criterion":"second-journey-stage","value":"Completed"}
+{"at":"2026-09-15T03:07:37.5311936+00:00","note":"Scenario finished."}
+{"at":"2026-09-15T03:07:53.7284305+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 34 lines, 34 distinct, 9 message types, 0 distinct violations, 0 known; schema compilation 15191 ms."}
