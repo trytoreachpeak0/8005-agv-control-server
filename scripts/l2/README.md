@@ -142,11 +142,14 @@ resume 是设计不是缺陷。同一状态下 `COMPENSATE_LOAD_ALL_EMPTY` 是�
    之前算好的 `now`，而 RIoT 是在应答的那一刻盖 `observedAt`。于是「车不能报告未来」这条守卫
    每一轮都命中，充电行程永远停在 `AwaitingChargerArrival`。红证据
    `20260908-auto-charge-endurance-002`。`IsTrustedArrivalAsync` 一直是读完再取钟的，照抄就对。
-2. **改地图只能增，不能换。**准入策略把 `admissionPolicyVersion` 绑在按区号解析出的取货站点
-   集合上。场景一开始直接写了一张新站点表（少了 `11 = C15-13`），同一个版本号绑到不同内容，
+2. **改地图别动区号站点。**准入策略把 `admissionPolicyVersion` 绑在按区号解析出的取货站点
+   集合上，增、删、改名都算变。场景一开始直接写了一张新站点表（少了 `11 = C15-13`），同一个版本号绑到不同内容，
    `ApplyAdmissionPolicyAsync` 每轮抛 `BusinessIdentityConflictException`，运行时整个停摆——
    而日志只说准入策略，不说地图。红证据 `20260908-auto-charge-endurance-001`。现在的写法是读
-   出现有站点再追加充电桩。
+   出现有站点再追加充电桩，充电桩的名字不是区号格式，不进那个集合。这一条原先写成「只能增，不能换」，
+   对区号站点并不成立：多一个区号站点同样会变。2026-09-15 起集合对不上不再停摆，在途旅程与充电照走，
+   只是不再接新单（原因码 `ADMISSION_POLICY_DRIFT`，日志 EventId 2111 列出增减的站点），见
+   `docs/defects/20260915-admission-policy-drift-halts-runtime.md`。
 3. **合成对端的应答缓存过去只能记住一份。**`SublotEntryRequested` 与 `PreDepartureSafetyCheck`
    的缓存键写死成 `sublot` 和 `safety-check`。那个缓存存在的理由是「重放的请求要拿到一模一样
    的回复」，可键不带业务身份时，第二趟旅程的请求会拿到第一趟的回复——服务端当然拒绝一份指名

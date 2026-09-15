@@ -2783,6 +2783,156 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task AStationAddedToTheSharedMapDoesNotStrandCargoAlreadyBoundForTheGate()
+    {
+        // Map 25 is shared, and RIoT's other users add stations to it without telling this server.
+        // Every iteration re-derives the admission policy from the area-named stations on the live
+        // map and binds that set to JourneyRuntime:admissionPolicyVersion. One more such station
+        // under the same version made ApplyAdmissionPolicyAsync throw before anything else ran, so
+        // a loaded vehicle already on its way to the gate was never given its unload -- until
+        // someone raised the version and restarted. ADR-cross-0050 and 0051: a policy change
+        // affects operations not yet committed, and never interrupts one that is.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.JourneyRowAsync()).Stage);
+
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(14, "N1-4"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(300, "等待点"));
+
+        // The worker logs an iteration's exception and tries again on the next tick, so what counts
+        // is whether the journey moved -- asserted first, so a red run says that, not just the throw.
+        Exception? iterationError = await Record.ExceptionAsync(fixture.ArriveAtCurrentStopAsync);
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Null(iterationError);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AStationAddedToTheSharedMapTakesOnNoNewDemandUntilThePolicyVersionIsRaised()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // Binds version 1 to the map as it stands.
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Riot.SetMapStations(MapWithAStationAdded());
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("ADMISSION_POLICY_DRIFT", backlog.ReasonCode);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        // The live map is not an import (ADR-cross-0051): version 1 still binds what it was imported with.
+        Assert.Equal(
+            ["N1-1", "N1-2_N1-3"],
+            await fixture.Context.StationTaskTypeAdmissions.AsNoTracking()
+                .Select(row => row.StationId)
+                .OrderBy(stationId => stationId)
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(1, await fixture.Context.AdmissionPolicyAudit
+            .CountAsync(TestContext.Current.CancellationToken));
+
+        // Raising the version is the deliberate re-import, and it is all that intake waits for.
+        fixture.Options.AdmissionPolicyVersion = 2;
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Equal(2, await fixture.Context.AdmissionPolicyAudit
+            .CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    public async Task AStationAddedToTheSharedMapBeforeArrivalLoadsTheJourneysOwnDemandAndTakesOnNoOther()
+    {
+        const string first = "10000000-0000-4000-8000-000000000001";
+        const string second = "10000000-0000-4000-8000-000000000002";
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(first, "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.JourneyRowAsync()).Stage);
+
+        // A second demand at the same station turns up while the vehicle is on its way. Arrival puts
+        // everything the catalog offers at the stop into its first worklist -- except, now, this one.
+        fixture.Riot.SetMapStations(MapWithAStationAdded());
+        fixture.Catalog.Set(
+            fixture.Demand(first, "SUBLOT-001", createdAt: Now.AddMinutes(-10)),
+            fixture.Demand(second, "SUBLOT-002", createdAt: Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+        await fixture.ArriveAtCurrentStopAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Equal(first, Assert.Single(await fixture.DemandRowsAsync()).DemandId);
+        Assert.Equal(
+            "ADMISSION_POLICY_DRIFT",
+            (await fixture.Context.JourneyBacklog.AsNoTracking()
+                .SingleAsync(row => row.DemandId == second, TestContext.Current.CancellationToken)).ReasonCode);
+
+        // The demand the journey already carries loads under the bound policy and reaches the gate.
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.UnloadCurrentAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.JourneyRowAsync()).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AStationAddedToTheSharedMapDoesNotStopAChargingRunUnderWay()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.EnableAutoCharging();
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = 15 };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        AutoChargingRunRow run = await fixture.ChargingRunAsync();
+        Assert.Equal(AutoChargingStage.AwaitingChargerArrival, run.Stage);
+
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(14, "N1-4"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(211, "充电点1"));
+        fixture.Riot.SetSuccessfulArrival("TO_CHARGER", run.UpperId, run.ChargerStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with
+        {
+            CurrentStationId = run.ChargerStationRiotId,
+            BatteryState = "CHARGING",
+            BatteryPercent = 22
+        };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(AutoChargingStage.Charging, (await fixture.ChargingRunAsync()).Stage);
+    }
+
+    /// <summary>The fixture's default map with one more area-named station, the way another RIoT user adds one.</summary>
+    private static RiotMapStation[] MapWithAStationAdded() =>
+    [
+        new RiotMapStation(12, "N1-1"),
+        new RiotMapStation(13, "N1-2_N1-3"),
+        new RiotMapStation(14, "N1-4"),
+        new RiotMapStation(210, "关卡"),
+        new RiotMapStation(300, "等待点")
+    ];
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task BelowTheTriggerTheVehicleIsRefusedWorkEvenWhenNoChargingRunCanStart()
     {
