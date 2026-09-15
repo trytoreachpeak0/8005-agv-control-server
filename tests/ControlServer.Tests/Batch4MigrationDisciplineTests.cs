@@ -1,10 +1,13 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Composition;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ControlServer.Tests;
 
@@ -76,6 +79,28 @@ public sealed class Batch4MigrationDisciplineTests
         await using MigrationFixture fixture = await MigrationFixture.CreateAsync();
 
         Assert.False(fixture.Context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public async Task EveryBatch4PortIsRegisteredWithTheGovernanceModuleSoNoLaterTicketEditsIt()
+    {
+        // control-server#68, #70, #72 and #74 each call one of these ports. Registered here, once, none of
+        // the four has to touch GovernanceModule.cs -- the same reason the tables all land in one migration.
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        ServiceCollection services = new();
+        services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(connection));
+        services.AddGovernance(new ConfigurationBuilder().Build());
+        await using ServiceProvider provider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateScopes = true });
+        await using AsyncServiceScope scope = provider.CreateAsyncScope();
+
+        Assert.IsType<AreaAssignmentStore>(scope.ServiceProvider.GetRequiredService<IAreaAssignmentStore>());
+        Assert.IsType<DemandAreaAssignmentFreezeStore>(
+            scope.ServiceProvider.GetRequiredService<IDemandAreaAssignmentFreeze>());
+        Assert.IsType<StructuralDispatchBlockStore>(
+            scope.ServiceProvider.GetRequiredService<IStructuralDispatchBlockStore>());
+        Assert.IsType<VehicleSlotPositionReader>(scope.ServiceProvider.GetRequiredService<IVehicleSlotPositionReader>());
     }
 
     [Fact]
