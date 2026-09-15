@@ -131,8 +131,13 @@ public sealed class DispatchCandidateEvaluation(
     /// <summary>
     /// The slot group this demand's baskets must go into, which is the one its AREA is assigned. Set by the
     /// area assignment lookup from <see cref="AreaAssignment"/>, so that it is always a function of the
-    /// frozen version and the AREA; the slot capacity criterion chooses target slots inside it.
+    /// frozen version and the AREA.
     /// </summary>
+    /// <remarks>
+    /// Nothing enforces it yet: until control-server#73 makes the slot capacity criterion choose target slots
+    /// inside this group, target slots are still taken from every empty slot, and a plan can carry a group
+    /// its target slots are not in.
+    /// </remarks>
     public string? RequiredSlotPosition { get; set; }
 
     /// <summary>Set by the station-resolution criterion; every later criterion may rely on it.</summary>
