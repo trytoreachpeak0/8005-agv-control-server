@@ -31,13 +31,20 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// which zone. Read once for the same reason the catalog is — two vehicles judged against two
 /// reads of the policy could both be admitted under rules that never held at the same instant.
 /// </param>
+/// <param name="AreaAssignments">
+/// The current version of the area assignment table (REQ-0191, REQ-0349), or null when none was ever
+/// imported. Read once for the same reason as the policy: a criterion reading it for itself could judge
+/// two candidates of one round against two versions, and a demand must freeze the version its slot group
+/// was chosen from (REQ-0350).
+/// </param>
 public sealed record DispatchRoundFacts(
     DemandCatalogSnapshot Catalog,
     RiotMapStationCatalogSnapshot Map,
     RiotMapStation Gate,
     IReadOnlySet<string> AcceptedDemandIds,
     DateTimeOffset Now,
-    VehicleDispatchPolicy Policy);
+    VehicleDispatchPolicy Policy,
+    AreaAssignmentTableVersion? AreaAssignments = null);
 
 /// <summary>
 /// One vehicle's facts for this round, plus the configuration slice that applies to it.
@@ -58,12 +65,19 @@ public sealed record DispatchRoundFacts(
 /// <param name="Onboard">Onboard facts, or null when they are not ready.</param>
 /// <param name="Vehicle">The RIoT vehicle observation.</param>
 /// <param name="ObservedAt">When the dynamic facts above were read.</param>
+/// <param name="SlotPositions">
+/// Which slot group each of this vehicle's physical slots belongs to, and how many physical slots each group
+/// has; null when the vehicle's slot model is unresolved. Read once per vehicle per round from the server's
+/// own record of the vehicle's model, never from what the vehicle reports (program#70 decision 4) — which is
+/// why the onboard available-slot facts above stay as they are.
+/// </param>
 public sealed record DispatchVehicleFacts(
     string VehicleKey,
     string AgvId,
     OnboardDispatchFacts? Onboard,
     RiotVehicleObservation Vehicle,
-    DateTimeOffset ObservedAt);
+    DateTimeOffset ObservedAt,
+    VehicleSlotPositions? SlotPositions = null);
 
 /// <summary>Onboard-side facts a dispatch decision reads.</summary>
 public sealed record OnboardDispatchFacts(
@@ -101,6 +115,30 @@ public sealed class DispatchCandidateEvaluation(
     public DispatchRoundFacts Round { get; } = round;
 
     public DispatchVehicleFacts Vehicle { get; } = vehicle;
+
+    /// <summary>
+    /// The version of the area assignment table this candidate was looked up in, set by the area
+    /// assignment lookup; null when no table was ever imported. What the demand freezes (REQ-0350).
+    /// </summary>
+    public long? AreaAssignmentVersion { get; set; }
+
+    /// <summary>
+    /// What that version assigns to this demand's AREA — its dispatch zone and slot group — or null when
+    /// it names the AREA nowhere. Set by the area assignment lookup; nothing is refused on it there.
+    /// </summary>
+    public AreaAssignment? AreaAssignment { get; set; }
+
+    /// <summary>
+    /// The slot group this demand's baskets must go into, which is the one its AREA is assigned. Set by the
+    /// area assignment lookup from <see cref="AreaAssignment"/>, so that it is always a function of the
+    /// frozen version and the AREA.
+    /// </summary>
+    /// <remarks>
+    /// Nothing enforces it yet: until control-server#73 makes the slot capacity criterion choose target slots
+    /// inside this group, target slots are still taken from every empty slot, and a plan can carry a group
+    /// its target slots are not in.
+    /// </remarks>
+    public string? RequiredSlotPosition { get; set; }
 
     /// <summary>Set by the station-resolution criterion; every later criterion may rely on it.</summary>
     public ResolvedJourneyRoute? Route { get; set; }
@@ -209,7 +247,9 @@ public sealed record EligibleDispatchCandidate(
     int[] TargetSlots,
     DateTimeOffset FirstSeenAt,
     long? GraphTraversalCostMm = null,
-    long CatalogRevision = 0);
+    long CatalogRevision = 0,
+    long? AreaAssignmentVersion = null,
+    string? RequiredSlotPosition = null);
 
 /// <summary>
 /// Picks which eligible candidate a vehicle takes this round.

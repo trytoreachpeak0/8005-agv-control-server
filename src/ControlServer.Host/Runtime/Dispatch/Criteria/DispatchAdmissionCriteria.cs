@@ -51,6 +51,8 @@ public static class DispatchAdmissionCriteria
             // that will be omitted by the caller that most needed it.
             new VehicleTaskTypeAdmissionCriterion(),
             new RequiredMesFactsCriterion(),
+            // Required: it blocks nothing, and every batch 4 criterion behind it reads what it records.
+            new AreaAssignmentLookupCriterion(),
             new AreaScopeCriterion(),
             new AreaEqpUniqueCriterion(),
             new StationResolutionCriterion(stationResolver, options),
@@ -96,6 +98,7 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, VehicleTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, DispatchZoneVehicleCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, RequiredMesFactsCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, AreaAssignmentLookupCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, AreaScopeCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, AreaEqpUniqueCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, CatalogAvailabilityCriterion>();
@@ -111,6 +114,9 @@ public static class DispatchAdmissionCriteria
         // Cost-ranked, falling back to first-seen when nothing was priced — which is what
         // REQ-0207 asks for when a cost is missing rather than a reachability.
         services.AddScoped<IDispatchCandidateRanker, RouteGraphCostRanker>();
+        // Concludes nothing across vehicles until the structural dispatch block (control-server#74) replaces
+        // this one registration.
+        services.AddScoped<IDispatchRoundOutcomeSink, NoDispatchRoundOutcomeSink>();
         return services;
     }
 }

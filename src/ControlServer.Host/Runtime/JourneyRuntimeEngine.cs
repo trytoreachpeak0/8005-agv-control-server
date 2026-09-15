@@ -36,6 +36,9 @@ public sealed class JourneyRuntimeEngine(
     IVehicleMotionFacts motionFacts,
     CheckpointWaitLedger checkpointWaits,
     VehicleFaultCoordinator faults,
+    IAreaAssignmentStore areaAssignments,
+    IVehicleSlotPositionReader slotPositions,
+    IDispatchRoundOutcomeSink roundOutcomes,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -236,7 +239,13 @@ public sealed class JourneyRuntimeEngine(
 
         VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken)
             .ConfigureAwait(false);
-        DispatchRoundFacts round = new(snapshot, currentMap, gate, acceptedDemandIds, now, policy);
+        // Read once with the policy and for the same reason: every candidate in the round is judged against
+        // one version of the table, and that is the version a demand freezes.
+        AreaAssignmentTableVersion? areaAssignmentTable = await areaAssignments
+            .ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
+        DispatchRoundFacts round = new(
+            snapshot, currentMap, gate, acceptedDemandIds, now, policy, areaAssignmentTable);
+        List<DispatchVehicleOutcome> completedVehicles = [];
 
         // One worker, vehicles in series -- not one worker per vehicle. Serial iteration is what
         // keeps a round's snapshot fresh: two workers would each decide against their own read of
@@ -253,11 +262,15 @@ public sealed class JourneyRuntimeEngine(
             using CancellationTokenSource expiry = new(budget, timeProvider);
             using CancellationTokenSource linked =
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
+            List<DispatchCandidateVerdict> verdicts = [];
             try
             {
                 await DispatchForVehicleAsync(
-                    round, vehicle, acceptedDemandIds, backlogByDemandId, now, linked.Token)
+                    round, vehicle, acceptedDemandIds, backlogByDemandId, verdicts, now, linked.Token)
                     .ConfigureAwait(false);
+                // Only once the segment has run to its end. A vehicle its budget cuts off below has not
+                // finished deciding, so what it judged so far says nothing about that vehicle.
+                completedVehicles.Add(new DispatchVehicleOutcome(vehicle.AgvId, vehicle.VehicleKey, verdicts));
             }
             catch (OperationCanceledException) when (expiry.IsCancellationRequested &&
                                                      !cancellationToken.IsCancellationRequested)
@@ -277,6 +290,11 @@ public sealed class JourneyRuntimeEngine(
                 }
             }
         }
+
+        // After every vehicle, a budget-exhausted one included. Whether any vehicle at all could take a demand
+        // is only answerable across the fleet; JourneyBacklog, overwritten vehicle by vehicle, cannot say.
+        await roundOutcomes.RecordAsync(new DispatchRoundOutcome(round, completedVehicles), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -304,10 +322,15 @@ public sealed class JourneyRuntimeEngine(
         FleetVehicle fleetVehicle,
         HashSet<string> claimedDemandIds,
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
+        List<DispatchCandidateVerdict> verdicts,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         string vehicleKey = fleetVehicle.VehicleKey;
+        // The server's own record of which slot is in which group, once per vehicle per round. Not the
+        // vehicle's report (program#70 decision 4), which is why the onboard slot facts below stay as they are.
+        VehicleSlotPositions? vehicleSlotPositions = await slotPositions
+            .ReadAsync(fleetVehicle.AgvId, cancellationToken).ConfigureAwait(false);
         // Onboard facts are read for this vehicle's own agvId. Reading them off the single
         // configured one, as this did while there was one vehicle, would have judged every
         // vehicle in the fleet against the first vehicle's session -- the exact cross-talk the
@@ -317,7 +340,7 @@ public sealed class JourneyRuntimeEngine(
         RiotVehicleObservation vehicle = await vehicleFacts
             .ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
         DispatchVehicleFacts vehicleForRound = new(
-            vehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow());
+            vehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow(), vehicleSlotPositions);
 
         List<EligibleDispatchCandidate> eligible = [];
         foreach (AcceptedDemandSnapshot candidate in round.Catalog.Items)
@@ -326,6 +349,7 @@ public sealed class JourneyRuntimeEngine(
             string reason = await admissionChain
                 .EvaluateAsync(evaluation, cancellationToken).ConfigureAwait(false);
 
+            verdicts.Add(new DispatchCandidateVerdict(evaluation, reason));
             JourneyBacklogRow backlog = UpsertBacklog(backlogByDemandId, candidate, reason, now);
             if (string.Equals(reason, DispatchAdmissionChain.Eligible, StringComparison.Ordinal) &&
                 evaluation.Route is not null)
@@ -337,7 +361,9 @@ public sealed class JourneyRuntimeEngine(
                     evaluation.TargetSlots,
                     backlog.FirstSeenAt,
                     evaluation.GraphTraversalCostMm,
-                    evaluation.CatalogRevision));
+                    evaluation.CatalogRevision,
+                    evaluation.AreaAssignmentVersion,
+                    evaluation.RequiredSlotPosition));
             }
         }
 
@@ -1613,7 +1639,9 @@ public sealed class JourneyRuntimeEngine(
             StableGuid(demandId, "gate-leg"),
             $"W2G-{demandId}-GATE-{runtimeOptions.DispatchGeneration}",
             runtimeOptions.DispatchGeneration,
-            now);
+            now,
+            candidate.AreaAssignmentVersion,
+            candidate.RequiredSlotPosition);
     }
 
     /// <summary>
