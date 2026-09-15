@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-stale-stop-after-station-timeout",
+  "runId": "20260915T082400673Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "RealOnboard",
+    "onboardHmiCommit": "243aa66add6967ea8e4bb7419fa19023dcfae5c2",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "11da37745b5b5ec8742e5852361fd435f5df7ae7",
+    "agvId": "AGV-L2-001",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "batchId": "BATCH-3",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260915T082400673Z",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-SST-01",
+      "description": "车到站后要子批、给「取消装货」，当前站清单挂着这单（前提）",
+      "outcome": "PASS",
+      "expected": "canSubmitSublot / offersCancel / worklistHasDemand 均为 True",
+      "actual": "canSubmitSublot=True offersCancel=True station=N1-3_N1-7 deadline=09/15/2026 16:25:15 worklistHasDemand=True planLegs=2"
+    },
+    {
+      "id": "L2-SST-02",
+      "description": "站点等待到期，服务端以 CANCELLED_BY_STATION_TIMEOUT 结束需求、旅程 Completed、没发过仓位命令（前提）",
+      "outcome": "PASS",
+      "expected": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / 0 / */Completed",
+      "actual": "Cancelled / CANCELLED_BY_STATION_TIMEOUT / 0 / 1/Completed"
+    },
+    {
+      "id": "L2-SST-03",
+      "description": "旅程被站点超时结束之后，车不再要子批",
+      "outcome": "PASS",
+      "expected": "canSubmitSublot=False",
+      "actual": "canSubmitSublot=False offersCancel=False station=N1-3_N1-7 deadline= worklistHasDemand=False planLegs=0"
+    },
+    {
+      "id": "L2-SST-04",
+      "description": "旅程被站点超时结束之后，车不再给「取消装货」",
+      "outcome": "PASS",
+      "expected": "offersCancel=False",
+      "actual": "canSubmitSublot=False offersCancel=False station=N1-3_N1-7 deadline= worklistHasDemand=False planLegs=0"
+    },
+    {
+      "id": "L2-SST-05",
+      "description": "旅程被站点超时结束之后，车上的当前站清单不再挂着这单",
+      "outcome": "PASS",
+      "expected": "worklistHasDemand=False",
+      "actual": "canSubmitSublot=False offersCancel=False station=N1-3_N1-7 deadline= worklistHasDemand=False planLegs=0"
+    },
+    {
+      "id": "L2-SST-06",
+      "description": "旅程结束之后按两下「取消装货」，服务端不掐连接、车不重连",
+      "outcome": "PASS",
+      "expected": "SessionHello 次数不变（1）",
+      "actual": "按前 1 / 按后 1；第一下 HTTP 409 reasonCode=RECOVERY_RESUME_DISABLED error=；第二下 HTTP 409 reasonCode=RECOVERY_RESUME_DISABLED error="
+    },
+    {
+      "id": "L2-SST-07",
+      "description": "迟到的取消不会被再授权一次：不落取消工作流，需求仍是超时判的 Cancelled",
+      "outcome": "PASS",
+      "expected": "0 条工作流 / Cancelled",
+      "actual": "0 条工作流 / Cancelled"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 29 lines, 29 distinct, 7 message types, 0 distinct violations, 0 known; schema compilation 12626 ms."
+    }
+  ]
+}

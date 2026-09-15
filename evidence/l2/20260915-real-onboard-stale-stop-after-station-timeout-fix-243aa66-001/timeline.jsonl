@@ -1,0 +1,54 @@
+{"at":"2026-09-15T08:24:00.7073711+00:00","note":"L2 run 20260915T082400673Z starting for scenario 'real-onboard-stale-stop-after-station-timeout'."}
+{"at":"2026-09-15T08:24:00.7247732+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-15T08:24:00.8716714+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-15T08:24:08.8054285+00:00","note":"Building onboard-hmi at 243aa66add6967ea8e4bb7419fa19023dcfae5c2 from a throwaway clone."}
+{"at":"2026-09-15T08:24:10.7289302+00:00","note":"dotnet SDK resolved for onboard-hmi publish: 8.0.425"}
+{"at":"2026-09-15T08:24:14.9825644+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-15T08:24:14.9863646+00:00","note":"Peers: onboard-hmi@243aa66add6967ea8e4bb7419fa19023dcfae5c2, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-15T08:24:15.9154651+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-15T08:24:16.0349142+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-15T08:24:18.1886670+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-15T08:24:18.2263210+00:00","note":"Server settings from real-onboard-stale-stop-after-station-timeout.setup.psd1: JourneyRuntime__pollInterval=00:00:02, JourneyRuntime__sublotWaitTimeout=00:00:45"}
+{"at":"2026-09-15T08:24:21.3590798+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-15T08:24:22.4862972+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-15T08:24:25.2034040+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-15T08:24:25.2184492+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-15T08:24:25.3040166+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-15T08:24:25.5738102+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-15T08:24:25.6195362+00:00","note":"Environment is up; entering scenario 'real-onboard-stale-stop-after-station-timeout'."}
+{"at":"2026-09-15T08:24:25.7662065+00:00","note":"Publishing demand f429393c86234c499a5ee71156e8eb3a (sublot L2-SST-20260915T082400673Z)."}
+{"at":"2026-09-15T08:24:25.8528199+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-15T08:24:26.9444281+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-c23faa85-9e41-5055-9f1f-3ef29b5663e2-S1-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-15T08:24:27.2224767+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-c23faa85-9e41-5055-9f1f-3ef29b5663e2-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-15T08:24:27.2360250+00:00","note":"Vehicle drives to the pickup station."}
+{"at":"2026-09-15T08:24:30.9409339+00:00","criterion":"entry-offered","value":"@{CanSubmitSublot=True; OffersCancel=True; StationId=N1-3_N1-7; DeadlineAt=09/15/2026 16:25:15; WorklistHasDemand=True; PlanLegs=2}"}
+{"at":"2026-09-15T08:24:30.9689329+00:00","note":"Nobody scans. Station deadline 2026-09-15T16:25:15.2833355+08:00; waiting up to 134 s."}
+{"at":"2026-09-15T08:24:30.9777277+00:00","criterion":"station-timeout-settled","value":"@{Status=Accepted; Suppression=; Operations=0; Position=1/AwaitingSublot}"}
+{"at":"2026-09-15T08:25:16.4488788+00:00","criterion":"station-timeout-settled","value":"@{Status=Cancelled; Suppression=CANCELLED_BY_STATION_TIMEOUT; Operations=0; Position=1/Completed}"}
+{"at":"2026-09-15T08:25:16.4748798+00:00","criterion":"runtime-iterations","value":"28"}
+{"at":"2026-09-15T08:25:18.3230797+00:00","criterion":"runtime-iterations","value":"29"}
+{"at":"2026-09-15T08:25:20.4493374+00:00","criterion":"runtime-iterations","value":"30"}
+{"at":"2026-09-15T08:25:22.3035186+00:00","criterion":"runtime-iterations","value":"31"}
+{"at":"2026-09-15T08:25:24.4149413+00:00","criterion":"runtime-iterations","value":"32"}
+{"at":"2026-09-15T08:25:26.5219159+00:00","criterion":"runtime-iterations","value":"33"}
+{"at":"2026-09-15T08:25:28.3657104+00:00","criterion":"runtime-iterations","value":"34"}
+{"at":"2026-09-15T08:25:30.4496347+00:00","criterion":"runtime-iterations","value":"35"}
+{"at":"2026-09-15T08:25:32.2900783+00:00","criterion":"runtime-iterations","value":"36"}
+{"at":"2026-09-15T08:25:34.4146681+00:00","criterion":"runtime-iterations","value":"37"}
+{"at":"2026-09-15T08:25:36.5080559+00:00","criterion":"runtime-iterations","value":"38"}
+{"at":"2026-09-15T08:25:36.5177971+00:00","note":"Vehicle ten rounds after Completed: canSubmitSublot=False offersCancel=False station=N1-3_N1-7 deadline= worklistHasDemand=False planLegs=0"}
+{"at":"2026-09-15T08:25:36.5195231+00:00","note":"Server queued for the vehicle after Completed: (nothing)"}
+{"at":"2026-09-15T08:25:36.5738822+00:00","note":"first press of LOAD_CANCELLATION: HTTP 409 reasonCode=RECOVERY_RESUME_DISABLED error="}
+{"at":"2026-09-15T08:25:36.5934719+00:00","note":"second press of LOAD_CANCELLATION: HTTP 409 reasonCode=RECOVERY_RESUME_DISABLED error="}
+{"at":"2026-09-15T08:25:38.4437518+00:00","criterion":"runtime-iterations","value":"39"}
+{"at":"2026-09-15T08:25:40.2923751+00:00","criterion":"runtime-iterations","value":"40"}
+{"at":"2026-09-15T08:25:42.4139143+00:00","criterion":"runtime-iterations","value":"41"}
+{"at":"2026-09-15T08:25:44.4955992+00:00","criterion":"runtime-iterations","value":"42"}
+{"at":"2026-09-15T08:25:46.3415395+00:00","criterion":"runtime-iterations","value":"43"}
+{"at":"2026-09-15T08:25:48.4657423+00:00","criterion":"runtime-iterations","value":"44"}
+{"at":"2026-09-15T08:25:50.3092999+00:00","criterion":"runtime-iterations","value":"45"}
+{"at":"2026-09-15T08:25:52.4153268+00:00","criterion":"runtime-iterations","value":"46"}
+{"at":"2026-09-15T08:25:52.4244551+00:00","note":"Vehicle after both presses: canSubmitSublot=False offersCancel=False station=N1-3_N1-7 deadline= worklistHasDemand=False planLegs=0"}
+{"at":"2026-09-15T08:25:52.4267742+00:00","note":"LoadCancellationStartRequested rows on the server: 0"}
+{"at":"2026-09-15T08:25:52.4968616+00:00","note":"Exported 29 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-15T08:26:06.1758738+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 29 lines, 29 distinct, 7 message types, 0 distinct violations, 0 known; schema compilation 12626 ms."}
