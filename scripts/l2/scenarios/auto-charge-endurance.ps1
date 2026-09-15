@@ -123,10 +123,10 @@ function Complete-Demand([string]$demandId, [string]$wireId, [string]$sublot) {
 # 站点号必须和 setup 里给服务端的两项对上。
 #
 # 读出现有站点再追加，而不是直接写一张新表：准入策略把 admissionPolicyVersion 绑在按区号解析
-# 出的取货站点集合上，少掉任何一个，同一个版本号就绑到了不同内容，ApplyAdmissionPolicyAsync
-# 每一轮都会抛 BusinessIdentityConflictException——运行时整个停摆，而日志里只说准入策略，不
-# 说地图。第一次跑这条场景就是这么挂的（证据 001）。充电桩与关卡的名字都不是区号格式，所以
-# 只增不减时那个集合原样不动。
+# 出的取货站点集合上，增减任何一个，同一个版本号就绑到了不同内容。第一次跑这条场景时，那会让
+# ApplyAdmissionPolicyAsync 每一轮都抛 BusinessIdentityConflictException、运行时整个停摆（证据
+# 001）；2026-09-15 起改为只挡新单（ADMISSION_POLICY_DRIFT），这条场景照样一单都接不到。充电桩
+# 与关卡的名字都不是区号格式，所以只追加它们时那个集合原样不动。
 $journal.Note("Adding charger station $chargerStationId ($chargerStationName) to map $($Context.MapId).")
 $currentMap = @($riot.Snapshot().body.maps | Where-Object { $_.mapId -eq $Context.MapId })
 if ($currentMap.Count -ne 1) { throw "Fake RIoT does not serve map $($Context.MapId)." }
