@@ -8,15 +8,26 @@ namespace ControlServer.Host.Runtime.Faults;
 public sealed record StopProofVerdict(bool Proven, IReadOnlyList<string> MissingFacts);
 
 /// <summary>
-/// REQ-0247's combined stop proof: several consecutive fresh samples, all positively non-moving,
-/// all at the same known place, spaced closely enough to have watched the interval between them.
+/// REQ-0247's stop proof: an engaged emergency latch, or else the combined evidence of several
+/// consecutive fresh samples, all positively non-moving, all at the same known place, spaced closely
+/// enough to have watched the interval between them.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>The requirement is written as a list of things that do not count</b>, and the code is shaped
-/// the same way. An order in HELD does not count. An engaged emergency latch does not count. A
-/// single query does not count. None of those three is read here at all, which is the point: this
-/// function cannot accidentally be satisfied by them.
+/// <b>An engaged latch is the proof on its own</b> (REQ-0247 as revised by CP-0003, 2026-09-15). A
+/// latch read back as <c>CAN_RECOVER</c> or <c>CAN_NOT_RECOVER</c> means the vehicle has stopped,
+/// and motion, speed and position are not read at all. The user's ruling was that an emergency stop
+/// always stops the vehicle, and the field showed why the samples cannot be asked instead: agv02
+/// latched with its order still executing reported <c>MT_RUNNING</c> at speed 0, between stations,
+/// for as long as it stood there. The two risks accepted with it — a latch read while the vehicle
+/// is offline may be stale, and a vehicle may still be decelerating just after the latch engages —
+/// are recorded in CP-0003 and are not to be engineered back in here.
+/// </para>
+/// <para>
+/// <b>Otherwise the requirement is written as a list of things that do not count</b>, and the code
+/// is shaped the same way. An order in HELD does not count. A single query does not count. Neither
+/// is read by the combined evidence at all, which is the point: it cannot accidentally be satisfied
+/// by them.
 /// </para>
 /// <para>
 /// <b>Every missing fact is reported, not just the first.</b> A refusal is read by whoever has to
@@ -62,9 +73,29 @@ public static class StopProof
     /// <summary>Two samples were far enough apart that the interval between them went unwatched.</summary>
     public const string ObservationGap = "STOP_PROOF_OBSERVATION_GAP";
 
+    private static readonly StopProofVerdict LatchEngaged = new(true, []);
+
+    /// <summary>
+    /// Whether the vehicle is proven stopped as of <paramref name="now"/>, given the latch read in
+    /// this evaluation and the retained <paramref name="samples"/>, oldest first.
+    /// </summary>
+    /// <remarks>
+    /// An unreadable latch is not an engaged one, and falls through to the combined evidence like
+    /// an <c>OK</c> one does.
+    /// </remarks>
+    public static StopProofVerdict Evaluate(
+        IReadOnlyList<VehicleMotionSample> samples,
+        RiotVehicleEmergencyObservation emergency,
+        DateTimeOffset now,
+        VehicleFaultOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(emergency);
+        return emergency.IsLatched ? LatchEngaged : Evaluate(samples, now, options);
+    }
+
     /// <summary>
     /// Whether <paramref name="samples"/> — oldest first — prove the vehicle is stopped as of
-    /// <paramref name="now"/>.
+    /// <paramref name="now"/> by the combined evidence alone.
     /// </summary>
     public static StopProofVerdict Evaluate(
         IReadOnlyList<VehicleMotionSample> samples,

@@ -30,6 +30,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `command-surface-order-hold` | 合成 ×3 | **轨 B 出口**：一台车的在途单被报成 FAILED，命令面「该调用时调用了、参数正确、只调一次」，另两台不受牵连 | `evidence/l2/20260910-ticket18-command-surface-order-hold-002` |
 | `route-graph-staleness` | 合成 | **轨 B 出口**：引擎陈旧态三种触发各一次 fail-closed 证据 | `evidence/l2/20260910-ticket18-route-graph-staleness-001` |
 | `emergency-stop-single-trigger` | 合成 | **票 19 的前置**：车在动时单被报 FAILED，急停只发一次——闩锁晚锁、读不到、锁上都不重发；外部解除只重触发一次；原因还在就不解除 | `evidence/l2/20260913-b2close-emergency-stop-single-trigger-002`（修复前的代码上同一场景红：`-prefix-65bffc0c-001`） |
+| `emergency-stop-operator-release` | 合成 | **control-server#63（REQ-0356）**：车在两站之间被急停锁住后，锁住即停稳；确认不全或车上还有未结束订单就拒绝；确认齐全服务端自己发一次 `cancelEmergency`，稍后读到 `OK` 结算；解除后不重触发、不因位置读不到再急停；车再动按新急停处理 | 待本地与 CI 三连跑 |
 | `slot-configuration-activation-replay` | 合成 | **批次 3 出口（`FP-IS-14`）**：激活「下发 → 断线 → 重连 → 补报」——断线期间服务端不猜，补发同一行，只收敛一次；顺带经 `FieldOps export-audit` 导出这次激活的业务审计（REQ-0271） | 待 CI 三连跑 |
 | `onboard-alarm-snapshot-dashboard` | 合成 | **批次 3 出口（`FP-IS-15`）**：车载告警快照「车载产快照 → 服务端消费 → 看板可见」，断言读看板进程渲染出的页面；看板显示全部告警（REQ-0270）、整体取代、失联直述、重连采纳 | 待 CI 三连跑 |
 
@@ -209,6 +210,11 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 - `RiotCommands` —— `RiotCommandOptions` 的键原样变成 `RiotCommands__*`。目前只有
   `emergency-stop-single-trigger` 用它把急停重试退避调长：本装置每秒评估一次，默认退避会让「退避内
   又请求了一次」与「退避到期重试」挤在一起。退避是 `REQ-0248` 允许现场设的参数，不是开关。
+  `emergency-stop-operator-release` 出于同一个理由也用它。
+
+- `EmergencyStopRelease = $true` —— 打开 `REQ-0356` 的人工确认解除入口（`EmergencyStopRelease__enabled`），并给它
+  配一份本装置用的调用凭据，经 `Context.EmergencyReleaseCredential` 交给场景。产品里入口默认不挂；
+  `emergency-stop-operator-release` 用它。
 
 - `StationDepartureWaitTimeout` —— 服务端 `JourneyRuntime:stationDepartureWaitTimeout`，装载提交后车在取货点
   等多久才请求出发前安全检查（ADR-cross-0055，产品默认 5 分钟）。这段时间是普通放错唯一的修正窗口

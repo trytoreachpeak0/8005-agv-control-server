@@ -80,6 +80,10 @@ jobs:
               # Batch 2 ticket 19's prerequisite: the emergency stop goes out exactly once. Three
               # consecutive runs, because what it guards against is a timing race with RIoT's latch.
               @{ Name = 'emergency-stop-single-trigger'; Runs = 3 }
+              # control-server#63 (REQ-0356): the release on a person's confirmation, three consecutive
+              # runs for the same reason -- what it guards against is RIoT clearing the latch after the
+              # read-back, a timing that one pass cannot tell from luck.
+              @{ Name = 'emergency-stop-operator-release'; Runs = 3 }
               # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
               @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
               @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }

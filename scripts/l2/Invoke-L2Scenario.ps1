@@ -138,6 +138,12 @@ $slotConfigurationActivation = ($setup.ContainsKey('SlotConfigurationActivation'
 $governanceCredentialVariable = 'CONTROL_SERVER_GOVERNANCE_CREDENTIAL'
 # Not a secret either, for the same reason as the recovery proof above.
 $governanceCredential = 'l2-governance-credential-not-a-production-secret'
+# REQ-0356's release-on-confirmation entry point. Off in the product, because it takes an emergency stop
+# off a vehicle; a scenario that proves the release turns it on here, the same switch a site turns on.
+$emergencyStopRelease = ($setup.ContainsKey('EmergencyStopRelease') -and $setup.EmergencyStopRelease)
+$emergencyReleaseCredentialVariable = 'CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL'
+# Not a secret either.
+$emergencyReleaseCredential = 'l2-emergency-release-credential-not-a-production-secret'
 # The dashboard process. It reads only the server's read-only /api/dashboard/ endpoints over HTTP, so
 # starting it changes nothing about the server under test.
 $dashboard = ($setup.ContainsKey('Dashboard') -and $setup.Dashboard)
@@ -453,6 +459,11 @@ try {
         $serverEnvironment['SlotConfigurationActivation__credentialEnvironmentVariable'] = $governanceCredentialVariable
         $serverEnvironment[$governanceCredentialVariable] = $governanceCredential
     }
+    if ($emergencyStopRelease) {
+        $serverEnvironment['EmergencyStopRelease__enabled'] = 'true'
+        $serverEnvironment['EmergencyStopRelease__credentialEnvironmentVariable'] = $emergencyReleaseCredentialVariable
+        $serverEnvironment[$emergencyReleaseCredentialVariable] = $emergencyReleaseCredential
+    }
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
         # the safety summary says. Leaving it off for the synthetic rig keeps those scenarios
@@ -754,6 +765,8 @@ try {
         SnapshotRoot        = $snapshotRoot
         # Null unless the setup file turned the activation entry point on.
         GovernanceCredential = if ($slotConfigurationActivation) { $governanceCredential } else { $null }
+        # Null unless the setup file turned the release-on-confirmation entry point on.
+        EmergencyReleaseCredential = if ($emergencyStopRelease) { $emergencyReleaseCredential } else { $null }
         # Null unless the setup file asked for the dashboard.
         DashboardUrl        = $dashboardUrl
         # ControlServer.FieldOps, the same executable a site's W1 window runs, against the SQLite file the

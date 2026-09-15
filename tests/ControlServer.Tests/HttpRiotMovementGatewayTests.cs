@@ -675,6 +675,76 @@ public sealed class HttpRiotMovementGatewayTests
         Assert.Equal(2, handler.CallCount);
     }
 
+    /// <summary>
+    /// REQ-0356's order check: an order counts for the vehicle when it is appointed to it or
+    /// executing on it, and another vehicle's order does not.
+    /// </summary>
+    [Fact]
+    public async Task UnfinishedOrdersCountOrdersAppointedToOrExecutingOnTheVehicle()
+    {
+        const string orders = """
+            {"code":"0","result":{"current":1,"size":100,"total":3,"records":[
+              {"id":1,"orderId":"ORDER-APPOINTED","upperId":"UPPER-1","orderState":1,
+               "appointVehicleKey":"VEHICLE-KEY-01","executeVehicleKey":"--"},
+              {"id":2,"orderId":"ORDER-OTHER","upperId":"UPPER-2","orderState":3,
+               "appointVehicleKey":"VEHICLE-KEY-02","executeVehicleKey":"VEHICLE-KEY-02"},
+              {"id":3,"orderId":"ORDER-HELD","upperId":"UPPER-3","orderState":7,
+               "appointVehicleKey":null,"executeVehicleKey":"VEHICLE-KEY-01"}]}}
+            """;
+        RecordingHandler handler = new((request, _) =>
+            request.RequestUri?.AbsolutePath == "/api/order/v1/orderRecord"
+                ? JsonResponse(orders)
+                : new HttpResponseMessage(HttpStatusCode.NotFound));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotVehicleOrderObservation result = await gateway.ReadUnfinishedOrdersAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsKnown);
+        Assert.True(result.HasUnfinishedOrder);
+        Assert.Equal(["ORDER-APPOINTED", "ORDER-HELD"], result.UnfinishedOrderIds);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task UnfinishedOrdersAreNoneWhenRiotHoldsNoneForTheVehicle()
+    {
+        RecordingHandler handler = new((_, _) => JsonResponse(CompleteOrdersJson()));
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotVehicleOrderObservation result = await gateway.ReadUnfinishedOrdersAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.False(result.HasUnfinishedOrder);
+        Assert.Empty(result.UnfinishedOrderIds);
+    }
+
+    /// <summary>
+    /// A page that does not cover every record, and a failed read, are unknown — never "none".
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UnfinishedOrdersAreUnknownWhenRiotDoesNotAnswerCompletely(bool partialPage)
+    {
+        RecordingHandler handler = new((_, _) => partialPage
+            ? JsonResponse("""{"code":"0","result":{"current":1,"size":100,"total":101,"records":[]}}""")
+            : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            });
+        await using RiotSession session = CreateSession(handler);
+        HttpRiotMovementGateway gateway = new(session);
+
+        RiotVehicleOrderObservation result = await gateway.ReadUnfinishedOrdersAsync(
+            "VEHICLE-KEY-01", TestContext.Current.CancellationToken);
+
+        Assert.False(result.IsKnown);
+        Assert.Null(result.HasUnfinishedOrder);
+    }
+
     private static RecordingHandler SafetyHandler(
         MutableTimeProvider? clock,
         DateTimeOffset? afterVehicle,

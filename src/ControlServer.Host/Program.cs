@@ -127,6 +127,10 @@ builder.Services.AddOptions<SlotConfigurationActivationOptions>()
     .Bind(builder.Configuration.GetSection(SlotConfigurationActivationOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<SlotConfigurationActivationOptions>, SlotConfigurationActivationOptionsValidator>();
+builder.Services.AddOptions<EmergencyStopReleaseOptions>()
+    .Bind(builder.Configuration.GetSection(EmergencyStopReleaseOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<EmergencyStopReleaseOptions>, EmergencyStopReleaseOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>((services, client) =>
 {
@@ -221,6 +225,11 @@ if (app.Configuration.GetValue<bool>("OnboardSafetyProjection:enabled"))
 if (app.Configuration.GetValue<bool>("SlotConfigurationActivation:enabled"))
 {
     app.MapSlotConfigurationActivation();
+}
+// 默认不挂。REQ-0356 的人工确认解除：这个入口会把一台车的急停解开，要现场明确打开才提供。
+if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
+{
+    app.MapEmergencyStopRelease();
 }
 app.MapDashboardQueries();
 
