@@ -265,6 +265,413 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Contains("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
     }
 
+    /// <summary>
+    /// ADR-cross-0055 starts the station departure wait when the vehicle arrives at the pickup, not
+    /// when a load commits. Until batch 5 the v2 server had no deadline at all in AwaitingSublot: an
+    /// unscanned stop was asked again every poll and held the pickup until someone edited the
+    /// database. The start is seeded before the worklist goes out, because the worklist is where the
+    /// vehicle will be told the deadline (control-server#84) -- a first snapshot sent ahead of the
+    /// seed would carry none.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task TheStationDepartureWaitStartsAtThePickupArrivalBeforeTheWorklistGoesOut()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(5);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        DateTimeOffset arrivedAt = fixture.Clock.GetUtcNow();
+        bool worklistSent = false;
+        DateTimeOffset? startedWhenTheWorklistWasSent = null;
+        fixture.Peer.OnMessageSent = async line =>
+        {
+            using JsonDocument sent = JsonDocument.Parse(line);
+            if (sent.RootElement.GetProperty("messageType").GetString() != "CurrentStopWorklistSnapshot")
+            {
+                return;
+            }
+            worklistSent = true;
+            startedWhenTheWorklistWasSent = (await fixture.RuntimeAsync()).StationDepartureWaitStartedAt;
+        };
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(worklistSent);
+        Assert.Equal(arrivedAt, startedWhenTheWorklistWasSent);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal(arrivedAt, runtime.StationDepartureWaitStartedAt);
+    }
+
+    /// <summary>
+    /// ADR-cross-0058 decision 7, redone for the v2 one-demand journey: nobody scanned before the
+    /// deadline, so the server ends the stop itself. The demand is terminated as
+    /// CANCELLED_BY_STATION_TIMEOUT, the vehicle is released, and the entry request nobody answered is
+    /// settled -- left open it would be replayed into every later session, where the peer refuses it
+    /// as a business id whose content changed. It may end the stop alone precisely because no slot
+    /// operation was ever commanded: there is no physical state only the peer could settle. All of it
+    /// commits together, so a crash cannot leave a cancelled demand still holding its vehicle.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnUnscannedPickupEndsAtTheStationDeadlineInOneSaveAndReleasesTheVehicle()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        DateTimeOffset deadline = fixture.Clock.GetUtcNow();
+        fixture.SaveChanges.Reset();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+        Assert.Equal(deadline, (await fixture.LeaseAsync()).ReleasedAt);
+        OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.Purpose == "TO_PICKUP", TestContext.Current.CancellationToken);
+        Assert.Equal(deadline, pickup.VehicleOccupancyReleasedAt);
+        ProtocolOutboxRow entryRequest = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == runtime.SublotRequestMessageId, TestContext.Current.CancellationToken);
+        Assert.Equal(deadline, entryRequest.AcknowledgedAt);
+        Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(TestContext.Current.CancellationToken));
+        Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
+
+        string[] settlement = Assert.Single(
+            fixture.SaveChanges.Saves, save => save.Contains("JourneyRuntimeRow.Stage"));
+        Assert.Contains("AcceptedDemandRow.Status", settlement);
+        Assert.Contains("VehicleDispatchLeaseRow.ReleasedAt", settlement);
+        Assert.Contains("OrderIntentRow.VehicleOccupancyReleasedAt", settlement);
+        Assert.Contains("ProtocolOutboxRow.AcknowledgedAt", settlement);
+    }
+
+    /// <summary>
+    /// ADR-cross-0058 decision 4: a stop whose deadline passes while a slot door is not shut does not
+    /// end, because ending it means the vehicle may then be sent away, and ADR-cross-0011/0012 forbid
+    /// moving with a door open. Evidence the server cannot read counts as not shut. In AwaitingSublot the
+    /// session normally leaves Ready first (ADR-cross-0058 Verification), which this does not change;
+    /// it only guarantees the timeout itself never closes the stop against an open or unknown door.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [InlineData(null, "[]")]
+    [InlineData(true, "[]")]
+    [InlineData(false, "LOCK_NOT_CLOSED")]
+    public async Task TheStationDeadlineDoesNotEndTheStopWhileADoorIsOpenOrUnknown(
+        bool? unknownPresent,
+        string reasonCode)
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.SetSafetyEvidenceAsync(unknownPresent, reasonCode == "[]" ? [] : [reasonCode]);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+
+        await fixture.ProveSlotDoorsClosedAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
+    }
+
+    /// <summary>
+    /// ADR-cross-0055 makes the timeout and the start of the load exclusive, the first to be persisted
+    /// winning. An entry already durable when the deadline's iteration reads the inbox was persisted
+    /// first: the load starts, and once a load is commanded the pickup timeout never looks at the stop
+    /// again, however late it runs.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnEntryDurableBeforeTheTimeoutStartsTheLoadAndTheDeadlineNoLongerEndsTheStop()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(15));
+        await fixture.SubmitSublotAsync("SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        Assert.Contains("SlotOperationCommand", await fixture.OutboxTypesAsync());
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+    }
+
+    /// <summary>
+    /// The other half of the same exclusion: once the timeout has committed, an entry that arrives
+    /// afterwards was persisted second and starts nothing -- no slot operation, no load command, and
+    /// the demand stays cancelled.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnEntryPersistedAfterTheStationTimeoutCommittedStartsNoLoad()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+
+        await fixture.SubmitSublotAsync("SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+        Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(TestContext.Current.CancellationToken));
+        Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
+    }
+
+    /// <summary>
+    /// What ending the stop is for: the vehicle is free again. The released lease and occupancy let
+    /// the next round give it the next demand, while the cancelled one is not dispatched a second time
+    /// because its DemandId is already accepted. Suppressing its business key, so a new DemandId for
+    /// the same sublot stays out too, is batch 7 (REQ-0155/0156/0211).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AfterAStationTimeoutTheVehicleTakesTheNextDemandAndTheCancelledOneIsNotDispatchedAgain()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        AcceptedDemandSnapshot timedOut = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10));
+        fixture.Catalog.Set(timedOut);
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+
+        AcceptedDemandSnapshot next = fixture.Demand(
+            "10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-5));
+        fixture.Catalog.Set([timedOut, next]);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync(next.DemandId)).Stage);
+        Assert.Equal(2, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
+    /// ADR-cross-0055: "倒计时期间断联使本轮截止时间失效，恢复握手和投影对账完成后重新计满". A wall clock that
+    /// kept running while the vehicle was gone would end the stop on the first iteration after it came
+    /// back, and the operator would find the demand cancelled without ever having had the chance to scan
+    /// it. The disconnect is the real reconnect path -- BeginSessionRecoveryAsync is what the peer's
+    /// SessionHello reaches -- and the refill happens behind the readiness gate, which is where the
+    /// handshake and the projection reconciliation are already done. It is a reset, not an exemption.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task ADisconnectVoidsTheSublotWaitAndItRefillsInFullOnceTheSessionIsReadyAgain()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await fixture.ReconnectAsync(2);
+        Assert.Null((await fixture.RuntimeAsync()).StationDepartureWaitStartedAt);
+
+        // Offline far past the original deadline. No iteration runs in between on purpose: one behind
+        // the closed readiness gate would leave ONBOARD_SESSION_NOT_READY on the row, and the save that
+        // reason triggers would hide whether the refill below is saved for its own sake.
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.AdvanceSessionAsync(2);
+        await fixture.ProveSlotDoorsClosedAsync();
+        DateTimeOffset readyAt = fixture.Clock.GetUtcNow();
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        Assert.Equal(readyAt, runtime.StationDepartureWaitStartedAt);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
+    }
+
+    /// <summary>
+    /// The same ADR-cross-0055 rule for the wait after the load commits. That wait already restarted
+    /// from the server's clock when it was entered, but a disconnect did not void it
+    /// (program#61 Q2 on FR-031 AC-9): a vehicle offline past the window came back and was asked for
+    /// departure safety at once, with the correction window it was owed gone.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task ADisconnectVoidsTheDepartureWaitAfterTheLoadAndItRefillsInFullOnceTheSessionIsReadyAgain()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToLoadResultAsync();
+        await fixture.ApplySafeResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await fixture.ReconnectAsync(2);
+        Assert.Null((await fixture.RuntimeAsync()).StationDepartureWaitStartedAt);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+
+        await fixture.AdvanceSessionAsync(2);
+        DateTimeOffset readyAt = fixture.Clock.GetUtcNow();
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, runtime.Stage);
+        Assert.Equal(readyAt, runtime.StationDepartureWaitStartedAt);
+        Assert.DoesNotContain("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.DoesNotContain("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    /// <summary>
+    /// The one place the station departure deadline is computed: the runtime judges the timeout from
+    /// it, and control-server#84 sends it to the vehicle as <c>stationDepartureDeadlineAt</c>. A
+    /// disabled timeout and a wait that has not started are both "no deadline" -- a countdown the
+    /// runtime would never act on is one that expires into silence.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task TheStationDepartureDeadlineIsTheWaitStartPlusTheTimeoutAndAbsentWithoutAWait()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync();
+
+        runtime.StationDepartureWaitStartedAt = new DateTimeOffset(2026, 8, 26, 1, 0, 30, TimeSpan.Zero);
+        Assert.Equal(
+            new DateTimeOffset(2026, 8, 26, 1, 5, 30, TimeSpan.Zero),
+            JourneyRuntimeEngine.StationDepartureDeadline(runtime, TimeSpan.FromMinutes(5)));
+        Assert.Null(JourneyRuntimeEngine.StationDepartureDeadline(runtime, TimeSpan.Zero));
+
+        runtime.StationDepartureWaitStartedAt = null;
+        Assert.Null(JourneyRuntimeEngine.StationDepartureDeadline(runtime, TimeSpan.FromMinutes(5)));
+    }
+
+    /// <summary>
+    /// ADR-cross-0055 restarts the wait from its full length once a LoadBatch closes (6e8dea5a). With
+    /// the wait now starting at the arrival, the commit has to replace that start rather than inherit
+    /// it: an operator who scans eight seconds into a ten-second wait still gets the whole correction
+    /// window after the load.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task TheLoadCommitRestartsTheStationDepartureWaitFromItsFullLength()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync();
+        DateTimeOffset arrivedAt = fixture.Clock.GetUtcNow();
+        Assert.Equal(arrivedAt, runtime.StationDepartureWaitStartedAt);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(8));
+        await fixture.SubmitSublotAsync("SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.ApplySafeResultAsync(
+            await fixture.OperationAsync(SlotOperationType.Load), SlotOperationType.Load, SlotBusinessState.Occupied);
+        DateTimeOffset committedAt = fixture.Clock.GetUtcNow();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, runtime.Stage);
+        Assert.Equal(committedAt, runtime.StationDepartureWaitStartedAt);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+        Assert.DoesNotContain("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, (await fixture.RuntimeAsync()).Stage);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     [Trait("IntegrationSlice", "FP-IS-04")]
@@ -2189,6 +2596,73 @@ public sealed class JourneyRuntimeWorkerTests
             await AddCapabilityAndSafetyAsync(generation);
         }
 
+        /// <summary>Carries the journey to its trusted pickup arrival, where it waits for a sublot.</summary>
+        public async Task<JourneyRuntimeRow> AdvanceToSublotWaitAsync()
+        {
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            JourneyRuntimeRow pickupRuntime = await RuntimeAsync();
+            Riot.SetSuccessfulArrival("TO_PICKUP", pickupRuntime.PickupStationRiotId);
+            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = pickupRuntime.PickupStationRiotId };
+            await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            return await RuntimeAsync();
+        }
+
+        /// <summary>
+        /// Records the safety evidence a real peer's snapshot carries once every slot door is shut:
+        /// nothing unknown and no reason codes. The seeded session leaves both unset, which is what an
+        /// unread safety picture looks like, and the station timeout refuses to close a stop on that.
+        /// </summary>
+        public async Task ProveSlotDoorsClosedAsync() =>
+            await SetSafetyEvidenceAsync(unknownPresent: false, reasonCodes: []);
+
+        public async Task SetSafetyEvidenceAsync(bool? unknownPresent, string[]? reasonCodes)
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.SafetyUnknownPresent = unknownPresent;
+            session.SafetyReasonCodesJson = reasonCodes is null ? null : JsonSerializer.Serialize(reasonCodes);
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>Records the operator's sublot entry for the current journey, as the peer sends it.</summary>
+        public async Task SubmitSublotAsync(string sublot)
+        {
+            JourneyRuntimeRow runtime = await RuntimeAsync();
+            await AddInboxAsync(
+                Guid.NewGuid().ToString("D"),
+                "SublotSubmitted",
+                new
+                {
+                    demandId = runtime.DemandId,
+                    operationSessionId = runtime.OperationSessionId,
+                    stationId = runtime.PickupStationId,
+                    worklistRevision = runtime.WorklistRevision,
+                    sublot,
+                    entryMethod = "SCANNER",
+                    @operator = new
+                    {
+                        operatorId = "OP-001",
+                        verificationMethod = "BADGE",
+                        verifiedAt = Clock.GetUtcNow()
+                    }
+                });
+        }
+
+        /// <summary>
+        /// The peer comes back under a new session generation, through the entry its SessionHello
+        /// reaches. The session is left mid-handshake; <see cref="AdvanceSessionAsync"/> completes it.
+        /// </summary>
+        public async Task ReconnectAsync(long generation) =>
+            await new WireToGateStore(Context).BeginSessionRecoveryAsync(
+                new SessionIdentity(
+                    Options.AgvId,
+                    generation,
+                    ProtocolCandidateIdentity.RepositoryCommit,
+                    ProtocolCandidateIdentity.ManifestSha256,
+                    ProtocolCandidateIdentity.ProfileId,
+                    ProtocolCandidateIdentity.ProtocolVersion),
+                TestContext.Current.CancellationToken);
+
         /// <summary>Carries the journey to the point where the load command is outstanding.</summary>
         public async Task<JourneyRuntimeRow> AdvanceToLoadResultAsync()
         {
@@ -2887,13 +3361,24 @@ public sealed class JourneyRuntimeWorkerTests
     {
         public int Count { get; private set; }
 
-        public void Reset() => Count = 0;
+        /// <summary>
+        /// What each save since the last <see cref="Reset"/> wrote, one entry per save, as
+        /// <c>RowType.Property</c> for every property it inserted or modified. It is how a test says
+        /// that several facts commit together rather than one after another.
+        /// </summary>
+        public List<string[]> Saves { get; } = [];
+
+        public void Reset()
+        {
+            Count = 0;
+            Saves.Clear();
+        }
 
         public override InterceptionResult<int> SavingChanges(
             DbContextEventData eventData,
             InterceptionResult<int> result)
         {
-            Count++;
+            Record(eventData);
             return result;
         }
 
@@ -2903,8 +3388,23 @@ public sealed class JourneyRuntimeWorkerTests
             CancellationToken cancellationToken = default)
         {
             _ = cancellationToken;
-            Count++;
+            Record(eventData);
             return ValueTask.FromResult(result);
+        }
+
+        private void Record(DbContextEventData eventData)
+        {
+            Count++;
+            if (eventData.Context is null)
+            {
+                return;
+            }
+            Saves.Add(eventData.Context.ChangeTracker.Entries()
+                .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
+                .SelectMany(entry => entry.Properties
+                    .Where(property => entry.State == EntityState.Added || property.IsModified)
+                    .Select(property => $"{entry.Metadata.ClrType.Name}.{property.Metadata.Name}"))
+                .ToArray());
         }
     }
 

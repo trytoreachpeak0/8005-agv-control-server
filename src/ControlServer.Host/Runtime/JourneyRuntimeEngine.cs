@@ -80,6 +80,18 @@ public sealed class JourneyRuntimeEngine(
             new EventId(2107, nameof(LogOrderFailedSymptom)),
             "RIoT reports order {UpperId} FAILED on vehicle {AgvId}; journey {DemandId} recorded the " +
             "symptom with the fault model and stopped advancing on its own.");
+    private static readonly Action<ILogger, string, string, DateTimeOffset, Exception?> LogStationDeadlineEndedStop =
+        LoggerMessage.Define<string, string, DateTimeOffset>(
+            LogLevel.Warning,
+            new EventId(2108, nameof(LogStationDeadlineEndedStop)),
+            "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline " +
+            "{Deadline}; demand {DemandId} ended as CANCELLED_BY_STATION_TIMEOUT and the vehicle was released.");
+
+    /// <summary>
+    /// The terminal reason of a demand whose pickup stop ran out its station departure deadline
+    /// (ADR-cross-0055).
+    /// </summary>
+    public const string StationTimeoutCancellationReason = "CANCELLED_BY_STATION_TIMEOUT";
 
     /// <summary>The journey is not arriving because the vehicle is holding at a traffic checkpoint.</summary>
     public const string CheckpointWaitReason = "VEHICLE_WAITING_AT_CHECKPOINT";
@@ -567,11 +579,24 @@ public sealed class JourneyRuntimeEngine(
                 SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
                 break;
             case JourneyRuntimeStage.AwaitingSublot:
+                // Refills the station departure wait a disconnect voided (ADR-cross-0055). A reconnect
+                // does not re-enter this stage, so the arrival's seed cannot be what refills it; and
+                // this line runs behind the readiness gate, which is "after the recovery handshake and
+                // the projection reconciliation".
+                bool waitRefilled = runtime.StationDepartureWaitStartedAt is null;
+                runtime.StationDepartureWaitStartedAt ??= now;
                 ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, session, cancellationToken)
                     .ConfigureAwait(false);
                 if (sublot is null)
                 {
-                    if (runtime.BlockReasonCode is not null)
+                    if (await TryEndStopAtStationDeadlineAsync(runtime, session, now, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                    // The one quiet exit of this stage. A wait refilled above and not saved here would be
+                    // refilled again on every later iteration, which is the same as never running out.
+                    if (runtime.BlockReasonCode is not null || waitRefilled)
                     {
                         runtime.UpdatedAt = now;
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -1033,6 +1058,10 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             new VehicleBusinessProjection(runtime.VehicleBusinessRevision, "READY", TransportPurpose, false, "SUFFICIENT", []),
             cancellationToken).ConfigureAwait(false);
+        // ADR-cross-0055: the station departure wait starts at the arrival. Seeded ahead of the
+        // worklist, whose save carries it, because the worklist is where the vehicle is told the
+        // deadline -- a first snapshot sent before the seed would tell it there is none.
+        runtime.StationDepartureWaitStartedAt ??= timeProvider.GetUtcNow();
         await publisher.PublishCurrentStopWorklistAsync(
             runtime.WorklistMessageId,
             runtime.AgvId,
@@ -1938,7 +1967,95 @@ public sealed class JourneyRuntimeEngine(
             runtime.BlockReasonCode = null;
             runtime.UpdatedAt = now;
         }
-        return now - startedAt >= runtimeOptions.StationDepartureWaitTimeout;
+        // No deadline here means the wait is off: the vehicle leaves in the iteration its load commits.
+        return StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is not { } deadline ||
+               now >= deadline;
+    }
+
+    /// <summary>
+    /// When this journey's station departure wait (ADR-cross-0055) runs out, or null when there is no
+    /// such wait to express: the timeout is off, or the wait has not started.
+    /// </summary>
+    /// <remarks>
+    /// The single source of the deadline. The runtime judges the pickup timeout and the departure from
+    /// it, and the worklist sends it to the vehicle as <c>stationDepartureDeadlineAt</c>
+    /// (control-server#84), so the two can never disagree about when the stop ends. A null is not a
+    /// deadline of "now": publishing one the runtime never acts on would be a countdown that expires
+    /// into silence.
+    /// </remarks>
+    public static DateTimeOffset? StationDepartureDeadline(
+        JourneyRuntimeRow runtime,
+        TimeSpan stationDepartureWaitTimeout) =>
+        stationDepartureWaitTimeout <= TimeSpan.Zero || runtime.StationDepartureWaitStartedAt is not { } startedAt
+            ? null
+            : startedAt + stationDepartureWaitTimeout;
+
+    /// <summary>
+    /// Ends the pickup stop once its station departure deadline has passed with no sublot entered
+    /// (ADR-cross-0055; ADR-cross-0058 decision 7 redone for the one-demand journey). Called only from
+    /// <see cref="JourneyRuntimeStage.AwaitingSublot"/> in an iteration that found no matching entry.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Until batch 5 that stage had no deadline and no exit: an unscanned stop was asked again on
+    /// every poll and held the pickup until someone edited the database. The runtime may end it alone
+    /// because no slot operation has been commanded in this stage -- a load command moves the journey
+    /// to AwaitingLoadResult in the iteration that sends it -- so there is no physical state that only
+    /// the peer could settle.
+    /// </para>
+    /// <para>
+    /// <b>Exclusive with starting the load.</b> Both are decided by this one iteration for this one
+    /// journey: an entry already durable when the iteration reads the inbox starts the load and this
+    /// is never reached; once this has committed the journey is Completed and a later entry is never
+    /// read. Whichever is persisted first wins (ADR-cross-0055).
+    /// </para>
+    /// <para>
+    /// The demand stays out of dispatch because its DemandId is already accepted
+    /// (AlreadyAcceptedCriterion). Suppressing the business key permanently, so that a new DemandId
+    /// for the same sublot is not dispatched either, is REQ-0155/0156/0211 in batch 7.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> TryEndStopAtStationDeadlineAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is not { } deadline ||
+            now < deadline)
+        {
+            return false;
+        }
+        // ADR-cross-0058 decision 4: ending the stop lets the vehicle be sent on, and it must not move
+        // with a door open (ADR-cross-0011/0012). So the stop keeps waiting past its deadline until the
+        // door is shut, then ends on that iteration's evidence. Raising an alarm for it is
+        // control-server#81.
+        if (SlotDoorsNotProvenClosed(session))
+        {
+            return false;
+        }
+
+        await new PickupStopTermination(dbContext)
+            .StageAsync(runtime, StationTimeoutCancellationReason, now, cancellationToken).ConfigureAwait(false);
+        checkpointWaits.Clear(runtime.VehicleKey);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId, deadline, null);
+        return true;
+    }
+
+    /// <summary>
+    /// Whether the vehicle's current safety evidence fails to show every slot door shut: it reports a
+    /// door not closed (<c>LOCK_NOT_CLOSED</c>), or something unknown, or the server holds no reading
+    /// at all. The server must not end a stop against evidence it cannot read.
+    /// </summary>
+    private static bool SlotDoorsNotProvenClosed(SessionRecoveryRow session)
+    {
+        if (session.SafetyUnknownPresent != false || session.SafetyReasonCodesJson is null)
+        {
+            return true;
+        }
+        string[] reasonCodes = JsonSerializer.Deserialize<string[]>(session.SafetyReasonCodesJson) ?? [];
+        return reasonCodes.Contains("LOCK_NOT_CLOSED", StringComparer.Ordinal);
     }
 
     /// <summary>

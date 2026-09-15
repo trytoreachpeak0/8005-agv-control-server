@@ -84,6 +84,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.Readiness = SessionReadiness.RecoveryRequired;
         row.ReasonCode = "HANDSHAKE_INCOMPLETE";
         row.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // ADR-cross-0055: a disconnect voids the station departure wait, and it is refilled in full
+        // once the recovery handshake and the projection reconciliation are done. It is dropped here
+        // for the reason the facts above are: a clock that kept running while the vehicle was gone is
+        // not a fact about this session. Left running, a vehicle offline for longer than the wait came
+        // back to a stop ended before anyone could scan, or to a correction window already spent.
+        // Only voided, not refilled: the runtime refills it behind its readiness gate.
+        JourneyRuntimeRow[] waiting = await dbContext.JourneyRuntimes
+            .Where(item => item.AgvId == identity.AgvId && item.StationDepartureWaitStartedAt != null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (JourneyRuntimeRow journey in waiting)
+        {
+            journey.StationDepartureWaitStartedAt = null;
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 

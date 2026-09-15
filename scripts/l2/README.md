@@ -33,6 +33,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `emergency-stop-operator-release` | 合成 | **control-server#63（REQ-0356）**：车在两站之间被急停锁住后，锁住即停稳；确认不全或车上还有未结束订单就拒绝；确认齐全服务端自己发一次 `cancelEmergency`，稍后读到 `OK` 结算；解除后不重触发、不因位置读不到再急停；车再动按新急停处理 | 待本地与 CI 三连跑 |
 | `slot-configuration-activation-replay` | 合成 | **批次 3 出口（`FP-IS-14`）**：激活「下发 → 断线 → 重连 → 补报」——断线期间服务端不猜，补发同一行，只收敛一次；顺带经 `FieldOps export-audit` 导出这次激活的业务审计（REQ-0271） | 待 CI 三连跑 |
 | `onboard-alarm-snapshot-dashboard` | 合成 | **批次 3 出口（`FP-IS-15`）**：车载告警快照「车载产快照 → 服务端消费 → 看板可见」，断言读看板进程渲染出的页面；看板显示全部告警（REQ-0270）、整体取代、失联直述、重连采纳 | 待 CI 三连跑 |
+| `station-deadline-sublot-timeout` | 合成 | **批次 5（control-server#79，ADR-cross-0055、ADR-cross-0058 决策 7）**：到站起算站点期限，没人扫码到期服务端自己结束本站（需求 `Cancelled`、`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、录入请求结算、同一 `DemandId` 不再被派）；期限走到一半断联重连，从会话回到 Ready 那一刻重新计满 | 本地 PASS（证据未入库），三连在批次 5 出口 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -182,6 +183,17 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 故障。后面每个异常场景都只是在它上面改一处——把车载端某一类应答的策略从 `Auto` 改成 `Manual` 或
 `Silent`，或者给假 RIoT 或模拟器注入一个故障模式，然后断言服务端**没有**做它不该做的事。
 
+**两条读取纪律，都来自 MVP 线上「读完一个就顺手读下一个」那一串假红（control-server#26，下面第 14 条）。**
+
+- **断言的实际值来自等待的返回值，不来自等待之后的另一次读取。**要一起断言的第二个事实，若不与被等的条件在同一次
+  提交里，就写进同一个等待的 `Probe`，或者自己再等一次。判不准是不是同一次提交，看第 14 条记下的写入边界。
+- **「记下一个值、做一件事、再等它变」交给 `Wait-L2Change`**：
+  `Wait-L2Change -Baseline {…} -Action {…} -Probe {…} -Until { param($before, $now) … }`，返回 `Baseline` 与 `Value`。
+  基线在函数里、紧贴动作之前读；自己分三行写，基线就可能落到动作之后。它在单独的 `L2Change.psm1` 里（批次 4、5
+  并行加共享辅助函数，各占一个新文件，不改 `L2.psm1` 主体），用的场景自己导入：
+  `Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Change.psm1') -Force`。
+  已有场景里手写且写对了的地方不迁移，新写的用函数。
+
 **要改环境启动方式的场景，写一个同名的 `scenarios/<名字>.setup.psd1`。**目前认这些键：
 
 - `Onboard = 'Real'` —— 换成真车载端 + 真模拟器那套装置（默认 `'Synthetic'`）；
@@ -220,6 +232,9 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   等多久才请求出发前安全检查（ADR-cross-0055，产品默认 5 分钟）。这段时间是普通放错唯一的修正窗口
   （`REQ-0237`）。本装置不给这个键时用 `00:00:05`，让与修正无关的场景只多等五秒；
   `g3-pickup-load-and-correction` 给 `00:00:20`，它要证修正期间车不走、修正收敛后等满才走。
+  **批次 5（control-server#79）起同一个值也从到站起算**：到站后这么久没人录入，服务端就以
+  `CANCELLED_BY_STATION_TIMEOUT` 结束本站。所以一条场景若要在 `AwaitingSublot` 停得比它久（让录入挂起、
+  到站后先做别的），就要在自己的 setup 里给足；`station-deadline-sublot-timeout` 给 `00:00:20`。
 
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
@@ -396,3 +411,26 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     修法是上面「同一时刻只能有一个 L2 占着这组端口」那一节的端口锁，加上启动等待的端口归属检查。
     两份红证据在仓库之外：`C:\g3dbg\resume-002`、
     `C:\g3dbg\20260914-l2query-slot-configuration-activation-replay-001`。
+14. **读到一个状态就顺手读另一个，而两者落在不同的写入里，就会间歇性假红或漏记。**这一条是从 MVP 线
+    （`ControlServer_MVP` 的 `scripts/l2/README.md` 第 14 条）搬过来的：那边前后六例，有等到仓位操作
+    `Committed` 就直读旅程、读到还没轮到的旧阶段的；有基线取在动作之后、基线里已经含着要等的那一次开锁、
+    于是永远等不到的——同一份脚本一绿一红，这就是这类竞态的样子。2026-09-13 普查
+    （control-server#26）之后收口成两样东西：上面「加一个场景」一节的两条读取纪律，与 `Wait-L2Change`。
+    **修一例的时候，要把同一形状的其他地方一起找出来**：那边第五例和第三例是同一个模板抄出来的，第三例只修了
+    出事的那一条。
+
+    判法只有一条：直读的东西要么与被等的条件落在**同一次提交**，要么在因果上**必然先于**它落库，否则就是这种
+    形状。v2 服务端的写入边界，核对过的记在这里，下次不必再读一遍服务端（行号会漂，按名字查）：
+    - **站点期限到期结束本站**（`JourneyRuntimeEngine.TryEndStopAtStationDeadlineAsync` →
+      `PickupStopTermination.StageAsync`）一次提交：需求 `Cancelled`、调度租约 `ReleasedAt`、取货单的
+      `VehicleOccupancyReleasedAt`、录入请求在发件箱里结算、旅程 `Completed` / `CANCELLED_BY_STATION_TIMEOUT`。
+      等到旅程 `Completed` 再读这几样是安全的。
+    - **到站那一轮**：车辆业务状态、工作清单、计划、录入请求四条出站报文各自在发布时落库
+      （`WireToGateStore.QueueOutboundEnvelopeAsync` 每条一次保存），之后引擎才保存 `AwaitingSublot`；期限起点随工作清单那次
+      保存一起落库。等到 `AwaitingSublot` 再读这几样是安全的，反过来不是。
+    - **装货结果**由消息处理器收下时写 `StationOperations.Status = Committed`（`ApplyOperationResultAsync`），旅程转
+      `AwaitingStationDeparture` 是引擎下一轮的另一次写入。卸货结果那一次提交里有需求 `Succeeded`、租约释放与
+      `TransportDemandCompletions`，旅程 `Completed` 与车辆占用释放仍是引擎之后的另一次写入。
+    - **重连**：`BeginSessionRecoveryAsync` 把会话退回 `HANDSHAKE_INCOMPLETE` 的同一次保存里作废本车旅程的期限起点；
+      重新计满是会话回到 Ready 之后引擎某一轮的另一次写入。所以「重连之后期限起点变了」要等，不能在
+      重连命令返回时直读。
