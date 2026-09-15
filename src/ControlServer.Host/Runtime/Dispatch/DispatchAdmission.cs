@@ -31,13 +31,20 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// which zone. Read once for the same reason the catalog is — two vehicles judged against two
 /// reads of the policy could both be admitted under rules that never held at the same instant.
 /// </param>
+/// <param name="AdmissionPolicyDrifted">
+/// Whether the store refused, this round, to bind the live Map's area-named stations to the
+/// configured admission policy version. The bound policy stays in force for journeys under way;
+/// <see cref="Criteria.AdmissionPolicyDriftCriterion"/> refuses new work on it. False by default, so
+/// a round built outside the engine is the ordinary case.
+/// </param>
 public sealed record DispatchRoundFacts(
     DemandCatalogSnapshot Catalog,
     RiotMapStationCatalogSnapshot Map,
     RiotMapStation Gate,
     IReadOnlySet<string> AcceptedDemandIds,
     DateTimeOffset Now,
-    VehicleDispatchPolicy Policy);
+    VehicleDispatchPolicy Policy,
+    bool AdmissionPolicyDrifted = false);
 
 /// <summary>
 /// One vehicle's facts for this round, plus the configuration slice that applies to it.
