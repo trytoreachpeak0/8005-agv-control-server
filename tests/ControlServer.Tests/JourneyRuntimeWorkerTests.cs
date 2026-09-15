@@ -2783,6 +2783,41 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-04")]
+    public async Task AStationAddedToTheSharedMapDoesNotStrandCargoAlreadyBoundForTheGate()
+    {
+        // Map 25 is shared, and RIoT's other users add stations to it without telling this server.
+        // Every iteration re-derives the admission policy from the area-named stations on the live
+        // map and binds that set to JourneyRuntime:admissionPolicyVersion. One more such station
+        // under the same version made ApplyAdmissionPolicyAsync throw before anything else ran, so
+        // a loaded vehicle already on its way to the gate was never given its unload -- until
+        // someone raised the version and restarted. ADR-cross-0050 and 0051: a policy change
+        // affects operations not yet committed, and never interrupts one that is.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+        await fixture.LoadSublotAsync("SUBLOT-001");
+        await fixture.ConfirmDepartureSafeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.JourneyRowAsync()).Stage);
+
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(14, "N1-4"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(300, "等待点"));
+
+        // The worker logs an iteration's exception and tries again on the next tick, so what counts
+        // is whether the journey moved -- asserted first, so a red run says that, not just the throw.
+        Exception? iterationError = await Record.ExceptionAsync(fixture.ArriveAtCurrentStopAsync);
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.JourneyRowAsync()).Stage);
+        Assert.Null(iterationError);
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "W2G-IS-01")]
     public async Task BelowTheTriggerTheVehicleIsRefusedWorkEvenWhenNoChargingRunCanStart()
     {
