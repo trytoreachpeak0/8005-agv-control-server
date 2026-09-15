@@ -125,9 +125,12 @@ public sealed partial class OnboardMessageProcessor(
                 : firstResponse => RebindDurableAckAsync(
                     firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
             .ConfigureAwait(false);
+        // SublotSubmitted is here for its refusal: one answering a journey that has already ended is refused
+        // after its DurableAck is written, so the vehicle never reads the refusal before the acceptance.
         bool hasDeferredRecoveryOutbound = OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
                                            OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
                                            messageType == "OperationResult" ||
+                                           messageType == "SublotSubmitted" ||
                                            messageType == "RecoveryStateReport";
         if (hasDeferredRecoveryOutbound && state.DeferOutboundUntilResponseWritten)
         {
@@ -135,7 +138,8 @@ public sealed partial class OnboardMessageProcessor(
         }
         else if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
                  OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
-                 messageType == "OperationResult")
+                 messageType == "OperationResult" ||
+                 messageType == "SublotSubmitted")
         {
             await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
         }
@@ -161,7 +165,8 @@ public sealed partial class OnboardMessageProcessor(
         string messageType = RequiredString(root, "messageType");
         if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
             OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
-            messageType == "OperationResult")
+            messageType == "OperationResult" ||
+            messageType == "SublotSubmitted")
         {
             await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
         }
