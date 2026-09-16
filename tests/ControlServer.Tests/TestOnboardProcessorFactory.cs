@@ -21,6 +21,7 @@ internal static class TestOnboardProcessorFactory
         OnboardRecoveryCoordinator coordinator = new(
             context, store, publisher, activationDispatcher, timeProvider, configuration);
         return new OnboardMessageProcessor(
+            context,
             store,
             coordinator,
             new OnboardAlarmProjectionStore(context),
