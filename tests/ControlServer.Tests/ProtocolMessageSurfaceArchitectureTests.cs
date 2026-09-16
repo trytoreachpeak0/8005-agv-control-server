@@ -45,7 +45,7 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
     /// <remarks>
     /// <para>
     /// <b>Two kinds of entry, and they are not the same kind of debt.</b> Nine are the messages v2
-    /// added, and each belongs to a slice section 7.2 of the full-product scope specification
+    /// added, and each belongs to a slice section 7.2 of the second edition of the scope specification
     /// schedules into a later batch; those empty as their batches land, exactly like
     /// <see cref="ProtocolVectorTestBindingArchitectureTests.VectorsAwaitingTheirSlice"/>. Three
     /// predate v2 and are pinned to what the server does instead -- they are findings, not
@@ -73,16 +73,16 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
         {
             ["CapabilitySnapshotRequested"] =
                 "predates v2; the server refuses readiness with CAPABILITY_VERSION_GAP instead of asking again",
-            ["DemandSelectionRequested"] = "FP-IS-09, batch 7",
-            ["DemandSelectionResult"] = "FP-IS-09, batch 7",
-            ["ManualStationClearanceConfirmationRequested"] = "FP-IS-13, batch 8",
-            ["ManualStationClearanceConfirmationResult"] = "FP-IS-13, batch 8",
+            ["DemandSelectionRequested"] = "FP-IS-09, batch 11",
+            ["DemandSelectionResult"] = "FP-IS-09, batch 11",
+            ["ManualStationClearanceConfirmationRequested"] = "FP-IS-13, batch 9",
+            ["ManualStationClearanceConfirmationResult"] = "FP-IS-13, batch 9",
             ["SafetyStateSnapshotRequested"] =
                 "predates v2; the server refuses readiness with SAFETY_STATE_VERSION_GAP instead of asking again",
             ["SublotRejected"] =
                 "predates v2; SublotSubmitted is answered with an unconditional DurableAck, so nothing emits it",
-            ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 8",
-            ["UnableToChargeFieldConfirmationResult"] = "FP-IS-13, batch 8"
+            ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 9",
+            ["UnableToChargeFieldConfirmationResult"] = "FP-IS-13, batch 9"
         };
 
     /// <summary>

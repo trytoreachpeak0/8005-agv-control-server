@@ -329,14 +329,16 @@ public sealed class OnboardPeerSession(
     public PendingRequest? Pending(string key) =>
         engine.Snapshot().State.Pending.TryGetValue(key, out PendingRequest? request) ? request : null;
 
+    // Protocol 2.0.0 item 2: the request names the dispatch scope's sublots and no demand, and the
+    // submission names only what was scanned -- the server resolves the demand. This peer scans the
+    // first sublot it was offered, which with one demand per journey is the only one.
     public object SublotSubmitted(JsonElement requestPayload, long generation) =>
         Envelope("SublotSubmitted", NewId(), null, generation, new
         {
-            demandId = requestPayload.GetProperty("demandId").GetString(),
             operationSessionId = requestPayload.GetProperty("operationSessionId").GetString(),
             stationId = requestPayload.GetProperty("stationId").GetString(),
             worklistRevision = requestPayload.GetProperty("worklistRevision").GetInt64(),
-            sublot = requestPayload.GetProperty("expectedSublot").GetString(),
+            sublot = requestPayload.GetProperty("expectedSublots")[0].GetString(),
             entryMethod = "SCANNER",
             @operator = new
             {

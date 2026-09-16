@@ -1070,7 +1070,7 @@ public sealed class JourneyRuntimeEngine(
             runtime.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision, "READY", TransportPurpose, false, "SUFFICIENT", []),
+            TransportBusinessState(runtime.VehicleBusinessRevision, LoadingPhase(runtime.Stage, loadBatchClosed: false)),
             cancellationToken).ConfigureAwait(false);
         // ADR-cross-0055: the station departure wait starts at the arrival. Seeded ahead of the
         // worklist, whose save carries it, because the worklist is where the vehicle is told the
@@ -1080,7 +1080,13 @@ public sealed class JourneyRuntimeEngine(
             runtime.WorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.PickupStationId, "PICKUP", runtime.WorklistRevision),
+            Worklist(
+                runtime,
+                demand,
+                runtime.PickupStationId,
+                "PICKUP",
+                runtime.WorklistRevision,
+                StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout)),
             cancellationToken).ConfigureAwait(false);
         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
             .ConfigureAwait(false);
@@ -1090,16 +1096,16 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             PickupPlan(runtime),
             cancellationToken).ConfigureAwait(false);
+        // One demand per journey, so the dispatch scope is this demand's sublot (protocol 2.0.0 item 2).
         await publisher.PublishSublotEntryRequestAsync(
             runtime.SublotRequestMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new SublotEntryRequest(
-                runtime.DemandId,
                 runtime.OperationSessionId,
                 runtime.PickupStationId,
                 runtime.WorklistRevision,
-                demand.Sublot),
+                [demand.Sublot]),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1215,13 +1221,20 @@ public sealed class JourneyRuntimeEngine(
             runtime.GateVehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision + 1, "READY", TransportPurpose, false, "SUFFICIENT", []),
+            TransportBusinessState(runtime.VehicleBusinessRevision + 1, LoadingPhase(runtime.Stage, loadBatchClosed: true)),
             cancellationToken).ConfigureAwait(false);
+        // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
         await publisher.PublishCurrentStopWorklistAsync(
             runtime.GateWorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.GateStationId, "DROPOFF", runtime.WorklistRevision + 1),
+            Worklist(
+                runtime,
+                demand,
+                runtime.GateStationId,
+                "DROPOFF",
+                runtime.WorklistRevision + 1,
+                stationDepartureDeadlineAt: null),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             runtime.GatePlanMessageId,
@@ -1263,9 +1276,11 @@ public sealed class JourneyRuntimeEngine(
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
             JsonElement payload = root.GetProperty("payload");
+            // Protocol 2.0.0 took demandId off SublotSubmitted: the server resolves the demand. With one
+            // demand per journey the operation session already names it; resolving by dispatch scope and
+            // refusing sublots outside it is 8005-agv-control-server#82.
             bool matches = RequiredString(root, "agvId") == runtime.AgvId &&
                            root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                           RequiredString(payload, "demandId") == runtime.DemandId &&
                            RequiredString(payload, "operationSessionId") == runtime.OperationSessionId &&
                            RequiredString(payload, "stationId") == runtime.PickupStationId &&
                            payload.GetProperty("worklistRevision").GetInt64() == runtime.WorklistRevision &&
@@ -1798,10 +1813,12 @@ public sealed class JourneyRuntimeEngine(
         AcceptedDemandRow demand,
         string station,
         string role,
-        long revision) => new(
+        long revision,
+        DateTimeOffset? stationDepartureDeadlineAt) => new(
             station,
             revision,
             runtime.OperationSessionId,
+            stationDepartureDeadlineAt,
             [new CurrentStopWorklistItem(
                 demand.DemandId,
                 demand.TransportDemandKey,
@@ -1818,7 +1835,58 @@ public sealed class JourneyRuntimeEngine(
 
     // Likewise the only activePurpose this runtime can be in. CHARGING is batch 8, IDLE_RETURN is
     // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.
-    private const string TransportPurpose = "TRANSPORT";
+    private const string TransportPurpose = VehicleActivePurposes.Transport;
+
+    // 8005-agv-program#94's semantic table: v2 has no automatic charging today (scope specification
+    // 5.5), so this server holds no charger reservation, no charging order and no charging cycle.
+    // "Not in a charging cycle" is a fact it knows, not a guess; UNKNOWN would report a missing
+    // feature as a lost observation. Nor is MANDATORY_CHARGE sent before batch 9.
+    private const string NotInAChargingCycle = "NOT_CHARGING";
+
+    private static VehicleBusinessProjection TransportBusinessState(long revision, LoadingPhaseProjection loadingPhase) =>
+        new(revision, "READY", TransportPurpose, false, "SUFFICIENT", NotInAChargingCycle, loadingPhase, []);
+
+    /// <summary>
+    /// The loading phase a transport journey reports at a given stage -- the one place that mapping is
+    /// made, never null for a journey that exists.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The semantics are <c>8005-agv-program</c> commit <c>db5a1d14</c> (<c>8005-agv-program#94</c>):
+    /// <c>LOADING</c> until the pickup's load batch closes safely, then <c>CLOSED</c> with
+    /// <c>PLANNED_LOADING_COMPLETE</c> until the journey ends. With one demand per journey there is no
+    /// cargo holding wait, so the holding deadline is always null.
+    /// </para>
+    /// <para>
+    /// The stage alone decides it everywhere but <see cref="JourneyRuntimeStage.Blocked"/> and
+    /// <see cref="JourneyRuntimeStage.Completed"/>, which a journey reaches from either side of the
+    /// load; there <paramref name="loadBatchClosed"/> decides. <see cref="JourneyRuntimeStage.AwaitingStationDeparture"/>
+    /// is already closed: the load has committed, and a correction there handles what was already
+    /// loaded rather than admitting another demand.
+    /// </para>
+    /// <para>
+    /// <b>Sent at the two points this runtime already publishes the snapshot</b>: the pickup arrival
+    /// (<c>LOADING</c>) and the drop-off arrival (<c>CLOSED</c>). #94 left open whether to publish once
+    /// more when the vehicle leaves the pickup, and this server does not: an extra snapshot shifts the
+    /// revision stream the synthetic peer and the G3 runners assert against, for a value nothing acts on
+    /// before batch 7 gives the phase its display.
+    /// </para>
+    /// </remarks>
+    public static LoadingPhaseProjection LoadingPhase(JourneyRuntimeStage stage, bool loadBatchClosed) => stage switch
+    {
+        JourneyRuntimeStage.AwaitingPickupArrival or
+        JourneyRuntimeStage.AwaitingSublot or
+        JourneyRuntimeStage.AwaitingLoadResult => LoadingPhaseProjection.Loading,
+        JourneyRuntimeStage.AwaitingStationDeparture or
+        JourneyRuntimeStage.AwaitingDepartureSafety or
+        JourneyRuntimeStage.AwaitingGateArrival or
+        JourneyRuntimeStage.AwaitingUnloadResult => LoadingPhaseProjection.PlannedLoadingComplete,
+        JourneyRuntimeStage.Blocked or
+        JourneyRuntimeStage.Completed => loadBatchClosed
+            ? LoadingPhaseProjection.PlannedLoadingComplete
+            : LoadingPhaseProjection.Loading,
+        _ => throw new ArgumentOutOfRangeException(nameof(stage), stage, "Journey stage has no loading phase mapping.")
+    };
 
     // The plan stream advances three times per journey: before the pickup arrival at the stored
     // revision, at the pickup one above it, at the gate two above it. WireToGateStore seeds the next

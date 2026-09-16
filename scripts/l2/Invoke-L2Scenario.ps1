@@ -638,7 +638,7 @@ try {
         approvalStatus     = $version.approvalStatus
     }
     $journal.Note("Protocol release identity: $($version.protocolTag) " +
-        "(protocolVersion $($version.protocolVersion), $($version.approvalStatus)).")
+        "(profileId $($version.profileId), protocolVersion $($version.protocolVersion), $($version.approvalStatus)).")
 
     # 4b. The skew proxy, when a scenario asked for one. After the server (it forwards to it) and
     #     before the onboard (which must find it listening on its first poll).

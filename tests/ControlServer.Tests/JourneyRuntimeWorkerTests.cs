@@ -74,7 +74,6 @@ public sealed class JourneyRuntimeWorkerTests
             "SublotSubmitted",
             new
             {
-                demandId = runtime.DemandId,
                 operationSessionId = runtime.OperationSessionId,
                 stationId = runtime.PickupStationId,
                 worklistRevision = runtime.WorklistRevision,
@@ -1159,7 +1158,6 @@ public sealed class JourneyRuntimeWorkerTests
             "SublotSubmitted",
             new
             {
-                demandId = runtime.DemandId,
                 operationSessionId = runtime.OperationSessionId,
                 stationId = runtime.PickupStationId,
                 worklistRevision = runtime.WorklistRevision,
@@ -2685,6 +2683,275 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
     }
 
+    /// <summary>
+    /// Protocol 2.0.0 item 1: the pickup worklist tells the vehicle when its stop ends, and that is
+    /// the deadline the runtime itself ends the stop by -- <see cref="JourneyRuntimeEngine.StationDepartureDeadline"/>,
+    /// the single source 8005-agv-control-server#79 made for exactly this.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ThePickupWorklistCarriesTheStationDepartureDeadlineTheRuntimeEndsTheStopBy()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromMinutes(5);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        DateTimeOffset arrivedAt = fixture.Clock.GetUtcNow();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        JsonElement deadline = (await fixture.OutboxPayloadAsync(runtime.WorklistMessageId))
+            .GetProperty("stationDepartureDeadlineAt");
+        Assert.Equal(JsonValueKind.String, deadline.ValueKind);
+        Assert.Equal(
+            JourneyRuntimeEngine.StationDepartureDeadline(runtime, fixture.Options.StationDepartureWaitTimeout),
+            deadline.GetDateTimeOffset());
+        Assert.Equal(arrivedAt + TimeSpan.FromMinutes(5), deadline.GetDateTimeOffset());
+    }
+
+    /// <summary>
+    /// The drop-off stop has no departure wait, so its worklist carries no deadline: a countdown there
+    /// would be one the runtime never acts on.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-04")]
+    public async Task TheDropoffWorklistCarriesNoStationDepartureDeadline()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        JourneyRuntimeRow runtime = await fixture.RunToGateUnloadAsync();
+
+        JsonElement payload = await fixture.OutboxPayloadAsync(runtime.GateWorklistMessageId);
+        Assert.Equal("DROPOFF", payload.GetProperty("items")[0].GetProperty("stopRole").GetString());
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("stationDepartureDeadlineAt").ValueKind);
+    }
+
+    /// <summary>
+    /// With the station departure wait switched off (<c>StationDepartureWaitTimeout</c> zero) there is
+    /// no deadline to tell, even at the pickup.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task WithTheStationDepartureWaitSwitchedOffThePickupWorklistCarriesNoDeadline()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.Zero;
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, runtime.Stage);
+        JsonElement payload = await fixture.OutboxPayloadAsync(runtime.WorklistMessageId);
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("stationDepartureDeadlineAt").ValueKind);
+    }
+
+    /// <summary>
+    /// Protocol 2.0.0 item 2: the entry request gives the vehicle the dispatch scope's sublots and
+    /// names no demand. One demand per journey makes that scope this demand's sublot.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task TheSublotEntryRequestNamesTheDispatchScopeAndNoDemand()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        JourneyRuntimeRow runtime = await fixture.AdvanceToSublotWaitAsync();
+
+        JsonElement payload = await fixture.OutboxPayloadAsync(runtime.SublotRequestMessageId);
+        Assert.Equal(
+            ["SUBLOT-001"],
+            payload.GetProperty("expectedSublots").EnumerateArray().Select(item => item.GetString()));
+        Assert.False(payload.TryGetProperty("demandId", out _));
+        Assert.False(payload.TryGetProperty("expectedSublot", out _));
+        Assert.Equal(runtime.OperationSessionId, payload.GetProperty("operationSessionId").GetString());
+        Assert.Equal(runtime.WorklistRevision, payload.GetProperty("worklistRevision").GetInt64());
+    }
+
+    /// <summary>
+    /// Protocol 2.0.0 item 2, the other direction: <c>SublotSubmitted</c> no longer carries a demand,
+    /// and a submission without one is still matched and commands the load as before.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-PICKUP-SUBLOT-LOAD")]
+    public async Task ASubmissionThatNamesNoDemandIsMatchedAndCommandsTheLoad()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        JourneyRuntimeRow runtime = await fixture.AdvanceToLoadResultAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        ProtocolInboxRow submission = await fixture.Context.ProtocolInbox.AsNoTracking().SingleAsync(
+            row => row.MessageId == runtime.ConsumedSublotMessageId, TestContext.Current.CancellationToken);
+        using (JsonDocument submitted = JsonDocument.Parse(submission.RequestJson))
+        {
+            Assert.False(submitted.RootElement.GetProperty("payload").TryGetProperty("demandId", out _));
+        }
+        JsonElement command = await fixture.OutboxPayloadAsync(runtime.LoadCommandMessageId);
+        Assert.Equal(runtime.DemandId, command.GetProperty("demandId").GetString());
+        Assert.Equal(runtime.LoadSlotOperationAttemptId, command.GetProperty("slotOperationAttemptId").GetString());
+    }
+
+    /// <summary>
+    /// <c>SublotSubmitted</c>'s <c>businessDedupKeys</c> is empty in the 2.0.0 candidate, so nothing in
+    /// the protocol stops a second submission of the same entry -- a rescan under a new messageId,
+    /// even by another entry method -- and "one entry, one side effect" is this server's to keep. The
+    /// submission a load was commanded for is consumed; a later one commands nothing, opens no second
+    /// attempt and does not move the journey.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ARescanUnderANewMessageIdCommandsNoSecondLoad()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToLoadResultAsync();
+        string consumed = runtime.ConsumedSublotMessageId!;
+
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "SublotSubmitted",
+            new
+            {
+                operationSessionId = runtime.OperationSessionId,
+                stationId = runtime.PickupStationId,
+                worklistRevision = runtime.WorklistRevision,
+                sublot = "SUBLOT-001",
+                entryMethod = "KEYBOARD",
+                @operator = new
+                {
+                    operatorId = "OP-001",
+                    verificationMethod = "BADGE",
+                    verifiedAt = fixture.Clock.GetUtcNow()
+                }
+            });
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        Assert.Equal(consumed, runtime.ConsumedSublotMessageId);
+        Assert.Single(await fixture.OutboxTypesAsync(), type => type == "SlotOperationCommand");
+        Assert.Single(await fixture.Context.StationOperations.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// The contract the rescan test above relies on, read from the vendored manifest rather than
+    /// assumed: no business deduplication for a submission or a rejection, and the entry request
+    /// deduplicated by <c>(operationSessionId, worklistRevision)</c> -- which is why this server keeps
+    /// <c>expectedSublots</c> fixed within one worklist revision.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public void TheCandidateLeavesSublotSubmissionsAndRejectionsWithoutBusinessDeduplication()
+    {
+        using JsonDocument manifest = JsonDocument.Parse(
+            File.ReadAllBytes(ProtocolIdentityArchitectureTests.ManifestPath()));
+        JsonElement messages = manifest.RootElement.GetProperty("messages");
+
+        Assert.Empty(messages.GetProperty("SublotSubmitted").GetProperty("businessDedupKeys").EnumerateArray());
+        Assert.Empty(messages.GetProperty("SublotRejected").GetProperty("businessDedupKeys").EnumerateArray());
+        Assert.Equal(
+            ["operationSessionId", "worklistRevision"],
+            messages.GetProperty("SublotEntryRequested").GetProperty("businessDedupKeys")
+                .EnumerateArray().Select(key => key.GetString()));
+    }
+
+    /// <summary>
+    /// Protocol 2.0.0 items 5 and 6 on the two snapshots a journey publishes: <c>LOADING</c> at the
+    /// pickup, <c>CLOSED</c> / <c>PLANNED_LOADING_COMPLETE</c> at the drop-off once the load batch has
+    /// closed, never null while the journey exists; and <c>NOT_CHARGING</c> in both, because v2 has
+    /// no automatic charging to be in a cycle of (8005-agv-program#94, commit <c>db5a1d14</c>).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-04")]
+    public async Task EachVehicleBusinessStateOfAJourneyCarriesItsLoadingPhaseAndNoChargingCycle()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        JourneyRuntimeRow runtime = await fixture.RunToGateUnloadAsync();
+
+        JsonElement pickup = await fixture.OutboxPayloadAsync(runtime.VehicleBusinessMessageId);
+        JsonElement dropoff = await fixture.OutboxPayloadAsync(runtime.GateVehicleBusinessMessageId);
+        foreach (JsonElement snapshot in new[] { pickup, dropoff })
+        {
+            Assert.Equal("TRANSPORT", snapshot.GetProperty("activePurpose").GetString());
+            Assert.Equal("NOT_CHARGING", snapshot.GetProperty("chargingCycleState").GetString());
+            Assert.Equal(JsonValueKind.Null, snapshot.GetProperty("loadingPhase")
+                .GetProperty("cargoHoldingDeadlineAt").ValueKind);
+        }
+        Assert.Equal("LOADING", pickup.GetProperty("loadingPhase").GetProperty("state").GetString());
+        Assert.Equal(JsonValueKind.Null, pickup.GetProperty("loadingPhase").GetProperty("closedReason").ValueKind);
+        Assert.Equal("CLOSED", dropoff.GetProperty("loadingPhase").GetProperty("state").GetString());
+        Assert.Equal(
+            "PLANNED_LOADING_COMPLETE",
+            dropoff.GetProperty("loadingPhase").GetProperty("closedReason").GetString());
+    }
+
+    public static TheoryData<JourneyRuntimeStage, bool, string> LoadingPhaseOfEveryStage()
+    {
+        TheoryData<JourneyRuntimeStage, bool, string> data = [];
+        foreach (JourneyRuntimeStage stage in Enum.GetValues<JourneyRuntimeStage>())
+        {
+            foreach (bool loadBatchClosed in new[] { false, true })
+            {
+                bool closed = stage switch
+                {
+                    JourneyRuntimeStage.AwaitingPickupArrival or
+                    JourneyRuntimeStage.AwaitingSublot or
+                    JourneyRuntimeStage.AwaitingLoadResult => false,
+                    JourneyRuntimeStage.Blocked or JourneyRuntimeStage.Completed => loadBatchClosed,
+                    _ => true
+                };
+                data.Add(stage, loadBatchClosed, closed ? "CLOSED/PLANNED_LOADING_COMPLETE" : "LOADING/");
+            }
+        }
+        return data;
+    }
+
+    /// <summary>
+    /// The one mapping from journey stage to loading phase, over every stage there is: none maps to
+    /// null, the stages before the load batch closes are <c>LOADING</c>, the ones after are
+    /// <c>CLOSED</c>, and the two a journey reaches from either side follow the load.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [MemberData(nameof(LoadingPhaseOfEveryStage))]
+    public void EveryJourneyStageMapsToALoadingPhase(JourneyRuntimeStage stage, bool loadBatchClosed, string expected)
+    {
+        LoadingPhaseProjection phase = JourneyRuntimeEngine.LoadingPhase(stage, loadBatchClosed);
+
+        Assert.NotNull(phase);
+        Assert.Null(phase.CargoHoldingDeadlineAt);
+        Assert.Equal(expected, $"{phase.State}/{phase.ClosedReason}");
+    }
+
     private sealed class RuntimeFixture : IAsyncDisposable
     {
         private RuntimeFixture(
@@ -2885,7 +3152,6 @@ public sealed class JourneyRuntimeWorkerTests
                 "SublotSubmitted",
                 new
                 {
-                    demandId = runtime.DemandId,
                     operationSessionId = runtime.OperationSessionId,
                     stationId = runtime.PickupStationId,
                     worklistRevision = runtime.WorklistRevision,
@@ -2929,7 +3195,6 @@ public sealed class JourneyRuntimeWorkerTests
                 "SublotSubmitted",
                 new
                 {
-                    demandId = runtime.DemandId,
                     operationSessionId = runtime.OperationSessionId,
                     stationId = runtime.PickupStationId,
                     worklistRevision = runtime.WorklistRevision,
@@ -3244,6 +3509,15 @@ public sealed class JourneyRuntimeWorkerTests
             .Where(row => row.AcknowledgedAt == null && row.FencedAt == null)
             .Select(row => row.MessageId)
             .ToArrayAsync(TestContext.Current.CancellationToken);
+
+        /// <summary>The payload of one outbound message, as stored and sent.</summary>
+        public async Task<JsonElement> OutboxPayloadAsync(string messageId)
+        {
+            ProtocolOutboxRow row = await Context.ProtocolOutbox.AsNoTracking()
+                .SingleAsync(item => item.MessageId == messageId, TestContext.Current.CancellationToken);
+            using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+            return document.RootElement.GetProperty("payload").Clone();
+        }
 
         public async Task<string[]> OutboxTypesAsync() => await Context.ProtocolOutbox
             .AsNoTracking()
