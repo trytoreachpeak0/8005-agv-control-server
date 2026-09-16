@@ -1582,8 +1582,31 @@ public sealed class JourneyRuntimeEngine(
         return latest;
     }
 
+    /// <summary>
+    /// The vehicle's session row as the database holds it right now.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>AsNoTracking is the point of this method, not a performance note.</b> The engine only
+    /// ever reads this row -- Onboard's transport owns every write to it, on its own scope and its
+    /// own <see cref="ControlServerDbContext"/>. A tracking query returns the instance the change
+    /// tracker already holds and leaves its values alone, so the first read in an iteration pinned
+    /// the row for the whole iteration: a SafetyStateChanged that landed while the iteration was
+    /// running was invisible to every later read of it, however long the iteration then ran
+    /// against RIoT.
+    /// </para>
+    /// <para>
+    /// That is not merely stale, it is unsafe, because
+    /// <see cref="ReadOnboardFactsAsync"/> pins the safety summary to
+    /// <c>SafetyRevision</c>: a stale revision does not fail to match, it matches the *previous*
+    /// message, which is still in the inbox and still says whatever was true before. The arrival
+    /// check then read a vehicle Onboard had already reported moving as stopped, and trusted an
+    /// arrival that had not happened. See
+    /// docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md.
+    /// </para>
+    /// </remarks>
     private Task<SessionRecoveryRow?> CurrentReadySessionAsync(string agvId, CancellationToken cancellationToken) =>
-        dbContext.SessionRecoveries.SingleOrDefaultAsync(
+        dbContext.SessionRecoveries.AsNoTracking().SingleOrDefaultAsync(
             row => row.AgvId == agvId && row.Readiness == SessionReadiness.Ready,
             cancellationToken);
 

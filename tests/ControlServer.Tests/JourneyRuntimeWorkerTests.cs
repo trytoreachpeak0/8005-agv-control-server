@@ -1665,6 +1665,55 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ArrivalIsNotTrustedWhenOnboardReportsTheVehicleMovingDuringTheSameIteration()
+    {
+        // The test above hands the engine a settled world: the safety change is already stored
+        // before ExecuteOnceAsync is called. On the rig it lands while an iteration is running, and
+        // on the transport's scope rather than the engine's -- and AdvanceAsync had already read the
+        // session row at the top of the iteration on a tracking query, so every later read of that
+        // row in the same iteration returned the tracked instance with the revision it carried when
+        // the iteration began. The arrival check pins the safety summary to that revision, found the
+        // previous message, which still said the vehicle was stopped, and trusted an arrival Onboard
+        // had already contradicted. Caught by L2 session-established-while-moving in CI run
+        // 35055524167 attempt 1; see
+        // docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", runtime.PickupStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
+
+        // Each iteration runs in its own scope in the host, so the window under test has to be the
+        // one inside a single iteration and not a tracked row carried over from the previous one.
+        await fixture.RecreateEngineAsync();
+
+        // ReadVehicleAsync is called from CheckArrivalAsync, between the session read at the top of
+        // AdvanceAsync and the safety facts that judge the arrival -- exactly the window the rig hit.
+        fixture.Riot.BeforeReadVehicle = () => fixture
+            .ApplySafetyStateChangedOnAnotherScopeAsync(8, departureSafe: true, vehicleStopped: false)
+            .GetAwaiter().GetResult();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Riot.BeforeReadVehicle = null;
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+
+        // And the arrival is still trusted once Onboard reports the vehicle at rest, so reading the
+        // row afresh does not simply strand the journey.
+        await fixture.ApplySafetyStateChangedOnAnotherScopeAsync(9, departureSafe: true, vehicleStopped: true);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("IntegrationSlice", "FP-IS-07")]
     public async Task ABlockedJourneyKeepsTheReasonItWasBlockedForWhenTheSessionDrops()
@@ -2565,6 +2614,7 @@ public sealed class JourneyRuntimeWorkerTests
     {
         private RuntimeFixture(
             SqliteConnection connection,
+            DbContextOptions<ControlServerDbContext> dbOptions,
             ControlServerDbContext context,
             RecordingCatalog catalog,
             RecordingBoxCounts boxCounts,
@@ -2578,6 +2628,7 @@ public sealed class JourneyRuntimeWorkerTests
         {
             CatalogApproved = catalogApproved;
             Connection = connection;
+            DbOptions = dbOptions;
             Context = context;
             Catalog = catalog;
             BoxCounts = boxCounts;
@@ -2591,6 +2642,13 @@ public sealed class JourneyRuntimeWorkerTests
         }
 
         private SqliteConnection Connection { get; }
+
+        /// <summary>
+        /// The same options the engine's context was built from, so a test can open a second
+        /// context on this connection and write the way a different scope does in the host.
+        /// </summary>
+        private DbContextOptions<ControlServerDbContext> DbOptions { get; }
+
         public ControlServerDbContext Context { get; }
         public RecordingCatalog Catalog { get; }
         public RecordingBoxCounts BoxCounts { get; }
@@ -2633,8 +2691,8 @@ public sealed class JourneyRuntimeWorkerTests
             RecordingPeer peer = new();
             RecordingRouteCostProbe routeCosts = new();
             RuntimeFixture fixture = new(
-                connection, context, catalog, boxCounts, riot, peer, routeCosts, catalogApproved,
-                options, clock, saveChanges);
+                connection, dbOptions, context, catalog, boxCounts, riot, peer, routeCosts,
+                catalogApproved, options, clock, saveChanges);
             await fixture.SeedRecoveredPeerAsync();
             saveChanges.Reset();
             return fixture;
@@ -2983,6 +3041,61 @@ public sealed class JourneyRuntimeWorkerTests
         /// in the inbox and the session row takes the new revision and departure flag. Onboard
         /// sends the full snapshot once per session and reports every later change this way.
         /// </summary>
+        /// <summary>
+        /// Applies a SafetyStateChanged the way the host does: on the transport's own scope, which
+        /// is a different <see cref="ControlServerDbContext"/> from the engine's. The ordinary
+        /// <see cref="AddSafetyStateChangedAsync"/> writes through the engine's own context, so the
+        /// engine sees the new revision on its tracked session row whatever it does -- which hides
+        /// every question about when the engine actually re-reads that row.
+        /// </summary>
+        public async Task ApplySafetyStateChangedOnAnotherScopeAsync(
+            long safetyStateVersion,
+            bool departureSafe,
+            bool vehicleStopped)
+        {
+            await using ControlServerDbContext scope = new(DbOptions);
+            string messageId = Guid.NewGuid().ToString("D");
+            string json = JsonSerializer.Serialize(new
+            {
+                messageType = "SafetyStateChanged",
+                messageId,
+                agvId = Options.AgvId,
+                sessionGeneration = 1L,
+                sentAt = Now,
+                payload = new
+                {
+                    safetyStateVersion,
+                    observedAt = Clock.GetUtcNow(),
+                    safety = new
+                    {
+                        departureSafe,
+                        vehicleStopped,
+                        allTargetSlotsLocked = true,
+                        allUnlockOutputsReset = true,
+                        unknownPresent = false,
+                        reasonCodes = Array.Empty<string>()
+                    },
+                    affectedSlots = Array.Empty<int>()
+                }
+            }, SerializerOptions);
+            scope.ProtocolInbox.Add(new ProtocolInboxRow
+            {
+                MessageId = messageId,
+                MessageType = "SafetyStateChanged",
+                RequestJson = json,
+                ContentHash = new string('f', 64),
+                FirstResponseJson = "{}",
+                ReceivedAt = Clock.GetUtcNow()
+            });
+            SessionRecoveryRow session = await scope.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.SafetyRevision = safetyStateVersion;
+            session.DepartureSafe = departureSafe;
+            // One SaveChanges, as ADR-cross-0033 requires: the envelope and the revision it advances
+            // land together, so no reader can see one without the other.
+            await scope.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
         public async Task AddSafetyStateChangedAsync(
             long safetyStateVersion,
             bool departureSafe,

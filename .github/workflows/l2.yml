@@ -65,7 +65,12 @@ jobs:
         run: |
           $scenarios = @(
               @{ Name = 'normal-load';                 Runs = 1 }
-              @{ Name = 'session-established-while-moving'; Runs = 1 }
+              # Three consecutive runs since 2026-09-16, not because the scenario is new but
+              # because it turned out to be racing the server: it went red once in twelve runs
+              # (run 35055524167 attempt 1) on a real defect, and one pass could not have told
+              # that apart from luck. See
+              # docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md.
+              @{ Name = 'session-established-while-moving'; Runs = 3 }
               @{ Name = 'load-result-requires-recovery';    Runs = 1 }
               @{ Name = 'load-command-never-answered';      Runs = 1 }
               @{ Name = 'route-graph-engine';          Runs = 1 }
