@@ -2,14 +2,17 @@
 
 <#
 .SYNOPSIS
-    Self-check for L2SlotGroups.psm1's group assertion: one constructed case that must pass, and constructed
-    cases that must each fail for their own reason.
+    Self-check for L2SlotGroups.psm1's group assertion: constructed cases that must pass, constructed cases that
+    must each fail for their own reason, and the assertion's default and explicit description.
 
 .DESCRIPTION
     Pure input, no rig and no database, a few seconds. The model here is deliberately not today's approved one:
     FRONT is the even slots and REAR the odd ones, so a helper that had "1-4 is FRONT" written into it would get
     every case below wrong. The database half -- reading a real vehicle's groups and available slots -- is
     exercised against a running server by the L2 evidence in control-server#71.
+
+    It also checks the text Assert-L2SlotGroupTargets writes into the evidence row, with and without -Description,
+    by replacing that function's two database reads inside the module with the same constructed model.
 
     Exits 1 when any case comes out the other way, and prints every case either way.
 
@@ -51,8 +54,48 @@ foreach ($case in $cases) {
         ($case.Targets -join ','), $case.Name, $verdict)
 }
 
+# Assert-L2SlotGroupTargets' assertion text. Its database reads are replaced inside the module with the model
+# above, so this still needs no database; what it checks is only which 判据 lands in the evidence row.
+$slotGroups = Get-Module L2SlotGroups
+& $slotGroups {
+    param($positions)
+    $script:stubPositions = $positions
+    $script:stubJourneys = @()
+    function script:Invoke-L2Query([object]$Connection, [string]$Sql) { return , @($script:stubJourneys) }
+    function script:Get-L2VehicleSlotPositions([object]$Connection, [string]$AgvId) {
+        return [pscustomobject]@{ AgvId = $AgvId; Positions = $script:stubPositions }
+    }
+} $positions
+
+$descriptionCases = @(
+    @{ Name = 'no journey, no -Description'; Journey = $false; Arguments = @{}
+       Expected = '需求 D-1 的目标仓位属于 FRONT 组' }
+    @{ Name = 'no journey, -Description'; Journey = $false; Arguments = @{ Description = '自定义判据' }
+       Expected = '自定义判据' }
+    @{ Name = 'journey, no -Description'; Journey = $true; Arguments = @{}
+       Expected = '需求 D-1 的目标仓位全部属于 FRONT 组、升序，且恰好是该组编号最小的 2 个可用仓' }
+    @{ Name = 'journey, -Description'; Journey = $true; Arguments = @{ Description = '自定义判据' }
+       Expected = '自定义判据' }
+)
+foreach ($case in $descriptionCases) {
+    & $slotGroups {
+        param($journey)
+        $script:stubJourneys = $journey ? @([pscustomobject]@{ AgvId = 'agv-1'; TargetSlotsJson = '[4,6]' }) : @()
+    } $case.Journey
+    $assertions = & $slotGroups { New-L2Assertions }
+    $arguments = $case.Arguments
+    $null = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'SELF-CHECK' -Connection ([pscustomobject]@{}) -DemandId 'D-1' `
+        -SlotPosition 'FRONT' -AvailableSlots $available @arguments
+    $actual = [string]$assertions.Items[0].description
+    $asExpected = $actual -ceq $case.Expected
+    if (-not $asExpected) { $wrong++ }
+    Write-Host ("{0}  {1} -> description '{2}'" -f $(if ($asExpected) { 'ok  ' } else { 'BAD ' }), $case.Name, $actual)
+}
+
+$total = $cases.Count + $descriptionCases.Count
 if ($wrong -gt 0) {
-    Write-Host "L2SlotGroups self-check: $wrong of $($cases.Count) cases came out the wrong way."
+    Write-Host "L2SlotGroups self-check: $wrong of $total cases came out the wrong way."
     exit 1
 }
-Write-Host "L2SlotGroups self-check: all $($cases.Count) cases as expected (2 pass, $($cases.Count - 2) fail)."
+Write-Host ("L2SlotGroups self-check: all $total cases as expected (2 pass, $($cases.Count - 2) fail, " +
+    "$($descriptionCases.Count) assertion descriptions).")
