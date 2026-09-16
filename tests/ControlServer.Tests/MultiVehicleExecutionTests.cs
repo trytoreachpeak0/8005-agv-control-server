@@ -222,7 +222,7 @@ public sealed class MultiVehicleExecutionTests
 
     /// <summary>
     /// The area assignment table is read once per round, however many vehicles and candidates the round
-    /// judges; with none imported the plans carry no version and no slot group.
+    /// judges, and every plan of the round carries the version that one read returned.
     /// </summary>
     /// <remarks>
     /// Three vehicles judging three candidates would be nine reads if a criterion read the table for itself,
@@ -239,8 +239,8 @@ public sealed class MultiVehicleExecutionTests
         Assert.Equal(3, fixture.AcceptedPlans.Count);
         Assert.All(fixture.AcceptedPlans, plan =>
         {
-            Assert.Null(plan.AreaAssignmentVersion);
-            Assert.Null(plan.RequiredSlotPosition);
+            Assert.Equal(1, plan.AreaAssignmentVersion);
+            Assert.Equal("FRONT", plan.RequiredSlotPosition);
         });
     }
 
@@ -275,22 +275,19 @@ public sealed class MultiVehicleExecutionTests
     public async Task ThePlanCarriesTheVersionAndSlotGroupItsCandidateWasLookedUpIn()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
-        fixture.AreaAssignments.Current = new AreaAssignmentTableVersion(
-            7,
-            new string('a', 64),
-            "snapshot-7",
-            Now,
-            new Dictionary<string, AreaAssignment>(StringComparer.Ordinal)
-            {
-                ["N1-1"] = new("N1-1", "MAP-25-WIRE_TO_GATE", "FRONT"),
-                ["N1-2"] = new("N1-2", "MAP-25-WIRE_TO_GATE", "REAR"),
-                ["N1-3"] = new("N1-3", "MAP-25-WIRE_TO_GATE", "FRONT"),
-            });
+        AreaAssignmentTableVersion table = await fixture.AreaAssignments.ImportAsync(
+            [
+                new("N1-1", "MAP-25-WIRE_TO_GATE", "FRONT"),
+                new("N1-2", "MAP-25-WIRE_TO_GATE", "REAR"),
+                new("N1-3", "MAP-25-WIRE_TO_GATE", "FRONT"),
+            ],
+            Now);
 
-        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.RunRoundAsync();
 
+        Assert.Equal(2, table.Version);
         Assert.Equal(3, fixture.AcceptedPlans.Count);
-        Assert.All(fixture.AcceptedPlans, plan => Assert.Equal(7, plan.AreaAssignmentVersion));
+        Assert.All(fixture.AcceptedPlans, plan => Assert.Equal(table.Version, plan.AreaAssignmentVersion));
         Assert.Equal(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -844,6 +841,12 @@ public sealed class MultiVehicleExecutionTests
             Options = options;
             Clock = clock;
             Riot = new FleetRiot(clock, options);
+            GovernanceStore governance = new(
+                context,
+                new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+                AuditRetentionPolicy.Default);
+            AreaAssignments = new CountingAreaAssignments(
+                new AreaAssignmentStore(context, new GovernedConfigurationPublisher(governance, governance)));
             Engine = CreateEngine();
         }
 
@@ -853,20 +856,24 @@ public sealed class MultiVehicleExecutionTests
         public FleetRiot Riot { get; }
         public FleetCatalog Catalog { get; } = new();
         public CheckpointWaitLedger CheckpointWaits { get; } = new();
-        public CountingAreaAssignments AreaAssignments { get; } = new();
+        public CountingAreaAssignments AreaAssignments { get; }
         public CountingSlotPositions SlotPositions { get; } = new();
         public RecordingRoundOutcomes RoundOutcomes { get; } = new();
         public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
         public JourneyRuntimeEngine Engine { get; private set; }
 
-        public static async Task<FleetFixture> CreateAsync(int budgetMilliseconds = 30_000)
+        public static async Task<FleetFixture> CreateAsync(
+            int budgetMilliseconds = 30_000,
+            Action<JourneyRuntimeOptions>? configure = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             ControlServerDbContext context = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
             await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
-            FleetFixture fixture = new(connection, context, FleetOptions(budgetMilliseconds), new MovableClock(Now));
+            JourneyRuntimeOptions options = FleetOptions(budgetMilliseconds);
+            configure?.Invoke(options);
+            FleetFixture fixture = new(connection, context, options, new MovableClock(Now));
             await fixture.SeedAsync();
             return fixture;
         }
@@ -1094,6 +1101,11 @@ public sealed class MultiVehicleExecutionTests
                 await AddSafetySnapshotAsync(agvId, 1, departureSafe: true);
             }
 
+            // Every demand's AREA in the configured zone: since control-server#72 the table is the whole
+            // execution whitelist, so without one no vehicle takes anything.
+            await AreaAssignments.ImportAsync(
+                [.. Areas.Select(area => new AreaAssignment(area, Options.DispatchZone, "FRONT"))], Now);
+            Context.ChangeTracker.Clear();
             Catalog.Set([.. Enumerable.Range(0, AgvIds.Length).Select(Demand)]);
         }
 
@@ -1273,27 +1285,33 @@ public sealed class MultiVehicleExecutionTests
         }
     }
 
-    /// <summary>An area assignment table that is whatever the test sets, counting how often a round asks.</summary>
-    private sealed class CountingAreaAssignments : IAreaAssignmentStore
+    /// <summary>
+    /// The real area assignment store, counting how often a round asks for the current version.
+    /// </summary>
+    /// <remarks>
+    /// Real rather than a table held in memory: acceptance freezes the version a plan carries, and a version
+    /// that was never written cannot be frozen.
+    /// </remarks>
+    private sealed class CountingAreaAssignments(IAreaAssignmentStore inner) : IAreaAssignmentStore
     {
-        public AreaAssignmentTableVersion? Current { get; set; }
-
         public int CurrentReads { get; private set; }
+
+        public Task<AreaAssignmentTableVersion> ImportAsync(IReadOnlyList<AreaAssignment> assignments, DateTimeOffset at) =>
+            inner.WriteVersionAsync(assignments, at, TestContext.Current.CancellationToken);
 
         public Task<AreaAssignmentTableVersion?> ReadCurrentAsync(CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
             CurrentReads++;
-            return Task.FromResult(Current);
+            return inner.ReadCurrentAsync(cancellationToken);
         }
 
         public Task<AreaAssignmentTableVersion?> ReadVersionAsync(long version, CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            inner.ReadVersionAsync(version, cancellationToken);
 
         public Task<AreaAssignmentTableVersion> WriteVersionAsync(
             IReadOnlyList<AreaAssignment> assignments,
             DateTimeOffset importedAt,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
+            CancellationToken cancellationToken) => inner.WriteVersionAsync(assignments, importedAt, cancellationToken);
     }
 
     /// <summary>Every vehicle on an eight-slot model, front four and rear four, with each read written down.</summary>

@@ -5,7 +5,8 @@ using Microsoft.Extensions.Logging;
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
-/// Derives how many baskets the sublot needs and checks the vehicle has that many free slots.
+/// Derives how many baskets the sublot needs and chooses that many free slots inside the slot group the
+/// demand's AREA is assigned.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,6 +19,25 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// The slots are chosen here, not later, because the count and the slots have to come from the
 /// same onboard observation. Choosing them against a newer observation could pick slots that the
 /// count was never checked against.
+/// </para>
+/// <para>
+/// <b>Slots are chosen inside one group (REQ-0351, REQ-0352; ADR-cross-0059).</b> This replaces invariant I8,
+/// "any slot serves any station", which took the lowest free slots across the whole vehicle. A machine only
+/// opens one side's doors, so a basket put in the other side's slot cannot come out there. The whole demand
+/// goes into the group its AREA is assigned, lowest-numbered free slots first; free slots in any other group
+/// do not count, and when the group is short the demand waits rather than borrowing.
+/// </para>
+/// <para>
+/// Which slot is in which group is the server's record of the vehicle's slot model
+/// (<see cref="DispatchVehicleFacts.SlotPositions"/>, program#70 decision 4), never a slot-number range: a
+/// vehicle bound to a different model is grouped by that model. Which slots are free is still the vehicle's
+/// report, unchanged.
+/// </para>
+/// <para>
+/// <b>There is deliberately no branch on the station type.</b> Loading and unloading both read the one
+/// <see cref="DispatchCandidateEvaluation.TargetSlots"/> chosen here, so the gate being able to open either
+/// group needs no code: which group opens is decided by the demand's AREA alone. Do not add a per-station
+/// check of the door side (REQ-0353, program#80).
 /// </para>
 /// </remarks>
 public sealed class SlotCapacityCriterion(
@@ -74,12 +94,40 @@ public sealed class SlotCapacityCriterion(
             return "EXPECTED_BASKET_COUNT_OUT_OF_RANGE";
         }
 
-        if (onboard.AvailableSlots.Length < expectedBasketCount)
+        // The area assignment whitelist (control-server#72) refuses an AREA with no assignment earlier in the
+        // chain; this is the defence behind it, not the place that decision is made.
+        string? requiredSlotPosition = evaluation.RequiredSlotPosition;
+        if (requiredSlotPosition is null)
         {
-            return "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE";
+            return DispatchReasonCodes.AreaSlotGroupNotAssigned;
         }
 
-        evaluation.TargetSlots = onboard.AvailableSlots.Take(expectedBasketCount).ToArray();
+        // Unresolved is fail-closed: no default eight-slot model, no inference from slot numbers.
+        VehicleSlotPositions? slotPositions = evaluation.Vehicle.SlotPositions;
+        if (slotPositions is null)
+        {
+            return DispatchReasonCodes.VehicleSlotModelUnresolved;
+        }
+
+        // Physical slots, whatever their state: a demand larger than the group can never go on this vehicle,
+        // which is a different fact from the group being full right now.
+        if (expectedBasketCount > slotPositions.PhysicalSlotCountByGroup.GetValueOrDefault(requiredSlotPosition))
+        {
+            return DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup;
+        }
+
+        int[] groupAvailableSlots = onboard.AvailableSlots
+            .Where(slot => slotPositions.SlotPositionByPhysicalSlot.TryGetValue(slot, out string? position) &&
+                string.Equals(position, requiredSlotPosition, StringComparison.Ordinal))
+            .Distinct()
+            .Order()
+            .ToArray();
+        if (groupAvailableSlots.Length < expectedBasketCount)
+        {
+            return DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable;
+        }
+
+        evaluation.TargetSlots = groupAvailableSlots.Take(expectedBasketCount).ToArray();
         return DispatchAdmissionChain.Eligible;
     }
 }
