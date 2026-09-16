@@ -55,6 +55,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         {
             ["AgvRestorationTests"] = "batch 3 FP-C5 archive-and-restore lifecycle; server-internal, no wire message",
             ["AreaAssignmentDispatchTests"] = "batch 4 FP-C15 REQ-0191/REQ-0350 area assignment whitelist, route dispatch zone, startup check and acceptance freeze (control-server#72); server-internal, no wire message",
+            ["AreaAssignmentImportTests"] = "batch 4 FP-C15 REQ-0350 FieldOps whole-table import of the area assignment table; a controlled operations entry point, no wire message",
             ["AreaAssignmentStoreTests"] = "batch 4 FP-C15 REQ-0350 area assignment table versions; the side is decided on the server only (spec 5.1 #10), no wire message",
             ["AuditExportTests"] = "batch 3 FP-C14 REQ-0271 audit query and export; server-internal, no wire message",
             ["Batch2CapabilityStoresTests"] = "batch 2 track B persistence foundation; server-internal, no wire message",
@@ -69,6 +70,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateGateTests"] = "RIoT create experiment; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateMigrationTests"] = "RIoT create experiment migration; server-internal",
+            ["FakeOnboardSlotStateSeedTests"] = "L2 synthetic peer's handshake slot state seed (control-server#71); a test double's startup configuration, not the product's wire surface",
             ["GovernanceSnapshotAndAuditTests"] = "batch 3 FP-C7/FP-C5 shared snapshot and audit mechanism; server-internal, no wire message",
             ["IntegrationSliceTraitArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",

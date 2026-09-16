@@ -21,7 +21,8 @@ namespace ControlServer.FakeOnboard;
 /// </remarks>
 public sealed class OnboardPeerSession(
     CommandEngine<FakeOnboardState> engine,
-    FakeOnboardOptions options) : IAsyncDisposable
+    FakeOnboardOptions options,
+    SlotStateSeed slotStateSeed) : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
@@ -100,7 +101,7 @@ public sealed class OnboardPeerSession(
             // 得上。「两端算出同一个摘要」是 G3 对真车载端的断言，不是这个假车能证的。
             activeSlotConfigurationVersion = state.ActiveSlotConfigurationVersion,
             activeSlotConfigurationFingerprint = state.ActiveSlotConfigurationFingerprint,
-            slotStates = SlotStates(),
+            slotStates = slotStateSeed.Render(),
             supportsBatchUnlock = false,
             onboardJournalFormatVersion = 1
         }), cancellationToken).ConfigureAwait(false);
@@ -111,7 +112,7 @@ public sealed class OnboardPeerSession(
             safetyStateVersion = state.SafetyStateVersion,
             observedAt = DateTimeOffset.UtcNow,
             safety = SafetyBody(state.Safety),
-            slotStates = SlotStates()
+            slotStates = slotStateSeed.Render()
         }), cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
 
@@ -328,14 +329,16 @@ public sealed class OnboardPeerSession(
     public PendingRequest? Pending(string key) =>
         engine.Snapshot().State.Pending.TryGetValue(key, out PendingRequest? request) ? request : null;
 
+    // Protocol 2.0.0 item 2: the request names the dispatch scope's sublots and no demand, and the
+    // submission names only what was scanned -- the server resolves the demand. This peer scans the
+    // first sublot it was offered, which with one demand per journey is the only one.
     public object SublotSubmitted(JsonElement requestPayload, long generation) =>
         Envelope("SublotSubmitted", NewId(), null, generation, new
         {
-            demandId = requestPayload.GetProperty("demandId").GetString(),
             operationSessionId = requestPayload.GetProperty("operationSessionId").GetString(),
             stationId = requestPayload.GetProperty("stationId").GetString(),
             worklistRevision = requestPayload.GetProperty("worklistRevision").GetInt64(),
-            sublot = requestPayload.GetProperty("expectedSublot").GetString(),
+            sublot = requestPayload.GetProperty("expectedSublots")[0].GetString(),
             entryMethod = "SCANNER",
             @operator = new
             {
@@ -785,19 +788,6 @@ public sealed class OnboardPeerSession(
         schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256,
         vectorsSha256 = ProtocolCandidateIdentity.VectorsSha256
     };
-
-    private static object[] SlotStates() => Enumerable.Range(1, 8)
-        .Select(slotNo => (object)new
-        {
-            slotNo,
-            operability = "OPERABLE",
-            administrativeAvailability = "ENABLED",
-            physicalState = "EMPTY",
-            lockState = "LOCKED",
-            unlockOutputState = "RESET",
-            reasonCodes = Array.Empty<string>()
-        })
-        .ToArray();
 
     private static string Sha256(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();

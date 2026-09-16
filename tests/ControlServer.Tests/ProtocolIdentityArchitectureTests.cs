@@ -92,19 +92,23 @@ public sealed class ProtocolIdentityArchitectureTests
     }
 
     /// <summary>
-    /// The identity names the approved release, so a release candidate can be packaged over it.
+    /// While the identity names a candidate, packaging a release candidate over it stays refused.
     /// </summary>
     /// <remarks>
     /// <c>scripts/New-WireToGateReleaseCandidate.ps1</c> gates on <c>APPROVED_RELEASE</c> and this
-    /// is the other half of that gate. Until 2026-09-12 this test asserted the opposite, because
-    /// <c>protocol-v1.0.0</c> had been neither approved nor tagged. The change was made here on purpose
-    /// the day both happened: an annotated tag on <see cref="ProtocolCandidateIdentity.RepositoryCommit"/>
-    /// and one approval in the external attestation, given by an AI agent the product owner authorized.
+    /// is the other half of that gate. This test has now flipped twice on purpose. It asserted a
+    /// candidate while the v2 candidate was unreleased, asserted <c>APPROVED_RELEASE</c> from
+    /// 2026-09-12 when <c>protocol-v1.0.0</c> was tagged and approved, and asserts a candidate again
+    /// since the server moved to the unreleased <c>2.0.0</c> candidate
+    /// (<c>8005-agv-control-server#84</c>). When <c>8005-agv-program#97</c> tags
+    /// <see cref="ProtocolCandidateIdentity.Tag"/> and <c>8005-agv-control-server#89</c> binds that
+    /// release, this is where the change has to be made deliberately rather than noticed afterwards.
     /// </remarks>
     [Fact]
-    public void ThisIdentityIsTheApprovedReleaseItNames()
+    public void ThisIdentityIsACandidateAndDoesNotClaimAnApprovedRelease()
     {
-        Assert.Equal("APPROVED_RELEASE", ProtocolCandidateIdentity.ApprovalStatus);
+        Assert.NotEqual("APPROVED_RELEASE", ProtocolCandidateIdentity.ApprovalStatus);
+        Assert.Equal("SUPERSEDING_CANDIDATE", ProtocolCandidateIdentity.ApprovalStatus);
     }
 
     /// <summary>

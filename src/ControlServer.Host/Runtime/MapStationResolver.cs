@@ -1,16 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using ControlServer.Application;
+using ControlServer.Domain;
 
 namespace ControlServer.Host.Runtime;
 
 public sealed class MapStationResolver
 {
-    private static readonly Regex AreaCode = new(
-        "^[A-Z][A-Z0-9]*-[0-9]+$",
-        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
-
     public IReadOnlyList<RiotMapStation> ParseAreaNamedMachineStations(
         RiotMapStationCatalogSnapshot catalog) =>
         catalog.Stations.Where(station => ParseAreaCodes(station.StationName).Length > 0).ToArray();
@@ -75,7 +71,7 @@ public sealed class MapStationResolver
         string[] tokens = stationName.Split('_', StringSplitOptions.None);
         return tokens.Length is >= 1 and <= 3 &&
                tokens.Distinct(StringComparer.Ordinal).Count() == tokens.Length &&
-               tokens.All(token => AreaCode.IsMatch(token))
+               tokens.All(AreaCodeFormat.IsValid)
             ? tokens
             : [];
     }

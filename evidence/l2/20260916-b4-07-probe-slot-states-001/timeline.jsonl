@@ -1,0 +1,24 @@
+{"at":"2026-09-16T10:56:44.9162648+00:00","note":"L2 run 20260916T105644860Z starting for scenario 'b4-07-probe-slot-states'."}
+{"at":"2026-09-16T10:57:25.0438396+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T10:57:25.0464870+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T10:57:28.4485170+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T10:57:28.7867600+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T10:57:31.8285455+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T10:57:34.0699161+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T10:57:34.3323035+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-16T10:57:34.3714365+00:00","note":"Onboard slot states for fake-onboard: 0:slotNo=1, 0:physicalState=OCCUPIED, 1:slotNo=2, 1:administrativeAvailability=DISABLED"}
+{"at":"2026-09-16T10:57:35.0987965+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-16T10:57:35.3889717+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T10:57:35.4944498+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T10:57:35.5527845+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105644860Z\\controlserver.db"}
+{"at":"2026-09-16T10:57:38.0361156+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"871ac93cc91b4b21a87b164c97bef8ab","version":1,"slotCount":8}}}
+{"at":"2026-09-16T10:57:38.0489265+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105644860Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-16T10:57:40.2261722+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"871ac93cc91b4b21a87b164c97bef8ab","boundSlots":8,"version":1}}}
+{"at":"2026-09-16T10:57:40.3392829+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-16T10:57:40.3422585+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105644860Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\evidence\\b4-07-20260916\\probes\\slot-states-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-16T10:57:42.4422771+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\evidence\\b4-07-20260916\\probes\\slot-states-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"0d72caf6ddac4af88b9b336b1c760548","importedAt":"2026-09-16T18:57:40.6788652+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-16T10:57:42.4466408+00:00","note":"Environment is up; entering scenario 'b4-07-probe-slot-states'."}
+{"at":"2026-09-16T10:57:42.7139177+00:00","criterion":"probe:target-slots","value":"(null)"}
+{"at":"2026-09-16T10:57:44.2920208+00:00","criterion":"probe:target-slots","value":"[3,4]"}
+{"at":"2026-09-16T10:57:44.4223575+00:00","note":"Group assertion results: FRONT -> True; REAR -> False (slot(s) 3, 4 are not in group REAR)."}
+{"at":"2026-09-16T10:57:44.8083041+00:00","note":"L2 port block lock released."}

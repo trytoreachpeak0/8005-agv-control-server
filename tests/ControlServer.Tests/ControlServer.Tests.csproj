@@ -26,6 +26,8 @@
          SlotConfigurationVersionLineArchitectureTests scans its assembly alongside src/. -->
     <ProjectReference Include="..\..\tools\ControlServer.FieldOps\ControlServer.FieldOps.csproj" />
     <ProjectReference Include="..\..\tools\ControlServer.FakeRiot\ControlServer.FakeRiot.csproj" />
+    <!-- FakeOnboardSlotStateSeedTests reads the synthetic peer's slot state seed (control-server#71). -->
+    <ProjectReference Include="..\..\tools\ControlServer.FakeOnboard\ControlServer.FakeOnboard.csproj" />
     <ProjectReference Include="..\..\tools\ControlServer.ClockSkewProxy\ControlServer.ClockSkewProxy.csproj" />
   </ItemGroup>
 </Project>

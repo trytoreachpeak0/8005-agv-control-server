@@ -55,12 +55,14 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed class ProtocolPayloadShapeArchitectureTests
 {
+    private static readonly JsonSerializerOptions WireSerializerOptions = new(JsonSerializerDefaults.Web);
+
     /// <summary>
     /// SHA-256 over the vendored schema tree: for each file in relative-path order, the path, a
     /// newline, the file's own SHA-256 in lower hex, and a newline.
     /// </summary>
     private const string ApprovedSchemaTreeSha256 =
-        "fcdf6f71849cf6734073f656d07bb2a80c63c14efd5b393a7b7cb678b9a7ddd9";
+        "3487327d9a90d9367d9eb27c968530613d71fe145ae9876f52109252eddddf5e";
 
     [Fact]
     public void TheVendoredSchemaTreeIsTheProtocolSchemaTreeFileForFile()
@@ -101,6 +103,42 @@ public sealed class ProtocolPayloadShapeArchitectureTests
         Assert.True(
             offences.Count == 0,
             "The server sends payloads its own frozen schemas reject: " + string.Join("; ", offences));
+    }
+
+    /// <summary>
+    /// The <c>SublotRejected</c> payload type, both ways its demand can be, serialised the way the
+    /// server serialises every payload and checked against the frozen schema.
+    /// </summary>
+    /// <remarks>
+    /// Nothing sends it yet (<c>8005-agv-control-server#82</c>), so there is no publisher to drive the
+    /// way <see cref="EverySnapshotThePublisherSendsMatchesItsFrozenSchema"/> does. The type is what the
+    /// sender will serialise, so the type is what is checked.
+    /// </remarks>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("00000000-0000-4000-8000-000000000421")]
+    public void TheSublotRejectionTypeMatchesItsFrozenSchema(string? demandId)
+    {
+        SublotRejection rejection = new(
+            demandId,
+            "00000000-0000-4000-8000-000000000422",
+            new WireProblem(ServerReasonCodes.SublotNotInDispatchScope, "payload.sublot", null),
+            5,
+            "SUBLOT-999");
+        using JsonDocument payload = JsonDocument.Parse(
+            JsonSerializer.Serialize(rejection, WireSerializerOptions));
+        using JsonDocument schema = JsonDocument.Parse(File.ReadAllBytes(SchemaPath("SublotRejected")));
+
+        string[] offences =
+        [
+            .. Offences(
+                "SublotRejected",
+                "payload",
+                payload.RootElement,
+                schema.RootElement.GetProperty("properties").GetProperty("payload"))
+        ];
+
+        Assert.True(offences.Length == 0, string.Join("; ", offences));
     }
 
     /// <summary>
@@ -308,7 +346,8 @@ public sealed class ProtocolPayloadShapeArchitectureTests
             "00000000-0000-4000-8000-000000000411",
             agvId,
             generation,
-            new VehicleBusinessProjection(3, "READY", "TRANSPORT", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(
+                3, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []),
             TestContext.Current.CancellationToken);
         await publisher.PublishCurrentStopWorklistAsync(
             "00000000-0000-4000-8000-000000000412",
@@ -318,6 +357,7 @@ public sealed class ProtocolPayloadShapeArchitectureTests
                 "PICKUP-01",
                 5,
                 "00000000-0000-4000-8000-000000000413",
+                new DateTimeOffset(2026, 9, 8, 9, 5, 0, TimeSpan.Zero),
                 [new CurrentStopWorklistItem(
                     demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)]),
             TestContext.Current.CancellationToken);

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "candidateVersion": "2.0.0",
+  "status": "APPROVED",
+  "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804",
+  "contentManifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+  "approvals": [
+    {
+      "ownerId": "claude-opus-5 (Claude Code agent)",
+      "approverKind": "AI_AGENT",
+      "authorizedBy": "Zhengyu Shao",
+      "decidedAt": "2026-09-16T12:19:21Z",
+      "decision": "APPROVED",
+      "statement": "Zhengyu Shao, the product owner, authorized the Claude Code agent executing trytoreachpeak0/8005-agv-program#97 in the conversation on 2026-09-16 to approve protocol-v2.0.0 on the product owners behalf, naming commit 86575456c847041515b7b75e8851a00e0d939804 and content manifest 4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7. Before approving, this agent confirmed that fp/v2-candidate still pointed at that commit, that manifest/release.json hashed to that value, that no protocol-v2* tag existed, and that candidate G1 passed on a clean clone. Before release, the control server (8005-agv-control-server#84, PR #107) and the onboard HMI (8005-agv-onboard-hmi#73, PR #88) passed L1 and development-mode G2 on this candidate, marked UNRELEASED_CANDIDATE. Gate evidence (G2, G3, L2) bound to this released identity does not exist yet; the implementations re-run it after this release."
+    }
+  ],
+  "statement": "Approval of protocol-v2.0.0 at commit 86575456c847041515b7b75e8851a00e0d939804 and content manifest 4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7. Kept outside Git and published as a GitHub Release Asset, so it changes neither the manifest hash nor the commit it approves."
+}
