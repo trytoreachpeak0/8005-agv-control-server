@@ -21,7 +21,8 @@ namespace ControlServer.FakeOnboard;
 /// </remarks>
 public sealed class OnboardPeerSession(
     CommandEngine<FakeOnboardState> engine,
-    FakeOnboardOptions options) : IAsyncDisposable
+    FakeOnboardOptions options,
+    SlotStateSeed slotStateSeed) : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
@@ -100,7 +101,7 @@ public sealed class OnboardPeerSession(
             // 得上。「两端算出同一个摘要」是 G3 对真车载端的断言，不是这个假车能证的。
             activeSlotConfigurationVersion = state.ActiveSlotConfigurationVersion,
             activeSlotConfigurationFingerprint = state.ActiveSlotConfigurationFingerprint,
-            slotStates = SlotStates(),
+            slotStates = slotStateSeed.Render(),
             supportsBatchUnlock = false,
             onboardJournalFormatVersion = 1
         }), cancellationToken).ConfigureAwait(false);
@@ -111,7 +112,7 @@ public sealed class OnboardPeerSession(
             safetyStateVersion = state.SafetyStateVersion,
             observedAt = DateTimeOffset.UtcNow,
             safety = SafetyBody(state.Safety),
-            slotStates = SlotStates()
+            slotStates = slotStateSeed.Render()
         }), cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
 
@@ -785,19 +786,6 @@ public sealed class OnboardPeerSession(
         schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256,
         vectorsSha256 = ProtocolCandidateIdentity.VectorsSha256
     };
-
-    private static object[] SlotStates() => Enumerable.Range(1, 8)
-        .Select(slotNo => (object)new
-        {
-            slotNo,
-            operability = "OPERABLE",
-            administrativeAvailability = "ENABLED",
-            physicalState = "EMPTY",
-            lockState = "LOCKED",
-            unlockOutputState = "RESET",
-            reasonCodes = Array.Empty<string>()
-        })
-        .ToArray();
 
     private static string Sha256(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();

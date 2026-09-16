@@ -173,7 +173,52 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 
 `scenarios/<名字>.ps1`，接一个 `-Context` 参数。`Context` 上有 `Journal`、`Assertions`、
 `Riot`、`MesIngest`、`Onboard`、`Simulator`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、
-`StopComponent` 以及车辆与站点的身份。
+`StopComponent`、`InvokeFieldOps`、`DispatchZone`（服务端 `appsettings.json` 里的调度分区）、
+`SlotModelVersionId`（默认前置入库的那一版模型，没做入库时为 `$null`）以及车辆与站点的身份。
+
+### 派车场景的默认前置（control-server#71）
+
+批次 4 起，派车要求需求的 AREA 在分区归属表里、车辆有服务端仓位模型，缺一样就一辆车也派不出。所以**服务端
+`JourneyRuntime` 开着的场景（今天是全部场景，两套装置都算）**，编排器在服务端就绪之后、进入场景之前，经
+`InvokeFieldOps` 依次做三步，与现场 W1 窗口用的是同一个 `ControlServer.FieldOps.exe`：
+
+1. `seed-approved-facts` —— 已批准八仓事实入库（1～4 号 `FRONT`，5～8 号 `REAR`）；
+2. 对名册里每台车 `bind-io --agv <车>`（`OnboardPeers` 里不在名册上的合成对端不绑，服务端不给它们派车）；
+3. `import-area-assignments` —— 默认表：假 RIoT **当时**站点表里每个站点名解析出的 AREA（与 `MapStationResolver`
+   同一规则：`_` 分隔的一到三个区号），全部归服务端的调度分区，分组 `FRONT`。默认站点下是 `C15-13`、`N1-3`、`N1-7`。
+   导入之前先等服务端把这个分区写进库内调度策略（`DispatchZoneVehicles`），否则导入会判「分区不存在」。
+
+**不做激活握手**：`IVehicleSlotPositionReader` 在车辆没有生效配置时退到该车最新一版已发布 IO 绑定引用的模型
+（control-server#66），入库加绑定就足以让派车读到分组。每一步的 JSON 输出以
+`slot-model-preseed:seed-approved-facts`、`slot-model-preseed:bind-io:<车>`、`slot-model-preseed:import-area-assignments`
+三类判据写进 `timeline.jsonl`，导入的那份 CSV 留在 `snapshots/preseed-area-assignments.csv`；任一步失败整场景失败。
+
+三步都在场景发布第一条需求之前结束，而站点离站期限从车到站才起算，所以默认前置不会被 `StationDepartureWaitTimeout`
+截断，不论它是 5 秒还是 30 秒。
+
+`run-journey-g3.ps1` 经本编排器跑它的十个 `g3-*` 真装置场景，所以在它的 ControlServer 绑定挪到含这三步的提交之后，
+那十个场景同样获得默认前置（绑定不动，跑的仍是旧编排器）。
+
+与默认前置冲突的场景用下面「`SlotModelPreseed`」「`AreaAssignments`」两个键退出。今天退出的两条：
+`slot-configuration-activation-replay`（自己入库、绑定并断言计数，两者都关）、`area-assignment-import-rejects`
+（断言导入之前一版表都没有，只关导入）。
+
+### 批次 4 的辅助模块：`L2SlotGroups.psm1`
+
+与 `L2Change.psm1` 同样是单独一个文件，用的场景自己导入：
+`Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SlotGroups.psm1') -Force`。
+
+- `Get-L2VehicleSlotPositions -Connection -AgvId` —— 某车的「仓号 → `SlotPosition`」。从 `SlotModelSlots` 经该车的
+  记录读：生效配置引用的模型，没有就取最新一版已发布 IO 绑定引用的模型（与 `VehicleSlotModelResolver` 同一顺序）。
+  **脚本里不写 1～4／5～8**，那是今天这一版已批准模型的性质，不是车的性质。
+- `Get-L2AvailableSlots -Connection -AgvId` —— 服务端就这台车当前会话算出的可用仓：读该会话代次的
+  `CapabilitySnapshot` 与 `SafetyStateSnapshot`，规则同 `JourneyRuntimeEngine.SlotAvailable`。
+- `Assert-L2SlotGroupTargets -Assertions -Id -Connection -DemandId -SlotPosition [-AvailableSlots]` —— 断言需求
+  旅程的 `TargetSlotsJson` 全部属于指定分组、严格升序，且恰好是该组内编号最小的 N 个可用仓。判定本体是不碰库的
+  `Test-L2SlotGroupTargets`；`scripts/l2/Test-L2SlotGroups.ps1` 用一份刻意不是 1～4／5～8 的构造模型给出一个通过、
+  七个各因一种原因失败的例子（几秒钟，不起装置）。
+- `Get-L2StructuralDispatchBlock -Connection -DemandId [-IncludeCleared]`、`Get-L2JourneyBacklogRow -Connection -DemandId`
+  —— 读某需求在 `StructuralDispatchBlocks` 的当前行（默认只要未清除的）与 `JourneyBacklog` 的那一行。
 
 `Onboard` 在两套装置下**是两个不同的东西**：合成装置下是假车载端控制面的 `L2Double`，真装置下
 是 UIA 驱动（`CanSubmit()` / `SetSublot()` / `SubmitReady()` / `Submit()`）。`Simulator` 只在真装置
@@ -230,22 +275,43 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 
 - `StationDepartureWaitTimeout` —— 服务端 `JourneyRuntime:stationDepartureWaitTimeout`，装载提交后车在取货点
   等多久才请求出发前安全检查（ADR-cross-0055，产品默认 5 分钟）。这段时间是普通放错唯一的修正窗口
-  （`REQ-0237`）。本装置不给这个键时用 `00:00:05`，让与修正无关的场景只多等五秒；
+  （`REQ-0237`）。本装置不给这个键时用 `00:00:30`（control-server#71 起；原来是 `00:00:05`，为什么改见下面「真装置场景」一段）；
   `g3-pickup-load-and-correction` 给 `00:00:20`，它要证修正期间车不走、修正收敛后等满才走。
   **批次 5（control-server#79）起同一个值也从到站起算**：到站后这么久没人录入，服务端就以
   `CANCELLED_BY_STATION_TIMEOUT` 结束本站。所以一条场景若要在 `AwaitingSublot` 停得比它久（让录入挂起、
   到站后先做别的），就要在自己的 setup 里给足；`station-deadline-sublot-timeout` 给 `00:00:20`。
 
-  **真装置场景每一条都落在这条约束里，而且默认值不够用。**实测「服务端采信到站 → UIA 录入并提交」要
+  **真装置场景每一条都落在这条约束里，旧的五秒默认值不够用。**实测「服务端采信到站 → UIA 录入并提交」要
   **4.7–5.4 秒**（`evidence/l2/20260913-b2close-real-onboard-normal-load-003`、
-  `20260914-real-onboard-restart-with-open-recovery-session-004` 的 `timeline.jsonl`），与装置默认的 5 秒是同一量级——
-  等于抛硬币。所以 `Onboard = 'Real'` 且会录入的场景都在自己的 setup 里写了这个键：多数给 `00:00:30`；
+  `20260914-real-onboard-restart-with-open-recovery-session-004` 的 `timeline.jsonl`），与当时装置默认的 5 秒是同一量级——
+  等于抛硬币。所以默认值在 control-server#71 抬到了 `00:00:30`（#79 的审查建议）。在那之前，`Onboard = 'Real'` 且会录入的
+  场景都在自己的 setup 里写了这个键，这些显式值保留不动：多数给 `00:00:30`；
   `g3-journey-demand-to-pickup` 给 `00:05:00`（它刻意停在 `AwaitingSublot`，到站之后还要等快照确认、读车载端
   日志库、判终态，整条尾巴都在期限内）；`g3-predeparture-check-expires` 由 `00:00:15` 抬到 `00:00:40`；
   `g3-pickup-load-and-correction` 维持 `00:00:20`，因为场景里 `$stationDepartureWait` 与判据文案钉着同一个数，
   改它要连脚本一起改。取值的上界来自装货提交之后那条等待的判据超时（例如 `real-onboard-normal-load` 是 180 秒，
   `g3-predeparture-check-expires` 是 90 秒），下界来自录入那一段，两者之间才是安全区。
   `real-onboard-clock-skew` 与 `g3-manual-charging-return` 不进 `AwaitingSublot`，不受影响，没有加这个键。
+
+下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键都在启动任何
+进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」。
+
+- `SlotModelPreseed = $false` —— 本场景不做默认的入库与绑定。分区归属表的导入要按已发布模型校验分组，所以同时
+  **必须**写 `AreaAssignments = $false`，否则编排器直接报错：自己入库的场景自己导入。
+- `AreaAssignments` —— 覆盖默认的分区归属表。给 `$false` 表示本场景不导入；给一组行则导入的就是这些行，每行
+  `@{ Area = 'N1-3'; DispatchZone = 'MAP-25-WIRE_TO_GATE'; SlotPosition = 'REAR' }`，三项都必填，原样写进那份 CSV。
+  写 `$true` 或空数组会报错（要默认表就不写这个键）。
+- `SlotStates` —— 合成对端握手快照（`CapabilitySnapshot` 与 `SafetyStateSnapshot`）里逐仓状态的覆盖，每项 `SlotNo`
+  加 `physicalState`／`administrativeAvailability`／`operability` 中要改的字段，例如
+  `@(@{ SlotNo = 1; physicalState = 'OCCUPIED' }, @{ SlotNo = 2; administrativeAvailability = 'DISABLED' })`。
+  变成 `--FakeOnboard:Seed:slotStates:<i>:*`，未给的仓保持 `OPERABLE`／`ENABLED`／`EMPTY`／`LOCKED`／`RESET`；取值按协议枚举
+  校验，写错的值假车载端启动即退出。给所有合成对端；`OnboardPeers` 某一项自己带 `SlotStates` 时那一台用自己的。
+  与 `Onboard = 'Real'` 同给直接报错（真装置读自己的 IO）。**只支持握手种子**：服务端只从会话的两份快照读可用仓，
+  而假车载端没有运行中改逐仓状态的入口，要换状态就得换种子重起对端，同一次运行里做不到。
+- `Stations` —— 覆盖假 RIoT 在本场景地图上的整张站点表，`@{ '210' = '关卡'; '12' = 'N1-3_N2-5' }` 这样的站点号到站点名。
+  在服务端启动之前经假 RIoT 控制面 `PUT /control/v1/maps/{mapId}/stations` **整张替换**（命令行种子只能往默认表里加），
+  所以表里要自己留着关卡 `210 关卡` 与场景要用的取货点（`Context.PickupStationRiotId` 仍是 12）。默认分区归属表按替换后的
+  站点名推 AREA。开了路网引擎的场景另需站点所在节点，这个键不管。
 
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
