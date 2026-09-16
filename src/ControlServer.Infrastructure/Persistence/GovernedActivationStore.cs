@@ -158,72 +158,80 @@ public sealed class GovernedActivationStore(
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         ArgumentException.ThrowIfNullOrWhiteSpace(slotModelVersionId);
 
-        string objectId = FormattableString.Invariant($"{agvId}:{slotModelVersionId}");
+        // 回滚与绑定发布、激活共用一条版本线，取号因此走同一处：绑定发布写下、还没冻上快照的那一版也
+        // 算被占用。
+        SlotConfigurationVersionLine line = SlotConfigurationVersionLine.For(agvId, slotModelVersionId);
+        string objectId = line.ObjectId;
         GovernedConfigurationSnapshot source = await _snapshots.ReadAsync(
                 GovernedObjectKind.ActiveSlotConfiguration, objectId, toVersion, cancellationToken)
             ?? throw new InvalidOperationException(
                 FormattableString.Invariant(
                     $"There is no frozen version {toVersion} of {objectId} to roll back to."));
 
-        long newVersion = await NextVersionAsync(objectId, cancellationToken);
-        SensitiveActivationRequest request = new(
-            SensitiveActivationAction.Rollback,
-            GovernedObjectKind.ActiveSlotConfiguration,
-            objectId,
-            newVersion,
-            effectiveFrom);
-        ActivationImpactPreview preview = await PreviewAsync(request, cancellationToken);
+        return await line.PublishNextVersionAsync(
+            _context,
+            async (newVersion, token) =>
+            {
+                SensitiveActivationRequest request = new(
+                    SensitiveActivationAction.Rollback,
+                    GovernedObjectKind.ActiveSlotConfiguration,
+                    objectId,
+                    newVersion,
+                    effectiveFrom);
+                ActivationImpactPreview preview = await PreviewAsync(request, token);
 
-        // 新的一版：内容取自旧版，逐字节相同；旧版本身没有被读之外的任何动作碰过。
-        GovernedConfigurationSnapshot activated = await _publisher.PublishVersionAsync(
-            GovernedObjectKind.ActiveSlotConfiguration,
-            objectId,
-            newVersion,
-            source.ContentJson,
-            "SLOT_CONFIGURATION_ROLLBACK_ACTIVATED",
-            effectiveFrom,
-            cancellationToken);
+                // 新的一版：内容取自旧版，逐字节相同；旧版本身没有被读之外的任何动作碰过。
+                GovernedConfigurationSnapshot activated = await _publisher.PublishVersionAsync(
+                    GovernedObjectKind.ActiveSlotConfiguration,
+                    objectId,
+                    newVersion,
+                    source.ContentJson,
+                    "SLOT_CONFIGURATION_ROLLBACK_ACTIVATED",
+                    effectiveFrom,
+                    token);
 
-        SlotConfigurationActivationRow activation = new()
-        {
-            ActivationId = NewId(),
-            AgvId = agvId,
-            SlotModelVersionId = slotModelVersionId,
-            ConfigurationVersion = newVersion,
-            // 与正常激活同一套规范化摘要，不是这份快照对自己内容的摘要：回滚也是一次要发到车上去核验
-            // 的激活，车那侧只会算规范化摘要。用 ContentSha256 会让每一次回滚都被车判成指纹不匹配。
-            Fingerprint = SlotConfigurationFingerprint.Compute(FingerprintInput(activated.ContentJson)),
-            Kind = SlotConfigurationActivationKind.Rollback,
-            RolledBackToVersion = toVersion,
-            State = SlotConfigurationActivationState.PendingResult,
-            RecoveryRole = SlotConfigurationActivationDelivery.RecoveryRole,
-            IssuedAt = effectiveFrom,
-            SnapshotId = activated.SnapshotId
-        };
-        _context.Set<SlotConfigurationActivationRow>().Add(activation);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        await _auditWriter.WriteBusinessAsync(
-            new GovernanceAuditEntry(
-                ActionCodeFor(SensitiveActivationAction.Rollback),
-                GovernedObjectKind.ActiveSlotConfiguration,
-                objectId,
-                newVersion,
-                GovernanceActionOutcome.Succeeded,
-                JsonSerializer.Serialize(new
+                SlotConfigurationActivationRow activation = new()
                 {
-                    activationId = activation.ActivationId,
-                    rolledBackToVersion = toVersion,
-                    impactStatement = preview.Statement,
-                    impactedCount = preview.Impacted.Count,
-                    unaffectedCount = preview.Unaffected.Count
-                }),
-                activated.SnapshotId),
-            effectiveFrom,
-            cancellationToken);
+                    ActivationId = NewId(),
+                    AgvId = agvId,
+                    SlotModelVersionId = slotModelVersionId,
+                    ConfigurationVersion = newVersion,
+                    // 与正常激活同一套规范化摘要，不是这份快照对自己内容的摘要：回滚也是一次要发到车上去核验
+                    // 的激活，车那侧只会算规范化摘要。用 ContentSha256 会让每一次回滚都被车判成指纹不匹配。
+                    Fingerprint = SlotConfigurationFingerprint.Compute(FingerprintInput(activated.ContentJson)),
+                    Kind = SlotConfigurationActivationKind.Rollback,
+                    RolledBackToVersion = toVersion,
+                    State = SlotConfigurationActivationState.PendingResult,
+                    RecoveryRole = SlotConfigurationActivationDelivery.RecoveryRole,
+                    IssuedAt = effectiveFrom,
+                    SnapshotId = activated.SnapshotId
+                };
+                _context.Set<SlotConfigurationActivationRow>().Add(activation);
+                await _context.SaveChangesAsync(token);
 
-        return new RollbackOutcome(
-            activation.ActivationId, objectId, toVersion, newVersion, activated.SnapshotId, preview);
+                await _auditWriter.WriteBusinessAsync(
+                    new GovernanceAuditEntry(
+                        ActionCodeFor(SensitiveActivationAction.Rollback),
+                        GovernedObjectKind.ActiveSlotConfiguration,
+                        objectId,
+                        newVersion,
+                        GovernanceActionOutcome.Succeeded,
+                        JsonSerializer.Serialize(new
+                        {
+                            activationId = activation.ActivationId,
+                            rolledBackToVersion = toVersion,
+                            impactStatement = preview.Statement,
+                            impactedCount = preview.Impacted.Count,
+                            unaffectedCount = preview.Unaffected.Count
+                        }),
+                        activated.SnapshotId),
+                    effectiveFrom,
+                    token);
+
+                return new RollbackOutcome(
+                    activation.ActivationId, objectId, toVersion, newVersion, activated.SnapshotId, preview);
+            },
+            cancellationToken);
     }
 
     private static string ActionCodeFor(SensitiveActivationAction action) => action switch
@@ -234,15 +242,6 @@ public sealed class GovernedActivationStore(
         SensitiveActivationAction.RemoveActiveBinding => "SENSITIVE_ACTIVATION_BINDING_REMOVED",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown sensitive activation action.")
     };
-
-    private async Task<long> NextVersionAsync(string objectId, CancellationToken cancellationToken)
-    {
-        long[] versions = await _context.Set<GovernedConfigurationSnapshotRow>().AsNoTracking()
-            .Where(row => row.ObjectKind == GovernedObjectKind.ActiveSlotConfiguration && row.ObjectId == objectId)
-            .Select(row => row.Version)
-            .ToArrayAsync(cancellationToken);
-        return versions.Length == 0 ? 1 : versions.Max() + 1;
-    }
 
     /// <summary>
     /// 激活 id 用协议的 <c>Id</c> 形状（<c>D</c>），不是批次 3 其余 id 的 <c>N</c>。

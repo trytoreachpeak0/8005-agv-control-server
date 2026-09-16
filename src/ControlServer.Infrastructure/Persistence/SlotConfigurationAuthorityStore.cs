@@ -21,8 +21,8 @@ public sealed class SlotConfigurationAuthorityStore(
     ControlServerDbContext context,
     GovernedConfigurationPublisher publisher)
 {
-    private const string DraftStatus = "DRAFT";
-    private const string PublishedStatus = "PUBLISHED";
+    private const string DraftStatus = SlotConfigurationVersionLine.DraftStatus;
+    private const string PublishedStatus = SlotConfigurationVersionLine.PublishedStatus;
 
     private readonly ControlServerDbContext _context =
         context ?? throw new ArgumentNullException(nameof(context));
@@ -148,59 +148,55 @@ public sealed class SlotConfigurationAuthorityStore(
         ArgumentException.ThrowIfNullOrWhiteSpace(slotModelVersionId);
         ArgumentNullException.ThrowIfNull(bindings);
 
-        // 绑定发布、激活与回滚冻结的是同一个治理对象（这台车在这一版车型下的仓位配置），共用一条版本线，
-        // 所以版本号要越过这条线上已有的每一版快照，不能只看绑定行：激活或回滚占掉的版本号，冻结时会原样
-        // 拿回那一版既有快照，新绑定行与它的发布审计就指到了别人的内容上。绑定行也算进来，是为了越过发布
-        // 到一半、行已落地而快照没冻上的那一版。
-        string objectId = FormattableString.Invariant($"{agvId}:{slotModelVersionId}");
-        long version = await NextVersionAsync(
-            _context.Set<SlotIoBindingRow>()
-                .Where(row => row.AgvId == agvId && row.SlotModelVersionId == slotModelVersionId)
-                .Select(row => row.Version)
-                .Concat(_context.Set<GovernedConfigurationSnapshotRow>()
-                    .Where(row => row.ObjectKind == GovernedObjectKind.ActiveSlotConfiguration
-                        && row.ObjectId == objectId)
-                    .Select(row => row.Version)),
-            cancellationToken);
-        List<SlotIoBindingRow> rows = [];
-        foreach (SlotIoBindingSpecification binding in bindings)
-        {
-            SlotIoBindingRow row = new()
+        // 绑定发布、激活与回滚冻结的是同一个治理对象（这台车在这一版车型下的仓位配置），共用一条版本线。
+        // 取号、落地与撞号之后怎么办，都由 SlotConfigurationVersionLine 一处说了算——三处各写一份，正是
+        // 三处数的东西不一样、两个写入方拿到同一个号的由来。
+        SlotConfigurationVersionLine line = SlotConfigurationVersionLine.For(agvId, slotModelVersionId);
+        return await line.PublishNextVersionAsync(
+            _context,
+            async (version, token) =>
             {
-                SlotIoBindingId = NewId(),
-                AgvId = agvId,
-                SlotModelVersionId = slotModelVersionId,
-                PhysicalSlotNumber = binding.PhysicalSlotNumber,
-                UnlockOutputPoint = binding.UnlockOutputPoint,
-                LockFeedbackInputPoint = binding.LockFeedbackInputPoint,
-                LightCurtainInputPoint = binding.LightCurtainInputPoint,
-                SignalPolarity = binding.SignalPolarity,
-                PulseResetMilliseconds = binding.PulseResetMilliseconds,
-                Version = version,
-                Status = DraftStatus,
-                CreatedAt = occurredAt
-            };
-            rows.Add(row);
-            _context.Set<SlotIoBindingRow>().Add(row);
-        }
-        await _context.SaveChangesAsync(cancellationToken);
+                List<SlotIoBindingRow> rows = [];
+                foreach (SlotIoBindingSpecification binding in bindings)
+                {
+                    SlotIoBindingRow row = new()
+                    {
+                        SlotIoBindingId = NewId(),
+                        AgvId = agvId,
+                        SlotModelVersionId = slotModelVersionId,
+                        PhysicalSlotNumber = binding.PhysicalSlotNumber,
+                        UnlockOutputPoint = binding.UnlockOutputPoint,
+                        LockFeedbackInputPoint = binding.LockFeedbackInputPoint,
+                        LightCurtainInputPoint = binding.LightCurtainInputPoint,
+                        SignalPolarity = binding.SignalPolarity,
+                        PulseResetMilliseconds = binding.PulseResetMilliseconds,
+                        Version = version,
+                        Status = DraftStatus,
+                        CreatedAt = occurredAt
+                    };
+                    rows.Add(row);
+                    _context.Set<SlotIoBindingRow>().Add(row);
+                }
+                await _context.SaveChangesAsync(token);
 
-        GovernedConfigurationSnapshot snapshot = await _publisher.PublishVersionAsync(
-            GovernedObjectKind.ActiveSlotConfiguration,
-            objectId,
-            version,
-            JsonSerializer.Serialize(bindings),
-            "SLOT_IO_BINDING_VERSION_PUBLISHED",
-            occurredAt,
+                GovernedConfigurationSnapshot snapshot = await _publisher.PublishVersionAsync(
+                    GovernedObjectKind.ActiveSlotConfiguration,
+                    line.ObjectId,
+                    version,
+                    JsonSerializer.Serialize(bindings),
+                    "SLOT_IO_BINDING_VERSION_PUBLISHED",
+                    occurredAt,
+                    token);
+
+                foreach (SlotIoBindingRow row in rows)
+                {
+                    row.Status = PublishedStatus;
+                    row.SnapshotId = snapshot.SnapshotId;
+                }
+                await _context.SaveChangesAsync(token);
+                return (IReadOnlyList<SlotIoBindingRow>)rows;
+            },
             cancellationToken);
-
-        foreach (SlotIoBindingRow row in rows)
-        {
-            row.Status = PublishedStatus;
-            row.SnapshotId = snapshot.SnapshotId;
-        }
-        await _context.SaveChangesAsync(cancellationToken);
-        return rows;
     }
 
     /// <summary>
