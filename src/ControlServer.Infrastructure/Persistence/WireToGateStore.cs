@@ -161,6 +161,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.ActiveUnlockSlotsJson = JsonSerializer.Serialize(NormalizeSlots(activeUnlockSlots));
         row.PendingAttemptIdsJson = SerializeSorted(pendingAttemptIds);
         row.PendingResultIdsJson = SerializeSorted(pendingResultIds);
+        // The report can name an attempt this server settled long ago, and nothing may arrive for it
+        // afterwards: its result was accepted in an earlier session. Settling reported attempts only when
+        // a result arrives left such a session on PENDING_FACT_RECONCILIATION_REQUIRED until some later
+        // result or reconnect (8005-agv-program#61, residual of MVP 369919f5; 8005-agv-control-server#78).
+        // The same rule applies here as there, so an attempt with no conclusion yet stays pending.
+        await RemoveSettledReportedAttemptsAsync(row, cancellationToken).ConfigureAwait(false);
         row.Readiness = SessionReadiness.RecoveryRequired;
         row.ReasonCode = "RECOVERY_RECONCILIATION_PENDING";
         row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -209,10 +215,26 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
             .ConfigureAwait(false);
+        if (!await RemoveSettledReportedAttemptsAsync(row, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Takes off <paramref name="row"/> every reported attempt whose operation is committed or cancelled,
+    /// unsaved. Returns whether anything was taken off.
+    /// </summary>
+    private async Task<bool> RemoveSettledReportedAttemptsAsync(
+        SessionRecoveryRow row, CancellationToken cancellationToken)
+    {
         string[] pending = DeserializeStrings(row.PendingAttemptIdsJson);
         if (pending.Length == 0)
         {
-            return;
+            return false;
         }
 
         string[] settled = await dbContext.StationOperations
@@ -223,7 +245,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         if (settled.Length == 0)
         {
-            return;
+            return false;
         }
 
         row.PendingAttemptIdsJson = SerializeSorted(pending.Except(settled, StringComparer.Ordinal));
@@ -232,8 +254,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             row.UnsettledSlotOperationAttemptId = null;
         }
-        row.UpdatedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     public async Task<SessionReadinessDecision> DecideReadinessAsync(
