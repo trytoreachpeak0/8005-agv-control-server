@@ -164,13 +164,7 @@ public sealed class DemandAreaAssignmentFreezeStore(ControlServerDbContext conte
             .SingleOrDefaultAsync(row => row.ConsumerId == demandId, cancellationToken);
         if (existing is not null)
         {
-            return existing.FrozenVersion == version
-                ? Project(existing)
-                : throw new DemandAreaAssignmentFreezeConflictException(
-                    FormattableString.Invariant(
-                        $"Demand {demandId} already froze area assignment version {existing.FrozenVersion}; ")
-                    + FormattableString.Invariant(
-                        $"it cannot be frozen again at version {version}. Later versions do not change a frozen demand."));
+            return AgainstExisting(existing, demandId, version);
         }
 
         DispatchZoneAreaAssignmentVersionRow header = await _context.Set<DispatchZoneAreaAssignmentVersionRow>()
@@ -190,9 +184,40 @@ public sealed class DemandAreaAssignmentFreezeStore(ControlServerDbContext conte
             SnapshotId = header.SnapshotId
         };
         _context.Set<ConfigurationConsumerBindingRow>().Add(binding);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The read above and this insert are two statements, so a second writer freezing the same demand can
+            // land between them; the primary key then refuses this insert. That writer's row is the freeze now,
+            // and it is judged exactly as if the read had seen it: the same version is idempotent, a different
+            // one conflicts. No row means the insert failed for some other reason, which is not ours to absorb.
+            _context.Entry(binding).State = EntityState.Detached;
+            ConfigurationConsumerBindingRow? winner = await DemandFreezes()
+                .AsNoTracking()
+                .SingleOrDefaultAsync(row => row.ConsumerId == demandId, cancellationToken);
+            if (winner is null)
+            {
+                throw;
+            }
+            return AgainstExisting(winner, demandId, version);
+        }
         return Project(binding);
     }
+
+    private static DemandAreaAssignmentFreeze AgainstExisting(
+        ConfigurationConsumerBindingRow existing,
+        string demandId,
+        long version) =>
+        existing.FrozenVersion == version
+            ? Project(existing)
+            : throw new DemandAreaAssignmentFreezeConflictException(
+                FormattableString.Invariant(
+                    $"Demand {demandId} already froze area assignment version {existing.FrozenVersion}; ")
+                + FormattableString.Invariant(
+                    $"it cannot be frozen again at version {version}. Later versions do not change a frozen demand."));
 
     public async Task<DemandAreaAssignmentFreeze?> ReadAsync(string demandId, CancellationToken cancellationToken)
     {

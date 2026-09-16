@@ -1,7 +1,10 @@
+using System.Data.Common;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace ControlServer.Tests;
 
@@ -107,12 +110,99 @@ public sealed class DemandAreaAssignmentFreezeTests
             inFlight.Select(freeze => (freeze.DemandId, freeze.Version)));
     }
 
-    private static async Task<(AreaAssignmentTableVersion First, AreaAssignmentTableVersion Second)>
-        WriteTwoVersionsAsync(AreaAssignmentPersistenceFixture fixture)
+    // ---- two writers freezing one demand (control-server#72) ------------------------------------
+
+    /// <summary>
+    /// A second writer freezes the same demand at the same version between this writer's read and its insert:
+    /// this writer returns that freeze instead of failing on the primary key.
+    /// </summary>
+    /// <remarks>
+    /// The interleaving is placed, not hoped for: the other writer's freeze runs from inside this writer's
+    /// read of the version header, which comes after its read of the existing freeze and before its insert.
+    /// Two connections to one database file, so the refusal is SQLite's own.
+    /// </remarks>
+    [Fact]
+    public async Task AWriterThatLosesTheRaceToFreezeTheSameVersionReturnsTheWinnersFreezeInsteadOfFailing()
     {
-        AreaAssignmentTableVersion first = await fixture.AreaAssignments.WriteVersionAsync(
+        await using TwoWriterDatabase database = await TwoWriterDatabase.CreateAsync();
+        (AreaAssignmentTableVersion first, _) = await database.WriteTwoVersionsAsync();
+        await using ControlServerDbContext other = database.Open();
+        FreezeBeforeVersionRead interleave = new(() =>
+            new DemandAreaAssignmentFreezeStore(other).FreezeAsync("D-1", 1, Now, TestContext.Current.CancellationToken));
+        await using ControlServerDbContext mine = database.Open(interleave);
+
+        DemandAreaAssignmentFreeze frozen = await new DemandAreaAssignmentFreezeStore(mine)
+            .FreezeAsync("D-1", 1, Now.AddSeconds(5), TestContext.Current.CancellationToken);
+
+        Assert.True(interleave.Fired, "The other writer never ran between the read and the insert.");
+        DemandAreaAssignmentFreeze winner = new("D-1", 1, first.SnapshotId, Now);
+        Assert.Equal(winner, frozen);
+        await using ControlServerDbContext reader = database.Open();
+        Assert.Equal(winner, await new DemandAreaAssignmentFreezeStore(reader).ReadAsync("D-1", TestContext.Current.CancellationToken));
+        Assert.Equal(1, await reader.Set<ConfigurationConsumerBindingRow>().CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// The same race, but the other writer froze a different version: this writer gets the freeze conflict,
+    /// exactly as if its read had seen that freeze, and not a database error.
+    /// </summary>
+    [Fact]
+    public async Task AWriterThatLosesTheRaceToADifferentVersionGetsTheFreezeConflictNotADatabaseError()
+    {
+        await using TwoWriterDatabase database = await TwoWriterDatabase.CreateAsync();
+        (_, AreaAssignmentTableVersion second) = await database.WriteTwoVersionsAsync();
+        await using ControlServerDbContext other = database.Open();
+        FreezeBeforeVersionRead interleave = new(() =>
+            new DemandAreaAssignmentFreezeStore(other).FreezeAsync("D-1", 2, Now, TestContext.Current.CancellationToken));
+        await using ControlServerDbContext mine = database.Open(interleave);
+
+        await Assert.ThrowsAsync<DemandAreaAssignmentFreezeConflictException>(() =>
+            new DemandAreaAssignmentFreezeStore(mine).FreezeAsync("D-1", 1, Now.AddSeconds(5), TestContext.Current.CancellationToken));
+
+        Assert.True(interleave.Fired, "The other writer never ran between the read and the insert.");
+        await using ControlServerDbContext reader = database.Open();
+        Assert.Equal(
+            new DemandAreaAssignmentFreeze("D-1", 2, second.SnapshotId, Now),
+            await new DemandAreaAssignmentFreezeStore(reader).ReadAsync("D-1", TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// Eight writers on eight connections freeze one demand at one version at once: every one of them returns
+    /// the one freeze that was written, and none throws.
+    /// </summary>
+    /// <remarks>
+    /// Unlike the two tests above this does not place the interleaving, so a run may or may not hit the race.
+    /// What it pins is the outcome under real concurrency, whichever way the scheduler lines the writers up.
+    /// </remarks>
+    [Fact]
+    public async Task ManyWritersFreezingOneDemandAtOneVersionConcurrentlyAllReturnTheOneFreeze()
+    {
+        await using TwoWriterDatabase database = await TwoWriterDatabase.CreateAsync();
+        await database.WriteTwoVersionsAsync();
+        using Barrier start = new(8);
+
+        DemandAreaAssignmentFreeze[] results = await Task.WhenAll(Enumerable.Range(0, 8).Select(writer => Task.Run(async () =>
+        {
+            await using ControlServerDbContext context = database.Open();
+            start.SignalAndWait(TestContext.Current.CancellationToken);
+            return await new DemandAreaAssignmentFreezeStore(context)
+                .FreezeAsync("D-1", 2, Now.AddSeconds(writer), TestContext.Current.CancellationToken);
+        })));
+
+        Assert.Single(results.Distinct());
+        await using ControlServerDbContext reader = database.Open();
+        Assert.Equal(1, await reader.Set<ConfigurationConsumerBindingRow>().CountAsync(TestContext.Current.CancellationToken));
+    }
+
+    private static Task<(AreaAssignmentTableVersion First, AreaAssignmentTableVersion Second)>
+        WriteTwoVersionsAsync(AreaAssignmentPersistenceFixture fixture) => WriteTwoVersionsAsync(fixture.AreaAssignments);
+
+    private static async Task<(AreaAssignmentTableVersion First, AreaAssignmentTableVersion Second)>
+        WriteTwoVersionsAsync(IAreaAssignmentStore areaAssignments)
+    {
+        AreaAssignmentTableVersion first = await areaAssignments.WriteVersionAsync(
             [new("N01", "MAP-25-WIRE_TO_GATE", "FRONT")], Now.AddDays(-2), TestContext.Current.CancellationToken);
-        AreaAssignmentTableVersion second = await fixture.AreaAssignments.WriteVersionAsync(
+        AreaAssignmentTableVersion second = await areaAssignments.WriteVersionAsync(
             [new("N01", "MAP-25-WIRE_TO_GATE", "REAR")], Now.AddDays(-1), TestContext.Current.CancellationToken);
         return (first, second);
     }
@@ -159,4 +249,86 @@ public sealed class DemandAreaAssignmentFreezeTests
         CreatedAt = Now.AddMinutes(-8),
         UpdatedAt = Now
     };
+
+    /// <summary>
+    /// Runs another writer's freeze from inside the first read of the version header, which in
+    /// <see cref="DemandAreaAssignmentFreezeStore.FreezeAsync"/> sits between the read of the existing freeze and
+    /// the insert.
+    /// </summary>
+    private sealed class FreezeBeforeVersionRead(Func<Task> otherWriter) : DbCommandInterceptor
+    {
+        public bool Fired { get; private set; }
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Fired && command.CommandText.Contains("DispatchZoneAreaAssignmentVersions", StringComparison.Ordinal))
+            {
+                Fired = true;
+                await otherWriter();
+            }
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// One migrated database file that several connections open, the way two server scopes, or the server and
+    /// FieldOps, do.
+    /// </summary>
+    private sealed class TwoWriterDatabase : IAsyncDisposable
+    {
+        private readonly string _directory;
+        private readonly string _connectionString;
+
+        private TwoWriterDatabase(string directory)
+        {
+            _directory = directory;
+            _connectionString = ControlServerSqlite.ForDatabaseFile(Path.Combine(directory, "controlserver.db"));
+        }
+
+        public static async Task<TwoWriterDatabase> CreateAsync()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "w2g-area-freeze-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            TwoWriterDatabase database = new(directory);
+            await using ControlServerDbContext context = database.Open();
+            await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            return database;
+        }
+
+        public ControlServerDbContext Open(params IInterceptor[] interceptors) => new(
+            new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(_connectionString)
+                .AddInterceptors(interceptors)
+                .Options);
+
+        public async Task<(AreaAssignmentTableVersion First, AreaAssignmentTableVersion Second)> WriteTwoVersionsAsync()
+        {
+            await using ControlServerDbContext context = Open();
+            GovernanceStore governance = new(
+                context,
+                new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+                AuditRetentionPolicy.Default);
+            return await DemandAreaAssignmentFreezeTests.WriteTwoVersionsAsync(
+                new AreaAssignmentStore(context, new GovernedConfigurationPublisher(governance, governance)));
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            // The pool keeps the file open on behalf of the process; without this the directory cannot go.
+            SqliteConnection.ClearAllPools();
+            try
+            {
+                Directory.Delete(_directory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Left in the temp directory; not worth a red test.
+            }
+            return ValueTask.CompletedTask;
+        }
+    }
 }

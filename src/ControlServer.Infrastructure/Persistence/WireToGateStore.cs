@@ -496,6 +496,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved demand '{activeLease.DemandId}'.");
         }
 
+        if (journey?.AreaAssignmentVersion is long areaAssignmentVersion)
+        {
+            await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);
+        }
+
         dbContext.AcceptedDemands.Add(new AcceptedDemandRow
         {
             DemandId = snapshot.DemandId,
@@ -2120,9 +2125,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// plan was built with.
     /// </para>
     /// <para>
-    /// No binding means nothing was frozen, and only a plan carrying neither field matches that. Until #72
-    /// writes the binding, a replayed plan that does carry a version is refused: nothing durable vouches
-    /// for the version it names, and refusing is the fail-closed side.
+    /// No binding means nothing was frozen, and only a plan carrying neither field matches that. The binding
+    /// is written inside the transaction that writes the accepted demand (<see cref="FreezeAreaAssignmentAsync"/>),
+    /// so an accepted demand whose plan carried a version always has one: a crash between the two cannot leave
+    /// the demand accepted and unfrozen, and so cannot make its replay read as a different acceptance.
     /// </para>
     /// </remarks>
     private async Task<bool> AreaAssignmentFreezeMatchesAsync(
@@ -2130,15 +2136,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         JourneyExecutionPlan journey,
         CancellationToken cancellationToken)
     {
-        long? frozenVersion = await dbContext.Set<ConfigurationConsumerBindingRow>()
-            .AsNoTracking()
-            .Where(row => row.ConsumerKind == DispatchZoneAreaAssignmentGovernance.DemandConsumerKind &&
-                          row.ConsumerId == snapshot.DemandId &&
-                          row.ObjectKind == GovernedObjectKind.DispatchZoneAreaAssignment &&
-                          row.ObjectId == DispatchZoneAreaAssignmentGovernance.ObjectId)
-            .Select(row => (long?)row.FrozenVersion)
-            .SingleOrDefaultAsync(cancellationToken)
-            .ConfigureAwait(false);
+        long? frozenVersion = (await new DemandAreaAssignmentFreezeStore(dbContext)
+            .ReadAsync(snapshot.DemandId, cancellationToken)
+            .ConfigureAwait(false))?.Version;
         if (frozenVersion != journey.AreaAssignmentVersion)
         {
             return false;
@@ -2154,6 +2154,42 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 .SingleOrDefaultAsync(cancellationToken)
                 .ConfigureAwait(false);
         return string.Equals(frozenSlotPosition, journey.RequiredSlotPosition, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Freezes the area assignment version the demand was evaluated against (REQ-0350), inside the acceptance
+    /// transaction and ahead of the rows that accept it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Same transaction, because the frozen version has to be the one the slot group was chosen from: frozen
+    /// separately, a crash in between leaves an accepted demand whose replay no binding vouches for, and an
+    /// import in between freezes a version other than the one the plan was built from.
+    /// </para>
+    /// <para>
+    /// The current version is compared first, inside the transaction the acceptance holds. If a new version was
+    /// imported after the round read the table, the demand was judged against a table that no longer governs
+    /// the site — its door side may have changed — so nothing is accepted and
+    /// <see cref="AreaAssignmentVersionChangedException"/> sends intake back to judge it next round.
+    /// </para>
+    /// </remarks>
+    private async Task FreezeAreaAssignmentAsync(
+        AcceptedDemandSnapshot snapshot,
+        long evaluatedVersion,
+        CancellationToken cancellationToken)
+    {
+        long? currentVersion = await dbContext.Set<DispatchZoneAreaAssignmentVersionRow>()
+            .MaxAsync(row => (long?)row.Version, cancellationToken)
+            .ConfigureAwait(false);
+        if (currentVersion != evaluatedVersion)
+        {
+            throw new AreaAssignmentVersionChangedException(FormattableString.Invariant(
+                $"Demand {snapshot.DemandId} was evaluated against area assignment version {evaluatedVersion}, but the current version is {currentVersion}."));
+        }
+
+        await new DemandAreaAssignmentFreezeStore(dbContext)
+            .FreezeAsync(snapshot.DemandId, evaluatedVersion, snapshot.AcceptedAt, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

@@ -9,6 +9,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Commands;
@@ -1541,8 +1542,10 @@ public sealed class JourneyRuntimeWorkerTests
         // freeze of its endpoints. A steady round that accepts nothing adds only the confirmation.
         // B2 adds three more, still none of them per candidate: applying the configured fleet
         // policy, which this first round does because the tables start empty and which costs two
-        // saves, and the occupancy claim on the accepted journey's first order.
-        Assert.InRange(fixture.SaveChanges.Count, 1, 15);
+        // saves, and the occupancy claim on the accepted journey's first order. Batch 4 adds one more
+        // (control-server#72): the area assignment freeze, written inside the acceptance transaction
+        // ahead of the acceptance rows.
+        Assert.InRange(fixture.SaveChanges.Count, 1, 16);
     }
 
     [Fact]
@@ -2151,6 +2154,183 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(0, fixture.Riot.TotalCreateCount);
     }
 
+    /// <summary>
+    /// An AREA the area assignment table does not name is skipped silently (REQ-0191): the reason reaches the
+    /// backlog and nothing else — no structural dispatch block, no log at Warning or above — round after round.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AnUnmappedAreaIsSkippedSilentlyWithNoStructuralBlockAndNoWarning()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        // A station exists for it and it starts with N: under the old prefix rule it would have been dispatched.
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-7"),
+            new RiotMapStation(210, "关卡"));
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10),
+            "N1-7"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow backlog = await fixture.Context.JourneyBacklog.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("OUT_OF_SCOPE_AREA", backlog.ReasonCode);
+        Assert.Null(backlog.AcceptedAt);
+        Assert.Empty(await fixture.Context.Set<StructuralDispatchBlockRow>().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.Level >= LogLevel.Warning);
+        Assert.DoesNotContain(fixture.SlotCapacityLog.Entries, entry => entry.Level >= LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// An AREA starting with T — a die-attach machine — is dispatched once the table names it. The old leading-N
+    /// rule refused it however it was configured.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AMappedAreaStartingWithTIsAcceptedAndItsFreezeIsTheVersionItWasJudgedAgainst()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AreaAssignmentTableVersion table = await fixture.ImportAreaAssignmentsAsync(
+        [
+            new AreaAssignment("N1-1", fixture.Options.DispatchZone, "FRONT"),
+            new AreaAssignment("T3-7", fixture.Options.DispatchZone, "REAR"),
+        ]);
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "T3-7"),
+            new RiotMapStation(210, "关卡"));
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10),
+            "T3-7"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal("T3-7", runtime.PickupStationId);
+        Assert.Equal(fixture.Options.DispatchZone, runtime.DispatchZone);
+        DemandAreaAssignmentFreeze? freeze = await new DemandAreaAssignmentFreezeStore(fixture.Context)
+            .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken);
+        Assert.Equal(table.Version, freeze?.Version);
+        Assert.Equal(table.SnapshotId, freeze?.SnapshotId);
+    }
+
+    /// <summary>
+    /// A version imported after the round judged the demand and before intake commits refuses this acceptance —
+    /// nothing is accepted and nothing is frozen — and the next round judges the demand again and freezes the
+    /// new version.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AVersionImportedBetweenEvaluationAndAcceptanceIsRefusedAndTheNextRoundJudgesAgainstIt()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        AreaAssignmentTableVersion? imported = null;
+        // Read 1 is the round's discovery; read 2 is intake's final read, after the round judged the candidate.
+        fixture.Catalog.BeforeRead = read =>
+        {
+            if (read == 2)
+            {
+                imported = fixture.ImportAreaAssignmentsAsync(
+                    [.. RuntimeFixture.DefaultAssignedAreas.Select(area =>
+                        new AreaAssignment(area, fixture.Options.DispatchZone, "REAR"))])
+                    .GetAwaiter().GetResult();
+            }
+        };
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, imported?.Version);
+        Assert.Equal(
+            "FINAL_CATALOG_DECISION_FACT_CHANGED",
+            (await fixture.Context.JourneyBacklog.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.Set<ConfigurationConsumerBindingRow>().ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+
+        fixture.Catalog.BeforeRead = null;
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.SingleAsync(
+            TestContext.Current.CancellationToken);
+        Assert.Equal(
+            2,
+            (await new DemandAreaAssignmentFreezeStore(fixture.Context)
+                .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken))?.Version);
+    }
+
+    /// <summary>
+    /// A Map catalog revision — a station deleted and rebuilt under a new id, renamed, and the AREA moved onto
+    /// another station — neither rewrites the area assignment table nor pauses dispatch for review (REQ-0350):
+    /// the table is keyed on AREA, not on station.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AMapCatalogRevisionLeavesTheAreaAssignmentTableAloneAndDoesNotPauseDispatch()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AreaAssignmentTableVersion before = (await new AreaAssignmentStore(fixture.Context, CreateGovernedPublisher(fixture.Context))
+            .ReadCurrentAsync(TestContext.Current.CancellationToken))!;
+        int auditsBefore = await fixture.Context.Set<BusinessAuditRecordRow>().CountAsync(TestContext.Current.CancellationToken);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        // Station 12 "N1-1" is gone; N1-1 now sits on a rebuilt, renamed station shared with N1-9. The station
+        // admission policy is bound to station names, so the site republishes it under a new version, as it must.
+        fixture.Options.AdmissionPolicyVersion++;
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(44, "N1-9_N1-1"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(300, "等待点"));
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        fixture.Context.ChangeTracker.Clear();
+        AreaAssignmentTableVersion after = (await new AreaAssignmentStore(fixture.Context, CreateGovernedPublisher(fixture.Context))
+            .ReadCurrentAsync(TestContext.Current.CancellationToken))!;
+        Assert.Equal(before.Version, after.Version);
+        Assert.Equal(before.ContentSha256, after.ContentSha256);
+        Assert.Equal(before.ByArea.OrderBy(pair => pair.Key, StringComparer.Ordinal), after.ByArea.OrderBy(pair => pair.Key, StringComparer.Ordinal));
+        Assert.Equal(1, await fixture.Context.Set<DispatchZoneAreaAssignmentVersionRow>().CountAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(auditsBefore, await fixture.Context.Set<BusinessAuditRecordRow>().CountAsync(TestContext.Current.CancellationToken));
+        JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(44, runtime.PickupStationRiotId);
+        Assert.Null(runtime.BlockReasonCode);
+        Assert.Equal(
+            before.Version,
+            (await new DemandAreaAssignmentFreezeStore(fixture.Context)
+                .ReadAsync(runtime.DemandId, TestContext.Current.CancellationToken))?.Version);
+    }
+
+    private static GovernedConfigurationPublisher CreateGovernedPublisher(ControlServerDbContext context)
+    {
+        GovernanceStore governance = new(
+            context,
+            new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+            AuditRetentionPolicy.Default);
+        return new GovernedConfigurationPublisher(governance, governance);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task InScopeResolvedUnknownPackageIsDeduplicatedAndNeverCreatesOrder()
@@ -2669,6 +2849,13 @@ public sealed class JourneyRuntimeWorkerTests
 
         public FixedTimeProvider Clock { get; }
         public SaveChangesCounter SaveChanges { get; }
+
+        /// <summary>What the engine logged, so a test can pin what it does not log.</summary>
+        public RecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
+
+        /// <summary>What the slot capacity criterion logged; the one criterion that logs.</summary>
+        public RecordingLogger<SlotCapacityCriterion> SlotCapacityLog { get; } = new();
+
         public JourneyRuntimeEngine Engine { get; private set; }
 
         public static async Task<RuntimeFixture> CreateAsync(bool catalogApproved = true)
@@ -2694,8 +2881,29 @@ public sealed class JourneyRuntimeWorkerTests
                 connection, dbOptions, context, catalog, boxCounts, riot, peer, routeCosts,
                 catalogApproved, options, clock, saveChanges);
             await fixture.SeedRecoveredPeerAsync();
+            await fixture.ImportAreaAssignmentsAsync(
+                [.. DefaultAssignedAreas.Select(area => new AreaAssignment(area, options.DispatchZone, "FRONT"))]);
             saveChanges.Reset();
             return fixture;
+        }
+
+        /// <summary>
+        /// The N-prefixed AREAs these tests use, all in the configured zone. Since control-server#72 the table is
+        /// the whole execution whitelist, so a server with none dispatches nothing; D11-10 and Q18-10 stay
+        /// unmapped because they are the tests' out-of-scope AREAs.
+        /// </summary>
+        public static readonly string[] DefaultAssignedAreas = ["N1-1", "N1-2", "N1-3", "N22-1"];
+
+        /// <summary>Imports a new version of the area assignment table the way FieldOps does.</summary>
+        public async Task<AreaAssignmentTableVersion> ImportAreaAssignmentsAsync(IReadOnlyList<AreaAssignment> assignments)
+        {
+            await using ControlServerDbContext importer = new(DbOptions);
+            GovernanceStore governance = new(
+                importer,
+                new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+                AuditRetentionPolicy.Default);
+            return await new AreaAssignmentStore(importer, new GovernedConfigurationPublisher(governance, governance))
+                .WriteVersionAsync(assignments, Clock.GetUtcNow(), TestContext.Current.CancellationToken);
         }
 
         public AcceptedDemandSnapshot Demand(
@@ -3331,7 +3539,7 @@ public sealed class JourneyRuntimeWorkerTests
                     store,
                     new VehicleFaultStore(Context),
                     BoxCounts,
-                    NullLogger<SlotCapacityCriterion>.Instance,
+                    SlotCapacityLog,
                     routeGraph: null,
                     catalog: CreateCatalogAccess(),
                     createGate: CreateGate())),
@@ -3349,12 +3557,12 @@ public sealed class JourneyRuntimeWorkerTests
                 new NoDispatchRoundOutcomeSink(),
                 options,
                 Clock,
-                NullLogger<JourneyRuntimeEngine>.Instance);
+                EngineLog);
         }
 
         /// <summary>
         /// The governed-configuration publisher over this fixture's database: what the batch 4 area assignment
-        /// store needs to be built at all, although no runtime test imports a table.
+        /// store needs to be built at all.
         /// </summary>
         private GovernedConfigurationPublisher CreateGovernedPublisher()
         {
