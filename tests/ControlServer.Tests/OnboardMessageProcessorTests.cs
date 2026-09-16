@@ -454,7 +454,6 @@ public sealed class OnboardMessageProcessorTests
             [
                 ("SublotSubmitted", "00000000-0000-4000-8000-000000000101", new
                 {
-                    demandId,
                     operationSessionId = "00000000-0000-4000-8000-000000000112",
                     stationId = "PICKUP-01",
                     worklistRevision = 2,
@@ -521,6 +520,32 @@ public sealed class OnboardMessageProcessorTests
                 Assert.Equal(messageType, inbox.MessageType);
                 Assert.Equal(line, inbox.RequestJson);
             }
+
+            // Protocol 2.0.0 gives SublotSubmitted no business deduplication keys, so the same sublot
+            // rescanned under a new messageId -- here by keyboard after the scanner -- is a new request
+            // the inbox takes and acknowledges, not a business-id content conflict. That its side
+            // effect happens once is the runtime's job (ARescanUnderANewMessageIdCommandsNoSecondLoad).
+            string rescan = Envelope("SublotSubmitted", "00000000-0000-4000-8000-000000000105", state.SessionGeneration, new
+            {
+                operationSessionId = "00000000-0000-4000-8000-000000000112",
+                stationId = "PICKUP-01",
+                worklistRevision = 2,
+                sublot = "SUBLOT-001",
+                entryMethod = "KEYBOARD",
+                @operator = new
+                {
+                    operatorId = "OP-001",
+                    verificationMethod = "BADGE",
+                    verifiedAt = "2026-08-25T09:00:05Z"
+                }
+            });
+            using (JsonDocument rescanAck = JsonDocument.Parse(
+                await processor.ProcessAsync(rescan, state, TestContext.Current.CancellationToken)))
+            {
+                Assert.Equal("DurableAck", rescanAck.RootElement.GetProperty("messageType").GetString());
+            }
+            Assert.Equal(2, await context.ProtocolInbox.CountAsync(
+                row => row.MessageType == "SublotSubmitted", TestContext.Current.CancellationToken));
 
             string operationResult = Envelope(
                 messages[^1].MessageType,

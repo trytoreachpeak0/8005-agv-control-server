@@ -38,6 +38,8 @@ public sealed class OnboardJourneyPublisherTests
             "TRANSPORT",
             false,
             "SUFFICIENT",
+            "NOT_CHARGING",
+            LoadingPhaseProjection.Loading,
             []);
 
         await publisher.PublishVehicleBusinessStateAsync(
@@ -121,7 +123,7 @@ public sealed class OnboardJourneyPublisherTests
             "00000000-0000-4000-8000-000000000323",
             "AGV-001",
             9,
-            new VehicleBusinessProjection(3, "READY", "TRANSPORT", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(3, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []),
             TestContext.Current.CancellationToken);
         await publisher.PublishCurrentStopWorklistAsync(
             "00000000-0000-4000-8000-000000000324",
@@ -131,6 +133,7 @@ public sealed class OnboardJourneyPublisherTests
                 "PICKUP-01",
                 5,
                 operationSessionId,
+                null,
                 [new CurrentStopWorklistItem(
                     demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)]),
             TestContext.Current.CancellationToken);
@@ -196,7 +199,7 @@ public sealed class OnboardJourneyPublisherTests
         RecordingPeer peer = new(context);
         OnboardJourneyPublisher publisher = new(store, peer, new AdvancingTimeProvider());
         const string messageId = "00000000-0000-4000-8000-000000000331";
-        VehicleBusinessProjection projection = new(2, "READY", "TRANSPORT", false, "SUFFICIENT", []);
+        VehicleBusinessProjection projection = new(2, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []);
 
         await publisher.PublishVehicleBusinessStateAsync(
             messageId, "AGV-001", 1, projection, TestContext.Current.CancellationToken);
@@ -233,7 +236,7 @@ public sealed class OnboardJourneyPublisherTests
         AdvancingTimeProvider clock = new();
         OnboardJourneyPublisher publisher = new(store, peer, clock);
         const string messageId = "00000000-0000-4000-8000-000000000311";
-        VehicleBusinessProjection original = new(1, "READY", "TRANSPORT", false, "SUFFICIENT", []);
+        VehicleBusinessProjection original = new(1, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []);
         await publisher.PublishVehicleBusinessStateAsync(
             messageId, "AGV-001", 1, original, TestContext.Current.CancellationToken);
 
@@ -297,7 +300,7 @@ public sealed class OnboardJourneyPublisherTests
             sublotMessageId,
             "AGV-001",
             11,
-            new SublotEntryRequest(demandId, operationSessionId, "PICKUP-01", 5, "SUBLOT-001"),
+            new SublotEntryRequest(operationSessionId, "PICKUP-01", 5, ["SUBLOT-001"]),
             TestContext.Current.CancellationToken);
         await publisher.PublishSlotOperationCommandAsync(
             slotMessageId,
@@ -409,11 +412,10 @@ public sealed class OnboardJourneyPublisherTests
         OnboardJourneyPublisher publisher = new(store, peer, clock);
         const string messageId = "00000000-0000-4000-8000-000000000411";
         SublotEntryRequest request = new(
-            "00000000-0000-4000-8000-000000000412",
             "00000000-0000-4000-8000-000000000413",
             "PICKUP-01",
             8,
-            "SUBLOT-008");
+            ["SUBLOT-008"]);
 
         await publisher.PublishSublotEntryRequestAsync(
             messageId, "AGV-001", 12, request, TestContext.Current.CancellationToken);
@@ -430,7 +432,7 @@ public sealed class OnboardJourneyPublisherTests
                 messageId,
                 "AGV-001",
                 12,
-                request with { ExpectedSublot = "SUBLOT-DIFFERENT" },
+                request with { ExpectedSublots = ["SUBLOT-DIFFERENT"] },
                 TestContext.Current.CancellationToken));
 
         OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
@@ -541,7 +543,7 @@ public sealed class OnboardJourneyPublisherTests
             messageId,
             "AGV-001",
             1,
-            new VehicleBusinessProjection(6, "READY", "TRANSPORT", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(6, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []),
             TestContext.Current.CancellationToken);
 
         ProtocolOutboxRow row = await context.ProtocolOutbox.SingleAsync(
@@ -596,7 +598,7 @@ public sealed class OnboardJourneyPublisherTests
         RecordingPeer peer = new(context);
         OnboardJourneyPublisher publisher = new(store, peer, new AdvancingTimeProvider());
         const string messageId = "00000000-0000-4000-8000-000000000351";
-        VehicleBusinessProjection projection = new(6, "READY", "TRANSPORT", false, "SUFFICIENT", []);
+        VehicleBusinessProjection projection = new(6, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []);
 
         await publisher.PublishVehicleBusinessStateAsync(
             messageId, "AGV-001", 1, projection, TestContext.Current.CancellationToken);
@@ -611,6 +613,112 @@ public sealed class OnboardJourneyPublisherTests
 
         Assert.Equal(replayed, row.PayloadJson);
         Assert.Equal(Sha256(replayed), PeerContentSha256(replayed));
+    }
+
+    /// <summary>
+    /// Protocol 2.0.0 items 5 and 6 for a vehicle with no transport journey: <c>loadingPhase</c> is
+    /// present and null, and <c>chargingCycleState</c> is still reported.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task AVehicleWithoutATransportJourneyReportsANullLoadingPhase()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, new AdvancingTimeProvider());
+
+        await publisher.PublishVehicleBusinessStateAsync(
+            "00000000-0000-4000-8000-000000000361",
+            "AGV-001",
+            1,
+            new VehicleBusinessProjection(1, "READY", null, false, "SUFFICIENT", "NOT_CHARGING", null, []),
+            TestContext.Current.CancellationToken);
+
+        using JsonDocument envelope = JsonDocument.Parse(peer.Lines.Single());
+        JsonElement payload = envelope.RootElement.GetProperty("payload");
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("activePurpose").ValueKind);
+        Assert.Equal(JsonValueKind.Null, payload.GetProperty("loadingPhase").ValueKind);
+        Assert.Equal("NOT_CHARGING", payload.GetProperty("chargingCycleState").GetString());
+    }
+
+    /// <summary>
+    /// The schema accepts a null loading phase whatever the purpose, so the publisher is where "a
+    /// journey never reports null, and nothing else reports a phase" is held. Both mistakes are
+    /// refused before anything is persisted or sent.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ThePublisherRefusesAJourneyWithoutALoadingPhaseAndALoadingPhaseWithoutAJourney()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, new AdvancingTimeProvider());
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => publisher.PublishVehicleBusinessStateAsync(
+            "00000000-0000-4000-8000-000000000362",
+            "AGV-001",
+            1,
+            new VehicleBusinessProjection(1, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", null, []),
+            TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => publisher.PublishVehicleBusinessStateAsync(
+            "00000000-0000-4000-8000-000000000363",
+            "AGV-001",
+            1,
+            new VehicleBusinessProjection(
+                1, "READY", null, false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []),
+            TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => publisher.PublishVehicleBusinessStateAsync(
+            "00000000-0000-4000-8000-000000000364",
+            "AGV-001",
+            1,
+            new VehicleBusinessProjection(
+                1, "READY", "TRANSPORT", false, "SUFFICIENT", "IDLE", LoadingPhaseProjection.Loading, []),
+            TestContext.Current.CancellationToken));
+
+        Assert.Empty(peer.Lines);
+        Assert.Empty(await context.ProtocolOutbox.ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// <c>expectedSublots</c> within the schema's bounds: one to eight, no repeats.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [InlineData(0)]
+    [InlineData(9)]
+    [InlineData(-2)]
+    public async Task ASublotEntryRequestOutsideTheSchemasBoundsIsRefused(int count)
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        RecordingPeer peer = new(context);
+        OnboardJourneyPublisher publisher = new(new WireToGateStore(context), peer, new AdvancingTimeProvider());
+        // -2 stands for two entries that repeat one sublot.
+        string[] sublots = count < 0
+            ? ["SUBLOT-001", "SUBLOT-001"]
+            : [.. Enumerable.Range(1, count).Select(index => $"SUBLOT-{index:D3}")];
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => publisher.PublishSublotEntryRequestAsync(
+            "00000000-0000-4000-8000-000000000365",
+            "AGV-001",
+            1,
+            new SublotEntryRequest("00000000-0000-4000-8000-000000000366", "PICKUP-01", 1, sublots),
+            TestContext.Current.CancellationToken));
+        Assert.Empty(peer.Lines);
     }
 
     /// <summary>

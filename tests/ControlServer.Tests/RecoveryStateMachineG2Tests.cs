@@ -1249,6 +1249,243 @@ public sealed class RecoveryStateMachineG2Tests
         Assert.Equal(handoffId, fault.RootElement.GetProperty("payload").GetProperty("handoffId").GetString());
     }
 
+    /// <summary>
+    /// Protocol 2.0.0 item 7, the half with a value: a session opened on a demand whose load had
+    /// been commanded names that load's attempt in <c>ExceptionRecoverySessionOpened</c>, in its
+    /// snapshot, and in <c>RecoveryActionAccepted</c> -- the same one each time, and the one
+    /// compensation is later authorized against (8005-agv-program#95).
+    /// </summary>
+    /// <remarks>
+    /// Without it the vehicle could not build <c>LoadCompensationRequested</c>: the attempt is
+    /// required there, and the vehicle's own record of it is cleared by the time recovery is needed.
+    /// That is MVP control-server#5 on the v2 line.
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("ExceptionRecoverySessionOpened")]
+    [InlineData("ExceptionRecoverySessionSnapshot")]
+    [InlineData("RecoveryActionAccepted")]
+    public async Task EachRecoveryMessageNamesTheAttemptOfTheLoadTheSessionIsAbout(string messageType)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_ATTEMPT_NAMED";
+        const string proof = "attempt-named-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+
+            string opened = await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            string accepted = await processor.ProcessAsync(
+                RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY"), state, token);
+
+            Assert.Equal("ExceptionRecoverySessionOpened", MessageType(opened));
+            Assert.Equal("RecoveryActionAccepted", MessageType(accepted));
+            string?[] named = await NamedAttemptsAsync(context, messageType, opened, accepted);
+            Assert.NotEmpty(named);
+            Assert.All(named, attempt => Assert.Equal(AttemptId, attempt));
+            // The one compensation is authorized against.
+            Assert.Equal(AttemptId, (await context.RecoveryWorkflows.SingleAsync(token)).SlotOperationAttemptId);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Protocol 2.0.0 item 7, the null half: a session that is about no demand has no slot operation
+    /// to point at, and all three messages say null rather than borrowing an attempt from the demand
+    /// the vehicle happens to hold.
+    /// </summary>
+    /// <remarks>
+    /// On v2 today this is the only way a recovery session precedes a load: opening one on a demand
+    /// requires that demand's slot operation (<c>RECOVERY_SCOPE_MISMATCH</c> otherwise), so a session
+    /// on a demand whose load never started is refused before any of these messages exists. The rule
+    /// the server applies is the same either way -- no operation commanded at the session's opening,
+    /// no attempt named.
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("ExceptionRecoverySessionOpened")]
+    [InlineData("ExceptionRecoverySessionSnapshot")]
+    [InlineData("RecoveryActionAccepted")]
+    public async Task EachRecoveryMessageOfASessionAboutNoLoadNamesNoAttempt(string messageType)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_ATTEMPT_NULL";
+        const string proof = "attempt-null-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+
+            string opened = await processor.ProcessAsync(
+                RecoverySessionRequest(proof, demandId: null), state, token);
+            string accepted = await processor.ProcessAsync(
+                RecoveryAction("FORCED_MECHANICAL_RECOVERY", demandId: null), state, token);
+
+            Assert.Equal("ExceptionRecoverySessionOpened", MessageType(opened));
+            Assert.Equal("RecoveryActionAccepted", MessageType(accepted));
+            string?[] named = await NamedAttemptsAsync(context, messageType, opened, accepted);
+            Assert.NotEmpty(named);
+            Assert.All(named, attempt => Assert.Null(attempt));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The attempt a session names is fixed at its first value. A slot operation for the same demand
+    /// created after the session opened changes neither a replayed <c>ExceptionRecoverySessionOpened</c>
+    /// nor the next snapshot, and an action that would be recorded against that later operation is
+    /// refused whole with <c>RECOVERY_SCOPE_MISMATCH</c> instead of being accepted under an attempt the
+    /// vehicle was never told.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ASessionKeepsItsFirstAttemptAndRefusesAnActionAboutAnyOther()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_ATTEMPT_FIXED";
+        const string proof = "attempt-fixed-proof-not-a-production-secret";
+        const string laterAttemptId = "20000000-0000-4000-8000-000000000099";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            string opened = await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            Assert.Equal(AttemptId, PayloadAttempt(opened));
+
+            context.StationOperations.Add(new StationOperationRow
+            {
+                SlotOperationAttemptId = laterAttemptId,
+                DemandId = DemandId,
+                SublotId = "SUBLOT-001",
+                TargetSlotsJson = "[1,2]",
+                OperationType = SlotOperationType.Unload,
+                ForcedRecoveryGeneration = 0,
+                ContentHash = new string('b', 64),
+                Status = StationOperationStatus.Prepared,
+                CreatedAt = Now.AddMinutes(1)
+            });
+            await context.SaveChangesAsync(token);
+
+            string replayed = await processor.ProcessAsync(
+                RecoverySessionRequest(proof, messageId: "e0000000-0000-4000-8000-000000000031"), state, token);
+            string refused = await processor.ProcessAsync(
+                RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+
+            Assert.Equal("ExceptionRecoverySessionOpened", MessageType(replayed));
+            Assert.Equal(AttemptId, PayloadAttempt(replayed));
+            Assert.Equal("RecoveryActionRejected", MessageType(refused));
+            using (JsonDocument document = JsonDocument.Parse(refused))
+            {
+                Assert.Equal(ServerReasonCodes.RecoveryScopeMismatch, document.RootElement.GetProperty("payload")
+                    .GetProperty("problem").GetProperty("reasonCode").GetString());
+            }
+            Assert.Empty(await context.RecoveryWorkflows.ToArrayAsync(token));
+            Assert.All(await SessionSnapshotAttemptsAsync(context), attempt => Assert.Equal(AttemptId, attempt));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Protocol 2.0.0 item 3: <c>LoadCancellationResult.slotResults</c> may be empty, which is what a
+    /// cancellation before anything was loaded reports. Inbound parsing must take it; what the
+    /// server then decides is 8005-agv-control-server#83, so this asserts only that it is received,
+    /// recorded and acknowledged rather than thrown on.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ALoadCancellationResultWithNoSlotResultsIsReceivedAndAcknowledged()
+    {
+        const string cancellationId = "b2000000-0000-4000-8000-000000000001";
+        const string resultMessageId = "b2000000-0000-4000-8000-000000000002";
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCancellableLoadAsync(context);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState state = CurrentState();
+        await processor.ProcessAsync(CancellationRequest(cancellationId), state, token);
+
+        string ack = await processor.ProcessAsync(
+            Envelope(
+                resultMessageId,
+                "LoadCancellationResult",
+                new
+                {
+                    cancellationId,
+                    demandId = DemandId,
+                    slotOperationAttemptId = AttemptId,
+                    overallOutcome = "ALL_EMPTY",
+                    slotResults = Array.Empty<object>(),
+                    observedAt = Now.AddSeconds(4)
+                }),
+            state,
+            token);
+
+        Assert.Equal("DurableAck", MessageType(ack));
+        Assert.Single(await context.RecoveryResultEvidence.ToArrayAsync(token));
+    }
+
+    /// <summary>
+    /// What the given recovery message said: the response line for the two answers, every queued
+    /// revision for the snapshot (the session queues one when it opens and one when an action is taken).
+    /// </summary>
+    private static async Task<string?[]> NamedAttemptsAsync(
+        ControlServerDbContext context,
+        string messageType,
+        string opened,
+        string accepted)
+    {
+        if (messageType == "ExceptionRecoverySessionOpened") return [PayloadAttempt(opened)];
+        if (messageType == "RecoveryActionAccepted") return [PayloadAttempt(accepted)];
+        Assert.Equal("ExceptionRecoverySessionSnapshot", messageType);
+        string?[] snapshots = await SessionSnapshotAttemptsAsync(context);
+        Assert.Equal(2, snapshots.Length);
+        return snapshots;
+    }
+
+    private static string? PayloadAttempt(string wire)
+    {
+        string first = wire.Split('\n', StringSplitOptions.RemoveEmptyEntries).First();
+        using JsonDocument document = JsonDocument.Parse(first);
+        JsonElement attempt = document.RootElement.GetProperty("payload").GetProperty("slotOperationAttemptId");
+        return attempt.ValueKind == JsonValueKind.Null ? null : attempt.GetString();
+    }
+
+    private static async Task<string?[]> SessionSnapshotAttemptsAsync(ControlServerDbContext context) =>
+    [
+        .. (await context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "ExceptionRecoverySessionSnapshot")
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .OrderBy(row => row.CreatedAt)
+            .Select(row => PayloadAttempt(row.PayloadJson))
+    ];
+
     private static OnboardMessageProcessor Processor(
         ControlServerDbContext context,
         IOnboardPeer peer,
@@ -1535,8 +1772,11 @@ public sealed class RecoveryStateMachineG2Tests
     private static string WireContentHash(string line) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(line))).ToLowerInvariant();
 
-    private static string RecoverySessionRequest(string proof) => Envelope(
-        "e0000000-0000-4000-8000-000000000001",
+    private static string RecoverySessionRequest(
+        string proof,
+        string? demandId = DemandId,
+        string messageId = "e0000000-0000-4000-8000-000000000001") => Envelope(
+        messageId,
         "ExceptionRecoverySessionRequested",
         new
         {
@@ -1544,7 +1784,7 @@ public sealed class RecoveryStateMachineG2Tests
             administrator = Operator(),
             administratorRole = "MAINTENANCE_ADMINISTRATOR",
             eventId = EventId,
-            demandId = DemandId,
+            demandId,
             slots = RecoverySlots,
             reason = "Recover the blocked load operation.",
             authenticationProof = proof
@@ -1554,7 +1794,8 @@ public sealed class RecoveryStateMachineG2Tests
         string action,
         string reason = "Use current persisted facts.",
         string messageId = "e0000000-0000-4000-8000-000000000002",
-        string? actionId = null) => Envelope(
+        string? actionId = null,
+        string? demandId = DemandId) => Envelope(
         messageId,
         "RecoveryActionSubmitted",
         new
@@ -1563,7 +1804,7 @@ public sealed class RecoveryStateMachineG2Tests
             exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
             action,
             eventId = EventId,
-            demandId = DemandId,
+            demandId,
             slots = RecoverySlots,
             @operator = Operator(),
             reason

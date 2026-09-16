@@ -69,8 +69,18 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         VehicleBusinessProjection projection,
-        CancellationToken cancellationToken) =>
-        PublishStampedSnapshotAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        if (!ChargingCycleStates.Contains(projection.ChargingCycleState))
+            throw new InvalidDataException("chargingCycleState is not allowed by the protocol.");
+        // loadingPhase is null exactly when the vehicle has no transport journey
+        // (8005-agv-program#94). The schema accepts null either way, so nothing downstream -- not even
+        // the outbound schema gate -- would notice a journey reported without its loading phase.
+        if ((projection.ActivePurpose == "TRANSPORT") != (projection.LoadingPhase is not null))
+            throw new InvalidDataException(
+                "loadingPhase must be present exactly when activePurpose is TRANSPORT.");
+        return PublishStampedSnapshotAsync(
             "VehicleBusinessStateSnapshot",
             messageId,
             agvId,
@@ -87,6 +97,15 @@ public sealed class OnboardJourneyPublisher(
                 projection.ActivePurpose,
                 projection.ManualChargingHold,
                 projection.BatteryState,
+                projection.ChargingCycleState,
+                loadingPhase = projection.LoadingPhase is not { } phase
+                    ? null
+                    : new
+                    {
+                        phase.State,
+                        phase.CargoHoldingDeadlineAt,
+                        phase.ClosedReason
+                    },
                 blockingFacts = projection.BlockingFacts.Select(fact => new
                 {
                     fact.ReasonCode,
@@ -96,6 +115,12 @@ public sealed class OnboardJourneyPublisher(
                 ObservedAt = sentAt
             },
             cancellationToken);
+    }
+
+    private static readonly HashSet<string> ChargingCycleStates = new(StringComparer.Ordinal)
+    {
+        "NOT_CHARGING", "ALLOCATED", "EN_ROUTE", "CHARGING", "COMPLETE", "UNABLE_TO_CHARGE", "UNKNOWN"
+    };
 
     public Task PublishSublotEntryRequestAsync(
         string messageId,
@@ -105,11 +130,15 @@ public sealed class OnboardJourneyPublisher(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ValidateUuid(request.DemandId, nameof(request.DemandId));
         ValidateUuid(request.OperationSessionId, nameof(request.OperationSessionId));
         ArgumentException.ThrowIfNullOrWhiteSpace(request.StationId);
         ArgumentOutOfRangeException.ThrowIfNegative(request.WorklistRevision);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.ExpectedSublot);
+        ArgumentNullException.ThrowIfNull(request.ExpectedSublots);
+        // The schema's own bounds: one to eight, each non-blank, no repeats.
+        if (request.ExpectedSublots.Count is < 1 or > 8 ||
+            request.ExpectedSublots.Any(string.IsNullOrWhiteSpace) ||
+            request.ExpectedSublots.Distinct(StringComparer.Ordinal).Count() != request.ExpectedSublots.Count)
+            throw new InvalidDataException("expectedSublots must hold one to eight distinct sublots.");
 
         return PublishEnvelopeAsync(
             "SublotEntryRequested",
@@ -119,11 +148,10 @@ public sealed class OnboardJourneyPublisher(
             sessionGeneration,
             new
             {
-                request.DemandId,
                 request.OperationSessionId,
                 request.StationId,
                 request.WorklistRevision,
-                request.ExpectedSublot,
+                request.ExpectedSublots,
                 entryMethods = SublotEntryMethods,
                 expiresOnRevisionChange = true
             },
@@ -272,6 +300,13 @@ public sealed class OnboardJourneyPublisher(
             throw new InvalidDataException("Recovery administrator role is not allowed by the protocol.");
         ValidateUuid(projection.EventId, nameof(projection.EventId));
         if (projection.DemandId is not null) ValidateUuid(projection.DemandId, nameof(projection.DemandId));
+        if (projection.SlotOperationAttemptId is not null)
+        {
+            ValidateUuid(projection.SlotOperationAttemptId, nameof(projection.SlotOperationAttemptId));
+            // An attempt belongs to a demand; a session with none has no attempt to name.
+            if (projection.DemandId is null)
+                throw new InvalidDataException("A recovery session without a demand names no slot operation attempt.");
+        }
         ValidateSlots(projection.Slots);
         return QueueEnvelopeAsync(
             "ExceptionRecoverySessionSnapshot", messageId, null, agvId, sessionGeneration,
@@ -284,6 +319,7 @@ public sealed class OnboardJourneyPublisher(
                 projection.AdministratorRole,
                 projection.EventId,
                 projection.DemandId,
+                projection.SlotOperationAttemptId,
                 projection.Slots,
                 projection.SelectedAction,
                 projection.AllowedActions,
@@ -454,6 +490,7 @@ public sealed class OnboardJourneyPublisher(
                 projection.StationId,
                 worklistRevision = projection.Revision,
                 projection.OperationSessionId,
+                projection.StationDepartureDeadlineAt,
                 items = projection.Items.Select(item => new
                 {
                     item.DemandId,

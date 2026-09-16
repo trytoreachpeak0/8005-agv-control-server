@@ -60,7 +60,7 @@ public sealed class ProtocolPayloadShapeArchitectureTests
     /// newline, the file's own SHA-256 in lower hex, and a newline.
     /// </summary>
     private const string ApprovedSchemaTreeSha256 =
-        "fcdf6f71849cf6734073f656d07bb2a80c63c14efd5b393a7b7cb678b9a7ddd9";
+        "3487327d9a90d9367d9eb27c968530613d71fe145ae9876f52109252eddddf5e";
 
     [Fact]
     public void TheVendoredSchemaTreeIsTheProtocolSchemaTreeFileForFile()
@@ -308,7 +308,8 @@ public sealed class ProtocolPayloadShapeArchitectureTests
             "00000000-0000-4000-8000-000000000411",
             agvId,
             generation,
-            new VehicleBusinessProjection(3, "READY", "TRANSPORT", false, "SUFFICIENT", []),
+            new VehicleBusinessProjection(
+                3, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []),
             TestContext.Current.CancellationToken);
         await publisher.PublishCurrentStopWorklistAsync(
             "00000000-0000-4000-8000-000000000412",
@@ -318,6 +319,7 @@ public sealed class ProtocolPayloadShapeArchitectureTests
                 "PICKUP-01",
                 5,
                 "00000000-0000-4000-8000-000000000413",
+                new DateTimeOffset(2026, 9, 8, 9, 5, 0, TimeSpan.Zero),
                 [new CurrentStopWorklistItem(
                     demandId, "SUBLOT-001|WIRE_TO_GATE", "SUBLOT-001", "WIRE_TO_GATE", "PICKUP", 2)]),
             TestContext.Current.CancellationToken);
