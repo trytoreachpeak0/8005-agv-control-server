@@ -178,8 +178,7 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 
 ### 派车场景的默认前置（control-server#71）
 
-批次 4 起，派车要求需求的 AREA 在分区归属表里、车辆有服务端仓位模型，缺一样就一辆车也派不出。所以**服务端
-`JourneyRuntime` 开着的场景（今天是全部场景，两套装置都算）**，编排器在服务端就绪之后、进入场景之前，经
+批次 4 起，派车要求需求的 AREA 在分区归属表里、车辆有服务端仓位模型，缺一样就一辆车也派不出。所以**经本编排器跑的每个场景（两套装置都算）**，编排器在服务端就绪之后、进入场景之前，经
 `InvokeFieldOps` 依次做三步，与现场 W1 窗口用的是同一个 `ControlServer.FieldOps.exe`：
 
 1. `seed-approved-facts` —— 已批准八仓事实入库（1～4 号 `FRONT`，5～8 号 `REAR`）；
@@ -187,6 +186,9 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 3. `import-area-assignments` —— 默认表：假 RIoT **当时**站点表里每个站点名解析出的 AREA（与 `MapStationResolver`
    同一规则：`_` 分隔的一到三个区号），全部归服务端的调度分区，分组 `FRONT`。默认站点下是 `C15-13`、`N1-3`、`N1-7`。
    导入之前先等服务端把这个分区写进库内调度策略（`DispatchZoneVehicles`），否则导入会判「分区不存在」。
+
+**不设「只对派车场景」的开关**：编排器给每个服务端都写死 `JourneyRuntime__enabled = 'true'`，也没有边车键能关掉它，所以
+经它跑的场景都会派车，默认前置一律做；不要的场景用下面两个键退出。
 
 **不做激活握手**：`IVehicleSlotPositionReader` 在车辆没有生效配置时退到该车最新一版已发布 IO 绑定引用的模型
 （control-server#66），入库加绑定就足以让派车读到分组。每一步的 JSON 输出以
@@ -293,8 +295,9 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   `g3-predeparture-check-expires` 是 90 秒），下界来自录入那一段，两者之间才是安全区。
   `real-onboard-clock-skew` 与 `g3-manual-charging-return` 不进 `AwaitingSublot`，不受影响，没有加这个键。
 
-下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键都在启动任何
-进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」。
+下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
+`OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；
+只有 `SlotStates` 的取值是假车载端启动时按协议枚举校验，写错那台对端启动即失败。
 
 - `SlotModelPreseed = $false` —— 本场景不做默认的入库与绑定。分区归属表的导入要按已发布模型校验分组，所以同时
   **必须**写 `AreaAssignments = $false`，否则编排器直接报错：自己入库的场景自己导入。

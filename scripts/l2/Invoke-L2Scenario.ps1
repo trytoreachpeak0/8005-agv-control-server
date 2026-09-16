@@ -220,6 +220,12 @@ if ($realOnboard -and ($setup.ContainsKey('SlotStates') -or
 if ($setup.ContainsKey('SlotStates')) {
     $null = ConvertTo-SlotStateArguments -Entries @($setup.SlotStates) -Where "$Scenario.setup.psd1"
 }
+# The per-peer ones too, so a bad entry fails here rather than when that peer is started. What this checks is
+# the shape -- slot numbers, field names, no slot twice; the values themselves are checked against the protocol's
+# enums by the fake onboard as it starts (SlotStateSeed), which fails that peer's startup.
+foreach ($peer in @($setup.OnboardPeers | Where-Object { $_ -is [hashtable] -and $_.ContainsKey('SlotStates') })) {
+    $null = ConvertTo-SlotStateArguments -Entries @($peer.SlotStates) -Where "$Scenario.setup.psd1 (OnboardPeers)"
+}
 # The fake RIoT's station table for the run's map, replacing the default one whole.
 if ($setup.ContainsKey('Stations')) {
     if ($setup.Stations -isnot [hashtable] -or $setup.Stations.Count -eq 0) {
@@ -865,7 +871,9 @@ try {
     #         published IO binding (control-server#66), so no activation handshake is needed;
     #      c. import-area-assignments -- every AREA the fake RIoT's stations carry, in the server's dispatch
     #         zone, group FRONT; or the scenario's own table; or nothing.
-    #    Only when the journey runtime is on, since nothing else reads either. After readiness, because the
+    #    Every scenario, unconditionally: this orchestrator starts every server with JourneyRuntime__enabled
+    #    = 'true' and no setup key turns that off, so every scenario it runs can dispatch. A scenario that must
+    #    not have the preseed says so with SlotModelPreseed / AreaAssignments. After readiness, because the
     #    import checks the zone against the dispatch policy the server stores once it is running. Every step's
     #    JSON goes into the timeline and any failure fails the run: a rig that silently skipped this would
     #    dispatch nothing, and that would look like a server defect.
@@ -876,78 +884,74 @@ try {
     $dispatchZone = (Get-Content -LiteralPath (Join-Path $hostDirectory 'appsettings.json') -Raw |
         ConvertFrom-Json).JourneyRuntime.dispatchZone
     $preseededSlotModelVersionId = $null
-    if ($serverEnvironment['JourneyRuntime__enabled'] -ne 'true') {
-        $journal.Note('Slot model preseed skipped: the journey runtime is off.')
-    } else {
-        if ($slotModelPreseed) {
-            $seedResult = & $invokeFieldOps -Arguments @('seed-approved-facts')
-            $journal.Observe('slot-model-preseed:seed-approved-facts', $seedResult.outcome, @{ output = $seedResult })
-            if ($seedResult.outcome -ne 'OK' -or [int]$seedResult.slotCount -ne 8) {
-                throw "Slot model preseed: seed-approved-facts answered $($seedResult.outcome) with $($seedResult.slotCount) slots."
-            }
-            $preseededSlotModelVersionId = [string]$seedResult.slotModelVersionId
-            foreach ($vehicle in $fleet) {
-                $bindResult = & $invokeFieldOps -Arguments @('bind-io', '--agv', $vehicle.AgvId)
-                $journal.Observe("slot-model-preseed:bind-io:$($vehicle.AgvId)", $bindResult.outcome, @{ output = $bindResult })
-                if ($bindResult.outcome -ne 'OK' -or [int]$bindResult.boundSlots -ne 8) {
-                    throw "Slot model preseed: bind-io for $($vehicle.AgvId) answered $($bindResult.outcome) with $($bindResult.boundSlots) slots."
-                }
-            }
-        } else {
-            $journal.Note('Slot model preseed skipped: SlotModelPreseed = $false.')
+    if ($slotModelPreseed) {
+        $seedResult = & $invokeFieldOps -Arguments @('seed-approved-facts')
+        $journal.Observe('slot-model-preseed:seed-approved-facts', $seedResult.outcome, @{ output = $seedResult })
+        if ($seedResult.outcome -ne 'OK' -or [int]$seedResult.slotCount -ne 8) {
+            throw "Slot model preseed: seed-approved-facts answered $($seedResult.outcome) with $($seedResult.slotCount) slots."
         }
+        $preseededSlotModelVersionId = [string]$seedResult.slotModelVersionId
+        foreach ($vehicle in $fleet) {
+            $bindResult = & $invokeFieldOps -Arguments @('bind-io', '--agv', $vehicle.AgvId)
+            $journal.Observe("slot-model-preseed:bind-io:$($vehicle.AgvId)", $bindResult.outcome, @{ output = $bindResult })
+            if ($bindResult.outcome -ne 'OK' -or [int]$bindResult.boundSlots -ne 8) {
+                throw "Slot model preseed: bind-io for $($vehicle.AgvId) answered $($bindResult.outcome) with $($bindResult.boundSlots) slots."
+            }
+        }
+    } else {
+        $journal.Note('Slot model preseed skipped: SlotModelPreseed = $false.')
+    }
 
-        if ($areaAssignmentsSetting -is [bool]) {
-            $journal.Note('Area assignment import skipped: AreaAssignments = $false.')
+    if ($areaAssignmentsSetting -is [bool]) {
+        $journal.Note('Area assignment import skipped: AreaAssignments = $false.')
+    } else {
+        $assignmentRows = if ($null -ne $areaAssignmentsSetting) {
+            @($areaAssignmentsSetting | ForEach-Object {
+                    [pscustomobject]@{ Area = $_.Area; DispatchZone = $_.DispatchZone; SlotPosition = $_.SlotPosition } })
         } else {
-            $assignmentRows = if ($null -ne $areaAssignmentsSetting) {
-                @($areaAssignmentsSetting | ForEach-Object {
-                        [pscustomobject]@{ Area = $_.Area; DispatchZone = $_.DispatchZone; SlotPosition = $_.SlotPosition } })
-            } else {
-                # Read back off the double rather than restated here, so a scenario that replaces the stations
-                # gets a default table for its own stations. Parsed the way MapStationResolver parses a machine
-                # station's name: one to three distinct '_'-separated area codes, each like N1-3.
-                $stationNames = @(@($riot.Snapshot().body.maps | Where-Object { [int]$_.mapId -eq $mapId }) |
-                    ForEach-Object { $_.stations } | ForEach-Object { [string]$_.name })
-                $areas = @($stationNames | ForEach-Object {
-                        $tokens = @($_ -split '_')
-                        if ($tokens.Count -le 3 -and
-                            @($tokens | Sort-Object -Unique -CaseSensitive).Count -eq $tokens.Count -and
-                            @($tokens | Where-Object { $_ -cnotmatch '^[A-Z][A-Z0-9]*-[0-9]+$' }).Count -eq 0) {
-                            $tokens
-                        }
-                    } | Sort-Object -Unique -CaseSensitive)
-                if ($areas.Count -eq 0) {
-                    throw "Area assignment import: no station on map $mapId carries an area code, so the default table would be empty."
-                }
-                @($areas | ForEach-Object { [pscustomobject]@{ Area = $_; DispatchZone = $dispatchZone; SlotPosition = 'FRONT' } })
+            # Read back off the double rather than restated here, so a scenario that replaces the stations
+            # gets a default table for its own stations. Parsed the way MapStationResolver parses a machine
+            # station's name: one to three distinct '_'-separated area codes, each like N1-3.
+            $stationNames = @(@($riot.Snapshot().body.maps | Where-Object { [int]$_.mapId -eq $mapId }) |
+                ForEach-Object { $_.stations } | ForEach-Object { [string]$_.name })
+            $areas = @($stationNames | ForEach-Object {
+                    $tokens = @($_ -split '_')
+                    if ($tokens.Count -le 3 -and
+                        @($tokens | Sort-Object -Unique -CaseSensitive).Count -eq $tokens.Count -and
+                        @($tokens | Where-Object { $_ -cnotmatch '^[A-Z][A-Z0-9]*-[0-9]+$' }).Count -eq 0) {
+                        $tokens
+                    }
+                } | Sort-Object -Unique -CaseSensitive)
+            if ($areas.Count -eq 0) {
+                throw "Area assignment import: no station on map $mapId carries an area code, so the default table would be empty."
             }
-            # Into the evidence: what was imported is part of what the run proves.
-            $assignmentCsv = Join-Path $snapshotRoot 'preseed-area-assignments.csv'
-            $csvLines = @('area,dispatch_zone,slot_position') +
-                @($assignmentRows | ForEach-Object { "$($_.Area),$($_.DispatchZone),$($_.SlotPosition)" })
-            [IO.File]::WriteAllText($assignmentCsv, (($csvLines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+            @($areas | ForEach-Object { [pscustomobject]@{ Area = $_; DispatchZone = $dispatchZone; SlotPosition = 'FRONT' } })
+        }
+        # Into the evidence: what was imported is part of what the run proves.
+        $assignmentCsv = Join-Path $snapshotRoot 'preseed-area-assignments.csv'
+        $csvLines = @('area,dispatch_zone,slot_position') +
+            @($assignmentRows | ForEach-Object { "$($_.Area),$($_.DispatchZone),$($_.SlotPosition)" })
+        [IO.File]::WriteAllText($assignmentCsv, (($csvLines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
 
-            # The import judges a zone by the vehicles serving it in the server's stored dispatch policy, which the
-            # runtime writes on its own schedule; waiting for it keeps the import from racing the server.
-            $wantedZones = @($assignmentRows | ForEach-Object { [string]$_.DispatchZone } | Sort-Object -Unique)
-            $null = Wait-L2Condition -Description 'the server stored the dispatch zones the area assignment table names' `
-                -Journal $journal -Criterion 'slot-model-preseed:dispatch-zones' -TimeoutSeconds 60 -Component $serverHandle `
-                -Probe {
-                    $stored = Invoke-L2Query -Connection $connection -Sql 'SELECT DISTINCT Zone FROM DispatchZoneVehicles'
-                    $storedZones = @($stored | ForEach-Object { [string]$_.Zone })
-                    @($wantedZones | Where-Object { $_ -cnotin $storedZones }).Count
-                } -Until { param($v) $v -eq 0 }
-            try {
-                $importResult = & $invokeFieldOps -Arguments @('import-area-assignments', '--input', $assignmentCsv)
-            } catch {
-                $journal.Observe('slot-model-preseed:import-area-assignments', 'FAILED', @{ error = $_.Exception.Message })
-                throw
-            }
-            $journal.Observe('slot-model-preseed:import-area-assignments', $importResult.outcome, @{ output = $importResult })
-            if ($importResult.outcome -ne 'OK' -or [int]$importResult.entryCount -ne $assignmentRows.Count) {
-                throw "Area assignment import answered $($importResult.outcome) with $($importResult.entryCount) of $($assignmentRows.Count) rows."
-            }
+        # The import judges a zone by the vehicles serving it in the server's stored dispatch policy, which the
+        # runtime writes on its own schedule; waiting for it keeps the import from racing the server.
+        $wantedZones = @($assignmentRows | ForEach-Object { [string]$_.DispatchZone } | Sort-Object -Unique)
+        $null = Wait-L2Condition -Description 'the server stored the dispatch zones the area assignment table names' `
+            -Journal $journal -Criterion 'slot-model-preseed:dispatch-zones' -TimeoutSeconds 60 -Component $serverHandle `
+            -Probe {
+                $stored = Invoke-L2Query -Connection $connection -Sql 'SELECT DISTINCT Zone FROM DispatchZoneVehicles'
+                $storedZones = @($stored | ForEach-Object { [string]$_.Zone })
+                @($wantedZones | Where-Object { $_ -cnotin $storedZones }).Count
+            } -Until { param($v) $v -eq 0 }
+        try {
+            $importResult = & $invokeFieldOps -Arguments @('import-area-assignments', '--input', $assignmentCsv)
+        } catch {
+            $journal.Observe('slot-model-preseed:import-area-assignments', 'FAILED', @{ error = $_.Exception.Message })
+            throw
+        }
+        $journal.Observe('slot-model-preseed:import-area-assignments', $importResult.outcome, @{ output = $importResult })
+        if ($importResult.outcome -ne 'OK' -or [int]$importResult.entryCount -ne $assignmentRows.Count) {
+            throw "Area assignment import answered $($importResult.outcome) with $($importResult.entryCount) of $($assignmentRows.Count) rows."
         }
     }
 
