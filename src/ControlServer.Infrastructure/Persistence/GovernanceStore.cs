@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Infrastructure.Persistence;
@@ -62,6 +63,21 @@ public sealed class GovernanceStore : IConfigurationSnapshotStore, IGovernanceAu
         _deploymentIdentity = deploymentIdentity;
     }
 
+    /// <summary>
+    /// 冻结一版。同一版同一份内容再冻一次拿回既有那一份；同一版不同内容则明着报错。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 「同一版不同内容」意味着两个写入方在同一条版本线上取到了同一个号。这里原样返回既有快照的话，
+    /// 后到的那个写入方的行与审计就指向了一份它从没发布过的内容，而唯一索引
+    /// <c>(ObjectKind, ObjectId, Version)</c> 一次都没被碰到——库里没有任何东西记下这件事发生过。
+    /// 既有那一版一个字节不动，被拒的是「悄悄」。
+    /// </para>
+    /// <para>
+    /// 读与写之间还有一个窗口：另一个进程可能恰好在这中间冻上同一版。那一条由唯一索引挡下，在这里被
+    /// 翻译成同一个冲突——内容相同就当作重投，返回对方那一份。
+    /// </para>
+    /// </remarks>
     public async Task<GovernedConfigurationSnapshot> FreezeAsync(
         GovernedObjectKind objectKind,
         string objectId,
@@ -79,7 +95,7 @@ public sealed class GovernanceStore : IConfigurationSnapshotStore, IGovernanceAu
                 cancellationToken);
         if (existing is not null)
         {
-            return Project(existing);
+            return SameContentOrConflict(existing, contentJson);
         }
 
         GovernedConfigurationSnapshotRow row = new()
@@ -93,9 +109,53 @@ public sealed class GovernanceStore : IConfigurationSnapshotStore, IGovernanceAu
             FrozenAt = frozenAt
         };
         _context.Set<GovernedConfigurationSnapshotRow>().Add(row);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException failure) when (IsVersionAlreadyFrozen(failure, row))
+        {
+            _context.Entry(row).State = EntityState.Detached;
+            GovernedConfigurationSnapshotRow taken = await _context.Set<GovernedConfigurationSnapshotRow>()
+                .AsNoTracking()
+                .SingleAsync(
+                    candidate => candidate.ObjectKind == objectKind
+                        && candidate.ObjectId == objectId
+                        && candidate.Version == version,
+                    cancellationToken);
+            return SameContentOrConflict(taken, contentJson, failure);
+        }
         return Project(row);
     }
+
+    /// <summary>一版有且只有一份内容：一样就是重投，不一样就是撞号。</summary>
+    private static GovernedConfigurationSnapshot SameContentOrConflict(
+        GovernedConfigurationSnapshotRow frozen,
+        string contentJson,
+        Exception? innerException = null) =>
+        string.Equals(frozen.ContentJson, contentJson, StringComparison.Ordinal)
+            ? Project(frozen)
+            : throw new GovernedSnapshotVersionConflictException(
+                frozen.ObjectKind,
+                frozen.ObjectId,
+                frozen.Version,
+                frozen.SnapshotId,
+                frozen.ContentSha256,
+                Sha256(contentJson),
+                innerException);
+
+    /// <summary>
+    /// 这次插入是不是被 <c>(ObjectKind, ObjectId, Version)</c> 的唯一索引挡下的。
+    /// </summary>
+    /// <remarks>
+    /// SQLite 用 <c>SQLITE_CONSTRAINT</c>（19）报约束冲突。只认与本次插入同一行的失败，别的写入失败照常
+    /// 抛出去——把一次磁盘错误当成撞号会让重试转到天亮。
+    /// </remarks>
+    private static bool IsVersionAlreadyFrozen(DbUpdateException failure, GovernedConfigurationSnapshotRow row) =>
+        failure.InnerException is SqliteException { SqliteErrorCode: SqliteConstraintErrorCode }
+        && failure.Entries.Any(entry => ReferenceEquals(entry.Entity, row));
+
+    private const int SqliteConstraintErrorCode = 19;
 
     public async Task<GovernedConfigurationSnapshot?> ReadAsync(
         GovernedObjectKind objectKind,
