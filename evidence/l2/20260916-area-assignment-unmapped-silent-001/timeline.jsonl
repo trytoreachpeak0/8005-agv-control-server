@@ -1,0 +1,29 @@
+{"at":"2026-09-16T09:15:31.9125864+00:00","note":"L2 run 20260916T091531868Z starting for scenario 'area-assignment-unmapped-silent'."}
+{"at":"2026-09-16T09:15:31.9686072+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T09:15:31.9703141+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T09:15:46.5811197+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T09:15:46.8434177+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T09:15:51.1677876+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T09:15:53.3267583+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T09:15:53.4263761+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-16T09:15:54.1948791+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-16T09:15:54.4804964+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T09:15:54.5419350+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T09:15:54.6136410+00:00","note":"Environment is up; entering scenario 'area-assignment-unmapped-silent'."}
+{"at":"2026-09-16T09:15:54.7402362+00:00","criterion":"dispatch-zone-configured","value":"1"}
+{"at":"2026-09-16T09:15:54.7818094+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T091531868Z\\controlserver.db"}
+{"at":"2026-09-16T09:15:57.4155979+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T091531868Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-area-assignment-unmapped-silent-001\\snapshots\\area-assignments.csv"}
+{"at":"2026-09-16T09:15:58.7589615+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T091531868Z\\controlserver.db"}
+{"at":"2026-09-16T09:15:59.8478670+00:00","note":"Publishing demand a74e2bbf234c454591fcbc8284f85fda (N1-7, AREA N1-7) to the fake MesIngest catalog."}
+{"at":"2026-09-16T09:15:59.8965334+00:00","note":"Publishing demand f5f7f1a2eec740518ccc1f88f7de461d (T5-2, AREA T5-2) to the fake MesIngest catalog."}
+{"at":"2026-09-16T09:15:59.9358286+00:00","criterion":"backlog-rows","value":"0"}
+{"at":"2026-09-16T09:16:00.7421868+00:00","criterion":"backlog-rows","value":"2"}
+{"at":"2026-09-16T09:16:00.8013304+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-16T09:16:01.6137269+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-16T09:16:02.6737207+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-16T09:16:03.7329943+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-16T09:16:03.7415366+00:00","note":"Publishing demand 54100a473d124dfe81ed909499478186 (N1-3, AREA N1-3) to the fake MesIngest catalog."}
+{"at":"2026-09-16T09:16:03.7778689+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-16T09:16:05.0909566+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-16T09:16:05.1460876+00:00","note":"表里没有的 AREA 静默不执行，表里有的 T 开头 AREA 通过白名单，N1-3 受理并冻结当前版本。"}
+{"at":"2026-09-16T09:16:05.5380118+00:00","note":"L2 port block lock released."}
