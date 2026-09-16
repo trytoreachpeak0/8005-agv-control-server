@@ -66,9 +66,11 @@ internal static class Program
             return Usage($"database file not found: {databasePath}");
         }
 
+        // 体检命令一行不写，所以连库都用 SQLite 自己的只读模式开——「只读」由驱动保证，不是靠这里自觉。
+        bool readOnly = args[0] is CheckBindingSnapshotsCommand;
         DbContextOptions<ControlServerDbContext> contextOptions =
             new DbContextOptionsBuilder<ControlServerDbContext>()
-                .UseSqlite($"Data Source={databasePath}")
+                .UseSqlite($"Data Source={databasePath}" + (readOnly ? ";Mode=ReadOnly" : string.Empty))
                 .Options;
         await using ControlServerDbContext context = new(contextOptions);
         GovernanceStore governance = new(
@@ -86,8 +88,51 @@ internal static class Program
             "seed-approved-facts" => await SeedApprovedFactsAsync(context, governance, now),
             "bind-io" => await BindIoAsync(context, governance, options, now),
             "export-audit" => await ExportAuditAsync(context, options, now),
+            CheckBindingSnapshotsCommand => await CheckBindingSnapshotsAsync(context),
             _ => Usage($"unknown command '{args[0]}'")
         };
+    }
+
+    private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
+
+    /// <summary>
+    /// 体检：哪些 IO 绑定行指着的快照装的不是它们自己。**只读，一行不写。**
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 找的是取号撞车留下的痕迹：绑定发布与激活、回滚曾经会取到同一个版本号，后冻结的一方于是拿回先
+    /// 冻结那一方的快照，绑定行与它的发布审计就指向了一份别人的内容。取号修好之后新写入不再产生这种
+    /// 行，已经写下的不会自己变好。
+    /// </para>
+    /// <para>
+    /// 退出码沿用本工具的约定：0 是干净，1 是查出了东西（不是工具出错），2 是用法错误。它不修任何东西
+    /// ——一版快照不可改写，重新发布一版并作废旧的那一版是有人负责的运维决定。
+    /// </para>
+    /// </remarks>
+    private static async Task<int> CheckBindingSnapshotsAsync(ControlServerDbContext context)
+    {
+        IReadOnlyList<SlotBindingSnapshotFinding> findings =
+            await SlotConfigurationBindingSnapshotAudit.ScanAsync(context, CancellationToken.None);
+        return Emit(
+            new
+            {
+                command = CheckBindingSnapshotsCommand,
+                outcome = findings.Count == 0 ? "OK" : "FINDINGS",
+                count = findings.Count,
+                findings = findings.Select(finding => new
+                {
+                    agvId = finding.AgvId,
+                    slotModelVersionId = finding.SlotModelVersionId,
+                    objectId = finding.ObjectId,
+                    version = finding.Version,
+                    snapshotId = finding.SnapshotId,
+                    problem = finding.Problem,
+                    slotsOnlyInSnapshot = finding.SlotsOnlyInSnapshot,
+                    slotsOnlyInRows = finding.SlotsOnlyInRows,
+                    differingFields = finding.DifferingFields
+                })
+            },
+            findings.Count == 0 ? 0 : 1);
     }
 
     /// <summary>
@@ -485,8 +530,8 @@ internal static class Program
     {
         Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"ControlServer.FieldOps: {problem}."));
         Console.Error.WriteLine(
-            "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io|export-audit>"
-            + " --database <path> [options]");
+            "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io"
+            + "|export-audit|check-binding-snapshots> --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
         Console.Error.WriteLine("  enable-gate [--note <text>]");
@@ -496,6 +541,8 @@ internal static class Program
         Console.Error.WriteLine(
             "  export-audit --stream <business|administrator> --format <csv|json> --output <file>"
             + " [--since <iso-8601>] [--until <iso-8601>]");
+        Console.Error.WriteLine(
+            "  check-binding-snapshots   read-only; exit 1 means findings, not a tool failure");
         return 2;
     }
 }

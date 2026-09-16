@@ -59,55 +59,62 @@ public sealed class SlotConfigurationActivationCoordinator(
 
         await RequireCompletePublishedTargetAsync(agvId, slotModelVersionId, cancellationToken);
 
-        string objectId = FormattableString.Invariant($"{agvId}:{slotModelVersionId}");
-        long version = await NextVersionAsync(objectId, cancellationToken);
-        SlotIoBindingRow[] bindings = await VehicleSlotModelResolver.ReadLatestPublishedBindingsAsync(
-            _context, agvId, slotModelVersionId, cancellationToken);
-        GovernedConfigurationSnapshot snapshot = await _publisher.PublishVersionAsync(
-            GovernedObjectKind.ActiveSlotConfiguration,
-            objectId,
-            version,
-            JsonSerializer.Serialize(bindings
-                .OrderBy(binding => binding.PhysicalSlotNumber)
-                .Select(binding => new
-                {
-                    binding.PhysicalSlotNumber,
-                    binding.UnlockOutputPoint,
-                    binding.LockFeedbackInputPoint,
-                    binding.LightCurtainInputPoint,
-                    binding.SignalPolarity,
-                    binding.PulseResetMilliseconds
-                })),
-            "SLOT_CONFIGURATION_ACTIVATION_ISSUED",
-            occurredAt,
-            cancellationToken);
+        // 取号走共用的版本线：绑定发布已经写下、还没冻上快照的那一版也算被占用，否则这次激活会与它
+        // 撞号，而先冻结的一方会让后冻结的一方悄悄拿到自己的快照。
+        SlotConfigurationVersionLine line = SlotConfigurationVersionLine.For(agvId, slotModelVersionId);
+        return await line.PublishNextVersionAsync(
+            _context,
+            async (version, token) =>
+            {
+                SlotIoBindingRow[] bindings = await VehicleSlotModelResolver.ReadLatestPublishedBindingsAsync(
+                    _context, agvId, slotModelVersionId, token);
+                GovernedConfigurationSnapshot snapshot = await _publisher.PublishVersionAsync(
+                    GovernedObjectKind.ActiveSlotConfiguration,
+                    line.ObjectId,
+                    version,
+                    JsonSerializer.Serialize(bindings
+                        .OrderBy(binding => binding.PhysicalSlotNumber)
+                        .Select(binding => new
+                        {
+                            binding.PhysicalSlotNumber,
+                            binding.UnlockOutputPoint,
+                            binding.LockFeedbackInputPoint,
+                            binding.LightCurtainInputPoint,
+                            binding.SignalPolarity,
+                            binding.PulseResetMilliseconds
+                        })),
+                    "SLOT_CONFIGURATION_ACTIVATION_ISSUED",
+                    occurredAt,
+                    token);
 
-        SlotConfigurationActivationRow activation = new()
-        {
-            ActivationId = NewId(),
-            AgvId = agvId,
-            SlotModelVersionId = slotModelVersionId,
-            ConfigurationVersion = version,
-            // 指纹是跨端契约，不是这份治理快照对自己内容的摘要（后者是 #9 的审计事实，格式随快照的
-            // 序列化走）。协议 v2 的消息 7 不带配置内容，那次激活是一次核验——车算自己手上那份的指纹
-            // 与它比，所以它必须由两端共用的那套规范化规则算出来。
-            Fingerprint = SlotConfigurationFingerprint.Compute(
-                [.. bindings.Select(binding => new SlotIoBindingSpecification(
-                    binding.PhysicalSlotNumber,
-                    binding.UnlockOutputPoint,
-                    binding.LockFeedbackInputPoint,
-                    binding.LightCurtainInputPoint,
-                    binding.SignalPolarity,
-                    binding.PulseResetMilliseconds))]),
-            Kind = SlotConfigurationActivationKind.Activation,
-            State = SlotConfigurationActivationState.PendingResult,
-            RecoveryRole = SlotConfigurationActivationDelivery.RecoveryRole,
-            IssuedAt = occurredAt,
-            SnapshotId = snapshot.SnapshotId
-        };
-        _context.Set<SlotConfigurationActivationRow>().Add(activation);
-        await _context.SaveChangesAsync(cancellationToken);
-        return activation;
+                SlotConfigurationActivationRow activation = new()
+                {
+                    ActivationId = NewId(),
+                    AgvId = agvId,
+                    SlotModelVersionId = slotModelVersionId,
+                    ConfigurationVersion = version,
+                    // 指纹是跨端契约，不是这份治理快照对自己内容的摘要（后者是 #9 的审计事实，格式随快照的
+                    // 序列化走）。协议 v2 的消息 7 不带配置内容，那次激活是一次核验——车算自己手上那份的指纹
+                    // 与它比，所以它必须由两端共用的那套规范化规则算出来。
+                    Fingerprint = SlotConfigurationFingerprint.Compute(
+                        [.. bindings.Select(binding => new SlotIoBindingSpecification(
+                            binding.PhysicalSlotNumber,
+                            binding.UnlockOutputPoint,
+                            binding.LockFeedbackInputPoint,
+                            binding.LightCurtainInputPoint,
+                            binding.SignalPolarity,
+                            binding.PulseResetMilliseconds))]),
+                    Kind = SlotConfigurationActivationKind.Activation,
+                    State = SlotConfigurationActivationState.PendingResult,
+                    RecoveryRole = SlotConfigurationActivationDelivery.RecoveryRole,
+                    IssuedAt = occurredAt,
+                    SnapshotId = snapshot.SnapshotId
+                };
+                _context.Set<SlotConfigurationActivationRow>().Add(activation);
+                await _context.SaveChangesAsync(token);
+                return activation;
+            },
+            cancellationToken);
     }
 
     /// <summary>
@@ -275,15 +282,6 @@ public sealed class SlotConfigurationActivationCoordinator(
                 + "A vehicle configuration is activated whole or not at all, so an incomplete one is refused "
                 + "before it goes out, not after.");
         }
-    }
-
-    private async Task<long> NextVersionAsync(string objectId, CancellationToken cancellationToken)
-    {
-        long[] versions = await _context.Set<GovernedConfigurationSnapshotRow>().AsNoTracking()
-            .Where(row => row.ObjectKind == GovernedObjectKind.ActiveSlotConfiguration && row.ObjectId == objectId)
-            .Select(row => row.Version)
-            .ToArrayAsync(cancellationToken);
-        return versions.Length == 0 ? 1 : versions.Max() + 1;
     }
 
     /// <summary>

@@ -27,7 +27,7 @@ public sealed class GovernanceSnapshotAndAuditTests
     });
 
     [Fact]
-    public async Task FrozenSnapshotComesBackFieldForFieldAndRefreezingTheSameVersionDoesNotWriteASecondOne()
+    public async Task FrozenSnapshotComesBackFieldForFieldAndRefreezingTheSameContentDoesNotWriteASecondOne()
     {
         await using GovernanceFixture fixture = await GovernanceFixture.CreateAsync();
         string content = TemplateContent(300);
@@ -35,8 +35,9 @@ public sealed class GovernanceSnapshotAndAuditTests
         GovernedConfigurationSnapshot first = await fixture.Store.FreezeAsync(
             GovernedObjectKind.SlotTemplate, TemplateId, 1, content, fixture.Now,
             TestContext.Current.CancellationToken);
+        // 同一版、同一份内容再冻一次：拿回既有那一份，不写第二条。重投与重试都靠这一条。
         GovernedConfigurationSnapshot second = await fixture.Store.FreezeAsync(
-            GovernedObjectKind.SlotTemplate, TemplateId, 1, TemplateContent(999), fixture.Now.AddHours(1),
+            GovernedObjectKind.SlotTemplate, TemplateId, 1, content, fixture.Now.AddHours(1),
             TestContext.Current.CancellationToken);
 
         Assert.Equal(first.SnapshotId, second.SnapshotId);
@@ -53,6 +54,44 @@ public sealed class GovernanceSnapshotAndAuditTests
         using JsonDocument frozen = JsonDocument.Parse(read.ContentJson);
         Assert.Equal(300, frozen.RootElement.GetProperty("heightMm").GetInt32());
         Assert.Equal(600, frozen.RootElement.GetProperty("lengthMm").GetInt32());
+    }
+
+    /// <summary>
+    /// 同一版被另一份内容占着：明着报错，不把调用方的东西挂到别人的快照上。
+    /// </summary>
+    /// <remarks>
+    /// 这是两个写入方在同一条版本线上取到同一个号的样子。原样返回既有快照会让第二个写入方的行与审计
+    /// 指向它从没发布过的内容，而唯一索引 <c>(ObjectKind, ObjectId, Version)</c> 一次都没被碰到——
+    /// 谁都不会知道。既有那一版一个字节不动，被拒的是「悄悄」这件事。
+    /// </remarks>
+    [Fact]
+    public async Task RefreezingAVersionWithDifferentContentFailsLoudlyInsteadOfReturningTheExistingSnapshot()
+    {
+        await using GovernanceFixture fixture = await GovernanceFixture.CreateAsync();
+        GovernedConfigurationSnapshot first = await fixture.Store.FreezeAsync(
+            GovernedObjectKind.SlotTemplate, TemplateId, 1, TemplateContent(300), fixture.Now,
+            TestContext.Current.CancellationToken);
+
+        GovernedSnapshotVersionConflictException conflict =
+            await Assert.ThrowsAsync<GovernedSnapshotVersionConflictException>(() =>
+                fixture.Store.FreezeAsync(
+                    GovernedObjectKind.SlotTemplate, TemplateId, 1, TemplateContent(999),
+                    fixture.Now.AddHours(1), TestContext.Current.CancellationToken));
+
+        Assert.Equal(GovernedObjectKind.SlotTemplate, conflict.ObjectKind);
+        Assert.Equal(TemplateId, conflict.ObjectId);
+        Assert.Equal(1, conflict.Version);
+        Assert.Equal(first.SnapshotId, conflict.ExistingSnapshotId);
+        Assert.Equal(first.ContentSha256, conflict.ExistingContentSha256);
+        Assert.NotEqual(conflict.ExistingContentSha256, conflict.AttemptedContentSha256);
+
+        // 既有那一版原封不动，也没有多出第二条。
+        Assert.Equal(1, await fixture.Context.Set<GovernedConfigurationSnapshotRow>()
+            .CountAsync(TestContext.Current.CancellationToken));
+        GovernedConfigurationSnapshot read = Assert.IsType<GovernedConfigurationSnapshot>(
+            await fixture.Store.ReadAsync(
+                GovernedObjectKind.SlotTemplate, TemplateId, 1, TestContext.Current.CancellationToken));
+        Assert.Equal(TemplateContent(300), read.ContentJson);
     }
 
     [Fact]

@@ -90,6 +90,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",
             ["SlotConfigurationGateModeTests"] = "readiness gate mode validation; no wire message",
             ["SlotConfigurationReadinessGateTests"] = "batch 3 per-vehicle IO integrity gate; a server-side readiness predicate, no wire message",
+            ["SlotConfigurationVersionLineTests"] = "batch 4 FP-C7/FP-C9b version allocation on the shared ActiveSlotConfiguration line; a server-internal write-ordering rule between two processes, no wire message",
             ["StructuralDispatchBlockStoreTests"] = "batch 4 REQ-0210 structural dispatch block storage; server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
             ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"
