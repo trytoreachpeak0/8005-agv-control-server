@@ -1,0 +1,30 @@
+{"at":"2026-09-16T08:00:25.6026544+00:00","note":"L2 run 20260916T080025538Z starting for scenario 'normal-load'."}
+{"at":"2026-09-16T08:00:25.6920686+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T08:00:25.6948759+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T08:00:30.5975227+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T08:00:30.8812451+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T08:00:35.4737211+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T08:00:37.6531066+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T08:00:37.7965569+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-16T08:00:38.5799444+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-16T08:00:38.8545325+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T08:00:38.9210006+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T08:00:38.9720782+00:00","note":"Environment is up; entering scenario 'normal-load'."}
+{"at":"2026-09-16T08:00:39.0097788+00:00","note":"Publishing demand 71f0a58f11fd468e8363e6cdfc9b1f87 (sublot L2-SUBLOT-20260916T080025538Z) to the fake MesIngest catalog."}
+{"at":"2026-09-16T08:00:39.1085736+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-16T08:00:39.9111630+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-16T08:00:39.9186655+00:00","criterion":"to-pickup-intent","value":"PENDING_RECONCILIATION"}
+{"at":"2026-09-16T08:00:40.1893401+00:00","criterion":"to-pickup-intent","value":"CONFIRMED"}
+{"at":"2026-09-16T08:00:40.2149680+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-16T08:00:40.2900464+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-16T08:00:41.3598671+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-16T08:00:42.4226590+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-16T08:00:43.2168413+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-09-16T08:00:48.2058292+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-16T08:00:48.4704306+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-16T08:00:48.4745914+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-09-16T08:00:48.4944259+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-16T08:00:49.8154377+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-16T08:00:50.3467112+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-16T08:00:50.3563870+00:00","note":"Scenario finished."}
+{"at":"2026-09-16T08:00:50.7717724+00:00","note":"L2 port block lock released."}

@@ -9,6 +9,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Commands;
@@ -199,6 +200,80 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(JourneyRuntimeStage.AwaitingDepartureSafety, runtime.Stage);
         Assert.Null(runtime.StationDepartureWaitStartedAt);
         Assert.Contains("PreDepartureSafetyCheck", await fixture.OutboxTypesAsync());
+    }
+
+    /// <summary>
+    /// 8005-agv-control-server#28, fixed on the MVP line as #40 and carried to v2 here. One DbContext
+    /// serves a whole TCP connection while the runtime worker writes the same journeys and operations
+    /// from a context of its own, so every row an earlier message on that connection read was handed
+    /// back to every later message as it stood then. The window that matters most is the narrowest one
+    /// the server has: REQ-0237 lets an ordinary mis-placement be corrected only while the vehicle is
+    /// still waiting at the pickup with its load committed. A connection that had asked once while the
+    /// load was still running held the journey at AwaitingLoadResult and the operation at Prepared, so
+    /// when the operator pressed 「修正装货」 inside the real window the server refused it against a
+    /// picture minutes out of date -- and the vehicle drove to the gate with the wrong slots filled,
+    /// with nothing left that could put it right.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("ProtocolVector", "CV-LOAD-CORRECTION")]
+    public async Task TheNextMessageOnAConnectionJudgesACorrectionOnTheJourneyAsStored()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToLoadResultAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, runtime.Stage);
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        int[] slots = JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson)!;
+
+        // The operator presses it once while the load is still running. Refused, correctly -- and the
+        // connection has now read both the operation and the journey.
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        string early = await fixture.RequestLoadCorrectionOnConnectionAsync(
+            connection,
+            "70000000-0000-4000-8000-000000000011",
+            runtime.DemandId,
+            load.SlotOperationAttemptId,
+            slots);
+        Assert.Equal("LoadCorrectionRejected", CorrectionOutcome(early));
+
+        // The load commits and the runtime, from its own context, puts the vehicle into the departure
+        // wait -- the one window in which a correction is allowed.
+        await fixture.ApplySafeResultAsync(load, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.AwaitingStationDeparture, (await fixture.RuntimeAsync()).Stage);
+
+        string inWindow = await fixture.RequestLoadCorrectionOnConnectionAsync(
+            connection,
+            "70000000-0000-4000-8000-000000000012",
+            runtime.DemandId,
+            load.SlotOperationAttemptId,
+            slots);
+
+        Assert.Equal("AUTHORIZED", CorrectionOutcome(inWindow));
+        Assert.Contains("LoadCorrectionCommand", await fixture.OutboxTypesAsync());
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Single(await fixture.Context.RecoveryWorkflows
+            .Where(row => row.WorkflowType == "LOAD_CORRECTION")
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
+    /// An authorized correction is answered by the LoadCorrectionCommand that goes out, not by a line
+    /// back on this connection, so an empty answer is the authorization. A refusal names itself.
+    /// </summary>
+    private static string CorrectionOutcome(string response)
+    {
+        if (string.IsNullOrEmpty(response))
+        {
+            return "AUTHORIZED";
+        }
+        using JsonDocument document = JsonDocument.Parse(
+            response.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
+        return document.RootElement.GetProperty("messageType").GetString()!;
     }
 
     /// <summary>
@@ -3532,6 +3607,74 @@ public sealed class JourneyRuntimeWorkerTests
                 })
             }, generation);
         }
+
+        /// <summary>
+        /// A second DbContext over the same database, which is what a TCP connection gets: OnboardTcpServer
+        /// opens one scope -- and so one context -- for as long as a connection lives, while the runtime
+        /// worker writes the same journeys and operations from a context of its own on every pass. Built
+        /// from <see cref="DbOptions"/>, the same options the engine's context uses, so this second
+        /// context carries the interceptors too and the fixture has one way of opening another scope
+        /// rather than two that differ in what they record.
+        /// </summary>
+        public ControlServerDbContext OpenConnectionContext() => new(DbOptions);
+
+        /// <summary>
+        /// The operator's 「修正装货」, entering through OnboardMessageProcessor on the connection whose
+        /// context is <paramref name="connection"/>, the way every message on a TCP connection does.
+        /// Returns the server's answer: LoadCorrectionAuthorization when it is authorized,
+        /// LoadCorrectionRejected when it is not.
+        /// </summary>
+        public async Task<string> RequestLoadCorrectionOnConnectionAsync(
+            ControlServerDbContext connection,
+            string correctionId,
+            string demandId,
+            string attemptId,
+            int[] slots)
+        {
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                connection, new WireToGateStore(connection), Clock, new ConfigurationBuilder().Build());
+            OnboardConnectionState state = new()
+            {
+                AgvId = Options.AgvId,
+                SessionGeneration = 1,
+                CapabilityRevision = 1,
+                SafetyRevision = 7,
+                Readiness = SessionReadiness.Ready
+            };
+            return await processor.ProcessAsync(
+                PeerEnvelope(
+                    "LoadCorrectionRequested",
+                    new
+                    {
+                        correctionId,
+                        demandId,
+                        slotOperationAttemptId = attemptId,
+                        slots,
+                        @operator = new
+                        {
+                            operatorId = "OP-001",
+                            verificationMethod = "BADGE",
+                            verifiedAt = Clock.GetUtcNow()
+                        }
+                    }),
+                state,
+                TestContext.Current.CancellationToken);
+        }
+
+        private string PeerEnvelope(string messageType, object payload) => JsonSerializer.Serialize(new
+        {
+            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+            profileId = ProtocolCandidateIdentity.ProfileId,
+            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
+            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+            messageType,
+            messageId = Guid.NewGuid().ToString("D"),
+            correlationId = (string?)null,
+            agvId = Options.AgvId,
+            sessionGeneration = 1L,
+            sentAt = Clock.GetUtcNow(),
+            payload
+        }, SerializerOptions);
 
         private async Task AddRawInboxAsync(
             string messageType,

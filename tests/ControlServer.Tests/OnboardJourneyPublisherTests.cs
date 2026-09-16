@@ -85,7 +85,11 @@ public sealed class OnboardJourneyPublisherTests
             TestContext.Current.CancellationToken);
 
         Assert.Empty(response);
-        Assert.Equal(clock.LastReturned, row.AcknowledgedAt);
+        // Read back rather than asserted on `row`: OnboardMessageProcessor clears this context's tracking
+        // at the top of every message (8005-agv-control-server#28/#40), so the instance loaded before the
+        // call is no longer the one the acknowledgement wrote.
+        Assert.Equal(clock.LastReturned, (await context.ProtocolOutbox.SingleAsync(
+            item => item.MessageId == messageId, TestContext.Current.CancellationToken)).AcknowledgedAt);
 
         await publisher.PublishVehicleBusinessStateAsync(
             messageId,
@@ -449,7 +453,11 @@ public sealed class OnboardJourneyPublisherTests
             TestContext.Current.CancellationToken);
 
         Assert.Empty(response);
-        Assert.NotNull(row.AcknowledgedAt);
+        // Read back rather than asserted on `row`: OnboardMessageProcessor clears this context's tracking
+        // at the top of every message (8005-agv-control-server#28/#40), so the instance loaded before the
+        // call is no longer the one the acknowledgement wrote.
+        Assert.NotNull((await context.ProtocolOutbox.SingleAsync(
+            item => item.MessageId == messageId, TestContext.Current.CancellationToken)).AcknowledgedAt);
         await publisher.PublishSublotEntryRequestAsync(
             messageId, "AGV-001", 12, request, TestContext.Current.CancellationToken);
         Assert.Equal(2, peer.Lines.Count);
@@ -560,7 +568,11 @@ public sealed class OnboardJourneyPublisherTests
             TestContext.Current.CancellationToken);
 
         Assert.Empty(response);
-        Assert.NotNull(row.AcknowledgedAt);
+        // Read back rather than asserted on `row`: OnboardMessageProcessor clears this context's tracking
+        // at the top of every message (8005-agv-control-server#28/#40), so the instance loaded before the
+        // call is no longer the one the acknowledgement wrote.
+        Assert.NotNull((await context.ProtocolOutbox.SingleAsync(
+            item => item.MessageId == messageId, TestContext.Current.CancellationToken)).AcknowledgedAt);
     }
 
     [Fact]

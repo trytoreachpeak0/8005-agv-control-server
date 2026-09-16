@@ -83,15 +83,28 @@ public sealed class OnboardRecoveryCoordinator(
             cancellationToken).ConfigureAwait(false);
         ValidateResultIdentity(messageType, payload, workflow);
 
+        // DEFENSIVE RESIDUE, not a live path. Since 8005-agv-control-server#77 every inbound line reaches
+        // this method through OnboardMessageProcessor, and the inbox there answers a second arrival of the
+        // same messageId before this method is called at all: byte-identical replays return the first
+        // response, resends that differ only in sessionGeneration are answered by RebindDurableAckAsync,
+        // and anything else is already a content conflict. So no production caller can get here with a
+        // row on file. It stays because this method is public and its contract -- one durable result per
+        // messageId -- must hold for any caller, and because a future entry point that skips the inbox
+        // would otherwise write a second evidence row in silence.
+        //
+        // What it must NOT do is judge equivalence a second time. That is decided once, by the inbox,
+        // which ignores the sessionGeneration a resend rebinds and nothing else (#30). This compared the
+        // whole line's hash, which a resend changes by definition, so whichever path reached it second
+        // turned an accepted resend into a dropped connection. Identity is what is left: the same
+        // messageId must still name the same workflow and the same kind of record.
         RecoveryResultEvidenceRow? existing = await dbContext.RecoveryResultEvidence
             .SingleOrDefaultAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
-            if (existing.ContentHash != contentHash || existing.WorkflowId != workflowId ||
-                existing.MessageType != messageType)
+            if (existing.WorkflowId != workflowId || existing.MessageType != messageType)
             {
                 throw new ProtocolContentConflictException(
-                    "Recovery result MessageId was replayed with different identity or content.");
+                    "Recovery result MessageId was replayed with a different identity.");
             }
             return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
         }
