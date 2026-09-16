@@ -339,15 +339,9 @@ public sealed class StructuralDispatchBlockStore(ControlServerDbContext context)
 /// 车辆各仓位的 SlotPosition 分组，取服务端对「这台车绑的是哪个整车模型」的正式记录，不取车报（program#70 定案 4）。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 解析顺序固定：生效配置 <c>ActiveSlotConfigurations</c> 引用的模型；没有时退到该车最新一版已发布 IO 绑定引用的模型；
-/// 都没有就是未解析，由调用方 fail-closed。不回退到已批准八仓事实的默认模型，也不按仓号区间推断。
-/// </para>
-/// <para>
-/// 「最新一版 IO 绑定」按绑定时间取，时间相同再比版本号。版本号是按（车，模型）各自从 1 编号的
-/// （<see cref="SlotConfigurationAuthorityStore.PublishIoBindingsAsync"/>），一台车先后绑过两个模型时，只比版本号会让
-/// 改过两版的旧模型压过刚绑上的新模型。
-/// </para>
+/// 解析顺序与并列规则都在 <see cref="VehicleSlotModelResolver"/>，核验车载端配置声明用的是同一份实现。
+/// 概括：生效配置引用的车型 → 该车最新一版已发布 IO 绑定引用的车型 → 未解析（由调用方 fail-closed），
+/// 不回退到默认车型，也不按仓号区间推断。
 /// </remarks>
 public sealed class VehicleSlotPositionReader(ControlServerDbContext context) : IVehicleSlotPositionReader
 {
@@ -357,14 +351,14 @@ public sealed class VehicleSlotPositionReader(ControlServerDbContext context) : 
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
 
-        (string SlotModelVersionId, VehicleSlotPositionSource Source)? model =
-            await ResolveModelAsync(agvId, cancellationToken);
+        VehicleSlotModelResolution? model =
+            await VehicleSlotModelResolver.ResolveAsync(_context, agvId, cancellationToken);
         if (model is null)
         {
             return null;
         }
 
-        string slotModelVersionId = model.Value.SlotModelVersionId;
+        string slotModelVersionId = model.SlotModelVersionId;
         SlotModelSlotRow[] slots = await _context.Set<SlotModelSlotRow>()
             .AsNoTracking()
             .Where(row => row.SlotModelVersionId == slotModelVersionId)
@@ -376,7 +370,7 @@ public sealed class VehicleSlotPositionReader(ControlServerDbContext context) : 
             : new VehicleSlotPositions(
                 agvId,
                 slotModelVersionId,
-                model.Value.Source,
+                model.Source,
                 slots.ToDictionary(row => row.PhysicalSlotNumber, row => row.SlotPosition));
     }
 
@@ -401,32 +395,5 @@ public sealed class VehicleSlotPositionReader(ControlServerDbContext context) : 
             largest = Math.Max(largest, positions.PhysicalSlotCountByGroup.GetValueOrDefault(slotPosition));
         }
         return new SlotPositionGroupCapacity(slotPosition, largest, unresolved);
-    }
-
-    private async Task<(string SlotModelVersionId, VehicleSlotPositionSource Source)?> ResolveModelAsync(
-        string agvId,
-        CancellationToken cancellationToken)
-    {
-        string? active = await _context.Set<ActiveSlotConfigurationRow>()
-            .AsNoTracking()
-            .Where(row => row.AgvId == agvId)
-            .Select(row => row.SlotModelVersionId)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (active is not null)
-        {
-            return (active, VehicleSlotPositionSource.ActiveSlotConfiguration);
-        }
-
-        var bindings = await _context.Set<SlotIoBindingRow>()
-            .AsNoTracking()
-            .Where(row => row.AgvId == agvId && row.Status == PublishedVersionImmutabilityGuard.PublishedStatus)
-            .Select(row => new { row.SlotModelVersionId, row.Version, row.CreatedAt })
-            .ToArrayAsync(cancellationToken);
-        // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset.
-        var latest = bindings
-            .OrderByDescending(row => row.CreatedAt)
-            .ThenByDescending(row => row.Version)
-            .FirstOrDefault();
-        return latest is null ? null : (latest.SlotModelVersionId, VehicleSlotPositionSource.LatestPublishedIoBinding);
     }
 }

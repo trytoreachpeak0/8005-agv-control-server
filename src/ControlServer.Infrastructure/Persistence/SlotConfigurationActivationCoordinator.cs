@@ -61,7 +61,8 @@ public sealed class SlotConfigurationActivationCoordinator(
 
         string objectId = FormattableString.Invariant($"{agvId}:{slotModelVersionId}");
         long version = await NextVersionAsync(objectId, cancellationToken);
-        SlotIoBindingRow[] bindings = await LatestPublishedBindingsAsync(agvId, slotModelVersionId, cancellationToken);
+        SlotIoBindingRow[] bindings = await VehicleSlotModelResolver.ReadLatestPublishedBindingsAsync(
+            _context, agvId, slotModelVersionId, cancellationToken);
         GovernedConfigurationSnapshot snapshot = await _publisher.PublishVersionAsync(
             GovernedObjectKind.ActiveSlotConfiguration,
             objectId,
@@ -261,8 +262,8 @@ public sealed class SlotConfigurationActivationCoordinator(
             .Where(row => row.SlotModelVersionId == slotModelVersionId)
             .Select(row => row.PhysicalSlotNumber)
             .ToArrayAsync(cancellationToken);
-        SlotIoBindingRow[] bindings =
-            await LatestPublishedBindingsAsync(agvId, slotModelVersionId, cancellationToken);
+        SlotIoBindingRow[] bindings = await VehicleSlotModelResolver.ReadLatestPublishedBindingsAsync(
+            _context, agvId, slotModelVersionId, cancellationToken);
         int[] missing = [.. modelSlots
             .Where(slot => !bindings.Any(binding => binding.PhysicalSlotNumber == slot))
             .Order()];
@@ -274,24 +275,6 @@ public sealed class SlotConfigurationActivationCoordinator(
                 + "A vehicle configuration is activated whole or not at all, so an incomplete one is refused "
                 + "before it goes out, not after.");
         }
-    }
-
-    private async Task<SlotIoBindingRow[]> LatestPublishedBindingsAsync(
-        string agvId,
-        string slotModelVersionId,
-        CancellationToken cancellationToken)
-    {
-        SlotIoBindingRow[] bindings = await _context.Set<SlotIoBindingRow>().AsNoTracking()
-            .Where(row => row.AgvId == agvId
-                && row.SlotModelVersionId == slotModelVersionId
-                && row.Status == PublishedStatus)
-            .ToArrayAsync(cancellationToken);
-        if (bindings.Length == 0)
-        {
-            return bindings;
-        }
-        long latest = bindings.Max(row => row.Version);
-        return [.. bindings.Where(row => row.Version == latest)];
     }
 
     private async Task<long> NextVersionAsync(string objectId, CancellationToken cancellationToken)

@@ -243,9 +243,19 @@ public sealed class SlotConfigurationAuthorityStore(
     /// 核验车载端报上来的配置声明。**只核验，不采信**：这个方法不写任何权威表。
     /// </summary>
     /// <remarks>
-    /// 比对的对象是这台车**一个车型版本下的一版**绑定，不是全车最大的版本号——版本号按「车 + 车型版本」
-    /// 各自从 1 数起，跨车型比大小没有意义。车型先认生效配置（车此刻跑的就是它）；还没激活过的车，认
-    /// 最近一次发布的绑定所属的车型。这与派车读仓位分组时认车型的顺序相同。车型定下之后取其中最新一版。
+    /// <para>
+    /// 比对的对象是这台车**此刻跑着的那一份**配置，由 <see cref="VehicleSlotModelResolver"/> 解析——与派车
+    /// 读仓位分组认车型的是同一份实现，不是另一份写法相同的副本。
+    /// </para>
+    /// <para>
+    /// 有生效配置时比的是它冻结的那一版快照内容，不是那个车型下版本号最大的绑定行：回滚（取旧版内容重新
+    /// 激活）与「激活之后又发布一版绑定但还没再激活」这两种情形下，两者指的不是同一份东西，按绑定行比会把
+    /// 一台照生效内容接好线的车判成不一致。还没激活过的车才退到最新一版已发布绑定。
+    /// </para>
+    /// <para>
+    /// 解析不出来（两份记录都没有、最新一版绑定跨车型并列、生效配置的快照读不出内容）时没有权威值可比，
+    /// 声明一律不通过，每个报上来的仓位都记一条 <c>slot</c> 不符——fail-closed，不猜一个车型凑出「通过」。
+    /// </para>
     /// </remarks>
     public async Task<VehicleDeclarationVerdict> VerifyVehicleDeclarationAsync(
         string agvId,
@@ -255,30 +265,15 @@ public sealed class SlotConfigurationAuthorityStore(
         ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
         ArgumentNullException.ThrowIfNull(declared);
 
-        SlotIoBindingRow[] published = await _context.Set<SlotIoBindingRow>()
-            .AsNoTracking()
-            .Where(row => row.AgvId == agvId && row.Status == PublishedStatus)
-            .ToArrayAsync(cancellationToken);
-        string? activeModel = await _context.Set<ActiveSlotConfigurationRow>()
-            .AsNoTracking()
-            .Where(row => row.AgvId == agvId)
-            .Select(row => row.SlotModelVersionId)
-            .SingleOrDefaultAsync(cancellationToken);
-        // SQLite 不能对 DateTimeOffset 做 ORDER BY，所以在内存里排。
-        string? model = activeModel ?? published
-            .OrderByDescending(row => row.CreatedAt)
-            .ThenByDescending(row => row.Version)
-            .FirstOrDefault()?.SlotModelVersionId;
-        SlotIoBindingRow[] authoritative = [.. published.Where(row => row.SlotModelVersionId == model)];
-        long latest = authoritative.Length == 0 ? 0 : authoritative.Max(row => row.Version);
-        Dictionary<int, SlotIoBindingRow> bySlot = authoritative
-            .Where(row => row.Version == latest)
-            .ToDictionary(row => row.PhysicalSlotNumber);
+        SlotIoBindingSpecification[] authoritative =
+            await VehicleSlotModelResolver.ReadActiveContentAsync(_context, agvId, cancellationToken) ?? [];
+        Dictionary<int, SlotIoBindingSpecification> bySlot =
+            authoritative.ToDictionary(binding => binding.PhysicalSlotNumber);
 
         List<string> mismatched = [];
         foreach (SlotIoBindingSpecification claim in declared)
         {
-            if (!bySlot.TryGetValue(claim.PhysicalSlotNumber, out SlotIoBindingRow? authority))
+            if (!bySlot.TryGetValue(claim.PhysicalSlotNumber, out SlotIoBindingSpecification? authority))
             {
                 mismatched.Add(Field(claim.PhysicalSlotNumber, "slot"));
                 continue;
