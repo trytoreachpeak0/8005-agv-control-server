@@ -51,12 +51,13 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
 {
     /// <summary>
     /// SHA-256 of the frozen slice family index, over the file's bytes. Taken from
-    /// <c>8005-agv-protocol</c> commit <c>9f22db825d52ad86c1d803bd0c1925dcc58d6793</c> (branch
-    /// <c>fp/v2-candidate</c>, the v2 candidate G1 passed on) on 2026-09-12. The file has not
-    /// changed since it was first frozen at <c>f6ee75d</c> on 2026-09-08.
+    /// <c>8005-agv-protocol</c> commit <c>86575456c847041515b7b75e8851a00e0d939804</c> (branch
+    /// <c>fp/v2-candidate</c>, the <c>2.0.0</c> candidate G1 passed on) on 2026-09-16. The file had
+    /// not changed from its first freeze at <c>f6ee75d</c> on 2026-09-08 until this candidate added
+    /// two vectors to <c>FP-IS-02</c>.
     /// </summary>
     private const string ApprovedIndexSha256 =
-        "71e0a63d49d1973653e1f70addc19c334faff5e53e8597733c1423a7307bd82f";
+        "268ce62be4e0ec8fe6d26e2048a59cf1732f02713415a0c5f41b6b009951b6fc";
 
     /// <summary>
     /// The trait name a test uses to claim it proves a frozen vector.
@@ -66,8 +67,8 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// <summary>
     /// The slices this line implements. Sequences 0 through 7 are <c>FP-IS-00</c> through
     /// <c>FP-IS-07</c>, batch 2 track A, recertified under v2; batch 3 adds <c>FP-IS-14</c> and
-    /// <c>FP-IS-15</c>. The rest are scheduled into batches 4 through 8 by section 7.2 of the
-    /// full-product scope specification.
+    /// <c>FP-IS-15</c>. The rest are scheduled into batches 6 through 11 by section 7.2 of the
+    /// second edition of the full-product scope specification.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -84,7 +85,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// the smallest form it takes.
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> is what makes
     /// the set load-bearing instead of decorative, and
-    /// <see cref="TheIndexParsesIntoSixteenSlicesAndThirtyOneDistinctVectors"/> is what lets it be
+    /// <see cref="TheIndexParsesIntoSixteenSlicesAndThirtyThreeDistinctVectors"/> is what lets it be
     /// stated as slice ids at all: it pins each slice's id to its own sequence, so the ids named
     /// here and the sequences the index carries cannot drift apart.
     /// </para>
@@ -97,9 +98,10 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     ];
 
     /// <summary>
-    /// The frozen vectors that have no named test, each with the slice that would prove it and the
-    /// batch that slice is scheduled into. <b>Every entry is a vector whose slice nobody has built
-    /// yet, and it is meant to empty as those batches land.</b>
+    /// The frozen vectors that have no named test, each with the slice that would prove it and either
+    /// the batch that slice is scheduled into or the ticket that claims the vector. <b>Every entry is
+    /// a vector whose slice nobody has built yet, or a vector a protocol upgrade added to a built
+    /// slice and a named ticket has claimed; it is meant to empty as those land.</b>
     /// </summary>
     /// <remarks>
     /// <para>
@@ -119,6 +121,21 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// could have become a place to park an inconvenient red.
     /// </para>
     /// <para>
+    /// <b>The claimed kind exists since the <c>2.0.0</c> candidate.</b> It added
+    /// <c>CV-LOAD-CANCELLATION-BEFORE-LOAD</c> and <c>CV-SUBLOT-REJECTED-AFTER-ENTRY</c> to
+    /// <c>FP-IS-02</c>, a slice this line has built, and section 19.4 of the second edition of the
+    /// scope specification assigns them there. The behaviour they prove belongs to
+    /// <c>8005-agv-control-server#83</c> and <c>#82</c>, which land after the ticket that vendors the
+    /// candidate (<c>#84</c>). Such a pin must name its slice and the claiming ticket in exactly the
+    /// form <see cref="ClaimedPinLabel"/> gives, and
+    /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> refuses every other
+    /// pin on a built slice.
+    /// </para>
+    /// <para>
+    /// The batch labels follow section 7.2 of the second edition, which rescheduled
+    /// <c>FP-IS-08</c> through <c>13</c>; the first edition's numbers are gone.
+    /// </para>
+    /// <para>
     /// The shape is borrowed from
     /// <see cref="ProtocolReasonCodeArchitectureTests"/>'s pinned deviation set, which held eleven
     /// of its own when it landed and is empty today. <b>Keep the field when it empties</b>: empty
@@ -129,16 +146,25 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     private static readonly IReadOnlyDictionary<string, string> VectorsAwaitingTheirSlice =
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
-            ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 8",
-            ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 8",
-            ["CV-MULTI-STOP-PLAN-NINE-LEGS"] = "FP-IS-08, batch 6",
-            ["CV-REVERSED-DIRECTION-JOURNEY"] = "FP-IS-11, batch 4 second stage",
-            ["CV-TASK-TYPE-ADMISSION-FAIL-CLOSED"] = "FP-IS-10, batch 4",
-            ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 8",
-            ["CV-WAITING-POINT-IDLE-RETURN"] = "FP-IS-12, batch 5",
-            ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 7",
-            ["CV-WORKLIST-SELECTION-STALE-REVISION"] = "FP-IS-09, batch 7"
+            ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 9",
+            ["CV-LOAD-CANCELLATION-BEFORE-LOAD"] = ClaimedPinLabel("FP-IS-02", 83),
+            ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
+            ["CV-MULTI-STOP-PLAN-NINE-LEGS"] = "FP-IS-08, batch 7",
+            ["CV-REVERSED-DIRECTION-JOURNEY"] = "FP-IS-11, batch 6",
+            ["CV-SUBLOT-REJECTED-AFTER-ENTRY"] = ClaimedPinLabel("FP-IS-02", 82),
+            ["CV-TASK-TYPE-ADMISSION-FAIL-CLOSED"] = "FP-IS-10, batch 6",
+            ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 9",
+            ["CV-WAITING-POINT-IDLE-RETURN"] = "FP-IS-12, batch 8",
+            ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",
+            ["CV-WORKLIST-SELECTION-STALE-REVISION"] = "FP-IS-09, batch 11"
         };
+
+    /// <summary>
+    /// The only label a pin on a slice this line has built may carry: the slice and the ticket in
+    /// this repository that claims the vector.
+    /// </summary>
+    private static string ClaimedPinLabel(string sliceId, int issueNumber) =>
+        FormattableString.Invariant($"{sliceId}, claimed by 8005-agv-control-server#{issueNumber}");
 
     private sealed record Slice(string SliceId, int Sequence, IReadOnlyList<string> VectorIds);
 
@@ -154,26 +180,27 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     }
 
     /// <summary>
-    /// The parse of the index, checked against the shape v2 froze.
+    /// The parse of the index, checked against the shape the <c>2.0.0</c> candidate froze.
     /// </summary>
     /// <remarks>
     /// Without this, every assertion below could pass over an empty parse. The three counts are the
-    /// ones that differ from each other -- 16 slices, 34 <c>vectorIds</c> entries, 31 distinct
+    /// ones that differ from each other -- 16 slices, 36 <c>vectorIds</c> entries, 33 distinct
     /// vectors -- so a parse that lost a slice, or one that forgot to deduplicate, is reported here
     /// rather than silently narrowing what the binding check covers. The three vectors shared
-    /// across slices are counted rather than named: the count is the entire difference between 34
-    /// and 31, and writing their ids out would put a hand-copied fragment of the vector list in a
-    /// file whose whole point is not to hold one.
+    /// across slices are counted rather than named: the count is the entire difference between 36
+    /// and 33, and writing their ids out would put a hand-copied fragment of the vector list in a
+    /// file whose whole point is not to hold one. v2 froze 34 and 31; the candidate added two
+    /// vectors, both to <c>FP-IS-02</c> and neither shared.
     /// </remarks>
     [Fact]
-    public void TheIndexParsesIntoSixteenSlicesAndThirtyOneDistinctVectors()
+    public void TheIndexParsesIntoSixteenSlicesAndThirtyThreeDistinctVectors()
     {
         Slice[] slices = Slices();
         string[] entries = [.. slices.SelectMany(slice => slice.VectorIds)];
 
         Assert.Equal(16, slices.Length);
-        Assert.Equal(34, entries.Length);
-        Assert.Equal(31, FrozenVectorIds().Length);
+        Assert.Equal(36, entries.Length);
+        Assert.Equal(33, FrozenVectorIds().Length);
 
         // Each slice's id paired with its own sequence, not the two sets compared separately.
         // LastSliceSequenceThisBatchImplements is stated as a sequence and read as a batch
@@ -248,33 +275,87 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     }
 
     /// <summary>
-    /// Nothing is pinned that this batch is supposed to have built.
+    /// Nothing is pinned that this batch is supposed to have built, unless a named ticket claims it.
     /// </summary>
     /// <remarks>
     /// Without this, <see cref="VectorsAwaitingTheirSlice"/> would be a way to turn any red green by
     /// adding a line. A vector belonging to a slice named in
     /// <see cref="SlicesThisLineImplements"/> is a vector this line really builds, and its absence
-    /// from the suite is a gap rather than a schedule.
+    /// from the suite is a gap rather than a schedule. The one exception is a vector a protocol
+    /// upgrade added to such a slice: it may be pinned only with <see cref="ClaimedPinLabel"/> naming
+    /// that very slice and the ticket that claims it, so the gap stays owned and visible.
     /// </remarks>
     [Fact]
     public void EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement()
     {
-        Slice[] slices = Slices();
-
-        string[] wronglyPinned =
-        [
-            .. VectorsAwaitingTheirSlice.Keys
-                .Where(vectorId => slices.Any(slice =>
-                    SlicesThisLineImplements.Contains(slice.SliceId, StringComparer.Ordinal)
-                    && slice.VectorIds.Contains(vectorId, StringComparer.Ordinal)))
-                .Order(StringComparer.Ordinal)
-        ];
+        string[] wronglyPinned = WronglyPinned(VectorsAwaitingTheirSlice);
 
         Assert.True(
             wronglyPinned.Length == 0,
-            "These vectors belong to slices this batch implements, so a missing named test is a gap "
-            + "rather than a schedule: " + string.Join(", ", wronglyPinned));
+            "These vectors belong to slices this batch implements and their pin does not name the "
+            + "claiming ticket in the form " + nameof(ClaimedPinLabel) + " gives, so a missing named "
+            + "test is a gap rather than a schedule: " + string.Join(", ", wronglyPinned));
     }
+
+    /// <summary>
+    /// Proves the claimed-pin exception is narrow: the same vector pinned to a batch rather than a
+    /// ticket, or to a ticket under a slice it does not belong to, is still refused.
+    /// </summary>
+    [Fact]
+    public void AClaimedPinOnABuiltSliceMustNameThatSliceAndItsTicket()
+    {
+        const string vectorId = "CV-LOAD-CANCELLATION-BEFORE-LOAD";
+
+        Assert.Empty(WronglyPinned(new Dictionary<string, string>
+        {
+            [vectorId] = ClaimedPinLabel("FP-IS-02", 83)
+        }));
+        Assert.Equal(
+            [vectorId],
+            WronglyPinned(new Dictionary<string, string> { [vectorId] = "FP-IS-02, batch 5" }));
+        Assert.Equal(
+            [vectorId],
+            WronglyPinned(new Dictionary<string, string> { [vectorId] = ClaimedPinLabel("FP-IS-07", 83) }));
+        Assert.Equal(
+            [vectorId],
+            WronglyPinned(new Dictionary<string, string>
+            {
+                [vectorId] = ClaimedPinLabel("FP-IS-02", 83) + " until later"
+            }));
+    }
+
+    /// <summary>
+    /// Pins on a vector of a built slice whose label is not exactly a claim naming one of that
+    /// vector's built slices.
+    /// </summary>
+    private static string[] WronglyPinned(IReadOnlyDictionary<string, string> pinned)
+    {
+        Slice[] slices = Slices();
+
+        return
+        [
+            .. pinned
+                .Where(pin =>
+                {
+                    Slice[] builtOwners =
+                    [
+                        .. slices.Where(slice =>
+                            SlicesThisLineImplements.Contains(slice.SliceId, StringComparer.Ordinal)
+                            && slice.VectorIds.Contains(pin.Key, StringComparer.Ordinal))
+                    ];
+
+                    return builtOwners.Length > 0
+                        && !builtOwners.Any(slice => ClaimedPin.IsMatch(pin.Value)
+                            && pin.Value.StartsWith($"{slice.SliceId}, ", StringComparison.Ordinal));
+                })
+                .Select(pin => pin.Key)
+                .Order(StringComparer.Ordinal)
+        ];
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex ClaimedPin = new(
+        "^FP-IS-[0-9]{2}, claimed by 8005-agv-control-server#[1-9][0-9]*$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     /// <summary>
     /// Proves the binding check is not vacuous, by running it over a set that lost a binding the

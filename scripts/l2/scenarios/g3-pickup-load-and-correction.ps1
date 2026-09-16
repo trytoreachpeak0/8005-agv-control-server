@@ -260,8 +260,10 @@ if ($loadStatus -eq 'Committed') {
         -Probe { Get-Stage } -Until { param($v) $v -ne 'AwaitingLoadResult' }
 }
 
-$entries =@((Get-Outbound 'SublotEntryRequested') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
-$submissions = @((Get-Inbound 'SublotSubmitted') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
+# 协议 2.0.0 第 2 项：两条消息都不再带 demandId。请求给出派车范围的 expectedSublots，提交只报扫到的 sublot，
+# 所以按 sublot 找；一趟一单时范围里只有这条需求的 sublot。
+$entries = @((Get-Outbound 'SublotEntryRequested') | Where-Object { @($_.Payload.expectedSublots) -contains $sublot })
+$submissions = @((Get-Inbound 'SublotSubmitted') | Where-Object { [string]$_.Payload.sublot -eq $sublot })
 $operations = Invoke-L2Query -Connection $connection `
     -Sql "SELECT SlotOperationAttemptId, SublotId, Status FROM StationOperations WHERE DemandId = '$demandId'"
 $sessionBound = $entries.Count -ge 1 -and $submissions.Count -ge 1 -and

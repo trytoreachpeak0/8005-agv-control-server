@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using ControlServer.Domain;
 
@@ -97,6 +98,31 @@ public sealed class ProtocolReasonCodeArchitectureTests
         Assert.Equal(
             PinnedDeviations.OrderBy(code => code, StringComparer.Ordinal),
             deviations.OrderBy(code => code, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// The server's copy of the registry is the vendored <c>$defs/ErrorCode</c>, value for value.
+    /// </summary>
+    /// <remarks>
+    /// The check above reads <see cref="ProtocolErrorCodes"/>, which is a hand-kept list; until the
+    /// <c>2.0.0</c> candidate nothing compared that list with the schema, so a re-vendor that added
+    /// codes left it silently behind. The vendored schema is pinned by
+    /// <c>ProtocolPayloadShapeArchitectureTests.ApprovedSchemaTreeSha256</c>, so this closes the chain.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public void TheRegistryCopyIsTheVendoredErrorCodeEnumeration()
+    {
+        using JsonDocument types = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(
+            RepositoryRoot(), "vendor", "8005-agv-protocol", "schemas", "common", "types.schema.json")));
+        string[] vendored =
+        [
+            .. types.RootElement.GetProperty("$defs").GetProperty("ErrorCode").GetProperty("enum")
+                .EnumerateArray().Select(code => code.GetString()!).Order(StringComparer.Ordinal)
+        ];
+
+        Assert.Equal(58, vendored.Length);
+        Assert.Equal(vendored, ProtocolErrorCodes.All.Order(StringComparer.Ordinal));
     }
 
     /// <summary>

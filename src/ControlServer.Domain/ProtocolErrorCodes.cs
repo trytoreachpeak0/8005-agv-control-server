@@ -14,15 +14,14 @@ namespace ControlServer.Domain;
 /// rather than each message against its schema.
 /// </para>
 /// <para>
-/// **This list and the identity beside it now name the same candidate.** The 54 values below are
+/// **This list and the identity beside it name the same candidate.** The 58 values below are
 /// <c>$defs/ErrorCode</c> of <c>schemas/common/types.schema.json</c> at protocol candidate manifest
-/// <c>a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23</c>
-/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, <c>protocolVersion: 2</c>),
-/// and <see cref="ProtocolCandidateIdentity"/> names that same commit. They were deliberately out
-/// of step for four days: this list moved to v2 first because eleven codes were appended and none
-/// removed, so re-syncing it could only let the reason-code guard tell the truth about the nine
-/// codes this server already emits, without touching wire behaviour. Moving the identity was the
-/// other half, and it is done.
+/// <c>4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7</c>
+/// (<c>status: CONTENT_SNAPSHOT</c>, profile <c>AGV_FULL_PRODUCT</c>, release <c>2.0.0</c>,
+/// <c>protocolVersion: 3</c>), and <see cref="ProtocolCandidateIdentity"/> names that same commit. The
+/// <c>2.0.0</c> candidate appended four: <c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>,
+/// <c>SUBLOT_BOX_COUNT_UNAVAILABLE</c> and <c>PACKAGE_CAPACITY_UNRESOLVED</c>
+/// (<c>8005-agv-program#93</c>), and <c>OPERATOR_TIMEOUT</c> (<c>8005-agv-program#91</c>).
 /// </para>
 /// <para>
 /// **Re-sync this list whenever the protocol's error surface moves**, which from here means either a
@@ -30,8 +29,9 @@ namespace ControlServer.Domain;
 /// registry is <c>appendOnly</c>, so a re-sync adds and never removes; a code that disappears is a
 /// governance breach rather than a merge to resolve here.
 /// <c>SessionReadinessReasonCodesTests</c> fails if a reason code the server can emit is not in
-/// here, and <c>ProtocolReasonCodeArchitectureTests</c> fails if any of them is, which catches drift
-/// in one direction; nothing catches this list drifting away from the protocol except re-syncing it.
+/// here, and <c>ProtocolReasonCodeArchitectureTests</c> fails if any of them is not. Since the
+/// <c>2.0.0</c> candidate the same class also compares this list with the vendored enumeration
+/// exactly, so it can no longer drift away from the protocol unnoticed.
 /// </para>
 /// </remarks>
 public static class ProtocolErrorCodes
@@ -91,10 +91,17 @@ public static class ProtocolErrorCodes
         "RECOVERY_OPERATION_NOT_FOUND",
         "PROVEN_RECOVERY_CHECKPOINT_REQUIRED",
         "RECOVERY_ACTION_REQUIRED",
-        "RECOVERY_RESULT_REQUIRED"
+        "RECOVERY_RESULT_REQUIRED",
+        "SUBLOT_NOT_IN_DISPATCH_SCOPE",
+        "SUBLOT_BOX_COUNT_UNAVAILABLE",
+        "PACKAGE_CAPACITY_UNRESOLVED",
+        "OPERATOR_TIMEOUT"
     };
 
     public static bool Contains(string code) => Codes.Contains(code);
+
+    /// <summary>The whole list, for the architecture test that compares it with the vendored schema.</summary>
+    public static IReadOnlyCollection<string> All => Codes;
 
     /// <summary>
     /// Maps the server's own session reason code — richer than the protocol's vocabulary, stored on
