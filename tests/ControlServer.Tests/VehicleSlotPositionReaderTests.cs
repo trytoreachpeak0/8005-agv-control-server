@@ -52,6 +52,40 @@ public sealed class VehicleSlotPositionReaderTests
     }
 
     [Fact]
+    public async Task TwoModelsBoundAtTheSameInstantLeaveTheVehicleUnresolvedRatherThanPickingTheLargerVersion()
+    {
+        // 同一时刻绑了两个车型：车型 A 的第二版与车型 B 的第一版共用同一个 CreatedAt。版本号按（车，车型）
+        // 各自从 1 数起，所以「2 比 1 大」不代表 A 比 B 新——它们数的不是同一条线。这种并列没有正确答案，
+        // 只有一个安全答案：未解析，由调用方 fail-closed。CreatedAt 本身是调用方传进来的 occurredAt，
+        // 不是写入顺序，所以也不能靠写入先后兜底。
+        await using AreaAssignmentPersistenceFixture fixture = await AreaAssignmentPersistenceFixture.CreateAsync();
+        SlotModelVersionRow modelA = await PublishModelAsync(fixture, "tie-a", "REAR", "REAR");
+        SlotModelVersionRow modelB = await PublishModelAsync(fixture, "tie-b", "FRONT");
+        await BindAsync(fixture, "AGV-03", modelA, Now);
+        await BindAsync(fixture, "AGV-03", modelA, Now.AddHours(1));
+        await BindAsync(fixture, "AGV-03", modelB, Now.AddHours(1));
+
+        Assert.Null(await fixture.SlotPositions.ReadAsync("AGV-03", TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task TwoBindingsOfOneModelAtTheSameInstantStillResolveToThatModel()
+    {
+        // 并列只在跨车型时才是歧义。同一个车型下并列的两版指的是同一个车型，没有什么要挑的——一次批量
+        // 导入用同一个时间戳发两版绑定不该把车变成未解析。
+        await using AreaAssignmentPersistenceFixture fixture = await AreaAssignmentPersistenceFixture.CreateAsync();
+        SlotModelVersionRow model = await PublishModelAsync(fixture, "same-instant", "FRONT", "REAR");
+        await BindAsync(fixture, "AGV-03", model, Now);
+        await BindAsync(fixture, "AGV-03", model, Now);
+
+        VehicleSlotPositions positions = Assert.IsType<VehicleSlotPositions>(
+            await fixture.SlotPositions.ReadAsync("AGV-03", TestContext.Current.CancellationToken));
+
+        Assert.Equal(VehicleSlotPositionSource.LatestPublishedIoBinding, positions.Source);
+        Assert.Equal(model.SlotModelVersionId, positions.SlotModelVersionId);
+    }
+
+    [Fact]
     public async Task WhenTheActiveConfigurationAndTheLatestBindingDisagreeTheActiveConfigurationWins()
     {
         await using AreaAssignmentPersistenceFixture fixture = await AreaAssignmentPersistenceFixture.CreateAsync();
