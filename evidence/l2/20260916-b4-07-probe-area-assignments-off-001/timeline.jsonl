@@ -1,0 +1,18 @@
+{"at":"2026-09-16T10:57:46.1323574+00:00","note":"L2 run 20260916T105746048Z starting for scenario 'b4-07-probe-area-assignments-off'."}
+{"at":"2026-09-16T10:58:08.7969518+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T10:58:08.8002239+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T10:58:12.7410354+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T10:58:13.0128740+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T10:58:16.0410220+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T10:58:18.1801120+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T10:58:18.3623694+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-16T10:58:19.0713268+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-16T10:58:19.3544799+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T10:58:19.4737640+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T10:58:19.5401266+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105746048Z\\controlserver.db"}
+{"at":"2026-09-16T10:58:21.4343216+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"1d652d4dd45340eea2b46c1a2c293c61","version":1,"slotCount":8}}}
+{"at":"2026-09-16T10:58:21.4452571+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105746048Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-16T10:58:23.0430709+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"1d652d4dd45340eea2b46c1a2c293c61","boundSlots":8,"version":1}}}
+{"at":"2026-09-16T10:58:23.0451914+00:00","note":"Area assignment import skipped: AreaAssignments = $false."}
+{"at":"2026-09-16T10:58:23.0534474+00:00","note":"Environment is up; entering scenario 'b4-07-probe-area-assignments-off'."}
+{"at":"2026-09-16T10:58:23.6378735+00:00","note":"L2 port block lock released."}

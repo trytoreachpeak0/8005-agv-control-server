@@ -1,0 +1,22 @@
+{"at":"2026-09-16T10:58:24.9816136+00:00","note":"L2 run 20260916T105824915Z starting for scenario 'b4-07-probe-area-assignments-override'."}
+{"at":"2026-09-16T10:58:47.2753260+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T10:58:47.2779401+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T10:58:51.2855150+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T10:58:51.5641357+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T10:58:54.5197234+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T10:58:56.6707576+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T10:58:56.8532800+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-16T10:58:57.5536051+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-16T10:58:57.8388529+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T10:58:57.9376275+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T10:58:57.9920342+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105824915Z\\controlserver.db"}
+{"at":"2026-09-16T10:58:59.8367778+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"229c9e115a2e4ecf97f17b3def24f075","version":1,"slotCount":8}}}
+{"at":"2026-09-16T10:58:59.8476839+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105824915Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-16T10:59:01.4405376+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"229c9e115a2e4ecf97f17b3def24f075","boundSlots":8,"version":1}}}
+{"at":"2026-09-16T10:59:01.5225628+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-16T10:59:01.5255355+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105824915Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\evidence\\b4-07-20260916\\probes\\area-assignments-override-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-16T10:59:03.2867044+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\evidence\\b4-07-20260916\\probes\\area-assignments-override-001\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"13774b1b322310fab2111e06fefc51760129c149ddee3d4cad267e88282d6444","snapshotId":"f71a3c3f21d3419c962be7505bd0c0bc","importedAt":"2026-09-16T18:59:01.7963498+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-16T10:59:03.2927848+00:00","note":"Environment is up; entering scenario 'b4-07-probe-area-assignments-override'."}
+{"at":"2026-09-16T10:59:03.3438313+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105824915Z\\controlserver.db"}
+{"at":"2026-09-16T10:59:04.7487044+00:00","criterion":"probe:area-assignments","value":"OK","detail":{"output":{"command":"area-assignments","outcome":"OK","version":1,"contentSha256":"13774b1b322310fab2111e06fefc51760129c149ddee3d4cad267e88282d6444","snapshotId":"f71a3c3f21d3419c962be7505bd0c0bc","importedAt":"2026-09-16T18:59:01.7963498+08:00","entryCount":2,"entries":[{"area":"C15-13","dispatchZone":"MAP-25-WIRE_TO_GATE","slotPosition":"FRONT"},{"area":"N1-3","dispatchZone":"MAP-25-WIRE_TO_GATE","slotPosition":"REAR"}]}}}
+{"at":"2026-09-16T10:59:05.1792352+00:00","note":"L2 port block lock released."}

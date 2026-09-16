@@ -69,6 +69,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateGateTests"] = "RIoT create experiment; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateMigrationTests"] = "RIoT create experiment migration; server-internal",
+            ["FakeOnboardSlotStateSeedTests"] = "L2 synthetic peer's handshake slot state seed (control-server#71); a test double's startup configuration, not the product's wire surface",
             ["GovernanceSnapshotAndAuditTests"] = "batch 3 FP-C7/FP-C5 shared snapshot and audit mechanism; server-internal, no wire message",
             ["IntegrationSliceTraitArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
