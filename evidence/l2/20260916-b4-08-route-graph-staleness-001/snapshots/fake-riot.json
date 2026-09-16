@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-553d0299",
+  "revision": 5,
+  "observedAt": "2026-09-16T21:55:51.4065902+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 2000,
+    "mapStationReads": 21,
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 210,
+        "battery": 80,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13",
+            "edgeId": 6,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7",
+            "edgeId": 2,
+            "posX": 0,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 210,
+            "name": "关卡",
+            "edgeId": 4,
+            "posX": 20000,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          }
+        ]
+      }
+    ],
+    "commandInvocations": [],
+    "edgeGroups": [
+      {
+        "groupName": "L2-ELEVATOR",
+        "id": 1,
+        "mapId": 25,
+        "mapName": "MAP-L2",
+        "edgeId": 3,
+        "type": "NORMAL",
+        "gmtCreate": "2024-06-26 10:57:58",
+        "gmtUpdate": "2024-06-26 10:57:58",
+        "isDelete": 0
+      },
+      {
+        "groupName": "L2-ELEVATOR",
+        "id": 2,
+        "mapId": 25,
+        "mapName": "MAP-L2",
+        "edgeId": 4,
+        "type": "NORMAL",
+        "gmtCreate": "2024-06-26 10:57:58",
+        "gmtUpdate": "2024-06-26 10:57:58",
+        "isDelete": 0
+      }
+    ],
+    "dynamicRouteCosts": {
+      "25:12": 18000
+    },
+    "removedEdges": [
+      {
+        "mapId": 25,
+        "edgeIds": []
+      }
+    ],
+    "removedStations": [
+      {
+        "mapId": 25,
+        "stationIds": []
+      }
+    ]
+  }
+}

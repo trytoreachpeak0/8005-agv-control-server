@@ -1,0 +1,27 @@
+{"at":"2026-09-16T13:51:25.2708944+00:00","note":"L2 run 20260916T135125214Z starting for scenario 'create-gate'."}
+{"at":"2026-09-16T13:51:25.3221464+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T13:51:25.3246727+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T13:51:29.8119044+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T13:51:30.1612370+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T13:51:30.3354194+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-16T13:51:33.9886993+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T13:51:36.0868365+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-16T13:51:36.5153288+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T13:51:36.7930349+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-09-16T13:51:37.5841581+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-16T13:51:37.8521388+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T13:51:37.9789049+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T13:51:38.0595934+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135125214Z\\controlserver.db"}
+{"at":"2026-09-16T13:51:40.5363576+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"6297bd434930463a895c47dc67a4a8fc","version":1,"slotCount":8}}}
+{"at":"2026-09-16T13:51:40.5535676+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135125214Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-16T13:51:42.5238174+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"6297bd434930463a895c47dc67a4a8fc","boundSlots":8,"version":1}}}
+{"at":"2026-09-16T13:51:42.6960389+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-16T13:51:42.7006458+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135125214Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-create-gate-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-16T13:51:44.7693813+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-create-gate-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"91b42fc9b0e44bbdbb37f2580a91dc2d","importedAt":"2026-09-16T21:51:43.0347599+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-16T13:51:44.7742969+00:00","note":"Environment is up; entering scenario 'create-gate'."}
+{"at":"2026-09-16T13:51:44.8884855+00:00","criterion":"catalog-confirmation","value":"2026-09-16 13:51:44.1503259+00:00"}
+{"at":"2026-09-16T13:51:44.9149263+00:00","note":"Publishing demand 71be1e57f5f64d4ca571ea61058ed12b (sublot L2-CG-20260916T135125214Z) with the create gate in the chain."}
+{"at":"2026-09-16T13:51:44.9723326+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-16T13:51:46.0125061+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-16T13:51:46.1243740+00:00","note":"建单前置门禁在真链路里工作：目录被完整确认、端点被冻结、两个证据源分别落进审计。"}
+{"at":"2026-09-16T13:51:46.6776733+00:00","note":"L2 port block lock released."}
