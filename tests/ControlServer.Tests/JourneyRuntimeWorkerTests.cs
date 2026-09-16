@@ -372,12 +372,14 @@ public sealed class JourneyRuntimeWorkerTests
     /// </summary>
     [Theory]
     [Trait("IntegrationSlice", "FP-IS-02")]
-    [InlineData(null, "[]")]
-    [InlineData(true, "[]")]
+    // A null reasonCode is the empty set: InlineData cannot carry an array, and the two cases that
+    // turn on unknownPresent report no reason code at all.
+    [InlineData(null, null)]
+    [InlineData(true, null)]
     [InlineData(false, "LOCK_NOT_CLOSED")]
     public async Task TheStationDeadlineDoesNotEndTheStopWhileADoorIsOpenOrUnknown(
         bool? unknownPresent,
-        string reasonCode)
+        string? reasonCode)
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
@@ -385,7 +387,7 @@ public sealed class JourneyRuntimeWorkerTests
             "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 7);
         await fixture.AdvanceToSublotWaitAsync();
-        await fixture.SetSafetyEvidenceAsync(unknownPresent, reasonCode == "[]" ? [] : [reasonCode]);
+        await fixture.SetSafetyEvidenceAsync(unknownPresent, reasonCode is null ? [] : [reasonCode]);
 
         fixture.Clock.Advance(TimeSpan.FromSeconds(30));
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
@@ -501,6 +503,92 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync(next.DemandId)).Stage);
         Assert.Equal(2, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
+    /// FR-031 AC-9 (TC-108): while the vehicle is off air its stop is neither ended nor departed. A
+    /// dropped link does not move the session off Ready by itself -- nothing calls
+    /// RecordConnectionLossAsync -- so without this the deadline would run out against whatever the
+    /// vehicle last said before it vanished, and the demand would be cancelled while nobody could have
+    /// scanned it. Liveness is measured the way the dispatch facts measure it: the last inbound message
+    /// of this session generation, within MaximumEvidenceAge.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task TheStationDeadlineDoesNotEndTheStopWhileTheVehicleIsOffAir()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Options.MaximumEvidenceAge = TimeSpan.FromSeconds(5);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+
+        // Off air: nothing more arrives from the peer, and the clock runs past both the deadline and
+        // the age at which this server stops believing what the peer last said.
+        fixture.Clock.Advance(TimeSpan.FromSeconds(11));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+
+        // Heard from again on the same generation: nothing reconnected, so the deadline that has
+        // already passed still stands and this iteration ends the stop. A hold, not an exemption.
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow ended = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, ended.Stage);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", ended.BlockReasonCode);
+    }
+
+    /// <summary>
+    /// A session leaves Ready without the vehicle going anywhere too: a forced recovery reconciliation
+    /// (<c>FORCED_RECOVERY_RECONCILIATION_REQUIRED</c>) or a safety report that makes departure unsafe.
+    /// The runtime advances no stop while that gate is closed, so nobody can be asked to scan and no
+    /// entry would be acted on -- a clock left running there would end the stop on the first iteration
+    /// after readiness returns. Voided while the gate is closed and refilled behind it, the same way a
+    /// disconnect is.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task ASessionThatLeavesReadyVoidsTheSublotWaitUntilReadinessReturns()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Options.StationDepartureWaitTimeout = TimeSpan.FromSeconds(10);
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.AdvanceToSublotWaitAsync();
+        await fixture.ProveSlotDoorsClosedAsync();
+
+        await fixture.DropOnboardSessionAsync();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow held = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, held.Stage);
+        Assert.Null(held.StationDepartureWaitStartedAt);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+
+        await fixture.RestoreSessionReadyAsync();
+        DateTimeOffset readyAt = fixture.Clock.GetUtcNow();
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow refilled = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, refilled.Stage);
+        Assert.Equal(readyAt, refilled.StationDepartureWaitStartedAt);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
     }
 
     /// <summary>
@@ -2596,6 +2684,37 @@ public sealed class JourneyRuntimeWorkerTests
             await AddCapabilityAndSafetyAsync(generation);
         }
 
+        /// <summary>
+        /// Readiness returns on the session the vehicle already holds: the gate reopens without a
+        /// reconnect, which is what the end of a forced recovery reconciliation looks like.
+        /// </summary>
+        public async Task RestoreSessionReadyAsync()
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.Readiness = SessionReadiness.Ready;
+            session.ReasonCode = "READY";
+            session.UpdatedAt = Clock.GetUtcNow();
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>
+        /// The peer is heard from again on the session it already holds -- a heartbeat, no reconnect.
+        /// The runtime measures liveness from the last inbound of the current generation, and every
+        /// other inbox helper here stamps the fixture's fixed start time, which is stale as soon as a
+        /// test advances its clock.
+        /// </summary>
+        public async Task HearFromPeerAsync()
+        {
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            await AddRawInboxAsync(
+                "Heartbeat",
+                new { observedAt = Clock.GetUtcNow() },
+                session.SessionGeneration,
+                Clock.GetUtcNow());
+        }
+
         /// <summary>Carries the journey to its trusted pickup arrival, where it waits for a sublot.</summary>
         public async Task<JourneyRuntimeRow> AdvanceToSublotWaitAsync()
         {
@@ -3301,7 +3420,11 @@ public sealed class JourneyRuntimeWorkerTests
             }, generation);
         }
 
-        private async Task AddRawInboxAsync(string messageType, object payload, long generation)
+        private async Task AddRawInboxAsync(
+            string messageType,
+            object payload,
+            long generation,
+            DateTimeOffset? receivedAt = null)
         {
             string messageId = Guid.NewGuid().ToString("D");
             string json = JsonSerializer.Serialize(new
@@ -3320,7 +3443,7 @@ public sealed class JourneyRuntimeWorkerTests
                 RequestJson = json,
                 ContentHash = new string('f', 64),
                 FirstResponseJson = "{}",
-                ReceivedAt = Now
+                ReceivedAt = receivedAt ?? Now
             });
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }

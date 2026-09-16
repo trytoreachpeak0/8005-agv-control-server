@@ -10,11 +10,18 @@ namespace ControlServer.Host.Runtime;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One tail for every way a pickup stop ends like this.</b> The station departure deadline
-/// (ADR-cross-0055, ADR-cross-0058 decision 7) is the first caller. The cancellation before a sublot
-/// is entered (control-server#83) and the settlement of a determinate load failure
-/// (control-server#81) end the stop the same way and differ only in why, so they reuse this rather
-/// than release the vehicle three slightly different ways.
+/// <b>The tail every way of ending a pickup stop like this is meant to share.</b> The station
+/// departure deadline (ADR-cross-0055, ADR-cross-0058 decision 7) is the first caller. The
+/// cancellation before a sublot is entered (control-server#83) and the settlement of a determinate
+/// load failure (control-server#81) end the stop the same way and differ only in why, so they reuse
+/// this rather than release the vehicle three slightly different ways.
+/// </para>
+/// <para>
+/// <b>It is not the only such code today.</b> <c>OnboardRecoveryCoordinator.ApplyCurrentResultAsync</c>
+/// terminates a demand through the five-step recovery handshake and writes nearly the same facts by
+/// hand, minus the vehicle occupancy. That path settles a commanded slot operation, which this one
+/// deliberately knows nothing about; converging the two belongs to control-server#81 and #83, which
+/// touch that method for their own reasons.
 /// </para>
 /// <para>
 /// <b>It stages the changes and does not save.</b> Every fact here has to commit together with the

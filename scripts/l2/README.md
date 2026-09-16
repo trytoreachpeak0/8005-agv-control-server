@@ -236,6 +236,17 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   `CANCELLED_BY_STATION_TIMEOUT` 结束本站。所以一条场景若要在 `AwaitingSublot` 停得比它久（让录入挂起、
   到站后先做别的），就要在自己的 setup 里给足；`station-deadline-sublot-timeout` 给 `00:00:20`。
 
+  **真装置场景每一条都落在这条约束里，而且默认值不够用。**实测「服务端采信到站 → UIA 录入并提交」要
+  **4.7–5.4 秒**（`evidence/l2/20260913-b2close-real-onboard-normal-load-003`、
+  `20260914-real-onboard-restart-with-open-recovery-session-004` 的 `timeline.jsonl`），与装置默认的 5 秒是同一量级——
+  等于抛硬币。所以 `Onboard = 'Real'` 且会录入的场景都在自己的 setup 里写了这个键：多数给 `00:00:30`；
+  `g3-journey-demand-to-pickup` 给 `00:05:00`（它刻意停在 `AwaitingSublot`，到站之后还要等快照确认、读车载端
+  日志库、判终态，整条尾巴都在期限内）；`g3-predeparture-check-expires` 由 `00:00:15` 抬到 `00:00:40`；
+  `g3-pickup-load-and-correction` 维持 `00:00:20`，因为场景里 `$stationDepartureWait` 与判据文案钉着同一个数，
+  改它要连脚本一起改。取值的上界来自装货提交之后那条等待的判据超时（例如 `real-onboard-normal-load` 是 180 秒，
+  `g3-predeparture-check-expires` 是 90 秒），下界来自录入那一段，两者之间才是安全区。
+  `real-onboard-clock-skew` 与 `g3-manual-charging-return` 不进 `AwaitingSublot`，不受影响，没有加这个键。
+
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
 

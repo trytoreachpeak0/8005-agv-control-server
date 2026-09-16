@@ -41,8 +41,9 @@ $secondGuid = [guid]::NewGuid()
 $secondWire = $secondGuid.ToString('N')
 $secondId = $secondGuid.ToString('D')
 
+# Invoke-L2Query 已经把 DBNull 换成了 $null，所以这里只判 $null。
 function Test-L2Null($value) {
-    return ($null -eq $value) -or ($value -is [System.DBNull])
+    return $null -eq $value
 }
 
 # ControlServerDbContext 把 DateTimeOffset 存成文本；判据要拿它和期限做加减，所以统一转成 DateTimeOffset。
@@ -66,9 +67,10 @@ function Get-Intent([string]$demandId, [string]$purpose) {
     return $rows[0]
 }
 
+# 列名用 Total，与既有场景（g3-journey-demand-to-pickup 等）一致。
 function Get-Count([string]$sql) {
     $rows = Invoke-L2Query -Connection $connection -Sql $sql
-    return [int]$rows[0].N
+    return [int]$rows[0].Total
 }
 
 function Publish-Demand([string]$wireId, [string]$suffix) {
@@ -184,8 +186,8 @@ $assertions.Add(
     ($entryRequest.Count -eq 1 -and -not (Test-L2Null $entryRequest[0].AcknowledgedAt)),
     '已结算', $(if ($entryRequest.Count -eq 1) { "AcknowledgedAt=$($entryRequest[0].AcknowledgedAt)" } else { '(no outbox row)' }))
 
-$operations = Get-Count "SELECT COUNT(*) AS N FROM StationOperations WHERE DemandId = '$firstId'"
-$workflows = Get-Count "SELECT COUNT(*) AS N FROM RecoveryWorkflows WHERE DemandId = '$firstId'"
+$operations = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$firstId'"
+$workflows = Get-Count "SELECT COUNT(*) AS Total FROM RecoveryWorkflows WHERE DemandId = '$firstId'"
 $assertions.Add(
     'L2-SD-07', '超时不下发任何仓位操作，也不开恢复流程',
     ($operations -eq 0 -and $workflows -eq 0),
@@ -195,7 +197,7 @@ $assertions.Add(
 
 # 假 MesIngest 的目录里这一单还在，所以「不再被派」是真在判：运行时又转几轮，照样看得见它，照样不接。
 $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
-$firstRuntimes = Get-Count "SELECT COUNT(*) AS N FROM JourneyRuntimes WHERE DemandId = '$firstId'"
+$firstRuntimes = Get-Count "SELECT COUNT(*) AS Total FROM JourneyRuntimes WHERE DemandId = '$firstId'"
 $ordersAfterTimeout = @($riot.Snapshot().body.orders).Count
 $catalogStillLists = @($mes.Snapshot().body.demands | Where-Object { [string]$_.demandId -eq $firstWire }).Count
 $assertions.Add(
@@ -208,7 +210,7 @@ $assertions.Add(
 
 $next = Wait-L2Change -Description 'the released vehicle took the next demand' `
     -Journal $journal -Criterion 'second-accepted' -TimeoutSeconds 90 `
-    -Baseline { Get-Count "SELECT COUNT(*) AS N FROM JourneyRuntimes WHERE DemandId = '$secondId'" } `
+    -Baseline { Get-Count "SELECT COUNT(*) AS Total FROM JourneyRuntimes WHERE DemandId = '$secondId'" } `
     -Action { Publish-Demand $secondWire 'B' } `
     -Probe { Get-Runtime $secondId } `
     -Until { param($before, $now) $before -eq 0 -and $now -and [string]$now.Stage -eq 'AwaitingPickupArrival' }
@@ -278,7 +280,7 @@ $assertions.Add(
 
 # 两单都只到过取货口：全程两条 RIoT 取货单，没有一条关卡单。
 $riotOrders = @($riot.Snapshot().body.orders)
-$gateIntents = Get-Count "SELECT COUNT(*) AS N FROM OrderIntents WHERE Purpose = 'TO_GATE'"
+$gateIntents = Get-Count "SELECT COUNT(*) AS Total FROM OrderIntents WHERE Purpose = 'TO_GATE'"
 $assertions.Add(
     'L2-SD-14', '全程两条 RIoT 单（两单各一条取货），没有关卡单',
     ($riotOrders.Count -eq 2 -and $gateIntents -eq 0),

@@ -516,6 +516,15 @@ public sealed class JourneyRuntimeEngine(
             .ConfigureAwait(false);
         if (session is null)
         {
+            // ADR-cross-0055: the station departure wait is about this session's chance to scan, and a
+            // journey behind a closed readiness gate has none -- the runtime advances no stop there, so
+            // an entry would not be acted on either. Left running, the clock would end the stop on the
+            // first iteration after readiness returned. Voided here and refilled behind the gate, the
+            // same way a reconnect's is. A disconnect that leaves the session Ready is caught instead by
+            // the liveness check in TryEndStopAtStationDeadlineAsync.
+            bool waitVoided = runtime.StationDepartureWaitStartedAt is not null;
+            runtime.StationDepartureWaitStartedAt = null;
+
             // A result that is already durable names the recovery this journey waits on, and it
             // names it from StationOperations alone -- reading it involves no session. Deciding
             // that here, ahead of the readiness gate, is what keeps the gate from closing on
@@ -540,6 +549,11 @@ public sealed class JourneyRuntimeEngine(
             if (runtime.Stage != JourneyRuntimeStage.Blocked)
             {
                 runtime.BlockReasonCode = "ONBOARD_SESSION_NOT_READY";
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (waitVoided)
+            {
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -2031,6 +2045,19 @@ public sealed class JourneyRuntimeEngine(
         // door is shut, then ends on that iteration's evidence. Raising an alarm for it is
         // control-server#81.
         if (SlotDoorsNotProvenClosed(session))
+        {
+            return false;
+        }
+        // ADR-cross-0055 voids the countdown for a disconnect, and FR-031 AC-9 forbids cancelling or
+        // departing while the vehicle is off air. A dropped link does not move the session off Ready by
+        // itself -- nothing calls RecordConnectionLossAsync -- so readiness alone would let the stop end
+        // against evidence the vehicle sent before it vanished, cancelling a demand nobody could have
+        // scanned. Liveness is the measure the dispatch facts already use: the last inbound of this
+        // generation, within MaximumEvidenceAge. Coming back on the same generation is not a reconnect,
+        // so a deadline that passed meanwhile still stands; a real reconnect voids it at the handshake.
+        DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
+            runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        if (lastInboundAt is null || now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
         {
             return false;
         }
