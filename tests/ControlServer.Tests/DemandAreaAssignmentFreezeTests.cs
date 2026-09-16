@@ -167,6 +167,45 @@ public sealed class DemandAreaAssignmentFreezeTests
     }
 
     /// <summary>
+    /// A save that fails because of some other pending row in a shared context is thrown as it is, even when another
+    /// writer has frozen this demand at this version by the time a re-read would look.
+    /// </summary>
+    /// <remarks>
+    /// Acceptance calls the freeze inside its own transaction on its own context, so the save can carry rows that are
+    /// not the binding. Only a constraint refusing the binding itself is the race the re-read exists for. The other
+    /// writer's freeze is placed where the re-read would run: were the failure absorbed, the re-read would find it and
+    /// report success for a save that never happened.
+    /// </remarks>
+    [Fact]
+    public async Task AWriteFailureCausedByAnotherPendingRowIsThrownEvenWhenTheDemandHasSinceBeenFrozen()
+    {
+        await using TwoWriterDatabase database = await TwoWriterDatabase.CreateAsync();
+        (AreaAssignmentTableVersion first, _) = await database.WriteTwoVersionsAsync();
+        await using ControlServerDbContext other = database.Open();
+        await new DemandAreaAssignmentFreezeStore(other).FreezeAsync("D-2", 1, Now, TestContext.Current.CancellationToken);
+        FreezeOnSecondBindingRead interleave = new(() =>
+            new DemandAreaAssignmentFreezeStore(other).FreezeAsync("D-1", 1, Now, TestContext.Current.CancellationToken));
+        await using ControlServerDbContext mine = database.Open(interleave);
+        ConfigurationConsumerBindingRow duplicate = new()
+        {
+            ConsumerKind = DispatchZoneAreaAssignmentGovernance.DemandConsumerKind,
+            ConsumerId = "D-2",
+            ObjectKind = GovernedObjectKind.DispatchZoneAreaAssignment,
+            ObjectId = DispatchZoneAreaAssignmentGovernance.ObjectId,
+            FrozenVersion = 1,
+            FrozenAt = Now,
+            SnapshotId = first.SnapshotId
+        };
+        mine.Set<ConfigurationConsumerBindingRow>().Add(duplicate);
+
+        DbUpdateException failure = await Assert.ThrowsAsync<DbUpdateException>(() =>
+            new DemandAreaAssignmentFreezeStore(mine).FreezeAsync("D-1", 1, Now.AddSeconds(5), TestContext.Current.CancellationToken));
+
+        Assert.Contains(failure.Entries, entry => ReferenceEquals(entry.Entity, duplicate));
+        Assert.False(interleave.Fired, "The failure was treated as the freeze race and the demand was re-read.");
+    }
+
+    /// <summary>
     /// Eight writers on eight connections freeze one demand at one version at once: every one of them returns
     /// the one freeze that was written, and none throws.
     /// </summary>
@@ -266,6 +305,32 @@ public sealed class DemandAreaAssignmentFreezeTests
             CancellationToken cancellationToken = default)
         {
             if (!Fired && command.CommandText.Contains("DispatchZoneAreaAssignmentVersions", StringComparison.Ordinal))
+            {
+                Fired = true;
+                await otherWriter();
+            }
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Runs another writer's freeze from inside the second read of the freeze table, which is only ever the re-read
+    /// <see cref="DemandAreaAssignmentFreezeStore.FreezeAsync"/> does after a failed save.
+    /// </summary>
+    private sealed class FreezeOnSecondBindingRead(Func<Task> otherWriter) : DbCommandInterceptor
+    {
+        private int _reads;
+
+        public bool Fired { get; private set; }
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("FROM \"ConfigurationConsumerBindings\"", StringComparison.Ordinal)
+                && ++_reads == 2)
             {
                 Fired = true;
                 await otherWriter();
