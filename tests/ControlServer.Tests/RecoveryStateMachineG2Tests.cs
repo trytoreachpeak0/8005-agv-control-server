@@ -113,7 +113,12 @@ public sealed class RecoveryStateMachineG2Tests
                         state,
                         TestContext.Current.CancellationToken);
                 }
-                Assert.NotNull(recoverySnapshot.AcknowledgedAt);
+                // Read back rather than asserted on `recoverySnapshot`: OnboardMessageProcessor clears
+                // this context's tracking at the top of every message (8005-agv-control-server#28/#40),
+                // so the instance loaded before the call is no longer the one the ack wrote.
+                Assert.NotNull((await firstContext.ProtocolOutbox.SingleAsync(
+                    row => row.MessageId == recoverySnapshot.MessageId,
+                    TestContext.Current.CancellationToken)).AcknowledgedAt);
                 string resultAck = await firstProcessor.ProcessAsync(
                     Envelope(
                         "e0000000-0000-4000-8000-000000000004",

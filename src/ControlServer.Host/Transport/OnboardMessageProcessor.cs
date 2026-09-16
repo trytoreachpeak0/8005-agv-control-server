@@ -8,6 +8,7 @@ using ControlServer.Infrastructure.Persistence;
 namespace ControlServer.Host.Transport;
 
 public sealed partial class OnboardMessageProcessor(
+    ControlServerDbContext dbContext,
     WireToGateStore store,
     OnboardRecoveryCoordinator recoveryCoordinator,
     OnboardAlarmProjectionStore alarmStore,
@@ -24,6 +25,16 @@ public sealed partial class OnboardMessageProcessor(
         OnboardConnectionState state,
         CancellationToken cancellationToken)
     {
+        // Every message starts from the database. OnboardTcpServer opens one scope, and so one
+        // DbContext, for as long as a TCP connection lives, while the runtime worker writes the same
+        // journeys, operations and demands from a context of its own on every pass. Whatever an earlier
+        // message tracked here, a later query would hand back as it stood then: a load correction asked
+        // for once while the load was still running was refused inside the one window REQ-0237 allows
+        // it in, because the journey and the operation were still the copies that connection first saw
+        // (8005-agv-control-server#28, fixed on the MVP line as #40). Clearing here rather than before
+        // FlushDeferredOutboundAsync keeps this message's own state for its deferred send. It also stops
+        // the tracked set growing for the life of the connection.
+        dbContext.ChangeTracker.Clear();
         using JsonDocument document = JsonDocument.Parse(line);
         JsonElement root = document.RootElement;
         string messageType = RequiredString(root, "messageType");
