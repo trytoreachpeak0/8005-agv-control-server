@@ -934,8 +934,17 @@ public sealed class RecoveryStateMachineG2Tests
     /// rebinding sessionGeneration is exactly what it does. Two verdicts on one question is one too
     /// many: whichever path got there second turned a resend the inbox had already accepted back into a
     /// dropped connection. What belongs here is the identity of the record, not the bytes that carried
-    /// it: the same messageId must still name the same workflow and the same message type.
+    /// it: the same messageId must still name the same workflow and the same kind of record.
     /// </summary>
+    /// <remarks>
+    /// This one deliberately calls the coordinator directly instead of sending a line, and that is the
+    /// only way to reach what it covers. On the real inbound path the inbox answers the resend first
+    /// (ACompensationResultResentInTheNextSessionIsAcknowledgedFromItsFirstAcceptance is that path, and
+    /// it goes through OnboardMessageProcessor), so the branch under test here is unreachable from
+    /// production -- it is the defensive residue the method keeps for any caller that skips the inbox.
+    /// Reaching past a seam is worth it exactly once, for a branch that would otherwise be asserted by
+    /// nothing and would quietly regress to judging bytes again.
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
     [Trait("IntegrationSlice", "FP-IS-07")]

@@ -3611,10 +3611,12 @@ public sealed class JourneyRuntimeWorkerTests
         /// <summary>
         /// A second DbContext over the same database, which is what a TCP connection gets: OnboardTcpServer
         /// opens one scope -- and so one context -- for as long as a connection lives, while the runtime
-        /// worker writes the same journeys and operations from a context of its own on every pass.
+        /// worker writes the same journeys and operations from a context of its own on every pass. Built
+        /// from <see cref="DbOptions"/>, the same options the engine's context uses, so this second
+        /// context carries the interceptors too and the fixture has one way of opening another scope
+        /// rather than two that differ in what they record.
         /// </summary>
-        public ControlServerDbContext OpenConnectionContext() =>
-            new(new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(Connection).Options);
+        public ControlServerDbContext OpenConnectionContext() => new(DbOptions);
 
         /// <summary>
         /// The operator's 「修正装货」, entering through OnboardMessageProcessor on the connection whose
