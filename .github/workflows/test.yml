@@ -39,8 +39,14 @@ jobs:
         shell: pwsh
         run: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
 
+      # continue-on-error, because the .trx is diagnostics, not a deliverable: the verdict is the
+      # `dotnet test` exit code in the step above, already reached by the time this runs. A
+      # transient ECONNRESET from the artifact service must not turn a green suite red. See the
+      # workspace root CLAUDE.md, "artifact 上传的重试留着"; release.yml is deliberately strict
+      # instead, because there the artifact IS the deliverable.
       - name: Upload test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results
