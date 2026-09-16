@@ -1295,7 +1295,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         Func<Task<string>> responseFactory, DateTimeOffset receivedAt,
         CancellationToken cancellationToken,
         Func<string, string>? replayEquivalenceHash = null,
-        Action<string>? equivalentReplayObserved = null)
+        Action<string>? equivalentReplayObserved = null,
+        Func<string, Task<string?>>? equivalentReplayResponse = null)
     {
         ProtocolInboxRow? existing = await dbContext.ProtocolInbox
             .SingleOrDefaultAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false);
@@ -1310,6 +1311,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 replayEquivalenceHash(existing.RequestJson) != replayEquivalenceHash(requestJson))
             {
                 throw new ProtocolContentConflictException("MessageId was replayed with different normalized content.");
+            }
+
+            // An equivalent resend answered from its first acceptance rather than processed again. The
+            // row keeps the bytes that were accepted; the caller decides whether the first response can
+            // be answered that way at all, and null means it cannot.
+            if (equivalentReplayResponse is not null)
+            {
+                return await equivalentReplayResponse(existing.FirstResponseJson).ConfigureAwait(false)
+                    ?? throw new ProtocolContentConflictException(
+                        "MessageId was replayed with different normalized content.");
             }
 
             await using var replayTransaction = await dbContext.Database

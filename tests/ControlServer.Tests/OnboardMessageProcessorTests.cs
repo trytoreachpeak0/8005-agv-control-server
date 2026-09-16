@@ -557,6 +557,179 @@ public sealed class OnboardMessageProcessorTests
     }
 
     /// <summary>
+    /// 8005-agv-control-server#30 carried to v2 as 8005-agv-program#61 group (1). A durable message whose
+    /// DurableAck was lost is resent into the next session exactly as it was first sent but for its
+    /// sessionGeneration -- ADR-cross-0030 has a resend keep its messageId. Until this was fixed only
+    /// RecoveryStateReport and OperationResult carried the generation-blind replay hash, so an
+    /// OperationProgress resent that way was judged a content conflict and the connection was dropped;
+    /// the vehicle reconnected, resent and was dropped again, with nothing to break the loop. The answer
+    /// is the first acceptance signed for this session: the hash names the line just received, which is
+    /// what the onboard compares it with, durablyAcceptedAt stays the moment the server took it, and the
+    /// inbox keeps the bytes that were accepted.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AProgressReportResentIntoTheNextSessionIsAcknowledgedFromItsFirstAcceptance()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_PROGRESS_REPLAY_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(token);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            FixedTimeProvider clock = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, clock, configuration);
+            OnboardConnectionState firstState = new();
+            await ReachReadyAsync(processor, firstState, credential, token);
+
+            const string progressId = "00000000-0000-4000-8000-000000000140";
+            string original = Envelope("OperationProgress", progressId, firstState.SessionGeneration, new
+            {
+                slotOperationAttemptId = "00000000-0000-4000-8000-000000000141",
+                phase = "VERIFYING",
+                activeUnlockSlots = Array.Empty<int>(),
+                completedSlots = FirstTwoSlots,
+                observedAt = "2026-08-25T09:00:00Z"
+            });
+            DateTimeOffset firstAcceptedAt = clock.GetUtcNow();
+            string firstAck = await processor.ProcessAsync(original, firstState, token);
+            Assert.Equal(WireContentHash(original), AcceptedContentSha256(firstAck));
+
+            // The ack never reached the vehicle. It reconnects and resends the same message under the
+            // new generation, the one thing ADR-cross-0030 lets a resend change.
+            clock.Advance(TimeSpan.FromMinutes(5));
+            OnboardConnectionState secondState = new();
+            await ReachReadyAsync(processor, secondState, credential, token);
+            long secondGeneration = secondState.SessionGeneration!.Value;
+            JsonNode reboundNode = JsonNode.Parse(original)!;
+            reboundNode["sessionGeneration"] = secondGeneration;
+            string rebound = reboundNode.ToJsonString();
+
+            string replay = await processor.ProcessAsync(rebound, secondState, token);
+
+            using JsonDocument acknowledgement = JsonDocument.Parse(
+                replay.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
+            Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());
+            Assert.Equal(secondGeneration, acknowledgement.RootElement.GetProperty("sessionGeneration").GetInt64());
+            JsonElement ack = acknowledgement.RootElement.GetProperty("payload");
+            Assert.Equal(progressId, ack.GetProperty("acceptedMessageId").GetString());
+            Assert.Equal("OperationProgress", ack.GetProperty("acceptedMessageType").GetString());
+            Assert.Equal(WireContentHash(rebound), ack.GetProperty("acceptedContentSha256").GetString());
+            Assert.Equal(firstAcceptedAt, ack.GetProperty("durablyAcceptedAt").GetDateTimeOffset());
+
+            // The row keeps the bytes that were accepted, not the ones just resent.
+            ProtocolInboxRow inbox = await context.ProtocolInbox.SingleAsync(
+                row => row.MessageId == progressId, token);
+            Assert.Equal(original, inbox.RequestJson);
+            Assert.Equal(WireContentHash(original), inbox.ContentHash);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The same resend rule for SafetyStateChanged, whose first answer is a DurableAck followed by a
+    /// SessionReadiness line. The ack is what the vehicle is waiting for, so that is what is rebuilt for
+    /// this session; the readiness that went with the first one spoke for a session that is gone, so it
+    /// is decided again from the state as it stands and, like everywhere else here, sent only when it
+    /// changed. What a resend still may not do is carry different content: the same messageId with a
+    /// different payload is a content conflict, before and after this change.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-05")]
+    public async Task ASafetyChangeResentIntoTheNextSessionIsAcknowledgedFromItsFirstAcceptance()
+    {
+        const string credentialVariable = "CONTROL_SERVER_TEST_SAFETY_REPLAY_CREDENTIAL";
+        const string credential = "test-credential-not-for-production";
+        Environment.SetEnvironmentVariable(credentialVariable, credential);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
+                .UseSqlite(connection)
+                .Options;
+            await using ControlServerDbContext context = new(options);
+            await context.Database.EnsureCreatedAsync(token);
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["OnboardTransport:CredentialEnvironmentVariable"] = credentialVariable
+                })
+                .Build();
+            WireToGateStore store = new(context);
+            FixedTimeProvider clock = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, clock, configuration);
+            OnboardConnectionState firstState = new();
+            await ReachReadyAsync(processor, firstState, credential, token);
+
+            const string changeId = "00000000-0000-4000-8000-000000000150";
+            string original = Envelope("SafetyStateChanged", changeId, firstState.SessionGeneration, new
+            {
+                safetyStateVersion = 2,
+                safety = Safety(departureSafe: true),
+                observedAt = "2026-08-25T09:00:00Z"
+            });
+            DateTimeOffset firstAcceptedAt = clock.GetUtcNow();
+            string firstResponse = await processor.ProcessAsync(original, firstState, token);
+            Assert.Equal("READY", ReadinessOf(firstResponse));
+
+            clock.Advance(TimeSpan.FromMinutes(5));
+            OnboardConnectionState secondState = new();
+            await ReachReadyAsync(processor, secondState, credential, token);
+            long secondGeneration = secondState.SessionGeneration!.Value;
+            JsonNode reboundNode = JsonNode.Parse(original)!;
+            reboundNode["sessionGeneration"] = secondGeneration;
+            string rebound = reboundNode.ToJsonString();
+
+            string replay = await processor.ProcessAsync(rebound, secondState, token);
+
+            using JsonDocument acknowledgement = JsonDocument.Parse(
+                replay.Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
+            Assert.Equal("DurableAck", acknowledgement.RootElement.GetProperty("messageType").GetString());
+            Assert.Equal(secondGeneration, acknowledgement.RootElement.GetProperty("sessionGeneration").GetInt64());
+            JsonElement ack = acknowledgement.RootElement.GetProperty("payload");
+            Assert.Equal("SafetyStateChanged", ack.GetProperty("acceptedMessageType").GetString());
+            Assert.Equal(WireContentHash(rebound), ack.GetProperty("acceptedContentSha256").GetString());
+            Assert.Equal(firstAcceptedAt, ack.GetProperty("durablyAcceptedAt").GetDateTimeOffset());
+            ProtocolInboxRow inbox = await context.ProtocolInbox.SingleAsync(
+                row => row.MessageId == changeId, token);
+            Assert.Equal(original, inbox.RequestJson);
+
+            // Rebinding the generation is the only difference a resend may carry.
+            JsonNode conflicting = JsonNode.Parse(rebound)!;
+            conflicting["payload"]!["safetyStateVersion"] = 3;
+            await Assert.ThrowsAsync<ProtocolContentConflictException>(() => processor.ProcessAsync(
+                conflicting.ToJsonString(), secondState, token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(credentialVariable, null);
+        }
+    }
+
+    /// <summary>
     /// CV-OPERATION-RESULT-UNKNOWN-RECONCILE: a result the vehicle could not prove is acknowledged,
     /// reported as pending in the next session's RecoveryStateReport, replayed under that session's
     /// generation, acknowledged again -- and reconciled without ever being taken for success.
@@ -1378,7 +1551,14 @@ public sealed class OnboardMessageProcessorTests
 
     private sealed class FixedTimeProvider : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() =>
-            new(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        private DateTimeOffset _now = new(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        /// <summary>
+        /// Lets a test tell the moment a message was first accepted from the moment it was resent.
+        /// A DurableAck rebuilt for a later session keeps the first one.
+        /// </summary>
+        public void Advance(TimeSpan by) => _now += by;
     }
 }
