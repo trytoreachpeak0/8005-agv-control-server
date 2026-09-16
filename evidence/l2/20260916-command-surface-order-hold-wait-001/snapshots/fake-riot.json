@@ -1,0 +1,199 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-cbed8849",
+  "revision": 10,
+  "observedAt": "2026-09-16T23:48:44.2766717+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 59,
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 12,
+        "battery": 80,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      },
+      {
+        "deviceKey": "BROKERX-L2-0002",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 210,
+        "battery": 80,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      },
+      {
+        "deviceKey": "BROKERX-L2-0003",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 210,
+        "battery": 80,
+        "batteryState": "NO_CHARGE",
+        "speed": 0,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_FINISHED",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-3d6bfd8e-ddb4-4fd9-8ca6-e451edb0e12b-PICKUP-1",
+        "orderState": 5,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "BROKERX-L2-0001",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      },
+      {
+        "id": 488002,
+        "orderId": "ORDER-000002",
+        "upperId": "W2G-d7daa215-9c78-4ea1-8fe0-bcd764bd68ed-PICKUP-1",
+        "orderState": 4,
+        "appointVehicleKey": "BROKERX-L2-0002",
+        "executeVehicleKey": "--",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      },
+      {
+        "id": 488003,
+        "orderId": "ORDER-000003",
+        "upperId": "W2G-afd9cc78-88e9-4306-8428-d0f1256bbb15-PICKUP-1",
+        "orderState": 1,
+        "appointVehicleKey": "BROKERX-L2-0003",
+        "executeVehicleKey": "--",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      },
+      {
+        "id": 488004,
+        "orderId": "ORDER-000004",
+        "upperId": "W2G-3d6bfd8e-ddb4-4fd9-8ca6-e451edb0e12b-GATE-1",
+        "orderState": 1,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "--",
+        "endStationNo": 210,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 210
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13",
+            "edgeId": 6,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7",
+            "edgeId": 2,
+            "posX": 0,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 210,
+            "name": "关卡",
+            "edgeId": 4,
+            "posX": 20000,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          }
+        ]
+      }
+    ],
+    "commandInvocations": [
+      {
+        "commandType": "CMD_ORDER_HELD",
+        "target": "ORDER-000002",
+        "argumentsJson": "{\"commandType\":\"CMD_ORDER_HELD\",\"disableVehicle\":false,\"reason\":\"VEHICLE_ORDER_FAILED\"}",
+        "at": "2026-09-16T23:48:03.055097+08:00"
+      }
+    ],
+    "edgeGroups": [],
+    "dynamicRouteCosts": {},
+    "removedEdges": [
+      {
+        "mapId": 25,
+        "edgeIds": []
+      }
+    ],
+    "removedStations": [
+      {
+        "mapId": 25,
+        "stationIds": []
+      }
+    ]
+  }
+}
