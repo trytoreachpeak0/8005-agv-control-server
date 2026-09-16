@@ -9,7 +9,7 @@ public sealed class ControlServerDesignTimeDbContextFactory : IDesignTimeDbConte
     {
         _ = args;
         DbContextOptions<ControlServerDbContext> options = new DbContextOptionsBuilder<ControlServerDbContext>()
-            .UseSqlite("Data Source=controlserver.design.db")
+            .UseSqlite(ControlServerSqlite.ForDatabaseFile("controlserver.design.db"))
             .Options;
         return new ControlServerDbContext(options);
     }
