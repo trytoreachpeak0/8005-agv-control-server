@@ -1029,7 +1029,7 @@ public sealed class OnboardRecoveryCoordinator(
     /// <b>Fixed at the session's first value.</b> Only operations created no later than the session
     /// opened are considered, and an operation row is only ever created together with its command, so
     /// every later call answers what the first one did -- a replayed request, each snapshot revision,
-    /// the accepted action. No column holds it (this ticket adds no migration); the persisted facts do.
+    /// the accepted action. No column stores the value; it is derived from those persisted facts.
     /// </para>
     /// </remarks>
     private async Task<string?> RecoveryAttemptIdAsync(

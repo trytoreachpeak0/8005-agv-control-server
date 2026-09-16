@@ -55,6 +55,8 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed class ProtocolPayloadShapeArchitectureTests
 {
+    private static readonly JsonSerializerOptions WireSerializerOptions = new(JsonSerializerDefaults.Web);
+
     /// <summary>
     /// SHA-256 over the vendored schema tree: for each file in relative-path order, the path, a
     /// newline, the file's own SHA-256 in lower hex, and a newline.
@@ -101,6 +103,42 @@ public sealed class ProtocolPayloadShapeArchitectureTests
         Assert.True(
             offences.Count == 0,
             "The server sends payloads its own frozen schemas reject: " + string.Join("; ", offences));
+    }
+
+    /// <summary>
+    /// The <c>SublotRejected</c> payload type, both ways its demand can be, serialised the way the
+    /// server serialises every payload and checked against the frozen schema.
+    /// </summary>
+    /// <remarks>
+    /// Nothing sends it yet (<c>8005-agv-control-server#82</c>), so there is no publisher to drive the
+    /// way <see cref="EverySnapshotThePublisherSendsMatchesItsFrozenSchema"/> does. The type is what the
+    /// sender will serialise, so the type is what is checked.
+    /// </remarks>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("00000000-0000-4000-8000-000000000421")]
+    public void TheSublotRejectionTypeMatchesItsFrozenSchema(string? demandId)
+    {
+        SublotRejection rejection = new(
+            demandId,
+            "00000000-0000-4000-8000-000000000422",
+            new WireProblem(ServerReasonCodes.SublotNotInDispatchScope, "payload.sublot", null),
+            5,
+            "SUBLOT-999");
+        using JsonDocument payload = JsonDocument.Parse(
+            JsonSerializer.Serialize(rejection, WireSerializerOptions));
+        using JsonDocument schema = JsonDocument.Parse(File.ReadAllBytes(SchemaPath("SublotRejected")));
+
+        string[] offences =
+        [
+            .. Offences(
+                "SublotRejected",
+                "payload",
+                payload.RootElement,
+                schema.RootElement.GetProperty("properties").GetProperty("payload"))
+        ];
+
+        Assert.True(offences.Length == 0, string.Join("; ", offences));
     }
 
     /// <summary>

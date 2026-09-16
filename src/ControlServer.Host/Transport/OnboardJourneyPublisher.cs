@@ -77,7 +77,7 @@ public sealed class OnboardJourneyPublisher(
         // loadingPhase is null exactly when the vehicle has no transport journey
         // (8005-agv-program#94). The schema accepts null either way, so nothing downstream -- not even
         // the outbound schema gate -- would notice a journey reported without its loading phase.
-        if ((projection.ActivePurpose == "TRANSPORT") != (projection.LoadingPhase is not null))
+        if ((projection.ActivePurpose == VehicleActivePurposes.Transport) != (projection.LoadingPhase is not null))
             throw new InvalidDataException(
                 "loadingPhase must be present exactly when activePurpose is TRANSPORT.");
         return PublishStampedSnapshotAsync(

@@ -1228,7 +1228,13 @@ public sealed class JourneyRuntimeEngine(
             runtime.GateWorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.GateStationId, "DROPOFF", runtime.WorklistRevision + 1, null),
+            Worklist(
+                runtime,
+                demand,
+                runtime.GateStationId,
+                "DROPOFF",
+                runtime.WorklistRevision + 1,
+                stationDepartureDeadlineAt: null),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             runtime.GatePlanMessageId,
@@ -1829,7 +1835,7 @@ public sealed class JourneyRuntimeEngine(
 
     // Likewise the only activePurpose this runtime can be in. CHARGING is batch 8, IDLE_RETURN is
     // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.
-    private const string TransportPurpose = "TRANSPORT";
+    private const string TransportPurpose = VehicleActivePurposes.Transport;
 
     // 8005-agv-program#94's semantic table: v2 has no automatic charging today (scope specification
     // 5.5), so this server holds no charger reservation, no charging order and no charging cycle.

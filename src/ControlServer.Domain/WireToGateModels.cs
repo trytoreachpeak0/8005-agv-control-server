@@ -104,6 +104,15 @@ public sealed record VehicleBusinessProjection(
     IReadOnlyList<VehicleBusinessBlockingFact> BlockingFacts);
 
 /// <summary>
+/// The <c>activePurpose</c> values this server uses by name.
+/// </summary>
+public static class VehicleActivePurposes
+{
+    /// <summary>The vehicle is carrying a demand; the only purpose the v2 journey runtime can be in.</summary>
+    public const string Transport = "TRANSPORT";
+}
+
+/// <summary>
 /// <c>VehicleBusinessStateSnapshot.loadingPhase</c>: where the loading phase of a transport journey
 /// stands.
 /// </summary>
@@ -194,6 +203,32 @@ public sealed record SublotEntryRequest(
     string StationId,
     long WorklistRevision,
     IReadOnlyList<string> ExpectedSublots);
+
+/// <summary>
+/// <c>$defs/Problem</c>: why a request was refused. <see cref="ReasonCode"/> is an <c>ErrorCode</c>, so
+/// it comes from <c>ServerReasonCodes</c>.
+/// </summary>
+public sealed record WireProblem(
+    string ReasonCode,
+    string? FieldPath,
+    string? DisplayMessage);
+
+/// <summary>
+/// The payload of <c>SublotRejected</c>: the server refusing one <c>SublotSubmitted</c>.
+/// </summary>
+/// <remarks>
+/// Protocol <c>2.0.0</c> item 2. <see cref="DemandId"/> is null when the sublot resolves to no demand
+/// in the dispatch scope (<c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>), and names the resolved demand when the
+/// sublot is in scope but fails its re-check. <see cref="RejectedSublot"/> is the value the operator
+/// entered. Only the type exists here; sending it, answering the submission with its messageId as
+/// <c>correlationId</c>, is <c>8005-agv-control-server#82</c>.
+/// </remarks>
+public sealed record SublotRejection(
+    string? DemandId,
+    string OperationSessionId,
+    WireProblem Problem,
+    long CurrentWorklistRevision,
+    string RejectedSublot);
 
 public enum SlotOperationType
 {
