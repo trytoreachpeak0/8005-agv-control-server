@@ -16,3 +16,8 @@
 `Runs` 各跑一遍的结果：改动前在 `fp/v2-impl@72ff5cf6` 的独立检出上，改动后在本分支 `0bff08c7` 上，两边都是 33 趟 33 PASS。
 每趟的完整证据目录在控制端本机 `8005-workspace-v2/evidence/b4-07-20260916/` 下（`results.json` 里的 `evidence` 字段就是路径），
 没有整体入库；入库的只有 `../20260916-b4-07-normal-load-001` 与 `../20260916-b4-07-emergency-stop-operator-release-001` 两份。
+
+**带入 #84 之后又跑了一遍。**本分支用 merge 带入 `fp/v2-impl@f563efa8`（#84 的协议 v2.0.0 候选，改了假车载端的
+`SublotSubmitted` 报文），并按审查意见去掉编排器里永真的派车判断、把 `OnboardPeers` 各项的 `SlotStates` 提前到启动前
+校验，之后在 `7fbf1425` 上把同样 17 个场景重跑：`sweep-after-merge-7fbf1425.results.json`，33 趟 33 PASS。完整证据目录在
+控制端本机 `8005-workspace-v2/evidence/b4-07-20260916/after-merge-7fbf1425/`。
