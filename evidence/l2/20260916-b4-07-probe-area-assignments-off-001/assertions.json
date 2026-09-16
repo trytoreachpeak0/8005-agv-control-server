@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "b4-07-probe-area-assignments-off",
+  "runId": "20260916T105746048Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T105746048Z",
+    "controlServerCommit": "0bff08c7b23024262dbf33d0c5e9f582bbd1324b",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-4"
+  },
+  "assertions": [
+    {
+      "id": "B4-07-OFF-01",
+      "description": "AreaAssignments = $false：库里一版分区归属表都没有",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "B4-07-OFF-02",
+      "description": "入库与绑定照做：主车有 8 行已发布 IO 绑定，且 Context.SlotModelVersionId 已给出",
+      "outcome": "PASS",
+      "expected": "8 / 非空",
+      "actual": "8 / 1d652d4dd45340eea2b46c1a2c293c61"
+    },
+    {
+      "id": "B4-07-OFF-03",
+      "description": "时间线里有入库与绑定两步，没有导入那一步",
+      "outcome": "PASS",
+      "expected": "seed + bind，无 import",
+      "actual": "slot-model-preseed:seed-approved-facts, slot-model-preseed:bind-io:AGV-L2-001"
+    }
+  ]
+}

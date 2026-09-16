@@ -913,6 +913,13 @@
       "controlserver.domain": {
         "type": "Project"
       },
+      "controlserver.fakeonboard": {
+        "type": "Project",
+        "dependencies": {
+          "ControlServer.Domain": "[1.0.0, )",
+          "ControlServer.TestDoubles": "[1.0.0, )"
+        }
+      },
       "controlserver.fakeriot": {
         "type": "Project",
         "dependencies": {
