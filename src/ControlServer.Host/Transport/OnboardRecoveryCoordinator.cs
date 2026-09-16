@@ -87,11 +87,16 @@ public sealed class OnboardRecoveryCoordinator(
             .SingleOrDefaultAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
-            if (existing.ContentHash != contentHash || existing.WorkflowId != workflowId ||
-                existing.MessageType != messageType)
+            // Identity, not bytes. Whether a resent line is equivalent to the one first accepted is
+            // decided once, by the inbox in OnboardMessageProcessor, which ignores the sessionGeneration
+            // a resend rebinds and nothing else (8005-agv-control-server#30). Comparing the whole line's
+            // hash again here was a second verdict on the same question, and it could only disagree:
+            // every legitimate resend fails it. What this still has to refuse is the same messageId
+            // turning up as a different record.
+            if (existing.WorkflowId != workflowId || existing.MessageType != messageType)
             {
                 throw new ProtocolContentConflictException(
-                    "Recovery result MessageId was replayed with different identity or content.");
+                    "Recovery result MessageId was replayed with a different identity.");
             }
             return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
         }
