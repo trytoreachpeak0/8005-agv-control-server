@@ -35,6 +35,9 @@ internal static class Program
         Converters = { new JsonStringEnumConverter() }
     };
 
+    /// <summary>取值即「出现」的开关，后面不跟值。</summary>
+    private static readonly HashSet<string> ValuelessOptions = new(StringComparer.Ordinal) { "dry-run" };
+
     internal static async Task<int> Main(string[] args)
     {
         // The vehicles are named in Chinese in RIoT, so every identifier this tool prints goes
@@ -48,13 +51,27 @@ internal static class Program
         }
 
         Dictionary<string, string> options = new(StringComparer.Ordinal);
-        for (int index = 1; index < args.Length; index += 2)
+        for (int index = 1; index < args.Length;)
         {
-            if (!args[index].StartsWith("--", StringComparison.Ordinal) || index + 1 >= args.Length)
+            if (!args[index].StartsWith("--", StringComparison.Ordinal))
             {
                 return Usage($"malformed option near '{args[index]}'");
             }
-            options[args[index][2..]] = args[index + 1];
+            string name = args[index][2..];
+            // A switch takes no value. Requiring one would make the operator type `--dry-run true`,
+            // and `--dry-run false` would then read as a dry run that is not one.
+            if (ValuelessOptions.Contains(name))
+            {
+                options[name] = "true";
+                index += 1;
+                continue;
+            }
+            if (index + 1 >= args.Length)
+            {
+                return Usage($"malformed option near '{args[index]}'");
+            }
+            options[name] = args[index + 1];
+            index += 2;
         }
 
         if (!options.TryGetValue("database", out string? databasePath))
@@ -66,8 +83,9 @@ internal static class Program
             return Usage($"database file not found: {databasePath}");
         }
 
-        // 体检命令一行不写，所以连库都用 SQLite 自己的只读模式开——「只读」由驱动保证，不是靠这里自觉。
-        bool readOnly = args[0] is CheckBindingSnapshotsCommand;
+        // 一行不写的命令连库都用 SQLite 自己的只读模式开——「只读」由驱动保证，不是靠这里自觉。
+        // 一个判断、一份名单：新增只读动词往这里加，不要在别处另起一套。
+        bool readOnly = args[0] is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand;
         // 服务端主机正在写同一个文件。连接串走共用的那一处，等写锁的上限两边因此是同一个值——自己拼一串
         // 出来的话，这个进程会在对方一次正常的写事务上直接报 database is locked。
         DbContextOptions<ControlServerDbContext> contextOptions =
@@ -91,11 +109,17 @@ internal static class Program
             "bind-io" => await BindIoAsync(context, governance, options, now),
             "export-audit" => await ExportAuditAsync(context, options, now),
             CheckBindingSnapshotsCommand => await CheckBindingSnapshotsAsync(context),
+            ImportAreaAssignmentsCommand => await ImportAreaAssignmentsAsync(context, governance, options, now),
+            ReadAreaAssignmentsCommand => await ReadAreaAssignmentsAsync(context, governance, options),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
 
     private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
+
+    private const string ImportAreaAssignmentsCommand = "import-area-assignments";
+
+    private const string ReadAreaAssignmentsCommand = "area-assignments";
 
     /// <summary>
     /// 体检：哪些 IO 绑定行指着的快照装的不是它们自己。**只读，一行不写。**
@@ -507,6 +531,141 @@ internal static class Program
             0);
     }
 
+    /// <summary>
+    /// REQ-0350：整表原子导入分区归属表（含开门侧列）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>表自身有错就整份拒绝，一行都不写</b>，并且一次把全部错误行报出来。现场改一轮表要跑一趟，逐条挤
+    /// 牙膏等于逐条跑一趟。<c>--dry-run</c> 只校验并出预览，正式导入则写一个新的不可变版本，附快照与不可改写
+    /// 审计；内容与上一版完全相同也形成新版本——回滚就是把旧内容再导入一次。生效不要求重启服务或车辆空闲。
+    /// </para>
+    /// <para>
+    /// 预览列出开门侧会随这份新内容变化的在途需求。它只提示：已冻结的需求装货与卸货仍按冻结版本执行。
+    /// </para>
+    /// </remarks>
+    private static async Task<int> ImportAreaAssignmentsAsync(
+        ControlServerDbContext context,
+        GovernanceStore governance,
+        Dictionary<string, string> options,
+        DateTimeOffset now)
+    {
+        if (!options.TryGetValue("input", out string? inputPath))
+        {
+            return Usage("import-area-assignments needs --input <assignments.csv>");
+        }
+        if (!File.Exists(inputPath))
+        {
+            return Usage($"input file not found: {inputPath}");
+        }
+        bool dryRun = options.ContainsKey("dry-run");
+
+        ControlServer.Application.AreaAssignmentImportService importer = new(
+            new AreaAssignmentStore(
+                context, new ControlServer.Application.GovernedConfigurationPublisher(governance, governance)),
+            new DemandAreaAssignmentFreezeStore(context),
+            new AreaAssignmentImportFacts(context));
+        ControlServer.Application.AreaAssignmentImportResult result = await importer.ImportAsync(
+            await File.ReadAllTextAsync(inputPath), dryRun, now, CancellationToken.None);
+
+        bool accepted = result.Outcome == ControlServer.Application.AreaAssignmentImportOutcome.Accepted;
+        return Emit(
+            new
+            {
+                command = "import-area-assignments",
+                outcome = accepted ? "OK" : "REJECTED",
+                dryRun,
+                input = Path.GetFullPath(inputPath),
+                entryCount = result.EntryCount,
+                version = result.Version?.Version,
+                contentSha256 = result.Version?.ContentSha256,
+                snapshotId = result.Version?.SnapshotId,
+                importedAt = result.Version?.ImportedAt,
+                errorCount = result.Errors.Count,
+                errors = result.Errors.Select(error => new
+                {
+                    line = error.Line,
+                    reasonCode = error.ReasonCode,
+                    area = error.Area,
+                    detail = error.Detail
+                }),
+                preview = result.Preview.Select(entry => new
+                {
+                    demandId = entry.DemandId,
+                    area = entry.Area,
+                    frozenVersion = entry.FrozenVersion,
+                    frozenSlotPosition = entry.FrozenSlotPosition,
+                    newSlotPosition = entry.NewSlotPosition
+                })
+            },
+            accepted ? 0 : 1);
+    }
+
+    /// <summary>
+    /// 当前（或指定）那一版分区归属表的全部行与版本元数据。
+    /// </summary>
+    /// <remarks>
+    /// <b>只读，而且库是以 SQLite 的只读模式开的</b>（见 <see cref="Main"/> 里那个判断），与体检命令同一条
+    /// 纪律：不写这件事由驱动保证，不靠这里自觉。
+    /// </remarks>
+    private static async Task<int> ReadAreaAssignmentsAsync(
+        ControlServerDbContext context,
+        GovernanceStore governance,
+        Dictionary<string, string> options)
+    {
+        long? version = null;
+        if (options.TryGetValue("version", out string? versionText))
+        {
+            if (!long.TryParse(versionText, CultureInfo.InvariantCulture, out long parsed))
+            {
+                return Usage($"--version must be a whole number, not '{versionText}'");
+            }
+            version = parsed;
+        }
+
+        // 读路径不发布，所以这里给的 publisher 只是为了构造 store，它不会被走到。
+        AreaAssignmentStore store = new(
+            context, new ControlServer.Application.GovernedConfigurationPublisher(governance, governance));
+        ControlServer.Application.AreaAssignmentTableVersion? table = version is null
+            ? await store.ReadCurrentAsync(CancellationToken.None)
+            : await store.ReadVersionAsync(version.Value, CancellationToken.None);
+        if (table is null)
+        {
+            return Emit(
+                new
+                {
+                    command = "area-assignments",
+                    outcome = "NOT_FOUND",
+                    requestedVersion = version,
+                    detail = version is null
+                        ? "No area assignment table has been imported into this database."
+                        : "That version does not exist."
+                },
+                1);
+        }
+
+        return Emit(
+            new
+            {
+                command = "area-assignments",
+                outcome = "OK",
+                version = table.Version,
+                contentSha256 = table.ContentSha256,
+                snapshotId = table.SnapshotId,
+                importedAt = table.ImportedAt,
+                entryCount = table.ByArea.Count,
+                entries = table.ByArea.Values
+                    .OrderBy(assignment => assignment.Area, StringComparer.Ordinal)
+                    .Select(assignment => new
+                    {
+                        area = assignment.Area,
+                        dispatchZone = assignment.DispatchZone,
+                        slotPosition = assignment.SlotPosition
+                    })
+            },
+            0);
+    }
+
     private static bool TryReadInstant(Dictionary<string, string> options, string name, out DateTimeOffset? value)
     {
         value = null;
@@ -533,7 +692,8 @@ internal static class Program
         Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"ControlServer.FieldOps: {problem}."));
         Console.Error.WriteLine(
             "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io"
-            + "|export-audit|check-binding-snapshots> --database <path> [options]");
+            + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments>"
+            + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
         Console.Error.WriteLine("  enable-gate [--note <text>]");
@@ -545,6 +705,27 @@ internal static class Program
             + " [--since <iso-8601>] [--until <iso-8601>]");
         Console.Error.WriteLine(
             "  check-binding-snapshots   read-only; exit 1 means findings, not a tool failure");
+        Console.Error.WriteLine("  import-area-assignments --input <assignments.csv> [--dry-run]");
+        Console.Error.WriteLine("  area-assignments        [--version <n>]   read-only");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine(
+            "import-area-assignments takes a UTF-8 CSV whose header is exactly"
+            + " 'area,dispatch_zone,slot_position' and whose fields carry no outer whitespace. The whole table"
+            + " is imported atomically: if any row is bad the whole file is rejected, every bad row is"
+            + " reported, and nothing is written.");
+        Console.Error.WriteLine(
+            "  A blank line at the end of the file is ignored; a blank line between rows is a malformed row"
+            + " and rejects the file.");
+        Console.Error.WriteLine(
+            "  Slot position groups come from the published whole-vehicle slot models in this database, never"
+            + " from a value hard-coded here; run seed-approved-facts first on a fresh database.");
+        Console.Error.WriteLine(
+            "  Dispatch zones come from the dispatch policy stored in this database, which the server writes at"
+            + " startup from its configuration. Two consequences:");
+        Console.Error.WriteLine(
+            "    - the server must have been started once with the intended configuration before importing;");
+        Console.Error.WriteLine(
+            "    - a zone that is configured but has no vehicle serving it counts as not existing.");
         return 2;
     }
 }
