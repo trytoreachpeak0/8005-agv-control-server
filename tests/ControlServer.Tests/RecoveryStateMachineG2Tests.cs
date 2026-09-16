@@ -1197,6 +1197,37 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal(releasedAt, (await context.VehicleDispatchLeases.SingleAsync(
                 TestContext.Current.CancellationToken)).ReleasedAt);
             Assert.Single(await context.RecoveryWorkflows.ToArrayAsync(TestContext.Current.CancellationToken));
+
+            // A later press of the same cancellation is a new message with the operator verified
+            // afresh. It asks the same question and gets the same answer; it used to be judged a
+            // replay with different content and cost the vehicle its session
+            // (8005-agv-onboard-hmi#89).
+            string laterPress = Envelope(
+                "e0000000-0000-4000-8000-000000000011",
+                "LoadCancellationStartRequested",
+                new
+                {
+                    cancellationId = "a0000000-0000-4000-8000-000000000010",
+                    demandId = DemandId,
+                    slotOperationAttemptId = (string?)null,
+                    @operator = new
+                    {
+                        operatorId = OperatorId,
+                        verificationMethod = "BADGE",
+                        verifiedAt = Now.AddSeconds(12)
+                    },
+                    reason = "站点没有要装的货。"
+                });
+            string laterReply = await processor.ProcessAsync(
+                laterPress, state, TestContext.Current.CancellationToken);
+            using (JsonDocument document = JsonDocument.Parse(laterReply))
+            {
+                Assert.Equal("AUTHORIZED",
+                    document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
+            }
+            RecoveryWorkflowRow settled = Assert.Single(
+                await context.RecoveryWorkflows.ToArrayAsync(TestContext.Current.CancellationToken));
+            Assert.Equal("CANCELLED_BEFORE_LOAD", settled.Outcome);
         }
         finally
         {

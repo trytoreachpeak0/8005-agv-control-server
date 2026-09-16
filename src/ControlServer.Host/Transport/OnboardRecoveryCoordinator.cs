@@ -622,9 +622,20 @@ public sealed class OnboardRecoveryCoordinator(
             : operation is null ? [] : ParseSlots(operation.TargetSlotsJson);
         if (authorized)
         {
-            RecoveryWorkflowRow workflow = await UpsertSimpleWorkflowAsync(
-                cancellationId, "LOAD_CANCELLATION", root, contentHash, demandId, attemptId, slots,
-                cancellationToken).ConfigureAwait(false);
+            // A replay of an authorised cancellation for the same demand and attempt is answered from
+            // the workflow, not re-checked byte for byte. The operator context carries verifiedAt,
+            // which the peer takes afresh on a later press, and "this demand is not loaded" means
+            // the same thing at either time. Treating that as a content conflict dropped the whole
+            // session (8005-agv-onboard-hmi#89). A different demand or attempt under the same id is
+            // still a conflict, and UpsertSimpleWorkflowAsync still throws for it.
+            RecoveryWorkflowRow workflow =
+                priorAuthorization is not null &&
+                priorAuthorization.DemandId == demandId &&
+                priorAuthorization.SlotOperationAttemptId == attemptId
+                    ? priorAuthorization
+                    : await UpsertSimpleWorkflowAsync(
+                        cancellationId, "LOAD_CANCELLATION", root, contentHash, demandId, attemptId, slots,
+                        cancellationToken).ConfigureAwait(false);
             // Cancelling at the pickup stop before any slot operation was commanded leaves nothing
             // to clear: no door was opened, so the peer has no emptiness to prove and sends no
             // LoadCancellationResult. Its schema could not carry one anyway -- slotResults is
