@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -26,6 +27,13 @@ namespace ControlServer.Infrastructure.Persistence;
 /// 是同一个 SQLite 库；两个进程可以在任何一方落地之前各自读到同一个最大值。
 /// <see cref="PublishNextVersionAsync{T}"/> 把「取号 + 落地」包进一个事务，撞车时整次尝试回滚、重新取号
 /// 再来一遍，失败的那次因此不留半行。
+/// </para>
+/// <para>
+/// <b>跨进程撞车的第一现场是 <c>SQLITE_BUSY</c>，不是版本冲突。</b>Microsoft.Data.Sqlite 开的是
+/// <c>BEGIN IMMEDIATE</c>，写锁在开事务那一刻就要拿到手，所以第二个写入方连号都取不到就被挡住了，看到的
+/// 是 <c>database is locked</c>（错误码 5）。等多久由连接串上的 <c>Default Timeout</c> 决定
+/// （<see cref="ControlServerSqlite.BusyTimeoutSeconds"/>）；等满了还拿不到，这里与版本冲突一视同仁——
+/// 整次取号重来。两者是同一件事的两种报法：号还没轮到你。
 /// </para>
 /// </remarks>
 public readonly record struct SlotConfigurationVersionLine(string AgvId, string SlotModelVersionId)
@@ -88,11 +96,19 @@ public readonly record struct SlotConfigurationVersionLine(string AgvId, string 
     /// <remarks>
     /// <para>
     /// 调用方自己已经开着事务时，这里不再开第二个，也<b>不重试</b>：那时候「回滚」会连调用方的写入一起
-    /// 扔掉，而这里无权替它决定。冲突照常抛出去，由那个更大的工作单元决定怎么办。
+    /// 扔掉，而这里无权替它决定。冲突照常抛出去，由那个更大的工作单元决定怎么办。同理它也<b>不清</b>
+    /// 调用方的变更跟踪器——那里面装着调用方自己的工作，而且回滚根本还没有发生。
     /// </para>
     /// <para>
-    /// 重试前会清空变更跟踪器。事务已经回滚，跟踪器里那些「已保存」的实体在库里并不存在，留着它们下一次
-    /// <c>SaveChanges</c> 就会把幽灵行写回去。
+    /// <b>自己开的那个事务一旦失败退出，跟踪器一定清空</b>，三条路都清：重试、撞满
+    /// <see cref="MaxAllocationAttempts"/> 次放弃、以及任何别的异常穿出去。事务已经回滚，跟踪器里那些实体
+    /// 在库里并不存在，而留着它们不是无害的：<c>Added</c> 的会被下一次 <c>SaveChanges</c> 真的写进去——
+    /// 写在一个谁都没有分配过的版本号上；<c>Unchanged</c> 的则是对库的一句假话，改它会得到一次针对不存在
+    /// 的行的 UPDATE。这在服务端一次请求一个上下文时看不出来，在 <c>ControlServer.FieldOps</c> 那种一个
+    /// 上下文活满整个进程的地方看得出来。
+    /// </para>
+    /// <para>
+    /// 开事务本身也在重试范围内：写锁被别的进程握着时，失败的正是 <c>BEGIN IMMEDIATE</c> 那一步。
     /// </para>
     /// </remarks>
     public async Task<T> PublishNextVersionAsync<T>(
@@ -103,14 +119,19 @@ public readonly record struct SlotConfigurationVersionLine(string AgvId, string 
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(publishAtVersion);
 
+        // 调用方开着事务的话，这一整次都在它的工作单元里：不开第二个、不重试、不清它的跟踪器。
+        bool ownsTransaction = context.Database.CurrentTransaction is null;
+
         for (int attempt = 1; ; attempt++)
         {
-            await using IDbContextTransaction? transaction = context.Database.CurrentTransaction is null
-                ? await context.Database.BeginTransactionAsync(cancellationToken)
-                : null;
-            long version = await NextVersionAsync(context, cancellationToken);
+            IDbContextTransaction? transaction = null;
             try
             {
+                if (ownsTransaction)
+                {
+                    transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+                }
+                long version = await NextVersionAsync(context, cancellationToken);
                 T published = await publishAtVersion(version, cancellationToken);
                 if (transaction is not null)
                 {
@@ -118,12 +139,63 @@ public readonly record struct SlotConfigurationVersionLine(string AgvId, string 
                 }
                 return published;
             }
-            catch (GovernedSnapshotVersionConflictException)
-                when (transaction is not null && attempt < MaxAllocationAttempts)
+            catch (Exception failure) when (ownsTransaction)
             {
-                await transaction.RollbackAsync(cancellationToken);
+                // 先清跟踪器：下面的 dispose 会回滚，而回滚之后这些实体就是库里没有的东西了。清在前面，
+                // 回滚那一步万一自己出问题，跟踪器也已经是干净的。
                 context.ChangeTracker.Clear();
+                if (!IsRetryable(failure) || attempt >= MaxAllocationAttempts)
+                {
+                    throw;
+                }
+            }
+            finally
+            {
+                if (transaction is not null)
+                {
+                    // 没提交的事务在这里回滚。不显式调 RollbackAsync：它自己抛出来会盖掉真正的原因。
+                    await transaction.DisposeAsync();
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// 这次失败是不是「号还没轮到你」，因而重新取号再来一次就有意义。
+    /// </summary>
+    /// <remarks>
+    /// 两种报法：本进程内两个写入方取到同一个号，是
+    /// <see cref="GovernedSnapshotVersionConflictException"/>；另一个进程握着库的写锁，是
+    /// <c>SQLITE_BUSY</c>。别的失败（磁盘满、schema 不对）重试多少次都还是那个结果，原样抛出去。
+    /// </remarks>
+    private static bool IsRetryable(Exception failure) =>
+        failure is GovernedSnapshotVersionConflictException || IsDatabaseLocked(failure);
+
+    /// <summary>SQLite 的 <c>SQLITE_BUSY</c>。</summary>
+    private const int SqliteBusyErrorCode = 5;
+
+    /// <summary>SQLite 的 <c>SQLITE_LOCKED</c>。</summary>
+    private const int SqliteLockedErrorCode = 6;
+
+    /// <summary>
+    /// 这个异常（或者它裹着的某一层）是不是「库被锁着」。
+    /// </summary>
+    /// <remarks>
+    /// 要顺着 <see cref="Exception.InnerException"/> 找下去：<c>SaveChanges</c> 失败时 EF 把它裹进
+    /// <c>DbUpdateException</c>，而开事务失败时它是光的。<c>SQLITE_LOCKED</c>（6）一并算上——同一个进程里
+    /// 两个连接共享缓存时，同样这件事报的是 6 而不是 5。
+    /// </remarks>
+    public static bool IsDatabaseLocked(Exception failure)
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+
+        for (Exception? candidate = failure; candidate is not null; candidate = candidate.InnerException)
+        {
+            if (candidate is SqliteException { SqliteErrorCode: SqliteBusyErrorCode or SqliteLockedErrorCode })
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

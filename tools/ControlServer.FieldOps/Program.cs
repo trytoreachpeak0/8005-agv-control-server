@@ -68,9 +68,11 @@ internal static class Program
 
         // 体检命令一行不写，所以连库都用 SQLite 自己的只读模式开——「只读」由驱动保证，不是靠这里自觉。
         bool readOnly = args[0] is CheckBindingSnapshotsCommand;
+        // 服务端主机正在写同一个文件。连接串走共用的那一处，等写锁的上限两边因此是同一个值——自己拼一串
+        // 出来的话，这个进程会在对方一次正常的写事务上直接报 database is locked。
         DbContextOptions<ControlServerDbContext> contextOptions =
             new DbContextOptionsBuilder<ControlServerDbContext>()
-                .UseSqlite($"Data Source={databasePath}" + (readOnly ? ";Mode=ReadOnly" : string.Empty))
+                .UseSqlite(ControlServerSqlite.ForDatabaseFile(databasePath, readOnly))
                 .Options;
         await using ControlServerDbContext context = new(contextOptions);
         GovernanceStore governance = new(

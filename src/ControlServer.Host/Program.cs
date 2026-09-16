@@ -28,7 +28,10 @@ builder.WebHost.UseUrls(builder.Configuration["Health:url"] ?? "http://127.0.0.1
 
 string configuredConnection = builder.Configuration.GetConnectionString("ControlServer")
     ?? "Data Source=%ProgramData%\\8005\\ControlServer\\data\\controlserver.db";
-string connectionString = ExpandDataSource(configuredConnection);
+// 这个库有两个进程在写（另一个是 ControlServer.FieldOps），连接串因此只在一处拼：路径展开与等写锁的
+// 上限都由 ControlServerSqlite 说了算。
+string connectionString = ControlServerSqlite.FromConfigured(configuredConnection);
+ControlServerSqlite.EnsureDataSourceDirectory(connectionString);
 builder.Services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(connectionString));
 builder.Services.AddScoped<WireToGateStore>();
 builder.Services.AddScoped<IDemandAcceptanceStore>(services => services.GetRequiredService<WireToGateStore>());
@@ -234,23 +237,6 @@ if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 app.MapDashboardQueries();
 
 await app.RunAsync();
-
-static string ExpandDataSource(string connectionString)
-{
-    const string prefix = "Data Source=";
-    if (!connectionString.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-    {
-        return connectionString;
-    }
-    string path = Environment.ExpandEnvironmentVariables(connectionString[prefix.Length..])
-        .Replace('/', Path.DirectorySeparatorChar);
-    string? directory = Path.GetDirectoryName(path);
-    if (!string.IsNullOrWhiteSpace(directory))
-    {
-        Directory.CreateDirectory(directory);
-    }
-    return $"{prefix}{path}";
-}
 
 static async Task EnsureDatabaseAsync(IServiceProvider services)
 {
