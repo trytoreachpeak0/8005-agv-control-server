@@ -1,0 +1,45 @@
+[12:26:00] 1/7 核对远端：fp/v2-candidate 的顶是 86575456c847041515b7b75e8851a00e0d939804，protocol-v2.0.0 还不存在
+86575456c847041515b7b75e8851a00e0d939804	refs/heads/fp/v2-candidate
+[12:26:03] 2/7 干净克隆并检出 86575456c847041515b7b75e8851a00e0d939804，核 manifest 哈希
+鉁?Lockfile passes supply-chain policies (verified 7d ago)
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +6
+++++++
+Packages are hard linked from the content-addressable store to the virtual store.
+  Content-addressable store is at: C:\Users\szy\AppData\Local\pnpm\store\v11
+  Virtual store is at:             node_modules/.pnpm
+Progress: resolved 6, reused 6, downloaded 0, added 6, done
+
+devDependencies:
++ ajv 8.20.0
++ ajv-formats 3.0.1
+
+Done in 1.9s using pnpm v11.25.0
+[12:26:16] 3/7 写入外置 attestation（不进 git），批准人 claude-opus-5 (Claude Code agent)（AI_AGENT）
+[12:26:16] 4/7 带 PROTOCOL_APPROVAL_ATTESTATION 跑发布 G1
+$ node tools/g1-validate.mjs
+{
+  "gate": "G1",
+  "status": "PASS",
+  "candidateManifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+  "approvalAttestationStatus": "APPROVED",
+  "approvalAttestationSha256": "db745d0dffd6fa4c206003d7d4b49d771327cc6fcc6276ff19de97c01e3631f6",
+  "approvalAttestationSource": "EXTERNAL_RELEASE_ASSET",
+  "schemaCount": 69,
+  "messageTypeCount": 63,
+  "validExampleCount": 63,
+  "invalidExampleCount": 1571,
+  "trajectoryCount": 33,
+  "integrationSliceCount": 16,
+  "checkedAt": "2026-09-15T00:00:00Z",
+  "failures": []
+}
+[12:26:27] 5/7 打注释 tag protocol-v2.0.0
+[12:26:27] 6/7 推送 tag（推送前再核一次远端没有同名 tag）
+To https://github.com/trytoreachpeak0/8005-agv-protocol.git
+ * [new tag]         protocol-v2.0.0 -> protocol-v2.0.0
+86575456c847041515b7b75e8851a00e0d939804	refs/tags/protocol-v2.0.0^{}
+[12:26:34] 7/7 创建 GitHub Release 并上传同一份 attestation
+https://github.com/trytoreachpeak0/8005-agv-protocol/releases/tag/protocol-v2.0.0
+[12:26:44] 完成：protocol-v2.0.0 -> 86575456c847041515b7b75e8851a00e0d939804；attestation db745d0dffd6fa4c206003d7d4b49d771327cc6fcc6276ff19de97c01e3631f6；日志 C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b5-33-8005-agv-control-server\evidence\g1\20260916-protocol-v2.0.0-release-8657545\publish-20260916T122600Z.log
