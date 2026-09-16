@@ -1,0 +1,31 @@
+{"at":"2026-09-16T09:27:24.4065785+00:00","note":"L2 run 20260916T092724340Z starting for scenario 'area-assignment-import-rejects'."}
+{"at":"2026-09-16T09:27:24.5135811+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T09:27:24.5173546+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T09:27:30.2238631+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T09:27:30.6214753+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T09:27:35.9679898+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T09:27:38.0927131+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-16T09:27:38.4821607+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T09:27:38.7040918+00:00","note":"Protocol release identity: protocol-v1.0.0 (protocolVersion 2, APPROVED_RELEASE)."}
+{"at":"2026-09-16T09:27:40.0135561+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T09:27:40.1353571+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T09:27:40.2037786+00:00","note":"Environment is up; entering scenario 'area-assignment-import-rejects'."}
+{"at":"2026-09-16T09:27:40.2865457+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db"}
+{"at":"2026-09-16T09:27:43.7382700+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\group-not-in-model.csv"}
+{"at":"2026-09-16T09:27:45.4329238+00:00","note":"Rejected import 'group-not-in-model': exit 1, reasons SLOT_POSITION_NOT_IN_PUBLISHED_MODEL."}
+{"at":"2026-09-16T09:27:45.4407694+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\group-missing.csv"}
+{"at":"2026-09-16T09:27:46.8603607+00:00","note":"Rejected import 'group-missing': exit 1, reasons SLOT_POSITION_MISSING."}
+{"at":"2026-09-16T09:27:46.8646867+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\area-duplicated.csv"}
+{"at":"2026-09-16T09:27:48.3492895+00:00","note":"Rejected import 'area-duplicated': exit 1, reasons AREA_DUPLICATED."}
+{"at":"2026-09-16T09:27:48.3542991+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\area-format-invalid.csv"}
+{"at":"2026-09-16T09:27:50.3215066+00:00","note":"Rejected import 'area-format-invalid': exit 1, reasons AREA_FORMAT_INVALID."}
+{"at":"2026-09-16T09:27:50.3252126+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\dispatch-zone-not-found.csv"}
+{"at":"2026-09-16T09:27:52.3848306+00:00","note":"Rejected import 'dispatch-zone-not-found': exit 1, reasons DISPATCH_ZONE_NOT_FOUND."}
+{"at":"2026-09-16T09:27:52.3883488+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\every-kind-at-once.csv"}
+{"at":"2026-09-16T09:27:54.2848001+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\accepted.csv --dry-run"}
+{"at":"2026-09-16T09:27:55.9629094+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\accepted.csv"}
+{"at":"2026-09-16T09:27:57.8979880+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\e9fe4f33-3c05-4e53-ac06-eecee92b1e7c\\scratchpad\\l2-rebased-e876a970\\snapshots\\area-assignment-csv\\accepted.csv"}
+{"at":"2026-09-16T09:27:59.7935383+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db"}
+{"at":"2026-09-16T09:28:01.3391018+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T092724340Z\\controlserver.db --version 1"}
+{"at":"2026-09-16T09:28:02.8859346+00:00","note":"五类配置错误各自整份拒绝，正确的一份形成新版本并留下快照与不可改写审计。"}
+{"at":"2026-09-16T09:28:03.2959086+00:00","note":"L2 port block lock released."}
