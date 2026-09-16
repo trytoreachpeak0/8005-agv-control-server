@@ -87,6 +87,9 @@ jobs:
               # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
               @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
               @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }
+              # Batch 5 (control-server#79): the station departure deadline. In CI from its own ticket so
+              # a batch-4 PR catches a regression before it merges; the batch-5 exit makes it three runs.
+              @{ Name = 'station-deadline-sublot-timeout'; Runs = 1; BatchId = 'batch-5' }
           )
           $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $failed = @()

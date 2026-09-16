@@ -596,8 +596,10 @@ public sealed class JourneyRuntimeRow
     public string? ConsumedSafetyResultMessageId { get; set; }
     public string? BlockReasonCode { get; set; }
     /// <summary>
-    /// When the current station departure wait began, by this server's clock: at the load commit,
-    /// and again whenever a load correction closes. Null outside <c>AwaitingStationDeparture</c>.
+    /// When the current station departure wait began, by this server's clock: at the pickup arrival,
+    /// again at the load commit, and again whenever a load correction closes or a new session is
+    /// ready after a disconnect voided it (ADR-cross-0055). Null before the arrival, after the
+    /// vehicle is sent on, and between a disconnect and the readiness that refills it.
     /// </summary>
     public DateTimeOffset? StationDepartureWaitStartedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
