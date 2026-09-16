@@ -286,8 +286,9 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (replay.RequestContentHash != businessHash || replay.AgvId != agvId)
                 throw new ProtocolContentConflictException("Recovery requestId was replayed with different content.");
-            return OpenedResponse(
-                root, replay, await RecoveryAttemptIdAsync(replay, cancellationToken).ConfigureAwait(false));
+            StationOperationRow? replayOperation = await SessionOperationAsync(replay, cancellationToken)
+                .ConfigureAwait(false);
+            return OpenedResponse(root, replay, replayOperation?.SlotOperationAttemptId);
         }
         ExceptionRecoverySessionRow? active = await dbContext.ExceptionRecoverySessions
             .SingleOrDefaultAsync(row => row.AgvId == agvId && row.State != "CLOSED", cancellationToken)
@@ -338,7 +339,8 @@ public sealed class OnboardRecoveryCoordinator(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _ = contentHash;
         _ = messageId;
-        return OpenedResponse(root, row, await RecoveryAttemptIdAsync(row, cancellationToken).ConfigureAwait(false));
+        StationOperationRow? operation = await SessionOperationAsync(row, cancellationToken).ConfigureAwait(false);
+        return OpenedResponse(root, row, operation?.SlotOperationAttemptId);
     }
 
     private async Task<string> SubmitActionAsync(
@@ -371,10 +373,19 @@ public sealed class OnboardRecoveryCoordinator(
         // The workflow's attempt is what RecoveryActionAccepted names and what compensation is later
         // authorized against, and the session already named one in ExceptionRecoverySessionOpened and
         // every snapshot. Those must be one value (8005-agv-program#95), so the action is judged on the
-        // same operation those messages name. Until 8005-agv-control-server#78 it was judged on the
-        // demand's latest operation instead, and a RECOVERY_SCOPE_MISMATCH guard refused the action
-        // whenever the two differed; with one source they cannot, and the guard went with it.
+        // same operation those messages name, from the one lookup that names it.
         StationOperationRow? operation = await SessionOperationAsync(session, cancellationToken).ConfigureAwait(false);
+        // A session is a verdict on the demand as it stood when the session opened. Should the demand
+        // have gained a slot operation since, that verdict is stale, and an action is refused whole
+        // rather than accepted against a load the world has moved past -- FORCED_MECHANICAL_RECOVERY
+        // and FAULT_CARGO_HANDOFF look at no operation state of their own to catch it. Defensive: slot
+        // operations are created only by the runtime's load and unload stages, a session opens only on a
+        // Blocked journey, and the runtime does nothing for a Blocked one (8005-agv-control-server#78).
+        if (session.DemandId is not null &&
+            (await FindLatestOperationAsync(session.DemandId, cancellationToken).ConfigureAwait(false))
+                ?.SlotOperationAttemptId != operation?.SlotOperationAttemptId)
+            return RejectedAction(
+                root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.RecoveryScopeMismatch);
         SessionRecoveryRow connection = await dbContext.SessionRecoveries.SingleAsync(
             row => row.AgvId == session.AgvId, cancellationToken).ConfigureAwait(false);
         string? actionProblem = ValidateActionPreconditions(action, session, connection, operation);
@@ -1002,11 +1013,6 @@ public sealed class OnboardRecoveryCoordinator(
         };
     }
 
-    private async Task<string?> RecoveryAttemptIdAsync(
-        ExceptionRecoverySessionRow session,
-        CancellationToken cancellationToken) =>
-        (await SessionOperationAsync(session, cancellationToken).ConfigureAwait(false))?.SlotOperationAttemptId;
-
     /// <summary>
     /// The slot operation a recovery session is about: the one whose attempt the three recovery messages
     /// to the vehicle name -- <c>ExceptionRecoverySessionOpened</c>, every
@@ -1029,10 +1035,13 @@ public sealed class OnboardRecoveryCoordinator(
     /// the accepted action. No column stores the value; it is derived from those persisted facts.
     /// </para>
     /// <para>
-    /// <b>The only such lookup.</b> The action and the snapshot's allowed actions once read the demand's
-    /// latest operation, with no cut-off at the opening, while the messages read this; one source is
-    /// what keeps the attempt a workflow records equal to the attempt the vehicle was told
-    /// (8005-agv-control-server#78).
+    /// <b>The only lookup of an existing session's operation.</b> The action and the snapshot's allowed
+    /// actions once read the demand's latest operation, with no cut-off at the opening, while the
+    /// messages read this; one source is what keeps the attempt a workflow records equal to the attempt
+    /// the vehicle was told (8005-agv-control-server#78). <see cref="FindLatestOperationAsync"/> answers
+    /// a different question -- what the demand's latest operation is now -- and is asked in two places:
+    /// validating a session's scope before the session exists, where the two coincide, and refusing an
+    /// action once the demand has moved past its session.
     /// </para>
     /// </remarks>
     private async Task<StationOperationRow?> SessionOperationAsync(
@@ -1040,7 +1049,7 @@ public sealed class OnboardRecoveryCoordinator(
         CancellationToken cancellationToken)
     {
         if (session.DemandId is null) return null;
-        StationOperationRow[] operations = await dbContext.StationOperations
+        StationOperationRow[] operations = await dbContext.StationOperations.AsNoTracking()
             .Where(row => row.DemandId == session.DemandId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         return operations

@@ -166,7 +166,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // a result arrives left such a session on PENDING_FACT_RECONCILIATION_REQUIRED until some later
         // result or reconnect (8005-agv-program#61, residual of MVP 369919f5; 8005-agv-control-server#78).
         // The same rule applies here as there, so an attempt with no conclusion yet stays pending.
-        await RemoveSettledReportedAttemptsAsync(row, cancellationToken).ConfigureAwait(false);
+        await TryTakeOffSettledReportedAttemptsAsync(row, cancellationToken).ConfigureAwait(false);
         row.Readiness = SessionReadiness.RecoveryRequired;
         row.ReasonCode = "RECOVERY_RECONCILIATION_PENDING";
         row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -215,7 +215,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
             .ConfigureAwait(false);
-        if (!await RemoveSettledReportedAttemptsAsync(row, cancellationToken).ConfigureAwait(false))
+        if (!await TryTakeOffSettledReportedAttemptsAsync(row, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -226,9 +226,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
 
     /// <summary>
     /// Takes off <paramref name="row"/> every reported attempt whose operation is committed or cancelled,
-    /// unsaved. Returns whether anything was taken off.
+    /// without saving: the caller saves. Returns whether anything was taken off.
     /// </summary>
-    private async Task<bool> RemoveSettledReportedAttemptsAsync(
+    private async Task<bool> TryTakeOffSettledReportedAttemptsAsync(
         SessionRecoveryRow row, CancellationToken cancellationToken)
     {
         string[] pending = DeserializeStrings(row.PendingAttemptIdsJson);

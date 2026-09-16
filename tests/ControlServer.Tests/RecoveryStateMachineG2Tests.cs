@@ -1357,18 +1357,21 @@ public sealed class RecoveryStateMachineG2Tests
     /// <summary>
     /// The attempt a session names is fixed at its first value. A slot operation for the same demand
     /// created after the session opened changes neither a replayed <c>ExceptionRecoverySessionOpened</c>
-    /// nor the next snapshot, and an action taken afterwards is about the session's attempt too: it is
-    /// accepted under that attempt and recorded against it, never against the later operation.
+    /// nor the next snapshot. The session itself is then stale, and an action on it is refused whole with
+    /// <c>RECOVERY_SCOPE_MISMATCH</c> -- including the two actions whose preconditions look at no operation
+    /// state -- rather than accepted against a load the demand has moved past.
     /// </summary>
     /// <remarks>
-    /// Until 8005-agv-control-server#78 the action was judged on the demand's latest operation while the
-    /// three messages named the attempt as of the session's opening, and a guard refused the action with
-    /// <c>RECOVERY_SCOPE_MISMATCH</c> whenever the two differed. Both now come from one lookup, so they
-    /// cannot differ and the guard is gone; this is the case that used to reach it.
+    /// Since 8005-agv-control-server#78 the attempt the action is recorded against and the one the
+    /// messages name come from one lookup, so they cannot differ; the refusal here is the separate
+    /// staleness check. The accepting case, with no later operation and one attempt throughout, is
+    /// <see cref="EachRecoveryMessageNamesTheAttemptOfTheLoadTheSessionIsAbout"/>.
     /// </remarks>
-    [Fact]
+    [Theory]
     [Trait("IntegrationSlice", "FP-IS-07")]
-    public async Task ASessionKeepsItsFirstAttemptThroughTheActionWhateverOperationComesLater()
+    [InlineData("FORCED_MECHANICAL_RECOVERY")]
+    [InlineData("FAULT_CARGO_HANDOFF")]
+    public async Task ASessionKeepsItsFirstAttemptAndRefusesAnActionOnceTheDemandHasMovedPastIt(string action)
     {
         const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_ATTEMPT_FIXED";
         const string proof = "attempt-fixed-proof-not-a-production-secret";
@@ -1402,14 +1405,18 @@ public sealed class RecoveryStateMachineG2Tests
 
             string replayed = await processor.ProcessAsync(
                 RecoverySessionRequest(proof, messageId: "e0000000-0000-4000-8000-000000000031"), state, token);
-            string accepted = await processor.ProcessAsync(
-                RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            string refused = await processor.ProcessAsync(RecoveryAction(action), state, token);
 
             Assert.Equal("ExceptionRecoverySessionOpened", MessageType(replayed));
             Assert.Equal(AttemptId, PayloadAttempt(replayed));
-            Assert.Equal("RecoveryActionAccepted", MessageType(accepted));
-            Assert.Equal(AttemptId, PayloadAttempt(accepted));
-            Assert.Equal(AttemptId, (await context.RecoveryWorkflows.SingleAsync(token)).SlotOperationAttemptId);
+            Assert.Equal("RecoveryActionRejected", MessageType(refused));
+            using (JsonDocument document = JsonDocument.Parse(refused))
+            {
+                Assert.Equal(ServerReasonCodes.RecoveryScopeMismatch, document.RootElement.GetProperty("payload")
+                    .GetProperty("problem").GetProperty("reasonCode").GetString());
+            }
+            Assert.Empty(await context.RecoveryWorkflows.ToArrayAsync(token));
+            Assert.Null((await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).SelectedAction);
             Assert.All(await SessionSnapshotAttemptsAsync(context), attempt => Assert.Equal(AttemptId, attempt));
         }
         finally
