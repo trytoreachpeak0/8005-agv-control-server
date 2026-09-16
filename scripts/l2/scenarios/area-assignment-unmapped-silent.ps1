@@ -8,8 +8,9 @@
 （T 开头）一进来就被挡。现在这张表就是白名单：表里没有的 AREA 不执行，而且是**静默**的——共晶、低温共晶这类
 AREA 本来就是靠「不配映射」排除在外，它们留在全厂投影里，不该变成告警。
 
-场景走的是现场那条路：服务端运行着，用同一个 `ControlServer.FieldOps.exe` 往同一个库里导入一张只含 `N1-3`
-与一个 T 开头 AREA 的表，再往假 MesIngest 放三条需求：
+分区归属表由边车 `AreaAssignments` 给出，只含 `N1-3` 与一个 T 开头 AREA；编排器的默认前置（control-server#71）
+在服务端就绪后经同一个 `ControlServer.FieldOps.exe` 入库已批准八仓事实、逐车绑定、导入这张表，和现场的路一样。
+场景再往假 MesIngest 放三条需求：
 
 - `N1-7`：假 RIoT 默认就有站点 `N1-3_N1-7`，又是 N 开头，旧规则下会被派车。表里没有它，所以始终不受理，积压
   原因 `OUT_OF_SCOPE_AREA`，不形成结构性派车阻断，服务端日志里没有关于它的 Warning 以上记录。
@@ -17,8 +18,6 @@ AREA 本来就是靠「不配映射」排除在外，它们留在全厂投影里
   `OUT_OF_SCOPE_AREA`，这正是要证的。
 - `N1-3`：正常受理，冻结行的版本等于受理时的当前版本，路线调度区取自表。
 
-场景自己入库已批准八仓事实并导入分区归属表，不依赖编排器的默认前置（边车里关掉了它），理由同
-`area-assignment-import-rejects`：分组取值的合法集合来自库内已发布的整车仓位模型。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -31,6 +30,7 @@ $assertions = $Context.Assertions
 $mes = $Context.MesIngest
 $connection = $Context.Connection
 
+# 与边车里那张表一致；场景第 1 段读回服务端库里的当前版本，核对导入的正是这张。
 $zone = 'MAP-25-WIRE_TO_GATE'
 $mappedTArea = 'T5-2'
 $serverLog = Join-Path (Split-Path -Parent $Context.SnapshotRoot) 'logs/control-server.out.log'
@@ -101,30 +101,17 @@ function Get-WarningRecordsMentioning([string[]]$needles) {
     return $matched.ToArray()
 }
 
-# --- 1. 前置：已批准八仓事实入库，导入只含 N1-3 与一个 T 开头 AREA 的分区归属表 ------------------------
+# --- 1. 前置：默认前置导入的分区归属表就是边车给的那张，只含 N1-3 与一个 T 开头 AREA -----------------
 
-$null = Wait-L2Condition -Description "the server applied its dispatch policy, which names zone $zone" `
-    -Journal $journal -Criterion 'dispatch-zone-configured' -TimeoutSeconds 60 `
-    -Probe { Get-Count "SELECT COUNT(*) AS N FROM DispatchZoneVehicles WHERE Zone = '$zone'" } `
-    -Until { param($v) $v -ge 1 }
-
-$seed = & $Context.InvokeFieldOps -Arguments @('seed-approved-facts')
-$csv = Join-Path $Context.SnapshotRoot 'area-assignments.csv'
-# 无 BOM 的 UTF-8、LF 换行，就是工具文档里那个受控格式；证据目录留下的正是喂进去的那份。
-[IO.File]::WriteAllText(
-    $csv,
-    ((@('area,dispatch_zone,slot_position', "N1-3,$zone,FRONT", "$mappedTArea,$zone,REAR") -join "`n") + "`n"),
-    [Text.UTF8Encoding]::new($false))
-$import = & $Context.InvokeFieldOps -Arguments @('import-area-assignments', '--input', $csv)
 $current = & $Context.InvokeFieldOps -Arguments @('area-assignments')
-$currentAreas = (@($current.entries | ForEach-Object { [string]$_.area } | Sort-Object)) -join ','
-$expectedAreas = (@('N1-3', $mappedTArea) | Sort-Object) -join ','
+$currentEntries = (@($current.entries | ForEach-Object { "$([string]$_.area)/$([string]$_.dispatchZone)/$([string]$_.slotPosition)" } | Sort-Object)) -join ','
+$expectedEntries = (@("N1-3/$zone/FRONT", "$mappedTArea/$zone/REAR") | Sort-Object) -join ','
+$versions = Get-Count 'SELECT COUNT(*) AS N FROM DispatchZoneAreaAssignmentVersions'
 $assertions.Add(
-    'L2-AAU-01', "分区归属表导入成功：当前版本只含 N1-3 与 $mappedTArea，N1-7 不在表里",
-    ([string]$seed.outcome -eq 'OK' -and [string]$import.outcome -eq 'OK' -and
-        [long]$current.version -eq [long]$import.version -and $currentAreas -eq $expectedAreas),
-    "OK / OK / v$($import.version) / $expectedAreas",
-    "$($seed.outcome) / $($import.outcome) / v$($current.version) / $currentAreas")
+    'L2-AAU-01', "默认前置按边车导入了分区归属表：只有一版，只含 N1-3 与 $mappedTArea，N1-7 不在表里",
+    ([string]$current.outcome -eq 'OK' -and $versions -eq 1 -and $currentEntries -eq $expectedEntries),
+    "OK / 1 version / $expectedEntries",
+    "$($current.outcome) / $versions version / $currentEntries")
 
 # --- 2. N1-7 与 T 开头 AREA 的需求先上：观察几轮 -----------------------------------------------------
 
@@ -182,10 +169,10 @@ $assertions.Add(
     'L2-AAU-04', 'N1-3 正常受理：冻结行的版本等于当前版本、快照是那一版的快照，路线调度区取自表',
     ($stage -eq 'AwaitingPickupArrival' -and $freeze.Count -eq 1 -and
         [long]$freeze[0].FrozenVersion -eq [long]$freeze[0].CurrentVersion -and
-        [long]$freeze[0].FrozenVersion -eq [long]$import.version -and
+        [long]$freeze[0].FrozenVersion -eq [long]$current.version -and
         [string]$freeze[0].FrozenSnapshotId -eq [string]$freeze[0].VersionSnapshotId -and
         [string]$freeze[0].DispatchZone -eq $zone),
-    "AwaitingPickupArrival / frozen v$($import.version) = current / own snapshot / $zone",
+    "AwaitingPickupArrival / frozen v$($current.version) = current / own snapshot / $zone",
     $(if ($freeze.Count -ne 1) { "$stage / $($freeze.Count) freeze rows" } else {
         "$stage / frozen v$($freeze[0].FrozenVersion), current v$($freeze[0].CurrentVersion) / " +
         "$($freeze[0].FrozenSnapshotId -eq $freeze[0].VersionSnapshotId) / $($freeze[0].DispatchZone)" }))
