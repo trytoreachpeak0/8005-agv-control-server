@@ -233,6 +233,7 @@ public sealed class JourneyRuntimeEngine(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
             .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
             .ConfigureAwait(false);
+        await MarkBacklogLeftCatalogAsync(backlogByDemandId, snapshot, cancellationToken).ConfigureAwait(false);
         // The MesIngest catalog is MES's own list of open transport demands, and a journey of ours
         // reaching Completed does not take the demand out of it. Discovery is only reached once no
         // unresolved journey remains, so the demand that just finished was scored as a fresh
@@ -1647,6 +1648,38 @@ public sealed class JourneyRuntimeEngine(
         dbContext.SessionRecoveries.AsNoTracking().SingleOrDefaultAsync(
             row => row.AgvId == agvId && row.Readiness == SessionReadiness.Ready,
             cancellationToken);
+
+    /// <summary>
+    /// Marks every unaccepted backlog row whose demand the catalog no longer lists, so it stops reading as waiting.
+    /// </summary>
+    /// <remarks>
+    /// Rows are only ever written for demands in the catalog, so without this a demand MES closed before this
+    /// server took it kept its last reason forever. Saved here, ahead of the vehicle loop, because a vehicle that
+    /// runs out its budget clears the change tracker. <c>LastSeenAt</c> is left alone: it stays the last time the
+    /// demand was in the catalog. See <see cref="DispatchReasonCodes.DemandLeftCatalog"/>.
+    /// </remarks>
+    private async Task MarkBacklogLeftCatalogAsync(
+        Dictionary<string, JourneyBacklogRow> backlogByDemandId,
+        DemandCatalogSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        HashSet<string> listed = snapshot.Items.Select(item => item.DemandId).ToHashSet(StringComparer.Ordinal);
+        bool marked = false;
+        foreach (JourneyBacklogRow row in backlogByDemandId.Values)
+        {
+            if (row.AcceptedAt is null &&
+                !listed.Contains(row.DemandId) &&
+                !string.Equals(row.ReasonCode, DispatchReasonCodes.DemandLeftCatalog, StringComparison.Ordinal))
+            {
+                row.ReasonCode = DispatchReasonCodes.DemandLeftCatalog;
+                marked = true;
+            }
+        }
+        if (marked)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     private JourneyBacklogRow UpsertBacklog(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
