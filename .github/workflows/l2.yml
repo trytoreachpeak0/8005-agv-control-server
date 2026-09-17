@@ -145,21 +145,24 @@ jobs:
               # Batch 4 (control-server#68), specification 8.3 scenario 4: the five kinds of bad area
               # assignment table each rejected whole. Same reason as the line above -- batches 4 and 5 both
               # merge into fp/v2-impl, so the scenario earns its place in CI from its own ticket; the
-              # batch-4 exit (control-server#76) makes it three runs.
-              @{ Name = 'area-assignment-import-rejects'; Runs = 1; BatchId = 'batch-4' }
-              @{ Name = 'area-assignment-unmapped-silent'; Runs = 1; BatchId = 'batch-4' }
+              # batch-4 exit (control-server#76) made it three runs.
+              @{ Name = 'area-assignment-import-rejects'; Runs = 3; BatchId = 'batch-4' }
+              @{ Name = 'area-assignment-unmapped-silent'; Runs = 3; BatchId = 'batch-4' }
               # Batch 4 (control-server#73), specification 8.3 scenarios 1 and 2: target slots chosen inside the
               # demand's slot group, and a demand waiting while its group is full. In CI from their own ticket for
-              # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.
-              @{ Name = 'slot-group-selection';           Runs = 1; BatchId = 'batch-4' }
-              @{ Name = 'slot-group-temporarily-full';    Runs = 1; BatchId = 'batch-4' }
+              # the same reason as the line above; the batch-4 exit (control-server#76) made them three runs.
+              @{ Name = 'slot-group-selection';           Runs = 3; BatchId = 'batch-4' }
+              @{ Name = 'slot-group-temporarily-full';    Runs = 3; BatchId = 'batch-4' }
               # Batch 4 (control-server#74), specification 8.3 scenario 3: an oversized demand raised at once as a
               # structural dispatch block, and disabled slots that stay ordinary backlog. In CI from their own ticket for
-              # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.
-              @{ Name = 'structural-block-oversized-demand'; Runs = 1; BatchId = 'batch-4' }
-              @{ Name = 'slot-group-disabled-no-alert';      Runs = 1; BatchId = 'batch-4' }
-              @{ Name = 'area-assignment-version-freeze';    Runs = 1; BatchId = 'batch-4' }
-              @{ Name = 'mixed-side-station-two-trips';      Runs = 1; BatchId = 'batch-4' }
+              # the same reason as the line above; the batch-4 exit (control-server#76) made them three runs.
+              @{ Name = 'structural-block-oversized-demand'; Runs = 3; BatchId = 'batch-4' }
+              @{ Name = 'slot-group-disabled-no-alert';      Runs = 3; BatchId = 'batch-4' }
+              # Batch 4 (control-server#75), specification 8.3 scenarios 5 and 7: the assignment version frozen at
+              # dispatch, and a mixed-side station served by two trips. The batch-4 exit (control-server#76) made them
+              # three runs.
+              @{ Name = 'area-assignment-version-freeze';    Runs = 3; BatchId = 'batch-4' }
+              @{ Name = 'mixed-side-station-two-trips';      Runs = 3; BatchId = 'batch-4' }
           )
           $only = @($env:L2_ONLY -split ',' | ForEach-Object Trim | Where-Object { $_ })
           $unknown = @($only | Where-Object { $_ -notin $scenarios.Name })
