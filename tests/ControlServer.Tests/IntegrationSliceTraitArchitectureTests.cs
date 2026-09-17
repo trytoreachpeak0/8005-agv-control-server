@@ -95,6 +95,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["RollbackAndImpactPreviewTests"] = "batch 3 rollback and impact preview; a rollback is a new activation of an existing frozen version, server-internal",
             ["RouteGraphDispatchTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["RouteGraphEngineTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
+            ["SchemaConformanceToolTests"] = "cross-cutting guard on the outbound gate's own validator (control-server#85), driven as its own process over the vendored contract; the gate stands behind every slice, so hanging it off one would defer it with that slice",
             ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",
             ["SlotConfigurationGateModeTests"] = "readiness gate mode validation; no wire message",
             ["SlotConfigurationReadinessGateTests"] = "batch 3 per-vehicle IO integrity gate; a server-side readiness predicate, no wire message",
