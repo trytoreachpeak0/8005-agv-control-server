@@ -1,3 +1,4 @@
+#Requires -Version 7
 <#
 .SYNOPSIS
 Assembles the WIRE_TO_GATE MVP release candidate from the two product repositories.
