@@ -147,7 +147,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
         new SortedDictionary<string, string>(StringComparer.Ordinal)
         {
             ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 9",
-            ["CV-LOAD-CANCELLATION-BEFORE-LOAD"] = ClaimedPinLabel("FP-IS-02", 83),
             ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
             ["CV-MULTI-STOP-PLAN-NINE-LEGS"] = "FP-IS-08, batch 7",
             ["CV-REVERSED-DIRECTION-JOURNEY"] = "FP-IS-11, batch 6",
