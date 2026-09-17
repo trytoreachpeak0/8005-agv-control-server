@@ -32,7 +32,8 @@ public sealed record DeterminateLoadFailureCommand : CommandEnvelope
 /// </remarks>
 public static class ControlPlaneDeterminateLoadFailure
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    // The envelope's own settings: this content hash has to agree with the server's, byte for byte.
+    private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
 
     public static void MapControlPlaneDeterminateLoadFailure(this WebApplication app)
     {
@@ -63,7 +64,7 @@ public static class ControlPlaneDeterminateLoadFailure
                 }
 
                 string reasonCode = command.ReasonCode ?? ServerReasonCodes.OperatorTimeout;
-                object answer = Result(
+                string answer = Result(
                     payload.RootElement,
                     peerOptions.AgvId,
                     engine.Snapshot().State.SessionGeneration,
@@ -79,7 +80,7 @@ public static class ControlPlaneDeterminateLoadFailure
             });
     }
 
-    private static object Result(JsonElement commandPayload, string agvId, long generation, string reasonCode)
+    private static string Result(JsonElement commandPayload, string agvId, long generation, string reasonCode)
     {
         object[] slotResults =
         [
@@ -108,19 +109,14 @@ public static class ControlPlaneDeterminateLoadFailure
         string hash = Convert.ToHexString(
             SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(content, SerializerOptions))).ToLowerInvariant();
 
-        return new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-            messageType = "OperationResult",
-            messageId = Guid.NewGuid().ToString("D"),
-            correlationId = (string?)null,
+        return ProtocolEnvelope.Serialize(
+            "OperationResult",
+            Guid.NewGuid().ToString("D"),
+            correlationId: null,
             agvId,
-            sessionGeneration = generation,
-            sentAt = DateTimeOffset.UtcNow,
-            payload = new
+            generation,
+            DateTimeOffset.UtcNow,
+            new
             {
                 content.demandId,
                 content.slotOperationAttemptId,
@@ -130,7 +126,6 @@ public static class ControlPlaneDeterminateLoadFailure
                 content.observedAt,
                 content.journalCheckpoint,
                 resultContentSha256 = hash
-            }
-        };
+            });
     }
 }

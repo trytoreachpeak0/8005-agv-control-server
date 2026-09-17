@@ -21,7 +21,9 @@ public sealed partial class OnboardMessageProcessor(
     IOptions<JourneyRuntimeOptions> runtimeOptions,
     ILogger<OnboardMessageProcessor> logger)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    // The envelope's own settings, not a second copy of them: this instance also hashes the business
+    // content the peer hashes, and the two only agree while both use the same serializer settings.
+    private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
     private readonly string _serverInstanceId = Guid.NewGuid().ToString("D");
 
     public async Task<string> ProcessAsync(
@@ -81,7 +83,7 @@ public sealed partial class OnboardMessageProcessor(
                                 sessionGeneration = generation,
                                 serverInstanceId = _serverInstanceId,
                                 serverBuildCommit = configuration["ControlServerBuild:commit"] ?? "WORKTREE_BUILD",
-                                acceptedProtocolReleaseIdentity = ProtocolReleaseIdentity(),
+                                acceptedProtocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity(),
                                 acceptedAt = timeProvider.GetUtcNow()
                             });
                     },
@@ -104,7 +106,7 @@ public sealed partial class OnboardMessageProcessor(
                             displayMessage = error.Message
                         },
                         expectedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-                        expectedProtocolReleaseIdentity = ProtocolReleaseIdentity()
+                        expectedProtocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity()
                     });
             }
 
@@ -782,33 +784,16 @@ public sealed partial class OnboardMessageProcessor(
         string agvId,
         long? sessionGeneration,
         object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        // The id and the clock are read here, not in the choke point: where they happen relative to
+        // building the payload is observable on the wire, so it stays with the caller.
+        ProtocolEnvelope.Serialize(
             messageType,
-            messageId = Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
             correlationId,
             agvId,
             sessionGeneration,
-            sentAt = timeProvider.GetUtcNow(),
-            payload
-        }, SerializerOptions);
-
-    private static object ProtocolReleaseIdentity() => new
-    {
-        repository = "8005-agv-protocol",
-        releaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-        tag = ProtocolCandidateIdentity.Tag,
-        commit = ProtocolCandidateIdentity.RepositoryCommit,
-        protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-        profileId = ProtocolCandidateIdentity.ProfileId,
-        manifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-        schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256,
-        vectorsSha256 = ProtocolCandidateIdentity.VectorsSha256
-    };
+            timeProvider.GetUtcNow(),
+            payload);
 
     /// <summary>
     /// Why the peer says the vehicle is unsafe to depart. Both this and unknownPresent used to be

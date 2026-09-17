@@ -25,7 +25,9 @@ public sealed class OnboardPeerSession(
     SlotStateSeed slotStateSeed,
     FakeLoadCancellations? loadCancellations = null) : IAsyncDisposable
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    // The envelope's own settings: this instance also hashes the OperationResult business content
+    // the server hashes back, and the peer's line has to be the bytes the server validates.
+    private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
     private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
 
     private readonly SemaphoreSlim writeGate = new(1, 1);
@@ -77,13 +79,13 @@ public sealed class OnboardPeerSession(
         string credential = Environment.GetEnvironmentVariable(options.CredentialEnvironmentVariable)
             ?? throw new InvalidOperationException(
                 "Credential environment variable '" + options.CredentialEnvironmentVariable + "' is not set.");
-        await SendAsync(Envelope("SessionHello", NewId(), null, null, new
+        await SendLineAsync(Envelope("SessionHello", NewId(), null, null, new
         {
             onboardInstanceId = NewId(),
             onboardBuildCommit = "FAKE_ONBOARD_WORKTREE_BUILD",
             supportedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
             profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseIdentity = ReleaseIdentity(),
+            protocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity(),
             credentialProof = credential
         }), cancellationToken).ConfigureAwait(false);
 
@@ -92,7 +94,7 @@ public sealed class OnboardPeerSession(
         long generation = accepted.GetProperty("sessionGeneration").GetInt64();
 
         FakeOnboardState state = engine.Snapshot().State;
-        await SendAsync(Envelope("CapabilitySnapshot", NewId(), null, generation, new
+        await SendLineAsync(Envelope("CapabilitySnapshot", NewId(), null, generation, new
         {
             capabilityVersion = 1,
             observedAt = DateTimeOffset.UtcNow,
@@ -108,7 +110,7 @@ public sealed class OnboardPeerSession(
         }), cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
 
-        await SendAsync(Envelope("SafetyStateSnapshot", NewId(), null, generation, new
+        await SendLineAsync(Envelope("SafetyStateSnapshot", NewId(), null, generation, new
         {
             safetyStateVersion = state.SafetyStateVersion,
             observedAt = DateTimeOffset.UtcNow,
@@ -122,7 +124,7 @@ public sealed class OnboardPeerSession(
         await SendAlarmSnapshotAsync(engine.Snapshot().State, generation, cancellationToken).ConfigureAwait(false);
         await ReadRequiredAsync(reader, "SnapshotAppliedAck", cancellationToken).ConfigureAwait(false);
 
-        await SendAsync(Envelope("RecoveryStateReport", NewId(), null, generation, new
+        await SendLineAsync(Envelope("RecoveryStateReport", NewId(), null, generation, new
         {
             reportId = NewId(),
             observedAt = DateTimeOffset.UtcNow,
@@ -187,7 +189,7 @@ public sealed class OnboardPeerSession(
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
                 FakeOnboardState state = engine.Snapshot().State;
-                await SendAsync(Envelope("Heartbeat", NewId(), null, state.SessionGeneration, new
+                await SendLineAsync(Envelope("Heartbeat", NewId(), null, state.SessionGeneration, new
                 {
                     observedAt = DateTimeOffset.UtcNow,
                     capabilityVersion = 1L,
@@ -303,7 +305,7 @@ public sealed class OnboardPeerSession(
         JsonElement root,
         long generation,
         AnswerMode mode,
-        Func<JsonElement, long, object> buildAnswer,
+        Func<JsonElement, long, string> buildAnswer,
         CancellationToken cancellationToken)
     {
         // ControlServer replays an unsettled command on every poll until it is answered, so the
@@ -339,9 +341,8 @@ public sealed class OnboardPeerSession(
     /// Sends an answer, remembers it verbatim so a replayed request gets the identical message, and
     /// closes the pending request it answers.
     /// </summary>
-    public async Task AnswerAsync(string key, object message, CancellationToken cancellationToken)
+    public async Task AnswerAsync(string key, string line, CancellationToken cancellationToken)
     {
-        string line = JsonSerializer.Serialize(message, SerializerOptions);
         answered[key] = line;
         await SendLineAsync(line, cancellationToken).ConfigureAwait(false);
         engine.Mutate<object?>(state =>
@@ -362,7 +363,7 @@ public sealed class OnboardPeerSession(
     // Protocol 2.0.0 item 2: the request names the dispatch scope's sublots and no demand, and the
     // submission names only what was scanned -- the server resolves the demand. This peer scans the
     // first sublot it was offered, which with one demand per journey is the only one.
-    public object SublotSubmitted(JsonElement requestPayload, long generation) =>
+    public string SublotSubmitted(JsonElement requestPayload, long generation) =>
         Envelope("SublotSubmitted", NewId(), null, generation, new
         {
             operationSessionId = requestPayload.GetProperty("operationSessionId").GetString(),
@@ -383,7 +384,7 @@ public sealed class OnboardPeerSession(
     /// OnboardMessageProcessor recomputes it. The server rejects the message outright when the two
     /// differ, so this hash is part of the contract rather than a checksum.
     /// </summary>
-    public object OperationResult(JsonElement commandPayload, long generation, bool completed)
+    public string OperationResult(JsonElement commandPayload, long generation, bool completed)
     {
         string operationType = commandPayload.GetProperty("operationType").GetString() ?? "LOAD";
         string finalState = operationType == "LOAD" ? "OCCUPIED" : "EMPTY";
@@ -446,7 +447,7 @@ public sealed class OnboardPeerSession(
         string UnlockOutputState,
         IReadOnlyList<string> ReasonCodes);
 
-    public object SafetyCheckResult(JsonElement checkPayload, long generation, bool safe)
+    public string SafetyCheckResult(JsonElement checkPayload, long generation, bool safe)
     {
         FakeOnboardState state = engine.Snapshot().State;
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
@@ -582,7 +583,7 @@ public sealed class OnboardPeerSession(
         long generation,
         CancellationToken cancellationToken)
     {
-        await SendAsync(Envelope("SlotConfigurationActivationResult", NewId(), null, generation, new
+        await SendLineAsync(Envelope("SlotConfigurationActivationResult", NewId(), null, generation, new
         {
             activationId = outcome.ActivationId,
             outcome = outcome.Outcome,
@@ -609,7 +610,7 @@ public sealed class OnboardPeerSession(
     }
 
     private Task SendAlarmSnapshotAsync(FakeOnboardState state, long generation, CancellationToken cancellationToken) =>
-        SendAsync(Envelope("OnboardAlarmSnapshot", NewId(), null, generation, new
+        SendLineAsync(Envelope("OnboardAlarmSnapshot", NewId(), null, generation, new
         {
             alarmSnapshotRevision = state.AlarmSnapshotRevision,
             observedAt = DateTimeOffset.UtcNow,
@@ -687,7 +688,7 @@ public sealed class OnboardPeerSession(
         CancellationToken cancellationToken)
     {
         long generation = engine.Snapshot().State.SessionGeneration;
-        await SendAsync(Envelope("SafetyStateChanged", NewId(), null, generation, new
+        await SendLineAsync(Envelope("SafetyStateChanged", NewId(), null, generation, new
         {
             safetyStateVersion,
             observedAt = DateTimeOffset.UtcNow,
@@ -716,7 +717,7 @@ public sealed class OnboardPeerSession(
         };
         JsonElement payload = root.GetProperty("payload");
         long revision = payload.GetProperty(revisionField).GetInt64();
-        await SendAsync(Envelope("SnapshotAppliedAck", NewId(), messageId, generation, new
+        await SendLineAsync(Envelope("SnapshotAppliedAck", NewId(), messageId, generation, new
         {
             snapshotMessageId = messageId,
             snapshotKind = kind,
@@ -731,12 +732,9 @@ public sealed class OnboardPeerSession(
         string messageId,
         object payload,
         CancellationToken cancellationToken) =>
-        SendAsync(
+        SendLineAsync(
             Envelope(messageType, messageId, null, engine.Snapshot().State.SessionGeneration, payload),
             cancellationToken);
-
-    private Task SendAsync(object message, CancellationToken cancellationToken) =>
-        SendLineAsync(JsonSerializer.Serialize(message, SerializerOptions), cancellationToken);
 
     private async Task SendLineAsync(string line, CancellationToken cancellationToken)
     {
@@ -791,20 +789,20 @@ public sealed class OnboardPeerSession(
 
     public IReadOnlyList<WireEvent> Wire() => wire.ToArray();
 
-    private object Envelope(string messageType, string messageId, string? correlationId, long? generation, object payload) => new
-    {
-        protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-        profileId = ProtocolCandidateIdentity.ProfileId,
-        protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-        protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-        messageType,
-        messageId,
-        correlationId,
-        agvId = options.AgvId,
-        sessionGeneration = generation,
-        sentAt = DateTimeOffset.UtcNow,
-        payload
-    };
+    /// <summary>
+    /// The peer's one outbound line builder. It returns the wire text rather than an object, because
+    /// everything downstream of it -- <see cref="SendLineAsync"/>, <see cref="AnswerAsync"/> -- sends
+    /// a line, and re-serializing an object there is how the two ends drift apart.
+    /// </summary>
+    private string Envelope(string messageType, string messageId, string? correlationId, long? generation, object payload) =>
+        ProtocolEnvelope.Serialize(
+            messageType,
+            messageId,
+            correlationId,
+            options.AgvId,
+            generation,
+            DateTimeOffset.UtcNow,
+            payload);
 
     private static object SafetyBody(SafetySummary safety) => new
     {
@@ -814,19 +812,6 @@ public sealed class OnboardPeerSession(
         allUnlockOutputsReset = safety.AllUnlockOutputsReset,
         unknownPresent = safety.UnknownPresent,
         reasonCodes = safety.ReasonCodes
-    };
-
-    private static object ReleaseIdentity() => new
-    {
-        repository = "8005-agv-protocol",
-        releaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-        tag = ProtocolCandidateIdentity.Tag,
-        commit = ProtocolCandidateIdentity.RepositoryCommit,
-        protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-        profileId = ProtocolCandidateIdentity.ProfileId,
-        manifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-        schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256,
-        vectorsSha256 = ProtocolCandidateIdentity.VectorsSha256
     };
 
     private static string Sha256(string value) =>
