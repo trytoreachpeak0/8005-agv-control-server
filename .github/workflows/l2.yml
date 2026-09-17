@@ -28,7 +28,20 @@ on:
   push:
     branches: [ControlServer_MVP, main]
   pull_request:
+  # The on-demand consecutive run: any branch, any time the runner is free. There is deliberately no
+  # schedule -- a ticket that needs three in a row mid-development should not wait for the night.
+  #   gh workflow run l2.yml --ref <branch> -f mode=consecutive [-f scenarios=a,b]
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'consecutive = each scenario its registered Runs; consecutive-all = every scenario at least three; default = what a pull request runs'
+        type: choice
+        options: [consecutive, consecutive-all, default]
+        default: consecutive
+      scenarios:
+        description: 'Comma-separated scenario names to run; empty runs the whole list'
+        type: string
+        default: ''
 
 # Never cancel a running job here. Cancelling one on a self-hosted runner also cancels the runner's
 # broker long-poll; the backoff retries exhaust and the session wedges without self-healing.
@@ -43,7 +56,20 @@ jobs:
     # `headless` matters: win11-01 also hosts an interactive runner, and a job that only asked for
     # [self-hosted] could be taken by either. This one must NOT land on the golden-renderer runner.
     runs-on: [self-hosted, headless]
-    timeout-minutes: 60
+    # A timeout ends the job by cancelling it, which may well take the path that wedged this runner,
+    # so it must never be what ends a run. The consecutive modes run the list up to three times over;
+    # give them room.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 180 || 60 }}
+    env:
+      # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
+      # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
+      # runs 34807639494 and 35118544313. Off in CI only; release.yml keeps it.
+      NuGetAudit: 'false'
+      L2_MODE: ${{ inputs.mode || 'default' }}
+      L2_ONLY: ${{ inputs.scenarios || '' }}
+      L2_PR_NUMBER: ${{ github.event.pull_request.number }}
+      L2_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      GITHUB_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v7
@@ -51,12 +77,29 @@ jobs:
       # Every scenario runs even when an earlier one fails: one red scenario must not hide the
       # state of the others, which is the whole reason to have more than one.
       #
-      # `runs` is the batch-2 track-B exit discipline (specification 8.3): the batch's new
-      # scenarios must pass THREE CONSECUTIVE times, and each run keeps its own evidence directory.
-      # The reason is the same one the golden renderer gives: L2 spans processes, so one pass
-      # cannot tell "correct" from "the scheduler happened to line up this time". A scenario that
-      # predates this batch keeps its single run -- three-in-a-row is an exit criterion for the
-      # work being handed over, not a permanent tax on every scenario.
+      # Two modes, one list. `Runs` is each scenario's CONSECUTIVE count (specification 8.3): L2
+      # spans processes, so one pass cannot tell "correct" from "the scheduler happened to line up
+      # this time", and a batch's scenarios must pass three in a row, each run with its own evidence
+      # directory. Since 2026-09-17 that count is paid on demand, not on every push -- it was 46% of
+      # an L2 job (618 of 1354 seconds in run 35171499974) on a single runner that four parallel
+      # tickets queue behind:
+      #
+      #   default (push, pull_request)  each scenario `DefaultRuns` times, 1 when absent
+      #   consecutive (dispatch)        each scenario `Runs` times
+      #   consecutive-all (dispatch)    each scenario at least three times -- a batch exit
+      #
+      # `DefaultRuns = 3` is for a scenario that guards a race already seen red in CI, where one pass
+      # on a pull request would not catch it coming back. What the default mode gives up: a
+      # low-rate race in the other scenarios is now caught only by a consecutive run, so a ticket
+      # touching timing (engine advance, connection session, recovery, emergency stop, or any
+      # `Runs = 3` scenario) runs one before it merges.
+      #
+      # A pull request run whose head has moved on skips its remaining scenarios and ends green:
+      # the newer push has its own run, and cancelling -- by hand or by `cancel-in-progress` -- wedges
+      # this runner (see above). The check never skips a dispatched run.
+      #
+      # Adding a scenario: one line, `@{ Name = '...'; Runs = 1 }`, `Runs = 3` when it needs three in
+      # a row. Add `DefaultRuns = 3` only for the reason above.
       #
       # Exit code is the contract -- the guest is zh-CN and the runner prints 已通过! not Passed!,
       # so nothing here may match on English console text. Invoke-L2Scenario.ps1 exits 1 on FAIL.
@@ -70,7 +113,8 @@ jobs:
               # (run 35055524167 attempt 1) on a real defect, and one pass could not have told
               # that apart from luck. See
               # docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md.
-              @{ Name = 'session-established-while-moving'; Runs = 3 }
+              # Three on every pull request too: that defect (control-server#104) is the race this guards.
+              @{ Name = 'session-established-while-moving'; Runs = 3; DefaultRuns = 3 }
               @{ Name = 'load-result-requires-recovery';    Runs = 1 }
               @{ Name = 'load-command-never-answered';      Runs = 1 }
               @{ Name = 'route-graph-engine';          Runs = 1 }
@@ -109,12 +153,61 @@ jobs:
               # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.
               @{ Name = 'slot-group-selection';           Runs = 1; BatchId = 'batch-4' }
               @{ Name = 'slot-group-temporarily-full';    Runs = 1; BatchId = 'batch-4' }
+              # Batch 4 (control-server#74), specification 8.3 scenario 3: an oversized demand raised at once as a
+              # structural dispatch block, and disabled slots that stay ordinary backlog. In CI from their own ticket for
+              # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.
+              @{ Name = 'structural-block-oversized-demand'; Runs = 1; BatchId = 'batch-4' }
+              @{ Name = 'slot-group-disabled-no-alert';      Runs = 1; BatchId = 'batch-4' }
           )
+          $only = @($env:L2_ONLY -split ',' | ForEach-Object Trim | Where-Object { $_ })
+          $unknown = @($only | Where-Object { $_ -notin $scenarios.Name })
+          if ($unknown.Count -gt 0) {
+              throw "Not in this workflow's scenario list: $($unknown -join ', ')"
+          }
+          Write-Host "L2 mode: $env:L2_MODE$(if ($only.Count -gt 0) { "; only $($only -join ', ')" })"
+
+          # True when this is a pull request run and the pull request's head is no longer the commit
+          # it was started for. Anything short of a clear answer -- the API unreachable through the
+          # proxy, a malformed reply -- keeps the run going: a skipped run must never be a guess.
+          # One failed read turns the check off for the rest of the run, so an unreachable API costs one
+          # timeout rather than one per scenario.
+          $script:supersededCheck = $env:GITHUB_EVENT_NAME -eq 'pull_request' -and [bool]$env:L2_PR_NUMBER
+          function Test-L2Superseded {
+              if (-not $script:supersededCheck) { return $false }
+              try {
+                  $pull = Invoke-RestMethod -TimeoutSec 45 `
+                      -Uri "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/pulls/$env:L2_PR_NUMBER" `
+                      -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json' }
+              } catch {
+                  Write-Host "Could not read the pull request's current head; running every scenario without checking again. $($_.Exception.Message)"
+                  $script:supersededCheck = $false
+                  return $false
+              }
+              $current = [string]$pull.head.sha
+              if ($current -match '^[0-9a-f]{40}$' -and $current -ne $env:L2_HEAD_SHA) {
+                  Write-Host "::notice title=L2 superseded::Pull request #$env:L2_PR_NUMBER head moved from $env:L2_HEAD_SHA to $current; skipping the remaining scenarios. The newer push has its own run."
+                  return $true
+              }
+              $false
+          }
+
           $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $failed = @()
-          foreach ($scenario in $scenarios) {
-              for ($run = 1; $run -le $scenario.Runs; $run++) {
-                  $label = if ($scenario.Runs -eq 1) { $scenario.Name } else { "$($scenario.Name) ($run/$($scenario.Runs))" }
+          $executed = [ordered]@{}
+          $superseded = $false
+          :scenarioList foreach ($scenario in $scenarios) {
+              if ($only.Count -gt 0 -and $scenario.Name -notin $only) { continue }
+              $runs = switch ($env:L2_MODE) {
+                  'consecutive'     { $scenario.Runs }
+                  'consecutive-all' { [Math]::Max(3, $scenario.Runs) }
+                  default           { $scenario.DefaultRuns ?? 1 }
+              }
+              for ($run = 1; $run -le $runs; $run++) {
+                  if (Test-L2Superseded) {
+                      $superseded = $true
+                      break scenarioList
+                  }
+                  $label = if ($runs -eq 1) { $scenario.Name } else { "$($scenario.Name) ($run/$runs)" }
                   # -EvidenceRoot must not exist; the run id, the attempt and the run number keep a
                   # re-run from colliding with the directory its predecessor wrote, and keep the
                   # three consecutive runs' evidence separate from each other.
@@ -124,6 +217,7 @@ jobs:
                       -Scenario $scenario.Name -EvidenceRoot $evidence -BatchId ($scenario.BatchId ?? 'batch-2')
                   $code = $LASTEXITCODE
                   Write-Host '::endgroup::'
+                  $executed[$scenario.Name] = "$run/$runs $(if ($code -eq 0) { 'PASS' } else { "FAIL ($code)" })"
                   if ($code -ne 0) {
                       $failed += $label
                       Write-Host "::error title=L2 scenario failed::$label exited with $code"
@@ -135,6 +229,17 @@ jobs:
               }
           }
           "L2_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # What actually ran, per scenario -- the record a consecutive run is cited by.
+          $summary = @("### L2 ($env:L2_MODE)$(if ($superseded) { ' -- superseded, remaining scenarios skipped' })", '',
+                       '| Scenario | Last run | Result |', '| --- | --- | --- |')
+          foreach ($entry in $executed.GetEnumerator()) {
+              $runText, $result = $entry.Value -split ' ', 2
+              $summary += "| $($entry.Key) | $runText | $result |"
+          }
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $summary | ForEach-Object { Write-Host $_ }
+
           if ($failed.Count -gt 0) {
               throw "L2 scenarios failed: $($failed -join ', ')"
           }

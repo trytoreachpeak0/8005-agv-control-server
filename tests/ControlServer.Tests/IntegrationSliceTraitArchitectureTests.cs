@@ -67,6 +67,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
             ["DemandAreaAssignmentFreezeTests"] = "batch 4 FP-C15 REQ-0350 demand freeze of the area assignment version; server-internal, no wire message",
+            ["DispatchBacklogDashboardTests"] = "batch 4 FP-C15 REQ-0210 dispatch backlog and structural dispatch block dashboard card (control-server#70); reads only /api/dashboard/, reasons never go on the wire (spec 5.1 #10)",
             ["DispatchChainSeamTests"] = "batch 4 FP-C15 dispatch chain seams (control-server#69): reason code names, the area assignment lookup and plan replay; server-internal, no wire message",
             ["EmergencyStopReleaseEndpointsTests"] = "REQ-0356 release-on-confirmation HTTP entry point (control-server#63); single-ended server-to-RIoT, no wire message",
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
@@ -100,6 +101,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["SlotConfigurationVersionLineCrossProcessTests"] = "batch 4 FP-C7/FP-C9b version allocation across two processes on one SQLite file; a server-internal write-ordering rule, no wire message",
             ["SlotConfigurationVersionLineTests"] = "batch 4 FP-C7/FP-C9b version allocation on the shared ActiveSlotConfiguration line; a server-internal write-ordering rule between two processes, no wire message",
             ["SlotGroupSelectionTests"] = "batch 4 FP-C15 REQ-0349/REQ-0351/REQ-0352 target slots chosen inside the demand's slot group (control-server#73); the side is decided on the server only (spec 5.1 #10), no wire message",
+            ["StructuralDispatchBlockTests"] = "batch 4 REQ-0210/REQ-0352 structural dispatch block summarised across vehicles at the end of a round (control-server#74); server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
             ["StructuralDispatchBlockStoreTests"] = "batch 4 REQ-0210 structural dispatch block storage; server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
             ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"
