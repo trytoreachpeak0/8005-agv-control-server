@@ -155,6 +155,8 @@ jobs:
               # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.
               @{ Name = 'structural-block-oversized-demand'; Runs = 1; BatchId = 'batch-4' }
               @{ Name = 'slot-group-disabled-no-alert';      Runs = 1; BatchId = 'batch-4' }
+              @{ Name = 'area-assignment-version-freeze';    Runs = 1; BatchId = 'batch-4' }
+              @{ Name = 'mixed-side-station-two-trips';      Runs = 1; BatchId = 'batch-4' }
           )
           $only = @($env:L2_ONLY -split ',' | ForEach-Object Trim | Where-Object { $_ })
           $unknown = @($only | Where-Object { $_ -notin $scenarios.Name })
