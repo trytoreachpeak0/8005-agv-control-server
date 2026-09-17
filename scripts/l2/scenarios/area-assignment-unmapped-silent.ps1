@@ -186,9 +186,10 @@ $assertions.Add(
     '0 rows / OUT_OF_SCOPE_AREA',
     "$(Get-AcceptanceRowCount $unmapped.Id) rows / $($unmappedBacklog.ReasonCode)")
 
-$blocks = Get-Count 'SELECT COUNT(*) AS N FROM StructuralDispatchBlocks'
+# 只数 N1-7 这一条：T 开头 AREA 在地图上没有站点（AREA_STATION_NOT_FOUND），control-server#74 起它正是结构性派车阻断。
+$blocks = Get-Count "SELECT COUNT(*) AS N FROM StructuralDispatchBlocks WHERE DemandId = '$($unmapped.Id)'"
 $assertions.Add(
-    'L2-AAU-06', 'StructuralDispatchBlocks 无行：未映射 AREA 不是结构性派车阻断',
+    'L2-AAU-06', 'StructuralDispatchBlocks 没有 N1-7 这条需求的行：未映射 AREA 不是结构性派车阻断',
     ($blocks -eq 0), '0', $blocks)
 
 $warnings = @(Get-WarningRecordsMentioning @($unmapped.Id, $unmapped.Wire, 'OUT_OF_SCOPE_AREA'))
