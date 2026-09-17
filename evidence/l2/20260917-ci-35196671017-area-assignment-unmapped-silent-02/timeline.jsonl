@@ -1,0 +1,33 @@
+{"at":"2026-09-17T08:09:19.1343552+00:00","note":"L2 run 20260917T080919095Z starting for scenario 'area-assignment-unmapped-silent'."}
+{"at":"2026-09-17T08:09:19.1726152+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-17T08:09:19.1740952+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-17T08:09:22.4272904+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-17T08:09:22.6589342+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-17T08:09:25.7507395+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-17T08:09:27.9068009+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-17T08:09:27.9870374+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-09-17T08:09:28.7049702+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-17T08:09:28.9848191+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-17T08:09:29.0446987+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-17T08:09:29.1046219+00:00","note":"FieldOps: seed-approved-facts --database C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260917T080919095Z\\controlserver.db"}
+{"at":"2026-09-17T08:09:30.6530924+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"d818fbd392c448d6958d6ed6b0e2bcb4","version":1,"slotCount":8}}}
+{"at":"2026-09-17T08:09:30.6610894+00:00","note":"FieldOps: bind-io --database C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260917T080919095Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-17T08:09:32.2042696+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"d818fbd392c448d6958d6ed6b0e2bcb4","boundSlots":8,"version":1}}}
+{"at":"2026-09-17T08:09:32.2801673+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-17T08:09:32.2825446+00:00","note":"FieldOps: import-area-assignments --database C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260917T080919095Z\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35196671017-1\\area-assignment-unmapped-silent-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-17T08:09:34.0195184+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35196671017-1\\area-assignment-unmapped-silent-02\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"8562988780a72fe24a1d641871b538d4b8ee7d5c0d17e02747cbe688b0d6f3ea","snapshotId":"235ba478aafa4060987060bcc1ec9596","importedAt":"2026-09-17T16:09:32.5661196+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-17T08:09:34.0326820+00:00","note":"Environment is up; entering scenario 'area-assignment-unmapped-silent'."}
+{"at":"2026-09-17T08:09:34.0702188+00:00","note":"FieldOps: area-assignments --database C:\\Windows\\ServiceProfiles\\NetworkService\\AppData\\Local\\Temp\\l2-20260917T080919095Z\\controlserver.db"}
+{"at":"2026-09-17T08:09:35.4141617+00:00","note":"Publishing demand a79641ea2c3d4349a20c4d328d574b41 (N1-7, AREA N1-7) to the fake MesIngest catalog."}
+{"at":"2026-09-17T08:09:35.4777635+00:00","note":"Publishing demand e0cdba173e8d41a1a3e59effc38badcc (T5-2, AREA T5-2) to the fake MesIngest catalog."}
+{"at":"2026-09-17T08:09:35.5066607+00:00","criterion":"backlog-rows","value":"0"}
+{"at":"2026-09-17T08:09:36.5362339+00:00","criterion":"backlog-rows","value":"2"}
+{"at":"2026-09-17T08:09:36.5960410+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-17T08:09:37.3922007+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-17T08:09:38.4151820+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-17T08:09:39.4242293+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-17T08:09:39.4416101+00:00","note":"Publishing demand 64a49da0a21f45569953b6b3db8e036b (N1-3, AREA N1-3) to the fake MesIngest catalog."}
+{"at":"2026-09-17T08:09:39.4712426+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-17T08:09:40.9932683+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-17T08:09:41.0809161+00:00","note":"表里没有的 AREA 静默不执行，表里有的 T 开头 AREA 通过白名单，N1-3 受理并冻结当前版本。"}
+{"at":"2026-09-17T08:09:41.4905598+00:00","note":"L2 port block lock released."}
