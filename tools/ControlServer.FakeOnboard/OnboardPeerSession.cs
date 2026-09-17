@@ -227,7 +227,7 @@ public sealed class OnboardPeerSession(
                 await OnRequestAsync(
                     SublotKey(root.GetProperty("payload")), messageType, messageId, root, generation,
                     engine.Snapshot().State.Policy.Sublot,
-                    (payload, gen) => SublotSubmitted(payload, gen),
+                    (payload, gen) => SublotSubmitted(payload, gen, engine.Snapshot().State.Policy.SublotScan),
                     cancellationToken).ConfigureAwait(false);
                 return;
             case "SlotOperationCommand":
@@ -359,16 +359,35 @@ public sealed class OnboardPeerSession(
     public PendingRequest? Pending(string key) =>
         engine.Snapshot().State.Pending.TryGetValue(key, out PendingRequest? request) ? request : null;
 
+    /// <summary>
+    /// Forgets the answers cached for entry requests, so the server's next replay of one is answered with
+    /// a newly built submission rather than the line sent before it.
+    /// </summary>
+    /// <remarks>
+    /// This is the operator scanning again. The server judges a submission once — a refused one stays on
+    /// file and is not judged a second time — so a rescan has to be a new message with a new messageId,
+    /// which the verbatim cache would otherwise never produce while the entry request stands
+    /// (control-server#82).
+    /// </remarks>
+    public void ForgetEntryAnswers()
+    {
+        foreach (string key in answered.Keys.Where(key => key.StartsWith("sublot:", StringComparison.Ordinal)).ToArray())
+        {
+            answered.TryRemove(key, out _);
+        }
+    }
+
     // Protocol 2.0.0 item 2: the request names the dispatch scope's sublots and no demand, and the
     // submission names only what was scanned -- the server resolves the demand. This peer scans the
-    // first sublot it was offered, which with one demand per journey is the only one.
-    public object SublotSubmitted(JsonElement requestPayload, long generation) =>
+    // first sublot it was offered, which with one demand per journey is the only one, unless a scenario
+    // names another one to scan (SublotScan.cs).
+    public object SublotSubmitted(JsonElement requestPayload, long generation, string? sublot = null) =>
         Envelope("SublotSubmitted", NewId(), null, generation, new
         {
             operationSessionId = requestPayload.GetProperty("operationSessionId").GetString(),
             stationId = requestPayload.GetProperty("stationId").GetString(),
             worklistRevision = requestPayload.GetProperty("worklistRevision").GetInt64(),
-            sublot = requestPayload.GetProperty("expectedSublots")[0].GetString(),
+            sublot = sublot ?? requestPayload.GetProperty("expectedSublots")[0].GetString(),
             entryMethod = "SCANNER",
             @operator = new
             {
