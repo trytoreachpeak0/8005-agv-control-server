@@ -22,7 +22,7 @@ using ControlServer.Host.Runtime.Fleet;
 
 namespace ControlServer.Tests;
 
-public sealed class JourneyRuntimeWorkerTests
+public sealed partial class JourneyRuntimeWorkerTests
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 26, 1, 0, 0, TimeSpan.Zero);
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);

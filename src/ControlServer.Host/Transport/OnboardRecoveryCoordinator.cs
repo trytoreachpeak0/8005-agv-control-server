@@ -169,7 +169,12 @@ public sealed class OnboardRecoveryCoordinator(
         if (workflow is null || disposition is OperationResultDisposition.Replay or OperationResultDisposition.HistoricalOnly)
             return;
 
-        workflow.State = disposition == OperationResultDisposition.Accepted
+        // A determinate failure closes the recovery too: what the administrator was asked for is a trustworthy
+        // account of the slots, and one that says nobody handed the cargo over is exactly that
+        // (ADR-cross-0058 decision 2). The runtime then ends the demand from AwaitingLoadResult.
+        bool reconciled = disposition is OperationResultDisposition.Accepted
+            or OperationResultDisposition.DeterminateFailure;
+        workflow.State = reconciled
             ? RecoveryWorkflowState.Reconciled
             : RecoveryWorkflowState.RecoveryRequired;
         workflow.UpdatedAt = timeProvider.GetUtcNow();
@@ -177,7 +182,7 @@ public sealed class OnboardRecoveryCoordinator(
             ? null
             : await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
                 row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
-        if (runtime is not null && disposition == OperationResultDisposition.Accepted)
+        if (runtime is not null && reconciled)
         {
             StationOperationRow operation = await dbContext.StationOperations.SingleAsync(
                 row => row.SlotOperationAttemptId == slotOperationAttemptId,
@@ -193,7 +198,7 @@ public sealed class OnboardRecoveryCoordinator(
             ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
                 row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
                 cancellationToken).ConfigureAwait(false);
-            session.State = disposition == OperationResultDisposition.Accepted ? "CLOSED" : "EXECUTING";
+            session.State = reconciled ? "CLOSED" : "EXECUTING";
             session.Revision++;
             session.UpdatedAt = timeProvider.GetUtcNow();
             long sessionGeneration = await dbContext.SessionRecoveries.Where(row => row.AgvId == workflow.AgvId)
