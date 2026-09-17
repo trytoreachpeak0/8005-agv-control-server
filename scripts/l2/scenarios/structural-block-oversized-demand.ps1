@@ -44,8 +44,11 @@ function ConvertTo-Instant([object]$Value) {
     return [DateTimeOffset]::Parse([string]$Value, [Globalization.CultureInfo]::InvariantCulture)
 }
 
+# Assigned before returning: Get-L2StructuralDispatchBlock returns the result set wrapped as one object, and piping or
+# @() would keep that wrapper as the only element (README).
 function Get-Blocks([string]$DemandId) {
-    return , @(Get-L2StructuralDispatchBlock -Connection $connection -DemandId $DemandId -IncludeCleared)
+    $rows = Get-L2StructuralDispatchBlock -Connection $connection -DemandId $DemandId -IncludeCleared
+    return , $rows
 }
 
 <#
@@ -162,11 +165,11 @@ $journal.Note("Deleting demand $wireId from the fake MesIngest catalog.")
 $null = $mes.Command('Delete', "demands/$wireId", @{})
 $null = Wait-L2Condition -Description 'the structural dispatch block was cleared once the demand left the catalog' `
     -Journal $journal -Criterion 'structural-block-cleared' -TimeoutSeconds 90 `
-    -Probe { @(Get-Blocks $demandId | Where-Object { -not [string]::IsNullOrEmpty([string]$_.ClearedAt) }).Count } `
+    -Probe { $rows = Get-Blocks $demandId; @($rows | Where-Object { -not [string]::IsNullOrEmpty([string]$_.ClearedAt) }).Count } `
     -Until { param($v) $v -ge 1 }
 
 $cleared = Get-Blocks $demandId
-$uncleared = @(Get-L2StructuralDispatchBlock -Connection $connection -DemandId $demandId)
+$uncleared = Get-L2StructuralDispatchBlock -Connection $connection -DemandId $demandId
 $accepted = Get-Count "SELECT COUNT(*) AS Total FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $assertions.Add(
     'L2-SBO-08', '删掉需求后告警清除：表里仍只有那一行、已记清除时间、首次形成时间不变，需求从未受理',

@@ -92,7 +92,7 @@ $assertions.Add(
 
 # --- 2. 负向证据：没有结构性派车阻断，也没有告警 -----------------------------------------------------------
 
-$blocks = @(Get-L2StructuralDispatchBlock -Connection $connection -DemandId $demandId -IncludeCleared)
+$blocks = Get-L2StructuralDispatchBlock -Connection $connection -DemandId $demandId -IncludeCleared
 $assertions.Add(
     'L2-SGD-04', 'StructuralDispatchBlocks 没有这条需求的行（含已清除的）：仓位临时禁用不是结构性阻断',
     ($blocks.Count -eq 0), 0, $blocks.Count)

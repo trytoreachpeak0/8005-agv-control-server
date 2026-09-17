@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "scenario": "structural-block-oversized-demand",
+  "runId": "20260917T012502397Z",
+  "outcome": "FAIL",
+  "failureReason": "The property 'ReasonCode' cannot be found on this object. Verify that the property exists.",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260917T012502397Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "SUPERSEDING_CANDIDATE"
+    },
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "e0a469ad1f8c50ab3aa7992727cf80a4997e2d03",
+    "batchId": "batch-4"
+  },
+  "assertions": [
+    {
+      "id": "L2-SBO-01",
+      "description": "前置：本车 FRONT 组有物理仓位，需求要 5 个花篮，比该组物理仓位数多一个（默认模型下 5 个）",
+      "outcome": "PASS",
+      "expected": "FRONT physical slots < 5 baskets",
+      "actual": "FRONT physical slots 4, baskets 5 (20 boxes)"
+    }
+  ]
+}

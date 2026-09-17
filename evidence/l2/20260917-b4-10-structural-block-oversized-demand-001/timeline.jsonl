@@ -1,0 +1,24 @@
+{"at":"2026-09-17T01:25:02.4472101+00:00","note":"L2 run 20260917T012502397Z starting for scenario 'structural-block-oversized-demand'."}
+{"at":"2026-09-17T01:25:02.5072068+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-17T01:25:02.5092430+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-17T01:25:19.1080609+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-17T01:25:19.6833551+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-17T01:25:27.8188395+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-17T01:25:30.0226743+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-17T01:25:30.2604157+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-09-17T01:25:31.5708074+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-17T01:25:31.8534368+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-17T01:25:31.9733092+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-17T01:25:32.0782800+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260917T012502397Z\\controlserver.db"}
+{"at":"2026-09-17T01:25:35.9360849+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"b723d8049fd5400389cde147b87e731d","version":1,"slotCount":8}}}
+{"at":"2026-09-17T01:25:35.9560184+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260917T012502397Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-17T01:25:38.3004640+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"b723d8049fd5400389cde147b87e731d","boundSlots":8,"version":1}}}
+{"at":"2026-09-17T01:25:38.3764770+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-17T01:25:38.3820572+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260917T012502397Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-10-8005-agv-control-server\\evidence\\l2\\20260917-b4-10-structural-block-oversized-demand-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-17T01:25:41.1287384+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-10-8005-agv-control-server\\evidence\\l2\\20260917-b4-10-structural-block-oversized-demand-001\\snapshots\\preseed-area-assignments.csv","entryCount":1,"version":1,"contentSha256":"8ab62504edb88283c1f89062bdec82316bfea9ff44c986b884a1ec00d5a5b50f","snapshotId":"01b7f9d1bd8a4edb9d23d7a0b01e8209","importedAt":"2026-09-17T09:25:38.7370727+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-17T01:25:41.1424637+00:00","note":"Environment is up; entering scenario 'structural-block-oversized-demand'."}
+{"at":"2026-09-17T01:25:41.3403075+00:00","note":"Publishing demand bb2c030e4e074cce836d0ed7b5791a84 (area N1-3, 20 boxes = 5 baskets)."}
+{"at":"2026-09-17T01:25:41.4373827+00:00","criterion":"structural-block","value":"1"}
+{"at":"2026-09-17T01:25:41.4836689+00:00","note":"Run failed: The property 'ReasonCode' cannot be found on this object. Verify that the property exists."}
+{"at":"2026-09-17T01:25:41.4905124+00:00","note":"Failure at: at <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-10-8005-agv-control-server\\scripts\\l2\\scenarios\\structural-block-oversized-demand.ps1: line 107\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-10-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1054"}
+{"at":"2026-09-17T01:25:42.0993918+00:00","note":"L2 port block lock released."}
