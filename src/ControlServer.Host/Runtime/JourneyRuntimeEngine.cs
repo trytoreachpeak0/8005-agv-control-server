@@ -6,6 +6,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch;
@@ -601,8 +602,6 @@ public sealed class JourneyRuntimeEngine(
                 // the projection reconciliation".
                 bool waitRefilled = runtime.StationDepartureWaitStartedAt is null;
                 runtime.StationDepartureWaitStartedAt ??= now;
-                string? blockBeforeEntryRead = runtime.BlockReasonCode;
-                DateTimeOffset? blockSinceBeforeEntryRead = runtime.BlockReasonSince;
                 ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, session, cancellationToken)
                     .ConfigureAwait(false);
                 // An operator cancelling before any entry (ADR-cross-0046; control-server#83) holds the stop
@@ -611,11 +610,16 @@ public sealed class JourneyRuntimeEngine(
                 if (await LoadCancellationBeforeSublot.HasOpenCancellationAsync(
                         dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false))
                 {
-                    // What the entry read concluded does not stand while the cancellation decides the stop. Undone
-                    // to exactly what the row held -- code and start time both -- rather than written again through
-                    // SetBlockReason, which would restart a block that never ended.
-                    dbContext.Entry(runtime).Property(row => row.BlockReasonCode).CurrentValue = blockBeforeEntryRead;
-                    dbContext.Entry(runtime).Property(row => row.BlockReasonSince).CurrentValue = blockSinceBeforeEntryRead;
+                    // What the entry read concluded does not stand while the cancellation decides the stop, so this
+                    // iteration's unsaved change to the block is undone -- code and start time both, back to what the
+                    // row holds in the store. This is only for undoing an unsaved change: every new block is written
+                    // through SetBlockReason, and writing the old code back through it here would restart a block
+                    // that never ended.
+                    EntityEntry<JourneyRuntimeRow> tracked = dbContext.Entry(runtime);
+                    tracked.Property(row => row.BlockReasonCode).CurrentValue =
+                        tracked.Property(row => row.BlockReasonCode).OriginalValue;
+                    tracked.Property(row => row.BlockReasonSince).CurrentValue =
+                        tracked.Property(row => row.BlockReasonSince).OriginalValue;
                     if (waitRefilled)
                     {
                         runtime.UpdatedAt = now;

@@ -605,6 +605,42 @@ public sealed partial class JourneyRuntimeWorkerTests
         await AssertStopEndedByOperatorAsync(fixture, waiting, receivedAt);
     }
 
+    /// <summary>
+    /// A block already on the stop survives an iteration the open cancellation holds (control-server#116,
+    /// after #118): the entry read that iteration would record a different block, and that unsaved change
+    /// is undone to what the store holds -- the code and the time the block began, not a restarted one.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnIterationHeldByAnOpenCancellationLeavesAnEarlierBlockAndItsStartAsTheyWere()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+
+        await fixture.DropOnboardSessionAsync();
+        await fixture.Engine.ExecuteOnceAsync(token);
+        JourneyRuntimeRow blocked = await fixture.RuntimeAsync();
+        Assert.Equal("ONBOARD_SESSION_NOT_READY", blocked.BlockReasonCode);
+        Assert.NotNull(blocked.BlockReasonSince);
+
+        await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+        await fixture.RestoreSessionReadyAsync();
+        // An entry the runtime would record as SUBLOT_SUBMISSION_MISMATCH this iteration.
+        await processor.ProcessAsync(SublotEntry(fixture, blocked, "SUBLOT-OTHER"), state, token);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(3));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(token);
+
+        JourneyRuntimeRow held = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, held.Stage);
+        Assert.Equal(blocked.BlockReasonCode, held.BlockReasonCode);
+        Assert.Equal(blocked.BlockReasonSince, held.BlockReasonSince);
+    }
+
     private static async Task SetWorkflowStateAsync(RuntimeFixture fixture, RecoveryWorkflowState state)
     {
         await using ControlServerDbContext context = fixture.OpenConnectionContext();
