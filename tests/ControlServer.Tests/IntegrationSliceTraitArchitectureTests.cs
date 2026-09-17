@@ -65,6 +65,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
             ["DemandAreaAssignmentFreezeTests"] = "batch 4 FP-C15 REQ-0350 demand freeze of the area assignment version; server-internal, no wire message",
+            ["DispatchBacklogDashboardTests"] = "batch 4 FP-C15 REQ-0210 dispatch backlog and structural dispatch block dashboard card (control-server#70); reads only /api/dashboard/, reasons never go on the wire (spec 5.1 #10)",
             ["DispatchChainSeamTests"] = "batch 4 FP-C15 dispatch chain seams (control-server#69): reason code names, the area assignment lookup and plan replay; server-internal, no wire message",
             ["EmergencyStopReleaseEndpointsTests"] = "REQ-0356 release-on-confirmation HTTP entry point (control-server#63); single-ended server-to-RIoT, no wire message",
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
