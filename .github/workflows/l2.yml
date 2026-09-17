@@ -95,6 +95,9 @@ jobs:
               # Batch 5 (control-server#79): the station departure deadline. In CI from its own ticket so
               # a batch-4 PR catches a regression before it merges; the batch-5 exit makes it three runs.
               @{ Name = 'station-deadline-sublot-timeout'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 5 (control-server#83): the cancellation before a sublot entry, waiting for the ALL_EMPTY
+              # result before ending the stop. Same reason as the line above; the batch-5 exit makes it three runs.
+              @{ Name = 'load-cancelled-before-sublot'; Runs = 1; BatchId = 'batch-5' }
               # Batch 4 (control-server#68), specification 8.3 scenario 4: the five kinds of bad area
               # assignment table each rejected whole. Same reason as the line above -- batches 4 and 5 both
               # merge into fp/v2-impl, so the scenario earns its place in CI from its own ticket; the

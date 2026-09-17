@@ -22,7 +22,8 @@ namespace ControlServer.FakeOnboard;
 public sealed class OnboardPeerSession(
     CommandEngine<FakeOnboardState> engine,
     FakeOnboardOptions options,
-    SlotStateSeed slotStateSeed) : IAsyncDisposable
+    SlotStateSeed slotStateSeed,
+    FakeLoadCancellations? loadCancellations = null) : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
@@ -246,6 +247,12 @@ public sealed class OnboardPeerSession(
             case "SlotConfigurationActivationCommand":
                 await OnActivationCommandAsync(root, messageId, generation, cancellationToken)
                     .ConfigureAwait(false);
+                return;
+            case "LoadCancellationAuthorization" when loadCancellations is not null:
+                await loadCancellations.ObserveAuthorizationAsync(this, root, cancellationToken).ConfigureAwait(false);
+                return;
+            case "DurableAck" when loadCancellations is not null:
+                loadCancellations.ObserveDurableAck(root);
                 return;
             case "PreDepartureSafetyCheck":
                 await OnRequestAsync(
@@ -694,6 +701,16 @@ public sealed class OnboardPeerSession(
             appliedContentSha256 = Sha256(root.GetRawText())
         }), cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>Sends one message this peer originates, in the current session generation.</summary>
+    public Task SendEnvelopeAsync(
+        string messageType,
+        string messageId,
+        object payload,
+        CancellationToken cancellationToken) =>
+        SendAsync(
+            Envelope(messageType, messageId, null, engine.Snapshot().State.SessionGeneration, payload),
+            cancellationToken);
 
     private Task SendAsync(object message, CancellationToken cancellationToken) =>
         SendLineAsync(JsonSerializer.Serialize(message, SerializerOptions), cancellationToken);

@@ -51,6 +51,15 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 | `PUT` | `/answer/{key}` | 应答一条挂起的请求 |
 | `PUT` | `/connection` | `connected: false` 断开到服务端的会话，`true` 重开并走完整握手 |
 | `PUT` | `/alarms` | 整体替换告警集，并作为下一份 `OnboardAlarmSnapshot` 发出 |
+| `PUT` | `/load-cancellations/{cancellationId}` | 发 `LoadCancellationStartRequested`，即操作员点「取消装货」 |
+| `GET` | `/load-cancellations` | 读发过的取消：服务端的决定、授权的仓位、报出的结果与是否被确认 |
+
+## 装货取消（批次 5，control-server#83）
+
+`PUT /load-cancellations/{cancellationId}` 带 `demandId`，`slotOperationAttemptId` 给 `null` 就是扫码前取消
+（ADR-cross-0046 第一种情形）。服务端回 `AUTHORIZED` 且 `slots` 为空时，这个假车立刻报 `LoadCancellationResult`：
+`ALL_EMPTY`、`slotResults` 为空——没有下发过仓位命令的车，能如实说的只有这一句。授权里带仓位的取消只记录、不应答：
+证明仓位空需要这个假车没有的 IO，替它编一份证明只会测到脚本自己。
 
 ## 协议 v2 的三条消息（批次 3）
 
