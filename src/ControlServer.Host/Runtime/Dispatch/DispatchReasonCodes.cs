@@ -55,6 +55,26 @@ public static class DispatchReasonCodes
     public const string OutOfScopeArea = "OUT_OF_SCOPE_AREA";
 
     /// <summary>
+    /// <b>Not waiting.</b> The demand was in the backlog unaccepted and the latest catalog the round read no
+    /// longer lists it: MES closed or withdrew it before this server took it. Nothing is waiting for a vehicle.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Written by the dispatch round, not by an admission criterion, and only from a catalog that was read
+    /// successfully -- the MesIngest catalog is the complete list of open demands, so absence from it is a
+    /// fact, whereas a failed read says nothing. The row is kept rather than deleted, and its
+    /// <c>LastSeenAt</c> keeps the last time the demand was actually in the catalog. A demand that comes back
+    /// is judged again like any other and keeps its <c>FirstSeenAt</c>.
+    /// </para>
+    /// <para>
+    /// Anything that lists waiting backlog (the dashboard, control-server#70) leaves these rows out; REQ-0210's
+    /// "展示等待状态" is about demands still waiting. A structural dispatch block on such a demand is cleared by
+    /// its own rule (control-server#74), not by this code.
+    /// </para>
+    /// </remarks>
+    public const string DemandLeftCatalog = "DEMAND_LEFT_CATALOG";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>
