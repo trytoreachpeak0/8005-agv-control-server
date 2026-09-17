@@ -112,7 +112,7 @@ $assertions.Add(
     ([int]$rearRuntime.ExpectedBasketCount -eq $basketCount -and $rearTargets.Count -eq $basketCount),
     "ExpectedBasketCount $basketCount, $basketCount target slots",
     "ExpectedBasketCount $($rearRuntime.ExpectedBasketCount), $($rearTargets.Count) target slots [$($rearTargets -join ',')]")
-# -Description given explicitly: the module's default is not applied when the parameter is left out.
+# A description of its own rather than the module default: it names the AREA and the group this step is about.
 $null = Assert-L2SlotGroupTargets -Assertions $assertions -Id 'L2-SGS-03' -Connection $connection `
     -DemandId $rearDemand -SlotPosition 'REAR' `
     -Description "N1-3 指 REAR：目标仓全部属于本车 REAR 组、升序，且恰好是该组编号最小的 $basketCount 个可用仓"
