@@ -158,6 +158,10 @@ jobs:
               # Batch 5 (control-server#80): blocked journeys with their start time on the dashboard. In CI from its own
               # ticket for the same reason; the batch-5 exit (control-server#90) makes it three runs.
               @{ Name = 'blocked-journey-dashboard-projection'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 5 (control-server#81): the load stop past its deadline -- a determinate failure settled
+              # defensively, and a door left open raising STATION_TIMEOUT_DOOR_NOT_CLOSED. Same reason; the
+              # batch-5 exit (control-server#90) makes it three runs.
+              @{ Name = 'load-determinate-failure-and-door-open-timeout'; Runs = 1; BatchId = 'batch-5' }
               # Batch 4 (control-server#68), specification 8.3 scenario 4: the five kinds of bad area
               # assignment table each rejected whole. Same reason as the line above -- batches 4 and 5 both
               # merge into fp/v2-impl, so the scenario earns its place in CI from its own ticket; the

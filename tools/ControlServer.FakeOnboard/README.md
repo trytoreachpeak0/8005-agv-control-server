@@ -49,6 +49,7 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 | `PUT` | `/policy` | 改四类请求的应答策略 |
 | `PUT` | `/safety` | 报新的安全状态（发 `SafetyStateChanged`） |
 | `PUT` | `/answer/{key}` | 应答一条挂起的请求 |
+| `PUT` | `/determinate-load-failures/{key}` | 按确定失败应答一条挂起的装货命令：首个目标仓 `FAILED`（默认 `OPERATOR_TIMEOUT`）、其余 `NOT_STARTED`，全部 `EMPTY`／`LOCKED`／`RESET`。v2 车载端不这样报，服务端只做防御性结算（control-server#81）；什么时候发由场景决定 |
 | `PUT` | `/connection` | `connected: false` 断开到服务端的会话，`true` 重开并走完整握手 |
 | `PUT` | `/alarms` | 整体替换告警集，并作为下一份 `OnboardAlarmSnapshot` 发出 |
 | `PUT` | `/load-cancellations/{cancellationId}` | 发 `LoadCancellationStartRequested`，即操作员点「取消装货」 |

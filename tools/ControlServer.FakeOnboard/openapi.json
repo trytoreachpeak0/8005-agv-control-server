@@ -79,6 +79,30 @@
         }
       }
     },
+    "/control/v1/determinate-load-failures/{key}": {
+      "put": {
+        "summary": "Answers a held load command with a determinate failure (ADR-cross-0058 decision 5).",
+        "description": "The first target slot FAILED under reasonCode, the rest NOT_STARTED, every slot EMPTY, LOCKED and RESET. The v2 onboard does not send this; the server settles it defensively, and only after the station departure deadline. Remembered verbatim like /answer, so a replayed command gets the same result back. This peer has no deadline of its own: the scenario decides when to send it.",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "\"operation:{slotOperationAttemptId}\" of a held LOAD command. Read the exact key from /control/v1/snapshot."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeterminateLoadFailureCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "The result was sent." },
+          "400": { "description": "INVALID_ARGUMENT when the request under that key is not a LOAD SlotOperationCommand." },
+          "409": { "description": "NOT_FOUND when no request is open under that key, NOT_ALLOWED_IN_STATE when no session is connected." }
+        }
+      }
+    },
     "/control/v1/connection": {
       "put": {
         "summary": "Drops the session to ControlServer (connected: false) or opens a new one with a full handshake (connected: true).",
@@ -240,6 +264,21 @@
                 "type": "boolean",
                 "default": true,
                 "description": "Activations only. false concludes the activation on the peer but holds its result back until ControlServer replays the command after a reconnect."
+              }
+            }
+          }
+        ]
+      },
+      "DeterminateLoadFailureCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "reasonCode": {
+                "type": "string",
+                "default": "OPERATOR_TIMEOUT",
+                "description": "The failed slot's reason code. OPERATOR_TIMEOUT is the only one protocol 2.0.0 allows on an OperationResult; any other goes to recovery on the server."
               }
             }
           }

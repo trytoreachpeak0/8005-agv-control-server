@@ -88,12 +88,31 @@ public sealed class JourneyRuntimeEngine(
             new EventId(2108, nameof(LogStationDeadlineEndedStop)),
             "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline " +
             "{Deadline}; demand {DemandId} ended as CANCELLED_BY_STATION_TIMEOUT and the vehicle was released.");
+    private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogStationTimeoutDoorNotClosed =
+        LoggerMessage.Define<string, string, string, DateTimeOffset>(
+            LogLevel.Warning,
+            new EventId(2109, nameof(LogStationTimeoutDoorNotClosed)),
+            "Vehicle {AgvId} is still loading demand {DemandId} at station {StationId} past its station " +
+            "departure deadline {Deadline} with a slot door not closed; the stop keeps waiting under " +
+            "STATION_TIMEOUT_DOOR_NOT_CLOSED.");
+    private static readonly Action<ILogger, string, string, string, Exception?> LogDeterminateLoadFailureSettled =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2110, nameof(LogDeterminateLoadFailureSettled)),
+            "Vehicle {AgvId} reported a determinate load failure after the station departure deadline; " +
+            "demand {DemandId} ended as {TerminalReason} and the vehicle was released.");
 
     /// <summary>
     /// The terminal reason of a demand whose pickup stop ran out its station departure deadline
     /// (ADR-cross-0055).
     /// </summary>
     public const string StationTimeoutCancellationReason = "CANCELLED_BY_STATION_TIMEOUT";
+
+    /// <summary>
+    /// The load stop has run out its station departure deadline with a slot door still not closed
+    /// (ADR-cross-0058 decision 4). The stop does not end; the duty moves to someone shutting the door.
+    /// </summary>
+    public const string StationTimeoutDoorNotClosedReason = "STATION_TIMEOUT_DOOR_NOT_CLOSED";
 
     /// <summary>The journey is not arriving because the vehicle is holding at a traffic checkpoint.</summary>
     public const string CheckpointWaitReason = "VEHICLE_WAITING_AT_CHECKPOINT";
@@ -661,6 +680,12 @@ public sealed class JourneyRuntimeEngine(
                 {
                     Block(runtime, "LOAD_RESULT_REQUIRES_RECOVERY", now);
                 }
+                else if (load?.Status == StationOperationStatus.Failed)
+                {
+                    await TrySettleDeterminateLoadFailureAsync(runtime, load, session, now, cancellationToken)
+                        .ConfigureAwait(false);
+                    return;
+                }
                 else if (load?.Status == StationOperationStatus.Committed)
                 {
                     await store.SettleAnsweredCommandAsync(
@@ -676,6 +701,17 @@ public sealed class JourneyRuntimeEngine(
                 }
                 else
                 {
+                    // No result yet. Refills the station departure wait a disconnect voided (ADR-cross-0055),
+                    // the way AwaitingSublot does: this stage is not re-entered on a reconnect either, and
+                    // without it a stop loading across a reconnect would have no deadline to raise its
+                    // alarm by.
+                    bool loadWaitRefilled = runtime.StationDepartureWaitStartedAt is null;
+                    runtime.StationDepartureWaitStartedAt ??= now;
+                    if (ReconcileStationTimeoutDoorNotClosed(runtime, session, now) || loadWaitRefilled)
+                    {
+                        runtime.UpdatedAt = now;
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
                     return;
                 }
                 break;
@@ -2189,8 +2225,10 @@ public sealed class JourneyRuntimeEngine(
         }
         // ADR-cross-0058 decision 4: ending the stop lets the vehicle be sent on, and it must not move
         // with a door open (ADR-cross-0011/0012). So the stop keeps waiting past its deadline until the
-        // door is shut, then ends on that iteration's evidence. Raising an alarm for it is
-        // control-server#81.
+        // door is shut, then ends on that iteration's evidence. The alarm is raised only in
+        // AwaitingLoadResult (ReconcileStationTimeoutDoorNotClosed): here no slot has been commanded, so an
+        // open door is nothing our command explains and the session leaves Ready first
+        // (ADR-cross-0058 Verification, decision 4).
         if (SlotDoorsNotProvenClosed(session))
         {
             return false;
@@ -2239,6 +2277,173 @@ public sealed class JourneyRuntimeEngine(
         checkpointWaits.Clear(runtime.VehicleKey);
         LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId, deadline, null);
         return true;
+    }
+
+    /// <summary>
+    /// Raises <see cref="StationTimeoutDoorNotClosedReason"/> while a load stop is past its station departure
+    /// deadline with no result and a slot door not proven closed, and withdraws it once that stops being
+    /// true (ADR-cross-0058 decision 4). Returns whether the block reason changed; the caller saves.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The stage stays <see cref="JourneyRuntimeStage.AwaitingLoadResult"/> and the journey is not Blocked:
+    /// nothing is wrong with the operation, and ending the stop would let the vehicle be sent away with a
+    /// door open (ADR-cross-0011/0012). The door is someone's to shut, so the alarm moves the duty to a
+    /// person rather than ending anything (8005-agv-program#55). Once the door is shut the alarm is
+    /// withdrawn, and the result that then arrives settles the stop as the vehicle reports it.
+    /// </para>
+    /// <para>
+    /// The door evidence is <see cref="SlotDoorsNotProvenClosed"/>, the reading that holds the AwaitingSublot
+    /// deadline back, and never RIoT's stop proof. Written on the edge only, since this runs every poll; the
+    /// withdrawal clears only this code, so a reason written by anything else survives. Its start time is
+    /// the block reason's own (control-server#80).
+    /// </para>
+    /// </remarks>
+    private bool ReconcileStationTimeoutDoorNotClosed(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        DateTimeOffset now)
+    {
+        if (StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is { } deadline &&
+            now >= deadline &&
+            SlotDoorsNotProvenClosed(session))
+        {
+            if (runtime.BlockReasonCode == StationTimeoutDoorNotClosedReason)
+            {
+                return false;
+            }
+            runtime.SetBlockReason(StationTimeoutDoorNotClosedReason, now);
+            LogStationTimeoutDoorNotClosed(
+                logger, runtime.AgvId, runtime.DemandId, runtime.PickupStationId, deadline, null);
+            return true;
+        }
+        if (runtime.BlockReasonCode != StationTimeoutDoorNotClosedReason)
+        {
+            return false;
+        }
+        runtime.SetBlockReason(null, now);
+        return true;
+    }
+
+    /// <summary>
+    /// Ends the demand of a load the store judged <see cref="StationOperationStatus.Failed"/>: a determinate
+    /// failure received after the stop's station departure deadline (ADR-cross-0058 decision 5).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Defensive path: the v2 onboard never produces it; the protocol allows another onboard version to
+    /// send it.</b> After its deadline the v2 onboard reopens a closed, empty slot rather than failing it
+    /// (8005-agv-program#55), so this runs only for a peer that does report <c>FAILED</c> with
+    /// <c>OPERATOR_TIMEOUT</c>. L1 and the synthetic peer are its whole proof.
+    /// </para>
+    /// <para>
+    /// The server may close the stop alone because such a failure only follows the deadline, so the
+    /// condition for closing it already holds when it arrives; one that arrived earlier never became
+    /// Failed (<see cref="DeterminateLoadFailure"/>). The demand ends under the terminal reason its failure
+    /// reason names -- <c>OPERATOR_TIMEOUT</c> ends it <c>CANCELLED_BY_STATION_TIMEOUT</c> -- the unanswered
+    /// load command is settled, and the vehicle is released through the same tail as the sublot deadline
+    /// (<see cref="PickupStopTermination"/>). The operation stays Failed, as the record of the load.
+    /// </para>
+    /// <para>
+    /// <b>Re-checked under the write lock.</b> The inbound processor handles every vehicle message inside a
+    /// write transaction, the cancellation of an in-flight load included, and a Failed load whose demand is
+    /// still Accepted is one that cancellation authorizes. So the decision is taken again inside one here:
+    /// the stage, the operation, the demand and the absence of an open load cancellation are read afresh,
+    /// and whichever writer commits first decides the demand. The one that loses changes nothing, rather
+    /// than rewriting a terminal reason already recorded.
+    /// </para>
+    /// <para>
+    /// Liveness is the station deadline's measure (FR-031 AC-9): nothing is ended against evidence from a
+    /// vehicle that has since gone off air.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> TrySettleDeterminateLoadFailureAsync(
+        JourneyRuntimeRow runtime,
+        StationOperationRow load,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
+            runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        if (lastInboundAt is null || now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
+        {
+            return false;
+        }
+        // The store makes a load Failed only for a result whose reason has a terminal state, and records
+        // that result in the same transaction; a null here would be a store defect, left standing rather
+        // than guessed at.
+        if (await DeterminateLoadFailureTerminalReasonAsync(runtime, cancellationToken).ConfigureAwait(false)
+            is not { } terminalReason)
+        {
+            return false;
+        }
+
+        await using (IDbContextTransaction transaction = await dbContext.Database
+                         .BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await dbContext.Entry(runtime).ReloadAsync(cancellationToken).ConfigureAwait(false);
+            await dbContext.Entry(load).ReloadAsync(cancellationToken).ConfigureAwait(false);
+            AcceptedDemandRow demand = await dbContext.AcceptedDemands
+                .SingleAsync(row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+            await dbContext.Entry(demand).ReloadAsync(cancellationToken).ConfigureAwait(false);
+            // The one definition the sublot deadline and the cancellation's authorization use too. A cancellation
+            // that did not reconcile is not "open", but it has already put the demand in RecoveryRequired and
+            // the journey in Blocked, which the checks below refuse on their own.
+            bool cancellationOpen = await LoadCancellationBeforeSublot
+                .HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false);
+            if (runtime.Stage != JourneyRuntimeStage.AwaitingLoadResult ||
+                load.Status != StationOperationStatus.Failed ||
+                demand.Status != DemandExecutionStatus.Accepted ||
+                cancellationOpen)
+            {
+                return false;
+            }
+
+            // The failure is the load command's answer. Left unsettled it would be replayed into every later
+            // session, where the peer refuses it as a business id whose content changed.
+            ProtocolOutboxRow? loadCommand = await dbContext.ProtocolOutbox
+                .SingleOrDefaultAsync(row => row.MessageId == runtime.LoadCommandMessageId, cancellationToken)
+                .ConfigureAwait(false);
+            if (loadCommand is not null)
+            {
+                loadCommand.AcknowledgedAt ??= now;
+            }
+            await new PickupStopTermination(dbContext)
+                .StageAsync(runtime, terminalReason, now, cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        checkpointWaits.Clear(runtime.VehicleKey);
+        LogDeterminateLoadFailureSettled(logger, runtime.AgvId, runtime.DemandId, terminalReason, null);
+        return true;
+    }
+
+    /// <summary>
+    /// The terminal reason the live result of this journey's load names, read from the result as the vehicle
+    /// sent it.
+    /// </summary>
+    private async Task<string?> DeterminateLoadFailureTerminalReasonAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        string? resultId = await dbContext.OperationResults.AsNoTracking()
+            .Where(row => row.SlotOperationAttemptId == runtime.LoadSlotOperationAttemptId &&
+                          row.SupersededByResultId == null &&
+                          !row.HistoricalOnly)
+            .Select(row => row.ResultId)
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        ProtocolInboxRow? result = resultId is null
+            ? null
+            : await dbContext.ProtocolInbox.AsNoTracking()
+                .SingleOrDefaultAsync(row => row.MessageId == resultId, cancellationToken).ConfigureAwait(false);
+        if (result is null)
+        {
+            return null;
+        }
+        using JsonDocument document = JsonDocument.Parse(result.RequestJson);
+        return DeterminateLoadFailure.TerminalReason(SlotOutcomeReport.FromSlotResults(
+            document.RootElement.GetProperty("payload").GetProperty("slotResults")));
     }
 
     /// <summary>

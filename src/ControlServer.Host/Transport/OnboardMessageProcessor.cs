@@ -3,7 +3,10 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Transport;
 
@@ -15,6 +18,7 @@ public sealed partial class OnboardMessageProcessor(
     SlotConfigurationActivationDispatcher activationDispatcher,
     TimeProvider timeProvider,
     IConfiguration configuration,
+    IOptions<JourneyRuntimeOptions> runtimeOptions,
     ILogger<OnboardMessageProcessor> logger)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -349,6 +353,8 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     long forcedGeneration = await store.GetOperationForcedRecoveryGenerationAsync(
                         attemptId, cancellationToken).ConfigureAwait(false);
+                    OperationResultReceipt receipt = await ReceiptAsync(demandId, cancellationToken)
+                        .ConfigureAwait(false);
                     OperationResultDisposition disposition = await store.ApplyOperationResultAsync(
                         new StationOperationResult(
                             messageId,
@@ -360,10 +366,29 @@ public sealed partial class OnboardMessageProcessor(
                             slotResults.All(item => RequiredString(item, "outcome") == "COMPLETED"),
                             payload.GetProperty("observedAt").GetDateTimeOffset(),
                             resultContentSha256,
-                            contentHash),
+                            contentHash,
+                            SlotOutcomeReport.FromSlotResults(payload.GetProperty("slotResults"))),
                         agvId,
                         forcedGeneration,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken,
+                        receipt).ConfigureAwait(false);
+                    if (disposition is OperationResultDisposition.FailedBeforeStationDeadline
+                        or OperationResultDisposition.FailureReasonWithoutTerminalState)
+                    {
+                        // Not accepted silently (ADR-cross-0058 Verification, decision 5): a failure the server
+                        // may only settle after the stop's deadline, or only for a reason with a terminal
+                        // state, went to recovery instead, and the operator is told why.
+                        LogUnsettleableDeterminateFailure(
+                            logger,
+                            agvId,
+                            demandId,
+                            attemptId,
+                            disposition == OperationResultDisposition.FailedBeforeStationDeadline
+                                ? DeterminateLoadFailure.FailedBeforeStationDeadline
+                                : DeterminateLoadFailure.ReasonWithoutTerminalState,
+                            receipt.ReceivedAt,
+                            receipt.StationDepartureDeadline);
+                    }
                     await recoveryCoordinator.ObserveOperationResultAsync(
                         attemptId, disposition, cancellationToken).ConfigureAwait(false);
                     // A result this session's RecoveryStateReport named as pending has now been seen,
@@ -811,6 +836,35 @@ public sealed partial class OnboardMessageProcessor(
             ? throw new InvalidDataException($"Protocol field '{propertyName}' is required.")
             : value;
     }
+
+    /// <summary>
+    /// When this result is received and the station departure deadline its journey stands under now, read
+    /// from the one function the runtime and the worklist take it from.
+    /// </summary>
+    private async Task<OperationResultReceipt> ReceiptAsync(string demandId, CancellationToken cancellationToken)
+    {
+        JourneyRuntimeRow? journey = await dbContext.JourneyRuntimes.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        return new OperationResultReceipt(
+            timeProvider.GetUtcNow(),
+            journey is null
+                ? null
+                : JourneyRuntimeEngine.StationDepartureDeadline(
+                    journey, runtimeOptions.Value.StationDepartureWaitTimeout));
+    }
+
+    [LoggerMessage(EventId = 1102, Level = LogLevel.Warning,
+        Message = "Vehicle {AgvId} reported load {SlotOperationAttemptId} of demand {DemandId} FAILED with every " +
+                  "slot determinate, but it cannot be settled ({ReasonCode}: received {ReceivedAt}, station " +
+                  "deadline {StationDepartureDeadline}); the operation went to recovery.")]
+    private static partial void LogUnsettleableDeterminateFailure(
+        ILogger logger,
+        string agvId,
+        string demandId,
+        string slotOperationAttemptId,
+        string reasonCode,
+        DateTimeOffset receivedAt,
+        DateTimeOffset? stationDepartureDeadline);
 
     [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
         Message = "Onboard rejected {RejectedMessageType} {RejectedMessageId}: {ReasonCode} at {FieldPath} -- {DisplayMessage}")]
