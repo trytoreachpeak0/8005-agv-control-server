@@ -19,8 +19,8 @@ AREA 所属的组、组内按编号升序选仓，一条需求不跨组。只在
 | --- | --- | --- |
 | L1：两端测试套件全绿，新能力逐项有新增覆盖 | **成立** | 服务端 1093 passed（`03ec8a8c`）；车载端 307 ＋ 118 passed（`08bcf7d`）。逐项对照见第一节 |
 | `l2.yml` 批次 4 八行都在，`Runs = 3`、`BatchId = 'batch-4'`，超时有依据 | **成立** | 八行由各功能票加入，无遗漏；本票改为 `Runs = 3`。超时不改，依据见第二节 |
-| L2：八个场景在 CI 上各连续三次通过，证据各自独立 | **成立** | CI run `35196671017`（`03ec8a8c`），`mode=consecutive-all`。见第二节 |
-| `identity` 含 `batchId = batch-4` 与读回的 `protocolReleaseIdentity` | **成立** | 读回值为 `protocol-v2.0.0@86575456`，`approvalStatus = SUPERSEDING_CANDIDATE`（**未发布的候选**，不是 `v1.0.0`），见第二节 |
+| L2：八个场景在 CI 上各连续三次通过，证据各自独立 | **成立** | ⑦ 以外七个场景：CI run `35196671017`（`03ec8a8c`，`mode=consecutive-all`）；⑦ 单车两趟：CI run `35236910128`（合入顶端后）。见第二节 |
+| `identity` 含 `batchId = batch-4` 与读回的 `protocolReleaseIdentity` | **成立** | ⑦ 以外七个场景读回 `protocol-v2.0.0@86575456`、`SUPERSEDING_CANDIDATE`（当时未发布的候选）；⑦ 重跑证据读回同一 commit、`APPROVED_RELEASE`。见第二节 |
 | 批次 2、3 既有场景（及已合入的批次 5 场景）同一次 CI 全绿 | 见 PR | 出口 PR 那一轮 `l2`：先在 `075d9abf` 上 run `35199832222`，清单 25 个场景全 PASS；合入 `fp/v2-impl` 顶端后清单为 27 个场景，最终一轮的 run 号写在 PR 正文与 #76 评论里，因为报告提交早于那一轮 |
 | 第 8.3 节七个场景各有证据目录，负向场景标明 | **成立** | 第二节表格；④、⑥、③b 标为负向 |
 | 门禁与真装置 L2 | **真装置跑了，门禁未跑** | 真装置 `real-onboard-normal-load` PASS；`CONTROL_SERVER_G2` 未跑及理由见第三节 |
@@ -124,12 +124,20 @@ PR 与 push 上每个场景仍跑一遍；批次出口用 `mode=consecutive-all`
 
 ### 场景⑦重跑（单车两趟）
 
-合入 `fp/v2-impl` 顶端后，在 PR 那一轮 CI 里用 PR 正文的 `L2-Consecutive: mixed-side-station-two-trips`（PR #122 起生效）连跑三遍。
-run 号、证据目录与结果在取回证据后补在这里。
+| 运行 | commit | 结果 | 证据 |
+| --- | --- | --- | --- |
+| **CI `l2` run [`35236910128`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35236910128)**（PR #124 那一轮，`L2-Consecutive`） | 分支 `40329ae7`；证据里的 `controlServerCommit` 是 `77e2c08e`，即 GitHub 把它与 `fp/v2-impl@72496a85` 试合并的提交 | ⑦ **3/3 PASS**，每遍 9/9；job success | `evidence/l2/20260917-ci-35236910128-mixed-side-station-two-trips-01`、`-02`、`-03` |
+
+三份证据都是一台车先后两趟，`batchId = batch-4`，`protocolReleaseIdentity` 读回 `protocol-v2.0.0@86575456`、`APPROVED_RELEASE`（#125 已合入，绑定已发布身份）。
+
+这一轮实际把八个批次 4 场景都跑了三遍，不只 ⑦：推送触发这一轮时，PR 正文里的 `L2-Consecutive` 行还列着全部八个场景，
+workflow 读的是触发那一刻的正文。八个场景各 3/3 PASS，同轮批次 2、3、5 的其余 19 个场景也全 PASS。只有 ⑦ 的三份入库；
+其余七个场景在发布身份上的三连证据留在该 run 的 artifact `l2-evidence` 里，未入库。同一轮 `test` run `35236910120`：
+`已通过! - 失败:     0，通过:  1141，已跳过:     0，总计:  1141`。
 
 ### 协议身份
 
-本票三连的 24 份证据与真装置证据，`identity.protocolReleaseIdentity` 读回都是：
+首轮三连的 24 份证据与真装置证据，`identity.protocolReleaseIdentity` 读回都是（⑦ 的现行证据见上一小节，是已发布身份）：
 
 | 项 | 值 |
 | --- | --- |
@@ -140,8 +148,9 @@ run 号、证据目录与结果在取回证据后补在这里。
 | approvalStatus | `SUPERSEDING_CANDIDATE` |
 
 票面预期的是两种情况之一：批次 4 先于批次 5 出口则绑 `protocol-v1.0.0`，否则绑已发布的 `v2.0.0`。**实际是第三种**：集成分支 `fp/v2-impl`
-已经带着批次 5 的 `v2.0.0` 候选（PR #107、#109），但 `v2.0.0` 还没有发布。所以本批次证据绑的是**未发布的候选身份**。
-批次 5 发布 `protocol-v2.0.0` 之后，由批次5-36（[control-server#90](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/90)）在发布身份上随全部场景重跑
+已经带着批次 5 的 `v2.0.0` 候选（PR #107、#109），但首轮三连时 `v2.0.0` 还没有发布，所以 ⑦ 以外七个场景的证据绑的是**未发布的候选身份**。
+之后 `protocol-v2.0.0` 发布，服务端改绑已发布身份（PR #125）；本分支合入顶端后重跑的 ⑦ 读回 `APPROVED_RELEASE`，manifest 与 commit 不变。
+其余七个场景的入库证据不改写，由批次5-36（[control-server#90](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/90)）在发布身份上随全部场景重跑
 （规格第 16 节第 12 条），这是计划内的重跑，**不是重开批次 4**。「v2 线」不等于 `protocol-v2.0.0`（规格 8.8 第 5 条）。
 
 ### 真装置 L2
