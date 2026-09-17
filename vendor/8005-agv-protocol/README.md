@@ -37,7 +37,7 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | 项 | 值 |
 | --- | --- |
 | 来源仓库 | `8005-agv-protocol` |
-| 来源提交 | `86575456c847041515b7b75e8851a00e0d939804`（分支 `fp/v2-candidate`） |
+| 来源提交 | `86575456c847041515b7b75e8851a00e0d939804`（tag `protocol-v2.0.0`） |
 | 取用日期 | 2026-09-16 |
 
 | 来源路径 | 内容 |
@@ -46,9 +46,12 @@ manifest 里的 `schemaBundleSha256`**——后者由协议仓自己的打包算
 | `manifest/release.json` | `status CONTENT_SNAPSHOT`、`releaseVersion 2.0.0`、`protocolVersion 3`、`profileId AGV_FULL_PRODUCT`、63 条消息、11 条 denylist、1785 条文件表项 |
 | `schemas/`（整棵树） | 69 个文件，`$id` 段 `agv-full-product/v3` |
 
-那个提交即协议 `2.0.0` 候选（未发布，`ApprovalStatus SUPERSEDING_CANDIDATE`），由 `8005-agv-program#96` 于 2026-09-16
-冻结，G1 在协议仓 PR 的 CI 上与合并顶端的干净克隆上各通过一次。三份文件从该提交的对象里导出（不经协议仓工作树），
-逐个与候选 manifest 自带的文件表 SHA-256 核对一致后整份拷入。发布后改绑 `protocol-v2.0.0` 是 `8005-agv-control-server#89`。
+那个提交即协议 `protocol-v2.0.0` 的发布内容（`ApprovalStatus APPROVED_RELEASE`）：`8005-agv-program#96` 于
+2026-09-16 把它冻结为 `2.0.0` 候选并在其上通过 G1（协议仓 PR 的 CI 与合并顶端的干净克隆各一次），
+`8005-agv-program#97` 同日用注释 tag `protocol-v2.0.0` 发布**同一个提交**——manifest 未变，批准只以外置
+attestation（Release asset `release-approval.json`）给出。三份文件从该提交的对象里导出（不经协议仓工作树），
+逐个与 manifest 自带的文件表 SHA-256 核对一致后整份拷入；发布后服务端没有重新 vendor，因为副本与发布提交
+逐字节相同（`8005-agv-control-server#89` 已逐个核对）。
 
 ## 上游改了以后怎么刷新
 

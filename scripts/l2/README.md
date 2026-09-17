@@ -34,7 +34,9 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `slot-configuration-activation-replay` | 合成 | **批次 3 出口（`FP-IS-14`）**：激活「下发 → 断线 → 重连 → 补报」——断线期间服务端不猜，补发同一行，只收敛一次；顺带经 `FieldOps export-audit` 导出这次激活的业务审计（REQ-0271） | 待 CI 三连跑 |
 | `onboard-alarm-snapshot-dashboard` | 合成 | **批次 3 出口（`FP-IS-15`）**：车载告警快照「车载产快照 → 服务端消费 → 看板可见」，断言读看板进程渲染出的页面；看板显示全部告警（REQ-0270）、整体取代、失联直述、重连采纳 | 待 CI 三连跑 |
 | `station-deadline-sublot-timeout` | 合成 | **批次 5（control-server#79，ADR-cross-0055、ADR-cross-0058 决策 7）**：到站起算站点期限，没人扫码到期服务端自己结束本站（需求 `Cancelled`、`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、录入请求结算、同一 `DemandId` 不再被派）；期限走到一半断联重连，从会话回到 Ready 那一刻重新计满 | 本地 PASS（证据未入库），三连在批次 5 出口 |
-| `blocked-journey-dashboard-projection` | 合成 | **批次 5（control-server#80，program#55）**：旅程阻断带开始时间上看板——读只读端点 `/api/dashboard/blocked-journeys`：检查点等待挂上即列出、清掉即消失；会话未就绪带会话的三个安全字段、安全证据不全直接最高档，引擎每轮重写这一行而开始时间不动，看板按档上色；装货结果需要恢复停摆后开始时间不变。`STATION_TIMEOUT_DOOR_NOT_CLOSED` 那一段由 control-server#81 补 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `load-cancelled-before-sublot` | 合成 | **批次 5（control-server#83，ADR-cross-0046 第一种情形）**：到站没人扫码，操作员取消——授权 `slots` 为空，车报 `ALL_EMPTY` 空结果被确认之后服务端才终结（需求 `Cancelled`、`CANCELLED_BY_OPERATOR`、租约与占用释放、录入请求结算、没有仓位命令）；再加到站前断联重连、到站后在新连接上取消（control-server#40 那一格），之后再重连一次录入请求不被重放 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `load-determinate-failure-and-door-open-timeout` | 合成 | **批次 5（control-server#81，ADR-cross-0058 决策 4、5）**：装货中期限。期限后报确定失败（`FAILED`＋首仓 `OPERATOR_TIMEOUT`、其余 `NOT_STARTED`，全部 `EMPTY`／`LOCKED`／`RESET`）→ 操作 `Failed`、需求 `Cancelled`／`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、装货命令结算、无恢复，同一台车接下一单——**防御路径，v2 车载端不产出**；期限后不报结果、仓门未闭 → 挂 `STATION_TIMEOUT_DOOR_NOT_CLOSED`、stage 仍 `AwaitingLoadResult`、开始时间不动，关门撤销，再报 `COMPLETED` 提交 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `blocked-journey-dashboard-projection` | 合成 | **批次 5（control-server#80，program#55）**：旅程阻断带开始时间上看板——读只读端点 `/api/dashboard/blocked-journeys`：检查点等待挂上即列出、清掉即消失；会话未就绪带会话的三个安全字段、安全证据不全直接最高档，引擎每轮重写这一行而开始时间不动，看板按档上色；装货结果需要恢复停摆后开始时间不变；装货中期限过了门还开着（`STATION_TIMEOUT_DOOR_NOT_CLOSED`，control-server#81 补）列出 `AwaitingLoadResult`、门关上即消失 | 本地 PASS（证据未入库），三连在批次 5 出口 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -87,8 +89,11 @@ resume 是设计不是缺陷。
 
 ```powershell
 gh workflow run l2.yml --ref <分支> -f mode=consecutive                       # 按各行登记的 Runs
-gh workflow run l2.yml --ref <分支> -f mode=consecutive -f scenarios=a,b      # 只跑其中几条
+gh workflow run l2.yml --ref <分支> -f mode=consecutive-all -f scenarios=a,b  # 只跑其中几条，各三遍
 ```
+
+注意 `consecutive` 只按各行登记的 `Runs` 跑，登记 `Runs = 1` 的场景用它挑出来也只跑一遍；要挑几条各跑三遍，用
+`consecutive-all`。
 
 作业摘要里有一张表，列出每个场景实际跑到第几遍、结果如何，引用三连证据时贴那次 run 的链接。
 
@@ -102,6 +107,33 @@ gh workflow run l2.yml --ref <分支> -f mode=consecutive -f scenarios=a,b      
 就打一行 `L2 superseded` 说明后收尾，更新的那次推送有它自己的运行。这里**绝不取消作业**，手动取消与
 `cancel-in-progress` 都会让 runner 会话卡死（2026-09-03 空转 4 小时 14 分）。查询失败时照常跑完，不猜；
 手动触发的运行从不因此跳过。
+
+### 一张票只跑一轮 CI（2026-09-17 起）
+
+一张服务端票原来平均跑 3～4 轮 CI：开 PR 首跑、改审查意见后、带入顶端后，再加一次手动三连。现在的目标是一轮，
+三连也并进这一轮：
+
+1. **工作会话开 PR 一律开草稿**：`gh pr create --draft`。草稿 PR 上 `test` 与 `l2` 两个工作流都显示「跳过」，
+   是 GitHub 在分配 runner 之前按 job 级 `if` 判掉的，不占 runner，也不是取消。草稿期间推多少次都不跑。
+2. 本地全量测试与票里要求的 L2 场景跑完、调度的审查意见改完、带入集成分支顶端之后，**时序敏感的票在 PR 正文里
+   加一行**（行首写，大小写与空格随意，逗号或空格分隔）：
+
+   <pre>L2-Consecutive: three-vehicle-exit, emergency-stop-single-trigger</pre>
+
+   列出的场景这一轮各跑三遍，其余照默认（每场景一遍，`DefaultRuns` 的例外不变）。**写了清单里没有的名字，这一轮
+   直接失败**并说出是哪个名字，免得拼错之后三遍悄悄变成一遍。只写 `L2-Consecutive:` 不跟名字也算错。
+   时序敏感指：动到引擎推进、连接会话、恢复协调、急停，或改动任一 `Runs = 3` 场景。
+3. **`gh pr ready` 转正式，触发唯一的一轮。** 作业摘要表的 `Consecutive` 列标出哪些场景是按 `L2-Consecutive`
+   跑的、各自 n/3 的结果，引用三连证据就贴这次 run。
+4. 调度会话合并前核对这一轮：L1、L2 都绿，该三连的场景在表里是 3/3。
+
+几条要知道的：
+
+- 工作流只读**触发那一刻**的 PR 正文，改正文不会触发新一轮（刻意没有监听 `edited`）。所以先改正文，再 `gh pr ready`
+  或推送。
+- 正文里任何以 `L2-Consecutive:` 开头的行都算数，包括代码块里的示例行；PR 正文里要举例时别把它写在行首。
+- 转正式之后再推送照常每次都跑（`synchronize`），PR 头已换的旧运行照样自己跳过。已经不是草稿的 PR 不受这套流程影响。
+- `workflow_dispatch` 的 `consecutive`、`consecutive-all` 不变，不读 PR 正文。
 
 **真装置那三条刻意不进 CI，两个各自独立的原因：**
 

@@ -207,8 +207,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// The report is the vehicle's view at its handshake. Nothing changed it afterwards, so a session
     /// whose attempt a resume had just committed still read PENDING_FACT_RECONCILIATION_REQUIRED until
     /// the vehicle reconnected, and the journey waited on ONBOARD_SESSION_NOT_READY over a committed
-    /// load (G3 FP-IS-07 resume-007, 2026-09-14). An attempt whose operation is still Prepared or
-    /// RecoveryRequired stays pending.
+    /// load (G3 FP-IS-07 resume-007, 2026-09-14). A determinate load failure (Failed) is as settled as a
+    /// commit: its result is known and nothing about the slots is uncertain. An attempt whose operation is
+    /// still Prepared or RecoveryRequired stays pending.
     /// </remarks>
     public async Task SettleReportedAttemptsAsync(
         string agvId, long sessionGeneration, CancellationToken cancellationToken)
@@ -225,7 +226,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     }
 
     /// <summary>
-    /// Takes off <paramref name="row"/> every reported attempt whose operation is committed or cancelled,
+    /// Takes off <paramref name="row"/> every reported attempt whose operation is committed, failed or cancelled,
     /// without saving: the caller saves. Returns whether anything was taken off.
     /// </summary>
     private async Task<bool> TryTakeOffSettledReportedAttemptsAsync(
@@ -240,6 +241,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         string[] settled = await dbContext.StationOperations
             .Where(operation => pending.Contains(operation.SlotOperationAttemptId) &&
                                 (operation.Status == StationOperationStatus.Committed ||
+                                 operation.Status == StationOperationStatus.Failed ||
                                  operation.Status == StationOperationStatus.Cancelled))
             .Select(operation => operation.SlotOperationAttemptId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -1612,11 +1614,17 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         return historicalOnly ? OperationResultDisposition.HistoricalOnly : OperationResultDisposition.Accepted;
     }
 
+    /// <param name="receipt">
+    /// When the result arrived and the station deadline that stood then. Without it no failure is
+    /// determinate (<see cref="DeterminateLoadFailure"/>): whether one may be settled turns on that
+    /// deadline, and a result judged without one goes to recovery as before.
+    /// </param>
     public async Task<OperationResultDisposition> ApplyOperationResultAsync(
         StationOperationResult result,
         string agvId,
         long forcedRecoveryGeneration,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        OperationResultReceipt? receipt = null)
     {
         ArgumentNullException.ThrowIfNull(result);
         int[] actualSlots = result.SlotEvidence.Select(item => item.SlotNumber).Distinct().Order().ToArray();
@@ -1725,6 +1733,22 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                                    item.State == expectedState && item.DoorLocked && item.UnlockOutputReset);
         if (!completedSafely)
         {
+            // ADR-cross-0058 decision 2 and 5: missing the target is not the same as not knowing what
+            // happened. A load that ran out its station deadline and came back with every slot's state
+            // known, door locked and unlock output reset is a complete account -- nobody handed the cargo
+            // over -- and sending it to manual recovery is exactly what ADR-cross-0040 forbids. Only that
+            // shape is lifted out; everything else still needs an administrator. Defensive: the v2
+            // onboard never reports it, the protocol lets another onboard version do so.
+            DeterminateLoadFailureVerdict verdict = DeterminateLoadFailure.Judge(result, expectedSlots, receipt);
+            if (verdict == DeterminateLoadFailureVerdict.Settleable)
+            {
+                // The demand stays Accepted: the runtime ends it, together with the vehicle's release.
+                operation.Status = StationOperationStatus.Failed;
+                operation.EvidenceJson = evidenceJson;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return OperationResultDisposition.DeterminateFailure;
+            }
+
             operation.Status = StationOperationStatus.RecoveryRequired;
             AcceptedDemandRow? blockedDemand = await dbContext.AcceptedDemands
                 .SingleOrDefaultAsync(row => row.DemandId == result.DemandId, cancellationToken)
@@ -1734,7 +1758,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 blockedDemand.Status = DemandExecutionStatus.RecoveryRequired;
             }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return OperationResultDisposition.RecoveryRequired;
+            return verdict switch
+            {
+                DeterminateLoadFailureVerdict.BeforeStationDeadline =>
+                    OperationResultDisposition.FailedBeforeStationDeadline,
+                DeterminateLoadFailureVerdict.ReasonWithoutTerminalState =>
+                    OperationResultDisposition.FailureReasonWithoutTerminalState,
+                _ => OperationResultDisposition.RecoveryRequired
+            };
         }
 
         operation.Status = StationOperationStatus.Committed;
@@ -2410,7 +2441,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// </summary>
     /// <remarks>
     /// The relaxation is deliberately narrow. It applies only while this server has an authorized
-    /// operation in flight, only when every reported reason is one that operation explains, and
+    /// operation in flight on this vehicle, only when every reported reason is one that operation explains, and
     /// never when any evidence was unknown. It changes session readiness alone -- departure itself
     /// is still authorized from a separate, freshness-bounded PreDepartureSafetyCheckResult in
     /// AuthorizeMovementAsync, which this does not touch.
@@ -2436,8 +2467,19 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             return false;
         }
+        // This vehicle's own operation, by the join operationNeedsRecovery takes in DecideReadinessAsync.
+        // The probe used to ask whether any operation anywhere was Prepared, so one vehicle mid-load
+        // handed every other vehicle an exemption it had not earned: an idle vehicle standing with a
+        // door ajar read Ready for as long as any vehicle in the fleet held a slot open.
         return await dbContext.StationOperations
-            .AnyAsync(item => item.Status == StationOperationStatus.Prepared, cancellationToken)
+            .Join(dbContext.JourneyRuntimes,
+                operation => operation.DemandId,
+                runtime => runtime.DemandId,
+                (operation, runtime) => new { operation, runtime })
+            .AnyAsync(
+                pair => pair.runtime.AgvId == row.AgvId &&
+                        pair.operation.Status == StationOperationStatus.Prepared,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 

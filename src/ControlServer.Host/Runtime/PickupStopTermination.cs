@@ -11,17 +11,19 @@ namespace ControlServer.Host.Runtime;
 /// <remarks>
 /// <para>
 /// <b>The tail every way of ending a pickup stop like this is meant to share.</b> The station
-/// departure deadline (ADR-cross-0055, ADR-cross-0058 decision 7) is the first caller. The
-/// cancellation before a sublot is entered (control-server#83) and the settlement of a determinate
-/// load failure (control-server#81) end the stop the same way and differ only in why, so they reuse
-/// this rather than release the vehicle three slightly different ways.
+/// departure deadline (ADR-cross-0055, ADR-cross-0058 decision 7) was the first caller. The
+/// cancellation before a sublot is entered (ADR-cross-0046, control-server#83) is the second: its
+/// ALL_EMPTY result ends the stop through here as <c>CANCELLED_BY_OPERATOR</c>. The settlement of a
+/// determinate load failure (control-server#81) ends the stop the same way and differs only in why, so
+/// it reuses this rather than release the vehicle a third slightly different way.
 /// </para>
 /// <para>
 /// <b>It is not the only such code today.</b> <c>OnboardRecoveryCoordinator.ApplyCurrentResultAsync</c>
-/// terminates a demand through the five-step recovery handshake and writes nearly the same facts by
-/// hand, minus the vehicle occupancy. That path settles a commanded slot operation, which this one
-/// deliberately knows nothing about; converging the two belongs to control-server#81 and #83, which
-/// touch that method for their own reasons.
+/// still terminates a demand whose slot operation was commanded -- a cancellation in flight, a
+/// compensation, a fault cargo handoff -- by writing nearly the same facts by hand, minus the vehicle
+/// occupancy. That path settles a commanded slot operation, which this one deliberately knows nothing
+/// about; control-server#83 moved only the uncommanded cancellation over, and converging the rest
+/// belongs to control-server#81.
 /// </para>
 /// <para>
 /// <b>It stages the changes and does not save.</b> Every fact here has to commit together with the

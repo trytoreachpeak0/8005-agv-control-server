@@ -4,11 +4,13 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Tests;
 
@@ -17,7 +19,6 @@ public sealed class RecoveryStateMachineG2Tests
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly int[] RecoverySlots = [1, 2];
     private static readonly string[] UnknownReasonCodes = ["PHYSICAL_STATE_UNKNOWN"];
-    private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
     private static readonly string[] ExpectedRecoveryCommandReplay =
         ["LoadCorrectionCommand", "FaultCargoRecoveryCommand", "LoadCorrectionCommand"];
     private static readonly string[] ExpectedResumeSends =
@@ -481,7 +482,7 @@ public sealed class RecoveryStateMachineG2Tests
             Envelope(
                 "e0000000-0000-4000-8000-000000000030",
                 "OperationResult",
-                OperationResultPayload(completed: false, journalCheckpoint: "OPERATOR_TIMEOUT")),
+                OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")),
             state,
             TestContext.Current.CancellationToken);
         await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
@@ -512,10 +513,99 @@ public sealed class RecoveryStateMachineG2Tests
             Envelope(
                 "e0000000-0000-4000-8000-000000000030",
                 "OperationResult",
-                OperationResultPayload(completed: false, journalCheckpoint: "OPERATOR_TIMEOUT")),
+                OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")),
             state,
             TestContext.Current.CancellationToken);
         Assert.Equal(response, replay);
+    }
+
+    /// <summary>
+    /// ADR-cross-0058 decision 5, on the wire: a load that ran out its station deadline and came back FAILED
+    /// with every slot empty, locked and reset -- the failed slot under <c>OPERATOR_TIMEOUT</c>, the other
+    /// never started -- is a complete account. The operation is Failed, the demand is left for the runtime to
+    /// end, and the vehicle is not told its session needs recovery: the result is acknowledged on one line.
+    /// Until control-server#81 this same result was judged RecoveryRequired, which with
+    /// <c>recoveryResumeEnabled=false</c> left the vehicle with no way out. Defensive: the v2 onboard does not
+    /// produce it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task ADeterminateLoadFailureAfterTheStationDeadlineAsksNoRecovery()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, waitStartedAt: Now.AddMinutes(-6));
+        OnboardMessageProcessor processor = DeadlineAwareProcessor(context, new RecordingLogger<OnboardMessageProcessor>());
+        OnboardConnectionState state = CurrentState();
+        state.Readiness = SessionReadiness.Ready;
+
+        string response = await processor.ProcessAsync(
+            Envelope("e0000000-0000-4000-8000-000000000031", "OperationResult", DeterminateLoadFailurePayload()),
+            state,
+            token);
+
+        Assert.Equal("DurableAck", MessageType(Assert.Single(response.Split('\n', StringSplitOptions.RemoveEmptyEntries))));
+        Assert.Equal(SessionReadiness.Ready, state.Readiness);
+        StationOperationRow operation = await context.StationOperations.AsNoTracking().SingleAsync(token);
+        Assert.Equal(StationOperationStatus.Failed, operation.Status);
+        Assert.NotNull(operation.EvidenceJson);
+        Assert.Equal(DemandExecutionStatus.Accepted, (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
+        Assert.Empty(await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+        Assert.Equal(
+            SessionReadiness.Ready,
+            (await context.SessionRecoveries.AsNoTracking().SingleAsync(token)).Readiness);
+    }
+
+    /// <summary>
+    /// The same complete-looking FAILED, where the server cannot explain it: it arrived before the station
+    /// deadline, which a determinate failure only ever follows, or its failed slot names a reason the
+    /// protocol gives no terminal state (only <c>OPERATOR_TIMEOUT</c> may sit on an OperationResult). Neither
+    /// is accepted silently: the operation and demand go to recovery, the vehicle is told, and the server logs
+    /// why under a reason code.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData(-1, "OPERATOR_TIMEOUT", "LOAD_FAILED_BEFORE_STATION_DEADLINE")]
+    [InlineData(-6, "ACTION_NOT_ALLOWED_IN_STATE", "LOAD_FAILURE_REASON_WITHOUT_TERMINAL_STATE")]
+    public async Task ADeterminateLookingFailureTheServerCannotExplainGoesToRecoveryUnderItsReasonCode(
+        int waitStartedMinutesAgo,
+        string failedSlotReasonCode,
+        string expectedReasonCode)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedLoadAwaitingResultAsync(context, waitStartedAt: Now.AddMinutes(waitStartedMinutesAgo));
+        RecordingLogger<OnboardMessageProcessor> log = new();
+        OnboardMessageProcessor processor = DeadlineAwareProcessor(context, log);
+        OnboardConnectionState state = CurrentState();
+        state.Readiness = SessionReadiness.Ready;
+
+        string response = await processor.ProcessAsync(
+            Envelope(
+                "e0000000-0000-4000-8000-000000000032",
+                "OperationResult",
+                DeterminateLoadFailurePayload(failedSlotReasonCode)),
+            state,
+            token);
+
+        string[] lines = response.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(["DurableAck", "SessionReadiness"], lines.Select(MessageType));
+        Assert.Equal(SessionReadiness.RecoveryRequired, state.Readiness);
+        Assert.Equal(
+            StationOperationStatus.RecoveryRequired,
+            (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.RecoveryRequired,
+            (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status);
+        (LogLevel level, string message) = Assert.Single(log.Entries, entry => entry.Message.Contains(expectedReasonCode));
+        Assert.Equal(LogLevel.Warning, level);
+        Assert.Contains(AttemptId, message);
     }
 
     [Fact]
@@ -1623,6 +1713,7 @@ public sealed class RecoveryStateMachineG2Tests
     [Trait("IntegrationSlice", "FP-IS-07")]
     [InlineData(StationOperationStatus.Committed, "READY")]
     [InlineData(StationOperationStatus.Cancelled, "READY")]
+    [InlineData(StationOperationStatus.Failed, "READY")]
     [InlineData(StationOperationStatus.Prepared, "RECOVERY_REQUIRED")]
     public async Task AReportNamingAnAttemptTheServerAlreadySettledNeedsNoFurtherResult(
         StationOperationStatus status,
@@ -1665,10 +1756,51 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// A cancellation that names an attempt is judged against the vehicle that sent it too
+    /// (control-server#116 review, item 3): another vehicle naming this demand and its load is refused and
+    /// records nothing, while the vehicle running the journey is authorized.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ALoadCancellationNamingAnAttemptIsRefusedFromAnotherVehicle()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCancellableLoadAsync(context);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState other = CurrentState();
+        other.AgvId = "AGV-SOMEONE-ELSE";
+        JsonNode foreign = JsonNode.Parse(CancellationRequest("b3000000-0000-4000-8000-000000000001"))!;
+        foreign["agvId"] = other.AgvId;
+
+        string refused = await processor.ProcessAsync(foreign.ToJsonString(), other, token);
+        string authorized = await processor.ProcessAsync(
+            CancellationRequest("b3000000-0000-4000-8000-000000000002").Replace(
+                "b1000000-0000-4000-8000-000000000010", "b3000000-0000-4000-8000-000000000010", StringComparison.Ordinal),
+            CurrentState(),
+            token);
+
+        using (JsonDocument document = JsonDocument.Parse(refused))
+        {
+            Assert.Equal("REJECTED", document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
+        }
+        using (JsonDocument document = JsonDocument.Parse(authorized))
+        {
+            Assert.Equal("AUTHORIZED", document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
+        }
+        RecoveryWorkflowRow workflow = await context.RecoveryWorkflows.SingleAsync(token);
+        Assert.Equal("b3000000-0000-4000-8000-000000000002", workflow.WorkflowId);
+    }
+
+    /// <summary>
     /// Protocol 2.0.0 item 3: <c>LoadCancellationResult.slotResults</c> may be empty, which is what a
-    /// cancellation before anything was loaded reports. Inbound parsing must take it; what the
-    /// server then decides is 8005-agv-control-server#83, so this asserts only that it is received,
-    /// recorded and acknowledged rather than thrown on.
+    /// cancellation before anything was loaded reports. Inbound parsing must take it, whatever was
+    /// authorized: here the cancellation named an attempt with two slots, so the empty result is received,
+    /// recorded and acknowledged rather than thrown on. What an empty result settles when the
+    /// authorization named no slot is JourneyRuntimeWorkerTests' CV-LOAD-CANCELLATION-BEFORE-LOAD test
+    /// (8005-agv-control-server#83).
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
@@ -1776,7 +1908,7 @@ public sealed class RecoveryStateMachineG2Tests
             Envelope(
                 "e0000000-0000-4000-8000-000000000010",
                 "OperationResult",
-                OperationResultPayload(completed: false, journalCheckpoint: "OPERATOR_TIMEOUT")),
+                OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")),
             state,
             TestContext.Current.CancellationToken);
         await processor.FlushDeferredOutboundAsync(state, TestContext.Current.CancellationToken);
@@ -1886,6 +2018,36 @@ public sealed class RecoveryStateMachineG2Tests
         });
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
+
+    /// <summary>
+    /// The seeded journey before its load has any result: the operation Prepared, the demand Accepted, the
+    /// journey in AwaitingLoadResult with its station departure wait started at <paramref name="waitStartedAt"/>
+    /// (a five-minute wait under <see cref="DeadlineAwareProcessor"/>), and a Ready session.
+    /// </summary>
+    private static async Task SeedLoadAwaitingResultAsync(ControlServerDbContext context, DateTimeOffset waitStartedAt)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+        (await context.StationOperations.SingleAsync(token)).Status = StationOperationStatus.Prepared;
+        (await context.AcceptedDemands.SingleAsync(token)).Status = DemandExecutionStatus.Accepted;
+        JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
+        runtime.Stage = JourneyRuntimeStage.AwaitingLoadResult;
+        runtime.SetBlockReason(null, Now);
+        runtime.StationDepartureWaitStartedAt = waitStartedAt;
+        await context.SaveChangesAsync(token);
+    }
+
+    private static OnboardMessageProcessor DeadlineAwareProcessor(
+        ControlServerDbContext context,
+        RecordingLogger<OnboardMessageProcessor> log) =>
+        TestOnboardProcessorFactory.Create(
+            context,
+            new WireToGateStore(context),
+            new FixedTimeProvider(Now),
+            Configuration(CancellationProofVariable),
+            new RecordingPeer(context),
+            new JourneyRuntimeOptions { StationDepartureWaitTimeout = TimeSpan.FromMinutes(5) },
+            log);
 
     private static OrderIntentRow Intent(string legId, string upperId, string purpose, int station) => new()
     {
@@ -2207,6 +2369,13 @@ public sealed class RecoveryStateMachineG2Tests
         reasonCodes = Array.Empty<string>()
     };
 
+    /// <remarks>
+    /// <paramref name="completed"/> false is a result whose slots the vehicle cannot vouch for: occupancy
+    /// UNKNOWN. Until control-server#81 it was FAILED over EMPTY, LOCKED and RESET, which is now the shape of
+    /// a determinate failure (ADR-cross-0058 decision 5) and stays out of recovery once the station deadline
+    /// has passed -- so the tests about a result that needs recovery carry one that needs it whatever the
+    /// clock says. The determinate shape is <see cref="DeterminateLoadFailurePayload"/>.
+    /// </remarks>
     private static object OperationResultPayload(
         bool completed = true,
         int[]? slots = null,
@@ -2215,18 +2384,55 @@ public sealed class RecoveryStateMachineG2Tests
         object[] slotResults = (slots ?? RecoverySlots).Select(slot => (object)new
         {
             slotNo = slot,
-            outcome = completed ? "COMPLETED" : "FAILED",
-            finalPhysicalState = completed ? "OCCUPIED" : "EMPTY",
+            outcome = completed ? "COMPLETED" : "UNKNOWN",
+            finalPhysicalState = completed ? "OCCUPIED" : "UNKNOWN",
             lockState = "LOCKED",
             unlockOutputState = "RESET",
-            reasonCodes = completed ? Array.Empty<string>() : FailedSlotReasonCodes
+            reasonCodes = completed ? Array.Empty<string>() : UnknownReasonCodes
         }).ToArray();
+        return OperationResultPayload(completed ? "COMPLETED" : "UNKNOWN", slotResults, journalCheckpoint);
+    }
+
+    /// <summary>
+    /// ADR-cross-0058 decision 5's result: slot 1 failed under <c>OPERATOR_TIMEOUT</c>, slot 2 was never
+    /// started, and both are empty, locked and reset.
+    /// </summary>
+    private static object DeterminateLoadFailurePayload(string failedSlotReasonCode = "OPERATOR_TIMEOUT") =>
+        OperationResultPayload(
+            "FAILED",
+            [
+                new
+                {
+                    slotNo = 1,
+                    outcome = "FAILED",
+                    finalPhysicalState = "EMPTY",
+                    lockState = "LOCKED",
+                    unlockOutputState = "RESET",
+                    reasonCodes = new[] { failedSlotReasonCode }
+                },
+                new
+                {
+                    slotNo = 2,
+                    outcome = "NOT_STARTED",
+                    finalPhysicalState = "EMPTY",
+                    lockState = "LOCKED",
+                    unlockOutputState = "RESET",
+                    reasonCodes = Array.Empty<string>()
+                }
+            ],
+            "OPERATOR_TIMEOUT_RECORDED");
+
+    private static object OperationResultPayload(
+        string overallOutcome,
+        object[] slotResults,
+        string journalCheckpoint)
+    {
         var withoutHash = new
         {
             demandId = DemandId,
             slotOperationAttemptId = AttemptId,
             operationType = "LOAD",
-            overallOutcome = completed ? "COMPLETED" : "FAILED",
+            overallOutcome,
             slotResults,
             observedAt = Now.AddSeconds(1),
             journalCheckpoint
