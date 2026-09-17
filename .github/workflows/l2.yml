@@ -152,6 +152,9 @@ jobs:
               # Batch 5 (control-server#79): the station departure deadline. In CI from its own ticket so
               # a batch-4 PR catches a regression before it merges; the batch-5 exit makes it three runs.
               @{ Name = 'station-deadline-sublot-timeout'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 5 (control-server#83): the cancellation before a sublot entry, waiting for the ALL_EMPTY
+              # result before ending the stop. Same reason as the line above; the batch-5 exit makes it three runs.
+              @{ Name = 'load-cancelled-before-sublot'; Runs = 1; BatchId = 'batch-5' }
               # Batch 5 (control-server#80): blocked journeys with their start time on the dashboard. In CI from its own
               # ticket for the same reason; the batch-5 exit (control-server#90) makes it three runs.
               @{ Name = 'blocked-journey-dashboard-projection'; Runs = 1; BatchId = 'batch-5' }

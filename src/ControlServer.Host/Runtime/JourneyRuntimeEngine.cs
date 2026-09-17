@@ -6,6 +6,8 @@ using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
@@ -603,6 +605,29 @@ public sealed class JourneyRuntimeEngine(
                 runtime.StationDepartureWaitStartedAt ??= now;
                 ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, session, cancellationToken)
                     .ConfigureAwait(false);
+                // An operator cancelling before any entry (ADR-cross-0046; control-server#83) holds the stop
+                // until the vehicle reports: no load starts and the deadline does not end it. Read after the
+                // inbox, so an entry seen here cannot have been persisted before the cancellation it loses to.
+                if (await LoadCancellationBeforeSublot.HasOpenCancellationAsync(
+                        dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false))
+                {
+                    // What the entry read concluded does not stand while the cancellation decides the stop, so this
+                    // iteration's unsaved change to the block is undone -- code and start time both, back to what the
+                    // row holds in the store. This is only for undoing an unsaved change: every new block is written
+                    // through SetBlockReason, and writing the old code back through it here would restart a block
+                    // that never ended.
+                    EntityEntry<JourneyRuntimeRow> tracked = dbContext.Entry(runtime);
+                    tracked.Property(row => row.BlockReasonCode).CurrentValue =
+                        tracked.Property(row => row.BlockReasonCode).OriginalValue;
+                    tracked.Property(row => row.BlockReasonSince).CurrentValue =
+                        tracked.Property(row => row.BlockReasonSince).OriginalValue;
+                    if (waitRefilled)
+                    {
+                        runtime.UpdatedAt = now;
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    return;
+                }
                 if (sublot is null)
                 {
                     if (await TryEndStopAtStationDeadlineAsync(runtime, session, now, cancellationToken)
@@ -1277,16 +1302,10 @@ public sealed class JourneyRuntimeEngine(
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            JsonElement payload = root.GetProperty("payload");
-            // Protocol 2.0.0 took demandId off SublotSubmitted: the server resolves the demand. With one
-            // demand per journey the operation session already names it; resolving by dispatch scope and
-            // refusing sublots outside it is 8005-agv-control-server#82.
-            bool matches = RequiredString(root, "agvId") == runtime.AgvId &&
-                           root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                           RequiredString(payload, "operationSessionId") == runtime.OperationSessionId &&
-                           RequiredString(payload, "stationId") == runtime.PickupStationId &&
-                           payload.GetProperty("worklistRevision").GetInt64() == runtime.WorklistRevision &&
-                           RequiredString(payload, "sublot") == demand.Sublot;
+            // One rule with the cancellation before a sublot, which refuses once such an entry is durable in
+            // any generation; the runtime itself acts only on an entry of the current one.
+            bool matches = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
+                           LoadCancellationBeforeSublot.IsEntryForStop(root, runtime, demand.Sublot);
             if (matches)
             {
                 if (!await store.IsTaskTypeAllowedAsync(
@@ -2190,10 +2209,34 @@ public sealed class JourneyRuntimeEngine(
             return false;
         }
 
+        // Decided again under the write lock (control-server#83). The operator's cancellation before a sublot
+        // is authorized on another connection's scope, and everything this iteration read about the stop was
+        // read without a lock: a cancellation authorized -- or authorized and already settled -- since then
+        // would otherwise lose its stop to this one, and its result would find a demand ended for a reason
+        // that is not the operator's. BeginTransaction on this store is BEGIN IMMEDIATE, so the reads below
+        // see every write committed before it, and the authorization, running inside the inbox's own write
+        // transaction, sees this one once it commits.
+        await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        JourneyRuntimeStage? stageNow = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.DemandId == runtime.DemandId)
+            .Select(row => (JourneyRuntimeStage?)row.Stage)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (stageNow != JourneyRuntimeStage.AwaitingSublot ||
+            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
         await new PickupStopTermination(dbContext)
             .StageAsync(runtime, StationTimeoutCancellationReason, now, cancellationToken).ConfigureAwait(false);
-        checkpointWaits.Clear(runtime.VehicleKey);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        checkpointWaits.Clear(runtime.VehicleKey);
         LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId, deadline, null);
         return true;
     }
