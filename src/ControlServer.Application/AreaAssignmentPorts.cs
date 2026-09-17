@@ -80,6 +80,31 @@ public sealed class DemandAreaAssignmentFreezeConflictException : InvalidOperati
 }
 
 /// <summary>
+/// 受理时分区归属表的当前版本已不是评估这条需求时用的版本：导入发生在评估与受理之间。受理整份不落，
+/// 由受理方按候选事实已变处理，下一轮按新版本重判（control-server#72）。
+/// </summary>
+/// <remarks>
+/// 不能照旧受理再冻结评估时的版本：选仓用的是那一版的开门侧，而现场此刻生效的是新版，装卸时可能按另一侧开门。
+/// </remarks>
+public sealed class AreaAssignmentVersionChangedException : InvalidOperationException
+{
+    public AreaAssignmentVersionChangedException(string message)
+        : base(message)
+    {
+    }
+
+    public AreaAssignmentVersionChangedException()
+        : base("The area assignment version changed between evaluating the demand and accepting it.")
+    {
+    }
+
+    public AreaAssignmentVersionChangedException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>
 /// 需求冻结指派版本（REQ-0350）。写在批次 3 的通用冻结表 <c>ConfigurationConsumerBindings</c> 里，一需求一行。
 /// </summary>
 public interface IDemandAreaAssignmentFreeze

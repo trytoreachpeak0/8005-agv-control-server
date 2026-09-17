@@ -7,6 +7,7 @@ using ControlServer.Infrastructure.Persistence;
 using ControlServer.Host.Transport;
 using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Dispatch;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -160,6 +161,9 @@ if (PackageCapacityImportCommand.IsRequested(args))
         args, app.Services, CancellationToken.None);
     return;
 }
+
+// control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。
+await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>

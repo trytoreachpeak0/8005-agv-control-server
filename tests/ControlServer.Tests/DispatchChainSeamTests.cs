@@ -141,8 +141,8 @@ public sealed class DispatchChainSeamTests
     /// <remarks>
     /// The journey row has no column for either field: #66 kept them off <c>JourneyRuntimes</c>, whose key
     /// batch 7 rewrites, and put the frozen version in <c>ConfigurationConsumerBindings</c>. That binding plus
-    /// the immutable table version is therefore the journey's durable record of both, and the freeze is
-    /// written here by hand because the call that writes it in the acceptance transaction is #72's.
+    /// the immutable table version is therefore the journey's durable record of both. Since #72 the acceptance
+    /// transaction writes the freeze itself; freezing again by hand afterwards is idempotent.
     /// </remarks>
     [Fact]
     public async Task AReplayCarryingTheFrozenVersionAndItsSlotGroupIsTheSameAcceptance()
@@ -186,12 +186,12 @@ public sealed class DispatchChainSeamTests
         await using AreaAssignmentPersistenceFixture fixture = await AreaAssignmentPersistenceFixture.CreateAsync();
         AreaAssignmentTableVersion first = await fixture.AreaAssignments.WriteVersionAsync(
             [new AreaAssignment("N1-1", "MAP-25-WIRE_TO_GATE", "FRONT")], Now, TestContext.Current.CancellationToken);
-        AreaAssignmentTableVersion second = await fixture.AreaAssignments.WriteVersionAsync(
-            [new AreaAssignment("N1-1", "MAP-25-WIRE_TO_GATE", "FRONT")], Now.AddMinutes(1), TestContext.Current.CancellationToken);
         WireToGateStore store = new(fixture.Context);
         JourneyExecutionPlan plan = Plan() with { AreaAssignmentVersion = first.Version, RequiredSlotPosition = "FRONT" };
         await store.AcceptWithOrderIntentAsync(Demand("N1-1"), PickupIntent(), plan, TestContext.Current.CancellationToken);
-        await fixture.Freezes.FreezeAsync(DemandId, first.Version, Now, TestContext.Current.CancellationToken);
+        // Imported after the acceptance: before it, the acceptance itself would have been refused.
+        AreaAssignmentTableVersion second = await fixture.AreaAssignments.WriteVersionAsync(
+            [new AreaAssignment("N1-1", "MAP-25-WIRE_TO_GATE", "FRONT")], Now.AddMinutes(1), TestContext.Current.CancellationToken);
 
         JourneyExecutionPlan[] different =
         [

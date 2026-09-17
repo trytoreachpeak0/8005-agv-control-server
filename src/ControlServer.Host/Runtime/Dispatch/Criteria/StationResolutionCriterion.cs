@@ -18,6 +18,12 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// criteria: they are properties of the route this criterion just built, and splitting them would
 /// mean a later criterion re-deriving what this one already knows.
 /// </para>
+/// <para>
+/// The route's dispatch zone is the one the area assignment table gives the demand's AREA (REQ-0191), not
+/// the single <c>JourneyRuntime:dispatchZone</c> this server is configured with — that one still names the
+/// zone a single-vehicle deployment serves, and nothing else. So two candidates of one round can fall in two
+/// zones, and <see cref="DispatchZoneVehicleCriterion"/> judges each against its own zone's vehicles.
+/// </para>
 /// </remarks>
 public sealed class StationResolutionCriterion(
     MapStationResolver stationResolver,
@@ -34,6 +40,13 @@ public sealed class StationResolutionCriterion(
         ArgumentNullException.ThrowIfNull(evaluation);
         _ = cancellationToken;
 
+        // AreaScopeCriterion has already refused an AREA the table does not name. Refusing it again here,
+        // under the same silent reason, keeps this criterion fail-closed when it is run on its own.
+        if (evaluation.AreaAssignment is not { } assignment)
+        {
+            return Task.FromResult(DispatchReasonCodes.OutOfScopeArea);
+        }
+
         try
         {
             RiotMapStation resolvedPickup = stationResolver.ResolveUniquePickup(
@@ -41,7 +54,7 @@ public sealed class StationResolutionCriterion(
                 evaluation.Candidate.LiveMesFields!.Area!);
 
             ResolvedJourneyRoute route = new(
-                _options.DispatchZone,
+                assignment.DispatchZone,
                 MapStationResolver.BuildRouteEvidenceId(
                     evaluation.Round.Map,
                     resolvedPickup,

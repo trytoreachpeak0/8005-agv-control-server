@@ -299,6 +299,61 @@ public sealed class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// A route's dispatch zone is the one the area assignment table gives its AREA, not the one zone the server
+    /// is configured with, and in one round each candidate is judged against its own zone's vehicles
+    /// (control-server#72).
+    /// </summary>
+    /// <remarks>
+    /// The first vehicle serves only zone A and the other two only zone B. Were the route zone still
+    /// <c>JourneyRuntime:dispatchZone</c> (zone A), the first vehicle would be admitted to every candidate and
+    /// the other two to none.
+    /// </remarks>
+    [Fact]
+    public async Task EachCandidateOfOneRoundIsRoutedIntoItsAssignedZoneAndJudgedAgainstThatZonesVehicles()
+    {
+        const string ZoneA = "MAP-25-ZONE-A";
+        const string ZoneB = "MAP-25-ZONE-B";
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(configure: options =>
+        {
+            options.DispatchZone = ZoneA;
+            options.AllowedDispatchZones = [ZoneA, ZoneB];
+            options.Fleet[0].Zones = [ZoneA];
+            options.Fleet[1].Zones = [ZoneB];
+            options.Fleet[2].Zones = [ZoneB];
+        });
+        await fixture.AreaAssignments.ImportAsync(
+            [
+                new("N1-1", ZoneA, "FRONT"),
+                new("N1-2", ZoneB, "FRONT"),
+                new("N1-3", ZoneB, "FRONT"),
+            ],
+            Now);
+
+        await fixture.RunRoundAsync();
+
+        Assert.Equal(3, fixture.AcceptedPlans.Count);
+        JourneyExecutionPlan zoneAPlan = Assert.Single(fixture.AcceptedPlans, plan => plan.PickupStationId == "N1-1");
+        Assert.Equal(ZoneA, zoneAPlan.DispatchZone);
+        Assert.Equal(FleetFixture.AgvIds[0], zoneAPlan.AgvId);
+        JourneyExecutionPlan[] zoneBPlans = [.. fixture.AcceptedPlans.Where(plan => plan.PickupStationId != "N1-1")];
+        Assert.All(zoneBPlans, plan => Assert.Equal(ZoneB, plan.DispatchZone));
+        Assert.Equal(
+            FleetFixture.AgvIds[1..].Order(StringComparer.Ordinal).ToArray(),
+            zoneBPlans.Select(plan => plan.AgvId).Order(StringComparer.Ordinal).ToArray());
+
+        DispatchVehicleOutcome first = Assert.Single(
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles,
+            vehicle => vehicle.AgvId == FleetFixture.AgvIds[0]);
+        Assert.All(
+            first.Verdicts.Where(verdict => verdict.Evaluation.Candidate.LiveMesFields!.Area != "N1-1"),
+            verdict =>
+            {
+                Assert.Equal(ZoneB, verdict.Evaluation.Route!.DispatchZone);
+                Assert.Equal(DispatchZoneVehicleCriterion.VehicleNotInZoneReason, verdict.ReasonCode);
+            });
+    }
+
+    /// <summary>
     /// Once the round has served every vehicle, the round-end hook is called once with every vehicle's
     /// verdict on every candidate — the refusals included, since those are what a structural judgement reads.
     /// </summary>

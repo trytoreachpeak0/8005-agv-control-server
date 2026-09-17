@@ -39,4 +39,28 @@ public static class DispatchReasonCodes
     /// The area assignment table the round read gives this demand's AREA no slot group.
     /// </summary>
     public const string AreaSlotGroupNotAssigned = "AREA_SLOT_GROUP_NOT_ASSIGNED";
+
+    /// <summary>
+    /// <b>Silent.</b> The area assignment table the round read does not name this demand's AREA, so this
+    /// server does not execute it (REQ-0191). The table is the only execution whitelist; there is no prefix
+    /// rule behind it.
+    /// </summary>
+    /// <remarks>
+    /// Not a fault and not an alarm: eutectic and low-temperature eutectic AREAs, among others, are kept out of
+    /// execution precisely by leaving them unmapped, and they stay in the plant-wide projection. So the demand
+    /// is only written to <c>JourneyBacklog</c>, never raised as a structural dispatch block, and never logged
+    /// at Warning or above. Listed in <see cref="Silent"/>, which is what the structural classification
+    /// (control-server#74) excludes.
+    /// </remarks>
+    public const string OutOfScopeArea = "OUT_OF_SCOPE_AREA";
+
+    /// <summary>
+    /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
+    /// else — no structural dispatch block, no alarm, no log at Warning or above.
+    /// </summary>
+    public static IReadOnlySet<string> Silent { get; } =
+        new HashSet<string>(StringComparer.Ordinal) { OutOfScopeArea };
+
+    /// <summary>Whether <paramref name="reasonCode"/> is one of <see cref="Silent"/>.</summary>
+    public static bool IsSilent(string reasonCode) => Silent.Contains(reasonCode);
 }

@@ -215,10 +215,10 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   **脚本里不写 1～4／5～8**，那是今天这一版已批准模型的性质，不是车的性质。
 - `Get-L2AvailableSlots -Connection -AgvId` —— 服务端就这台车当前会话算出的可用仓：读该会话代次的
   `CapabilitySnapshot` 与 `SafetyStateSnapshot`，规则同 `JourneyRuntimeEngine.SlotAvailable`。
-- `Assert-L2SlotGroupTargets -Assertions -Id -Connection -DemandId -SlotPosition [-AvailableSlots]` —— 断言需求
+- `Assert-L2SlotGroupTargets -Assertions -Id -Connection -DemandId -SlotPosition [-AvailableSlots] [-Description]` —— 断言需求
   旅程的 `TargetSlotsJson` 全部属于指定分组、严格升序，且恰好是该组内编号最小的 N 个可用仓。判定本体是不碰库的
-  `Test-L2SlotGroupTargets`；`scripts/l2/Test-L2SlotGroups.ps1` 用一份刻意不是 1～4／5～8 的构造模型给出一个通过、
-  七个各因一种原因失败的例子（几秒钟，不起装置）。
+  `Test-L2SlotGroupTargets`；`scripts/l2/Test-L2SlotGroups.ps1` 用一份刻意不是 1～4／5～8 的构造模型给出两个通过、
+  七个各因一种原因失败的例子，并在模块内替换掉两处读库，核对不传与传 `-Description` 时证据行的判据文本（几秒钟，不起装置）。
 - `Get-L2StructuralDispatchBlock -Connection -DemandId [-IncludeCleared]`、`Get-L2JourneyBacklogRow -Connection -DemandId`
   —— 读某需求在 `StructuralDispatchBlocks` 的当前行（默认只要未清除的）与 `JourneyBacklog` 的那一行。
 

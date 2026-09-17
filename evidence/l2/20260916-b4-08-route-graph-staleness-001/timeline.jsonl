@@ -1,0 +1,40 @@
+{"at":"2026-09-16T13:54:56.1731056+00:00","note":"L2 run 20260916T135456115Z starting for scenario 'route-graph-staleness'."}
+{"at":"2026-09-16T13:54:56.2369882+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T13:54:56.2399593+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T13:55:00.3285764+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T13:55:00.7297253+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T13:55:00.8631995+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-16T13:55:03.6116557+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T13:55:05.7710911+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T13:55:05.9778510+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-09-16T13:55:06.6924712+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-16T13:55:06.9712890+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T13:55:07.0850016+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T13:55:07.1531059+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135456115Z\\controlserver.db"}
+{"at":"2026-09-16T13:55:09.8532851+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"167d144df7d74e579df79de7da9bdab7","version":1,"slotCount":8}}}
+{"at":"2026-09-16T13:55:09.8744124+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135456115Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-16T13:55:12.7927780+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"167d144df7d74e579df79de7da9bdab7","boundSlots":8,"version":1}}}
+{"at":"2026-09-16T13:55:13.0808664+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-16T13:55:13.1151626+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135456115Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-route-graph-staleness-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-16T13:55:16.5836454+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-route-graph-staleness-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"09b862de1abe443eaa9c63165437f4af","importedAt":"2026-09-16T21:55:13.7178974+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-16T13:55:16.6376514+00:00","note":"Environment is up; entering scenario 'route-graph-staleness'."}
+{"at":"2026-09-16T13:55:17.5208726+00:00","criterion":"route-graph-baseline","value":"ready"}
+{"at":"2026-09-16T13:55:17.6990118+00:00","note":"Slowing the fake RIoT so one refresh outlives the runtime budget."}
+{"at":"2026-09-16T13:55:18.2997723+00:00","criterion":"stale-reason","value":""}
+{"at":"2026-09-16T13:55:34.5957864+00:00","criterion":"stale-reason","value":"ROUTE_GRAPH_RUNTIME_STATE_EXPIRED"}
+{"at":"2026-09-16T13:55:34.6003379+00:00","note":"Publishing demand 9b4a4a1dece941a38d9f0b6fb48ea9bd against a stale graph."}
+{"at":"2026-09-16T13:55:34.6728681+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-16T13:55:38.6092631+00:00","criterion":"backlog-reason","value":"ROUTE_GRAPH_RUNTIME_STATE_EXPIRED"}
+{"at":"2026-09-16T13:55:38.6135157+00:00","note":"RIoT starts reporting a dynamic route cost."}
+{"at":"2026-09-16T13:55:46.7964149+00:00","criterion":"stale-reason","value":"ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED"}
+{"at":"2026-09-16T13:55:46.7986765+00:00","note":"Removing the delay; the dynamic-cost block is not the kind that waiting fixes."}
+{"at":"2026-09-16T13:55:46.8393899+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-16T13:55:48.9435587+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-16T13:55:49.4713053+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-09-16T13:55:50.2509585+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-09-16T13:55:50.2554078+00:00","criterion":"backlog-reason","value":"ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED"}
+{"at":"2026-09-16T13:55:50.2694470+00:00","note":"An edge group appears on the Map under the graph."}
+{"at":"2026-09-16T13:55:51.3624916+00:00","criterion":"stale-reason","value":"ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED"}
+{"at":"2026-09-16T13:55:51.3695744+00:00","criterion":"backlog-reason","value":"ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED"}
+{"at":"2026-09-16T13:55:51.3830110+00:00","note":"三种陈旧触发各取到一次，每一次都能追到具体哪一条，且三次都没派出任何一趟。"}
+{"at":"2026-09-16T13:55:51.9044993+00:00","note":"L2 port block lock released."}

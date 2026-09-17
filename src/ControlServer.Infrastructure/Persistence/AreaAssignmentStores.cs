@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -164,13 +165,7 @@ public sealed class DemandAreaAssignmentFreezeStore(ControlServerDbContext conte
             .SingleOrDefaultAsync(row => row.ConsumerId == demandId, cancellationToken);
         if (existing is not null)
         {
-            return existing.FrozenVersion == version
-                ? Project(existing)
-                : throw new DemandAreaAssignmentFreezeConflictException(
-                    FormattableString.Invariant(
-                        $"Demand {demandId} already froze area assignment version {existing.FrozenVersion}; ")
-                    + FormattableString.Invariant(
-                        $"it cannot be frozen again at version {version}. Later versions do not change a frozen demand."));
+            return AgainstExisting(existing, demandId, version);
         }
 
         DispatchZoneAreaAssignmentVersionRow header = await _context.Set<DispatchZoneAreaAssignmentVersionRow>()
@@ -190,9 +185,57 @@ public sealed class DemandAreaAssignmentFreezeStore(ControlServerDbContext conte
             SnapshotId = header.SnapshotId
         };
         _context.Set<ConfigurationConsumerBindingRow>().Add(binding);
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException failure) when (IsThisBindingRefusedByAConstraint(failure, binding))
+        {
+            // The read above and this insert are two statements, so a second writer freezing the same demand can
+            // land between them; the primary key then refuses this insert. That writer's row is the freeze now,
+            // and it is judged exactly as if the read had seen it: the same version is idempotent, a different
+            // one conflicts. No row means the insert failed for some other reason, which is not ours to absorb.
+            _context.Entry(binding).State = EntityState.Detached;
+            ConfigurationConsumerBindingRow? winner = await DemandFreezes()
+                .AsNoTracking()
+                .SingleOrDefaultAsync(row => row.ConsumerId == demandId, cancellationToken);
+            if (winner is null)
+            {
+                throw;
+            }
+            return AgainstExisting(winner, demandId, version);
+        }
         return Project(binding);
     }
+
+    /// <summary>
+    /// Whether the save failed because a constraint refused this binding row, and not something else.
+    /// </summary>
+    /// <remarks>
+    /// SQLite reports a primary key or unique violation as <c>SQLITE_CONSTRAINT</c> (19). The entry check is what
+    /// keeps a shared context honest: acceptance calls this inside its own transaction, and a failure caused by some
+    /// other pending row must reach the caller even when another writer happens to have frozen this demand by the
+    /// time it would be re-read. Same shape as <see cref="GovernanceStore"/>'s check on an already-frozen version.
+    /// </remarks>
+    private static bool IsThisBindingRefusedByAConstraint(
+        DbUpdateException failure,
+        ConfigurationConsumerBindingRow binding) =>
+        failure.InnerException is SqliteException { SqliteErrorCode: SqliteConstraintErrorCode }
+        && failure.Entries.Any(entry => ReferenceEquals(entry.Entity, binding));
+
+    private const int SqliteConstraintErrorCode = 19;
+
+    private static DemandAreaAssignmentFreeze AgainstExisting(
+        ConfigurationConsumerBindingRow existing,
+        string demandId,
+        long version) =>
+        existing.FrozenVersion == version
+            ? Project(existing)
+            : throw new DemandAreaAssignmentFreezeConflictException(
+                FormattableString.Invariant(
+                    $"Demand {demandId} already froze area assignment version {existing.FrozenVersion}; ")
+                + FormattableString.Invariant(
+                    $"it cannot be frozen again at version {version}. Later versions do not change a frozen demand."));
 
     public async Task<DemandAreaAssignmentFreeze?> ReadAsync(string demandId, CancellationToken cancellationToken)
     {

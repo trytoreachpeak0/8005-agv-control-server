@@ -100,6 +100,7 @@ jobs:
               # merge into fp/v2-impl, so the scenario earns its place in CI from its own ticket; the
               # batch-4 exit (control-server#76) makes it three runs.
               @{ Name = 'area-assignment-import-rejects'; Runs = 1; BatchId = 'batch-4' }
+              @{ Name = 'area-assignment-unmapped-silent'; Runs = 1; BatchId = 'batch-4' }
               # Batch 4 (control-server#73), specification 8.3 scenarios 1 and 2: target slots chosen inside the
               # demand's slot group, and a demand waiting while its group is full. In CI from their own ticket for
               # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.

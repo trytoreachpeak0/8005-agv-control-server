@@ -150,6 +150,7 @@ public sealed class OnboardRecoveryCoordinator(
                 sessionGeneration,
                 cancellationToken).ConfigureAwait(false);
         }
+        await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
     }
@@ -199,6 +200,7 @@ public sealed class OnboardRecoveryCoordinator(
                 .Select(row => row.SessionGeneration).SingleAsync(cancellationToken).ConfigureAwait(false);
             await QueueSessionSnapshotAsync(session, sessionGeneration, cancellationToken).ConfigureAwait(false);
         }
+        await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -284,8 +286,9 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (replay.RequestContentHash != businessHash || replay.AgvId != agvId)
                 throw new ProtocolContentConflictException("Recovery requestId was replayed with different content.");
-            return OpenedResponse(
-                root, replay, await RecoveryAttemptIdAsync(replay, cancellationToken).ConfigureAwait(false));
+            StationOperationRow? replayOperation = await SessionOperationAsync(replay, cancellationToken)
+                .ConfigureAwait(false);
+            return OpenedResponse(root, replay, replayOperation?.SlotOperationAttemptId);
         }
         ExceptionRecoverySessionRow? active = await dbContext.ExceptionRecoverySessions
             .SingleOrDefaultAsync(row => row.AgvId == agvId && row.State != "CLOSED", cancellationToken)
@@ -336,7 +339,8 @@ public sealed class OnboardRecoveryCoordinator(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _ = contentHash;
         _ = messageId;
-        return OpenedResponse(root, row, await RecoveryAttemptIdAsync(row, cancellationToken).ConfigureAwait(false));
+        StationOperationRow? operation = await SessionOperationAsync(row, cancellationToken).ConfigureAwait(false);
+        return OpenedResponse(root, row, operation?.SlotOperationAttemptId);
     }
 
     private async Task<string> SubmitActionAsync(
@@ -366,21 +370,27 @@ public sealed class OnboardRecoveryCoordinator(
             return AcceptedAction(root, session, actionId, action, replay.SlotOperationAttemptId);
         }
 
-        StationOperationRow? operation = await FindScopedOperationAsync(session, cancellationToken).ConfigureAwait(false);
+        // The workflow's attempt is what RecoveryActionAccepted names and what compensation is later
+        // authorized against, and the session already named one in ExceptionRecoverySessionOpened and
+        // every snapshot. Those must be one value (8005-agv-program#95), so the action is judged on the
+        // same operation those messages name, from the one lookup that names it.
+        StationOperationRow? operation = await SessionOperationAsync(session, cancellationToken).ConfigureAwait(false);
+        // A session is a verdict on the demand as it stood when the session opened. Should the demand
+        // have gained a slot operation since, that verdict is stale, and an action is refused whole
+        // rather than accepted against a load the world has moved past -- FORCED_MECHANICAL_RECOVERY
+        // and FAULT_CARGO_HANDOFF look at no operation state of their own to catch it. Defensive: slot
+        // operations are created only by the runtime's load and unload stages, a session opens only on a
+        // Blocked journey, and the runtime does nothing for a Blocked one (8005-agv-control-server#78).
+        if (session.DemandId is not null &&
+            (await FindLatestOperationAsync(session.DemandId, cancellationToken).ConfigureAwait(false))
+                ?.SlotOperationAttemptId != operation?.SlotOperationAttemptId)
+            return RejectedAction(
+                root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.RecoveryScopeMismatch);
         SessionRecoveryRow connection = await dbContext.SessionRecoveries.SingleAsync(
             row => row.AgvId == session.AgvId, cancellationToken).ConfigureAwait(false);
         string? actionProblem = ValidateActionPreconditions(action, session, connection, operation);
         if (actionProblem is not null)
             return RejectedAction(root, actionId, recoverySessionId, session.Revision, actionProblem);
-        // The workflow's attempt is what RecoveryActionAccepted names and what compensation is later
-        // authorized against, and the session already named one in ExceptionRecoverySessionOpened and
-        // every snapshot. Those must be one value (8005-agv-program#95). Should the operation found now
-        // differ from the one the session was opened for, the action is refused whole rather than
-        // accepted under an attempt the vehicle has not been told.
-        if (operation?.SlotOperationAttemptId != await RecoveryAttemptIdAsync(session, cancellationToken)
-                .ConfigureAwait(false))
-            return RejectedAction(
-                root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.RecoveryScopeMismatch);
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         long forcedGeneration = connection.ForcedRecoveryGeneration;
@@ -729,9 +739,7 @@ public sealed class OnboardRecoveryCoordinator(
                 session.ExceptionRecoverySessionId)
                 row.FencedAt = timeProvider.GetUtcNow();
         }
-        StationOperationRow? operation = session.DemandId is null
-            ? null
-            : await FindLatestOperationAsync(session.DemandId, cancellationToken).ConfigureAwait(false);
+        StationOperationRow? operation = await SessionOperationAsync(session, cancellationToken).ConfigureAwait(false);
         string[] allowedActions = session.State == "OPEN"
             ? AllowedActions(session, operation)
             : [];
@@ -758,7 +766,7 @@ public sealed class OnboardRecoveryCoordinator(
                 session.AdministratorRole,
                 session.EventId,
                 session.DemandId,
-                await RecoveryAttemptIdAsync(session, cancellationToken).ConfigureAwait(false),
+                operation?.SlotOperationAttemptId,
                 ParseSlots(session.SlotsJson),
                 session.SelectedAction,
                 allowedActions,
@@ -1005,16 +1013,11 @@ public sealed class OnboardRecoveryCoordinator(
         };
     }
 
-    private async Task<StationOperationRow?> FindScopedOperationAsync(
-        ExceptionRecoverySessionRow session,
-        CancellationToken cancellationToken) =>
-        session.DemandId is null ? null : await FindLatestOperationAsync(session.DemandId, cancellationToken)
-            .ConfigureAwait(false);
-
     /// <summary>
-    /// The slot operation attempt a recovery session is about, as the three recovery messages to the
-    /// vehicle name it: <c>ExceptionRecoverySessionOpened</c>, every
-    /// <c>ExceptionRecoverySessionSnapshot</c> and <c>RecoveryActionAccepted</c>.
+    /// The slot operation a recovery session is about: the one whose attempt the three recovery messages
+    /// to the vehicle name -- <c>ExceptionRecoverySessionOpened</c>, every
+    /// <c>ExceptionRecoverySessionSnapshot</c> and <c>RecoveryActionAccepted</c> -- and the one an action
+    /// on the session is judged on and its workflow recorded against.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -1031,8 +1034,17 @@ public sealed class OnboardRecoveryCoordinator(
     /// every later call answers what the first one did -- a replayed request, each snapshot revision,
     /// the accepted action. No column stores the value; it is derived from those persisted facts.
     /// </para>
+    /// <para>
+    /// <b>The only lookup of an existing session's operation.</b> The action and the snapshot's allowed
+    /// actions once read the demand's latest operation, with no cut-off at the opening, while the
+    /// messages read this; one source is what keeps the attempt a workflow records equal to the attempt
+    /// the vehicle was told (8005-agv-control-server#78). <see cref="FindLatestOperationAsync"/> answers
+    /// a different question -- what the demand's latest operation is now -- and is asked in two places:
+    /// validating a session's scope before the session exists, where the two coincide, and refusing an
+    /// action once the demand has moved past its session.
+    /// </para>
     /// </remarks>
-    private async Task<string?> RecoveryAttemptIdAsync(
+    private async Task<StationOperationRow?> SessionOperationAsync(
         ExceptionRecoverySessionRow session,
         CancellationToken cancellationToken)
     {
@@ -1043,7 +1055,7 @@ public sealed class OnboardRecoveryCoordinator(
         return operations
             .Where(row => row.CreatedAt <= session.OpenedAt)
             .OrderByDescending(row => row.CreatedAt)
-            .FirstOrDefault()?.SlotOperationAttemptId;
+            .FirstOrDefault();
     }
 
     private async Task<StationOperationRow?> FindLatestOperationAsync(
@@ -1216,6 +1228,27 @@ public sealed class OnboardRecoveryCoordinator(
         workflow.CommandContentHash = contentHash;
         workflow.State = RecoveryWorkflowState.AwaitingResult;
         workflow.UpdatedAt = timeProvider.GetUtcNow();
+    }
+
+    /// <summary>
+    /// Settles the command a workflow's first result answers, whatever that result concluded.
+    /// </summary>
+    /// <remarks>
+    /// A recovery command has no ack of its own (<c>LoadCompensationCommandAck</c> is on the profile
+    /// denylist); its answer is the result -- one of the five recovery results, or for a resume the
+    /// replacement OperationResult. A workflow holding its first result takes no other, so a command
+    /// left pending could only be replayed into a later session to draw a duplicate. Until
+    /// 8005-agv-control-server#78 nothing settled it: a failed workflow, still in RecoveryRequired,
+    /// had its command replayed into every session that followed, and a reconciled one sat unsettled
+    /// in the outbox for the life of the database (8005-agv-program#61, MVP <c>219b033f</c>).
+    /// </remarks>
+    private async Task SettleAnsweredCommandAsync(
+        RecoveryWorkflowRow workflow,
+        CancellationToken cancellationToken)
+    {
+        if (workflow.CommandMessageId is null) return;
+        await store.SettleAnsweredCommandAsync(
+            workflow.CommandMessageId, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
     }
 
     private static string ResultOutcome(string messageType, JsonElement payload) =>
