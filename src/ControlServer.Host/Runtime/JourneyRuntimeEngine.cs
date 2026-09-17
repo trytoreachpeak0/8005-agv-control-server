@@ -2387,13 +2387,11 @@ public sealed class JourneyRuntimeEngine(
             AcceptedDemandRow demand = await dbContext.AcceptedDemands
                 .SingleAsync(row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
             await dbContext.Entry(demand).ReloadAsync(cancellationToken).ConfigureAwait(false);
-            bool cancellationOpen = await dbContext.RecoveryWorkflows.AsNoTracking()
-                .AnyAsync(
-                    row => row.DemandId == runtime.DemandId &&
-                           row.WorkflowType == "LOAD_CANCELLATION" &&
-                           row.State != RecoveryWorkflowState.Reconciled &&
-                           row.State != RecoveryWorkflowState.HistoricalOnly,
-                    cancellationToken).ConfigureAwait(false);
+            // The one definition the sublot deadline and the cancellation's authorization use too. A cancellation
+            // that did not reconcile is not "open", but it has already put the demand in RecoveryRequired and
+            // the journey in Blocked, which the checks below refuse on their own.
+            bool cancellationOpen = await LoadCancellationBeforeSublot
+                .HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false);
             if (runtime.Stage != JourneyRuntimeStage.AwaitingLoadResult ||
                 load.Status != StationOperationStatus.Failed ||
                 demand.Status != DemandExecutionStatus.Accepted ||
