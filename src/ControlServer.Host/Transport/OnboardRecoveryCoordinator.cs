@@ -19,7 +19,6 @@ public sealed class OnboardRecoveryCoordinator(
     IConfiguration configuration,
     ILogger<OnboardRecoveryCoordinator>? logger = null)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly Action<ILogger, string, string, string, string?, Exception?> LogCancellationFoundStopDecided =
         LoggerMessage.Define<string, string, string, string?>(
             LogLevel.Warning,
@@ -1341,20 +1340,14 @@ public sealed class OnboardRecoveryCoordinator(
         });
 
     private string Response(JsonElement request, string messageType, object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        ProtocolEnvelope.Serialize(
             messageType,
-            messageId = Guid.NewGuid().ToString("D"),
-            correlationId = RequiredString(request, "messageId"),
-            agvId = RequiredString(request, "agvId"),
-            sessionGeneration = request.GetProperty("sessionGeneration").GetInt64(),
-            sentAt = timeProvider.GetUtcNow(),
-            payload
-        }, SerializerOptions);
+            Guid.NewGuid().ToString("D"),
+            RequiredString(request, "messageId"),
+            RequiredString(request, "agvId"),
+            request.GetProperty("sessionGeneration").GetInt64(),
+            timeProvider.GetUtcNow(),
+            payload);
 
     private string DurableAck(
         string acceptedMessageType,
@@ -1362,26 +1355,22 @@ public sealed class OnboardRecoveryCoordinator(
         string agvId,
         long generation,
         string contentHash) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-            messageType = "DurableAck",
-            messageId = Guid.NewGuid().ToString("D"),
-            correlationId = acceptedMessageId,
+        // Two clock reads, and the order they happen in is observable on the wire: sentAt first, the
+        // payload's durablyAcceptedAt second. Argument evaluation is left to right, so it still is.
+        ProtocolEnvelope.Serialize(
+            "DurableAck",
+            Guid.NewGuid().ToString("D"),
+            acceptedMessageId,
             agvId,
-            sessionGeneration = generation,
-            sentAt = timeProvider.GetUtcNow(),
-            payload = new
+            generation,
+            timeProvider.GetUtcNow(),
+            new
             {
                 acceptedMessageId,
                 acceptedMessageType,
                 acceptedContentSha256 = contentHash,
                 durablyAcceptedAt = timeProvider.GetUtcNow()
-            }
-        }, SerializerOptions);
+            });
 
     private static object Problem(string reasonCode, string fieldPath, string displayMessage) => new
     {

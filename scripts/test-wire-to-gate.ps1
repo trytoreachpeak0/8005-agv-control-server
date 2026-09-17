@@ -76,14 +76,26 @@ if ($selected.Count -eq 0) {
 
 New-Item -ItemType Directory -Path $Output | Out-Null
 $startedAt = [DateTimeOffset]::UtcNow
-& $dotnet test $projectPath -c Release --filter "IntegrationSlice=$Slice" --logger "trx;LogFileName=control-$Slice.trx" --results-directory $Output
-$testExitCode = $LASTEXITCODE
+# Every line the slice's tests send is validated against the protocol's JSON Schemas when the run ends
+# (tests/ControlServer.Tests/OutboundSchemaConformance.cs). A violation makes dotnet test exit
+# non-zero while its console summary still says "Failed: 0", so the summary above is not the verdict
+# this script reads: $LASTEXITCODE is. schema-coverage.json always lands here next to the TRX, and
+# schema-violations.json when something failed.
+$env:WIRE_TO_GATE_SCHEMA_REPORT_DIR = $Output
+try {
+    & $dotnet test $projectPath -c Release --filter "IntegrationSlice=$Slice" --logger "trx;LogFileName=control-$Slice.trx" --results-directory $Output
+    $testExitCode = $LASTEXITCODE
+} finally {
+    Remove-Item Env:WIRE_TO_GATE_SCHEMA_REPORT_DIR -ErrorAction SilentlyContinue
+}
+$schemaCoveragePath = Join-Path $Output 'schema-coverage.json'
+$schemaCoverage = if (Test-Path -LiteralPath $schemaCoveragePath) { Get-Content -LiteralPath $schemaCoveragePath -Raw | ConvertFrom-Json } else { $null }
 $result = [ordered]@{
-    # 1.1.0, not 1.0.0: this run adds protocolProfileId, protocolVersion, protocolApprovalStatus,
-    # integrationSliceIndexSha256 and selectedTestCount. Additive, so a 1.0.0 reader still parses it
-    # -- but a consumer that cannot tell the two shapes apart cannot tell a v1 gate result from a v2
-    # one either, which is the whole reason the identity moved.
-    schemaVersion = '1.1.0'
+    # 1.2.0, not 1.1.0: this run adds schemaConformance. Additive again, and for the same reason the
+    # version moved to 1.1.0 -- a consumer that cannot tell the two shapes apart cannot tell an
+    # evidence directory that had its outbound lines checked against the contract from one that did
+    # not, and from control-server#85 on, CONTROL_SERVER_G2 means both.
+    schemaVersion = '1.2.0'
     gate = $Gate
     integrationSliceId = $Slice
     status = if ($testExitCode -eq 0) { 'PASS' } else { 'FAIL' }
@@ -103,6 +115,19 @@ $result = [ordered]@{
     integrationSliceIndexSha256 = $indexSha256
     selectedTestCount = $selected.Count
     vectorIds = @($sliceEntry.vectorIds)
+    # What the outbound schema check made of this slice's traffic. $null means the report is not
+    # there, which is itself worth recording: an evidence directory whose schemaConformance is null
+    # says the slice ran without its lines being compared with the contract.
+    schemaConformance = if ($schemaCoverage) {
+        [ordered]@{
+            linesChecked = $schemaCoverage.linesChecked
+            linesInViolation = $schemaCoverage.linesInViolation
+            knownViolationsMatched = $schemaCoverage.knownViolationsMatched
+            coverage = 'schema-coverage.json'
+        }
+    } else {
+        $null
+    }
     testExitCode = $testExitCode
 }
 $result | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Output 'gate-result.json') -Encoding utf8NoBOM

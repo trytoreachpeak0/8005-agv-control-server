@@ -128,6 +128,17 @@ Historically 583 passed / 0 skipped. Build with the .NET SDK pinned in
 `WIRE_TO_GATE_DOTNET_EXE` at that version's `dotnet.exe` and run
 `.\scripts\build.ps1`.
 
+**That command also checks every outbound protocol line against the protocol JSON Schema**, and it
+can fail while its console summary says `Failed: 0`. When the run ends,
+`tests/ControlServer.Tests/OutboundSchemaConformance.cs` hands what the tests sent to
+`tools/ControlServer.SchemaConformance` (its own process: its System.Text.Json 10 must not enter the
+test host). A violation is reported as `[Test Assembly Cleanup Failure] Xunit.Sdk.TestPipelineException`
+with exit code 1; the detail is in the TRX and in `schema-conformance/` next to the test assembly.
+Never "fix" such a failure by adding to `tests/ControlServer.Tests/schema-known-violations.json`
+without an issue that owns the violation -- that list is for defects already filed, and every entry
+names one. It adds about 40 to 50 seconds of Roslyn schema compilation per run (measured 38.6 s and
+47.9 s on the two runs that landed control-server#85).
+
 Test authorization is scoped to the current task. A request to inspect, tidy,
 commit, or push an already-dirty worktree does **not** authorize a test run. Run
 tests only when the current task changed product code, tests, or build inputs,
