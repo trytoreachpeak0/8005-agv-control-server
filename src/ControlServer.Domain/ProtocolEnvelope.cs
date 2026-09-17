@@ -24,6 +24,21 @@ public static class ProtocolEnvelope
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>
+    /// Every line this side builds, handed to whoever is watching. Null in production, where the
+    /// check is a single null test on the way out; the test host assigns it for the length of a run
+    /// so each line can be compared with the contract before it is forgotten
+    /// (<c>tests/ControlServer.Tests/OutboundSchemaConformance.cs</c>).
+    /// </summary>
+    /// <remarks>
+    /// <b>A hook, not a gate.</b> Nothing here validates, refuses to send or holds a line back: a
+    /// vehicle-facing server has no good answer to a non-conforming line at the moment it is about to
+    /// go out, and dropping the session over one is worse than sending it. The judgement belongs to
+    /// the test run and to <c>CONTROL_SERVER_G2</c>, where a failure stops a release instead of a
+    /// vehicle.
+    /// </remarks>
+    public static Action<string, string>? OutboundObserver { get; set; }
+
+    /// <summary>
     /// Builds the wire line: the nine release identity values above the payload, then the seven
     /// per-message fields, in the order the protocol's envelope schema and the peer's parser both
     /// expect.
@@ -50,8 +65,9 @@ public static class ProtocolEnvelope
         string agvId,
         long? sessionGeneration,
         DateTimeOffset sentAt,
-        object payload) =>
-        JsonSerializer.Serialize(new
+        object payload)
+    {
+        string line = JsonSerializer.Serialize(new
         {
             protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
             profileId = ProtocolCandidateIdentity.ProfileId,
@@ -65,6 +81,9 @@ public static class ProtocolEnvelope
             sentAt,
             payload
         }, SerializerOptions);
+        OutboundObserver?.Invoke(messageType, line);
+        return line;
+    }
 
     /// <summary>
     /// The release identity as a payload body: what <c>SessionAccepted</c> reports it accepted and

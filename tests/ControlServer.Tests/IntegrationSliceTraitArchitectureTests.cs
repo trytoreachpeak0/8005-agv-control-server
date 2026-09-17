@@ -81,6 +81,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
             ["OnboardVehicleSafetyEndpointsTests"] = "server-side safety projection endpoint; not a protocol wire message",
             ["PackageCapacityStoreTests"] = "server-internal store; no wire message",
+            ["ProtocolEnvelopeObserverArchitectureTests"] = "cross-cutting guard on the observation point every slice's outbound lines pass through (control-server#85); hanging it off one would defer the guard with that slice",
             ["ProtocolEnvelopeTests"] = "cross-cutting guard on the one place an outbound protocol line is built (control-server#85); every slice sends through it, so hanging it off one would defer the guard with that slice",
             ["ProtocolIdentityArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["ProtocolMessageSurfaceArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",

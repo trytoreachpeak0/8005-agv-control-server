@@ -54,6 +54,11 @@ public sealed class OnboardJourneyPublisher(
             envelope["sessionGeneration"] = sessionGeneration;
             envelope["sentAt"] = sentAt;
             string wire = envelope.ToJsonString(SerializerOptions);
+            // This line does not go through ProtocolEnvelope.Serialize -- it rewrites what was stored
+            // rather than building from fields, and it is the only outbound byte that does not -- so
+            // it hands itself to the observation point by hand. Without this the gate would be blind
+            // to every replayed envelope, which is exactly the kind of line a session resume sends.
+            ProtocolEnvelope.OutboundObserver?.Invoke(row.MessageType, wire);
             ProtocolOutboxRow current = await store.QueueOutboundEnvelopeAsync(
                 row.MessageId,
                 row.MessageType,

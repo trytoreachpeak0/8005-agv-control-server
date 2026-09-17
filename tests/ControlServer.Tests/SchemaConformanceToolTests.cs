@@ -159,6 +159,75 @@ public sealed class SchemaConformanceToolTests : IDisposable
         Assert.Contains("No vendored protocol", run.Error, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A violation already filed is reported and does not fail the run -- and the report still names
+    /// it, because the point of the entry is that the defect stays visible while it is on file.
+    /// </summary>
+    [Fact]
+    public async Task AKnownViolationIsStillReportedAndDoesNotFailTheRun()
+    {
+        string known = await WriteKnownViolationsAsync(
+            "known",
+            """
+            {"messageType":"DurableAck","pointer":"#/payload/durablyAcceptedAt","keyword":"required",
+             "actual":"(absent)","issue":"https://github.com/trytoreachpeak0/8005-agv-control-server/issues/85"}
+            """);
+        ToolRun run = await RunToolAsync(
+            "known", [Record("DurableAck", DurableAckSite, DurableAckLine(without: "durablyAcceptedAt"))], known: known);
+
+        Assert.Equal(0, run.ExitCode);
+        JsonNode coverage = Coverage(run);
+        Assert.Equal(0, coverage["linesInViolation"]!.GetValue<int>());
+        Assert.Equal(1, coverage["linesInKnownViolation"]!.GetValue<int>());
+        Assert.Equal(1, coverage["knownViolationsMatched"]!.GetValue<int>());
+        Assert.Empty(coverage["knownViolationEntriesNotMatched"]!.AsArray());
+        Assert.Single(Violations(run));
+        Assert.Contains("KNOWN SCHEMA VIOLATION", run.Output, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An entry nobody can trigger is reported. It is the half that keeps the table honest: an entry
+    /// that has stopped matching real traffic would otherwise sit there silencing the next defect that
+    /// lands on the same pointer.
+    /// </summary>
+    [Fact]
+    public async Task AKnownEntryThatMatchesNothingIsReported()
+    {
+        string known = await WriteKnownViolationsAsync(
+            "unmatched",
+            """
+            {"messageType":"DurableAck","pointer":"#/payload/neverSent","keyword":"required",
+             "actual":"(absent)","issue":"https://github.com/trytoreachpeak0/8005-agv-control-server/issues/85"}
+            """);
+
+        ToolRun run = await RunToolAsync(
+            "unmatched", [Record("DurableAck", DurableAckSite, DurableAckLine())], known: known);
+
+        Assert.Equal(0, run.ExitCode);
+        Assert.Single(Coverage(run)["knownViolationEntriesNotMatched"]!.AsArray());
+        Assert.Contains("KNOWN VIOLATION NOT MATCHED", run.Output, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every entry names the issue that owns it. An entry without one is not a known violation, it is
+    /// a silenced one, so the table is refused before any line is judged.
+    /// </summary>
+    [Fact]
+    public async Task AKnownEntryWithoutAnIssueIsRefused()
+    {
+        string known = await WriteKnownViolationsAsync(
+            "no-issue",
+            """
+            {"messageType":"DurableAck","pointer":"#/payload/durablyAcceptedAt","keyword":"required","actual":"(absent)"}
+            """);
+
+        ToolRun run = await RunToolOnAsync(
+            "no-issue", Path.Combine(_directory, "no-issue.ndjson"), known: known);
+
+        Assert.Equal(2, run.ExitCode);
+        Assert.Contains("issue URL", run.Error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ALineSetThatIsNotThereExitsTwo()
     {
@@ -262,6 +331,15 @@ public sealed class SchemaConformanceToolTests : IDisposable
     private static string Record(string messageType, string site, string line) =>
         JsonSerializer.Serialize(new { messageType, origin = "product", site, line });
 
+    /// <summary>Writes one known-violation entry, given as the JSON object the table holds.</summary>
+    private async Task<string> WriteKnownViolationsAsync(string name, string entry)
+    {
+        string path = Path.Combine(_directory, name + "-known-violations.json");
+        await File.WriteAllTextAsync(
+            path, "[\n" + entry + "\n]\n", TestContext.Current.CancellationToken);
+        return path;
+    }
+
     private static JsonNode Coverage(ToolRun run) => JsonNode.Parse(
         File.ReadAllText(Path.Combine(run.ReportDirectory, "schema-coverage.json")))!;
 
@@ -285,20 +363,25 @@ public sealed class SchemaConformanceToolTests : IDisposable
         return destination;
     }
 
-    private async Task<ToolRun> RunToolAsync(string name, string[] records, string? vendor = null)
+    private async Task<ToolRun> RunToolAsync(
+        string name, string[] records, string? vendor = null, string? known = null)
     {
         string linesPath = Path.Combine(_directory, name + ".ndjson");
         await File.WriteAllLinesAsync(linesPath, records, TestContext.Current.CancellationToken);
-        return await RunToolOnAsync(name, linesPath, vendor);
+        return await RunToolOnAsync(name, linesPath, vendor, known);
     }
 
-    private async Task<ToolRun> RunToolOnAsync(string name, string linesPath, string? vendor = null)
+    private async Task<ToolRun> RunToolOnAsync(string name, string linesPath, string? vendor = null, string? known = null)
     {
         string reportDirectory = Path.Combine(_directory, name + "-report");
         List<string> arguments = ["--lines", linesPath, "--report", reportDirectory];
         if (vendor is not null)
         {
             arguments.AddRange(["--vendor", vendor]);
+        }
+        if (known is not null)
+        {
+            arguments.AddRange(["--known", known]);
         }
         return await RunToolWithArgumentsAsync(arguments, reportDirectory);
     }

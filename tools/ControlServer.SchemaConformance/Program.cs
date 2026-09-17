@@ -13,11 +13,13 @@ using Corvus.Json.Validator;
 // (8005-agv-control-server#85).
 //
 //   ControlServer.SchemaConformance --lines <ndjson> --report <directory> [--vendor <directory>]
+//                                     [--known <json>]
 //
 // Each input line is {"messageType","origin","site","line"}: origin is product, synthetic-peer or
 // test, site names the sending method. Writes schema-coverage.json always and schema-violations.json
-// when anything failed. Exit 0 = every line conforms, 1 = violations, 2 = the vendored contract is
-// not the one ProtocolCandidateIdentity names, or the input is unusable.
+// when anything failed. Exit 0 = every line conforms or every violation is on file, 1 = a violation
+// that is not, 2 = the vendored contract is not the one ProtocolCandidateIdentity names, or the
+// input is unusable.
 //
 // It runs as its own process on purpose. Corvus.Json.Validator 4.6.7 is the version the protocol
 // repository's compatibility matrix pins for an "isolated .NET conformance process", and it brings
@@ -50,6 +52,17 @@ catch (ArgumentException exception)
 // point the validator at a copy of its own, which is how the hash self-check is tested.
 string vendorRoot = arguments.GetValueOrDefault("vendor")
     ?? Path.Combine(AppContext.BaseDirectory, "vendor", "8005-agv-protocol");
+// Violations already filed, each naming the issue that owns it. Optional: a run without the table
+// judges every line on its own.
+KnownViolation[] known = arguments.GetValueOrDefault("known") is { } knownPath
+    ? JsonSerializer.Deserialize<KnownViolation[]>(File.ReadAllText(knownPath), JsonSerializerOptions.Web) ?? []
+    : [];
+if (known.FirstOrDefault(entry => !entry.IsWellFormed) is { } malformed)
+{
+    return Fail(
+        "Every known-violation entry names messageType, pointer, keyword and actual, and an issue URL " +
+        "(the protocol's for a contract defect, this repository's for a product one): " + malformed);
+}
 Directory.CreateDirectory(reportDirectory);
 // A violations file an earlier run left in the same directory must not outlive the run that wrote it.
 File.Delete(Path.Combine(reportDirectory, "schema-violations.json"));
@@ -180,6 +193,33 @@ Violation[] ordered = violations.Values
     .ThenBy(violation => violation.Origin, StringComparer.Ordinal)
     .ThenBy(violation => violation.Site, StringComparer.Ordinal)
     .ToArray();
+// A violation on file is reported every run and does not fail. Every error of a line has to match
+// one, so a defect riding along with a registered one cannot hide behind it, and an entry that
+// matched nothing is reported too -- an entry nobody can trigger only silences the next real defect.
+HashSet<KnownViolation> usedEntries = [];
+foreach (Violation violation in ordered)
+{
+    KnownViolation?[] matches = violation.Errors
+        .Select(error => known.FirstOrDefault(entry => entry.Matches(violation.MessageType, error)))
+        .ToArray();
+    if (matches.All(match => match is not null))
+    {
+        violation.OnFile = matches.Distinct().Cast<KnownViolation>().ToArray();
+        usedEntries.UnionWith(violation.OnFile);
+    }
+}
+int LinesWhere(Func<Violation, bool> predicate) => ordered.Where(predicate).Sum(violation => violation.Count);
+int unknownViolations = ordered.Count(violation => violation.OnFile is null);
+
+// Reported, never judged: which messages a run happens to send is a fact about the tests. A message
+// no test sends is one whose sender this gate cannot see, and that gap belongs in the account rather
+// than in the verdict.
+SortedSet<string> observedTypes = new(checkedLines.Select(line => line.MessageType), StringComparer.Ordinal);
+string[] notObserved = [.. messages
+    .Where(entry => entry.Value?["sender"]?.GetValue<string>() == "CONTROL_SERVER")
+    .Select(entry => entry.Key)
+    .Where(type => !observedTypes.Contains(type))
+    .Order(StringComparer.Ordinal)];
 
 JsonSerializerOptions reportOptions = new(JsonSerializerDefaults.Web)
 {
@@ -207,9 +247,15 @@ File.WriteAllText(
         testAuthoredLinesSkipped = observed.Count - checkedLines.Length,
         linesChecked = checkedLines.Length,
         distinctLinesChecked = distinctLines,
-        linesInViolation = ordered.Sum(violation => violation.Count),
+        linesInViolation = LinesWhere(violation => violation.OnFile is null),
+        linesInKnownViolation = LinesWhere(violation => violation.OnFile is not null),
+        knownViolationsMatched = usedEntries.Count,
+        knownViolationEntriesNotMatched = known.Where(entry => !usedEntries.Contains(entry)).ToArray(),
         schemaCompilationMilliseconds = compileTime.ElapsedMilliseconds,
         validationMilliseconds = validationTime.ElapsedMilliseconds,
+        // The server's own message types this run never sent. Reported, not judged: which messages a
+        // test happens to send says nothing about whether the ones it sent are right.
+        serverMessageTypesNotObserved = notObserved,
         // Reported, never judged: which messages a run happens to send is a fact about the tests. A
         // message no test sends is one whose sender this gate cannot see.
         byMessageType = new SortedDictionary<string, SortedDictionary<string, int>>(
@@ -224,9 +270,16 @@ File.WriteAllText(
 Console.WriteLine(string.Create(
     CultureInfo.InvariantCulture,
     $"Schema conformance ({ProtocolCandidateIdentity.Tag} {ProtocolCandidateIdentity.ApprovalStatus}): " +
-    $"{checkedLines.Length} lines, {distinctLines} distinct, {checkedLines.Select(line => line.MessageType).Distinct().Count()} message types; " +
-    $"{ordered.Length} distinct violations, {ordered.Sum(violation => violation.Count)} lines; " +
+    $"{checkedLines.Length} lines, {distinctLines} distinct, {observedTypes.Count} message types; " +
+    $"{ordered.Length} distinct violations, {unknownViolations} of them not on file; " +
+    $"{known.Length - usedEntries.Count} known-violation entries matched nothing; " +
     $"schema compilation {compileTime.ElapsedMilliseconds} ms, validation {validationTime.ElapsedMilliseconds} ms."));
+// Printed before the early return: an entry that matched nothing on a run with no violations at all
+// is exactly the case worth seeing, and it would otherwise only ever appear in the report file.
+foreach (KnownViolation entry in known.Where(entry => !usedEntries.Contains(entry)))
+{
+    Console.WriteLine($"KNOWN VIOLATION NOT MATCHED: {entry.MessageType} {entry.Pointer} [{entry.Keyword}] {entry.Actual} ({entry.Issue})");
+}
 if (ordered.Length == 0)
 {
     return 0;
@@ -235,15 +288,20 @@ if (ordered.Length == 0)
 File.WriteAllText(Path.Combine(reportDirectory, "schema-violations.json"), JsonSerializer.Serialize(ordered, reportOptions) + "\n");
 foreach (Violation violation in ordered)
 {
+    string label = violation.OnFile switch
+    {
+        null => "SCHEMA VIOLATION",
+        { } onFile => "KNOWN SCHEMA VIOLATION (" + string.Join(", ", onFile.Select(entry => entry.Issue).Distinct()) + ")"
+    };
     Console.WriteLine(string.Create(
         CultureInfo.InvariantCulture,
-        $"SCHEMA VIOLATION x{violation.Count}: {violation.MessageType} sent by {violation.Origin} {violation.Site}"));
+        $"{label} x{violation.Count}: {violation.MessageType} sent by {violation.Origin} {violation.Site}"));
     foreach (Error error in violation.Errors)
     {
         Console.WriteLine($"  {error.Pointer} [{error.Keyword}] {error.Message} actual: {error.Actual}");
     }
 }
-return 1;
+return unknownViolations > 0 ? 1 : 0;
 
 void Record(ObservedLine line, Error[] errors)
 {
@@ -437,4 +495,29 @@ internal sealed record Error(string Pointer, string Keyword, string Message, str
 internal sealed record Violation(string MessageType, string Origin, string Site, Error[] Errors, string SampleLine)
 {
     public int Count { get; set; }
+
+    /// <summary>The entries that cover every error of this line, or null while one is uncovered.</summary>
+    public KnownViolation[]? OnFile { get; set; }
+}
+
+/// <summary>
+/// A violation on file: printed and reported every run, not failed on, until the defect is fixed and
+/// the entry deleted. The issue is the whole point of the entry -- "we know" without an owner is how
+/// a real defect gets quiet. Array indices in <see cref="Pointer"/> are written <c>*</c> so one entry
+/// covers every occurrence.
+/// </summary>
+internal sealed record KnownViolation(
+    string MessageType, string Pointer, string Keyword, string Actual, string Issue)
+{
+    public bool IsWellFormed =>
+        !string.IsNullOrWhiteSpace(MessageType) && !string.IsNullOrWhiteSpace(Pointer) &&
+        !string.IsNullOrWhiteSpace(Keyword) && Actual is not null &&
+        Issue is { } issue && issue.StartsWith("https://github.com/trytoreachpeak0/", StringComparison.Ordinal) &&
+        issue.Contains("/issues/", StringComparison.Ordinal);
+
+    public bool Matches(string messageType, Error error) =>
+        messageType == MessageType &&
+        error.Keyword == Keyword &&
+        error.Actual == Actual &&
+        string.Join('/', error.Pointer.Split('/').Select(segment => segment.Length > 0 && segment.All(char.IsAsciiDigit) ? "*" : segment)) == Pointer;
 }
