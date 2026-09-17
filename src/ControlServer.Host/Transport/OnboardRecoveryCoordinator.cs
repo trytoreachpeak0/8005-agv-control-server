@@ -185,7 +185,7 @@ public sealed class OnboardRecoveryCoordinator(
             runtime.Stage = operation.OperationType == SlotOperationType.Load
                 ? JourneyRuntimeStage.AwaitingLoadResult
                 : JourneyRuntimeStage.AwaitingUnloadResult;
-            runtime.BlockReasonCode = null;
+            runtime.SetBlockReason(null, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
         }
         if (workflow.ExceptionRecoverySessionId is not null)
@@ -878,11 +878,13 @@ public sealed class OnboardRecoveryCoordinator(
         if (runtime is not null)
         {
             runtime.Stage = JourneyRuntimeStage.Completed;
-            runtime.BlockReasonCode = messageType == "FaultCargoRecoveryResult"
-                ? "TERMINATED_BY_FAULT_CARGO_HANDOFF"
-                : messageType == "LoadCompensationResult"
-                    ? "CANCELLED_BY_LOAD_COMPENSATION"
-                    : "CANCELLED_BY_OPERATOR";
+            runtime.SetBlockReason(
+                messageType == "FaultCargoRecoveryResult"
+                    ? "TERMINATED_BY_FAULT_CARGO_HANDOFF"
+                    : messageType == "LoadCompensationResult"
+                        ? "CANCELLED_BY_LOAD_COMPENSATION"
+                        : "CANCELLED_BY_OPERATOR",
+                observedAt);
             runtime.UpdatedAt = observedAt;
         }
     }
@@ -903,7 +905,7 @@ public sealed class OnboardRecoveryCoordinator(
         if (runtime is not null)
         {
             runtime.Stage = JourneyRuntimeStage.Blocked;
-            runtime.BlockReasonCode = reason;
+            runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
         }
     }

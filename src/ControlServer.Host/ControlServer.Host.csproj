@@ -19,5 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- control-server#80: the dashboard's two escalation thresholds, in a file of their own. -->
+    <None Update="blocked-journey-escalation.settings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
