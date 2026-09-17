@@ -1642,6 +1642,87 @@ public sealed partial class JourneyRuntimeWorkerTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task DemandLeavingTheCatalogUnacceptedStopsReadingAsWaitingBacklog()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AcceptedDemandSnapshot leaving = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10));
+        AcceptedDemandSnapshot staying = fixture.Demand(
+            "10000000-0000-4000-8000-000000000002", "SUBLOT-002", Now.AddMinutes(-10));
+        fixture.Catalog.Set(leaving, staying);
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = null };
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        DateTimeOffset lastInCatalog = (await fixture.BacklogAsync(leaving.DemandId)).LastSeenAt;
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        fixture.Catalog.Set(staying);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow gone = await fixture.BacklogAsync(leaving.DemandId);
+        Assert.Equal(DispatchReasonCodes.DemandLeftCatalog, gone.ReasonCode);
+        Assert.Null(gone.AcceptedAt);
+        // Last seen means last seen in the catalog: a later round that only confirms the absence
+        // does not make the row look freshly evaluated.
+        Assert.Equal(lastInCatalog, gone.LastSeenAt);
+        JourneyBacklogRow waiting = await fixture.BacklogAsync(staying.DemandId);
+        Assert.Equal("BATTERY_FACT_UNKNOWN", waiting.ReasonCode);
+        Assert.Equal(fixture.Clock.GetUtcNow(), waiting.LastSeenAt);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task DemandReturningToTheCatalogIsJudgedAgainAndKeepsItsFirstSeen()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AcceptedDemandSnapshot demand = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10));
+        fixture.Catalog.Set(demand);
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = null };
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        DateTimeOffset firstSeen = (await fixture.BacklogAsync(demand.DemandId)).FirstSeenAt;
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        fixture.Catalog.Set();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(
+            DispatchReasonCodes.DemandLeftCatalog, (await fixture.BacklogAsync(demand.DemandId)).ReasonCode);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        fixture.Catalog.Set(demand);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyBacklogRow back = await fixture.BacklogAsync(demand.DemandId);
+        Assert.Equal("BATTERY_FACT_UNKNOWN", back.ReasonCode);
+        Assert.Equal(firstSeen, back.FirstSeenAt);
+        Assert.Equal(fixture.Clock.GetUtcNow(), back.LastSeenAt);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task UnreadableCatalogDoesNotMarkBacklogAsLeft()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        AcceptedDemandSnapshot demand = fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10));
+        fixture.Catalog.Set(demand);
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { BatteryPercent = null };
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        fixture.Catalog.BeforeRead = _ => throw new HttpRequestException("MesIngest unreachable");
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("BATTERY_FACT_UNKNOWN", (await fixture.BacklogAsync(demand.DemandId)).ReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task LargeCatalogBatchesBacklogPersistenceBeforeAcceptingEligibleJourney()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
