@@ -1464,6 +1464,67 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
     }
 
+    /// <summary>
+    /// control-server#80: a block's start is recorded when its code first appears, survives every later
+    /// iteration that writes the same code, and starts over when the code changes. The departure safety
+    /// wait is the case that needed care -- it cleared the code before every attempt and wrote it back,
+    /// which would have restarted the start on every poll of a journey that stays refused.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
+    public async Task ABlockKeepsTheTimeItBeganWhileItsCodeHoldsAndStartsOverWhenTheCodeChanges()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        Assert.Null(runtime.BlockReasonCode);
+        Assert.Null(runtime.BlockReasonSince);
+        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = firstCheckId,
+                outcome = "SAFE",
+                observedAt = answeredAt,
+                safetyStateVersion = 7,
+                validUntil = answeredAt.AddSeconds(2),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            firstCheckId);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal("PRE_DEPARTURE_SAFETY_NOT_VALID", runtime.BlockReasonCode);
+        DateTimeOffset blockedAt = runtime.BlockReasonSince ?? throw new InvalidOperationException("No start recorded.");
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal("PRE_DEPARTURE_SAFETY_NOT_VALID", runtime.BlockReasonCode);
+        Assert.Equal(fixture.Clock.GetUtcNow(), runtime.UpdatedAt);
+        Assert.Equal(blockedAt, runtime.BlockReasonSince);
+
+        fixture.Clock.Advance(fixture.Options.MaximumEvidenceAge);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal("PREDEPARTURE_CHECK_EXPIRED", runtime.BlockReasonCode);
+        Assert.Equal(fixture.Clock.GetUtcNow(), runtime.BlockReasonSince);
+    }
+
     private static object SafeDepartureAnswer(string checkId, long safetyStateVersion, DateTimeOffset observedAt) => new
     {
         preDepartureSafetyCheckId = checkId,

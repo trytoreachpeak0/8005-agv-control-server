@@ -61,6 +61,8 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["Batch2CapabilityStoresTests"] = "batch 2 track B persistence foundation; server-internal, no wire message",
             ["Batch3MigrationDisciplineTests"] = "cross-cutting migration and startup guard; hanging it off a slice would defer the guard with the slice",
             ["Batch4MigrationDisciplineTests"] = "cross-cutting migration guard for batch 4's one migration; hanging it off a slice would defer the guard with the slice",
+            ["Batch5MigrationDisciplineTests"] = "cross-cutting migration guard for batch 5's one migration (control-server#80); hanging it off a slice would defer the guard with the slice",
+            ["BlockedJourneyDashboardTests"] = "batch 5 control-server#80 blocked-journey start time and dashboard card; server and dashboard only, the dashboard is disjoint from the protocol and nothing is pushed (REQ-0270)",
             ["ControlServerSqliteConnectionTests"] = "cross-cutting guard on the one place the server's SQLite connection string is built; the busy timeout two processes share is a policy, not a slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
