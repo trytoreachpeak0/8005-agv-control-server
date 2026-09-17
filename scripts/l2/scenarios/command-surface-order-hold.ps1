@@ -163,15 +163,37 @@ $assertions.Add(
 
 # 到 RIoT 那一侧再确认一次：审计表证的是本服务端记了什么，`commandInvocations` 证的是线上真的
 # 发生过什么。两者对不上的那种缺陷，只看一边永远看不见。
-$invocations = @($riot.Snapshot().body.commandInvocations)
-$holdCalls = @($invocations | Where-Object { [string]$_.commandType -eq 'CMD_ORDER_HELD' })
+#
+# 要等，不能在审计行出现后立刻读。`RiotOrderCommandService.IssueAsync` 先 `ArmAttemptAsync` 把审计行
+# 提交进库，再发 HTTP 请求给 RIoT；上面等的是审计行，所以此刻请求可能还在路上。立刻读就会偶发读到空：
+# CI run 35109762084 第 3/3 次就是这样红的——这条判据读到「无 CMD_ORDER_HELD」，同一次运行 8 轮之后的
+# L2-CS-11 却读到恰好一条，命令其实发了。判据的实际值取自等待的返回值（README 的读取纪律）。等不到仍按
+# 失败记：线上真的没收到，就是这条判据要抓的缺陷。
+$holdCallsSeen = $null
+try {
+    $holdCallsSeen = Wait-L2Condition -Description 'the fake RIoT received the CMD_ORDER_HELD the audit row announced' `
+        -Journal $journal -Criterion 'riot-hold-received' -TimeoutSeconds 30 `
+        -Probe {
+            $calls = @(@($riot.Snapshot().body.commandInvocations) |
+                Where-Object { [string]$_.commandType -eq 'CMD_ORDER_HELD' })
+            [pscustomobject]@{
+                Count  = $calls.Count
+                Target = if ($calls.Count -gt 0) { [string]$calls[0].target } else { $null }
+            }
+        } `
+        -Until { param($v) $v.Count -ge 1 }
+}
+catch {
+    $journal.Note("No CMD_ORDER_HELD reached the fake RIoT within 30 s: $($_.Exception.Message)")
+}
 $assertions.Add(
     'L2-CS-08',
     '参数正确：线上收到的是 CMD_ORDER_HELD，打在这一张 orderId 上',
-    ($holdCalls.Count -eq 1 -and [string]$holdCalls[0].target -eq [string]$faultedIntent.OrderId),
+    ($null -ne $holdCallsSeen -and $holdCallsSeen.Count -eq 1 -and
+        $holdCallsSeen.Target -eq [string]$faultedIntent.OrderId),
     "CMD_ORDER_HELD @ $([string]$faultedIntent.OrderId)",
-    $(if ($holdCalls.Count -eq 0) { '(无 CMD_ORDER_HELD)' }
-      else { "$($holdCalls.Count) 条，首条打在 $([string]$holdCalls[0].target)" }))
+    $(if ($null -eq $holdCallsSeen) { '(30 秒内无 CMD_ORDER_HELD)' }
+      else { "$($holdCallsSeen.Count) 条，首条打在 $($holdCallsSeen.Target)" }))
 
 # --- 4. 只调一次 ----------------------------------------------------------------------------------
 
