@@ -32,7 +32,6 @@ public sealed class AreaAssignmentLookupCriterion : IDispatchAdmissionCriterion
         AreaAssignmentTableVersion? table = evaluation.Round.AreaAssignments;
         evaluation.AreaAssignmentVersion = table?.Version;
         evaluation.AreaAssignment = table?.ByArea.GetValueOrDefault(evaluation.Candidate.LiveMesFields!.Area!);
-        evaluation.RequiredSlotPosition = evaluation.AreaAssignment?.SlotPosition;
         return Task.FromResult(DispatchAdmissionChain.Eligible);
     }
 }

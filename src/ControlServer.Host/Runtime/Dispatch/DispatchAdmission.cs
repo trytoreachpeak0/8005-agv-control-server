@@ -129,16 +129,15 @@ public sealed class DispatchCandidateEvaluation(
     public AreaAssignment? AreaAssignment { get; set; }
 
     /// <summary>
-    /// The slot group this demand's baskets must go into, which is the one its AREA is assigned. Set by the
-    /// area assignment lookup from <see cref="AreaAssignment"/>, so that it is always a function of the
-    /// frozen version and the AREA.
+    /// The slot group this demand's baskets must go into, which is the one its AREA is assigned. Read straight
+    /// off <see cref="AreaAssignment"/>, so it is always a function of the frozen version and the AREA and has
+    /// no second writer; null until the area assignment lookup has run, and when the AREA has no assignment.
     /// </summary>
     /// <remarks>
-    /// Nothing enforces it yet: until control-server#73 makes the slot capacity criterion choose target slots
-    /// inside this group, target slots are still taken from every empty slot, and a plan can carry a group
-    /// its target slots are not in.
+    /// The slot capacity criterion chooses <see cref="TargetSlots"/> inside this group (control-server#73), so
+    /// a plan's target slots are always in the group it carries.
     /// </remarks>
-    public string? RequiredSlotPosition { get; set; }
+    public string? RequiredSlotPosition => AreaAssignment?.SlotPosition;
 
     /// <summary>Set by the station-resolution criterion; every later criterion may rely on it.</summary>
     public ResolvedJourneyRoute? Route { get; set; }
