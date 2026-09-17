@@ -1,6 +1,6 @@
 # 批次 4 期间四次 L2 红：出口时补登记
 
-Status: 三项已修（两处场景脚本、`command-surface-order-hold`），一项修复待合入（假车载端应答缓存，PR #121）
+Status: 四项均已修（两处场景脚本、`command-surface-order-hold`、假车载端应答缓存）
 Owner repository: `8005-agv-control-server`
 Found by: 批次 4 各功能票的本机 L2 与 CI L2，见下表各行；本单由批次 4 出口票
 [control-server#76](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/76) 在出口核对时补写
@@ -50,5 +50,5 @@ Found by: 批次 4 各功能票的本机 L2 与 CI L2，见下表各行；本单
   一台假车跑不完两趟。服务端行为正确。
 - 当前处置：control-server#75 接受场景⑦暂时改为「两台车各一趟」（PR #120 合入 `0030aa2d`），三遍 PASS，
   证据 `evidence/l2/20260917-b4-11-mixed-side-station-two-trips-00{1,2,3}`。
-- 修复：PR #121 把缓存键改为请求自己的业务标识，并把场景改回票面的单车两趟。**本单写成时 PR #121 尚未合入**，
-  所以批次 4 出口三连跑的仍是两车各一趟的形状，见 `docs/batch-4-v2-exit-report.md`。
+- 修复：PR #121（已合入）把缓存键改为请求自己的业务标识，并把场景改回票面的单车两趟。本单初稿时 #121 尚未合入，
+  出口首轮三连跑的是两车各一趟；出口分支合入顶端后按单车两趟重新三连，见 `docs/batch-4-v2-exit-report.md`。
