@@ -22,7 +22,8 @@ namespace ControlServer.FakeOnboard;
 public sealed class OnboardPeerSession(
     CommandEngine<FakeOnboardState> engine,
     FakeOnboardOptions options,
-    SlotStateSeed slotStateSeed) : IAsyncDisposable
+    SlotStateSeed slotStateSeed,
+    FakeLoadCancellations? loadCancellations = null) : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly string[] FailedSlotReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"];
@@ -224,7 +225,7 @@ public sealed class OnboardPeerSession(
                 return;
             case "SublotEntryRequested":
                 await OnRequestAsync(
-                    "sublot", messageType, messageId, root, generation,
+                    SublotKey(root.GetProperty("payload")), messageType, messageId, root, generation,
                     engine.Snapshot().State.Policy.Sublot,
                     (payload, gen) => SublotSubmitted(payload, gen),
                     cancellationToken).ConfigureAwait(false);
@@ -247,9 +248,15 @@ public sealed class OnboardPeerSession(
                 await OnActivationCommandAsync(root, messageId, generation, cancellationToken)
                     .ConfigureAwait(false);
                 return;
+            case "LoadCancellationAuthorization" when loadCancellations is not null:
+                await loadCancellations.ObserveAuthorizationAsync(this, root, cancellationToken).ConfigureAwait(false);
+                return;
+            case "DurableAck" when loadCancellations is not null:
+                loadCancellations.ObserveDurableAck(root);
+                return;
             case "PreDepartureSafetyCheck":
                 await OnRequestAsync(
-                    "safety-check", messageType, messageId, root, generation,
+                    SafetyCheckKey(root.GetProperty("payload")), messageType, messageId, root, generation,
                     engine.Snapshot().State.Policy.SafetyCheck,
                     (payload, gen) => SafetyCheckResult(payload, gen, safe: true),
                     cancellationToken).ConfigureAwait(false);
@@ -260,6 +267,29 @@ public sealed class OnboardPeerSession(
                 return;
         }
     }
+
+    /// <summary>
+    /// The key a sublot entry request is answered and replayed under: its operation session and worklist
+    /// revision, which is what the server re-sends unchanged and what changes for the next trip.
+    /// </summary>
+    /// <remarks>
+    /// This was the fixed string <c>sublot</c> until control-server#75's review: the first trip's answer
+    /// was then replayed to every later request on the same connection, so the second trip was told the
+    /// first trip's sublot and one fake vehicle could never finish two trips. The expected sublots are
+    /// fixed by the worklist at that revision (the request expires on a revision change), so they add
+    /// nothing to the key.
+    /// </remarks>
+    public static string SublotKey(JsonElement requestPayload) =>
+        "sublot:" + requestPayload.GetProperty("operationSessionId").GetString() + ":"
+        + requestPayload.GetProperty("worklistRevision").GetInt64().ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The key a pre-departure safety check is answered and replayed under. The server reissues an
+    /// expired check under a new <c>preDepartureSafetyCheckId</c>, and each trip has its own, so a
+    /// cached answer naming an older check must not be sent back for it.
+    /// </summary>
+    public static string SafetyCheckKey(JsonElement checkPayload) =>
+        "safety-check:" + checkPayload.GetProperty("preDepartureSafetyCheckId").GetString();
 
     /// <summary>
     /// Records the request, then either answers it now or leaves it open for the scenario. Silent
@@ -694,6 +724,16 @@ public sealed class OnboardPeerSession(
             appliedContentSha256 = Sha256(root.GetRawText())
         }), cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>Sends one message this peer originates, in the current session generation.</summary>
+    public Task SendEnvelopeAsync(
+        string messageType,
+        string messageId,
+        object payload,
+        CancellationToken cancellationToken) =>
+        SendAsync(
+            Envelope(messageType, messageId, null, engine.Snapshot().State.SessionGeneration, payload),
+            cancellationToken);
 
     private Task SendAsync(object message, CancellationToken cancellationToken) =>
         SendLineAsync(JsonSerializer.Serialize(message, SerializerOptions), cancellationToken);
