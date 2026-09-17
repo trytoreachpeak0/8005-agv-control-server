@@ -150,6 +150,11 @@ jobs:
               # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.
               @{ Name = 'slot-group-selection';           Runs = 1; BatchId = 'batch-4' }
               @{ Name = 'slot-group-temporarily-full';    Runs = 1; BatchId = 'batch-4' }
+              # Batch 4 (control-server#74), specification 8.3 scenario 3: an oversized demand raised at once as a
+              # structural dispatch block, and disabled slots that stay ordinary backlog. In CI from their own ticket for
+              # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.
+              @{ Name = 'structural-block-oversized-demand'; Runs = 1; BatchId = 'batch-4' }
+              @{ Name = 'slot-group-disabled-no-alert';      Runs = 1; BatchId = 'batch-4' }
           )
           $only = @($env:L2_ONLY -split ',' | ForEach-Object Trim | Where-Object { $_ })
           $unknown = @($only | Where-Object { $_ -notin $scenarios.Name })
