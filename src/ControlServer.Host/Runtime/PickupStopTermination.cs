@@ -75,7 +75,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
         }
 
         runtime.Stage = JourneyRuntimeStage.Completed;
-        runtime.BlockReasonCode = reasonCode;
+        runtime.SetBlockReason(reasonCode, endedAt);
         runtime.StationDepartureWaitStartedAt = null;
         runtime.UpdatedAt = endedAt;
     }

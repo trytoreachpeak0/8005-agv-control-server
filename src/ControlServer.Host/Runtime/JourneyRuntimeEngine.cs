@@ -500,7 +500,8 @@ public sealed class JourneyRuntimeEngine(
             JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
                 .SingleAsync(row => row.DemandId == selected.Snapshot.DemandId, cancellationToken)
                 .ConfigureAwait(false);
-            runtime.BlockReasonCode = result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED";
+            runtime.SetBlockReason(
+                result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED", now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -548,7 +549,7 @@ public sealed class JourneyRuntimeEngine(
             // readiness carries its own row and its own reason code.
             if (runtime.Stage != JourneyRuntimeStage.Blocked)
             {
-                runtime.BlockReasonCode = "ONBOARD_SESSION_NOT_READY";
+                runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -694,7 +695,7 @@ public sealed class JourneyRuntimeEngine(
                     }
                     if (reissuedDepartureCheck && runtime.BlockReasonCode is null)
                     {
-                        runtime.BlockReasonCode = "PREDEPARTURE_CHECK_EXPIRED";
+                        runtime.SetBlockReason("PREDEPARTURE_CHECK_EXPIRED", now);
                     }
                     if (runtime.BlockReasonCode is not null)
                     {
@@ -712,7 +713,7 @@ public sealed class JourneyRuntimeEngine(
                     .ConfigureAwait(false);
                 if (!gateLeg.IsAllowed)
                 {
-                    runtime.BlockReasonCode = gateLeg.BlockReason;
+                    runtime.SetBlockReason(gateLeg.BlockReason, timeProvider.GetUtcNow());
                     runtime.UpdatedAt = timeProvider.GetUtcNow();
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
@@ -728,9 +729,9 @@ public sealed class JourneyRuntimeEngine(
                 await store.SettleAnsweredCommandAsync(
                     runtime.PreDepartureSafetyCheckMessageId, now, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingGateArrival, now);
-                runtime.BlockReasonCode = dispatch.Outcome == MovementDispatchOutcome.Confirmed
-                    ? null
-                    : dispatch.Outcome.ToString();
+                runtime.SetBlockReason(
+                    dispatch.Outcome == MovementDispatchOutcome.Confirmed ? null : dispatch.Outcome.ToString(),
+                    now);
                 break;
             case JourneyRuntimeStage.AwaitingGateArrival:
                 if (!await EnsureMovementConfirmedAsync(
@@ -956,7 +957,7 @@ public sealed class JourneyRuntimeEngine(
         checkpointWaits.Clear(runtime.VehicleKey);
         if (!string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal))
         {
-            runtime.BlockReasonCode = VehicleFaultEvidence.OrderFailed;
+            runtime.SetBlockReason(VehicleFaultEvidence.OrderFailed, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -1003,7 +1004,7 @@ public sealed class JourneyRuntimeEngine(
             checkpointWaits.Clear(runtime.VehicleKey);
             if (IsCheckpointReason(runtime.BlockReasonCode))
             {
-                runtime.BlockReasonCode = null;
+                runtime.SetBlockReason(null, timeProvider.GetUtcNow());
                 runtime.UpdatedAt = timeProvider.GetUtcNow();
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -1022,7 +1023,7 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        runtime.BlockReasonCode = reason;
+        runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
         runtime.UpdatedAt = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -1048,12 +1049,12 @@ public sealed class JourneyRuntimeEngine(
             upperId, cancellationToken).ConfigureAwait(false);
         if (result.Outcome == MovementDispatchOutcome.Confirmed)
         {
-            runtime.BlockReasonCode = null;
+            runtime.SetBlockReason(null, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
-        runtime.BlockReasonCode = $"{legName}_{result.Outcome}";
+        runtime.SetBlockReason($"{legName}_{result.Outcome}", timeProvider.GetUtcNow());
         runtime.UpdatedAt = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return false;
@@ -1290,12 +1291,12 @@ public sealed class JourneyRuntimeEngine(
                 if (!await store.IsTaskTypeAllowedAsync(
                         runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
                 {
-                    runtime.BlockReasonCode = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
+                    runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", timeProvider.GetUtcNow());
                     return null;
                 }
                 return row;
             }
-            runtime.BlockReasonCode = "SUBLOT_SUBMISSION_MISMATCH";
+            runtime.SetBlockReason("SUBLOT_SUBMISSION_MISMATCH", timeProvider.GetUtcNow());
         }
         return null;
     }
@@ -1323,18 +1324,22 @@ public sealed class JourneyRuntimeEngine(
         int attempts = Math.Max(1, (int)(runtimeOptions.DepartureSafetyResultWait / step));
         for (int attempt = 0; ; attempt++)
         {
-            runtime.BlockReasonCode = null;
-            SafetyCheckObservation? safety = await FindSafeDepartureResultAsync(
-                runtime, session, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
-            if (safety is not null || runtime.BlockReasonCode is not null || attempt >= attempts)
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            (SafetyCheckObservation? safety, bool invalid) = await FindSafeDepartureResultAsync(
+                runtime, session, now, cancellationToken).ConfigureAwait(false);
+            if (safety is not null || invalid || attempt >= attempts)
             {
+                // Written once, as the wait ends. Clearing the code before every attempt and writing it
+                // back, as this did before control-server#80, would restart BlockReasonSince on every
+                // poll of a journey that stays PRE_DEPARTURE_SAFETY_NOT_VALID.
+                runtime.SetBlockReason(invalid ? "PRE_DEPARTURE_SAFETY_NOT_VALID" : null, now);
                 return safety;
             }
             await Task.Delay(step, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task<SafetyCheckObservation?> FindSafeDepartureResultAsync(
+    private async Task<(SafetyCheckObservation? Safety, bool Invalid)> FindSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
         SessionRecoveryRow session,
         DateTimeOffset now,
@@ -1377,21 +1382,20 @@ public sealed class JourneyRuntimeEngine(
                          now - observedAt <= runtimeOptions.MaximumEvidenceAge;
             if (!valid)
             {
-                runtime.BlockReasonCode = "PRE_DEPARTURE_SAFETY_NOT_VALID";
-                return null;
+                return (null, true);
             }
             if (session.SafetyRevision is not long safetyRevision)
             {
-                return null;
+                return (null, false);
             }
-            return new SafetyCheckObservation(
+            return (new SafetyCheckObservation(
                 runtime.PreDepartureSafetyCheckId,
                 safetyRevision,
                 true,
                 observedAt,
-                validUntil);
+                validUntil), false);
         }
-        return null;
+        return (null, false);
     }
 
     /// <summary>
@@ -1970,7 +1974,7 @@ public sealed class JourneyRuntimeEngine(
     private static void SetStage(JourneyRuntimeRow runtime, JourneyRuntimeStage stage, DateTimeOffset now)
     {
         runtime.Stage = stage;
-        runtime.BlockReasonCode = null;
+        runtime.SetBlockReason(null, now);
         runtime.UpdatedAt = now;
     }
 
@@ -2015,7 +2019,7 @@ public sealed class JourneyRuntimeEngine(
     private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)
     {
         runtime.Stage = JourneyRuntimeStage.Blocked;
-        runtime.BlockReasonCode = reason;
+        runtime.SetBlockReason(reason, now);
         runtime.UpdatedAt = now;
     }
 
@@ -2055,7 +2059,7 @@ public sealed class JourneyRuntimeEngine(
         {
             if (runtime.BlockReasonCode != "LOAD_CORRECTION_IN_PROGRESS")
             {
-                runtime.BlockReasonCode = "LOAD_CORRECTION_IN_PROGRESS";
+                runtime.SetBlockReason("LOAD_CORRECTION_IN_PROGRESS", now);
                 runtime.UpdatedAt = now;
             }
             return false;
@@ -2069,7 +2073,7 @@ public sealed class JourneyRuntimeEngine(
         if (runtime.StationDepartureWaitStartedAt != startedAt || runtime.BlockReasonCode is not null)
         {
             runtime.StationDepartureWaitStartedAt = startedAt;
-            runtime.BlockReasonCode = null;
+            runtime.SetBlockReason(null, now);
             runtime.UpdatedAt = now;
         }
         // No deadline here means the wait is off: the vehicle leaves in the iteration its load commits.
@@ -2263,7 +2267,7 @@ public sealed class JourneyRuntimeEngine(
                 currentRevision,
                 runtime.GateStationId),
             cancellationToken).ConfigureAwait(false);
-        runtime.BlockReasonCode = "PREDEPARTURE_CHECK_EXPIRED";
+        runtime.SetBlockReason("PREDEPARTURE_CHECK_EXPIRED", now);
         runtime.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return true;

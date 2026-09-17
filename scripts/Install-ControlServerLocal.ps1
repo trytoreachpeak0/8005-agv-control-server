@@ -17,7 +17,14 @@ param(
     [string]$ListenAddress = '127.0.0.1',
     [string]$HealthBindAddress = '127.0.0.1',
     [switch]$CopyUserRiotSecretToMachine,
-    [switch]$SkipMachineEnvironmentInjection
+    [switch]$SkipMachineEnvironmentInjection,
+    # control-server#80: the release candidate's dashboard directory. Optional, so an install that names
+    # only the server package behaves exactly as before.
+    [string]$DashboardPackagePath,
+    [string]$DashboardInstallRoot = 'C:\Program Files\8005 AGV\ControlServer.Dashboard',
+    [string]$DashboardTaskName = '8005 AGV ControlServer Dashboard',
+    [ValidateRange(1, 65535)]
+    [int]$DashboardPort = 58009
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,6 +58,16 @@ $dataRootExisted = Test-Path -LiteralPath $dataRoot
 $dataBackupCreated = $false
 $oldRiotMachine = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'Machine')
 $machineEnvironmentInjected = $false
+$installDashboard = -not [string]::IsNullOrWhiteSpace($DashboardPackagePath)
+$resolvedDashboardPackage = if ($installDashboard) { Resolve-FullPath $DashboardPackagePath } else { $null }
+$dashboardInstallPath = Resolve-FullPath $DashboardInstallRoot
+# The dashboard has no authentication, so it stays on loopback whatever the server binds (program#55): a
+# maintainer reaches it with ssh -L 58009:127.0.0.1:58009. Opening it to the LAN is a separate decision.
+$dashboardOrigin = "http://127.0.0.1:$DashboardPort"
+$dashboardProduct = '8005 AGV ControlServer Dashboard'
+$dashboardInstallCreated = $false
+$dashboardTaskCreated = $false
+$dashboardPageServed = $false
 
 function Assert-Administrator {
     $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
@@ -99,13 +116,13 @@ function Set-RestrictedRegistryAcl([Microsoft.Win32.RegistryKey]$Key) {
     $Key.SetAccessControl($security)
 }
 
-function Test-PackageManifest([string]$Path) {
+function Test-PackageManifest([string]$Path, [string]$ExpectedProduct = '8005 AGV ControlServer') {
     $manifestPath = Join-Path $Path 'deployment-manifest.json'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
         throw 'Package deployment-manifest.json is missing.'
     }
     $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 1 -or $manifest.product -ne '8005 AGV ControlServer') {
+    if ($manifest.schemaVersion -ne 1 -or $manifest.product -ne $ExpectedProduct) {
         throw 'Package manifest identity is invalid.'
     }
     $packagePrefix = $Path.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
@@ -174,6 +191,32 @@ function Get-VersionCheck {
     return Invoke-HealthJson "$healthCheckOrigin/version"
 }
 
+# The page is the check, not the port: it has to come back rendered with the blocked-journey card on it,
+# which also proves the dashboard reached the server's read-only endpoints through the origin it was given.
+function Wait-DashboardPage([int]$Seconds = 60) {
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($Seconds)
+    $lastError = 'no response'
+    do {
+        try {
+            $response = Invoke-WebRequest -Uri "$dashboardOrigin/" -NoProxy -TimeoutSec 5 -UseBasicParsing
+            if ($response.StatusCode -eq 200 -and $response.Content.Contains('id="blocked-journeys"')) { return $true }
+            $lastError = "status $($response.StatusCode) without the blocked-journeys card"
+        }
+        catch {
+            $lastError = $_.Exception.Message
+        }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+    throw "The dashboard at $dashboardOrigin did not serve its page within $Seconds seconds: $lastError"
+}
+
+function Stop-DashboardProcess {
+    $prefix = $dashboardInstallPath.TrimEnd('\') + '\'
+    Get-Process -Name 'ControlServer.Dashboard' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) } |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
 Assert-Administrator
 if (-not $CopyUserRiotSecretToMachine -and -not $SkipMachineEnvironmentInjection) {
     throw 'Explicit -CopyUserRiotSecretToMachine authorization is required unless -SkipMachineEnvironmentInjection is used.'
@@ -189,6 +232,22 @@ if (Test-Path -LiteralPath $installPath) {
 }
 
 $manifest = Test-PackageManifest $resolvedPackage
+$dashboardManifest = $null
+if ($installDashboard) {
+    if (-not (Test-Path -LiteralPath $resolvedDashboardPackage -PathType Container)) {
+        throw "Dashboard package path does not exist: $resolvedDashboardPackage"
+    }
+    if (Get-ScheduledTask -TaskName $DashboardTaskName -ErrorAction SilentlyContinue) {
+        throw "Scheduled task already exists; this first-install script will not replace it: $DashboardTaskName"
+    }
+    if (Test-Path -LiteralPath $dashboardInstallPath) {
+        throw "Dashboard install path already exists; this first-install script will not replace it: $dashboardInstallPath"
+    }
+    $dashboardManifest = Test-PackageManifest $resolvedDashboardPackage $dashboardProduct
+    if ($dashboardManifest.sourceCommit -ne $manifest.sourceCommit) {
+        throw "The dashboard package was built from $($dashboardManifest.sourceCommit), the server package from $($manifest.sourceCommit)."
+    }
+}
 $riotUser = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'User')
 if ([string]::IsNullOrWhiteSpace($riotUser)) {
     throw 'User-scope CONTROL_SERVER_RIOT_CALL_API_KEY is missing.'
@@ -312,6 +371,36 @@ try {
     Invoke-LiveCheck
     Write-Diagnostic 'service-lifecycle-checks-complete'
 
+    if ($installDashboard) {
+        New-Item -ItemType Directory -Path $dashboardInstallPath -Force | Out-Null
+        $dashboardInstallCreated = $true
+        foreach ($item in Get-ChildItem -LiteralPath $resolvedDashboardPackage -Force) {
+            Copy-Item -LiteralPath $item.FullName -Destination $dashboardInstallPath -Recurse -Force
+        }
+        Set-RestrictedDirectoryAcl $dashboardInstallPath
+
+        # A scheduled task at startup rather than a service: the dashboard's Program.cs does not host itself
+        # as a Windows service, the service control manager kills an executable that never reports in, and
+        # that file is the dashboard main file its self-registration convention keeps unchanged. The task
+        # runs as LocalSystem like the server, restarts on failure, and has no time limit.
+        $dashboardExecutable = Join-Path $dashboardInstallPath 'ControlServer.Dashboard.exe'
+        $dashboardArguments = '--Dashboard:url={0} --Dashboard:controlServerBaseUrl={1}' -f $dashboardOrigin, $healthCheckOrigin
+        $dashboardAction = New-ScheduledTaskAction -Execute $dashboardExecutable -Argument $dashboardArguments `
+            -WorkingDirectory $dashboardInstallPath
+        $dashboardTrigger = New-ScheduledTaskTrigger -AtStartup
+        $dashboardPrincipal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+        $dashboardSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+            -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable `
+            -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+        Register-ScheduledTask -TaskName $DashboardTaskName -Action $dashboardAction -Trigger $dashboardTrigger `
+            -Principal $dashboardPrincipal -Settings $dashboardSettings `
+            -Description '8005 AGV ControlServer read-only dashboard, loopback only' | Out-Null
+        $dashboardTaskCreated = $true
+        Start-ScheduledTask -TaskName $DashboardTaskName
+        $dashboardPageServed = Wait-DashboardPage
+        Write-Diagnostic 'dashboard-installation-complete'
+    }
+
     $databaseCreated = Test-Path -LiteralPath $databasePath -PathType Leaf
     if (-not $databaseCreated) { throw "The service did not create the SQLite database at $databasePath." }
     $logFiles = @()
@@ -358,7 +447,19 @@ try {
             serviceSpecificEnvironmentPresent = $serviceEnvironmentVerified
             valuesDisclosed = $false
         }
-        checks = @('package-hashes', 'sqlite-migrations-at-start', 'http-live-after-start', 'http-ready-after-start', 'stop-start', 'restart', 'http-version', 'log-file-written')
+        checks = @('package-hashes', 'sqlite-migrations-at-start', 'http-live-after-start', 'http-ready-after-start', 'stop-start', 'restart', 'http-version', 'log-file-written') +
+            @(if ($installDashboard) { 'dashboard-package-hashes'; 'dashboard-page-served' })
+        dashboard = [ordered]@{
+            installed = $installDashboard
+            taskName = if ($installDashboard) { $DashboardTaskName } else { $null }
+            installRoot = if ($installDashboard) { $dashboardInstallPath } else { $null }
+            url = if ($installDashboard) { $dashboardOrigin } else { $null }
+            controlServerBaseUrl = if ($installDashboard) { $healthCheckOrigin } else { $null }
+            packageManifestSha256 = if ($installDashboard) {
+                (Get-FileHash -LiteralPath (Join-Path $resolvedDashboardPackage 'deployment-manifest.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+            } else { $null }
+            pageServed = $dashboardPageServed
+        }
         journeyRuntimeEnabled = $false
         riotMutationPerformed = $false
         orderCreated = $false
@@ -375,6 +476,20 @@ catch {
     $originalError = $_
     $rollbackErrors = [Collections.Generic.List[string]]::new()
     Write-Diagnostic ("failure: {0}" -f $originalError.Exception.Message)
+    try {
+        if ($dashboardTaskCreated) {
+            Stop-ScheduledTask -TaskName $DashboardTaskName -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $DashboardTaskName -Confirm:$false
+        }
+        if ($dashboardInstallCreated) { Stop-DashboardProcess }
+    }
+    catch { $rollbackErrors.Add("dashboard-task: $($_.Exception.Message)") }
+    try {
+        if ($dashboardInstallCreated -and (Test-Path -LiteralPath $dashboardInstallPath)) {
+            Remove-Item -LiteralPath $dashboardInstallPath -Recurse -Force
+        }
+    }
+    catch { $rollbackErrors.Add("dashboard-install-path: $($_.Exception.Message)") }
     try {
         if ($serviceCreated) {
             Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
