@@ -2683,6 +2683,48 @@ public sealed class JourneyRuntimeWorkerTests
     }
 
     /// <summary>
+    /// A demand needing more baskets than its group has physical slots on any vehicle is refused, raised once as a
+    /// structural dispatch block that the next round only refreshes, and cleared once MES drops the demand
+    /// (control-server#74). The summary runs after the vehicle loop and changes nothing about what was dispatched.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ADemandNoVehicleHasTheSlotsForIsBlockedStructurallyNotDispatchedAndClearedWhenItLeavesTheCatalog()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        // Five baskets of four boxes each, for a FRONT group of four physical slots.
+        fixture.BoxCounts.Set("SUBLOT-001", 20);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        DateTimeOffset firstRound = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup,
+            (await fixture.Context.JourneyBacklog.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        StructuralDispatchBlockRow block = await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup, block.ReasonCode);
+        Assert.Equal(firstRound, block.FirstRaisedAt);
+        Assert.Equal(firstRound.AddSeconds(1), block.LastSeenAt);
+        Assert.Null(block.ClearedAt);
+        Assert.Single(fixture.StructuralBlockLog.Entries, entry => entry.Level == LogLevel.Warning);
+
+        fixture.Catalog.Set();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            firstRound.AddSeconds(2),
+            (await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).ClearedAt);
+    }
+
+    /// <summary>
     /// The whole vehicle has room, the demand's group does not: it waits rather than borrowing the other side,
     /// and is taken, into its own group, once slots there free up.
     /// </summary>
@@ -3403,6 +3445,9 @@ public sealed class JourneyRuntimeWorkerTests
 
         /// <summary>What the slot capacity criterion logged; the one criterion that logs.</summary>
         public RecordingLogger<SlotCapacityCriterion> SlotCapacityLog { get; } = new();
+
+        /// <summary>What the round-end structural dispatch block summary logged.</summary>
+        public RecordingLogger<StructuralDispatchBlockSink> StructuralBlockLog { get; } = new();
 
         public JourneyRuntimeEngine Engine { get; private set; }
 
@@ -4138,7 +4183,11 @@ public sealed class JourneyRuntimeWorkerTests
                 CreateFaultCoordinator(),
                 new AreaAssignmentStore(Context, CreateGovernedPublisher()),
                 new VehicleSlotPositionReader(Context),
-                new NoDispatchRoundOutcomeSink(),
+                new StructuralDispatchBlockSink(
+                    new StructuralDispatchBlockStore(Context),
+                    new VehicleSlotPositionReader(Context),
+                    new VehicleRoster(options),
+                    StructuralBlockLog),
                 options,
                 Clock,
                 EngineLog);

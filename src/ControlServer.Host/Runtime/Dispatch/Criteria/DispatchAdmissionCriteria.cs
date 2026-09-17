@@ -114,9 +114,8 @@ public static class DispatchAdmissionCriteria
         // Cost-ranked, falling back to first-seen when nothing was priced — which is what
         // REQ-0207 asks for when a cost is missing rather than a reachability.
         services.AddScoped<IDispatchCandidateRanker, RouteGraphCostRanker>();
-        // Concludes nothing across vehicles until the structural dispatch block (control-server#74) replaces
-        // this one registration.
-        services.AddScoped<IDispatchRoundOutcomeSink, NoDispatchRoundOutcomeSink>();
+        // The structural dispatch block (control-server#74): what can only be concluded across every vehicle.
+        services.AddScoped<IDispatchRoundOutcomeSink, StructuralDispatchBlockSink>();
         return services;
     }
 }

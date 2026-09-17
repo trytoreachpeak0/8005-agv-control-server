@@ -38,8 +38,10 @@ public sealed class DispatchZoneAreaAssignmentRow
 /// 一条需求没有任何潜在合法车辆时的结构性派车阻断（REQ-0210），按任务与原因去重。
 /// </summary>
 /// <remarks>
-/// 同一原因持续成立只刷新 <see cref="LastSeenAt"/>，不按每轮调度新建一行；原因消失时记 <see cref="ClearedAt"/>，
-/// 行留着作为这段阻断的记录。
+/// 同一原因持续成立只刷新 <see cref="LastSeenAt"/>，不按每轮调度新建一行；原因消失时记 <see cref="ClearedAt"/>。
+/// 主键 <c>(DemandId, ReasonCode)</c> 只容一行，所以这一行只记<b>最近一段</b>阻断：清除后同一原因再次成立时覆盖同一行
+/// （<see cref="FirstRaisedAt"/> 改为这次、<see cref="ClearedAt"/> 置空、明细取这次），上一段的起止时间随之丢失，
+/// 这张表不是历次阻断的历史。
 /// </remarks>
 public sealed class StructuralDispatchBlockRow
 {
