@@ -34,7 +34,8 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `slot-configuration-activation-replay` | 合成 | **批次 3 出口（`FP-IS-14`）**：激活「下发 → 断线 → 重连 → 补报」——断线期间服务端不猜，补发同一行，只收敛一次；顺带经 `FieldOps export-audit` 导出这次激活的业务审计（REQ-0271） | 待 CI 三连跑 |
 | `onboard-alarm-snapshot-dashboard` | 合成 | **批次 3 出口（`FP-IS-15`）**：车载告警快照「车载产快照 → 服务端消费 → 看板可见」，断言读看板进程渲染出的页面；看板显示全部告警（REQ-0270）、整体取代、失联直述、重连采纳 | 待 CI 三连跑 |
 | `station-deadline-sublot-timeout` | 合成 | **批次 5（control-server#79，ADR-cross-0055、ADR-cross-0058 决策 7）**：到站起算站点期限，没人扫码到期服务端自己结束本站（需求 `Cancelled`、`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、录入请求结算、同一 `DemandId` 不再被派）；期限走到一半断联重连，从会话回到 Ready 那一刻重新计满 | 本地 PASS（证据未入库），三连在批次 5 出口 |
-| `blocked-journey-dashboard-projection` | 合成 | **批次 5（control-server#80，program#55）**：旅程阻断带开始时间上看板——读只读端点 `/api/dashboard/blocked-journeys`：检查点等待挂上即列出、清掉即消失；会话未就绪带会话的三个安全字段、安全证据不全直接最高档，引擎每轮重写这一行而开始时间不动，看板按档上色；装货结果需要恢复停摆后开始时间不变。`STATION_TIMEOUT_DOOR_NOT_CLOSED` 那一段由 control-server#81 补 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `load-determinate-failure-and-door-open-timeout` | 合成 | **批次 5（control-server#81，ADR-cross-0058 决策 4、5）**：装货中期限。期限后报确定失败（`FAILED`＋首仓 `OPERATOR_TIMEOUT`、其余 `NOT_STARTED`，全部 `EMPTY`／`LOCKED`／`RESET`）→ 操作 `Failed`、需求 `Cancelled`／`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、装货命令结算、无恢复，车接下一单——**防御路径，v2 车载端不产出**；期限后不报结果、仓门未闭 → 挂 `STATION_TIMEOUT_DOOR_NOT_CLOSED`、stage 仍 `AwaitingLoadResult`、开始时间不动，关门撤销，再报 `COMPLETED` 提交 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `blocked-journey-dashboard-projection` | 合成 | **批次 5（control-server#80，program#55）**：旅程阻断带开始时间上看板——读只读端点 `/api/dashboard/blocked-journeys`：检查点等待挂上即列出、清掉即消失；会话未就绪带会话的三个安全字段、安全证据不全直接最高档，引擎每轮重写这一行而开始时间不动，看板按档上色；装货结果需要恢复停摆后开始时间不变；装货中期限过了门还开着（`STATION_TIMEOUT_DOOR_NOT_CLOSED`，control-server#81 补）列出 `AwaitingLoadResult`、门关上即消失 | 本地 PASS（证据未入库），三连在批次 5 出口 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与

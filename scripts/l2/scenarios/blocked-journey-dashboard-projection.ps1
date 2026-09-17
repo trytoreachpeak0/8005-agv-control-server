@@ -5,17 +5,19 @@
 
 在这之前阻断码只写在 JourneyRuntimes.BlockReasonCode 一个字段里：没有开始时间（UpdatedAt 会被后续写入冲掉）、
 没有端点，现场与脚本只能直查 SQLite。这条场景从外面读服务端新加的只读端点 /api/dashboard/blocked-journeys，
-用 v2 已有的三条阻断路径证「挂上即记、后续写入不冲掉、清掉即消失」：
+用 v2 已有的四条阻断路径证「挂上即记、后续写入不冲掉、清掉即消失」：
 
   A. 检查点等待（VEHICLE_WAITING_AT_CHECKPOINT）：挂上之后端点列出这条旅程与开始时间；车重新动起来、码被
      清掉之后，端点里这条旅程消失，库里开始时间一并清掉。
   B. 会话未就绪（ONBOARD_SESSION_NOT_READY，安全证据有未知项）：端点带开始时间与会话的原因码、安全原因码、
      SafetyUnknownPresent，直接按最高档；引擎每一轮都重写这一行（UpdatedAt 往前走），开始时间不动，已挂时长
      照实增长；看板那一页按最高档渲染出这一行。到站换段时它被清掉，端点不再列出。
+  D. 装货中期限过了、门还开着（STATION_TIMEOUT_DOOR_NOT_CLOSED，control-server#81 补）：端点列出 AwaitingLoadResult
+     （不是 Blocked）、取货站与开始时间，按操作员档；再跑几轮开始时间不变；门关上端点不再列出。
   C. 装货结果需要恢复（LOAD_RESULT_REQUIRES_RECOVERY）：停摆后端点列出 Blocked、取货站与开始时间，再跑几轮不变。
 
-STATION_TIMEOUT_DOOR_NOT_CLOSED 那一段不在这里：它的判定是 control-server#81，本票合入时 #81 尚未合入，
-按票面分工由 #81 合入时补上。合成对端不发起恢复握手，所以 C 段停在「正确地停摆」，清除由 A、B 两段证。
+D 段在 C 段应答之前跑：告警只在装货结果还没到时挂。它等的是装置默认的三十秒站点期限，从到站起算。合成对端不发起恢复
+握手，所以 C 段停在「正确地停摆」，清除由 A、B、D 三段证。
 
 所有「对端收到了什么」的判据都先等它出现再断言（Wait-L2Condition／Wait-L2Change），不读一次就下结论。
 #>
@@ -292,6 +294,63 @@ $assertions.Add(
     ([string]::IsNullOrEmpty([string]$runtime.BlockReasonCode) -and $null -eq $afterArrival),
     '(not listed) / code null', "$(Format-Entry $afterArrival) / code '$($runtime.BlockReasonCode)'")
 
+# --- D. 装货中期限过了、门还开着：STATION_TIMEOUT_DOOR_NOT_CLOSED 带开始时间，门关上即消失 --------------------------
+
+$doorAlarm = Wait-L2Change -Description 'the endpoint lists the load stop past its deadline with a door open' `
+    -Journal $journal -Criterion 'endpoint-door-not-closed' -TimeoutSeconds 90 `
+    -Baseline { Get-BlockedEntry } `
+    -Action {
+        $journal.Note('Peer reports a slot door not closed while the load is still underway; the stop runs out its deadline.')
+        $null = $onboard.Command('Put', 'safety', @{
+            departureSafe        = $false
+            allTargetSlotsLocked = $false
+            unknownPresent       = $false
+            reasonCodes          = @('LOCK_NOT_CLOSED')
+        })
+    } `
+    -Probe { Get-BlockedEntry } `
+    -Until { param($before, $now) $null -ne $now -and $now.blockReasonCode -eq 'STATION_TIMEOUT_DOOR_NOT_CLOSED' }
+$door = $doorAlarm.Value
+$doorSince = ConvertTo-Instant $door.blockReasonSince
+$runtime = Get-Runtime
+$assertions.Add(
+    'L2-BJ-10', '仓门未闭告警挂上后端点列出 AwaitingLoadResult（不是 Blocked）、取货站与开始时间，开始时间就是库里记下的那一个，按操作员档',
+    ($null -eq $doorAlarm.Baseline -and $door.stage -eq 'AwaitingLoadResult' -and $door.stationId -eq $pickupStationId -and
+        $null -ne $doorSince -and $doorSince -eq (ConvertTo-Instant $runtime.BlockReasonSince) -and
+        $door.escalationLevel -eq 'Operator'),
+    "(not listed) → AwaitingLoadResult @ $pickupStationId, STATION_TIMEOUT_DOOR_NOT_CLOSED since $($runtime.BlockReasonSince) (Operator)",
+    "$(Format-Entry $doorAlarm.Baseline) → $(Format-Entry $door)")
+
+$null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
+$doorHeld = Get-BlockedEntry
+$assertions.Add(
+    'L2-BJ-11', '告警挂着期间运行时又跑了几轮，码与开始时间不变，stage 仍是 AwaitingLoadResult',
+    ($null -ne $doorHeld -and $doorHeld.blockReasonCode -eq 'STATION_TIMEOUT_DOOR_NOT_CLOSED' -and
+        (ConvertTo-Instant $doorHeld.blockReasonSince) -eq $doorSince -and $doorHeld.stage -eq 'AwaitingLoadResult'),
+    "STATION_TIMEOUT_DOOR_NOT_CLOSED since $($door.blockReasonSince) (AwaitingLoadResult)", (Format-Entry $doorHeld))
+
+$doorShut = Wait-L2Change -Description 'the journey disappears from the endpoint once the door is shut' `
+    -Journal $journal -Criterion 'endpoint-door-closed' -TimeoutSeconds 60 `
+    -Baseline { Get-BlockedEntry } `
+    -Action {
+        $journal.Note('The operator shuts the door; the peer reports every slot locked again.')
+        $null = $onboard.Command('Put', 'safety', @{
+            departureSafe        = $true
+            allTargetSlotsLocked = $true
+            unknownPresent       = $false
+            reasonCodes          = @()
+        })
+    } `
+    -Probe { (Get-BlockedEntry) ?? $notListed } `
+    -Until { param($before, $now) $null -ne $before -and $now -eq $notListed }
+$runtime = Get-Runtime
+$assertions.Add(
+    'L2-BJ-12', '门关上后端点不再列出这条旅程，库里阻断码与开始时间一并清空，本站仍在等装货结果',
+    ($doorShut.Value -eq $notListed -and $null -eq (ConvertTo-Instant $runtime.BlockReasonSince) -and
+        [string]::IsNullOrEmpty([string]$runtime.BlockReasonCode) -and [string]$runtime.Stage -eq 'AwaitingLoadResult'),
+    '(not listed) / code null / since null / AwaitingLoadResult',
+    "$($doorShut.Value) / code '$($runtime.BlockReasonCode)' / since '$($runtime.BlockReasonSince)' / $($runtime.Stage)")
+
 $blocked = Wait-L2Change -Description 'the endpoint lists the journey blocked on the incomplete load result' `
     -Journal $journal -Criterion 'endpoint-load-result-block' -TimeoutSeconds 120 `
     -Baseline { Get-BlockedEntry } `
@@ -320,4 +379,4 @@ $assertions.Add(
         (ConvertTo-Instant $stillBlocked.blockReasonSince) -eq $loadSince),
     "LOAD_RESULT_REQUIRES_RECOVERY since $($loadBlock.blockReasonSince)", (Format-Entry $stillBlocked))
 
-$journal.Note('Scenario finished at Blocked; STATION_TIMEOUT_DOOR_NOT_CLOSED is added by control-server#81.')
+$journal.Note('Scenario finished at Blocked.')
