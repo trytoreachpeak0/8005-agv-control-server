@@ -27,9 +27,25 @@ using Corvus.Json.Validator;
 const int ErrorsPerLine = 5;
 const string Validator = "Corvus.Json.Validator 4.6.7";
 
-Dictionary<string, string> arguments = ParseArguments(args);
-string linesPath = Required(arguments, "lines");
-string reportDirectory = Required(arguments, "report");
+// A missing or malformed argument is unusable input, and unusable input is exit 2 like every other
+// one: an unhandled exception would end the process with the runtime's own code and a stack trace,
+// which a caller that reads the exit code -- a test fixture, the G2 script -- cannot tell apart from
+// a crash in the schema library. Caught rather than avoided, so --name value pairs stay the only
+// spelling and nothing has to be checked twice.
+const string Usage = "Usage: ControlServer.SchemaConformance --lines <ndjson> --report <directory> [--vendor <directory>]";
+Dictionary<string, string> arguments;
+string linesPath;
+string reportDirectory;
+try
+{
+    arguments = ParseArguments(args);
+    linesPath = Required(arguments, "lines");
+    reportDirectory = Required(arguments, "report");
+}
+catch (ArgumentException exception)
+{
+    return Fail($"{exception.Message} {Usage}");
+}
 // The build copies vendor/8005-agv-protocol next to the executable; --vendor exists so a caller can
 // point the validator at a copy of its own, which is how the hash self-check is tested.
 string vendorRoot = arguments.GetValueOrDefault("vendor")

@@ -169,6 +169,25 @@ public sealed class SchemaConformanceToolTests : IDisposable
         Assert.Contains("No lines file", run.Error, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A bad command line is unusable input like any other, so it exits 2 rather than ending the
+    /// process with the runtime's own code and a stack trace -- a caller reading the exit code could
+    /// not tell that apart from a crash inside the schema library.
+    /// </summary>
+    [Fact]
+    public async Task ArgumentsThatAreMissingOrMalformedExitTwoInsteadOfCrashing()
+    {
+        string reportDirectory = Path.Combine(_directory, "arguments-report");
+
+        ToolRun missing = await RunToolWithArgumentsAsync(["--report", reportDirectory], reportDirectory);
+        Assert.Equal(2, missing.ExitCode);
+        Assert.Contains("--lines is required", missing.Error, StringComparison.Ordinal);
+
+        ToolRun unpaired = await RunToolWithArgumentsAsync(["--lines"], reportDirectory);
+        Assert.Equal(2, unpaired.ExitCode);
+        Assert.Contains("--name value pairs", unpaired.Error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void TheTestHostStillLoadsTheSystemTextJsonTheProductShipsWith()
     {
@@ -276,21 +295,25 @@ public sealed class SchemaConformanceToolTests : IDisposable
     private async Task<ToolRun> RunToolOnAsync(string name, string linesPath, string? vendor = null)
     {
         string reportDirectory = Path.Combine(_directory, name + "-report");
+        List<string> arguments = ["--lines", linesPath, "--report", reportDirectory];
+        if (vendor is not null)
+        {
+            arguments.AddRange(["--vendor", vendor]);
+        }
+        return await RunToolWithArgumentsAsync(arguments, reportDirectory);
+    }
 
+    private static async Task<ToolRun> RunToolWithArgumentsAsync(IEnumerable<string> arguments, string reportDirectory)
+    {
         Assert.True(File.Exists(ToolExecutable), $"the validator was not built: {ToolExecutable}");
         ProcessStartInfo start = new(ToolExecutable)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        start.ArgumentList.Add("--lines");
-        start.ArgumentList.Add(linesPath);
-        start.ArgumentList.Add("--report");
-        start.ArgumentList.Add(reportDirectory);
-        if (vendor is not null)
+        foreach (string argument in arguments)
         {
-            start.ArgumentList.Add("--vendor");
-            start.ArgumentList.Add(vendor);
+            start.ArgumentList.Add(argument);
         }
 
         using Process process = Process.Start(start)!;
