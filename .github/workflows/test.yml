@@ -25,6 +25,11 @@ jobs:
   test:
     runs-on: [self-hosted, headless]
     timeout-minutes: 30
+    env:
+      # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
+      # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
+      # runs 34807639494 and 35118544313. Off in CI only; release.yml keeps it.
+      NuGetAudit: 'false'
 
     steps:
       - uses: actions/checkout@v7
