@@ -70,8 +70,37 @@ resume 是设计不是缺陷。
 
 ## CI 只跑合成场景
 
-`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。现在是四条，合计
-约两分钟，证据当作 artifact 传上去（失败时也传——失败那次的证据才是唯一说明原因的东西）。
+`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。证据当作 artifact 传上去
+（失败时也传——失败那次的证据才是唯一说明原因的东西）。
+
+**PR 上默认每个场景跑一遍，三连按需手动跑**（2026-09-17 起）。清单里每行的 `Runs` 是这个场景的**三连次数**，
+不再是每次 PR 都付的次数：
+
+| 模式 | 触发 | 每个场景跑几遍 |
+| --- | --- | --- |
+| `default` | push、PR | `DefaultRuns`，没写就是 1 |
+| `consecutive` | 手动 | `Runs` |
+| `consecutive-all` | 手动 | 至少 3（批次出口用） |
+
+手动三连对任意分支随时可跑，排上 runner 就开始，不等夜里：
+
+```powershell
+gh workflow run l2.yml --ref <分支> -f mode=consecutive                       # 按各行登记的 Runs
+gh workflow run l2.yml --ref <分支> -f mode=consecutive -f scenarios=a,b      # 只跑其中几条
+```
+
+作业摘要里有一张表，列出每个场景实际跑到第几遍、结果如何，引用三连证据时贴那次 run 的链接。
+
+为什么改：服务端仓只有一个 runner，四张票并行时 PR 排队一小时以上，而三连的第 2、3 遍占了一次 L2 作业的 46%
+（run `35171499974`，1354 秒里的 618 秒）。**代价**：除 `DefaultRuns = 3` 的场景外，低频竞态在 PR 上只剩一遍机会。
+所以动到时序的票（引擎推进、连接会话、恢复协调、急停，或改动任一 `Runs = 3` 场景）合入前跑一次手动三连。
+`session-established-while-moving` 写了 `DefaultRuns = 3`，每个 PR 仍跑三遍：它守的是 CI 上真红过一次的竞态
+（`docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md`）。
+
+**PR 头已经换了的运行会自己跳过剩下的场景并正常结束**：作业开头与每个场景之前查一次 PR 当前头，不是本次提交
+就打一行 `L2 superseded` 说明后收尾，更新的那次推送有它自己的运行。这里**绝不取消作业**，手动取消与
+`cancel-in-progress` 都会让 runner 会话卡死（2026-09-03 空转 4 小时 14 分）。查询失败时照常跑完，不猜；
+手动触发的运行从不因此跳过。
 
 **真装置那三条刻意不进 CI，两个各自独立的原因：**
 
@@ -84,7 +113,8 @@ resume 是设计不是缺陷。
 所以这条流水线不受对方进度影响。
 
 **新写的合成场景记得加进 `l2.yml` 的清单**——那是一份手写数组，不是扫目录得来的。扫目录会把真装置
-那几条也一起领进来，而它们在服务 runner 上跑不了。
+那几条也一起领进来，而它们在服务 runner 上跑不了。加一行即可：`@{ Name = '<名字>'; Runs = 1 }`，要三连就写
+`Runs = 3`（PR 上仍只跑一遍）。`DefaultRuns = 3` 只给 CI 上真红过的竞态用，不要顺手加。
 
 ## 两套装置
 
