@@ -1,9 +1,12 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Tests;
 
@@ -14,7 +17,9 @@ internal static class TestOnboardProcessorFactory
         WireToGateStore store,
         TimeProvider timeProvider,
         IConfiguration configuration,
-        IOnboardPeer? peer = null)
+        IOnboardPeer? peer = null,
+        JourneyRuntimeOptions? runtimeOptions = null,
+        ILogger<OnboardMessageProcessor>? logger = null)
     {
         OnboardJourneyPublisher publisher = new(store, peer ?? new SilentPeer(), timeProvider);
         SlotConfigurationActivationDispatcher activationDispatcher = ActivationDispatcher(context, publisher);
@@ -28,7 +33,8 @@ internal static class TestOnboardProcessorFactory
             activationDispatcher,
             timeProvider,
             configuration,
-            NullLogger<OnboardMessageProcessor>.Instance);
+            Options.Create(runtimeOptions ?? new JourneyRuntimeOptions()),
+            logger ?? NullLogger<OnboardMessageProcessor>.Instance);
     }
 
     /// <summary>

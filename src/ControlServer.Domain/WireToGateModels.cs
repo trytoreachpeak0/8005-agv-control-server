@@ -46,13 +46,21 @@ public sealed record StationOperationResult(
     bool AllSlotsCompleted,
     DateTimeOffset ObservedAt,
     string ResultContentSha256,
-    string WireContentSha256);
+    string WireContentSha256,
+    IReadOnlyList<SlotOutcomeReport>? SlotOutcomes = null);
 
 public enum StationOperationStatus
 {
     Prepared,
     Committed,
     Cancelled,
+    /// <summary>
+    /// A load that missed its target and said so completely, after its station deadline: every slot's
+    /// state known, door locked, unlock output reset, and a reason with a terminal state
+    /// (<see cref="DeterminateLoadFailure"/>). Nothing is uncertain, so nobody is asked to recover it; the
+    /// runtime ends the demand. Unload never reaches it.
+    /// </summary>
+    Failed,
     RecoveryRequired
 }
 
@@ -315,7 +323,19 @@ public enum ConnectionRecoveryStatus
 public enum OperationResultDisposition
 {
     Accepted,
+    /// <summary>Judged <see cref="StationOperationStatus.Failed"/>: no recovery is asked for.</summary>
+    DeterminateFailure,
     RecoveryRequired,
+    /// <summary>
+    /// Judged <see cref="StationOperationStatus.RecoveryRequired"/> although it looked determinate:
+    /// received before the station deadline (<see cref="DeterminateLoadFailure.FailedBeforeStationDeadline"/>).
+    /// </summary>
+    FailedBeforeStationDeadline,
+    /// <summary>
+    /// Judged <see cref="StationOperationStatus.RecoveryRequired"/> although it looked determinate: its
+    /// reason has no terminal state (<see cref="DeterminateLoadFailure.ReasonWithoutTerminalState"/>).
+    /// </summary>
+    FailureReasonWithoutTerminalState,
     HistoricalOnly,
     Replay
 }

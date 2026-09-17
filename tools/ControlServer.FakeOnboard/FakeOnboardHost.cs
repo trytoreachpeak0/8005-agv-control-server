@@ -46,6 +46,7 @@ public static class FakeOnboardHost
         app.MapControlPlane();
         app.MapControlPlaneV2();
         app.MapControlPlaneLoadCancellation();
+        app.MapControlPlaneDeterminateLoadFailure();
         return app;
     }
 
