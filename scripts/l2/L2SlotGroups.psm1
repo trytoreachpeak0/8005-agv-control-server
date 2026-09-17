@@ -197,11 +197,13 @@ function Assert-L2SlotGroupTargets {
         [int[]]$AvailableSlots,
         [string]$Description
     )
+    # Not `$Description ?? ...`: an unbound [string] parameter is '', never $null, so ?? would always keep it.
+    $hasDescription = -not [string]::IsNullOrEmpty($Description)
 
     $journey = Invoke-L2Query -Connection $Connection `
         -Sql "SELECT AgvId, TargetSlotsJson FROM JourneyRuntimes WHERE DemandId = $(ConvertTo-L2SqlLiteral $DemandId)"
     if ($journey.Count -eq 0) {
-        $Assertions.Add($Id, ($Description ?? "需求 $DemandId 的目标仓位属于 $SlotPosition 组"), $false,
+        $Assertions.Add($Id, ($hasDescription ? $Description : "需求 $DemandId 的目标仓位属于 $SlotPosition 组"), $false,
             "a journey for $DemandId", '(no journey row)')
         return [pscustomobject]@{ Passed = $false; Expected = $null; Actual = @(); Reason = 'no journey row' }
     }
@@ -221,7 +223,7 @@ function Assert-L2SlotGroupTargets {
                     else { "$SlotPosition 组内升序的最小可用仓" }
     $actualText = "[$($targets -join ',')] on $agvId" + $(if ($result.Reason) { "：$($result.Reason)" } else { '' })
     $Assertions.Add($Id,
-        ($Description ?? "需求 $DemandId 的目标仓位全部属于 $SlotPosition 组、升序，且恰好是该组编号最小的 $($targets.Count) 个可用仓"),
+        ($hasDescription ? $Description : "需求 $DemandId 的目标仓位全部属于 $SlotPosition 组、升序，且恰好是该组编号最小的 $($targets.Count) 个可用仓"),
         [bool]$result.Passed, $expectedText, $actualText)
     return $result
 }
