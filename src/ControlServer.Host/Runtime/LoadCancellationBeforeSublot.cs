@@ -25,7 +25,10 @@ namespace ControlServer.Host.Runtime;
 /// <b>Exclusive with the station deadline.</b> An open cancellation holds the stop: the runtime neither
 /// starts a load nor ends the stop while the vehicle is proving there is nothing to unload. The stop ends
 /// on the vehicle's ALL_EMPTY result instead, through the same <see cref="PickupStopTermination"/> the
-/// deadline uses, or is blocked for recovery by any other result.
+/// deadline uses, or is blocked for recovery by any other result. Neither side trusts an earlier unlocked
+/// read for this: the authorization runs inside the inbox's write transaction, and the deadline re-reads
+/// the stop and its cancellations inside one of its own before ending it (BEGIN IMMEDIATE on this store).
+/// The settlement checks the stop once more, and leaves a stop that has already ended as it ended.
 /// </para>
 /// </remarks>
 public static class LoadCancellationBeforeSublot
@@ -50,14 +53,19 @@ public static class LoadCancellationBeforeSublot
     }
 
     /// <summary>
-    /// Whether an inbound <c>SublotSubmitted</c> is the entry the runtime acts on for this stop: the same
-    /// vehicle and session generation, the stop's operation session, station and worklist revision, and the
-    /// demand's sublot. Anything else the runtime records as a mismatch and does not load.
+    /// Whether an inbound <c>SublotSubmitted</c> is an entry for this stop: the same vehicle, the stop's
+    /// operation session, station and worklist revision, and the demand's sublot. Anything else the runtime
+    /// records as a mismatch and does not load.
     /// </summary>
+    /// <remarks>
+    /// Deliberately blind to the session generation. The runtime acts only on an entry of the current
+    /// generation and checks that itself; the cancellation refuses on an entry of any generation, because an
+    /// entry made before a reconnect may be the one the runtime is loading while the cancellation arrives on
+    /// the next connection (control-server#116 review).
+    /// </remarks>
     public static bool IsEntryForStop(
         JsonElement submission,
         JourneyRuntimeRow runtime,
-        long sessionGeneration,
         string demandSublot)
     {
         ArgumentNullException.ThrowIfNull(runtime);
@@ -66,7 +74,6 @@ public static class LoadCancellationBeforeSublot
         // demand per journey the operation session already names it; resolving by dispatch scope and
         // refusing sublots outside it is 8005-agv-control-server#82.
         return submission.GetProperty("agvId").GetString() == runtime.AgvId &&
-               submission.GetProperty("sessionGeneration").GetInt64() == sessionGeneration &&
                payload.GetProperty("operationSessionId").GetString() == runtime.OperationSessionId &&
                payload.GetProperty("stationId").GetString() == runtime.PickupStationId &&
                payload.GetProperty("worklistRevision").GetInt64() == runtime.WorklistRevision &&

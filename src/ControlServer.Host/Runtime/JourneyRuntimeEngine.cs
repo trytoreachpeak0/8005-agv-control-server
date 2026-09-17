@@ -6,6 +6,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
@@ -1291,9 +1292,10 @@ public sealed class JourneyRuntimeEngine(
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            // One rule with the cancellation before a sublot, which refuses once such an entry is durable.
-            bool matches = LoadCancellationBeforeSublot.IsEntryForStop(
-                root, runtime, session.SessionGeneration, demand.Sublot);
+            // One rule with the cancellation before a sublot, which refuses once such an entry is durable in
+            // any generation; the runtime itself acts only on an entry of the current one.
+            bool matches = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
+                           LoadCancellationBeforeSublot.IsEntryForStop(root, runtime, demand.Sublot);
             if (matches)
             {
                 if (!await store.IsTaskTypeAllowedAsync(
@@ -2162,10 +2164,34 @@ public sealed class JourneyRuntimeEngine(
             return false;
         }
 
+        // Decided again under the write lock (control-server#83). The operator's cancellation before a sublot
+        // is authorized on another connection's scope, and everything this iteration read about the stop was
+        // read without a lock: a cancellation authorized -- or authorized and already settled -- since then
+        // would otherwise lose its stop to this one, and its result would find a demand ended for a reason
+        // that is not the operator's. BeginTransaction on this store is BEGIN IMMEDIATE, so the reads below
+        // see every write committed before it, and the authorization, running inside the inbox's own write
+        // transaction, sees this one once it commits.
+        await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        JourneyRuntimeStage? stageNow = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.DemandId == runtime.DemandId)
+            .Select(row => (JourneyRuntimeStage?)row.Stage)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (stageNow != JourneyRuntimeStage.AwaitingSublot ||
+            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
         await new PickupStopTermination(dbContext)
             .StageAsync(runtime, StationTimeoutCancellationReason, now, cancellationToken).ConfigureAwait(false);
-        checkpointWaits.Clear(runtime.VehicleKey);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        checkpointWaits.Clear(runtime.VehicleKey);
         LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId, deadline, null);
         return true;
     }

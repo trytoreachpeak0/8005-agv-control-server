@@ -1665,6 +1665,45 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// A cancellation that names an attempt is judged against the vehicle that sent it too
+    /// (control-server#116 review, item 3): another vehicle naming this demand and its load is refused and
+    /// records nothing, while the vehicle running the journey is authorized.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ALoadCancellationNamingAnAttemptIsRefusedFromAnotherVehicle()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(token);
+        await using ControlServerDbContext context = await CreateContextAsync(connection);
+        await SeedCancellableLoadAsync(context);
+        OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
+        OnboardConnectionState other = CurrentState();
+        other.AgvId = "AGV-SOMEONE-ELSE";
+        JsonNode foreign = JsonNode.Parse(CancellationRequest("b3000000-0000-4000-8000-000000000001"))!;
+        foreign["agvId"] = other.AgvId;
+
+        string refused = await processor.ProcessAsync(foreign.ToJsonString(), other, token);
+        string authorized = await processor.ProcessAsync(
+            CancellationRequest("b3000000-0000-4000-8000-000000000002").Replace(
+                "b1000000-0000-4000-8000-000000000010", "b3000000-0000-4000-8000-000000000010", StringComparison.Ordinal),
+            CurrentState(),
+            token);
+
+        using (JsonDocument document = JsonDocument.Parse(refused))
+        {
+            Assert.Equal("REJECTED", document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
+        }
+        using (JsonDocument document = JsonDocument.Parse(authorized))
+        {
+            Assert.Equal("AUTHORIZED", document.RootElement.GetProperty("payload").GetProperty("decision").GetString());
+        }
+        RecoveryWorkflowRow workflow = await context.RecoveryWorkflows.SingleAsync(token);
+        Assert.Equal("b3000000-0000-4000-8000-000000000002", workflow.WorkflowId);
+    }
+
+    /// <summary>
     /// Protocol 2.0.0 item 3: <c>LoadCancellationResult.slotResults</c> may be empty, which is what a
     /// cancellation before anything was loaded reports. Inbound parsing must take it, whatever was
     /// authorized: here the cancellation named an attempt with two slots, so the empty result is received,

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -358,6 +359,265 @@ public sealed partial class JourneyRuntimeWorkerTests
             state,
             token);
         await AssertStopEndedByOperatorAsync(fixture, waiting, receivedAt);
+    }
+
+    /// <summary>
+    /// The station deadline and the cancellation interleaved (control-server#116 review, item 1). Each side
+    /// decides under the write lock, so in the store one of them commits first and the other then refuses:
+    /// a cancellation arriving after the deadline ended the stop is REJECTED. Should both still have been
+    /// recorded -- the state a lost lock would leave, written here directly -- the vehicle's ALL_EMPTY result
+    /// is taken and acknowledged, but the stop keeps the reason it ended with: CANCELLED_BY_STATION_TIMEOUT
+    /// is not rewritten as the operator's, and nothing it released is released again.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task WhenTheStationDeadlineEndsTheStopFirstTheCancellationDoesNotRewriteHowItEnded()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+
+        // The deadline commits first; the cancellation that follows is refused.
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(token);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", (await fixture.RuntimeAsync()).BlockReasonCode);
+        string refused = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, "c1000000-0000-4000-8000-000000000002", generation: 1), state, token);
+        Assert.Equal("REJECTED", FirstLinePayload(refused, out _).GetProperty("decision").GetString());
+
+        // Both recorded anyway: an open cancellation on a stop the deadline has already ended.
+        DateTimeOffset endedAt = (await fixture.LeaseAsync()).ReleasedAt!.Value;
+        await using (ControlServerDbContext racer = fixture.OpenConnectionContext())
+        {
+            racer.RecoveryWorkflows.Add(new RecoveryWorkflowRow
+            {
+                WorkflowId = BeforeSublotCancellationId,
+                WorkflowType = "LOAD_CANCELLATION",
+                AgvId = fixture.Options.AgvId,
+                DemandId = BeforeSublotDemandId,
+                SlotOperationAttemptId = null,
+                SlotsJson = "[]",
+                ForcedRecoveryGeneration = 0,
+                State = RecoveryWorkflowState.AwaitingResult,
+                RequestMessageId = Guid.NewGuid().ToString("D"),
+                RequestContentHash = new string('b', 64),
+                CreatedAt = endedAt,
+                UpdatedAt = endedAt
+            });
+            await racer.SaveChangesAsync(token);
+        }
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+
+        string ack = await processor.ProcessAsync(
+            CancellationBeforeSublotResult(fixture, "c1000000-0000-4000-8000-000000000101", generation: 1),
+            state,
+            token);
+
+        Assert.Equal("DurableAck", FirstLineType(ack));
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+        Assert.Equal("CANCELLED_BY_STATION_TIMEOUT", runtime.BlockReasonCode);
+        Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
+        Assert.Equal(endedAt, (await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Equal(endedAt, (await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .SingleAsync(row => row.MessageId == waiting.SublotRequestMessageId, token)).AcknowledgedAt);
+        Assert.Single(await fixture.Context.RecoveryResultEvidence.AsNoTracking().ToArrayAsync(token));
+    }
+
+    /// <summary>
+    /// The other interleaving (control-server#116 review, item 2): a load commanded while a cancellation was
+    /// open -- again written directly, since the entry check and the engine's read order are meant to prevent
+    /// it. The ALL_EMPTY result cannot end a stop whose load went out, so the settlement re-checks and holds
+    /// the demand for recovery instead of cancelling it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnAllEmptyResultDoesNotEndAStopWhoseLoadWasCommandedMeanwhile()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+
+        // Hide the open cancellation from one runtime pass so it loads, then put it back.
+        await SetWorkflowStateAsync(fixture, RecoveryWorkflowState.HistoricalOnly);
+        await fixture.SubmitSublotAsync("SUBLOT-001");
+        await fixture.Engine.ExecuteOnceAsync(token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingLoadResult, (await fixture.RuntimeAsync()).Stage);
+        await SetWorkflowStateAsync(fixture, RecoveryWorkflowState.AwaitingResult);
+
+        string ack = await processor.ProcessAsync(
+            CancellationBeforeSublotResult(fixture, "c1000000-0000-4000-8000-000000000101", generation: 1),
+            state,
+            token);
+
+        Assert.Equal("DurableAck", FirstLineType(ack));
+        Assert.Equal(RecoveryWorkflowState.RecoveryRequired,
+            (await fixture.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+        Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await fixture.DemandRowAsync()).Status);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
+        Assert.Equal("LoadCancellationResult_NOT_RECONCILED", runtime.BlockReasonCode);
+        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+    }
+
+    /// <summary>
+    /// control-server#116 review, item 2: an entry made before a reconnect still holds the stop. The runtime
+    /// may be loading it when the cancellation arrives on the next connection, so the cancellation, judged
+    /// in a later generation, is refused all the same.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnEntryFromAnEarlierGenerationStillRefusesTheCancellation()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        await processor.ProcessAsync(
+            SublotEntry(fixture, await fixture.RuntimeAsync(), "SUBLOT-001"),
+            BeforeSublotConnection(fixture, generation: 1),
+            token);
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+
+        string response = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 2),
+            BeforeSublotConnection(fixture, generation: 2),
+            token);
+
+        JsonElement refused = FirstLinePayload(response, out _);
+        Assert.Equal("REJECTED", refused.GetProperty("decision").GetString());
+        Assert.Equal(ServerReasonCodes.ActionNotAllowedInState,
+            refused.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Empty(await fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+    }
+
+    /// <summary>
+    /// control-server#116 review, item 3: a cancellation is judged against the vehicle that sent it. Another
+    /// vehicle naming this demand is refused and records nothing -- and a request naming a cancellation on
+    /// file is answered from the record only for the vehicle that raised it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ACancellationFromAnotherVehicleIsRefused()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState other = BeforeSublotConnection(fixture, generation: 1);
+        other.AgvId = "AGV-SOMEONE-ELSE";
+
+        string foreign = await processor.ProcessAsync(
+            ForAgv(CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), other.AgvId),
+            other,
+            token);
+        Assert.Equal("REJECTED", FirstLinePayload(foreign, out _).GetProperty("decision").GetString());
+        Assert.Empty(await fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+
+        string own = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1),
+            BeforeSublotConnection(fixture, generation: 1),
+            token);
+        Assert.Equal("AUTHORIZED", FirstLinePayload(own, out _).GetProperty("decision").GetString());
+        string foreignRepeat = await processor.ProcessAsync(
+            ForAgv(CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), other.AgvId),
+            other,
+            token);
+        Assert.Equal("REJECTED", FirstLinePayload(foreignRepeat, out _).GetProperty("decision").GetString());
+    }
+
+    /// <summary>
+    /// Ticket item 4 as the onboard does it: the result went out in generation 1 and was taken, the DurableAck
+    /// was lost with the link, and the vehicle resends the same line into generation 2. The resend is answered
+    /// from the first acceptance; the stop is settled once.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AResultTakenBeforeTheLinkDroppedAndResentAfterTheReconnectIsSettledOnce()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        const string resultMessageId = "c1000000-0000-4000-8000-000000000101";
+        await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1),
+            BeforeSublotConnection(fixture, generation: 1),
+            token);
+        DateTimeOffset receivedAt = fixture.Clock.GetUtcNow();
+        await processor.ProcessAsync(
+            CancellationBeforeSublotResult(fixture, resultMessageId, generation: 1),
+            BeforeSublotConnection(fixture, generation: 1),
+            token);
+
+        await fixture.ReconnectAsync(2);
+        await fixture.AdvanceSessionAsync(2);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        string resent = await processor.ProcessAsync(
+            CancellationBeforeSublotResult(fixture, resultMessageId, generation: 2),
+            BeforeSublotConnection(fixture, generation: 2),
+            token);
+
+        Assert.Equal("DurableAck", FirstLineType(resent));
+        Assert.Single(await fixture.Context.RecoveryResultEvidence.AsNoTracking().ToArrayAsync(token));
+        await AssertStopEndedByOperatorAsync(fixture, waiting, receivedAt);
+    }
+
+    /// <summary>
+    /// A cancellation request repeated under a new messageId after its stop has already ended -- same
+    /// cancellationId, same content -- is answered AUTHORIZED from the record, not refused against the ended
+    /// stop and not treated as a content conflict that drops the connection.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ACancellationRepeatedAfterItsStopEndedIsAnsweredFromTheRecord()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        DateTimeOffset receivedAt = fixture.Clock.GetUtcNow();
+        await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+        await processor.ProcessAsync(
+            CancellationBeforeSublotResult(fixture, "c1000000-0000-4000-8000-000000000101", generation: 1),
+            state,
+            token);
+
+        string repeated = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+
+        Assert.Equal("AUTHORIZED", FirstLinePayload(repeated, out _).GetProperty("decision").GetString());
+        Assert.Equal(RecoveryWorkflowState.Reconciled,
+            (await fixture.Context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+        await AssertStopEndedByOperatorAsync(fixture, waiting, receivedAt);
+    }
+
+    private static async Task SetWorkflowStateAsync(RuntimeFixture fixture, RecoveryWorkflowState state)
+    {
+        await using ControlServerDbContext context = fixture.OpenConnectionContext();
+        RecoveryWorkflowRow workflow = await context.RecoveryWorkflows.SingleAsync(TestContext.Current.CancellationToken);
+        workflow.State = state;
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static string ForAgv(string line, string agvId)
+    {
+        System.Text.Json.Nodes.JsonNode node = System.Text.Json.Nodes.JsonNode.Parse(line)!;
+        node["agvId"] = agvId;
+        return node.ToJsonString();
     }
 
     private static async Task<RuntimeFixture> ReachSublotWaitAsync()
