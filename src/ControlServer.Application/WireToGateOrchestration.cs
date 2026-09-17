@@ -81,8 +81,17 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
         }
         else if (store is IJourneyAcceptanceStore journeyStore)
         {
-            await journeyStore.AcceptWithOrderIntentAsync(accepted, orderIntent, journey, cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                await journeyStore.AcceptWithOrderIntentAsync(accepted, orderIntent, journey, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (AreaAssignmentVersionChangedException)
+            {
+                // A new area assignment version was imported after the round judged this candidate. That is a
+                // decision fact changing under intake like any other, and nothing was written.
+                return DemandIntakeOutcome.CandidateChanged;
+            }
         }
         else
         {

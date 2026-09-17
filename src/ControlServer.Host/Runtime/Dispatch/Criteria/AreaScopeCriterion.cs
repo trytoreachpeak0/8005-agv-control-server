@@ -1,10 +1,22 @@
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
-/// Only AREAs this journey family serves, identified by the leading N.
+/// Only AREAs the area assignment table names are executed (REQ-0191).
 /// </summary>
 /// <remarks>
-/// Runs after <see cref="RequiredMesFactsCriterion"/>, which is what makes reading AREA here safe.
+/// <para>
+/// The table is the whole whitelist. There is no prefix rule and no guess from the AREA's spelling: the
+/// leading N this used to test only held because every AREA executed on map 25 started with N, and it refused
+/// a die-attach machine (AREAs starting with T) however that machine was configured.
+/// </para>
+/// <para>
+/// Reads what <see cref="AreaAssignmentLookupCriterion"/> recorded from the version the round read, so the
+/// version that admits a demand is the version the demand freezes. With no table imported at all, nothing is
+/// in scope.
+/// </para>
+/// <para>
+/// The refusal is silent (<see cref="DispatchReasonCodes.OutOfScopeArea"/>): backlog only.
+/// </para>
 /// </remarks>
 public sealed class AreaScopeCriterion : IDispatchAdmissionCriterion
 {
@@ -18,8 +30,8 @@ public sealed class AreaScopeCriterion : IDispatchAdmissionCriterion
         _ = cancellationToken;
 
         return Task.FromResult(
-            evaluation.Candidate.LiveMesFields!.Area!.StartsWith('N')
+            evaluation.AreaAssignment is not null
                 ? DispatchAdmissionChain.Eligible
-                : "OUT_OF_SCOPE_AREA");
+                : DispatchReasonCodes.OutOfScopeArea);
     }
 }

@@ -1,0 +1,35 @@
+{"at":"2026-09-16T13:59:21.0898111+00:00","note":"L2 run 20260916T135921036Z starting for scenario 'area-assignment-import-rejects'."}
+{"at":"2026-09-16T13:59:21.1422990+00:00","note":"L2 port block lock acquired."}
+{"at":"2026-09-16T13:59:21.1447631+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-16T13:59:24.8933779+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-16T13:59:25.2079389+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-16T13:59:28.1403018+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-16T13:59:30.2960184+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-16T13:59:30.4999767+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, SUPERSEDING_CANDIDATE)."}
+{"at":"2026-09-16T13:59:31.1755220+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-16T13:59:31.2651182+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-16T13:59:31.3161321+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db"}
+{"at":"2026-09-16T13:59:33.0055604+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"c55c6c16dd3f466eb72514da30d133a4","version":1,"slotCount":8}}}
+{"at":"2026-09-16T13:59:33.0146348+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-16T13:59:34.4933423+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"c55c6c16dd3f466eb72514da30d133a4","boundSlots":8,"version":1}}}
+{"at":"2026-09-16T13:59:34.4980454+00:00","note":"Area assignment import skipped: AreaAssignments = $false."}
+{"at":"2026-09-16T13:59:34.5123410+00:00","note":"Environment is up; entering scenario 'area-assignment-import-rejects'."}
+{"at":"2026-09-16T13:59:34.5822721+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db"}
+{"at":"2026-09-16T13:59:35.9029346+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\group-not-in-model.csv"}
+{"at":"2026-09-16T13:59:37.1305604+00:00","note":"Rejected import 'group-not-in-model': exit 1, reasons SLOT_POSITION_NOT_IN_PUBLISHED_MODEL."}
+{"at":"2026-09-16T13:59:37.1372294+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\group-missing.csv"}
+{"at":"2026-09-16T13:59:38.3665791+00:00","note":"Rejected import 'group-missing': exit 1, reasons SLOT_POSITION_MISSING."}
+{"at":"2026-09-16T13:59:38.3718664+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\area-duplicated.csv"}
+{"at":"2026-09-16T13:59:39.5206657+00:00","note":"Rejected import 'area-duplicated': exit 1, reasons AREA_DUPLICATED."}
+{"at":"2026-09-16T13:59:39.5229107+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\area-format-invalid.csv"}
+{"at":"2026-09-16T13:59:40.6521034+00:00","note":"Rejected import 'area-format-invalid': exit 1, reasons AREA_FORMAT_INVALID."}
+{"at":"2026-09-16T13:59:40.6545083+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\dispatch-zone-not-found.csv"}
+{"at":"2026-09-16T13:59:41.8397560+00:00","note":"Rejected import 'dispatch-zone-not-found': exit 1, reasons DISPATCH_ZONE_NOT_FOUND."}
+{"at":"2026-09-16T13:59:41.8432383+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\every-kind-at-once.csv"}
+{"at":"2026-09-16T13:59:43.0064893+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\accepted.csv --dry-run"}
+{"at":"2026-09-16T13:59:44.2418906+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\accepted.csv"}
+{"at":"2026-09-16T13:59:45.6646831+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b4-08-8005-agv-control-server\\evidence\\l2\\20260916-b4-08-area-assignment-import-rejects-001\\snapshots\\area-assignment-csv\\accepted.csv"}
+{"at":"2026-09-16T13:59:47.0921782+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db"}
+{"at":"2026-09-16T13:59:48.2065868+00:00","note":"FieldOps: area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260916T135921036Z\\controlserver.db --version 1"}
+{"at":"2026-09-16T13:59:49.4103721+00:00","note":"五类配置错误各自整份拒绝，正确的一份形成新版本并留下快照与不可改写审计。"}
+{"at":"2026-09-16T13:59:49.7550795+00:00","note":"L2 port block lock released."}
