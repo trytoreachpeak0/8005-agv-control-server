@@ -1636,7 +1636,7 @@ public sealed class RecoveryStateMachineG2Tests
         (await context.StationOperations.SingleAsync(token)).Status = status;
         JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
         runtime.Stage = JourneyRuntimeStage.AwaitingStationDeparture;
-        runtime.BlockReasonCode = null;
+        runtime.SetBlockReason(null, Now);
         await context.SaveChangesAsync(token);
         OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), CancellationProofVariable);
         OnboardConnectionState state = CurrentState();
@@ -1904,49 +1904,53 @@ public sealed class RecoveryStateMachineG2Tests
         OrderId = "ORDER-" + purpose
     };
 
-    private static JourneyRuntimeRow Runtime() => new()
+    private static JourneyRuntimeRow Runtime()
     {
-        DemandId = DemandId,
-        Stage = JourneyRuntimeStage.Blocked,
-        AgvId = AgvId,
-        VehicleKey = "VEHICLE-001",
-        AgvLifecycleGeneration = 1,
-        MapId = 29,
-        MapIdentity = "MAP-29",
-        DispatchZone = "ZONE-01",
-        RouteEvidenceId = "ROUTE-01",
-        PickupStationId = "PICKUP",
-        PickupStationRiotId = 11,
-        GateStationId = "GATE",
-        GateStationRiotId = 22,
-        ExpectedBasketCount = 2,
-        TargetSlotsJson = "[1,2]",
-        OperationSessionId = "c0000000-0000-4000-8000-000000000001",
-        PickupMovementLegId = "pickup-leg",
-        PickupUpperId = "UPPER-PICKUP",
-        GateMovementLegId = "gate-leg",
-        GateUpperId = "UPPER-GATE",
-        DispatchGeneration = 1,
-        VehicleBusinessRevision = 1,
-        WorklistRevision = 1,
-        PlanRevision = 1,
-        VehicleBusinessMessageId = "d0000000-0000-4000-8000-000000000001",
-        WorklistMessageId = "d0000000-0000-4000-8000-000000000002",
-        PlanMessageId = "d0000000-0000-4000-8000-000000000003",
-        SublotRequestMessageId = "d0000000-0000-4000-8000-000000000004",
-        LoadCommandMessageId = "d0000000-0000-4000-8000-000000000005",
-        LoadSlotOperationAttemptId = AttemptId,
-        PreDepartureSafetyCheckMessageId = "d0000000-0000-4000-8000-000000000006",
-        PreDepartureSafetyCheckId = "d0000000-0000-4000-8000-000000000007",
-        GateVehicleBusinessMessageId = "d0000000-0000-4000-8000-000000000008",
-        GateWorklistMessageId = "d0000000-0000-4000-8000-000000000009",
-        GatePlanMessageId = "d0000000-0000-4000-8000-000000000010",
-        UnloadCommandMessageId = "d0000000-0000-4000-8000-000000000011",
-        UnloadSlotOperationAttemptId = "d0000000-0000-4000-8000-000000000012",
-        BlockReasonCode = "LOAD_RESULT_REQUIRES_RECOVERY",
-        CreatedAt = Now.AddMinutes(-8),
-        UpdatedAt = Now
-    };
+        JourneyRuntimeRow runtime = new()
+        {
+            DemandId = DemandId,
+            Stage = JourneyRuntimeStage.Blocked,
+            AgvId = AgvId,
+            VehicleKey = "VEHICLE-001",
+            AgvLifecycleGeneration = 1,
+            MapId = 29,
+            MapIdentity = "MAP-29",
+            DispatchZone = "ZONE-01",
+            RouteEvidenceId = "ROUTE-01",
+            PickupStationId = "PICKUP",
+            PickupStationRiotId = 11,
+            GateStationId = "GATE",
+            GateStationRiotId = 22,
+            ExpectedBasketCount = 2,
+            TargetSlotsJson = "[1,2]",
+            OperationSessionId = "c0000000-0000-4000-8000-000000000001",
+            PickupMovementLegId = "pickup-leg",
+            PickupUpperId = "UPPER-PICKUP",
+            GateMovementLegId = "gate-leg",
+            GateUpperId = "UPPER-GATE",
+            DispatchGeneration = 1,
+            VehicleBusinessRevision = 1,
+            WorklistRevision = 1,
+            PlanRevision = 1,
+            VehicleBusinessMessageId = "d0000000-0000-4000-8000-000000000001",
+            WorklistMessageId = "d0000000-0000-4000-8000-000000000002",
+            PlanMessageId = "d0000000-0000-4000-8000-000000000003",
+            SublotRequestMessageId = "d0000000-0000-4000-8000-000000000004",
+            LoadCommandMessageId = "d0000000-0000-4000-8000-000000000005",
+            LoadSlotOperationAttemptId = AttemptId,
+            PreDepartureSafetyCheckMessageId = "d0000000-0000-4000-8000-000000000006",
+            PreDepartureSafetyCheckId = "d0000000-0000-4000-8000-000000000007",
+            GateVehicleBusinessMessageId = "d0000000-0000-4000-8000-000000000008",
+            GateWorklistMessageId = "d0000000-0000-4000-8000-000000000009",
+            GatePlanMessageId = "d0000000-0000-4000-8000-000000000010",
+            UnloadCommandMessageId = "d0000000-0000-4000-8000-000000000011",
+            UnloadSlotOperationAttemptId = "d0000000-0000-4000-8000-000000000012",
+            CreatedAt = Now.AddMinutes(-8),
+            UpdatedAt = Now
+        };
+        runtime.SetBlockReason("LOAD_RESULT_REQUIRES_RECOVERY", Now);
+        return runtime;
+    }
 
     /// <summary>
     /// Drives a compensation as far as the line the vehicle is about to send: session opened, action
@@ -2154,7 +2158,7 @@ public sealed class RecoveryStateMachineG2Tests
         load.CommittedAt = Now.AddMinutes(-1);
         JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(TestContext.Current.CancellationToken);
         runtime.Stage = stage;
-        runtime.BlockReasonCode = null;
+        runtime.SetBlockReason(null, Now);
         await context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 

@@ -1,3 +1,4 @@
+#Requires -Version 7
 <#
 .SYNOPSIS
 Assembles the WIRE_TO_GATE MVP release candidate from the two product repositories.
@@ -241,6 +242,7 @@ $controlServerBranch = @(Invoke-Native 'git' @('-C', $root, 'rev-parse', '--abbr
 
 New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
 $controlServerPackage = Join-Path $resolvedOutput 'controlserver'
+$dashboardPackage = Join-Path $resolvedOutput 'dashboard'
 $onboardPackage = Join-Path $resolvedOutput 'onboard-hmi'
 $onboardSource = "$resolvedOutput-onboard-src"
 $inventoryDirectory = Join-Path $resolvedOutput 'inventory'
@@ -258,6 +260,45 @@ $controlServerWarnings = Get-BuildWarningCount $controlServerOutput
 if ($controlServerWarnings -ne 0) {
     throw "The ControlServer publish reported $controlServerWarnings warnings."
 }
+
+# --- Dashboard package (control-server#80) ----------------------------------
+# The dashboard is its own process: it reads ControlServer only over the read-only /api/dashboard/
+# endpoints and links none of its assemblies, so it is published from its own project into its own
+# directory, with its own deployment-manifest.json for Install-ControlServerLocal.ps1 to verify. It
+# ships bound to 127.0.0.1 (program#55); opening it to the LAN is a separate decision, so a package
+# whose shipped settings say otherwise is refused here rather than installed.
+$dashboardProject = Join-Path $root 'src\ControlServer.Dashboard\ControlServer.Dashboard.csproj'
+$dashboardRestoreOutput = @(Invoke-Native $dotnet @(
+    'restore', $dashboardProject, '--locked-mode', '--runtime', $RuntimeIdentifier) 'Dashboard restore failed')
+$dashboardOutput = @(Invoke-Native $dotnet @(
+    'publish', $dashboardProject, '--configuration', 'Release',
+    '--runtime', $RuntimeIdentifier, '--self-contained', 'true', '--no-restore',
+    '--output', $dashboardPackage) 'Dashboard publish failed')
+$dashboardWarnings = Get-BuildWarningCount @($dashboardRestoreOutput + $dashboardOutput)
+if ($dashboardWarnings -ne 0) {
+    throw "The dashboard publish reported $dashboardWarnings warnings."
+}
+$dashboardSettingsPath = Join-Path $dashboardPackage 'dashboard.settings.json'
+if (-not (Test-Path -LiteralPath $dashboardSettingsPath -PathType Leaf)) {
+    throw 'The published dashboard package does not contain dashboard.settings.json.'
+}
+$dashboardUrl = [string](Get-Content -Raw -LiteralPath $dashboardSettingsPath | ConvertFrom-Json).Dashboard.url
+if (([Uri]$dashboardUrl).Host -ne '127.0.0.1') {
+    throw "The published dashboard is bound to $dashboardUrl; the release candidate ships it on 127.0.0.1 only."
+}
+$dashboardDeploymentManifest = [ordered]@{
+    schemaVersion = 1
+    product = '8005 AGV ControlServer Dashboard'
+    sourceCommit = $controlServerCommit
+    runtimeIdentifier = $RuntimeIdentifier
+    selfContained = $true
+    createdAt = [DateTimeOffset]::UtcNow.ToString('O')
+    files = @(Get-FileInventory $dashboardPackage)
+}
+[IO.File]::WriteAllText(
+    (Join-Path $dashboardPackage 'deployment-manifest.json'),
+    ($dashboardDeploymentManifest | ConvertTo-Json -Depth 6),
+    [Text.UTF8Encoding]::new($false))
 
 # --- OnboardHmi package from a throwaway clone ------------------------------
 Invoke-Native 'git' @('clone', '--quiet', '--branch', $OnboardBranch, $OnboardRepositoryUrl, $onboardSource) `
@@ -350,10 +391,15 @@ Copy-Item -LiteralPath $releaseDocument -Destination (Join-Path $resolvedOutput 
 
 # --- Inventories ------------------------------------------------------------
 $controlServerDependencies = Get-DependencyInventory (Join-Path $root 'src\ControlServer.Host\ControlServer.Host.csproj') 'controlserver'
+$dashboardDependencies = Get-DependencyInventory $dashboardProject 'dashboard'
 $onboardDependencies = Get-DependencyInventory $onboardProject 'onboard-hmi'
 [IO.File]::WriteAllText(
     (Join-Path $inventoryDirectory 'dependencies-controlserver.json'),
     ($controlServerDependencies | ConvertTo-Json -Depth 6),
+    [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText(
+    (Join-Path $inventoryDirectory 'dependencies-dashboard.json'),
+    ($dashboardDependencies | ConvertTo-Json -Depth 6),
     [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText(
     (Join-Path $inventoryDirectory 'dependencies-onboard.json'),
@@ -364,6 +410,7 @@ $secretScan = [ordered]@{
     schemaVersion = 1
     scopes = @(
         (Invoke-SecretScan $controlServerPackage 'release/controlserver'),
+        (Invoke-SecretScan $dashboardPackage 'release/dashboard'),
         (Invoke-SecretScan $onboardPackage 'release/onboard-hmi'),
         (Invoke-SecretScan $releaseScriptDirectory 'release/scripts'),
         (Invoke-SecretScan (Join-Path $root 'src') 'source/controlserver'),
@@ -383,11 +430,12 @@ $secretScan.totalKeyMaterialFileCount = @($secretScan.scopes | ForEach-Object { 
 # SHA256SUMS.txt or a package that claims to have passed.
 $scanGate = Assert-ReleaseScanGate `
     -SecretScan $secretScan `
-    -DependencyInventories @($controlServerDependencies, $onboardDependencies) `
+    -DependencyInventories @($controlServerDependencies, $dashboardDependencies, $onboardDependencies) `
     -UnresolvedLicenseAllowlist $unresolvedLicenseAllowlist
 
 # --- Joint release manifest -------------------------------------------------
 $controlServerFiles = @(Get-FileInventory $controlServerPackage)
+$dashboardFiles = @(Get-FileInventory $dashboardPackage)
 $onboardFiles = @(Get-FileInventory $onboardPackage)
 $releaseManifest = [ordered]@{
     schemaVersion = 1
@@ -407,6 +455,19 @@ $releaseManifest = [ordered]@{
             entryPoint = 'controlserver/ControlServer.Host.exe'
             fileCount = $controlServerFiles.Count
             files = $controlServerFiles
+        }
+        dashboard = [ordered]@{
+            repository = 'https://github.com/trytoreachpeak0/8005-agv-control-server.git'
+            branch = $controlServerBranch
+            commit = $controlServerCommit
+            selfContained = $true
+            buildWarnings = $dashboardWarnings
+            relativePath = 'dashboard'
+            entryPoint = 'dashboard/ControlServer.Dashboard.exe'
+            url = $dashboardUrl
+            deployed = $false
+            fileCount = $dashboardFiles.Count
+            files = $dashboardFiles
         }
         onboardHmi = [ordered]@{
             repository = $OnboardRepositoryUrl
@@ -447,10 +508,11 @@ $releaseManifest = [ordered]@{
         }
     }
     inventory = [ordered]@{
-        dependencies = @('inventory/dependencies-controlserver.json', 'inventory/dependencies-onboard.json')
+        dependencies = @('inventory/dependencies-controlserver.json', 'inventory/dependencies-dashboard.json', 'inventory/dependencies-onboard.json')
         controlServerPackageCount = $controlServerDependencies.packageCount
+        dashboardPackageCount = $dashboardDependencies.packageCount
         onboardPackageCount = $onboardDependencies.packageCount
-        unresolvedLicenseCount = $controlServerDependencies.unresolvedLicenseCount + $onboardDependencies.unresolvedLicenseCount
+        unresolvedLicenseCount = $controlServerDependencies.unresolvedLicenseCount + $dashboardDependencies.unresolvedLicenseCount + $onboardDependencies.unresolvedLicenseCount
         secretScan = 'inventory/secret-scan.json'
         secretScanFindingCount = $secretScan.totalFindingCount
         secretScanKeyMaterialFileCount = $secretScan.totalKeyMaterialFileCount

@@ -594,7 +594,11 @@ public sealed class JourneyRuntimeRow
     public required string UnloadSlotOperationAttemptId { get; set; }
     public string? ConsumedSublotMessageId { get; set; }
     public string? ConsumedSafetyResultMessageId { get; set; }
-    public string? BlockReasonCode { get; set; }
+    /// <summary>
+    /// Why the journey is not advancing, or null. Written only through <see cref="SetBlockReason"/>,
+    /// which keeps <see cref="BlockReasonSince"/> in step with it.
+    /// </summary>
+    public string? BlockReasonCode { get; private set; }
     /// <summary>
     /// When the current station departure wait began, by this server's clock: at the pickup arrival,
     /// again at the load commit, and again whenever a load correction closes or a new session is
@@ -602,8 +606,36 @@ public sealed class JourneyRuntimeRow
     /// vehicle is sent on, and between a disconnect and the readiness that refills it.
     /// </summary>
     public DateTimeOffset? StationDepartureWaitStartedAt { get; set; }
+    /// <summary>
+    /// When <see cref="BlockReasonCode"/> took its current value, by this server's clock
+    /// (control-server#80, program#55). <see cref="UpdatedAt"/> could not say it: every later write
+    /// to the row moves that one, so a block that had held for half an hour read as a minute old.
+    /// Null when the code is null, and for a block already held when the column was added, whose start
+    /// nobody recorded.
+    /// </summary>
+    public DateTimeOffset? BlockReasonSince { get; private set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    /// <summary>
+    /// The one way to write <see cref="BlockReasonCode"/>: the first write of a code records when it
+    /// began, writing the code it already holds keeps that time, a different code starts it over, and
+    /// clearing the code clears it.
+    /// </summary>
+    /// <remarks>
+    /// The setter is private so that a write which bypasses this is a compile error rather than a
+    /// block whose start is silently wrong -- the escalation schedule of program#55 is measured from
+    /// this time, and a missed write site would reset or never start it.
+    /// </remarks>
+    public void SetBlockReason(string? reasonCode, DateTimeOffset now)
+    {
+        if (string.Equals(BlockReasonCode, reasonCode, StringComparison.Ordinal))
+        {
+            return;
+        }
+        BlockReasonCode = reasonCode;
+        BlockReasonSince = reasonCode is null ? null : now;
+    }
 }
 
 public sealed class AdmissionPolicyStateRow

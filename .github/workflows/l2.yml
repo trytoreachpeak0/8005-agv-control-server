@@ -139,6 +139,9 @@ jobs:
               # Batch 5 (control-server#79): the station departure deadline. In CI from its own ticket so
               # a batch-4 PR catches a regression before it merges; the batch-5 exit makes it three runs.
               @{ Name = 'station-deadline-sublot-timeout'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 5 (control-server#80): blocked journeys with their start time on the dashboard. In CI from its own
+              # ticket for the same reason; the batch-5 exit (control-server#90) makes it three runs.
+              @{ Name = 'blocked-journey-dashboard-projection'; Runs = 1; BatchId = 'batch-5' }
               # Batch 4 (control-server#68), specification 8.3 scenario 4: the five kinds of bad area
               # assignment table each rejected whole. Same reason as the line above -- batches 4 and 5 both
               # merge into fp/v2-impl, so the scenario earns its place in CI from its own ticket; the
@@ -155,6 +158,8 @@ jobs:
               # the same reason as the line above; the batch-4 exit (control-server#76) makes them three runs.
               @{ Name = 'structural-block-oversized-demand'; Runs = 1; BatchId = 'batch-4' }
               @{ Name = 'slot-group-disabled-no-alert';      Runs = 1; BatchId = 'batch-4' }
+              @{ Name = 'area-assignment-version-freeze';    Runs = 1; BatchId = 'batch-4' }
+              @{ Name = 'mixed-side-station-two-trips';      Runs = 1; BatchId = 'batch-4' }
           )
           $only = @($env:L2_ONLY -split ',' | ForEach-Object Trim | Where-Object { $_ })
           $unknown = @($only | Where-Object { $_ -notin $scenarios.Name })
