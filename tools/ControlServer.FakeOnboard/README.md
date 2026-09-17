@@ -79,12 +79,14 @@ dotnet run --project tools/ControlServer.FakeOnboard --   --FakeOnboard:Peer:por
 在处理函数里抛出的异常会静悄悄地弄死读循环，场景只会看到自己在某个阶段一直等到超时，什么线索
 都没有。
 
-`/answer/{key}` 的 key：`sublot`、`safety-check`、`operation:{slotOperationAttemptId}`，
+`/answer/{key}` 的 key：`sublot:{operationSessionId}:{worklistRevision}`、`safety-check:{preDepartureSafetyCheckId}`、`operation:{slotOperationAttemptId}`，
 从 `/snapshot` 的 `pending` 里读准确值。
 
 ## 两条载重的实现细节
 
-**答案按 key 缓存，重发时原样再送。**ControlServer 每个轮询周期都会重发未结的命令。ADR-cross-0006
+**答案按 key 缓存，重发时原样再送。**key 必须是每个请求自己的业务标识：录 sublot 的 key 曾经是固定的
+`sublot`、安全检查的是固定的 `safety-check`，结果同一条连接上第二趟收到的是第一趟缓存的 sublot，一台假车
+跑不完两趟（control-server#75 评审时发现）。ControlServer 每个轮询周期都会重发未结的命令。ADR-cross-0006
 与 ADR-cross-0014 要求对端返回**已有**结果而不是产生新的：同一个 `slotOperationAttemptId` 下换一个
 `resultId` 的第二份 OperationResult 是内容冲突，服务端会直接把会话拆掉——第一次跑就是这么挂的。
 
