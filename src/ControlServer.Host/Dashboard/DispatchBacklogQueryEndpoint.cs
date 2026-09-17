@@ -19,6 +19,10 @@ namespace ControlServer.Host.Dashboard;
 /// 结构性阻断里也不列，control-server#74 本就不会为它们写行。
 /// </para>
 /// <para>
+/// 已不在 MesIngest 目录里的未受理需求（<see cref="DispatchReasonCodes.DemandLeftCatalog"/>）没有在等车，
+/// 既不进积压列表，也不计入静默计数——它不是 REQ-0191 的静默。
+/// </para>
+/// <para>
 /// 已受理旅程上的阻断原因不在这里，那是 control-server#80 的卡片。积压行没有 AREA 列（AREA 只在需求目录的实时字段里，
 /// 不落 <c>JourneyBacklog</c>），本票零 migration，所以不给。
 /// </para>
@@ -49,7 +53,7 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
 
         DateTimeOffset now = TimeProvider.System.GetUtcNow();
         JourneyBacklogRow[] pending = await dbContext.JourneyBacklog.AsNoTracking()
-            .Where(row => row.AcceptedAt == null)
+            .Where(row => row.AcceptedAt == null && row.ReasonCode != DispatchReasonCodes.DemandLeftCatalog)
             .ToArrayAsync(cancellationToken);
         IReadOnlyList<StructuralDispatchBlock> blocks =
             await new StructuralDispatchBlockStore(dbContext).ListUnclearedAsync(cancellationToken);

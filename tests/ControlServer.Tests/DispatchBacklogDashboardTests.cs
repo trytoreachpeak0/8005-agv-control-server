@@ -96,6 +96,29 @@ public sealed class DispatchBacklogDashboardTests
     }
 
     [Fact]
+    public async Task ADemandNoLongerInTheCatalogIsNeitherWaitingNorCountedAsSilent()
+    {
+        await using AreaAssignmentPersistenceFixture fixture = await AreaAssignmentPersistenceFixture.CreateAsync();
+        DateTimeOffset firstSeen = DateTimeOffset.UtcNow.AddMinutes(-5);
+        AddBacklog(fixture, "D-LEFT", DispatchReasonCodes.DemandLeftCatalog, firstSeen);
+        AddBacklog(fixture, "D-EUTECTIC", DispatchReasonCodes.OutOfScopeArea, firstSeen);
+        AddBacklog(fixture, "D-WAITING", DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable, firstSeen);
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(fixture);
+
+        Assert.Equal(
+            ["D-WAITING"],
+            fact.RootElement.GetProperty("backlog").EnumerateArray()
+                .Select(row => row.GetProperty("demandId").GetString()));
+        Assert.Equal(1, fact.RootElement.GetProperty("silentBacklogCount").GetInt32());
+
+        string html = new DispatchBacklogCard().RenderFact(fact.RootElement);
+        Assert.DoesNotContain("D-LEFT", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(DispatchReasonCodes.DemandLeftCatalog, html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AClearedStructuralBlockIsNotShown()
     {
         await using AreaAssignmentPersistenceFixture fixture = await AreaAssignmentPersistenceFixture.CreateAsync();

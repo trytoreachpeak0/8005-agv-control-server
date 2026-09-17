@@ -235,6 +235,9 @@ public static class StructuralDispatchClassification
             "A decision fact changed during intake: the MES catalog or the area assignment table, which the " +
             "backlog cannot tell apart."),
         Backlog("DEMAND_DECISION_FACT_CHANGED", null, "A decision fact changed since the demand was first seen."),
+        Backlog(DispatchReasonCodes.DemandLeftCatalog, null,
+            "Not a verdict: the round writes it before the vehicle loop for an unaccepted demand the catalog no " +
+            "longer lists. Nothing is waiting; a block on that demand is cleared by the catalog-absence rule."),
     ];
 
     /// <summary>Every classified reason code.</summary>
