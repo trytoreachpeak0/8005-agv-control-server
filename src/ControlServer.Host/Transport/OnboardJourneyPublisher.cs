@@ -12,7 +12,9 @@ public sealed class OnboardJourneyPublisher(
     IOnboardPeer peer,
     TimeProvider timeProvider)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    // The envelope's own settings, not a second copy of them: this instance also materialises the
+    // payload and rewrites replayed lines, and both have to agree with the envelope byte for byte.
+    private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
     private static readonly string[] SublotEntryMethods = ["SCANNER", "KEYBOARD"];
     private static readonly string[] LoadCorrectionSequence = ["EMPTY", "OCCUPIED"];
 
@@ -52,6 +54,11 @@ public sealed class OnboardJourneyPublisher(
             envelope["sessionGeneration"] = sessionGeneration;
             envelope["sentAt"] = sentAt;
             string wire = envelope.ToJsonString(SerializerOptions);
+            // This line does not go through ProtocolEnvelope.Serialize -- it rewrites what was stored
+            // rather than building from fields, and it is the only outbound byte that does not -- so
+            // it hands itself to the observation point by hand. Without this the gate would be blind
+            // to every replayed envelope, which is exactly the kind of line a session resume sends.
+            ProtocolEnvelope.OutboundObserver?.Invoke(row.MessageType, wire);
             ProtocolOutboxRow current = await store.QueueOutboundEnvelopeAsync(
                 row.MessageId,
                 row.MessageType,
@@ -691,9 +698,13 @@ public sealed class OnboardJourneyPublisher(
     /// through the encoder, so anything a converter emits verbatim -- the '+' in a DateTimeOffset
     /// offset -- comes back as its six-character unicode escape, so the peer can never reproduce
     /// our bytes. That failed the acknowledgement and dropped the connection. Materialising it first,
-    /// the way the contract type itself builds it, makes the line reproducible. It also makes the
-    /// line a fixed point of the replay rewrite in ReplayPendingForSessionAsync, so re-publishing at
-    /// the same generation stays a byte-identical no-op instead of a change that
+    /// the way the contract type itself builds it, makes the line reproducible. Which side of the
+    /// call that happens on is deliberate: ProtocolEnvelope.Serialize serializes its payload exactly
+    /// as given, so doing it there would change every other sender's bytes instead.
+    /// </remarks>
+    /// <remarks>
+    /// It also makes the line a fixed point of the replay rewrite in ReplayPendingForSessionAsync, so
+    /// re-publishing at the same generation stays a byte-identical no-op instead of a change that
     /// RefreshOutboundEnvelopeAsync then refuses as a non-advancing session generation.
     /// </remarks>
     private static string SerializeWire(
@@ -704,20 +715,14 @@ public sealed class OnboardJourneyPublisher(
         long sessionGeneration,
         DateTimeOffset sentAt,
         object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        ProtocolEnvelope.Serialize(
             messageType,
             messageId,
             correlationId,
             agvId,
             sessionGeneration,
             sentAt,
-            payload = JsonSerializer.SerializeToElement(payload, SerializerOptions)
-        }, SerializerOptions);
+            JsonSerializer.SerializeToElement(payload, ProtocolEnvelope.SerializerOptions));
 
     private async Task PublishSlotOperationEnvelopeAsync(
         string messageType,

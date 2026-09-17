@@ -4,6 +4,10 @@
     <CentralPackageVersionOverrideEnabled>false</CentralPackageVersionOverrideEnabled>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Pinned by 8005-agv-protocol compatibility/implementation-version-matrix.json, which names
+         Corvus.Json.Validator 4.6.7 for an "isolated .NET conformance process". Only
+         tools/ControlServer.SchemaConformance may reference it; see that project for why. -->
+    <PackageVersion Include="Corvus.Json.Validator" Version="4.6.7" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.30" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.30" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.30" />

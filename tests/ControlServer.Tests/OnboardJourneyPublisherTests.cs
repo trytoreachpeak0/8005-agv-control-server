@@ -616,6 +616,70 @@ public sealed class OnboardJourneyPublisherTests
     }
 
     /// <summary>
+    /// The replayed line reaches the observation point, with the bytes the peer is handed.
+    /// </summary>
+    /// <remarks>
+    /// Every other outbound line passes through <c>ProtocolEnvelope.Serialize</c>, which hands itself
+    /// to the observer on the way out. This one does not: it rewrites the stored envelope through
+    /// <c>JsonNode</c> instead of building it from fields, so it has to hand itself over by hand. Left
+    /// out, the schema gate would be blind to every replayed envelope -- the lines a session resume
+    /// exists to send.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-06")]
+    [Trait("ProtocolVector", "CV-REQUEST-FIRST-RESULT-REPLAY")]
+    public async Task ReplayIntoANewGenerationHandsTheLineToTheObservationPoint()
+    {
+        await using SqliteConnection connection = new("Data Source=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>()
+            .UseSqlite(connection)
+            .Options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        OnboardJourneyPublisher publisher = new(
+            new WireToGateStore(context), new RecordingPeer(context), new AdvancingTimeProvider());
+        const string messageId = "00000000-0000-4000-8000-000000000352";
+        VehicleBusinessProjection projection = new(7, "READY", "TRANSPORT", false, "SUFFICIENT", "NOT_CHARGING", LoadingPhaseProjection.Loading, []);
+        await publisher.PublishVehicleBusinessStateAsync(
+            messageId, "AGV-001", 1, projection, TestContext.Current.CancellationToken);
+
+        // The assembly fixture is watching too; this test observes without taking the gate's eyes off
+        // the rest of the run. The observer is static and the suite runs test classes in parallel, so
+        // what arrives here is every line the run sends -- this test keeps the one line it asked for,
+        // by its messageId, and passes the rest through untouched.
+        Action<string, string>? previous = ProtocolEnvelope.OutboundObserver;
+        List<(string Type, string Line)> observed = [];
+        ProtocolEnvelope.OutboundObserver = (type, line) =>
+        {
+            if (line.Contains(messageId, StringComparison.Ordinal))
+            {
+                observed.Add((type, line));
+            }
+            previous?.Invoke(type, line);
+        };
+        try
+        {
+            await publisher.ReplayPendingForSessionAsync(
+                "AGV-001", 2, new HashSet<string> { messageId }, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            ProtocolEnvelope.OutboundObserver = previous;
+        }
+
+        // Exactly one: the publish above happened before the observer was installed, so the only line
+        // carrying this messageId while it is installed is the replayed one.
+        (string type, string line) = Assert.Single(observed);
+        Assert.Equal("VehicleBusinessStateSnapshot", type);
+        ProtocolOutboxRow row = await context.ProtocolOutbox.SingleAsync(
+            TestContext.Current.CancellationToken);
+        // The rebound bytes, not the ones the first publish wrote: the generation moved to 2, which is
+        // the whole point of the rewrite this hook was added around.
+        Assert.Equal(row.PayloadJson, line);
+        Assert.Equal(2, JsonDocument.Parse(line).RootElement.GetProperty("sessionGeneration").GetInt64());
+    }
+
+    /// <summary>
     /// Protocol 2.0.0 items 5 and 6 for a vehicle with no transport journey: <c>loadingPhase</c> is
     /// present and null, and <c>chargingCycleState</c> is still reported.
     /// </summary>
