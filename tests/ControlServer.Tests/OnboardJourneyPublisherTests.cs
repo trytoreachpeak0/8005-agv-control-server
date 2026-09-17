@@ -644,12 +644,17 @@ public sealed class OnboardJourneyPublisherTests
             messageId, "AGV-001", 1, projection, TestContext.Current.CancellationToken);
 
         // The assembly fixture is watching too; this test observes without taking the gate's eyes off
-        // the rest of the run.
+        // the rest of the run. The observer is static and the suite runs test classes in parallel, so
+        // what arrives here is every line the run sends -- this test keeps the one line it asked for,
+        // by its messageId, and passes the rest through untouched.
         Action<string, string>? previous = ProtocolEnvelope.OutboundObserver;
         List<(string Type, string Line)> observed = [];
         ProtocolEnvelope.OutboundObserver = (type, line) =>
         {
-            observed.Add((type, line));
+            if (line.Contains(messageId, StringComparison.Ordinal))
+            {
+                observed.Add((type, line));
+            }
             previous?.Invoke(type, line);
         };
         try
@@ -662,6 +667,8 @@ public sealed class OnboardJourneyPublisherTests
             ProtocolEnvelope.OutboundObserver = previous;
         }
 
+        // Exactly one: the publish above happened before the observer was installed, so the only line
+        // carrying this messageId while it is installed is the replayed one.
         (string type, string line) = Assert.Single(observed);
         Assert.Equal("VehicleBusinessStateSnapshot", type);
         ProtocolOutboxRow row = await context.ProtocolOutbox.SingleAsync(
