@@ -56,7 +56,8 @@ public static class DispatchReasonCodes
 
     /// <summary>
     /// <b>Not waiting.</b> The demand was in the backlog unaccepted and the latest catalog the round read no
-    /// longer lists it: MES closed or withdrew it before this server took it. Nothing is waiting for a vehicle.
+    /// longer lists it: it is no longer in the MesIngest catalog, and this server never took it. Nothing is
+    /// waiting for a vehicle.
     /// </summary>
     /// <remarks>
     /// <para>
