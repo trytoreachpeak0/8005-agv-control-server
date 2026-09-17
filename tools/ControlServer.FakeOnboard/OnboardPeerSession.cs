@@ -224,7 +224,7 @@ public sealed class OnboardPeerSession(
                 return;
             case "SublotEntryRequested":
                 await OnRequestAsync(
-                    "sublot", messageType, messageId, root, generation,
+                    SublotKey(root.GetProperty("payload")), messageType, messageId, root, generation,
                     engine.Snapshot().State.Policy.Sublot,
                     (payload, gen) => SublotSubmitted(payload, gen),
                     cancellationToken).ConfigureAwait(false);
@@ -249,7 +249,7 @@ public sealed class OnboardPeerSession(
                 return;
             case "PreDepartureSafetyCheck":
                 await OnRequestAsync(
-                    "safety-check", messageType, messageId, root, generation,
+                    SafetyCheckKey(root.GetProperty("payload")), messageType, messageId, root, generation,
                     engine.Snapshot().State.Policy.SafetyCheck,
                     (payload, gen) => SafetyCheckResult(payload, gen, safe: true),
                     cancellationToken).ConfigureAwait(false);
@@ -260,6 +260,29 @@ public sealed class OnboardPeerSession(
                 return;
         }
     }
+
+    /// <summary>
+    /// The key a sublot entry request is answered and replayed under: its operation session and worklist
+    /// revision, which is what the server re-sends unchanged and what changes for the next trip.
+    /// </summary>
+    /// <remarks>
+    /// This was the fixed string <c>sublot</c> until control-server#75's review: the first trip's answer
+    /// was then replayed to every later request on the same connection, so the second trip was told the
+    /// first trip's sublot and one fake vehicle could never finish two trips. The expected sublots are
+    /// fixed by the worklist at that revision (the request expires on a revision change), so they add
+    /// nothing to the key.
+    /// </remarks>
+    public static string SublotKey(JsonElement requestPayload) =>
+        "sublot:" + requestPayload.GetProperty("operationSessionId").GetString() + ":"
+        + requestPayload.GetProperty("worklistRevision").GetInt64().ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The key a pre-departure safety check is answered and replayed under. The server reissues an
+    /// expired check under a new <c>preDepartureSafetyCheckId</c>, and each trip has its own, so a
+    /// cached answer naming an older check must not be sent back for it.
+    /// </summary>
+    public static string SafetyCheckKey(JsonElement checkPayload) =>
+        "safety-check:" + checkPayload.GetProperty("preDepartureSafetyCheckId").GetString();
 
     /// <summary>
     /// Records the request, then either answers it now or leaves it open for the scenario. Silent

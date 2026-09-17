@@ -8,16 +8,15 @@
 这种「混挂」是否一致，不按站点暂停或告警；一次停靠为各条需求分别开各自那一组；一个停靠位够不着两侧的站点由现场拆站，
 系统不建模也不检查。所以这里要证的是「什么都不发生」：两趟照常派、照常开各自的组，没有阻断、没有原因码、没有告警。
 
-边车把取货点 12 号站换成 `N1-3_N2-5`，归属表 N1-3 → FRONT、N2-5 → REAR。场景：
+边车把取货点 12 号站换成 `N1-3_N2-5`，归属表 N1-3 → FRONT、N2-5 → REAR。同一台车先后走两趟：
   1. 放需求甲（N1-3），走完一趟：目标仓在 FRONT 组，装卸命令都开这一组，停的是 12 号站。
   2. 再放需求乙（N2-5），走完一趟：目标仓在 REAR 组，装卸命令都开这一组，停的仍是 12 号站。
   3. 全程：StructuralDispatchBlocks 无行；积压里没有与站点一致性相关的原因码；两趟都没有被阻断；服务端日志里没有
      针对该站点的 Warning 及以上记录。
 
-**两趟由两台车各走一趟。**合成车载端（tools/ControlServer.FakeOnboard）对批次录入与出发前安全检查按固定键缓存答案，
-一个对端进程只能正确应答一趟；本票不改假对端，所以第一趟走完后在假 RIoT 上停用那台车（Enable = false），第二趟由
-名册里另一台车去同一个站点。要证的是服务端不按站点检查两侧区域号的一致性，这与哪台车停靠无关：两台车绑的是同一版
-已批准仓位模型。
+**两趟由同一台车走。**合成车载端（tools/ControlServer.FakeOnboard）起初按固定键缓存批次录入与出发前安全检查的答案，
+一个对端进程只能正确应答一趟，所以 #120 里这个场景一度改成两台车各走一趟；PR #121 让假车载端按请求缓存答案后，改回
+票面原样：一台车、同一个站点、先前侧后后侧。
 
 **这不是「一次停靠前后两侧各一条需求」。**v2 线在批次 7 之前一趟只带一条需求，同一次停靠同时服务前侧一条、后侧一条
 在今天构造不出来。那条真装置 L2 在批次 7（规格第 16 节第 9 条）；批次 4 用合成装置证同站两侧区域号先后两趟各开各组。
@@ -219,19 +218,15 @@ $tripA = Invoke-Trip 'A' '甲' 'N1-3' 'FRONT' 'L2-MSS-02'
 
 # --- 2. 第二趟：需求乙（N2-5）开 REAR 组，同一个站点 ------------------------------------------------------
 
-# 第一趟那台车退出服务：合成车载端不能再正确应答第二趟（见文件头），停用后派车只会找另一台。
-$journal.Note("Disabling $($tripA.Runtime.VehicleKey) on the fake RIoT so the second trip goes to the other vehicle.")
-$null = $riot.Command('Put', 'vehicle', @{ vehicleKey = [string]$tripA.Runtime.VehicleKey; enable = $false })
-
 $tripB = Invoke-Trip 'B' '乙' 'N2-5' 'REAR' 'L2-MSS-03'
 
 $assertions.Add(
-    'L2-MSS-04', '两趟停的是同一个站点，而开的是不相交的两组仓（两台车各一趟）',
-    ([string]$tripA.Runtime.AgvId -cne [string]$tripB.Runtime.AgvId -and
+    'L2-MSS-04', '同一台车两趟停的是同一个站点，而开的是不相交的两组仓',
+    ([string]$tripA.Runtime.AgvId -ceq [string]$tripB.Runtime.AgvId -and
         [string]$tripA.Runtime.PickupStationId -ceq [string]$tripB.Runtime.PickupStationId -and
         [int]$tripA.Runtime.PickupStationRiotId -eq [int]$tripB.Runtime.PickupStationRiotId -and
         @($tripA.Targets | Where-Object { $_ -in $tripB.Targets }).Count -eq 0),
-    "two vehicles / same station $stationRiotId / disjoint slots",
+    "same vehicle / same station $stationRiotId / disjoint slots",
     "A $($tripA.Runtime.AgvId) $($tripA.Runtime.PickupStationId) ($($tripA.Runtime.PickupStationRiotId)) [$($tripA.Targets -join ',')], " +
     "B $($tripB.Runtime.AgvId) $($tripB.Runtime.PickupStationId) ($($tripB.Runtime.PickupStationRiotId)) [$($tripB.Targets -join ',')]")
 
