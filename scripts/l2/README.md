@@ -87,8 +87,11 @@ resume 是设计不是缺陷。
 
 ```powershell
 gh workflow run l2.yml --ref <分支> -f mode=consecutive                       # 按各行登记的 Runs
-gh workflow run l2.yml --ref <分支> -f mode=consecutive -f scenarios=a,b      # 只跑其中几条
+gh workflow run l2.yml --ref <分支> -f mode=consecutive-all -f scenarios=a,b  # 只跑其中几条，各三遍
 ```
+
+注意 `consecutive` 只按各行登记的 `Runs` 跑，登记 `Runs = 1` 的场景用它挑出来也只跑一遍；要挑几条各跑三遍，用
+`consecutive-all`。
 
 作业摘要里有一张表，列出每个场景实际跑到第几遍、结果如何，引用三连证据时贴那次 run 的链接。
 
@@ -102,6 +105,33 @@ gh workflow run l2.yml --ref <分支> -f mode=consecutive -f scenarios=a,b      
 就打一行 `L2 superseded` 说明后收尾，更新的那次推送有它自己的运行。这里**绝不取消作业**，手动取消与
 `cancel-in-progress` 都会让 runner 会话卡死（2026-09-03 空转 4 小时 14 分）。查询失败时照常跑完，不猜；
 手动触发的运行从不因此跳过。
+
+### 一张票只跑一轮 CI（2026-09-17 起）
+
+一张服务端票原来平均跑 3～4 轮 CI：开 PR 首跑、改审查意见后、带入顶端后，再加一次手动三连。现在的目标是一轮，
+三连也并进这一轮：
+
+1. **工作会话开 PR 一律开草稿**：`gh pr create --draft`。草稿 PR 上 `test` 与 `l2` 两个工作流都显示「跳过」，
+   是 GitHub 在分配 runner 之前按 job 级 `if` 判掉的，不占 runner，也不是取消。草稿期间推多少次都不跑。
+2. 本地全量测试与票里要求的 L2 场景跑完、调度的审查意见改完、带入集成分支顶端之后，**时序敏感的票在 PR 正文里
+   加一行**（行首写，大小写与空格随意，逗号或空格分隔）：
+
+   <pre>L2-Consecutive: three-vehicle-exit, emergency-stop-single-trigger</pre>
+
+   列出的场景这一轮各跑三遍，其余照默认（每场景一遍，`DefaultRuns` 的例外不变）。**写了清单里没有的名字，这一轮
+   直接失败**并说出是哪个名字，免得拼错之后三遍悄悄变成一遍。只写 `L2-Consecutive:` 不跟名字也算错。
+   时序敏感指：动到引擎推进、连接会话、恢复协调、急停，或改动任一 `Runs = 3` 场景。
+3. **`gh pr ready` 转正式，触发唯一的一轮。** 作业摘要表的 `Consecutive` 列标出哪些场景是按 `L2-Consecutive`
+   跑的、各自 n/3 的结果，引用三连证据就贴这次 run。
+4. 调度会话合并前核对这一轮：L1、L2 都绿，该三连的场景在表里是 3/3。
+
+几条要知道的：
+
+- 工作流只读**触发那一刻**的 PR 正文，改正文不会触发新一轮（刻意没有监听 `edited`）。所以先改正文，再 `gh pr ready`
+  或推送。
+- 正文里任何以 `L2-Consecutive:` 开头的行都算数，包括代码块里的示例行；PR 正文里要举例时别把它写在行首。
+- 转正式之后再推送照常每次都跑（`synchronize`），PR 头已换的旧运行照样自己跳过。已经不是草稿的 PR 不受这套流程影响。
+- `workflow_dispatch` 的 `consecutive`、`consecutive-all` 不变，不读 PR 正文。
 
 **真装置那三条刻意不进 CI，两个各自独立的原因：**
 

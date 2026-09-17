@@ -172,10 +172,22 @@ jobs:
               @{ Name = 'structural-block-oversized-demand'; Runs = 1; BatchId = 'batch-4' }
               @{ Name = 'slot-group-disabled-no-alert';      Runs = 1; BatchId = 'batch-4' }
           )
+          # Registered before anything can fail, so the upload step below always has a path: without it
+          # a setup error also shows "Input required and not supplied: path" beside the real reason.
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          "L2_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # A setup error fails the round before any scenario runs; the annotation puts the reason on the
+          # pull request's checks page instead of only in the log.
+          function Stop-L2Setup([string]$Message) {
+              Write-Host "::error title=L2 setup::$Message"
+              throw $Message
+          }
+
           $only = @($env:L2_ONLY -split ',' | ForEach-Object Trim | Where-Object { $_ })
           $unknown = @($only | Where-Object { $_ -notin $scenarios.Name })
           if ($unknown.Count -gt 0) {
-              throw "Not in this workflow's scenario list: $($unknown -join ', ')"
+              Stop-L2Setup "Not in this workflow's scenario list: $($unknown -join ', ')"
           }
           Write-Host "L2 mode: $env:L2_MODE$(if ($only.Count -gt 0) { "; only $($only -join ', ')" })"
 
@@ -187,14 +199,14 @@ jobs:
               foreach ($line in $lines) {
                   $names = @($line.Groups[1].Value -replace '`', '' -split '[,\s]+' | Where-Object { $_ })
                   if ($names.Count -eq 0) {
-                      throw "The pull request body has an L2-Consecutive line that names no scenario."
+                      Stop-L2Setup "The pull request body has an L2-Consecutive line that names no scenario."
                   }
                   $bodyConsecutive += $names
               }
               $bodyConsecutive = @($bodyConsecutive | Select-Object -Unique)
               $unknown = @($bodyConsecutive | Where-Object { $_ -notin $scenarios.Name })
               if ($unknown.Count -gt 0) {
-                  throw "L2-Consecutive in the pull request body names scenarios not in this workflow's list: $($unknown -join ', ')"
+                  Stop-L2Setup "L2-Consecutive in the pull request body names scenarios not in this workflow's list: $($unknown -join ', ')"
               }
               if ($bodyConsecutive.Count -gt 0) {
                   Write-Host "L2-Consecutive from the pull request body, three runs each: $($bodyConsecutive -join ', ')"
@@ -226,7 +238,6 @@ jobs:
               $false
           }
 
-          $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $failed = @()
           $executed = [ordered]@{}
           $superseded = $false
@@ -264,8 +275,6 @@ jobs:
                   }
               }
           }
-          "L2_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
           # What actually ran, per scenario -- the record a consecutive run is cited by.
           $summary = @("### L2 ($env:L2_MODE)$(if ($superseded) { ' -- superseded, remaining scenarios skipped' })", '',
                        '| Scenario | Consecutive | Last run | Result |', '| --- | --- | --- | --- |')
