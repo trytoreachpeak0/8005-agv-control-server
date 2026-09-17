@@ -184,6 +184,117 @@ public sealed partial class JourneyRuntimeWorkerTests
     }
 
     /// <summary>
+    /// A refusal is not a load, so it does not hold the stop either (control-server#82, decided there
+    /// rather than here). The operator has just been shown on the vehicle why their scan did not stand;
+    /// cancelling the stop before any sublot is the next thing they are likely to want, and the stored
+    /// refusal is the record that no load will follow it.
+    /// </summary>
+    /// <remarks>
+    /// Without this the two refusals would also disagree: a sublot outside the dispatch scope never
+    /// matched the demand's and so never held the stop, while one inside it that failed BR-013 did.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ARefusedEntryDoesNotHoldTheStopAgainstACancellation()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        // BR-013 cannot be re-established for this entry: the box count it is revalidated against is gone.
+        fixture.BoxCounts.Remove("SUBLOT-001");
+        await processor.ProcessAsync(SublotEntry(fixture, waiting, "SUBLOT-001"), state, token);
+        await fixture.Engine.ExecuteOnceAsync(token);
+
+        using JsonDocument refusal = JsonDocument.Parse(
+            (await fixture.Context.ProtocolOutbox.AsNoTracking()
+                .SingleAsync(row => row.MessageType == "SublotRejected", token)).PayloadJson);
+        Assert.Equal(
+            ServerReasonCodes.SublotBoxCountUnavailable,
+            refusal.RootElement.GetProperty("payload").GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, (await fixture.RuntimeAsync()).Stage);
+
+        string authorization = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+
+        Assert.Equal("AUTHORIZED", FirstLinePayload(authorization, out _).GetProperty("decision").GetString());
+    }
+
+    /// <summary>
+    /// The other side of the same rule: an entry that has not been refused <b>yet</b> is still an entry.
+    /// The refusal is read from the store, so until it is durable nothing has been decided about the scan,
+    /// and the cancellation loses to it -- the conservative side of the race, and the one that cannot load
+    /// and cancel at the same time.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnEntryThatHasNotBeenRefusedYetStillHoldsTheStopAgainstACancellation()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        fixture.BoxCounts.Remove("SUBLOT-001");
+        await processor.ProcessAsync(SublotEntry(fixture, waiting, "SUBLOT-001"), state, token);
+        // Deliberately no engine iteration: the refusal this entry will draw has not been made durable.
+
+        string response = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+
+        JsonElement refused = FirstLinePayload(response, out string type);
+        Assert.Equal("LoadCancellationAuthorization", type);
+        Assert.Equal("REJECTED", refused.GetProperty("decision").GetString());
+        Assert.Equal(
+            ServerReasonCodes.ActionNotAllowedInState,
+            refused.GetProperty("problem").GetProperty("reasonCode").GetString());
+        Assert.Empty(await fixture.Context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+    }
+
+    /// <summary>
+    /// A cancellation the refusal allowed still decides the stop: fixing the data and scanning again does
+    /// not turn the next entry into a load. The runtime reads the inbox before the open cancellation, so an
+    /// entry that arrives after it loses to it however good the entry is.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ARefusalThatAllowedTheCancellationDoesNotLetALaterEntryLoad()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachSublotWaitAsync();
+        await using ControlServerDbContext connection = fixture.OpenConnectionContext();
+        OnboardMessageProcessor processor = BeforeSublotProcessor(fixture, connection);
+        OnboardConnectionState state = BeforeSublotConnection(fixture, generation: 1);
+        JourneyRuntimeRow waiting = await fixture.RuntimeAsync();
+        fixture.BoxCounts.Remove("SUBLOT-001");
+        await processor.ProcessAsync(SublotEntry(fixture, waiting, "SUBLOT-001"), state, token);
+        await fixture.Engine.ExecuteOnceAsync(token);
+        string authorization = await processor.ProcessAsync(
+            CancellationBeforeSublotRequest(fixture, BeforeSublotCancellationId, generation: 1), state, token);
+        Assert.Equal("AUTHORIZED", FirstLinePayload(authorization, out _).GetProperty("decision").GetString());
+
+        // The box count is back and the operator scans a sublot that would now load.
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await processor.ProcessAsync(SublotEntry(fixture, waiting, "SUBLOT-001"), state, token);
+        fixture.Clock.Advance(TimeSpan.FromSeconds(30));
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(token);
+        await fixture.Engine.ExecuteOnceAsync(token);
+
+        JourneyRuntimeRow held = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, held.Stage);
+        Assert.Null(held.ConsumedSublotMessageId);
+        Assert.Null(held.BlockReasonCode);
+        Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(token));
+        Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
+        Assert.Equal(DemandExecutionStatus.Accepted, (await fixture.DemandRowAsync()).Status);
+        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+    }
+
+    /// <summary>
     /// Exclusive the other way (ADR-cross-0055's first-persisted-wins, applied to ADR-cross-0046): once the
     /// cancellation is durable, an entry that arrives afterwards starts no load, and the station deadline
     /// passing -- with the doors proven shut and the vehicle heard from, so nothing else would hold the stop

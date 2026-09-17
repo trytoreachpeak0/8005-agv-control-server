@@ -206,6 +206,44 @@ public sealed partial class JourneyRuntimeWorkerTests
     }
 
     /// <summary>
+    /// A refusal is not a block. The journey keeps waiting at the pickup with nothing written to
+    /// <c>BlockReasonCode</c> — the field the dashboard and the escalation schedule read — and nothing
+    /// else on the row moves either: no slots were reserved, no attempt was opened, and the sublot's
+    /// reservation is untouched, so a rescan after the data is fixed is judged against the same
+    /// journey it was reserved for.
+    /// </summary>
+    /// <remarks>
+    /// This is the difference from the shape the stage had before: the entry that starts nothing used
+    /// to be recorded as <c>SUBLOT_SUBMISSION_MISMATCH</c> on the journey row, which made the dashboard
+    /// say a journey was blocked by a scan nobody had made. A refusal an operator can simply correct is
+    /// not a journey that needs an engineer; it travels on the wire, where the operator is.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task ARefusalLeavesEverythingOnTheJourneyRowAlone()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await ReachEntryWaitAsync();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Null(runtime.BlockReasonCode);
+        fixture.BoxCounts.Remove(RejectedEntrySublot);
+
+        await AddEntryAsync(fixture, payload: EntryPayload(runtime, RejectedEntrySublot));
+        await fixture.Engine.ExecuteOnceAsync(token);
+
+        Assert.Single(await RejectionEnvelopesAsync(fixture));
+        JourneyRuntimeRow refused = await fixture.RuntimeAsync();
+        Assert.Null(refused.BlockReasonCode);
+        Assert.Null(refused.BlockReasonSince);
+        Assert.Null(refused.ConsumedSublotMessageId);
+        Assert.Equal(JourneyRuntimeStage.AwaitingSublot, refused.Stage);
+        Assert.Equal(runtime.TargetSlotsJson, refused.TargetSlotsJson);
+        Assert.Equal(runtime.ExpectedBasketCount, refused.ExpectedBasketCount);
+        Assert.Equal(0, await fixture.Context.StationOperations.CountAsync(token));
+        Assert.Null((await fixture.LeaseAsync()).ReleasedAt);
+    }
+
+    /// <summary>
     /// Every way BR-013 section 2 says the authoritative basket count cannot be established, each with
     /// the reason code the candidate's registry gives it and none of them starting a load.
     /// </summary>
@@ -222,7 +260,7 @@ public sealed partial class JourneyRuntimeWorkerTests
     [InlineData("package-missing", ServerReasonCodes.PackageCapacityUnresolved)]
     [InlineData("capacity-unresolved", ServerReasonCodes.PackageCapacityUnresolved)]
     [InlineData("capacity-non-positive", ServerReasonCodes.PackageCapacityUnresolved)]
-    [InlineData("count-changed", "EXPECTED_BASKET_COUNT_MISMATCH")]
+    [InlineData("count-changed", ServerReasonCodes.ExpectedBasketCountMismatch)]
     public async Task AnEntryTheBasketCountCannotBeRecomputedForIsRefusedWithItsOwnReasonCode(
         string situation,
         string expectedReasonCode)
@@ -295,7 +333,7 @@ public sealed partial class JourneyRuntimeWorkerTests
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         string submitted = await AddEntryAsync(
             fixture,
-            messageId: "s1000000-0000-4000-8000-000000000001",
+            messageId: "51000000-0000-4000-8000-000000000001",
             payload: EntryPayload(runtime, "SUBLOT-NOT-IN-SCOPE"));
 
         await fixture.Engine.ExecuteOnceAsync(token);
@@ -376,7 +414,7 @@ public sealed partial class JourneyRuntimeWorkerTests
         JsonElement[] refusals = await RejectionEnvelopesAsync(fixture);
         Assert.Equal(2, refusals.Length);
         Assert.Equal(
-            [first, second],
+            new[] { first, second }.Order(StringComparer.Ordinal),
             refusals.Select(refusal => refusal.GetProperty("correlationId").GetString())
                 .Order(StringComparer.Ordinal));
         Assert.Equal(2, refusals.Select(refusal => refusal.GetProperty("messageId").GetString()).Distinct().Count());

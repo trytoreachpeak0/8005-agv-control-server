@@ -31,17 +31,20 @@ namespace ControlServer.Domain;
 /// filed under the divider.
 /// </para>
 /// <para>
-/// **Four are registered here before anything sends them.** The protocol <c>2.0.0</c> candidate added
+/// **Four were registered here before anything sent them.** The protocol <c>2.0.0</c> candidate added
 /// the three sublot rejection reasons, which <c>SublotRejected</c> starts carrying in
 /// <c>8005-agv-control-server#82</c>, and <c>OPERATOR_TIMEOUT</c>, which the v2 onboard never
 /// produces and this server only has to settle defensively when it arrives
-/// (<c>8005-agv-control-server#81</c>). Naming them now is what puts them under the registry guard
-/// before their first use rather than after.
+/// (<c>8005-agv-control-server#81</c>). Naming them first is what put them under the registry guard
+/// before their first use rather than after; <c>EXPECTED_BASKET_COUNT_MISMATCH</c> joined the
+/// <c>SublotRejected</c> surface in the same ticket, having until then only ever been a dispatch
+/// reason code the peer never saw.
 /// </para>
 /// </remarks>
 public static class ServerReasonCodes
 {
     public const string ActionNotAllowedInState = "ACTION_NOT_ALLOWED_IN_STATE";
+    public const string ExpectedBasketCountMismatch = "EXPECTED_BASKET_COUNT_MISMATCH";
     public const string ForcedRecoveryGenerationStale = "FORCED_RECOVERY_GENERATION_STALE";
     public const string OperatorTimeout = "OPERATOR_TIMEOUT";
     public const string PackageCapacityUnresolved = "PACKAGE_CAPACITY_UNRESOLVED";

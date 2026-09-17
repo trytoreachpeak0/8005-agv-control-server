@@ -4226,6 +4226,10 @@ public sealed partial class JourneyRuntimeWorkerTests
             OnboardJourneyPublisher publisher = new(store, Peer, Clock);
             Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions> options =
                 Microsoft.Extensions.Options.Options.Create(Options);
+            // One instance for both readers: the dispatch chain resolves the capacity at acceptance and
+            // the engine resolves it again after the entry, and the real host shares one scoped store
+            // between them the same way.
+            PackageCapacityStore packageCapacity = new(Context);
             return new JourneyRuntimeEngine(
                 Context,
                 Catalog,
@@ -4236,10 +4240,12 @@ public sealed partial class JourneyRuntimeWorkerTests
                 new MovementDispatchService(store, Riot),
                 store,
                 publisher,
+                BoxCounts,
+                packageCapacity,
                 new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
                     options,
                     new MapStationResolver(),
-                    new PackageCapacityStore(Context),
+                    packageCapacity,
                     store,
                     new VehicleFaultStore(Context),
                     BoxCounts,

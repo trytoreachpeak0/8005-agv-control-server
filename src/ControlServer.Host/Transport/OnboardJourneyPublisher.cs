@@ -158,6 +158,65 @@ public sealed class OnboardJourneyPublisher(
             cancellationToken);
     }
 
+    /// <summary>
+    /// The server refusing one <c>SublotSubmitted</c>: BR-013 section 2 could not establish the
+    /// authoritative basket count for the sublot the operator entered, or the sublot is not in this
+    /// vehicle's dispatch scope (protocol 2.0.0 item 2; <c>8005-agv-control-server#82</c>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It is a RESPONSE whose correlation rule is <c>REQUIRED_ORIGINAL_MESSAGE_ID</c>, so
+    /// <paramref name="submittedMessageId"/> is the submission being refused and not an id of ours. MVP
+    /// sent it with a null <c>correlationId</c>, which the vehicle answers with
+    /// <c>CORRELATION_INVALID</c>: BR-013's explicit refusal had never once reached an operator
+    /// (<c>8005-agv-control-server#20</c>).
+    /// </para>
+    /// <para>
+    /// Sent through the durable outbox rather than as a bare send, so the reason survives the connection
+    /// the entry arrived on — and so that the stored line is itself the record that this submission has
+    /// been judged, which is what keeps the runtime from refusing it again on every poll and what tells
+    /// the cancellation before a sublot that the stop is still the operator's to cancel.
+    /// </para>
+    /// </remarks>
+    public Task PublishSublotRejectedAsync(
+        string messageId,
+        string submittedMessageId,
+        string agvId,
+        long sessionGeneration,
+        SublotRejection rejection,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rejection);
+        ValidateUuid(messageId, nameof(messageId));
+        ValidateUuid(submittedMessageId, nameof(submittedMessageId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        if (rejection.DemandId is not null)
+        {
+            ValidateUuid(rejection.DemandId, nameof(rejection.DemandId));
+        }
+        ValidateUuid(rejection.OperationSessionId, nameof(rejection.OperationSessionId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(rejection.RejectedSublot);
+        ArgumentOutOfRangeException.ThrowIfNegative(rejection.CurrentWorklistRevision);
+        ArgumentNullException.ThrowIfNull(rejection.Problem);
+
+        return PublishEnvelopeAsync(
+            "SublotRejected",
+            messageId,
+            submittedMessageId,
+            agvId,
+            sessionGeneration,
+            new
+            {
+                rejection.DemandId,
+                rejection.OperationSessionId,
+                rejection.Problem,
+                rejection.CurrentWorklistRevision,
+                rejection.RejectedSublot
+            },
+            cancellationToken);
+    }
+
     public Task PublishSlotOperationCommandAsync(
         string messageId,
         string agvId,

@@ -638,14 +638,25 @@ public sealed class OnboardRecoveryCoordinator(
         {
             return false;
         }
+        // An entry the server already refused is not an entry for this stop (control-server#82): the
+        // operator has been shown why their scan did not stand, and cancelling the stop before any sublot
+        // is what they are most likely to want next. Read from the store, so a refusal that is not
+        // durable yet has not been decided and this stays refused -- the conservative side of the race.
+        HashSet<string> refused = await LoadCancellationBeforeSublot
+            .RefusedSubmissionIdsAsync(dbContext, cancellationToken).ConfigureAwait(false);
         ProtocolInboxRow[] entries = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SublotSubmitted")
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         foreach (ProtocolInboxRow entry in entries)
         {
+            if (refused.Contains(entry.MessageId))
+            {
+                continue;
+            }
             using JsonDocument document = JsonDocument.Parse(entry.RequestJson);
             // An entry the runtime refuses for the station's task types starts no load, so it does not hold
-            // the stop against the operator either.
+            // the stop against the operator either. That carve-out is kept as it was: it names a station
+            // that cannot do the work at all, and it is not a SublotRejected.
             if (LoadCancellationBeforeSublot.IsEntryForStop(document.RootElement, runtime, demand.Sublot))
                 return !await store.IsTaskTypeAllowedAsync(runtime.PickupStationId, demand.WorkType, cancellationToken)
                     .ConfigureAwait(false);

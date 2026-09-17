@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
@@ -28,6 +28,8 @@ public sealed class JourneyRuntimeEngine(
     MovementDispatchService movementDispatch,
     WireToGateStore store,
     OnboardJourneyPublisher publisher,
+    ISublotBoxCountReader boxCountReader,
+    IPackageCapacityStore packageCapacityStore,
     DispatchAdmissionChain admissionChain,
     IDispatchCandidateRanker candidateRanker,
     CatalogAvailabilityAccess catalogAvailability,
@@ -54,6 +56,11 @@ public sealed class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2102, nameof(LogBoxCountFailed)),
         "SUBLOT_BOX_COUNT failed closed for demand {DemandId}.");
+    private static readonly Action<ILogger, string, string, Exception?> LogSublotRejected =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Information,
+            new EventId(2108, nameof(LogSublotRejected)),
+            "The sublot entered for demand {DemandId} was refused: {ReasonCode}.");
     private static readonly Action<ILogger, Exception?> LogMapStationCatalogFailed = LoggerMessage.Define(
         LogLevel.Warning,
         new EventId(2103, nameof(LogMapStationCatalogFailed)),
@@ -661,6 +668,15 @@ public sealed class JourneyRuntimeEngine(
                         runtime.UpdatedAt = now;
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     }
+                    return;
+                }
+                // The entry answers the request open at this stop. Whether it may load is judged now,
+                // after the cancellation has had its chance to decide the stop: an entry that loses to
+                // one is neither loaded nor answered. A refusal is answered here, which is the point of
+                // BR-013's "give the operator the real reason", and leaves the stop exactly where it was.
+                if (!await RevalidateEnteredSublotAsync(runtime, session, sublot, now, cancellationToken)
+                        .ConfigureAwait(false))
+                {
                     return;
                 }
                 await PublishLoadAsync(runtime, session, sublot.MessageId, cancellationToken).ConfigureAwait(false);
@@ -1323,38 +1339,258 @@ public sealed class JourneyRuntimeEngine(
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The submission answering the entry request this stop has open, or null when none does.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A submission answers one entry request, and its address says which.</b> The vehicle, the
+    /// session generation, the operation session, the station and the worklist revision are the address.
+    /// A submission whose address is not this stop's cannot be an answer to this request, so it is
+    /// skipped rather than judged. Judging the whole inbox is what this method used to do, and it raised
+    /// <c>SUBLOT_SUBMISSION_MISMATCH</c> within one poll of every arrival with nobody having scanned
+    /// anything: the row that raised it was a finished journey's, another vehicle's, or this journey's
+    /// own earlier round. Nothing here writes a block reason.
+    /// </para>
+    /// <para>
+    /// <b>The read is narrowed in the store as well as here.</b> The operation session is written into
+    /// the submission's own JSON, so a substring is a filter the database can apply and the inbox's
+    /// history is not read back and parsed on every poll. It is a pre-filter only: the parsed comparison
+    /// below is what decides, and a pre-filter that decided anything would be a bug rather than a
+    /// shortcut.
+    /// </para>
+    /// <para>
+    /// <b>A submission already refused is not read again.</b> The stored <c>SublotRejected</c> is the
+    /// record that this entry was judged (<see cref="LoadCancellationBeforeSublot.RefusedSubmissionIdsAsync"/>);
+    /// without skipping it every poll would re-run the remote reads and re-send the same refusal.
+    /// </para>
+    /// <para>
+    /// <b>Nothing here decides about the load.</b> Which demand the sublot belongs to, whether the station
+    /// admits that demand's work type, and whether BR-013 still holds are judged by
+    /// <see cref="RevalidateEnteredSublotAsync"/>, which the caller reaches only after it has read the
+    /// open cancellation — so an entry that loses to a cancellation is neither loaded nor answered.
+    /// </para>
+    /// </remarks>
     private async Task<ProtocolInboxRow?> FindMatchingSublotAsync(
         JourneyRuntimeRow runtime,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        HashSet<string> refused = await LoadCancellationBeforeSublot
+            .RefusedSubmissionIdsAsync(dbContext, cancellationToken).ConfigureAwait(false);
+        string operationSessionId = runtime.OperationSessionId;
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SublotSubmitted")
+            .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         rows = rows.OrderBy(row => row.ReceivedAt).ToArray();
         foreach (ProtocolInboxRow row in rows)
         {
+            if (refused.Contains(row.MessageId))
+            {
+                continue;
+            }
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            // One rule with the cancellation before a sublot, which refuses once such an entry is durable in
-            // any generation; the runtime itself acts only on an entry of the current one.
-            bool matches = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                           LoadCancellationBeforeSublot.IsEntryForStop(root, runtime, demand.Sublot);
-            if (matches)
+            // The same address the cancellation before a sublot reads, plus the generation: the runtime
+            // acts only on an answer of the session it is serving, while the cancellation refuses on an
+            // entry of any generation (control-server#116 review).
+            bool answers = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
+                           LoadCancellationBeforeSublot.AnswersTheStop(root, runtime);
+            if (answers)
             {
-                if (!await store.IsTaskTypeAllowedAsync(
-                        runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
-                {
-                    runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", timeProvider.GetUtcNow());
-                    return null;
-                }
                 return row;
             }
-            runtime.SetBlockReason("SUBLOT_SUBMISSION_MISMATCH", timeProvider.GetUtcNow());
         }
         return null;
+    }
+
+    /// <summary>
+    /// Judges the submission that answers this stop's open entry request, answering it when it may not
+    /// load. Returns whether the load may proceed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The demand is resolved here, from the sublot, inside the dispatch scope.</b> Protocol 2.0.0 took
+    /// the demand off <c>SublotSubmitted</c>: which demand a sublot belongs to is the server's to work
+    /// out, and the scope it works it out in is the demands this journey was dispatched for — not the
+    /// catalogue, which holds demands this vehicle was never given. One demand per journey makes that
+    /// scope one demand's sublot; it is written as the set it becomes once a journey carries a stop
+    /// sequence, because FR-001 AC-3 scopes entry to the whole range.
+    /// </para>
+    /// <para>
+    /// <b>BR-013 section 2 makes the recomputed count authoritative after the entry.</b> The count was
+    /// computed once at acceptance against the capacity table and the MES box count as they stood then;
+    /// both move while the vehicle drives, and the slots were reserved against the number frozen on the
+    /// journey row. A count that cannot be established, or that comes out different, stops the load: no
+    /// slot is allocated and nothing is unlocked.
+    /// </para>
+    /// <para>
+    /// <b>The one refusal that is not a message.</b> A station whose task-type admission does not allow
+    /// the demand's work type is a fact about the station, not about the entry: the journey blocks under
+    /// <c>TASK_TYPE_NOT_ALLOWED_AT_STATION</c> and nothing is sent, which is the carve-out
+    /// <see cref="LoadCancellationBeforeSublot"/> still carries on the cancellation side.
+    /// </para>
+    /// <para>
+    /// A refusal is saved with the journey left where it was. The stop stays the operator's: the entry is
+    /// not recorded as consumed, so a rescan is judged afresh, the station deadline of
+    /// <c>control-server#79</c> still runs, and a cancellation before any sublot is still available.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> RevalidateEnteredSublotAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        ProtocolInboxRow submission,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        using JsonDocument document = JsonDocument.Parse(submission.RequestJson);
+        string enteredSublot = RequiredString(document.RootElement.GetProperty("payload"), "sublot");
+        // The dispatch scope: the demands this journey was sent for.
+        AcceptedDemandRow[] scope = await dbContext.AcceptedDemands.AsNoTracking()
+            .Where(row => row.DemandId == runtime.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        AcceptedDemandRow? demand = scope.SingleOrDefault(
+            row => string.Equals(row.Sublot, enteredSublot, StringComparison.Ordinal));
+        if (demand is null)
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demandId: null,
+                enteredSublot,
+                ServerReasonCodes.SublotNotInDispatchScope,
+                $"子批 {enteredSublot} 不属于本次派车范围，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!await store.IsTaskTypeAllowedAsync(
+                runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
+        {
+            runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        LiveMesFieldSet? fields = JsonSerializer.Deserialize<LiveMesFieldSet>(
+            demand.LiveMesFieldsJson, SerializerOptions);
+        if (string.IsNullOrWhiteSpace(fields?.Package))
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demand.DemandId,
+                enteredSublot,
+                ServerReasonCodes.PackageCapacityUnresolved,
+                $"子批 {enteredSublot} 没有 PACKAGE 型号，算不出花篮数量，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        int? capacity = await packageCapacityStore.ResolveAndTrackAsync(fields.Package, now, cancellationToken)
+            .ConfigureAwait(false);
+        if (!AuthoritativeBasketCount.PackageCapacityIsUsable(capacity))
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demand.DemandId,
+                enteredSublot,
+                ServerReasonCodes.PackageCapacityUnresolved,
+                $"PACKAGE {fields.Package} 没有已批准的花篮容量对照，算不出花篮数量，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        int? maxBoxCount;
+        try
+        {
+            maxBoxCount = await boxCountReader.ReadMaxBoxCountAsync(demand.Sublot, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or JsonException)
+        {
+            LogBoxCountFailed(logger, runtime.DemandId, error);
+            maxBoxCount = null;
+        }
+
+        if (!AuthoritativeBasketCount.BoxCountIsUsable(maxBoxCount))
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demand.DemandId,
+                enteredSublot,
+                ServerReasonCodes.SublotBoxCountUnavailable,
+                $"查不到子批 {enteredSublot} 的箱数，算不出花篮数量，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        // Both inputs were checked usable just above, so a count is computable.
+        int recomputed = AuthoritativeBasketCount.Compute(maxBoxCount, capacity)
+            ?? throw new InvalidOperationException("Both inputs are usable, so a count is computable.");
+        if (recomputed != runtime.ExpectedBasketCount)
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demand.DemandId,
+                enteredSublot,
+                ServerReasonCodes.ExpectedBasketCountMismatch,
+                $"子批 {enteredSublot} 的花篮数量由 {runtime.ExpectedBasketCount} 变为 {recomputed}，"
+                + "与本次派车预留的仓位不符，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Answers one entry with a <c>SublotRejected</c> carrying the reason, and leaves the journey waiting
+    /// for the next one. Always returns <see langword="false"/> — the caller's "do not load".
+    /// </summary>
+    /// <remarks>
+    /// The refusal is keyed on the submission it answers, which is the only correlation the operator's
+    /// screen can attach the reason to, and its own id is derived from that submission rather than
+    /// counted, so two refusals of two submissions are two messages instead of one rewritten identity.
+    /// The submission is deliberately not recorded as consumed: the stop is still the operator's to
+    /// rescan, to cancel, or to run out at its deadline.
+    /// </remarks>
+    private async Task<bool> RefuseAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        ProtocolInboxRow submission,
+        string? demandId,
+        string enteredSublot,
+        string reasonCode,
+        string displayMessage,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await publisher.PublishSublotRejectedAsync(
+            StableGuid(submission.MessageId, "sublot-rejected"),
+            submission.MessageId,
+            runtime.AgvId,
+            session.SessionGeneration,
+            new SublotRejection(
+                demandId,
+                runtime.OperationSessionId,
+                new WireProblem(reasonCode, "payload.sublot", displayMessage),
+                runtime.WorklistRevision,
+                enteredSublot),
+            cancellationToken).ConfigureAwait(false);
+        runtime.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        LogSublotRejected(logger, runtime.DemandId, reasonCode, null);
+        return false;
     }
 
     /// <summary>
