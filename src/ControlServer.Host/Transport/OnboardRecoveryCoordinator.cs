@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -505,6 +506,11 @@ public sealed class OnboardRecoveryCoordinator(
         string cancellationId = RequiredUuid(payload, "cancellationId");
         string demandId = RequiredUuid(payload, "demandId");
         string? attemptId = OptionalUuid(payload, "slotOperationAttemptId");
+        if (attemptId is null)
+        {
+            return await AuthorizeLoadCancellationBeforeSublotAsync(
+                root, contentHash, cancellationId, demandId, cancellationToken).ConfigureAwait(false);
+        }
         AcceptedDemandRow? demand = await dbContext.AcceptedDemands.SingleOrDefaultAsync(
             row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
         StationOperationRow? operation = attemptId is null ? null : await dbContext.StationOperations
@@ -532,6 +538,96 @@ public sealed class OnboardRecoveryCoordinator(
                 ServerReasonCodes.ActionNotAllowedInState, "payload.demandId",
                 "Load cancellation is not safe in the current state.")
         });
+    }
+
+    /// <summary>
+    /// ADR-cross-0046, first case: the operator cancels at the pickup before any sublot is entered, so no
+    /// slot operation was commanded and there is no slot to prove empty. Authorized with an empty slot set,
+    /// and the demand is ended only by the vehicle's ALL_EMPTY result that follows -- never by the
+    /// authorization itself, which is how MVP did it (ADR-cross-0057 Consequences).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only while the journey waits in <see cref="JourneyRuntimeStage.AwaitingSublot"/>, before any load
+    /// command, with no entry for the stop durable and no cancellation already open. Once an entry is
+    /// durable the runtime acts on it, and the cancellation, persisted second, loses
+    /// (<see cref="LoadCancellationBeforeSublot"/>). Until control-server#83 this path authorized at any
+    /// stage and then waited for a result that protocol 1.0.0 could not carry, so the stop stayed held.
+    /// </para>
+    /// <para>
+    /// A request naming a cancellation already on file is answered from the record rather than judged
+    /// afresh: judged afresh, the open cancellation it created would refuse it. Whether its content is the
+    /// same is <see cref="UpsertSimpleWorkflowAsync"/>'s identity check, as for every simple workflow.
+    /// </para>
+    /// </remarks>
+    private async Task<string> AuthorizeLoadCancellationBeforeSublotAsync(
+        JsonElement root,
+        string contentHash,
+        string cancellationId,
+        string demandId,
+        CancellationToken cancellationToken)
+    {
+        bool recorded = await dbContext.RecoveryWorkflows.AsNoTracking()
+            .AnyAsync(row => row.WorkflowId == cancellationId, cancellationToken).ConfigureAwait(false);
+        bool authorized = recorded || await CancellationBeforeSublotAllowedAsync(
+            demandId, root.GetProperty("sessionGeneration").GetInt64(), cancellationToken).ConfigureAwait(false);
+        if (authorized)
+        {
+            await UpsertSimpleWorkflowAsync(
+                cancellationId, LoadCancellationBeforeSublot.WorkflowType, root, contentHash, demandId,
+                attemptId: null, slots: [], cancellationToken).ConfigureAwait(false);
+        }
+        return Response(root, "LoadCancellationAuthorization", new
+        {
+            cancellationId,
+            decision = authorized ? "AUTHORIZED" : "REJECTED",
+            demandId,
+            slotOperationAttemptId = (string?)null,
+            slots = Array.Empty<int>(),
+            problem = authorized ? null : Problem(
+                ServerReasonCodes.ActionNotAllowedInState, "payload.slotOperationAttemptId",
+                "Load cancellation before a sublot entry is not allowed in the current state.")
+        });
+    }
+
+    private async Task<bool> CancellationBeforeSublotAllowedAsync(
+        string demandId,
+        long sessionGeneration,
+        CancellationToken cancellationToken)
+    {
+        AcceptedDemandRow? demand = await dbContext.AcceptedDemands.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        if (demand?.Status != DemandExecutionStatus.Accepted ||
+            runtime?.Stage != JourneyRuntimeStage.AwaitingSublot ||
+            runtime.ConsumedSublotMessageId is not null)
+        {
+            return false;
+        }
+        // The load command's id is assigned when the journey is created; the command exists once it is queued.
+        bool loadCommanded = await dbContext.ProtocolOutbox.AsNoTracking()
+            .AnyAsync(row => row.MessageId == runtime.LoadCommandMessageId, cancellationToken).ConfigureAwait(false);
+        if (loadCommanded ||
+            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(dbContext, demandId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+        ProtocolInboxRow[] entries = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotSubmitted")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (ProtocolInboxRow entry in entries)
+        {
+            using JsonDocument document = JsonDocument.Parse(entry.RequestJson);
+            // An entry the runtime refuses for the station's task types starts no load, so it does not hold
+            // the stop against the operator either.
+            if (LoadCancellationBeforeSublot.IsEntryForStop(
+                    document.RootElement, runtime, sessionGeneration, demand.Sublot))
+                return !await store.IsTaskTypeAllowedAsync(runtime.PickupStationId, demand.WorkType, cancellationToken)
+                    .ConfigureAwait(false);
+        }
+        return true;
     }
 
     private async Task<string> AuthorizeLoadCompensationAsync(
@@ -858,6 +954,19 @@ public sealed class OnboardRecoveryCoordinator(
         workflow.State = RecoveryWorkflowState.Reconciled;
         if (messageType == "LoadCorrectionResult") return;
         if (workflow.DemandId is null) return;
+        if (messageType == "LoadCancellationResult" && workflow.SlotOperationAttemptId is null)
+        {
+            // Cancelled before any sublot entry: nothing was commanded, so the stop ends the way the station
+            // deadline ends it -- demand, lease, vehicle occupancy, the unanswered entry request and the
+            // journey in one staged change -- and differs only in why (control-server#83). Stamped with the
+            // server's receipt time, like the deadline: every fact it writes is the server's own.
+            JourneyRuntimeRow stop = await dbContext.JourneyRuntimes.SingleAsync(
+                row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
+            await new PickupStopTermination(dbContext)
+                .StageAsync(stop, "CANCELLED_BY_OPERATOR", timeProvider.GetUtcNow(), cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
         AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
             row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
         if (demand.Status == DemandExecutionStatus.Succeeded)

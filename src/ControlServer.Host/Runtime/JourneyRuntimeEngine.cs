@@ -599,8 +599,24 @@ public sealed class JourneyRuntimeEngine(
                 // the projection reconciliation".
                 bool waitRefilled = runtime.StationDepartureWaitStartedAt is null;
                 runtime.StationDepartureWaitStartedAt ??= now;
+                string? blockBeforeEntryRead = runtime.BlockReasonCode;
                 ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, session, cancellationToken)
                     .ConfigureAwait(false);
+                // An operator cancelling before any entry (ADR-cross-0046; control-server#83) holds the stop
+                // until the vehicle reports: no load starts and the deadline does not end it. Read after the
+                // inbox, so an entry seen here cannot have been persisted before the cancellation it loses to.
+                if (await LoadCancellationBeforeSublot.HasOpenCancellationAsync(
+                        dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false))
+                {
+                    // What the entry read concluded does not stand while the cancellation decides the stop.
+                    runtime.BlockReasonCode = blockBeforeEntryRead;
+                    if (waitRefilled)
+                    {
+                        runtime.UpdatedAt = now;
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    return;
+                }
                 if (sublot is null)
                 {
                     if (await TryEndStopAtStationDeadlineAsync(runtime, session, now, cancellationToken)
@@ -1275,16 +1291,9 @@ public sealed class JourneyRuntimeEngine(
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            JsonElement payload = root.GetProperty("payload");
-            // Protocol 2.0.0 took demandId off SublotSubmitted: the server resolves the demand. With one
-            // demand per journey the operation session already names it; resolving by dispatch scope and
-            // refusing sublots outside it is 8005-agv-control-server#82.
-            bool matches = RequiredString(root, "agvId") == runtime.AgvId &&
-                           root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                           RequiredString(payload, "operationSessionId") == runtime.OperationSessionId &&
-                           RequiredString(payload, "stationId") == runtime.PickupStationId &&
-                           payload.GetProperty("worklistRevision").GetInt64() == runtime.WorklistRevision &&
-                           RequiredString(payload, "sublot") == demand.Sublot;
+            // One rule with the cancellation before a sublot, which refuses once such an entry is durable.
+            bool matches = LoadCancellationBeforeSublot.IsEntryForStop(
+                root, runtime, session.SessionGeneration, demand.Sublot);
             if (matches)
             {
                 if (!await store.IsTaskTypeAllowedAsync(

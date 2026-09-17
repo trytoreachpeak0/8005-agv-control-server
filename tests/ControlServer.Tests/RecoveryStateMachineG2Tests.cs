@@ -1666,9 +1666,11 @@ public sealed class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// Protocol 2.0.0 item 3: <c>LoadCancellationResult.slotResults</c> may be empty, which is what a
-    /// cancellation before anything was loaded reports. Inbound parsing must take it; what the
-    /// server then decides is 8005-agv-control-server#83, so this asserts only that it is received,
-    /// recorded and acknowledged rather than thrown on.
+    /// cancellation before anything was loaded reports. Inbound parsing must take it, whatever was
+    /// authorized: here the cancellation named an attempt with two slots, so the empty result is received,
+    /// recorded and acknowledged rather than thrown on. What an empty result settles when the
+    /// authorization named no slot is JourneyRuntimeWorkerTests' CV-LOAD-CANCELLATION-BEFORE-LOAD test
+    /// (8005-agv-control-server#83).
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
