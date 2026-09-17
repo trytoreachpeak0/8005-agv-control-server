@@ -1362,7 +1362,9 @@ public sealed class JourneyRuntimeEngine(
     /// <para>
     /// <b>A submission already refused is not read again.</b> The stored <c>SublotRejected</c> is the
     /// record that this entry was judged (<see cref="LoadCancellationBeforeSublot.RefusedSubmissionIdsAsync"/>);
-    /// without skipping it every poll would re-run the remote reads and re-send the same refusal.
+    /// without skipping it every poll would re-run the remote reads and re-send the same refusal. Only
+    /// the rows that answer this stop are asked about, so that lookup is bounded by this stop's entries
+    /// rather than by every refusal the server has ever written.
     /// </para>
     /// <para>
     /// <b>Nothing here decides about the load.</b> Which demand the sublot belongs to, whether the station
@@ -1376,32 +1378,32 @@ public sealed class JourneyRuntimeEngine(
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        HashSet<string> refused = await LoadCancellationBeforeSublot
-            .RefusedSubmissionIdsAsync(dbContext, cancellationToken).ConfigureAwait(false);
         string operationSessionId = runtime.OperationSessionId;
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        rows = rows.OrderBy(row => row.ReceivedAt).ToArray();
-        foreach (ProtocolInboxRow row in rows)
+        List<ProtocolInboxRow> answers = [];
+        foreach (ProtocolInboxRow row in rows.OrderBy(row => row.ReceivedAt))
         {
-            if (refused.Contains(row.MessageId))
-            {
-                continue;
-            }
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
             // The same address the cancellation before a sublot reads, plus the generation: the runtime
             // acts only on an answer of the session it is serving, while the cancellation refuses on an
             // entry of any generation (control-server#116 review).
-            bool answers = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                           LoadCancellationBeforeSublot.AnswersTheStop(root, runtime);
-            if (answers)
+            bool answersThisStop = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
+                                   LoadCancellationBeforeSublot.AnswersTheStop(root, runtime);
+            if (answersThisStop)
             {
-                return row;
+                answers.Add(row);
             }
         }
-        return null;
+
+        // Asked only about the submissions that answer this stop: the refusal lookup is then bounded by
+        // this stop's entries, not by every refusal the server has ever written.
+        HashSet<string> refused = await LoadCancellationBeforeSublot
+            .RefusedSubmissionIdsAsync(dbContext, [.. answers.Select(row => row.MessageId)], cancellationToken)
+            .ConfigureAwait(false);
+        return answers.Find(row => !refused.Contains(row.MessageId));
     }
 
     /// <summary>

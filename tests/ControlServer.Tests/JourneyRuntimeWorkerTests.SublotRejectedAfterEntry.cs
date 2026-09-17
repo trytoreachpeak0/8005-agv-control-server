@@ -118,12 +118,20 @@ public sealed partial class JourneyRuntimeWorkerTests
     /// Whether one query reads the submissions and excludes rows by address rather than by message type
     /// alone.
     /// </summary>
-    private static bool ReadsSubmissionsAndNarrowsOnTheAddress(string sql)
+    private static bool ReadsSubmissionsAndNarrowsOnTheAddress(string sql) =>
+        NarrowsOn(sql, "RequestJson");
+
+    /// <summary>
+    /// Whether one query reads rows of a type and narrows them past the type itself, by
+    /// <paramref name="column"/>. Asserted past the <c>WHERE</c>, because every read of a table selects
+    /// its columns: the projection says nothing about what was excluded.
+    /// </summary>
+    private static bool NarrowsOn(string sql, string column)
     {
         int where = sql.IndexOf("WHERE", StringComparison.Ordinal);
         return where >= 0
             && sql.Contains("MessageType", StringComparison.Ordinal)
-            && sql[where..].Contains("RequestJson", StringComparison.Ordinal);
+            && sql[where..].Contains(column, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -203,6 +211,38 @@ public sealed partial class JourneyRuntimeWorkerTests
         Assert.DoesNotContain("SlotOperationCommand", await fixture.OutboxTypesAsync());
         Assert.Empty(await fixture.Context.StationOperations.AsNoTracking().ToArrayAsync(token));
         Assert.Equal(runtime.TargetSlotsJson, (await fixture.RuntimeAsync()).TargetSlotsJson);
+    }
+
+    /// <summary>
+    /// Looking up whether a submission was already refused asks about <b>that submission</b>. Reading
+    /// every <c>SublotRejected</c> the server has ever written and parsing each one would be the same
+    /// unbounded read the address narrowing above removes, and it runs on every poll of the entry wait —
+    /// so the reason must not reappear on the outbox side of the same loop.
+    /// </summary>
+    /// <remarks>
+    /// Nothing observable tells the two apart: a lookup that asked the wrong question would answer the
+    /// same way, only slower. Asserted on the SQL, as the inbox narrowing is.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task TheRefusalLookupAsksAboutTheSubmissionRatherThanReadingEveryRefusalBack()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        RecordingCommands commands = new();
+        await using RuntimeFixture fixture = await ReachEntryWaitAsync(commands);
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        await AddEntryAsync(fixture, payload: EntryPayload(runtime, "SUBLOT-NOT-IN-SCOPE"));
+
+        // The first iteration writes the refusal; the second is the one that has to find it again.
+        await fixture.Engine.ExecuteOnceAsync(token);
+        await fixture.Engine.ExecuteOnceAsync(token);
+
+        Assert.Single(await RejectionEnvelopesAsync(fixture));
+        Assert.True(
+            commands.OutboxReads.Any(sql => NarrowsOn(sql, "PayloadJson")),
+            "No read of ProtocolOutbox narrowed the SublotRejected rows by the submission being asked "
+            + "about, so every refusal ever written is read back and parsed on every poll. Reads sent, "
+            + "distinct: " + string.Join(" | ", commands.OutboxReads.Distinct(StringComparer.Ordinal).Take(4)));
     }
 
     /// <summary>
@@ -597,8 +637,8 @@ public sealed partial class JourneyRuntimeWorkerTests
         .Count(type => string.Equals(type, messageType, StringComparison.Ordinal));
 
     /// <summary>
-    /// Captures the SQL the engine sent against the inbox, so a test can assert the read was narrowed
-    /// before it happened rather than only that its results were right.
+    /// Captures the SQL the engine sent against the two protocol tables, so a test can assert a read was
+    /// narrowed before it happened rather than only that its results were right.
     /// </summary>
     /// <remarks>
     /// Reads only. This provider routes its writes through the same interception point, and a row being
@@ -608,16 +648,24 @@ public sealed partial class JourneyRuntimeWorkerTests
     {
         public List<string> InboxReads { get; } = [];
 
+        public List<string> OutboxReads { get; } = [];
+
         public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
             DbCommand command,
             CommandEventData eventData,
             InterceptionResult<DbDataReader> result,
             CancellationToken cancellationToken = default)
         {
-            if (command.CommandText.StartsWith("SELECT", StringComparison.Ordinal)
-                && command.CommandText.Contains("\"ProtocolInbox\"", StringComparison.Ordinal))
+            if (command.CommandText.StartsWith("SELECT", StringComparison.Ordinal))
             {
-                InboxReads.Add(command.CommandText);
+                if (command.CommandText.Contains("\"ProtocolInbox\"", StringComparison.Ordinal))
+                {
+                    InboxReads.Add(command.CommandText);
+                }
+                else if (command.CommandText.Contains("\"ProtocolOutbox\"", StringComparison.Ordinal))
+                {
+                    OutboxReads.Add(command.CommandText);
+                }
             }
 
             return ValueTask.FromResult(result);

@@ -122,6 +122,15 @@ public static class LoadCancellationBeforeSublot
     /// it has, which is the conservative side of the race the rest of this class is about.
     /// </para>
     /// <para>
+    /// <b>Asked about the candidates, not about the refusals.</b> Reading every <c>SublotRejected</c>
+    /// ever written and parsing each one is the same unbounded read that
+    /// <see cref="JourneyRuntimeEngine.FindMatchingSublotAsync"/> exists to avoid on the inbox, and this
+    /// runs on every poll of every stop's entry wait. The callers therefore hand over the submissions
+    /// they are asking about — already narrowed to the stop's own in the store — and each is looked up by
+    /// its own id inside the stored payload. The parse is still what decides; the substring only keeps
+    /// rows that cannot be the answer out of the read, exactly as the inbox narrowing does.
+    /// </para>
+    /// <para>
     /// <b>One exemption, kept as it was.</b> An entry the runtime refuses for the station's task types
     /// is not a <c>SublotRejected</c> — it names a station that cannot do the work at all, and blocks the
     /// journey — and its own carve-out lives in the coordinator. This set does not reach it.
@@ -129,22 +138,30 @@ public static class LoadCancellationBeforeSublot
     /// </remarks>
     public static async Task<HashSet<string>> RefusedSubmissionIdsAsync(
         ControlServerDbContext dbContext,
+        IReadOnlyCollection<string> submissionIds,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
-        string[] stored = await dbContext.ProtocolOutbox.AsNoTracking()
-            .Where(row => row.MessageType == "SublotRejected")
-            .Select(row => row.PayloadJson)
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(submissionIds);
         HashSet<string> refused = new(StringComparer.Ordinal);
-        foreach (string payload in stored)
+        foreach (string submissionId in submissionIds)
         {
-            using JsonDocument document = JsonDocument.Parse(payload);
-            if (document.RootElement.TryGetProperty("correlationId", out JsonElement correlationId) &&
-                correlationId.GetString() is { } submissionId)
+            // A refusal of a later generation, or of another vehicle, is a different message and does not
+            // answer this submission, so the stored id is compared rather than the substring alone.
+            string[] stored = await dbContext.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "SublotRejected" && row.PayloadJson.Contains(submissionId))
+                .Select(row => row.PayloadJson)
+                .ToArrayAsync(cancellationToken)
+                .ConfigureAwait(false);
+            foreach (string payload in stored)
             {
-                refused.Add(submissionId);
+                using JsonDocument document = JsonDocument.Parse(payload);
+                if (document.RootElement.TryGetProperty("correlationId", out JsonElement correlationId) &&
+                    string.Equals(correlationId.GetString(), submissionId, StringComparison.Ordinal))
+                {
+                    refused.Add(submissionId);
+                    break;
+                }
             }
         }
 

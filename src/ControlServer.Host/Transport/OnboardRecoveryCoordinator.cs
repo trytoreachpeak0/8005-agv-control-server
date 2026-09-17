@@ -638,28 +638,38 @@ public sealed class OnboardRecoveryCoordinator(
         {
             return false;
         }
+        // Narrowed in the store the way the runtime's own read is, and for the same reason: this runs on
+        // every cancellation request and the inbox keeps every submission ever made. The operation
+        // session is written into the submission's own JSON, so the substring is a filter the database
+        // can apply; which entries are the stop's is still decided by the parse below.
+        string operationSessionId = runtime.OperationSessionId;
+        ProtocolInboxRow[] entries = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        List<ProtocolInboxRow> forThisStop = [];
+        foreach (ProtocolInboxRow entry in entries)
+        {
+            using JsonDocument document = JsonDocument.Parse(entry.RequestJson);
+            if (LoadCancellationBeforeSublot.IsEntryForStop(document.RootElement, runtime, demand.Sublot))
+            {
+                forThisStop.Add(entry);
+            }
+        }
+
         // An entry the server already refused is not an entry for this stop (control-server#82): the
         // operator has been shown why their scan did not stand, and cancelling the stop before any sublot
         // is what they are most likely to want next. Read from the store, so a refusal that is not
         // durable yet has not been decided and this stays refused -- the conservative side of the race.
         HashSet<string> refused = await LoadCancellationBeforeSublot
-            .RefusedSubmissionIdsAsync(dbContext, cancellationToken).ConfigureAwait(false);
-        ProtocolInboxRow[] entries = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SublotSubmitted")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        foreach (ProtocolInboxRow entry in entries)
+            .RefusedSubmissionIdsAsync(dbContext, [.. forThisStop.Select(entry => entry.MessageId)], cancellationToken)
+            .ConfigureAwait(false);
+        foreach (ProtocolInboxRow entry in forThisStop.Where(entry => !refused.Contains(entry.MessageId)))
         {
-            if (refused.Contains(entry.MessageId))
-            {
-                continue;
-            }
-            using JsonDocument document = JsonDocument.Parse(entry.RequestJson);
             // An entry the runtime refuses for the station's task types starts no load, so it does not hold
             // the stop against the operator either. That carve-out is kept as it was: it names a station
             // that cannot do the work at all, and it is not a SublotRejected.
-            if (LoadCancellationBeforeSublot.IsEntryForStop(document.RootElement, runtime, demand.Sublot))
-                return !await store.IsTaskTypeAllowedAsync(runtime.PickupStationId, demand.WorkType, cancellationToken)
-                    .ConfigureAwait(false);
+            return !await store.IsTaskTypeAllowedAsync(
+                    runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false);
         }
         return true;
     }
