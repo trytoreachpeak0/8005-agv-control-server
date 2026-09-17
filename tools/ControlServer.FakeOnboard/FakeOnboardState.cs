@@ -35,6 +35,13 @@ public sealed record PendingRequest(
 public sealed record FakeOnboardPolicy
 {
     public AnswerMode Sublot { get; init; } = AnswerMode.Auto;
+
+    /// <summary>
+    /// The sublot the operator enters, or null to enter the first one the request offered. Set through
+    /// <c>PUT /sublot-scan</c>, which is also how a scenario rescans after a refusal.
+    /// </summary>
+    public string? SublotScan { get; init; }
+
     public AnswerMode LoadResult { get; init; } = AnswerMode.Auto;
     public AnswerMode UnloadResult { get; init; } = AnswerMode.Auto;
     public AnswerMode SafetyCheck { get; init; } = AnswerMode.Auto;

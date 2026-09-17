@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ControlServer.Application;
+using ControlServer.Domain;
 using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
@@ -79,14 +80,13 @@ public sealed class SlotCapacityCriterion(
             maxBoxCount = null;
         }
 
-        if (maxBoxCount is null or <= 0)
+        if (!AuthoritativeBasketCount.BoxCountIsUsable(maxBoxCount))
         {
             return "SUBLOT_BOX_COUNT_UNAVAILABLE";
         }
 
-        int capacity = evaluation.PackageCapacity
+        int expectedBasketCount = AuthoritativeBasketCount.Compute(maxBoxCount, evaluation.PackageCapacity)
             ?? throw new InvalidOperationException("An eligible PACKAGE must have a frozen capacity.");
-        int expectedBasketCount = checked((maxBoxCount.Value + capacity - 1) / capacity);
         evaluation.ExpectedBasketCount = expectedBasketCount;
 
         if (expectedBasketCount is < MinimumBasketCount or > MaximumBasketCount)

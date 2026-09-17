@@ -3512,16 +3512,30 @@ public sealed partial class JourneyRuntimeWorkerTests
 
         public JourneyRuntimeEngine Engine { get; private set; }
 
-        public static async Task<RuntimeFixture> CreateAsync(bool catalogApproved = true, bool bindSlotModel = true)
+        /// <summary>
+        /// The <paramref name="commands"/> interceptor is the seam for asserting on the SQL the engine
+        /// sends, which is the only way to tell a query that narrows in the store from one that reads a
+        /// whole type back and filters in memory: a pre-filter that changed results would be a bug, so
+        /// nothing observable distinguishes the two.
+        /// </summary>
+        public static async Task<RuntimeFixture> CreateAsync(
+            bool catalogApproved = true,
+            bool bindSlotModel = true,
+            DbCommandInterceptor? commands = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             SaveChangesCounter saveChanges = new();
-            DbContextOptions<ControlServerDbContext> dbOptions =
+            DbContextOptionsBuilder<ControlServerDbContext> builder =
                 new DbContextOptionsBuilder<ControlServerDbContext>()
                     .UseSqlite(connection)
-                    .AddInterceptors(saveChanges)
-                    .Options;
+                    .AddInterceptors(saveChanges);
+            if (commands is not null)
+            {
+                builder.AddInterceptors(commands);
+            }
+
+            DbContextOptions<ControlServerDbContext> dbOptions = builder.Options;
             ControlServerDbContext context = new(dbOptions);
             await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
             JourneyRuntimeOptions options = ValidOptions();
@@ -4212,6 +4226,10 @@ public sealed partial class JourneyRuntimeWorkerTests
             OnboardJourneyPublisher publisher = new(store, Peer, Clock);
             Microsoft.Extensions.Options.IOptions<JourneyRuntimeOptions> options =
                 Microsoft.Extensions.Options.Options.Create(Options);
+            // One instance for both readers: the dispatch chain resolves the capacity at acceptance and
+            // the engine resolves it again after the entry, and the real host shares one scoped store
+            // between them the same way.
+            PackageCapacityStore packageCapacity = new(Context);
             return new JourneyRuntimeEngine(
                 Context,
                 Catalog,
@@ -4222,10 +4240,12 @@ public sealed partial class JourneyRuntimeWorkerTests
                 new MovementDispatchService(store, Riot),
                 store,
                 publisher,
+                BoxCounts,
+                packageCapacity,
                 new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
                     options,
                     new MapStationResolver(),
-                    new PackageCapacityStore(Context),
+                    packageCapacity,
                     store,
                     new VehicleFaultStore(Context),
                     BoxCounts,

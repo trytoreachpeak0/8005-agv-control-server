@@ -1069,6 +1069,8 @@ public sealed class MultiVehicleExecutionTests
                 movement,
                 store,
                 new OnboardJourneyPublisher(store, new SilentPeer(), Clock),
+                new FleetBoxCounts(),
+                new PackageCapacityStore(Context),
                 new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
                     options,
                     new MapStationResolver(),

@@ -126,7 +126,8 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     /// <c>FP-IS-02</c>, a slice this line has built, and section 19.4 of the second edition of the
     /// scope specification assigns them there. The behaviour they prove belongs to
     /// <c>8005-agv-control-server#83</c> and <c>#82</c>, which land after the ticket that vendors the
-    /// candidate (<c>#84</c>). Such a pin must name its slice and the claiming ticket in exactly the
+    /// candidate (<c>#84</c>); both have named tests now and neither is pinned.
+    /// Such a pin must name its slice and the claiming ticket in exactly the
     /// form <see cref="ClaimedPinLabel"/> gives, and
     /// <see cref="EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement"/> refuses every other
     /// pin on a built slice.
@@ -150,7 +151,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
             ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
             ["CV-MULTI-STOP-PLAN-NINE-LEGS"] = "FP-IS-08, batch 7",
             ["CV-REVERSED-DIRECTION-JOURNEY"] = "FP-IS-11, batch 6",
-            ["CV-SUBLOT-REJECTED-AFTER-ENTRY"] = ClaimedPinLabel("FP-IS-02", 82),
             ["CV-TASK-TYPE-ADMISSION-FAIL-CLOSED"] = "FP-IS-10, batch 6",
             ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 9",
             ["CV-WAITING-POINT-IDLE-RETURN"] = "FP-IS-12, batch 8",
