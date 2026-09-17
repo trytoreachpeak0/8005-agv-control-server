@@ -905,6 +905,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.Property<string>("BlockReasonCode")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("BlockReasonSince")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ConsumedSafetyResultMessageId")
                         .HasColumnType("TEXT");
 

@@ -1464,6 +1464,67 @@ public sealed partial class JourneyRuntimeWorkerTests
         Assert.Equal(0, fixture.Riot.CreateCount("TO_GATE"));
     }
 
+    /// <summary>
+    /// control-server#80: a block's start is recorded when its code first appears, survives every later
+    /// iteration that writes the same code, and starts over when the code changes. The departure safety
+    /// wait is the case that needed care -- it cleared the code before every attempt and wrote it back,
+    /// which would have restarted the start on every poll of a journey that stays refused.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("ProtocolVector", "CV-PREDEPARTURE-SAFETY-EXPIRES")]
+    public async Task ABlockKeepsTheTimeItBeganWhileItsCodeHoldsAndStartsOverWhenTheCodeChanges()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow runtime = await fixture.AdvanceToDepartureSafetyAsync();
+        Assert.Null(runtime.BlockReasonCode);
+        Assert.Null(runtime.BlockReasonSince);
+        string firstCheckId = runtime.PreDepartureSafetyCheckId;
+        DateTimeOffset answeredAt = fixture.Clock.GetUtcNow();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"), "PreDepartureSafetyCheckResult",
+            new
+            {
+                preDepartureSafetyCheckId = firstCheckId,
+                outcome = "SAFE",
+                observedAt = answeredAt,
+                safetyStateVersion = 7,
+                validUntil = answeredAt.AddSeconds(2),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            },
+            firstCheckId);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(10));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal("PRE_DEPARTURE_SAFETY_NOT_VALID", runtime.BlockReasonCode);
+        DateTimeOffset blockedAt = runtime.BlockReasonSince ?? throw new InvalidOperationException("No start recorded.");
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(5));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal("PRE_DEPARTURE_SAFETY_NOT_VALID", runtime.BlockReasonCode);
+        Assert.Equal(fixture.Clock.GetUtcNow(), runtime.UpdatedAt);
+        Assert.Equal(blockedAt, runtime.BlockReasonSince);
+
+        fixture.Clock.Advance(fixture.Options.MaximumEvidenceAge);
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        runtime = await fixture.RuntimeAsync();
+        Assert.Equal("PREDEPARTURE_CHECK_EXPIRED", runtime.BlockReasonCode);
+        Assert.Equal(fixture.Clock.GetUtcNow(), runtime.BlockReasonSince);
+    }
+
     private static object SafeDepartureAnswer(string checkId, long safetyStateVersion, DateTimeOffset observedAt) => new
     {
         preDepartureSafetyCheckId = checkId,
@@ -2491,7 +2552,7 @@ public sealed partial class JourneyRuntimeWorkerTests
     [InlineData("package-capacity-missing", "PACKAGE_CAPACITY_NOT_UNIQUE")]
     [InlineData("onboard-silent", "ONBOARD_FACTS_NOT_READY")]
     [InlineData("onboard-unsafe", "ONBOARD_DEPARTURE_UNSAFE")]
-    [InlineData("slot-capacity", "SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE")]
+    [InlineData("slot-capacity", "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE")]
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task EveryAdmissionGateFailsClosedBeforeAcceptance(
         string scenario,
@@ -2552,6 +2613,173 @@ public sealed partial class JourneyRuntimeWorkerTests
         Assert.Equal(0, fixture.Riot.TotalCreateCount);
         Assert.Equal(expectedReason, (await fixture.Context.JourneyBacklog.SingleAsync(
             TestContext.Current.CancellationToken)).ReasonCode);
+    }
+
+    // ---- slot group selection (control-server#73) ---------------------------------------------
+
+    /// <summary>
+    /// A demand whose AREA is assigned the rear group goes into the lowest free rear slots, and the journey
+    /// carries them: loading and unloading both read that one <c>TargetSlotsJson</c>, whatever the station.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ADemandAssignedTheRearGroupIsAcceptedIntoTheLowestFreeRearSlots()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.ImportAreaAssignmentsAsync(
+            [.. RuntimeFixture.DefaultAssignedAreas.Select(area =>
+                new AreaAssignment(area, fixture.Options.DispatchZone, area == "N1-1" ? "REAR" : "FRONT"))]);
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 12);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal(3, runtime.ExpectedBasketCount);
+        Assert.Equal("[5,6,7]", runtime.TargetSlotsJson);
+        Assert.Equal(1, fixture.Riot.CreateCount("TO_PICKUP"));
+    }
+
+    /// <summary>
+    /// With neither an active slot configuration nor a published IO binding the vehicle's groups are unknown,
+    /// and nothing is dispatched to it -- not onto an assumed eight-slot model.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AVehicleWithNoSlotModelOnRecordIsNotDispatched()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(bindSlotModel: false);
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            DispatchReasonCodes.VehicleSlotModelUnresolved,
+            (await fixture.Context.JourneyBacklog.SingleAsync(TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Empty(await fixture.Context.OrderIntents.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+    }
+
+    /// <summary>
+    /// A demand needing more baskets than its group has physical slots on any vehicle is refused, raised once as a
+    /// structural dispatch block that the next round only refreshes, and cleared once MES drops the demand
+    /// (control-server#74). The summary runs after the vehicle loop and changes nothing about what was dispatched.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task ADemandNoVehicleHasTheSlotsForIsBlockedStructurallyNotDispatchedAndClearedWhenItLeavesTheCatalog()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        // Five baskets of four boxes each, for a FRONT group of four physical slots.
+        fixture.BoxCounts.Set("SUBLOT-001", 20);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        DateTimeOffset firstRound = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup,
+            (await fixture.Context.JourneyBacklog.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+        StructuralDispatchBlockRow block = await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup, block.ReasonCode);
+        Assert.Equal(firstRound, block.FirstRaisedAt);
+        Assert.Equal(firstRound.AddSeconds(1), block.LastSeenAt);
+        Assert.Null(block.ClearedAt);
+        Assert.Single(fixture.StructuralBlockLog.Entries, entry => entry.Level == LogLevel.Warning);
+
+        fixture.Catalog.Set();
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            firstRound.AddSeconds(2),
+            (await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .SingleAsync(TestContext.Current.CancellationToken)).ClearedAt);
+    }
+
+    /// <summary>
+    /// The whole vehicle has room, the demand's group does not: it waits rather than borrowing the other side,
+    /// and is taken, into its own group, once slots there free up.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task AShortGroupWaitsWhileTheOtherGroupIsEmptyAndIsTakenOnceItsOwnSlotsFreeUp()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.ImportAreaAssignmentsAsync(
+            [.. RuntimeFixture.DefaultAssignedAreas.Select(area =>
+                new AreaAssignment(area, fixture.Options.DispatchZone, area == "N1-1" ? "REAR" : "FRONT"))]);
+        await SetSlotPhysicalStateAsync(fixture, "OCCUPIED", 5, 6, 7, 8);
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 8);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable,
+            (await fixture.Context.JourneyBacklog.AsNoTracking().SingleAsync(TestContext.Current.CancellationToken)).ReasonCode);
+        Assert.Empty(await fixture.Context.AcceptedDemands.ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, fixture.Riot.TotalCreateCount);
+
+        await SetSlotPhysicalStateAsync(fixture, "EMPTY", 5, 6);
+        await fixture.RecreateEngineAsync();
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("[5,6]", (await fixture.RuntimeAsync()).TargetSlotsJson);
+    }
+
+    /// <summary>
+    /// More free slots in its group does not put a candidate first (REQ-0208): the older demand, squeezed into
+    /// the last two free front slots, is taken ahead of a newer one whose rear group is empty.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
+    public async Task MoreRoomInItsGroupDoesNotPutACandidateAheadOfAnOlderOne()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.ImportAreaAssignmentsAsync(
+            [.. RuntimeFixture.DefaultAssignedAreas.Select(area =>
+                new AreaAssignment(area, fixture.Options.DispatchZone, area == "N1-2" ? "REAR" : "FRONT"))]);
+        await SetSlotPhysicalStateAsync(fixture, "OCCUPIED", 1, 2);
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", Now.AddMinutes(-5), area: "N1-2", eqp: "EQP-02"),
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 8);
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        Assert.Equal("10000000-0000-4000-8000-000000000001", runtime.DemandId);
+        Assert.Equal("[3,4]", runtime.TargetSlotsJson);
+    }
+
+    /// <summary>Sets <c>physicalState</c> on the given slots in the session's stored handshake snapshots.</summary>
+    private static async Task SetSlotPhysicalStateAsync(RuntimeFixture fixture, string physicalState, params int[] slotNumbers)
+    {
+        ProtocolInboxRow[] rows = await fixture.Context.ProtocolInbox
+            .Where(row => row.MessageType == "CapabilitySnapshot" || row.MessageType == "SafetyStateSnapshot")
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        foreach (ProtocolInboxRow row in rows)
+        {
+            JsonObject root = JsonNode.Parse(row.RequestJson)!.AsObject();
+            foreach (JsonNode? slot in root["payload"]!["slotStates"]!.AsArray())
+            {
+                if (slotNumbers.Contains(slot!["slotNo"]!.GetValue<int>()))
+                {
+                    slot["physicalState"] = physicalState;
+                }
+            }
+            row.RequestJson = root.ToJsonString(SerializerOptions);
+        }
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -3198,9 +3426,12 @@ public sealed partial class JourneyRuntimeWorkerTests
         /// <summary>What the slot capacity criterion logged; the one criterion that logs.</summary>
         public RecordingLogger<SlotCapacityCriterion> SlotCapacityLog { get; } = new();
 
+        /// <summary>What the round-end structural dispatch block summary logged.</summary>
+        public RecordingLogger<StructuralDispatchBlockSink> StructuralBlockLog { get; } = new();
+
         public JourneyRuntimeEngine Engine { get; private set; }
 
-        public static async Task<RuntimeFixture> CreateAsync(bool catalogApproved = true)
+        public static async Task<RuntimeFixture> CreateAsync(bool catalogApproved = true, bool bindSlotModel = true)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -3222,6 +3453,11 @@ public sealed partial class JourneyRuntimeWorkerTests
             RuntimeFixture fixture = new(
                 connection, dbOptions, context, catalog, boxCounts, riot, peer, routeCosts,
                 catalogApproved, options, clock, saveChanges);
+            if (bindSlotModel)
+            {
+                await fixture.BindApprovedSlotModelAsync();
+            }
+
             await fixture.SeedRecoveredPeerAsync();
             await fixture.ImportAreaAssignmentsAsync(
                 [.. DefaultAssignedAreas.Select(area => new AreaAssignment(area, options.DispatchZone, "FRONT"))]);
@@ -3276,6 +3512,30 @@ public sealed partial class JourneyRuntimeWorkerTests
             Context.ChangeTracker.Clear();
             Engine = CreateEngine();
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Enrols the approved eight-slot model (slots 1-4 FRONT, 5-8 REAR) and publishes the vehicle's IO binding
+        /// to it, the way a commissioned site starts. Since control-server#73 target slots are chosen inside the
+        /// demand's slot group from the vehicle's model, and a vehicle with no model is not dispatched.
+        /// </summary>
+        public async Task BindApprovedSlotModelAsync()
+        {
+            await using ControlServerDbContext enroller = new(DbOptions);
+            GovernanceStore governance = new(
+                enroller,
+                new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+                AuditRetentionPolicy.Default);
+            SlotConfigurationAuthorityStore authority = new(
+                enroller, new GovernedConfigurationPublisher(governance, governance));
+            SlotModelVersionRow model = await authority.EnsureApprovedHardwareFactsAsync(
+                Clock.GetUtcNow(), TestContext.Current.CancellationToken);
+            await authority.PublishIoBindingsAsync(
+                Options.AgvId,
+                model.SlotModelVersionId,
+                ApprovedSlotHardwareFacts.IoBindings,
+                Clock.GetUtcNow(),
+                TestContext.Current.CancellationToken);
         }
 
         public async Task AdvanceSessionAsync(long generation)
@@ -3903,7 +4163,11 @@ public sealed partial class JourneyRuntimeWorkerTests
                 CreateFaultCoordinator(),
                 new AreaAssignmentStore(Context, CreateGovernedPublisher()),
                 new VehicleSlotPositionReader(Context),
-                new NoDispatchRoundOutcomeSink(),
+                new StructuralDispatchBlockSink(
+                    new StructuralDispatchBlockStore(Context),
+                    new VehicleSlotPositionReader(Context),
+                    new VehicleRoster(options),
+                    StructuralBlockLog),
                 options,
                 Clock,
                 EngineLog);

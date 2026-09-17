@@ -35,6 +35,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `onboard-alarm-snapshot-dashboard` | 合成 | **批次 3 出口（`FP-IS-15`）**：车载告警快照「车载产快照 → 服务端消费 → 看板可见」，断言读看板进程渲染出的页面；看板显示全部告警（REQ-0270）、整体取代、失联直述、重连采纳 | 待 CI 三连跑 |
 | `station-deadline-sublot-timeout` | 合成 | **批次 5（control-server#79，ADR-cross-0055、ADR-cross-0058 决策 7）**：到站起算站点期限，没人扫码到期服务端自己结束本站（需求 `Cancelled`、`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、录入请求结算、同一 `DemandId` 不再被派）；期限走到一半断联重连，从会话回到 Ready 那一刻重新计满 | 本地 PASS（证据未入库），三连在批次 5 出口 |
 | `load-cancelled-before-sublot` | 合成 | **批次 5（control-server#83，ADR-cross-0046 第一种情形）**：到站没人扫码，操作员取消——授权 `slots` 为空，车报 `ALL_EMPTY` 空结果被确认之后服务端才终结（需求 `Cancelled`、`CANCELLED_BY_OPERATOR`、租约与占用释放、录入请求结算、没有仓位命令）；再加到站前断联重连、到站后在新连接上取消（control-server#40 那一格），之后再重连一次录入请求不被重放 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `blocked-journey-dashboard-projection` | 合成 | **批次 5（control-server#80，program#55）**：旅程阻断带开始时间上看板——读只读端点 `/api/dashboard/blocked-journeys`：检查点等待挂上即列出、清掉即消失；会话未就绪带会话的三个安全字段、安全证据不全直接最高档，引擎每轮重写这一行而开始时间不动，看板按档上色；装货结果需要恢复停摆后开始时间不变。`STATION_TIMEOUT_DOOR_NOT_CLOSED` 那一段由 control-server#81 补 | 本地 PASS（证据未入库），三连在批次 5 出口 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -71,8 +72,37 @@ resume 是设计不是缺陷。
 
 ## CI 只跑合成场景
 
-`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。现在是四条，合计
-约两分钟，证据当作 artifact 传上去（失败时也传——失败那次的证据才是唯一说明原因的东西）。
+`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。证据当作 artifact 传上去
+（失败时也传——失败那次的证据才是唯一说明原因的东西）。
+
+**PR 上默认每个场景跑一遍，三连按需手动跑**（2026-09-17 起）。清单里每行的 `Runs` 是这个场景的**三连次数**，
+不再是每次 PR 都付的次数：
+
+| 模式 | 触发 | 每个场景跑几遍 |
+| --- | --- | --- |
+| `default` | push、PR | `DefaultRuns`，没写就是 1 |
+| `consecutive` | 手动 | `Runs` |
+| `consecutive-all` | 手动 | 至少 3（批次出口用） |
+
+手动三连对任意分支随时可跑，排上 runner 就开始，不等夜里：
+
+```powershell
+gh workflow run l2.yml --ref <分支> -f mode=consecutive                       # 按各行登记的 Runs
+gh workflow run l2.yml --ref <分支> -f mode=consecutive -f scenarios=a,b      # 只跑其中几条
+```
+
+作业摘要里有一张表，列出每个场景实际跑到第几遍、结果如何，引用三连证据时贴那次 run 的链接。
+
+为什么改：服务端仓只有一个 runner，四张票并行时 PR 排队一小时以上，而三连的第 2、3 遍占了一次 L2 作业的 46%
+（run `35171499974`，1354 秒里的 618 秒）。**代价**：除 `DefaultRuns = 3` 的场景外，低频竞态在 PR 上只剩一遍机会。
+所以动到时序的票（引擎推进、连接会话、恢复协调、急停，或改动任一 `Runs = 3` 场景）合入前跑一次手动三连。
+`session-established-while-moving` 写了 `DefaultRuns = 3`，每个 PR 仍跑三遍：它守的是 CI 上真红过一次的竞态
+（`docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md`）。
+
+**PR 头已经换了的运行会自己跳过剩下的场景并正常结束**：作业开头与每个场景之前查一次 PR 当前头，不是本次提交
+就打一行 `L2 superseded` 说明后收尾，更新的那次推送有它自己的运行。这里**绝不取消作业**，手动取消与
+`cancel-in-progress` 都会让 runner 会话卡死（2026-09-03 空转 4 小时 14 分）。查询失败时照常跑完，不猜；
+手动触发的运行从不因此跳过。
 
 **真装置那三条刻意不进 CI，两个各自独立的原因：**
 
@@ -85,7 +115,8 @@ resume 是设计不是缺陷。
 所以这条流水线不受对方进度影响。
 
 **新写的合成场景记得加进 `l2.yml` 的清单**——那是一份手写数组，不是扫目录得来的。扫目录会把真装置
-那几条也一起领进来，而它们在服务 runner 上跑不了。
+那几条也一起领进来，而它们在服务 runner 上跑不了。加一行即可：`@{ Name = '<名字>'; Runs = 1 }`，要三连就写
+`Runs = 3`（PR 上仍只跑一遍）。`DefaultRuns = 3` 只给 CI 上真红过的竞态用，不要顺手加。
 
 ## 两套装置
 

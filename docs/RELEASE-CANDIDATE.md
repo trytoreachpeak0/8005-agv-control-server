@@ -46,7 +46,8 @@
 
 1. 校验 ControlServer 工作区干净，取 `HEAD` 作为服务端身份；
 2. 调 `scripts\Publish-ControlServer.ps1` 产出 self-contained 服务端包与逐文件 SHA-256 的
-   `deployment-manifest.json`；
+   `deployment-manifest.json`；再从同一 commit 发布 self-contained 看板包（`dashboard/`，自带
+   `deployment-manifest.json`），看板出厂设置不是绑 `127.0.0.1` 即失败退出（control-server#80）；
 3. 把车载端仓库**克隆到 `<OutputRoot>-onboard-src`** 后按指定 commit 构建。车载端仓库对 agent
    只读，脚本因此从不写入已有的车载端工作区；
 4. 车载端仓库没有 `global.json`，脚本在一次性克隆中写入 `8.0.424` 的固定值，并在 manifest 里以
@@ -61,6 +62,7 @@
 ```text
 <OutputRoot>/
 ├─ controlserver/                     服务端 self-contained 包（含 deployment-manifest.json）
+├─ dashboard/                         看板 self-contained 包（含 deployment-manifest.json，只读、绑 127.0.0.1）
 ├─ onboard-hmi/                       车载端 self-contained 包（含生产配置模板）
 ├─ scripts/                           安装、卸载、升级、重建脚本
 ├─ inventory/                         依赖与许可证清单、秘密扫描报告
@@ -135,6 +137,19 @@ Get-Content .\SHA256SUMS.txt | ForEach-Object {
 
 任一步失败，脚本自动回滚：删服务、删安装目录、还原机器作用域环境变量、还原或删除数据根，并把
 回滚结果一并抛出。
+
+**看板（可选，control-server#80）。** 加 `-DashboardPackagePath .\dashboard` 时，服务生命周期检查通过后
+脚本再装看板：校验看板包的 `deployment-manifest.json` 且要求与服务端包同一 commit → 复制到
+`-DashboardInstallRoot`（默认 `C:\Program Files\8005 AGV\ControlServer.Dashboard`）并收紧 ACL → 注册
+`LocalSystem` 开机计划任务 `-DashboardTaskName`（默认 `8005 AGV ControlServer Dashboard`，失败自动重启、
+不限时长）→ 启动并确认 `http://127.0.0.1:<DashboardPort>/`（默认 58009）渲染出旅程阻断卡片。看板用计划任务
+而不是 Windows 服务，是因为看板进程本身不接 Windows 服务宿主，而接入要改的正是看板主文件。
+
+看板**无认证、只绑 `127.0.0.1`**，与 `-HealthBindAddress` 无关；它经 `-HealthBindAddress` 那个地址读服务端的
+`/api/dashboard/` 只读端点。维护管理员远程查看用 `ssh -L 58009:127.0.0.1:58009 <服务器>`。对局域网开放是另一次
+决定，不在本版本。旅程阻断卡片的两道升级线（默认 10 分钟、30 分钟）在服务端包的
+`blocked-journey-escalation.settings.json` 里，不在 `appsettings.json`。卸载时把同样的任务名与安装目录传给
+`Uninstall-ControlServerLocal.ps1` 的 `-DashboardTaskName`／`-DashboardInstallRoot`；不传则不动看板。
 
 ### 4.3 隔离安装（不影响已有部署）
 
