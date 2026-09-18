@@ -25,6 +25,12 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
 {
     internal const string SessionNotReadyReason = "ONBOARD_SESSION_NOT_READY";
 
+    /// <summary>
+    /// The attribution a row carries when its unknown safety evidence is explained by this server's own in-flight move order
+    /// (control-server#139), so the card can say why the row was not sent to maintenance.
+    /// </summary>
+    internal const string OwnMovementOrderInFlight = "OWN_MOVEMENT_ORDER_IN_FLIGHT";
+
     private readonly BlockedJourneyEscalationOptions _escalation;
     private readonly TimeProvider _clock;
 
@@ -62,6 +68,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 .Select(row => row.UpperId)
                 .ToArrayAsync(cancellationToken),
             StringComparer.Ordinal);
+        HashSet<string> ownOrderInFlight = await OwnMovementOrdersInFlightAsync(dbContext, blocked, cancellationToken);
 
         // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset. Longest-held first, unknown starts first of all.
         return new
@@ -72,19 +79,35 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 .OrderBy(row => row.BlockReasonSince ?? DateTimeOffset.MinValue)
                 .ThenBy(row => row.AgvId, StringComparer.Ordinal)
                 .ThenBy(row => row.DemandId, StringComparer.Ordinal)
-                .Select(row => Fact(row, sessions.GetValueOrDefault(row.AgvId), departedForGate.Contains(row.GateUpperId), now))
+                .Select(row => Fact(
+                    row,
+                    sessions.GetValueOrDefault(row.AgvId),
+                    departedForGate.Contains(row.GateUpperId),
+                    ownOrderInFlight.Contains(row.DemandId),
+                    now))
                 .ToArray()
         };
     }
 
-    private object Fact(JourneyRuntimeRow row, SessionRecoveryRow? session, bool departedForGate, DateTimeOffset now)
+    private object Fact(
+        JourneyRuntimeRow row,
+        SessionRecoveryRow? session,
+        bool departedForGate,
+        bool ownOrderInFlight,
+        DateTimeOffset now)
     {
         TimeSpan? blockedFor = row.BlockReasonSince is DateTimeOffset since
             ? (now > since ? now - since : TimeSpan.Zero)
             : null;
         bool carriesSession = string.Equals(row.BlockReasonCode, SessionNotReadyReason, StringComparison.Ordinal);
+        bool explained = carriesSession && OwnMovementOrderExplanation.Explains(
+            row.BlockReasonCode,
+            session?.ReasonCode,
+            session?.SafetyReasonCodesJson,
+            session?.SafetyUnknownPresent,
+            ownOrderInFlight);
         BlockedJourneyEscalationLevel level =
-            _escalation.Classify(blockedFor, carriesSession, session?.SafetyUnknownPresent);
+            _escalation.Classify(blockedFor, carriesSession, session?.SafetyUnknownPresent, explained);
         return new
         {
             agvId = row.AgvId,
@@ -97,6 +120,7 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
             blockReasonSince = row.BlockReasonSince,
             blockedSeconds = blockedFor is TimeSpan elapsed ? (long?)elapsed.TotalSeconds : null,
             escalationLevel = level.ToString(),
+            unknownExplainedBy = explained ? OwnMovementOrderInFlight : null,
             session = carriesSession
                 ? new
                 {
@@ -108,6 +132,70 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 : null
         };
     }
+
+    /// <summary>
+    /// The journeys (by demand id) for which this server itself has a move order in flight on RIoT, by its own records.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The dashboard reads the database and never calls RIoT, so "in flight" is what this server has recorded and not yet seen
+    /// end. Each condition narrows, none widens: the journey is in one of the two arrival stages, so the runtime has not yet
+    /// observed that leg arrive; that leg's intent is <c>CONFIRMED</c> with an order id, so RIoT did accept an order this server
+    /// created; the intent is bound to this journey's vehicle; and the vehicle holds no fault fact, because a move order RIoT
+    /// reports FAILED is recorded as one (<c>ObserveOrderFailureAsync</c>) and a failed order explains nothing.
+    /// </para>
+    /// <para>
+    /// A journey waiting on departure safety has no gate order yet (it is created at departure authorization), so an unknown
+    /// there is not explained and stays at the top.
+    /// </para>
+    /// </remarks>
+    private static async Task<HashSet<string>> OwnMovementOrdersInFlightAsync(
+        ControlServerDbContext dbContext,
+        JourneyRuntimeRow[] blocked,
+        CancellationToken cancellationToken)
+    {
+        JourneyRuntimeRow[] legs = [.. blocked.Where(row =>
+            string.Equals(row.BlockReasonCode, SessionNotReadyReason, StringComparison.Ordinal) &&
+            InFlightLegUpperId(row) is not null)];
+        if (legs.Length == 0)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+
+        string[] upperIds = [.. legs.Select(leg => InFlightLegUpperId(leg)!)];
+        OrderIntentRow[] intents = await dbContext.OrderIntents.AsNoTracking()
+            .Where(row => upperIds.Contains(row.UpperId))
+            .ToArrayAsync(cancellationToken);
+        string[] agvIds = [.. legs.Select(leg => leg.AgvId).Distinct(StringComparer.Ordinal)];
+        HashSet<string> faulted = new(
+            await dbContext.VehicleFaultStates.AsNoTracking()
+                .Where(row => agvIds.Contains(row.AgvId) && row.Level != VehicleFaultLevel.None)
+                .Select(row => row.AgvId)
+                .ToArrayAsync(cancellationToken),
+            StringComparer.Ordinal);
+
+        return new HashSet<string>(
+            legs.Where(leg =>
+                    !faulted.Contains(leg.AgvId) &&
+                    intents.Any(intent =>
+                        string.Equals(intent.UpperId, InFlightLegUpperId(leg), StringComparison.Ordinal) &&
+                        string.Equals(intent.DemandId, leg.DemandId, StringComparison.Ordinal) &&
+                        string.Equals(intent.Status, "CONFIRMED", StringComparison.Ordinal) &&
+                        !string.IsNullOrWhiteSpace(intent.OrderId) &&
+                        string.Equals(intent.VehicleKey, leg.VehicleKey, StringComparison.Ordinal)))
+                .Select(leg => leg.DemandId),
+            StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The upper id of the move order a journey in an arrival stage is waiting on; null in every other stage.
+    /// </summary>
+    private static string? InFlightLegUpperId(JourneyRuntimeRow row) => row.Stage switch
+    {
+        JourneyRuntimeStage.AwaitingPickupArrival => row.PickupUpperId,
+        JourneyRuntimeStage.AwaitingGateArrival => row.GateUpperId,
+        _ => null
+    };
 
     /// <summary>
     /// 这条旅程停在哪个站：去关卡那一段（已经为关卡建过移动意图）算关卡，之前都算取货站。

@@ -32,7 +32,7 @@ public sealed class BlockedJourneyCard : IDashboardCard
         StringBuilder html = new();
         html.Append("<p class=\"blocked-journey-thresholds\">")
             .Append(WebUtility.HtmlEncode(
-                $"满 {Duration(fact, "shiftLeaderAfterSeconds")} 转班组长，满 {Duration(fact, "maintenanceAdministratorAfterSeconds")} 转维护管理员；安全证据不全直接由维护管理员处理。"))
+                $"满 {Duration(fact, "shiftLeaderAfterSeconds")} 转班组长，满 {Duration(fact, "maintenanceAdministratorAfterSeconds")} 转维护管理员；安全证据不全直接由维护管理员处理，只有车带着服务端自己的在途运单时照时长走。"))
             .Append("</p>");
 
         JsonElement[] journeys =
@@ -56,7 +56,7 @@ public sealed class BlockedJourneyCard : IDashboardCard
                 .Append(DashboardPageRenderer.Cell(DashboardPageRenderer.Text(journey, "blockReasonCode")))
                 .Append(DashboardPageRenderer.Cell(Since(journey)))
                 .Append(DashboardPageRenderer.Cell(Elapsed(journey)))
-                .Append(DashboardPageRenderer.Cell(role))
+                .Append(DashboardPageRenderer.Cell(role + Attribution(journey)))
                 .Append(DashboardPageRenderer.Cell(Session(journey)))
                 .Append("</tr>");
         }
@@ -72,6 +72,20 @@ public sealed class BlockedJourneyCard : IDashboardCard
         "MaintenanceAdministrator" => ("escalation-maintenance-administrator", "background:#f8d7da;color:#900", "维护管理员"),
         _ => ("escalation-maintenance-administrator", "background:#f8d7da;color:#900", $"维护管理员（未登记的档位 {level}）")
     };
+
+    /// <summary>
+    /// 服务端判定「安全证据有未知项」完全由自己的在途移动单解释时（control-server#139），说明这一行为什么没有直接交给维护管理员：
+    /// 车带着服务端自己下的单在排队、避让或行驶，RIoT 读数必然是「运动状态未知」。不认识的归因原样写出，不替它解释。
+    /// </summary>
+    private static string Attribution(JsonElement journey) =>
+        journey.TryGetProperty("unknownExplainedBy", out JsonElement value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() switch
+            {
+                "OWN_MOVEMENT_ORDER_IN_FLIGHT" => "；行驶中（由在途运单解释）",
+                string other => $"；{other}",
+                null => string.Empty
+            }
+            : string.Empty;
 
     private static string Since(JsonElement journey) =>
         journey.TryGetProperty("blockReasonSince", out JsonElement value)
