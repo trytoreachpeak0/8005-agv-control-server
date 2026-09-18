@@ -7,10 +7,10 @@ Found by: control-server#88 的真装置 L2 `real-onboard-compensate-then-reconn
 Product at discovery: control-server `fp/v2-impl@bc5c8e78` 的产品代码（场景分支 `fp/b5-32-program61-paired-real-rig-scenarios@09d0bd60` 只加了场景与测试替身）；
 onboard-hmi `w2g/fp-v2-impl@8153946b`；slots-simulator `main@fb5f7c59`；协议 `protocol-v2.0.0@86575456`
 
-**同一个缺陷，已有记录，这里只补它在补偿路径上的真装置复现。**原记录是 control-server#86 分支上的
-`docs/defects/20260918-in-flight-load-cancellation-keeps-vehicle-occupancy.md`（在途装货取消那条路径）。那份记录还没合入，
-两个分支改同一个文件会冲突，所以另写这一份短的。#131 票面把补偿清空与故障货物交接两条列为「读代码得出，没有单独跑过」；
-补偿清空这一条现在跑过了。
+**同一个缺陷，已有记录，这里只补它在补偿路径上的真装置复现。**原记录是 control-server#86 写的
+[`20260918-in-flight-load-cancellation-keeps-vehicle-occupancy.md`](20260918-in-flight-load-cancellation-keeps-vehicle-occupancy.md)
+（在途装货取消那条路径）。本单写的时候那份还在 cs#86 的分支上，两个分支改同一个文件会冲突，所以另写这一份短的，没有并进去。
+#131 票面把补偿清空与故障货物交接两条列为「读代码得出，没有单独跑过」；补偿清空这一条现在跑过了。
 
 ## 现象
 
