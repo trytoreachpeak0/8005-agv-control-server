@@ -72,10 +72,11 @@ jobs:
       NuGetAudit: 'false'
       L2_MODE: ${{ inputs.mode || 'default' }}
       # How many port slots the scenarios run in side by side (scripts/l2/L2Lanes.psm1, control-server#130).
-      # Three, not four, until win11-01's page file is raised: at 8.7 GB of commit limit, four lanes
-      # (about 0.7 GB each) plus a concurrent onboard-hmi CI round pass the limit, and past it an
-      # allocation fails outright rather than slowing down. 1 is the old serial run, in slot 1.
-      L2_LANES: '3'
+      # Four is the most slots there are besides slot 0. It needs win11-01's 4 GB page file (set on
+      # 2026-09-18): a lane commits about 0.7 GB, an onboard-hmi CI round about 2.9 GB, and with the old
+      # 512 MB page file the two together passed the 8.7 GB commit limit, where an allocation fails
+      # outright rather than slowing down. The limit is 12.0 GB now. 1 is the old serial run, in slot 1.
+      L2_LANES: '4'
       L2_ONLY: ${{ inputs.scenarios || '' }}
       L2_PR_NUMBER: ${{ github.event.pull_request.number }}
       L2_HEAD_SHA: ${{ github.event.pull_request.head.sha }}

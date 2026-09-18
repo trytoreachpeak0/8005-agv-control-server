@@ -99,7 +99,7 @@ gh workflow run l2.yml --ref <分支> -f mode=consecutive-all -f scenarios=a,b  
 
 ### 分路并行（control-server#130，2026-09-18 起）
 
-作业先 `dotnet build ControlServer.sln -c Release` **构建一次**，再把场景分到几路（`L2_LANES`，现在是 3）同时跑，
+作业先 `dotnet build ControlServer.sln -c Release` **构建一次**，再把场景分到几路（`L2_LANES`，现在是 4）同时跑，
 每一路占一个端口槽位（槽位 1～N，见下面「端口槽位」），路内一个接一个跑，每一趟都带 `-SkipBuild`。分路由
 `L2Lanes.psm1` 的 `Get-L2LanePlan` 做：按「单遍估时 × 遍数」从长到短，每次放进当前最空的那一路。估时是 `l2.yml`
 里的 `$estimates` 表（09-17 那 31 个作业的中位数），没列的场景按 30 秒算；估时只影响各路是否均衡，不影响跑什么。
@@ -119,8 +119,14 @@ vCPU 大部分时间闲着。每一趟里大头是起服务端和替身、再等
   攒了 3607 个。
 - **并行下哪个场景红了一次，不靠重跑，把它固定到单独一路**，并在 PR 里写明（票的验收标准）。
 
-`L2_LANES` 为什么是 3 而不是 4：一路合成 L2 约占 0.7 GB 已提交内存，4 路再撞上车载端一次 CI，会超过 win11-01
-当时 8.7 GB 的提交上限，超过时内存申请直接失败而不是变慢。页面文件调到 4 GB 之后再改成 4。
+`L2_LANES` 是 4，因为除槽位 0 外一共只有四个槽位。它依赖 win11-01 的页面文件：一路合成 L2 约占 0.7 GB 已提交内存，
+车载端一次 CI 约 2.9 GB，页面文件还是 512 MB 时提交上限只有 8.7 GB，两者撞在一起就会超，超过时内存申请直接失败
+而不是变慢。2026-09-18 页面文件调成固定 4 GB，上限 12.0 GB（`remote-ops/factory-server/scripts/06-configure-golden-renderer-vm.ps1 -GuestPageFile`）。
+
+**几个 pwsh 同时启动时，L2 模块里的 class 不能写 `Microsoft.PowerShell.Commands.*` 类型。**class 在模块解析时就编译，
+那些类型所在的程序集是 pwsh 懒加载的，几路同时起进程时偶尔还没加载，整趟直接 `ParserError` 死在场景开始之前
+（09-18 本机第一次 4 路跑，30 趟里 3 趟；48 次并发导入复现 4 次）。需要的话在方法里按类型名在运行时判断，
+`Test-L2Lanes.ps1` 有一条断言守着。
 
 本机要复现 CI 的分路跑法，用同一个模块：先构建，再 `Get-L2LanePlan` + `Invoke-L2LanePlan`。自检：
 

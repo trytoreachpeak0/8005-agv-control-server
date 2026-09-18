@@ -92,6 +92,32 @@ $refused = $false
 try { $null = Get-L2LanePlan -Items $items -LaneCount 5 } catch { $refused = $true }
 Assert-Case -Name 'no-more-lanes-than-slots' -Condition $refused -Detail 'LaneCount 5 is refused: there are four slots besides slot 0'
 
+# Lanes start several pwsh processes at the same moment, and every one of them imports L2.psm1 before it
+# does anything. A PowerShell class is compiled when its module is parsed, so every type it names must
+# already be loaded then -- and Microsoft.PowerShell.Commands.* types live in module assemblies pwsh loads
+# lazily. Under the lanes' concurrent start-up that lost the race: 3 of 30 runs on 2026-09-18 died on
+# "ParserError: Unable to find type [Microsoft.PowerShell.Commands.HttpResponseException]" before their
+# scenario began, and 4 of 48 concurrent bare imports reproduced it. So no class in an L2 module may name
+# such a type; a method that needs one checks it at run time instead.
+$lazyTypes = @(@(foreach ($module in Get-ChildItem -LiteralPath $PSScriptRoot -Filter '*.psm1') {
+    $ast = [Management.Automation.Language.Parser]::ParseFile($module.FullName, [ref]$null, [ref]$null)
+    $classes = $ast.FindAll({ param($node) $node -is [Management.Automation.Language.TypeDefinitionAst] }, $true)
+    foreach ($class in $classes) {
+        $class.FindAll({ param($node) $node -is [Management.Automation.Language.TypeConstraintAst] -or
+                $node -is [Management.Automation.Language.TypeExpressionAst] -or
+                $node -is [Management.Automation.Language.CatchClauseAst] }, $true) |
+            ForEach-Object {
+                $names = if ($_ -is [Management.Automation.Language.CatchClauseAst]) { $_.CatchTypes.TypeName.FullName } else { $_.TypeName.FullName }
+                foreach ($name in $names) {
+                    if ($name -like 'Microsoft.PowerShell.Commands.*') { "$($module.Name) class $($class.Name): [$name]" }
+                }
+            }
+    }
+}) | Select-Object -Unique)
+Assert-Case -Name 'no-l2-class-names-a-lazily-loaded-type' `
+    -Condition ($lazyTypes.Count -eq 0) `
+    -Detail $(if ($lazyTypes.Count -eq 0) { 'no class in scripts/l2/*.psm1 names a Microsoft.PowerShell.Commands.* type' } else { $lazyTypes -join '; ' })
+
 if ($failures.Count -gt 0) {
     [Console]::Error.WriteLine("L2_LANES_SELFTEST_FAILED: $($failures -join ', ')")
     exit 1

@@ -316,8 +316,13 @@ class L2Double {
             try {
                 return Invoke-RestMethod -Uri $uri -Method $method -ContentType 'application/json' `
                     -Body ($payload | ConvertTo-Json -Depth 8) -TimeoutSec 30
-            } catch [Microsoft.PowerShell.Commands.HttpResponseException] {
-                if ($attempt -ge $attempts -or $_.Exception.Response.StatusCode -ne 409) { throw }
+            } catch {
+                # Matched by name at run time, not as `catch [Microsoft.PowerShell.Commands.HttpResponseException]`:
+                # a class is compiled when the module is parsed, that type lives in an assembly pwsh loads
+                # lazily, and several pwsh processes starting at once (control-server#130's lanes) sometimes
+                # parse this before it is loaded -- ParserError, and the run dies before its scenario starts.
+                if ($_.Exception.GetType().FullName -ne 'Microsoft.PowerShell.Commands.HttpResponseException' -or
+                    $attempt -ge $attempts -or $_.Exception.Response.StatusCode -ne 409) { throw }
             }
         }
         # Unreachable: the loop either returns or throws.
