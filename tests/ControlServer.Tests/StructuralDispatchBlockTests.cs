@@ -57,6 +57,7 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("DISPATCH_ZONE_HAS_NO_VEHICLES", DispatchReasonClass.Structural)]
     [InlineData("VEHICLE_NOT_ADMITTED_IN_ZONE", DispatchReasonClass.Backlog)]
     [InlineData("PACKAGE_CAPACITY_NOT_UNIQUE", DispatchReasonClass.Backlog)]
+    [InlineData("ADMISSION_POLICY_DRIFT", DispatchReasonClass.Backlog)]
     [InlineData("ONBOARD_FACTS_NOT_READY", DispatchReasonClass.Backlog)]
     [InlineData("ONBOARD_DEPARTURE_UNSAFE", DispatchReasonClass.Backlog)]
     [InlineData("RIOT_VEHICLE_NOT_AVAILABLE", DispatchReasonClass.Backlog)]
