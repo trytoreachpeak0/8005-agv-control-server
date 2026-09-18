@@ -33,6 +33,24 @@ the other account would take an UnauthorizedAccessException instead of queueing.
 Authenticated Users full control of this one object. The worst another local account can do with
 that is hold the lock, which it could equally achieve by binding 48405.
 
+PORT SLOTS (control-server#130). One block and one lock made every L2 run on a machine wait for every
+other, so CI ran its 29 scenarios one after another. A slot is a whole block of its own under a lock of
+its own: slot N binds every port of slot 0 moved down by 1000 x N and takes the lock name with
+`-slotN` appended. **Slot 0 is the block and the name above, unchanged**, and it is what every caller
+gets that does not ask for a slot -- the real-onboard rig, run-journey-g3.ps1, and every checkout older
+than the slots, none of which know slots exist. So an old checkout and a new one still queue against
+each other on slot 0, and only a caller that asks for slot 1-4 runs beside them.
+
+Why down by 1000: slot 0 already sits just below Windows' dynamic range (49152-65535, see
+Invoke-L2Scenario.ps1 for what binding inside it cost), so the other slots go further down, not up.
+Slots 1-4 are 47405-47429, 46405-46429, 45405-45429 and 44405-44429. They step clear of the one
+excluded port in that stretch on this workspace's machines, 47001 (WinRM's HTTP listener, in
+`netsh int ipv4 show excludedportrange protocol=tcp` on the control machine; win11-01 excludes only
+5357). Test-L2PortLockQueueing.ps1 asserts the slots are disjoint and outside those ports.
+
+Slots share one build output. A caller that runs several slots at once builds once and passes
+-SkipBuild to each run, because a build under a running slot overwrites the executables it runs.
+
 LOCK ORDERING, which is what keeps this from deadlocking against the desktop lock:
 
     Port lock first, desktop lock second. Never take the port lock while holding the desktop lock.
@@ -50,7 +68,24 @@ behind it.
 Set-StrictMode -Version Latest
 
 # The literal. Every checkout of this repository that runs L2 on this machine must spell it the same.
+# Slot 0's name; slot N appends -slotN.
 $script:PortLockName = 'Global\W2G-L2PortBlock'
+
+# Slot 0's block, the ports Invoke-L2Scenario.ps1's parameter defaults also spell out. Test-L2PortLockQueueing.ps1
+# checks the two agree and that both are still the literal ports every older checkout binds.
+$script:SlotZeroPorts = [ordered]@{
+    ControlPort         = 48405
+    HealthPort          = 48407
+    FakeRiotPort        = 48408
+    FakeMesIngestPort   = 48409
+    SimulatorHttpPort   = 48411
+    SimulatorModbusPort = 48412
+    ClockSkewProxyPort  = 48413
+    DashboardPort       = 48414
+    # The first synthetic peer; peer N binds this plus N.
+    FakeOnboardPort     = 48420
+}
+$script:SlotStride = 1000
 
 # An hour, not the desktop lock's thirty minutes, because the holder can itself be queued: a
 # real-onboard run holds this lock while it waits up to 1800s for the desktop, and then runs a
@@ -61,13 +96,35 @@ $script:DefaultPortLockTimeoutSeconds = 3600
 function Get-L2PortLockName {
     <#
     .SYNOPSIS
-        The machine-wide L2 port block mutex name.
+        The machine-wide mutex name for one L2 port slot. Slot 0 is the name every checkout has always used.
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param()
+    param(
+        [ValidateRange(0, 4)]
+        [int]$Slot = 0
+    )
 
-    return $script:PortLockName
+    return $(if ($Slot -eq 0) { $script:PortLockName } else { "$script:PortLockName-slot$Slot" })
+}
+
+function Get-L2PortBlock {
+    <#
+    .SYNOPSIS
+        The ports one L2 port slot binds, keyed by Invoke-L2Scenario.ps1's parameter names.
+    #>
+    [CmdletBinding()]
+    [OutputType([Collections.Specialized.OrderedDictionary])]
+    param(
+        [ValidateRange(0, 4)]
+        [int]$Slot = 0
+    )
+
+    $block = [ordered]@{}
+    foreach ($name in $script:SlotZeroPorts.Keys) {
+        $block[$name] = $script:SlotZeroPorts[$name] - $script:SlotStride * $Slot
+    }
+    return $block
 }
 
 function Enter-L2PortLock {
@@ -88,6 +145,9 @@ function Enter-L2PortLock {
 
     .PARAMETER TimeoutSeconds
         How long to queue. 0 restores fail-fast.
+
+    .PARAMETER Slot
+        Which port slot's lock. 0, the default, is the one lock every checkout older than the slots takes.
     #>
     [CmdletBinding()]
     param(
@@ -95,16 +155,20 @@ function Enter-L2PortLock {
         [string]$Reason,
 
         [ValidateRange(0, 86400)]
-        [int]$TimeoutSeconds = $script:DefaultPortLockTimeoutSeconds
+        [int]$TimeoutSeconds = $script:DefaultPortLockTimeoutSeconds,
+
+        [ValidateRange(0, 4)]
+        [int]$Slot = 0
     )
 
-    $mutex = New-L2PortLockMutex
+    $lockName = Get-L2PortLockName -Slot $Slot
+    $mutex = New-L2PortLockMutex -Name $lockName
     # Zero-wait first, purely so that a queued run says so. A silent wait is indistinguishable from a
     # hang.
     $owned = Request-L2PortLockCore -Mutex $mutex -Seconds 0
     if (-not $owned -and $TimeoutSeconds -gt 0) {
         Write-Host ("L2_PORT_LOCK_WAITING: another L2 run owns this machine's L2 port block " +
-            "($script:PortLockName); queueing up to ${TimeoutSeconds}s for: $Reason")
+            "($lockName); queueing up to ${TimeoutSeconds}s for: $Reason")
         $owned = Request-L2PortLockCore -Mutex $mutex -Seconds $TimeoutSeconds
         if ($owned) {
             Write-Host "L2_PORT_LOCK_ACQUIRED: the L2 port block is now ours for: $Reason"
@@ -114,11 +178,12 @@ function Enter-L2PortLock {
     if (-not $owned) {
         $mutex.Dispose()
         throw ("L2_PORT_LOCK_BUSY: another L2 run owns this machine's L2 port block " +
-            "($script:PortLockName); waited ${TimeoutSeconds}s for: $Reason")
+            "($lockName); waited ${TimeoutSeconds}s for: $Reason")
     }
 
     return [pscustomobject]@{
         Mutex = $mutex
+        Name = $lockName
         Reason = $Reason
         AcquiredAt = [DateTimeOffset]::UtcNow
     }
@@ -144,7 +209,7 @@ function Exit-L2PortLock {
 function New-L2PortLockMutex {
     [CmdletBinding()]
     [OutputType([Threading.Mutex])]
-    param()
+    param([Parameter(Mandatory)][string]$Name)
 
     # The DACL only takes effect when this call creates the object. Opening one that already exists
     # asks for full control, which the DACL below grants -- so whichever account created it, every
@@ -157,7 +222,7 @@ function New-L2PortLockMutex {
         [Security.AccessControl.MutexRights]::FullControl,
         [Security.AccessControl.AccessControlType]::Allow))
     $createdNew = $false
-    return [Threading.MutexAcl]::Create($false, $script:PortLockName, [ref]$createdNew, $security)
+    return [Threading.MutexAcl]::Create($false, $Name, [ref]$createdNew, $security)
 }
 
 function Request-L2PortLockCore {
@@ -180,4 +245,4 @@ function Request-L2PortLockCore {
     }
 }
 
-Export-ModuleMember -Function Get-L2PortLockName, Enter-L2PortLock, Exit-L2PortLock
+Export-ModuleMember -Function Get-L2PortLockName, Get-L2PortBlock, Enter-L2PortLock, Exit-L2PortLock

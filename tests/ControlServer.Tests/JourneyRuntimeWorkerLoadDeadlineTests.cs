@@ -7,6 +7,7 @@ using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
 
@@ -14,7 +15,7 @@ namespace ControlServer.Tests;
 /// The load stop past its station departure deadline (ADR-cross-0058 decisions 4 and 5; control-server#81):
 /// a door left open raises an alarm and ends nothing, and a determinate load failure ends the demand.
 /// </summary>
-public sealed partial class JourneyRuntimeWorkerTests
+public sealed class JourneyRuntimeWorkerLoadDeadlineTests
 {
     /// <summary>
     /// ADR-cross-0058 decision 5, redone for the v2 one-demand journey. The vehicle ran out the stop and said
