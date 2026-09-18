@@ -115,16 +115,19 @@ if (-not $offered) {
     return
 }
 $null = Invoke-L2RealConfirmedButton $onboard $journal '补偿清空' '补偿清空'
-$compensation = Wait-L2Condition -Description 'the server received LoadCompensationResult, or the onboard reported a refusal' `
+# A refusal is read off the protocol (the server answered LoadCompensationRequested with LoadCompensationRejected), not
+# off the HMI's notice title: criteria never depend on onboard UI text.
+$compensation = Wait-L2Condition -Description 'the server received LoadCompensationResult, or rejected the compensation request' `
     -Journal $journal -Criterion 'compensation-result' -TimeoutSeconds 120 `
     -Probe {
         $received = @((Get-L2RealInbound $connection 'LoadCompensationResult') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
+        $rejected = @((Get-L2RealInbound $connection 'LoadCompensationRequested') | Where-Object { $_.Response -eq 'LoadCompensationRejected' })
         if ($received.Count -ge 1) { $received[0] }
-        elseif (@($onboard.WindowTitles()) -contains '补偿清空失败') { 'REFUSED' }
+        elseif ($rejected.Count -ge 1) { "REFUSED $($rejected[0].ResponsePayload | ConvertTo-Json -Depth 5 -Compress)" }
         else { $null }
     } -Until { param($v) $null -ne $v }
 if ($compensation -is [string]) {
-    Add-L2RealNotReached $assertions $laterIds '补偿清空未被接受（车载端弹出「补偿清空失败」）'
+    Add-L2RealNotReached $assertions $laterIds "补偿清空未被接受（服务端回 LoadCompensationRejected：$compensation）"
     return
 }
 $actionId = [string]$compensation.Payload.recoveryActionId

@@ -400,11 +400,14 @@ try {
     $fieldOpsDirectory = Join-Path $Repository "tools/ControlServer.FieldOps/bin/$configuration/$framework"
     $dashboardDirectory = Join-Path $Repository "src/ControlServer.Dashboard/bin/$configuration/$framework"
     if ($SkipBuild) {
-        foreach ($executable in @((Join-Path $hostDirectory 'ControlServer.Host.exe'),
-                                  (Join-Path $riotDirectory 'ControlServer.FakeRiot.exe'),
-                                  (Join-Path $mesDirectory 'ControlServer.FakeMesIngest.exe'),
-                                  (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe'),
-                                  (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe'))) {
+        $prebuilt = @((Join-Path $hostDirectory 'ControlServer.Host.exe'),
+                      (Join-Path $riotDirectory 'ControlServer.FakeRiot.exe'),
+                      (Join-Path $mesDirectory 'ControlServer.FakeMesIngest.exe'),
+                      (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe'),
+                      (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe'))
+        # Only a scenario that starts the proxy needs it built.
+        if ($protocolFaultProxy) { $prebuilt += Join-Path $faultProxyDirectory 'ControlServer.ProtocolFaultProxy.exe' }
+        foreach ($executable in $prebuilt) {
             if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
                 throw "-SkipBuild, but nothing is built at $executable; build ControlServer.sln -c Release first."
             }
