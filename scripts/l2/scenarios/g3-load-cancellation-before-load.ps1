@@ -205,7 +205,8 @@ $cancellationResult = Wait-L2Condition -Description 'the server received the Loa
     -Until { param($v) $null -ne $v }
 
 $authorization = $request.ResponsePayload
-$authorizedSlots = if ($null -ne $authorization -and $authorization.PSObject.Properties['slots']) { @($authorization.slots) } else { @() }
+# @() outside the if: an if-expression's empty array comes out of the pipeline as $null.
+$authorizedSlots = @(if ($null -ne $authorization -and $authorization.PSObject.Properties['slots']) { $authorization.slots })
 $authorizationText = if ($null -ne $authorization) {
     "$($request.Response) $([string]$authorization.decision) slots=[$($authorizedSlots -join ',')] attempt=$([string]$request.Payload.slotOperationAttemptId)"
 } else { "$($request.Response) (no payload)" }
