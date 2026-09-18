@@ -1838,6 +1838,118 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#131: each of the three results that end a demand whose load was commanded -- an
+    /// in-flight cancellation, a compensation, a fault cargo handoff -- frees the vehicle in the same change
+    /// that cancels the demand, releases the lease and cancels the slot operation. Until #131 they wrote all
+    /// of that by hand except the vehicle occupancy, so the pickup order kept holding the vehicle and the
+    /// occupancy index refused its next order (VEHICLE_OCCUPANCY_CONFLICT). The second claim below is that
+    /// index's decision, the same call the runtime makes before it dispatches.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("LoadCancellationResult", "CANCELLED_BY_OPERATOR")]
+    [InlineData("LoadCompensationResult", "CANCELLED_BY_LOAD_COMPENSATION")]
+    [InlineData("FaultCargoRecoveryResult", "TERMINATED_BY_FAULT_CARGO_HANDOFF")]
+    public async Task EachResultThatEndsACommandedLoadFreesTheVehicleForItsNextOrder(
+        string messageType,
+        string reasonCode)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RELEASES_VEHICLE";
+        const string proof = "releases-vehicle-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            if (messageType == "LoadCancellationResult")
+                await SeedCancellableLoadAsync(context);
+            else
+                await SeedBlockedJourneyAsync(context);
+            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
+            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
+            await context.SaveChangesAsync(token);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+
+            string result = await ReachEndingResultAsync(messageType, processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(result, state, token)));
+
+            Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows
+                .SingleAsync(row => row.ResultMessageId != null, token)).State);
+            Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+            Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.SingleAsync(token)).Status);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
+            Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+            Assert.Equal(reasonCode, runtime.BlockReasonCode);
+            Assert.NotNull((await context.OrderIntents.AsNoTracking()
+                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+
+            OrderIntentRow next = Intent("next-pickup-leg", "UPPER-NEXT-PICKUP", "TO_PICKUP", 11);
+            context.OrderIntents.Add(next);
+            await context.SaveChangesAsync(token);
+            Assert.True(await new VehicleDispatchPolicyStore(context).TryClaimVehicleOccupancyAsync(
+                next.UpperId, Now.AddMinutes(1), token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Drives the seeded journey to the line the vehicle sends when the given recovery has proved every
+    /// authorized slot empty, and returns that line unsent.
+    /// </summary>
+    private static async Task<string> ReachEndingResultAsync(
+        string messageType,
+        OnboardMessageProcessor processor,
+        OnboardConnectionState state,
+        string proof)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        switch (messageType)
+        {
+            case "LoadCancellationResult":
+                const string cancellationId = "b3100000-0000-4000-8000-000000000001";
+                await processor.ProcessAsync(CancellationRequest(cancellationId), state, token);
+                return CancellationResult(cancellationId, "b3100000-0000-4000-8000-000000000002", "EMPTY");
+            case "LoadCompensationResult":
+                return AllEmptyCompensationResult(await ReachCompensationResultAsync(processor, state, proof));
+            case "FaultCargoRecoveryResult":
+                await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+                await processor.ProcessAsync(RecoveryAction("FAULT_CARGO_HANDOFF"), state, token);
+                return Envelope(
+                    "b3100000-0000-4000-8000-000000000003",
+                    "FaultCargoRecoveryResult",
+                    new
+                    {
+                        exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
+                        recoveryActionId = ActionId,
+                        demandId = DemandId,
+                        handoffId = StableGuid(ActionId, "fault-cargo-handoff"),
+                        overallOutcome = "HANDED_OFF",
+                        slotResults = RecoverySlots.Select(slot => new
+                        {
+                            slotNo = slot,
+                            outcome = "COMPLETED",
+                            finalPhysicalState = "EMPTY",
+                            lockState = "LOCKED",
+                            unlockOutputState = "RESET",
+                            reasonCodes = Array.Empty<string>()
+                        }).ToArray(),
+                        @operator = Operator(),
+                        observedAt = Now.AddSeconds(5)
+                    });
+            default:
+                throw new ArgumentOutOfRangeException(nameof(messageType), messageType, null);
+        }
+    }
+
+    /// <summary>
     /// What the given recovery message said: the response line for the two answers, every queued
     /// revision for the snapshot (the session queues one when it opens and one when an action is taken).
     /// </summary>
