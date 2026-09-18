@@ -44,7 +44,7 @@ $proxy = $Context.ProtocolProxy
 if ($null -eq $proxy) { throw 'This scenario needs ProtocolFaultProxy = $true in its setup file.' }
 $button = '取消装货'
 $failure = '取消装货失败'
-$laterIds = @('L2-CAL-02', 'L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08')
+$laterIds = @('L2-CAL-02', 'L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08', 'L2-CAL-09')
 
 # Assign the result, never wrap the call in @(): it hands back the whole result set as one array, and @() would keep
 # that as a single element (cancellation-authorization-lost-001 joined both decisions into one string that way).
@@ -104,7 +104,7 @@ $assertions.Add(
     '1 条请求 / AUTHORIZED / AwaitingResult / 丢 1 条 / 车载端报失败',
     "$($first.Count) 条请求 / $firstDecision / $workflowAfterFirst / 丢 $dropped 条 / 车载端报失败=$noticeShown")
 if ($first.Count -ne 1) {
-    Add-L2RealNotReached $assertions @('L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08') '第一次按下没有发出取消请求'
+    Add-L2RealNotReached $assertions @('L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08', 'L2-CAL-09') '第一次按下没有发出取消请求'
     return
 }
 
@@ -204,5 +204,20 @@ $assertions.Add(
     ($lateResults.Count -eq 0 -and $recoveryRequired.Count -eq 0),
     'OperationResult 0 条 / RECOVERY_REQUIRED 0 次',
     "OperationResult $($lateResults.Count) 条$(if ($lateText) { "（$lateText）" }) / RECOVERY_REQUIRED $($recoveryRequired.Count) 次$(if ($recoveryRequired) { "（$($recoveryRequired -join '; ')）" })")
+
+# --- 7. 取消完成也把车还回去 -----------------------------------------------------------------------------------
+
+# 「取消完成」是这一站的终结（ADR-cross-0046），终结要把车辆占用还回去，否则这台车此后一单也派不出（旅程
+# Blocked / VEHICLE_OCCUPANCY_CONFLICT）。读的是被释放的那个事实本身，不靠再派一单：本场景不驱动第二个需求。
+# 扫码前取消走 PickupStopTermination，同一次提交里释放；在途取消由 OnboardRecoveryCoordinator 手写终结，写不写这一格
+# 就是 control-server#131。写入不一定与工作流 Reconciled 同一次提交，所以等，不直读。
+$releasedAt = Wait-L2RealOrLast -Description 'the vehicle occupancy of the cancelled pickup was released' -Journal $journal `
+    -Criterion 'vehicle-occupancy-released' -TimeoutSeconds 30 `
+    -Probe { Get-L2RealScalar $connection "SELECT VehicleOccupancyReleasedAt AS Value FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_PICKUP'" } `
+    -Until { param($v) $null -ne $v }
+$assertions.Add(
+    'L2-CAL-09', '取消完成也把车还回去：这一单 TO_PICKUP 的车辆占用已释放（VehicleOccupancyReleasedAt 有值），同一台车能再派单',
+    ($null -ne $releasedAt), 'VehicleOccupancyReleasedAt 有值',
+    $(if ($null -ne $releasedAt) { "VehicleOccupancyReleasedAt $releasedAt" } else { 'VehicleOccupancyReleasedAt 为空（30 s 内）' }))
 
 $journal.Note('Scenario finished.')
