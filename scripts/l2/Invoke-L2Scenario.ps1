@@ -993,6 +993,27 @@ try {
         DashboardUrl        = $dashboardUrl
         # ControlServer.FieldOps against the SQLite file the server is using; see $invokeFieldOps above.
         InvokeFieldOps      = $invokeFieldOps
+        # A new version of the package capacity table while the server runs, through the same import
+        # command step 2 used before it started (control-server#87: capacity changed after dispatch). The
+        # command exits before the host binds anything, so it can run beside the live server. Rows are
+        # @{ Pattern; Capacity }; the version must exceed every earlier one (the rig itself imports 1).
+        ImportPackageCapacity = {
+            param([Parameter(Mandatory)][object[]]$Rows, [Parameter(Mandatory)][int]$Version)
+            $csv = Join-Path $stageRoot "package-capacity-v$Version.csv"
+            @('pattern,match_type,max_boxes_per_basket,source,status,note') +
+                @($Rows | ForEach-Object { "$($_.Pattern),exact,$($_.Capacity),l2-scenario,active,L2 scenario fixture v$Version" }) |
+                Set-Content -LiteralPath $csv -Encoding utf8NoBOM
+            $journal.Note("Importing package capacity version ${Version}: " +
+                (($Rows | ForEach-Object { "$($_.Pattern)=$($_.Capacity)" }) -join ', '))
+            $reimport = Start-L2Process -Name "package-capacity-import-v$Version" `
+                -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
+                -ArgumentList @('--import-package-capacity', '--input', $csv, '--version', [string]$Version) `
+                -WorkingDirectory $hostDirectory -Environment $importEnvironment -LogRoot $logRoot
+            if (-not $reimport.Process.WaitForExit(120000)) { throw "Package capacity import v$Version did not exit within 120s." }
+            if ($reimport.Process.ExitCode -ne 0) {
+                throw "Package capacity import v$Version failed with exit code $($reimport.Process.ExitCode)."
+            }
+        }
         # The dispatch zone the server runs under, read from its own appsettings.json, and the slot model the
         # preseed published -- null when the setup file said SlotModelPreseed = $false.
         DispatchZone        = $dispatchZone
