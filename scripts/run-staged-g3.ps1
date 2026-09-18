@@ -67,7 +67,9 @@ param(
     #   $OnboardCommit -> 29fbf65e, the w2g/fp-v2-impl tip with hmi#112 (recovery entries announced under their
     #     own property names again, PR #114).
     #   $SimulatorCommit and $ProtocolCommit unchanged.
-    [string]$ControlServerCommit = 'c12f0498281a39e4fa94a51bd4506c3d3af97a1c',
+    #   Same day, $ControlServerCommit -> d3003c2f: cs#156 (PR #157), g3-forced-mechanical-recovery presses the
+    #     second step onboard-hmi#107 added. Scripts only; src/ and tests/ are still those of e0f26b37.
+    [string]$ControlServerCommit = 'd3003c2f688431436850df634a7d028fcb14f346',
     [string]$OnboardCommit = '29fbf65e0b4d58c80849d5e6d0e44f40903c411e',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
