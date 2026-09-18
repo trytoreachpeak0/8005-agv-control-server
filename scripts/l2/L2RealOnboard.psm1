@@ -61,9 +61,11 @@ function Get-L2RealInbound([object]$Connection, [string]$MessageType) {
         "WHERE MessageType = '$MessageType' ORDER BY ReceivedAt, MessageId")
     $messages = foreach ($row in $rows) {
         $request = [string]$row.RequestJson | ConvertFrom-Json -DateKind String
-        $answers = if (Test-L2RealPresent $row.FirstResponseJson) {
-            @(([string]$row.FirstResponseJson) -split "`n" | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json -DateKind String })
-        } else { @() }
+        # Wrapped as a whole: an if-expression's output goes down the pipeline, so a bare @() or a one-element array would
+        # arrive unwrapped and .Count below would throw under StrictMode (control-server#154).
+        $answers = @(if (Test-L2RealPresent $row.FirstResponseJson) {
+            ([string]$row.FirstResponseJson) -split "`n" | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json -DateKind String }
+        })
         $first = if ($answers.Count -gt 0) { $answers[0] } else { $null }
         [pscustomobject]@{
             MessageId       = [string]$row.MessageId

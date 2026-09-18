@@ -354,6 +354,10 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
   「出发解释的降级」路径：原因码是 `DEPARTURE_SAFETY_NOT_READY`、有安全原因码、不含 `SLOT_STATE_UNKNOWN`、全部是车辆运动原因、
   带这些原因的那版安全状态晚于建单收到，且关卡单在 RIoT 里未结束。证据行的实际值写明走的是哪条路径。
   `scripts/l2/Test-L2SessionContinuity.ps1` 用红那次的真实数据（必须走降级路径通过）和十四个各因一种原因失败的反例自检，一秒，不起装置。
+- `L2RealOnboard.psm1` 的 `Get-L2RealInbound` —— 真装置场景读服务端收件箱的那一处。收件箱行没有回应（例如
+  `LoadCompensationRequested`，服务端的回复在发件箱）时，`if` 表达式里的 `@()` 会被管道拆成空，StrictMode 下 `.Count`
+  抛异常，探测每轮都失败、只记成 `(nothing)`（control-server#154）。`scripts/l2/Test-L2RealInbound.ps1` 在模块内替换掉读库，
+  用没有回应、一条回应、两行回应三种行自检，一秒，不起装置。
 
 `Onboard` 在两套装置下**是两个不同的东西**：合成装置下是假车载端控制面的 `L2Double`，真装置下
 是 UIA 驱动（`CanSubmit()` / `SetSublot()` / `SubmitReady()` / `Submit()`）。`Simulator` 只在真装置
