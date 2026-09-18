@@ -651,6 +651,16 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         public async Task AddMidSessionSafetySnapshotAsync(long safetyStateVersion)
         {
+            // The baseline arrived a moment earlier, so "first" and "latest" are two different rows. The later
+            // one is received now, not after now: a receive time in the future does not count as liveness.
+            ProtocolInboxRow[] baseline = await Context.ProtocolInbox
+                .Where(row => row.MessageType == "SafetyStateSnapshot")
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            foreach (ProtocolInboxRow row in baseline)
+            {
+                row.ReceivedAt = Now.AddSeconds(-1);
+            }
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
             await AddRawInboxAsync("SafetyStateSnapshot", new
             {
                 safetyStateVersion,
@@ -674,7 +684,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     unlockOutputState = "RESET",
                     reasonCodes = Array.Empty<string>()
                 })
-            }, 1, Now.AddSeconds(1));
+            }, 1, Now);
             SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
                 TestContext.Current.CancellationToken);
             session.SafetyRevision = safetyStateVersion;

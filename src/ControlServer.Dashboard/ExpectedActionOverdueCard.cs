@@ -64,7 +64,7 @@ public sealed class ExpectedActionOverdueCard : IDashboardCard
 
         foreach (JsonElement vehicle in Array(fact, "unavailableVehicles"))
         {
-            html.Append("<p class=\"expected-action-overdue-unavailable\">")
+            html.Append("<p class=\"expected-action-overdue-vehicle-unknown\">")
                 .Append(WebUtility.HtmlEncode(
                     $"{DashboardPageRenderer.Text(vehicle, "agvId")}：{DashboardPageRenderer.Text(vehicle, "reason")}，期待动作超时状态不明"))
                 .Append("</p>");
@@ -88,7 +88,7 @@ public sealed class ExpectedActionOverdueCard : IDashboardCard
             {
                 "LOAD" => "装货",
                 "UNLOAD" => "卸货",
-                string other => other
+                var other => other ?? "不明"
             }
             : "不明";
 

@@ -353,6 +353,7 @@ public sealed class ExpectedActionOverdueTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public void TheThresholdComesFromItsOwnSettingsFileWhichShipsTheOnboardDefault()
     {
         Assert.Equal(TimeSpan.FromMinutes(6), ExpectedActionOverdueOptions.Default.Threshold);
@@ -420,6 +421,7 @@ public sealed class ExpectedActionOverdueTests
     // --- 卡片 ------------------------------------------------------------------------------------------------------
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public void TheCardRegistersItselfOnTheFleetViewAgainstTheEndpoint()
     {
         IDashboardCard card = Assert.Single(
@@ -434,6 +436,7 @@ public sealed class ExpectedActionOverdueTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public void TheCardShowsOneRowPerSlotWithTheStationDeadlineAndTheReadingsInThatRowAndNoForm()
     {
         using JsonDocument fact = JsonDocument.Parse("""
@@ -479,6 +482,7 @@ public sealed class ExpectedActionOverdueTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
     public void WithNothingOverdueTheCardSaysSo()
     {
         using JsonDocument fact = JsonDocument.Parse(
