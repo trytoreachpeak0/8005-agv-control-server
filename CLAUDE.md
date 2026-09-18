@@ -232,8 +232,14 @@ Load-bearing details:
 - **Check the commit bindings before a G3 run, and move them.** They are literal
   defaults, so a run inherits whatever the last run froze and silently gates old
   code — on 2026-09-04 they still pointed at a ControlServer and an onboard from
-  several days earlier. `$OnboardCommit` must be the tip of `origin/OnboardHmi_MVP`,
-  which `New-ExactClone -RemoteRef` enforces; the other three are unchecked.
+  several days earlier. `$OnboardCommit` must be the tip of `$OnboardRemoteRef` (a parameter of
+  `run-staged-g3.ps1` and `run-journey-g3.ps1`; `origin/w2g/fp-v2-impl` since batch 5), which
+  `New-ExactClone -RemoteRef` enforces; the other three are unchecked. It is never
+  `origin/OnboardHmi_MVP`: that branch is the MVP line, on a different protocol.
+- **A protocol release needs one approver**: the product owner, or an AI agent the product owner
+  authorized for that specific release (scope specification 6.4). **CI cannot approve.** Pushing to
+  the protocol repository notifies nobody; its commit message states which `FP-IS-*` slices it
+  touches and which evidence it voids.
 - **Evidence for individual G3 vectors is not the same as eight slices passing.**
   A slice passes only with all four gates.
 - Full procedure: `docs/RELEASE-CANDIDATE.md`.

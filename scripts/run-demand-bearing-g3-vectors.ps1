@@ -657,6 +657,18 @@ $fieldStoreProvenanceRecord = [ordered]@{
            'which spoke protocol-v0.1.1. Its recorded protocolCommit is that history, not a ' +
            'statement about the build under test, so it is recorded and not asserted. Ruled a ' +
            'known exemption by the user on 2026-09-09; scope is this fact alone.'
+    # The RIoT create audit read out of the same restored store. Asserted until the control-server#60
+    # review (2026-09-18): every row was written by the field run's build before this server started,
+    # so it judged that history rather than the bound commit. Recorded exactly as measured instead.
+    riotCreateAuditHistory = [ordered]@{
+        legs = $auditLegs.Count
+        preCreateReconciliationObservedUnknownOnEveryLeg = $riotUnknownObservedPass
+        unknownWasAnExactAbsentAtObservation = $riotUnknownIsExactAbsencePass
+        unknownStillCreatedExactlyOncePerLeg = $riotUnknownCreatesExactlyOncePass
+        unknownResolvedToTheOrderItCreated = $riotUnknownResolvesToTheCreatedOrderPass
+        note = 'History of the 2026-08-29 field run, not a judgment of the build under test. ' +
+               'Recorded, not asserted, by the user ruling on control-server#60 (2026-09-18).'
+    }
 }
 
 $configuration = [ordered]@{
@@ -711,10 +723,6 @@ foreach ($file in @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File)) {
 
 $assertions = [ordered]@{
     protocolAndBuildIdentityBoundToTheSharedBinding = $protocolBindingPass
-    riotPreCreateReconciliationObservesUnknownOnEveryLeg = $riotUnknownObservedPass
-    riotUnknownIsAnExactAbsentAtObservation = $riotUnknownIsExactAbsencePass
-    riotUnknownStillCreatesExactlyOncePerLeg = $riotUnknownCreatesExactlyOncePass
-    riotUnknownResolvesToTheOrderItCreated = $riotUnknownResolvesToTheCreatedOrderPass
     preparedAttemptAcceptsItsFirstResult = $resultAcceptedPass
     identicalResultReplayReturnsTheStoredAcknowledgement = $resultReplayPass
     sameMessageIdWithDifferentContentIsRefused = $resultContentConflictPass
