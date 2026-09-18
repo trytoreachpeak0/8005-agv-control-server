@@ -46,6 +46,8 @@ $button = '取消装货'
 $failure = '取消装货失败'
 $laterIds = @('L2-CAL-02', 'L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08')
 
+# Assign the result, never wrap the call in @(): it hands back the whole result set as one array, and @() would keep
+# that as a single element (cancellation-authorization-lost-001 joined both decisions into one string that way).
 function Get-Requests([string]$demandId) {
     return , @((Get-L2RealInbound $connection 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
 }
@@ -92,7 +94,7 @@ $dropped = Wait-L2RealOrLast -Description 'the proxy dropped the cancellation au
     -Probe { @((Get-L2RealTraffic $proxy).drops).Count } -Until { param($n) [int]$n -ge 1 }
 # 车载端等满 messageTimeoutMs 才判失败、弹提示框；关掉它，操作员才能再按。
 $noticeShown = Confirm-L2RealNotice $onboard $journal $failure 30
-$first = @(Get-Requests $demandId)
+$first = Get-Requests $demandId
 $cancellationId = if ($first.Count -ge 1) { [string]$first[0].Payload.cancellationId } else { '' }
 $workflowAfterFirst = if ($cancellationId) { Get-WorkflowState $cancellationId } else { '(no request)' }
 $firstDecision = if ($first.Count -ge 1 -and $null -ne $first[0].ResponsePayload) { [string]$first[0].ResponsePayload.decision } else { '(none)' }
@@ -151,7 +153,7 @@ $assertions.Add(
 
 # --- 5. 两次按下是两条报文，内容相同；服务端一次都没掐连接 --------------------------------------------------------
 
-$requests = @(Get-Requests $demandId)
+$requests = Get-Requests $demandId
 $messageIds = @($requests | ForEach-Object { $_.MessageId })
 $payloads = @($requests | ForEach-Object { $_.PayloadJson })
 $decisions = @($requests | ForEach-Object { if ($null -ne $_.ResponsePayload) { [string]$_.ResponsePayload.decision } else { '(none)' } })
