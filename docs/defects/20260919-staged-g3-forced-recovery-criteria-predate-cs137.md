@@ -78,8 +78,11 @@ control-server#151（PR #153）按 cs#137 之后的行为改写了三条判据�
 **control-server#90 的复验**（2026-09-19，修复合入后在出口身份上从头重跑）：`run-staged-g3.ps1` 在 control-server `c12f0498`（harness `69894550`）、
 onboard-hmi `29fbf65e`、slots-simulator `fb5f7c59`、`protocol-v2.0.0@86575456` 上 `STAGED_G3_RECOVERY_REPLAY_PASS`，
 `FP-IS-00`、`06`、`07`、`14`、`15` 全部 `PASS`：[`evidence/g3/20260919-protocol-v2.0.0-staged-c12f0498/`](../../evidence/g3/20260919-protocol-v2.0.0-staged-c12f0498/)。
-上面覆盖边界里提到的 `G3-07-44` 那一半，本轮 journey 里的 `g3-forced-mechanical-recovery` 没走到判据（另一处场景缺陷，见
-[`20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md`](20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md)），L1 那一半在全量测试里通过。
+那一轮 journey 里的 `g3-forced-mechanical-recovery` 没走到 `G3-07-44`（另一处场景缺陷，见
+[`20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md`](20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md)）。那处修复（control-server#156，`d3003c2f`）合入后的第三轮：
+staged 仍 `STAGED_G3_RECOVERY_REPLAY_PASS`，[`evidence/g3/20260919-protocol-v2.0.0-staged-d3003c2f/`](../../evidence/g3/20260919-protocol-v2.0.0-staged-d3003c2f/)；
+覆盖边界里说的 `G3-07-44` 那一半也在 journey 里走完并 PASS（车辆 `RecoveryRequired`，等硬件恢复记录），
+[`evidence/g3/20260919-protocol-v2.0.0-journey-d3003c2f/`](../../evidence/g3/20260919-protocol-v2.0.0-journey-d3003c2f/)；L1 那一半在全量测试里通过。
 ## 为什么没有早点发现
 
 control-server#137 的 PR 写明「没跑真装置场景 `g3-forced-mechanical-recovery`」，staged runner 也没有跑：它们都要本机真装置时段，而当时时段被 control-server#88 占用。

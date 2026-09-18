@@ -17,7 +17,7 @@ CI 上 28 个合成场景各连续三次、真装置七条、两端全量 L1。
 
 | 出口（规格 8.2／8.3 批次 5 行、19.5 节、本票验收） | 状态 | 依据 |
 | --- | --- | --- |
-| `protocol-v2.0.0` 发布：G1 在发布态通过、attestation 一名批准 | **成立** | `evidence/g1/20260916-protocol-v2.0.0-release-8657545/`（program#97）；本轮两端 G2 每片都在发布态重跑了协议 G1 |
+| `protocol-v2.0.0` 发布：G1 在发布态通过、attestation 一名批准 | **成立** | `evidence/g1/20260916-protocol-v2.0.0-release-8657545/`（program#97）；车载端 `ONBOARD_HMI_G2` 每片都在发布态重跑了协议 G1（`protocol-g1.log`）。服务端 `test-wire-to-gate.ps1` 不跑 G1，只核对 manifest 身份 |
 | L1：两端测试套件全绿；新能力逐项有新增覆盖 | **成立** | 服务端 1255/1255（`e0f26b37`，产品代码与 `d3003c2f` 相同）；车载端现行 538/538（`29fbf65e`，`evidence/l1/20260919-onboard-hmi-29fbf65e/`），第一轮 536/536（`9748c418`）保留；逐项对照表见第一节 |
 | `CONTROL_SERVER_G2` × 10 片 PASS，绑定发布身份，`schemaConformance` 零未登记违约 | **成立** | `evidence/g2/20260918-protocol-v2.0.0-06b65688/` |
 | `ONBOARD_HMI_G2` × 10 片 PASS，出站校验零违约 | **成立** | 现行：车载端仓 `evidence/g2/20260919-protocol-v2.0.0-29fbf65e/`（缺陷 A 修复后重跑）；第一轮 `…-9748c418/` 保留。九片零违约，`FP-IS-04` 无出站报文可验（见第三节） |
@@ -34,7 +34,7 @@ CI 上 28 个合成场景各连续三次、真装置七条、两端全量 L1。
 ## 重跑（2026-09-19，修复 A、B 之后）
 
 前置：control-server#151（PR #153，`c3c81eaf`）、control-server#154（PR #155，`c12f0498`）、onboard-hmi#112（PR #114，`29fbf65e`）都已合入。出口分支 merge 了两条主线（`bbe6ae32`；车载端证据分支 `7c6a0ae`），
-G3 共享绑定移到 `ControlServerCommit c12f0498`、`OnboardCommit 29fbf65e`（提交 `69894550`），模拟器与协议不变。真装置时段由调度会话放行，重负载都经 `Invoke-HeavyLocal.ps1 -Ticket cs#90`。
+G3 共享绑定移到 `ControlServerCommit c12f0498`、`OnboardCommit 29fbf65e`（提交 `69894550`），模拟器与协议不变。真装置七条从 detached 于 `69894550` 的克隆跑，证据 `identity.controlServerCommit` 记录的是 `69894550`（与 `c12f0498` 的差别只有 G3 绑定那一行）。真装置时段由调度会话放行，重负载都经 `Invoke-HeavyLocal.ps1 -Ticket cs#90`。
 
 | 重跑 | 结果 | 证据 |
 | --- | --- | --- |
@@ -61,11 +61,13 @@ journey **`JOURNEY_G3_PASS`**（12/12 场景，`FP-IS-01`／`02`／`03`／`07` P
 | --- | --- |
 | 协议 | `(AGV_FULL_PRODUCT, 3)`，`releaseVersion 2.0.0`，tag `protocol-v2.0.0` → `86575456c847041515b7b75e8851a00e0d939804` |
 | `ProtocolReleaseIdentity` 其余字段 | manifest `4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7`，schema bundle `9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221`，vectors `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a`，`APPROVED_RELEASE` |
-| 服务端产品代码 | `e0f26b37`（本票开工时的 `fp/v2-impl` 顶端，含 control-server#142 的 PR #147） |
-| G3 共享绑定提交（第 1 步） | `06b65688`，`chore(g3)`：`ControlServerCommit e0f26b37`、`OnboardCommit 9748c418`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456`；内嵌假对端身份同步到 v2.0.0；`run-demand-bearing-g3-vectors.ps1` 的 tag 判据由 `protocol-v1.0.0` 改为 `protocol-v2.0.0` |
-| 车载端 | `w2g/fp-v2-impl@9748c418`（onboard-hmi PR #111，hmi#109 合入） |
+| 服务端产品代码 | `e0f26b37`（本票开工时的 `fp/v2-impl` 顶端，含 control-server#142 的 PR #147）；`e0f26b37..d3003c2f` 在 `src/`、`tests/` 下零差异 |
+| **现行** G3 共享绑定 | `90654ade`：`ControlServerCommit d3003c2f`、`OnboardCommit 29fbf65e`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456` |
+| **现行**车载端 | `w2g/fp-v2-impl@29fbf65e`（onboard-hmi PR #114，hmi#112 合入） |
+| 第一轮 G3 共享绑定提交（第 1 步，历史） | `06b65688`，`chore(g3)`：`ControlServerCommit e0f26b37`、`OnboardCommit 9748c418`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456`；内嵌假对端身份同步到 v2.0.0；`run-demand-bearing-g3-vectors.ps1` 的 tag 判据由 `protocol-v1.0.0` 改为 `protocol-v2.0.0` |
+| 第一轮车载端（历史） | `w2g/fp-v2-impl@9748c418`（onboard-hmi PR #111，hmi#109 合入） |
 | 模拟器 | `main@fb5f7c59` |
-| 编排器 | `06b65688`（`scripts/` 以 control-server#71 之后的 L2 编排器为准，含 #141 的「在动」落库等待） |
+| 编排器 | 现行 `90654ade`，第一轮 `06b65688`（`scripts/` 以 control-server#71 之后的 L2 编排器为准，含 #141 的「在动」落库等待） |
 
 `06b65688` 相对 `e0f26b37` 只改两个 G3 脚本，`src/`、`tests/` 零差异，所以 G2 与 CI 三连绑 `06b65688` 与 G3 绑 `e0f26b37` 是同一份产品代码。
 
@@ -78,9 +80,10 @@ journey **`JOURNEY_G3_PASS`**（12/12 场景，`FP-IS-01`／`02`／`03`／`07` P
 | 端 | 命令 | 结果 |
 | --- | --- | --- |
 | 服务端 | `dotnet test .\tests\ControlServer.Tests\ControlServer.Tests.csproj -c Release`（`e0f26b37` 代码） | **1255 / 1255 通过**，0 失败 0 跳过；收尾的出站 schema 校验 1491 行、34 种消息、0 违约，`SublotRejected` 18 行被校验 |
-| 车载端 | `dotnet test .\SQCD_8005AGV.sln -c Release`（`9748c418`） | **536 / 536 通过**（`SQCD.Agv.UnitTests` 354、`SQCD.Agv.WireToGateG2Tests` 182），0 失败 0 跳过 |
+| 车载端（现行） | `dotnet test .\SQCD_8005AGV.sln -c Release`（`29fbf65e`） | **538 / 538 通过**（`SQCD.Agv.UnitTests` 354、`SQCD.Agv.WireToGateG2Tests` 184），0 失败 0 跳过；`evidence/l1/20260919-onboard-hmi-29fbf65e/` |
+| 车载端（第一轮，历史） | 同上（`9748c418`） | 536 / 536 通过（354＋182） |
 
-摘要与服务端全量的 schema 报告存在 `evidence/l1/20260919-protocol-v2.0.0-e0f26b37-9748c418/`。**车载端全量在 `9748c418` 上是全绿的，而缺陷单 A 就在这个提交上**：车载端单元测试覆盖不到恢复入口在重启后的显隐，修复票 onboard-hmi#112 要补能复现它的测试。
+摘要与服务端全量的 schema 报告存在 `evidence/l1/20260919-protocol-v2.0.0-e0f26b37-9748c418/`。**车载端全量在 `9748c418` 上是全绿的，而缺陷单 A 就在这个提交上**：当时的单元测试只看属性值、不看变更通知名，覆盖不到恢复入口在重启后的显隐。onboard-hmi#112（PR #114）补了 `RecoveryEntryNotificationViewModelTests` 和一条守卫（每个变更通知都以真实的公开属性命名），`29fbf65e` 上多出的两个测试就是它们。
 
 出站 schema 门禁（control-server#85、onboard-hmi#74）在两端各有新增覆盖：服务端全量运行末尾的 `schema-conformance/` 报告；车载端经 G2 的 `OutboundSchemaConformance` 夹具。
 
@@ -167,7 +170,7 @@ journey **`JOURNEY_G3_PASS`**（12/12 场景，`FP-IS-01`／`02`／`03`／`07` P
 
 ### 规格点名的三类场景
 
-| 能力 | 合成 L2（CI 三连） | 真装置 L2（本轮） |
+| 能力 | 合成 L2（CI 三连） | 真装置 L2（现行） |
 | --- | --- | --- |
 | ADR-cross-0058（站点期限） | `station-deadline-sublot-timeout`、`load-determinate-failure-and-door-open-timeout` | `real-onboard-load-door-closed-empty-reopens` PASS、`real-onboard-station-timeout-door-open` PASS、`real-onboard-unload-not-emptied` PASS |
 | 到站无货出口（扫码前取消） | `load-cancelled-before-sublot` | G3 `g3-load-cancellation-before-load` PASS（journey） |
@@ -175,19 +178,21 @@ journey **`JOURNEY_G3_PASS`**（12/12 场景，`FP-IS-01`／`02`／`03`／`07` P
 
 ### 真装置七条
 
-在 `repos/8005-agv-control-server` detached 于 `06b65688`，车载端 `9748c418`、模拟器 `fb5f7c59`，依次各跑一次：
+**现行（第二轮，`-002`）**：`repos/8005-agv-control-server` detached 于 `69894550`（服务端产品代码与 `e0f26b37` 相同），车载端 `29fbf65e`、模拟器 `fb5f7c59`，
+依次各跑一次，7/7 PASS；每份 `assertions.json` 的 `identity` 记录的就是这三个提交。
+**第一轮（`-001`，历史）**：detached 于 `06b65688`，车载端 `9748c418`，6 条 PASS、`compensate-then-reconnect` 红（缺陷单 A），原样保留。
 
-| 场景 | 票 | 结果 | 证据 |
-| --- | --- | --- | --- |
-| `real-onboard-load-door-closed-empty-reopens` | #86 | PASS | `evidence/l2/20260919-real-onboard-load-door-closed-empty-reopens-001/` |
-| `real-onboard-station-timeout-door-open` | #86 | PASS | `evidence/l2/20260919-real-onboard-station-timeout-door-open-001/` |
-| `real-onboard-unload-not-emptied` | #86 | PASS | `evidence/l2/20260919-real-onboard-unload-not-emptied-001/` |
-| `real-onboard-durable-ack-lost` | #88 | PASS | `evidence/l2/20260919-real-onboard-durable-ack-lost-001/` |
-| `real-onboard-compensate-then-reconnect` | #88 | 第一轮 **FAIL**（缺陷单 A）；重跑 `-002` **PASS** | `evidence/l2/20260919-real-onboard-compensate-then-reconnect-001/`；对照 `…-onboard-8f308bb1-001/` |
-| `real-onboard-restart-while-waiting-operator` | #88 | PASS | `evidence/l2/20260919-real-onboard-restart-while-waiting-operator-001/` |
-| `real-onboard-cancellation-authorization-lost` | #88 | PASS，含 `L2-CAL-10`（REQ-0357）：`至多 1 仓 / 采样错误 0 次` | `evidence/l2/20260919-real-onboard-cancellation-authorization-lost-001/` |
+| 场景 | 票 | 现行 `-002` | 证据（现行） | 第一轮 `-001` |
+| --- | --- | --- | --- | --- |
+| `real-onboard-load-door-closed-empty-reopens` | #86 | PASS | `evidence/l2/20260919-real-onboard-load-door-closed-empty-reopens-002/` | PASS |
+| `real-onboard-station-timeout-door-open` | #86 | PASS | `evidence/l2/20260919-real-onboard-station-timeout-door-open-002/` | PASS |
+| `real-onboard-unload-not-emptied` | #86 | PASS | `evidence/l2/20260919-real-onboard-unload-not-emptied-002/` | PASS |
+| `real-onboard-durable-ack-lost` | #88 | PASS | `evidence/l2/20260919-real-onboard-durable-ack-lost-002/` | PASS |
+| `real-onboard-compensate-then-reconnect` | #88 | PASS（`L2-CR-00`～`08`） | `evidence/l2/20260919-real-onboard-compensate-then-reconnect-002/` | **FAIL**（缺陷单 A）；对照 `…-onboard-8f308bb1-001/` |
+| `real-onboard-restart-while-waiting-operator` | #88 | PASS | `evidence/l2/20260919-real-onboard-restart-while-waiting-operator-002/` | PASS |
+| `real-onboard-cancellation-authorization-lost` | #88 | PASS，含 `L2-CAL-10`（REQ-0357）：`至多 1 仓 / 采样错误 0 次` | `evidence/l2/20260919-real-onboard-cancellation-authorization-lost-002/` | PASS |
 
-`L2-CAL-10` 的红绿对照已在 PR #134 取得（车载端 `8153946b` 上两仓同开），本轮在发布身份上再跑一次，绿。
+`L2-CAL-10` 的红绿对照已在 PR #134 取得（车载端 `8153946b` 上两仓同开）；现行这一次（`-002`，车载端 `29fbf65e`）在发布身份上再跑一次，绿，第一轮 `-001` 也绿。
 手动跑的真装置场景 `identity.batchId` 是编排器默认值 `batch-2`，只是标签，判定不看它。
 
 ## 三、门禁
@@ -200,30 +205,41 @@ journey **`JOURNEY_G3_PASS`**（12/12 场景，`FP-IS-01`／`02`／`03`／`07` P
 
 ### `ONBOARD_HMI_G2`
 
-车载端仓 `evidence/g2/20260918-protocol-v2.0.0-9748c418/`（分支 `w2g/b5-36-g2-evidence`，小 PR 进 `w2g/fp-v2-impl`）：十片全 `PASS`，build／test／format 退出码全 0，
-身份同上。九片出站校验零违约，共 2595 行；**`FP-IS-04` 的 `schemaConformance` 为 `null`**：它选中的 7 个测试都是执行器单元测试、不发协议报文，
+**现行**：车载端仓 `evidence/g2/20260919-protocol-v2.0.0-29fbf65e/`（分支 `w2g/b5-36-g2-evidence`，小 PR trytoreachpeak0/8005-agv-onboard-hmi#113 进 `w2g/fp-v2-impl`）：
+`29fbf65e`（onboard-hmi#112 修复后）上十片全 `PASS`，build／test／format 退出码全 0，身份同上。九片出站校验零违约，共 2595 行（`FP-IS-00` 324、`FP-IS-07` 810，其余与第一轮相同）；
+**第一轮**（历史）：`evidence/g2/20260918-protocol-v2.0.0-9748c418/`，十片同样全 `PASS`（`FP-IS-00` 322、`FP-IS-07` 812），但那个提交带着缺陷 A，修复改了产品代码，所以重出。**`FP-IS-04` 的 `schemaConformance` 为 `null`**：它选中的 7 个测试都是执行器单元测试、不发协议报文，
 `run-w2g-g2.ps1` 对这种片按约定写 `null`（选中了 G2 测试却没产出覆盖文件才判失败）。唯一「消失」的测试名是 onboard-hmi#69 的有意改名。
 
 ### G3
 
-绑定见「身份」一节。runner 从 `repos/8005-agv-control-server`（`06b65688`，干净）启动，`harnessWorktreeCleanAtStart: true`。
+**现行（第三轮）**：绑定提交 `90654ade`，`ControlServerCommit d3003c2f`、`OnboardCommit 29fbf65e`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456`。
+runner 从 `repos/8005-agv-control-server`（detached 于 `90654ade`，干净）启动，`runnerWorktreeCleanAtStart: true`。四个全绿：
 
-| runner | 结果 | 片 | 证据 |
+| runner | 结果 | 片 | 证据（现行） |
 | --- | --- | --- | --- |
-| `run-staged-g3.ps1` | **`STAGED_SLICE_FAIL`** | `FP-IS-00`、`06`、`14`、`15` PASS；**`FP-IS-07` FAIL**（缺陷单 B） | `evidence/g3/20260918-protocol-v2.0.0-staged-06b65688/` |
-| `run-staged-g3-restart.ps1` | `STAGED_G3_PROCESS_RESTART_PASS` | | `evidence/g3/20260918-protocol-v2.0.0-restart-06b65688/` |
-| `run-demand-bearing-g3-vectors.ps1`（`-FieldRunRoot …fullloop-20260829T131549Z`） | `DEMAND_BEARING_G3_VECTORS_PASS` | | `evidence/g3/20260918-protocol-v2.0.0-demand-bearing-06b65688/` |
-| `run-journey-g3.ps1` | **`JOURNEY_G3_SLICE_FAIL`** | `FP-IS-01`、`02`、`03` PASS；**`FP-IS-07` FAIL**（缺陷单 A） | `evidence/g3/20260918-protocol-v2.0.0-journey-06b65688/` |
+| `run-staged-g3.ps1` | `STAGED_G3_RECOVERY_REPLAY_PASS` | `FP-IS-00`、`06`、`07`、`14`、`15` PASS | `evidence/g3/20260919-protocol-v2.0.0-staged-d3003c2f/` |
+| `run-staged-g3-restart.ps1` | `STAGED_G3_PROCESS_RESTART_PASS` | `FP-IS-00`、`06`、`14`、`15` PASS | `evidence/g3/20260919-protocol-v2.0.0-restart-d3003c2f/` |
+| `run-demand-bearing-g3-vectors.ps1`（`-FieldRunRoot …fullloop-20260829T131549Z`） | `DEMAND_BEARING_G3_VECTORS_PASS` | `FP-IS-04`、`05`、`06` PASS | `evidence/g3/20260919-protocol-v2.0.0-demand-bearing-d3003c2f/` |
+| `run-journey-g3.ps1` | `JOURNEY_G3_PASS`，12/12 场景 | `FP-IS-01`、`02`、`03`、`07` PASS | `evidence/g3/20260919-protocol-v2.0.0-journey-d3003c2f/` |
+
+十片的 G3 面由这四份合起来覆盖：`00`、`06`、`14`、`15`（staged、restart），`04`、`05`（需求承载），`01`、`02`、`03`、`07`（journey）。
 
 - `FP-IS-02` 的 journey 面包含 control-server#87 的两条新场景 `g3-load-cancellation-before-load`、`g3-sublot-rejected`，都 PASS。
 - G3 归属按 control-server#60 复核后的 `g3-slice-evidence.ps1`（头注释记录了结论）。
-- `FP-IS-03` 的 `g3-predeparture-check-expires` 本轮 PASS（control-server#138 修正判据后）。
-- `g3-forced-mechanical-recovery`（`G3-07-44`，control-server#137 合入后欠的真装置复跑）本轮没走到判据：它和另外三条恢复场景一起卡在缺陷单 A。
+- `FP-IS-03` 的 `g3-predeparture-check-expires` PASS（control-server#138 修正判据后）。
+- `g3-forced-mechanical-recovery`（`G3-07-44`，control-server#137 合入后欠的真装置复跑）现行这一轮走完：`G3-07-41`～`45` 全 PASS，`G3-07-44` 实测车辆 `RecoveryRequired`，等硬件恢复记录。
 - 需求承载 G3 用的是单需求 fullloop 库，只核对、不含整库生产数据（control-server#43 结论）。
+
+**历史（原样保留）：**
+
+| 轮 | 绑定 | 结果 | 证据 |
+| --- | --- | --- | --- |
+| 第一轮（2026-09-18） | `06b65688`：cs `e0f26b37`、onboard `9748c418` | staged `STAGED_SLICE_FAIL`（`FP-IS-07`，缺陷单 B）；journey `JOURNEY_G3_SLICE_FAIL`（`FP-IS-07` 四条恢复场景没有入口，缺陷单 A）；restart、需求承载 PASS | `evidence/g3/20260918-protocol-v2.0.0-*-06b65688/` |
+| 第二轮（2026-09-19） | `69894550`：cs `c12f0498`、onboard `29fbf65e` | staged、restart、需求承载 PASS；journey `JOURNEY_G3_SLICE_FAIL`（`g3-forced-mechanical-recovery` 中止，缺陷单 C） | `evidence/g3/20260919-protocol-v2.0.0-*-c12f0498/` |
 
 ## 四、红证据与缺陷单
 
-两轮的红全部保留，没有被绿覆盖；每处红都先读证据再定性，没有「重跑一次看看」：
+三轮里的红全部保留，没有被绿覆盖；每处红都先读证据再定性，没有「重跑一次看看」：
 
 | 单 | 红在哪里 | 性质 | 修复去向 |
 | --- | --- | --- | --- |
@@ -240,7 +256,7 @@ journey **`JOURNEY_G3_PASS`**（12/12 场景，`FP-IS-01`／`02`／`03`／`07` P
 B 随这一整轮 G3 重跑。服务端 G2、服务端全量 L1 与 CI 三连沿用，理由同「重跑」一节。
 C 修复合入后：G3 共享绑定的 `ControlServerCommit` 移到 `d3003c2f`，四个 G3 runner 从头重跑，全绿；其余证据不经过那个场景文件，保留。
 
-这两处与 control-server#90 评论里调度会话留档的那一类（「读到的事实比它被采信的时刻旧」，D-1 与 `20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md`）
+这三处与 control-server#90 评论里调度会话留档的那一类（「读到的事实比它被采信的时刻旧」，D-1 与 `20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md`）
 不是同一类：本轮 `session-established-while-moving` 三连全绿，没有再现。那一类在这套代码里出现过两次，仍值得在后续引擎改动里当作固定检查项。
 
 ## 五、必须如实写明的各点
