@@ -235,6 +235,22 @@ $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
 Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那些轮**——所以这是唯一一个「运行时又
 有机会了」的可观测量。少了它，「这台车不再受理任何新需求」就只能写成 sleep。
 
+**车载端报了一个事实、接下来要看服务端据它拒绝别的东西时，先等服务端把这个事实落库。**
+`PUT /control/v1/safety` 在合成车载端把 `SafetyStateChanged` **发出去**时就返回了，服务端未必已经处理。
+紧接着改假 RIoT，就是在和服务端的传输层赛跑：control-server#141 里 CI 四路并跑时服务端处理「在动」
+用了 183 ms，运行时在这段空当里采信了到站，`L2-MV-08` 红。所以报安全状态用 `Set-L2OnboardSafety`，
+它等到 `SessionRecoveries.SafetyRevision` 到了刚发的版本才返回——服务端在存信封的同一个事务里推进这个
+revision，`DurableAck` 在事务提交之后才发，到站判定读的也正是这一行：
+
+```powershell
+$null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Context.AgvId `
+    -Safety @{ vehicleStopped = $false } -Journal $journal
+# 现在再让 RIoT 摆出到站，服务端一定已经知道车在动
+```
+
+这个窗口不靠数红绿证明关上了，靠 `Test-L2SafetyDurableWait.ps1`：它在每次安全报告期间拿住服务端库的
+写锁（服务端因此迟迟落不了库），原写法（报完不等）每次都红，新写法在同样的延迟下全绿。
+
 **不走捷径断言。**状态只从服务端自己的 SQLite 库、各替身的 `/control/v1/snapshot` 和模拟器的
 `/api/v1/snapshot` 读——运维在现场看的就是这几处。绕过被测方摆出终态，测的就只是脚本自己。
 
