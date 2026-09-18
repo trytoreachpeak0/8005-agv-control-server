@@ -323,6 +323,17 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
   七个各因一种原因失败的例子，并在模块内替换掉两处读库，核对不传与传 `-Description` 时证据行的判据文本（几秒钟，不起装置）。
 - `Get-L2StructuralDispatchBlock -Connection -DemandId [-IncludeCleared]`、`Get-L2JourneyBacklogRow -Connection -DemandId`
   —— 读某需求在 `StructuralDispatchBlocks` 的当前行（默认只要未清除的）与 `JourneyBacklog` 的那一行。
+- `L2SessionContinuity.psm1` 的 `Test-L2SessionKeptThroughDeparture` —— `g3-predeparture-check-expires` 的
+  `G3-03-06`（拒收过期检查不断会话）的判定本体，纯函数、不碰库（control-server#138）。这条判据在车出发之后读会话，而
+  **出发本身就会让会话按设计离开 Ready**：关卡单一建，服务端给车载端的车辆停稳投影就报 `UNKNOWN`
+  （`RIOT_NONFINAL_ORDER_PRESENT`）或 `MOVING`，车载端报 `VEHICLE_NOT_READY` / `ACTION_NOT_ALLOWED_IN_STATE`，会话停在
+  `RecoveryRequired / DEPARTURE_SAFETY_NOT_READY`，直到车停稳（`docs/RELEASE-CANDIDATE.md` 第 8 节，现场证据
+  `evidence/g3/20260830-issue14-field-closed-loop`）。车载端大约每秒轮询一次投影，原来「读到 Ready 才算过」的判据跟它赛跑，
+  control-server#128 的 journey 自检里红过一次。现在先要求拒收可能弄坏的两件事都没发生：代次不变；拒收之后车在最后一份安全状态为安全时出发
+  （旅程引擎只在 Ready 会话上推进）。在此之上，结束时 Ready 走 `Ready` 路径；不是 Ready 时只有五条同时成立才走
+  「出发解释的降级」路径：原因码是 `DEPARTURE_SAFETY_NOT_READY`、有安全原因码、不含 `SLOT_STATE_UNKNOWN`、全部是车辆运动原因、
+  带这些原因的那版安全状态晚于建单收到，且关卡单在 RIoT 里未结束。证据行的实际值写明走的是哪条路径。
+  `scripts/l2/Test-L2SessionContinuity.ps1` 用红那次的真实数据（必须走降级路径通过）和十四个各因一种原因失败的反例自检，一秒，不起装置。
 
 `Onboard` 在两套装置下**是两个不同的东西**：合成装置下是假车载端控制面的 `L2Double`，真装置下
 是 UIA 驱动（`CanSubmit()` / `SetSublot()` / `SubmitReady()` / `Submit()`）。`Simulator` 只在真装置
