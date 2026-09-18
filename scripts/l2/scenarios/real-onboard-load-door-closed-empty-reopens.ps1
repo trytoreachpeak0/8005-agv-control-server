@@ -222,4 +222,33 @@ $assertions.Add(
     "$noFailure / 装货非 Failed、RecoveryRequired、Committed / 完成记录 0",
     "$footprint / 装货 $($operation.Status) / 完成记录 $completions")
 
+# 「车辆释放」的行为面：同一台车能接下一单。上一条读的是两处释放标记，这一条看它们的后果——车辆占用的唯一索引
+# 只允许一台车同时占着一张单，占用没释放，下一单就派不出去。不用 Wait-L2Condition：派不出去时它会抛超时，
+# 而这里要把「派不出去」和积压表里的原因一起记成一条判据。
+$next = [pscustomobject]@{ Wire = [guid]::NewGuid().ToString('N') }
+$next | Add-Member -NotePropertyName Id -NotePropertyValue ([guid]::ParseExact($next.Wire, 'N').ToString('D'))
+$journal.Note("Publishing the next demand $($next.Wire) to see whether the vehicle takes it.")
+$null = $Context.MesIngest.Command('Put', "demands/$($next.Wire)", @{
+    sublot      = "$sublot-NEXT"
+    area        = 'N1-3'
+    eqp         = 'EQP-L2-01'
+    package     = 'L2-PACKAGE'
+    maxBoxCount = 4
+})
+$nextDeadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
+$nextRuntime = $null
+while ([DateTimeOffset]::UtcNow -lt $nextDeadline) {
+    $nextRuntime = Get-L2Runtime -Connection $connection -DemandId $next.Id
+    $journal.Observe('next-demand-dispatched', $(if ($nextRuntime) { [string]$nextRuntime.Stage } else { $null }), $null)
+    if ($nextRuntime) { break }
+    Start-Sleep -Milliseconds 500
+}
+$backlog = @(Invoke-L2Query -Connection $connection -Sql "SELECT * FROM JourneyBacklog WHERE DemandId = '$($next.Id)'")
+$backlogText = if ($backlog.Count -ge 1) { ($backlog[0].PSObject.Properties | Where-Object { $_.Name -match 'Status|Reason' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ' ' } else { '(no backlog row)' }
+$assertions.Add(
+    'L2-DC-12', '取消收尾之后，同一台车在 60 秒内接了下一单（车辆真的被释放了）',
+    ($null -ne $nextRuntime -and [string]$nextRuntime.AgvId -eq [string]$Context.AgvId),
+    "下一单派给 $($Context.AgvId)",
+    $(if ($nextRuntime) { "下一单 $($nextRuntime.Stage) on $($nextRuntime.AgvId)" } else { "60 s 内没有派出 / 积压：$backlogText" }))
+
 $journal.Note('Scenario finished.')
