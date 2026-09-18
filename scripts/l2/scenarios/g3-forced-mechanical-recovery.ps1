@@ -110,6 +110,9 @@ $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WH
 # terminated, journey completed, recovery session closed -- and only that. The vehicle stays out of Ready
 # until a HardwareRecoveryRecord for this workflow; before #137 this asserted the dead end the ticket removed
 # (workflow RecoveryRequired, journey Blocked/FORCED_MECHANICAL_RECOVERY_REQUIRES_FRESH_RECONCILIATION).
+# Reading Readiness here does not race the record: the onboard never submits it by itself -- an administrator
+# presses for it, and the entry appears only after the result's DurableAck (onboard-hmi#107) -- and this
+# scenario presses nothing after the forced recovery.
 $assertions.Add(
     'G3-07-44',
     '强制恢复只结算货物业务：工作流 Reconciled，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话 CLOSED，没有去关卡；车辆会话仍 RecoveryRequired，等硬件恢复记录（REQ-0242 / forbidden ready-before-reconciliation、unknown-as-success）',
@@ -129,4 +132,4 @@ $assertions.Add(
     "开锁 0 / $expectedPhysical / RIoT 单 1",
     "开锁 $($unlocksAfterRequest.Count) / $physical / RIoT 单 $orders")
 
-$journal.Note('FP-IS-07: a forced mechanical recovery was accepted under a new generation, reported without claiming any proof, and left the vehicle to be reconciled.')
+$journal.Note('FP-IS-07: a forced mechanical recovery was accepted under a new generation, reported without claiming any proof, settled the cargo as a named handoff and closed the session, and left the vehicle RecoveryRequired until an administrator submits a HardwareRecoveryRecord.')

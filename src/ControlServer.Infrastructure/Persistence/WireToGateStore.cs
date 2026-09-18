@@ -300,7 +300,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // yet what the result pinned false is still unproven: empty slots, safe doors, a recovered vehicle.
         // The affected slots are physically unknown, and with no per-slot operability in v2 (REQ-0230 is
         // deferred with FP-C12) the whole vehicle is held. What lifts it is a HardwareRecoveryRecord taken
-        // against that forced workflow, and only together with every other judgement here: a record is an
+        // against that forced workflow -- only accepted once its result is on file (OnboardRecoveryCoordinator
+        // .RecordHardwareRecoveryAsync) -- and only together with every other judgement here: a record is an
         // audit fact, not a substitute for live signals, and it resumes nothing. A workflow a later forced
         // generation made history of is covered by the later one.
         bool forcedRecoveryAwaitsHardwareRecord = await dbContext.RecoveryWorkflows

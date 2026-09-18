@@ -23,6 +23,7 @@ public sealed class SessionReadinessReasonCodesTests
         "PENDING_FACT_RECONCILIATION_REQUIRED",
         "DEPARTURE_SAFETY_NOT_READY",
         "OPERATION_RECOVERY_REQUIRED",
+        "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED",
         "RECOVERY_REQUIRED"
     ];
 

@@ -784,6 +784,10 @@ public sealed class RecoveryStateMachineG2Tests
             using (JsonDocument command = JsonDocument.Parse(forcedCommand.PayloadJson))
                 Assert.Equal(1, command.RootElement.GetProperty("payload")
                     .GetProperty("forcedRecoveryGeneration").GetInt64());
+            DemandExecutionStatus demandBefore = (await context.AcceptedDemands.AsNoTracking().SingleAsync(
+                TestContext.Current.CancellationToken)).Status;
+            StationOperationStatus operationBefore = (await context.StationOperations.AsNoTracking().SingleAsync(
+                TestContext.Current.CancellationToken)).Status;
 
             string lateAck = await processor.ProcessAsync(
                 Envelope(
@@ -792,6 +796,12 @@ public sealed class RecoveryStateMachineG2Tests
                     OperationResultPayload()),
                 state,
                 TestContext.Current.CancellationToken);
+            // The fenced generation's late result is evidence only: it moves neither the demand nor the
+            // operation, even though it reports a completed load.
+            Assert.Equal(demandBefore, (await context.AcceptedDemands.AsNoTracking().SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+            Assert.Equal(operationBefore, (await context.StationOperations.AsNoTracking().SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
             string result = Envelope(
                 "80000000-0000-4000-8000-000000000001",
                 "ForcedMechanicalRecoveryResult",
@@ -952,6 +962,180 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal("SessionReadiness", MessageType(lines[1]));
             Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
             Assert.Equal(JourneyRuntimeStage.Completed, (await context.JourneyRuntimes.SingleAsync(token)).Stage);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A hardware record attests to what was found after the forced recovery, so it can only follow the
+    /// forced result. Taken while the forced command is still pending, it would attest to nothing -- the doors
+    /// had not yet been forced -- and yet, once the result arrived, it lifted the hardware hold at the vehicle's
+    /// next report, with no hardware confirmation after the forcing at all. It is refused and lifts nothing;
+    /// the same record taken after the result is accepted and lifts the hold.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AHardwareRecoveryRecordTakenBeforeTheForcedResultIsRefusedAndLiftsNothing()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_EARLY_RECORD";
+        const string proof = "forced-early-record-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+
+            string early = await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000000011", slots: RecoverySlots), state, token);
+
+            Assert.Equal("REJECTED", FirstPayload(early).GetProperty("outcome").GetString());
+            Assert.Empty(await context.HardwareRecoveryRecords.ToArrayAsync(token));
+
+            await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, token);
+            await store.ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000000138", forcedRecoveryGeneration: 1,
+                null, "NONE", [], [], [], token);
+            Assert.Equal("FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED",
+                (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+
+            string recorded = await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000000012", slots: RecoverySlots), state, token);
+
+            Assert.Equal("RECORDED", FirstPayload(recorded).GetProperty("outcome").GetString());
+            Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A forced recovery that the vehicle reports as FAILED settles nothing, but it did force the doors all the
+    /// same: its result is on file, so a hardware record against it is accepted. Requiring the result before
+    /// the record must not turn into requiring a successful result.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AHardwareRecoveryRecordIsAcceptedAgainstAForcedRecoveryThatFailed()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_FAILED_RECORD";
+        const string proof = "forced-failed-record-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1, outcome: "FAILED"), state, token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows.SingleAsync(token)).State);
+
+            string recorded = await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000000021", slots: RecoverySlots), state, token);
+
+            Assert.Equal("RECORDED", FirstPayload(recorded).GetProperty("outcome").GetString());
+            Assert.Single(await context.HardwareRecoveryRecords.ToArrayAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A hardware record is about one vehicle's hardware. One sent over another vehicle's connection names a
+    /// workflow that is not that vehicle's, and is refused.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AHardwareRecoveryRecordForAnotherVehiclesForcedRecoveryIsRefused()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_OTHER_AGV";
+        const string proof = "forced-other-agv-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, token);
+            // The forced workflow belongs to a different vehicle than the one now submitting the record.
+            (await context.RecoveryWorkflows.SingleAsync(token)).AgvId = "AGV-8005-99";
+            await context.SaveChangesAsync(token);
+
+            string refused = await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000000031", slots: RecoverySlots), state, token);
+
+            Assert.Equal("REJECTED", FirstPayload(refused).GetProperty("outcome").GetString());
+            Assert.Empty(await context.HardwareRecoveryRecords.ToArrayAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// A forced workflow that a later forced generation made history of is covered by that later one, and its
+    /// own missing hardware record no longer holds the vehicle.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AForcedRecoveryMadeHistoricalNoLongerHoldsTheVehicleForItsHardwareRecord()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_HISTORICAL";
+        const string proof = "forced-historical-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, token);
+            await store.ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000000139", forcedRecoveryGeneration: 1,
+                null, "NONE", [], [], [], token);
+            Assert.Equal("FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED",
+                (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+            // The state a superseding forced generation leaves an earlier workflow in.
+            (await context.RecoveryWorkflows.SingleAsync(token)).State = RecoveryWorkflowState.HistoricalOnly;
+            await context.SaveChangesAsync(token);
+
+            Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
         }
         finally
         {
@@ -2520,8 +2704,7 @@ public sealed class RecoveryStateMachineG2Tests
         });
 
     /// <summary>
-    /// The vehicle's report of a forced mechanical recovery of the seeded session and action: isolated by
-    /// hand, and -- as the schema pins them -- neither electronic emptiness nor vehicle readiness claimed.
+    /// The state of the newest ExceptionRecoverySessionSnapshot this server queued.
     /// </summary>
     private static async Task<string?> LatestSessionSnapshotStateAsync(ControlServerDbContext context)
     {
@@ -2540,7 +2723,15 @@ public sealed class RecoveryStateMachineG2Tests
         return snapshots.MaxBy(snapshot => snapshot.Revision).State;
     }
 
-    private static string MechanicallyIsolatedResult(long generation, string messageId = "80000000-0000-4000-8000-000000000001") =>
+    /// <summary>
+    /// The vehicle's report of a forced mechanical recovery of the seeded session and action: isolated by
+    /// hand (or, with <paramref name="outcome"/>, not), and -- as the schema pins them -- neither electronic
+    /// emptiness nor vehicle readiness claimed.
+    /// </summary>
+    private static string MechanicallyIsolatedResult(
+        long generation,
+        string messageId = "80000000-0000-4000-8000-000000000001",
+        string outcome = "MECHANICALLY_ISOLATED") =>
         Envelope(
             messageId,
             "ForcedMechanicalRecoveryResult",
@@ -2549,7 +2740,7 @@ public sealed class RecoveryStateMachineG2Tests
                 exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
                 recoveryActionId = ActionId,
                 forcedRecoveryGeneration = generation,
-                outcome = "MECHANICALLY_ISOLATED",
+                outcome,
                 slots = RecoverySlots,
                 @operator = Operator(),
                 observedAt = Now.AddSeconds(2),
