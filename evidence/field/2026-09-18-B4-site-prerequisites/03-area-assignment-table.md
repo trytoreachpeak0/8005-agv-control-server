@@ -13,8 +13,14 @@ T 开头区域号（装片区）的归属与开门侧还定不下来，**没有�
 ## 表
 
 文件：[`area-assignments/area-assignments-N-revised.csv`](area-assignments/area-assignments-N-revised.csv)，
-SHA-256 `a9f1a0e18a938049f01c28627fa7a2327c60be1a0c0f5d3a4534ab8d2e5c0c4e`。无 BOM 的 UTF-8（纯 ASCII），LF 换行，
-表头 `area,dispatch_zone,slot_position`。
+无 BOM、纯 ASCII，表头 `area,dispatch_zone,slot_position`。这份表有两个字节形态，逐行内容完全相同，只差换行符：
+
+| 形态 | 换行 | 字节数 | SHA-256 |
+| --- | --- | --- | --- |
+| 用户交付、dry-run 实际读取、用户批准的原件 | CRLF | 3765 | `a9f1a0e18a938049f01c28627fa7a2327c60be1a0c0f5d3a4534ab8d2e5c0c4e` |
+| 提交进仓库的版本（仓库 `.gitattributes` 为 `text=auto eol=lf`，提交时统一成 LF） | LF | 3547 | `63b714684fbe28af943aec6bd7ef7b58619e280906d07e6ddb9d0cc54042be9f` |
+
+导入工具对两种换行一视同仁：CRLF 原件 dry-run 为 217 行、0 个错误，说明行尾的 `\r` 没有被当成开门侧取值的一部分。LF 版本没有单独再跑 dry-run。
 
 | 项 | 值 |
 | --- | --- |
@@ -47,7 +53,7 @@ SHA-256 `a9f1a0e18a938049f01c28627fa7a2327c60be1a0c0f5d3a4534ab8d2e5c0c4e`。无
 | --- | --- |
 | 批准人 | Zhengyu Shao（用户本人） |
 | 日期 | 2026-09-18 |
-| 批准对象 | 上面这份修订版 CSV（SHA-256 见上），在 dry-run 通过后于执行会话中批准 |
+| 批准对象 | 上面这份修订版 CSV 的内容（CRLF 原件 SHA-256 `a9f1a0e1…`），在 dry-run 通过后于执行会话中批准 |
 
 `dispatch_zone` 全部填 `WIRE`、N 区范围取地图 26 全部 N 区域号，都是用户 2026-09-18 在执行会话中定的；开门侧由用户逐个填写。
 
