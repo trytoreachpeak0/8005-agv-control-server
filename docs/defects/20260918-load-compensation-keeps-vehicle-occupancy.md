@@ -1,6 +1,6 @@
 # 缺陷：补偿清空收尾之后车辆占用不释放，同一台车派不出下一单（control-server#131 的补偿路径复现）
 
-Status: open，修复在 [control-server#131](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/131)（修复 PR #133）
+Status: fixed，已由 [control-server#131](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/131) 修复（PR [#133](https://github.com/trytoreachpeak0/8005-agv-control-server/pull/133)，合并提交 `c75ca69e`），复验 PASS（见文末「复验」）
 Owner repository: `8005-agv-control-server`（`OnboardRecoveryCoordinator.ApplyCurrentResultAsync`）
 Found by: control-server#88 的真装置 L2 `real-onboard-compensate-then-reconnect`，
 `C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs88-l2\compensate-then-reconnect-004\SUMMARY.md`（控制端本机，不入库）
@@ -66,3 +66,21 @@ L2-CAL-09 FAIL | VehicleOccupancyReleasedAt 为空（30 s 内）
 
 原因见 #131：`OnboardRecoveryCoordinator.ApplyCurrentResultAsync` 对在途取消、补偿清空、故障货物交接三种结果的手写终结不释放车辆占用。
 场景判据不改，产品代码不在本票修。#131 合入后重跑这两条场景，`L2-CR-07` 与 `L2-CAL-09` 应转绿。
+
+## 复验
+
+#131 由 PR #133 合入 `fp/v2-impl`（`c75ca69e`）。本票分支 merge 主线（`56f169e3`）之后，在 v2 专用工作区的真装置上重跑，
+两个判据都转绿，场景的其余判据照旧通过。车载端 `w2g/fp-v2-impl@b65969ba`（含 onboard-hmi#106），模拟器 `main@fb5f7c59`，
+协议 `protocol-v2.0.0@86575456`。证据在 `C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs88-l2\`（控制端本机，不入库）：
+
+| 场景 | 服务端提交 | 结论 | 证据 |
+| --- | --- | --- | --- |
+| `real-onboard-compensate-then-reconnect` | `35763ddb` | **PASS 9/9**，`L2-CR-07` 转绿：下一单 `SublotSubmitted` 1 条 | `compensate-then-reconnect-after131-001` |
+| `real-onboard-cancellation-authorization-lost` | `35763ddb` | FAIL 8/11，与本缺陷无关（见下） | `cancellation-authorization-lost-after131-001`（加 `-001-stage`） |
+| `real-onboard-cancellation-authorization-lost` | `99fc792f` | **PASS 11/11**，`L2-CAL-09` 转绿：`VehicleOccupancyReleasedAt` 有值 | `cancellation-authorization-lost-after131-002` |
+
+取消场景在复验前按 program#111 改成了两仓（第一仓装好锁上、第二仓开着时按取消），并加了 `L2-CAL-10`（一次只开一扇）。
+改完后的第一次运行 `-001` 红在取消结果 `UNKNOWN` 上：第 1 仓 `reasonCodes` 为 `ACTION_NOT_ALLOWED_IN_STATE`，即清空执行器的
+`TimeoutException`。原因在场景驱动：车载端给第 1 仓开锁后 0.55 s 场景就取货关门，车载端等不到稳定的开锁反馈，3 s 的
+`UnlockFeedbackTimeout` 到期（进度报文 `UNLOCKING [1]` 之后直接 `PAUSED`，没有 `WAITING_OPERATOR`）。`99fc792f` 改为等车载端
+对第 1 仓报 `WAITING_OPERATOR` 再取货关门，`-002` 全绿。
