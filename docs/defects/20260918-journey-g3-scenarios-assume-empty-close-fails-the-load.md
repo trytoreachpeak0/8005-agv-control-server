@@ -1,6 +1,6 @@
 # 缺陷：六条老 journey G3 场景仍按「空关仓门就判装货失败」写，批次 5 车载端改成空关即重开之后走不通
 
-Status: open（场景侧）；其中一条同时挂着车载端未完成的一项（onboard-hmi#78 第 5 项）
+Status: open（场景侧，交 control-server#128）；其中一条同时挂着车载端未完成的一项（onboard-hmi#78 第 5 项）
 Owner repository: `8005-agv-control-server`（`scripts/l2/scenarios/G3RecoveryCommon.ps1`、`scripts/l2/scenarios/g3-load-cancellation.ps1`）；车载端那一半在 `8005-agv-onboard-hmi`
 Found by: control-server#87 的 `run-journey-g3.ps1` 自检（2026-09-18 07:02–07:39Z，控制端 `68f9a1ad`、车载端 `19e8f205`、模拟器 `fb5f7c59`、协议 `protocol-v2.0.0`／`86575456`）。证据是自检证据，按票面写在会话临时目录、不入 `evidence/`：`selfcheck/journey-001/`（整轮）与 `l2/lc-rerun-001/`（`g3-load-cancellation` 空闲时单独重跑）
 Product at discovery: control-server `fp/v2-impl@bc5c8e78`＋本票分支；onboard-hmi `w2g/fp-v2-impl@19e8f205`
@@ -40,6 +40,8 @@ Timed out after 240s waiting for: the onboard reported the load result and the s
 
 ## 怎么收口
 
-1. 恢复类五条：另开票改写 `G3RecoveryCommon.ps1` 的前置，不再依赖车载端报确定失败。要在 control-server#90 按新归属出 G3 证据之前完成，否则 `FP-IS-03`、`FP-IS-07` 的 journey 面整片是红的。
-2. `g3-load-cancellation`：等 onboard-hmi#78 合入后在新的车载端提交上复跑；复跑仍红再按车载端缺陷单独开单。
+已开票 control-server#128（批次5-37）承接下面两项；它被 control-server#87 与 onboard-hmi#78 阻塞，同时阻塞 control-server#90。
+
+1. 恢复类五条：由 control-server#128 改写 `G3RecoveryCommon.ps1` 的前置，不再依赖车载端报确定失败。要在 control-server#90 按新归属出 G3 证据之前完成，否则 `FP-IS-03`、`FP-IS-07` 的 journey 面整片是红的。
+2. `g3-load-cancellation`：由 control-server#128 在 onboard-hmi#78 合入后、在新的车载端提交上复跑；复跑仍红再按车载端缺陷单独开单。
 3. 本票（control-server#87）按冲突边界不改既有 `g3-*` 场景，只记录。
