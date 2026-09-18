@@ -23,6 +23,10 @@
   MVP 线参照 `origin/ControlServer_MVP:scripts/l2/scenarios/real-onboard-load-door-closed-empty.ps1`，判据按
   program#55 改写，没有整份拷贝。
 
+「车辆释放」判两层：租约与车辆占用两处释放标记（`L2-DC-10`），以及它们的后果——同一台车能接下一单（`L2-DC-12`）。
+2026-09-18 本条在这两处是红的：在途取消终结后车辆占用不释放，见
+`docs/defects/20260918-in-flight-load-cancellation-keeps-vehicle-occupancy.md`（control-server#131）。
+
 模拟器没有开锁脉冲计数器，开锁输出是 500 ms 的脉冲、轮询数不准。它能如实说的是门：自动化接口只能关门不能开门，
 门只在开锁输出触发时弹开。所以「关上之后门又回到 OPEN」就是脉冲到了 IO，车载端发来的 `UNLOCKING` 条数说明
 脉冲是车发的（见 `L2RealStation.psm1` 的 `Invoke-L2CloseOverOppositeState`）。
