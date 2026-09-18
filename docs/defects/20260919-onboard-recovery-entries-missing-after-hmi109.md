@@ -85,7 +85,12 @@ PR #114 的新测试 `RecoveryEntryNotificationViewModelTests.AfterARestartSettl
 同时断言属性值与以属性名发出的 `PropertyChanged`：在 `9748c418` 上红（`Not found: "CanRequestWireToGateRecovery"`，收集到的通知名是
 `["SetRecoveryEntry", "HasRecoveryReasonInput", ...]`），在 `8f308bb1` 与修复提交上绿。只断言值抓不到这个缺陷：`9748c418` 上四个值断言都过。
 
-本单状态在 PR #114 合入、control-server#90 在修复后的车载端提交上重跑真装置七条与四个 G3 runner 全绿后改为 fixed。
+**对照那一次的 `Last observed: (nothing)` 也有了解释**（见上文「红绿对照」一节末的引用块）：不是新旧版本混搭的问题，是服务端 L2 脚本的缺陷。
+`scripts/l2/L2RealOnboard.psm1` 的 `Get-L2RealInbound` 在只有一条回应时，`$answers` 是单个对象而不是数组，读 `$answers.Count` 抛异常，
+场景的等待条件因此一直观察不到「服务端收到补偿结果」。由 onboard-hmi#112 的会话发现，修复票 [control-server#154](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/154)。
+所以 `real-onboard-compensate-then-reconnect` 要在 PR #114 与 control-server#154 都合入后才能转绿；本票的重跑以两者都合入为前置。
+
+本单状态在 PR #114 与 control-server#154 合入、control-server#90 在修复后的车载端提交上重跑真装置七条与四个 G3 runner 全绿后改为 fixed。
 
 ## 为什么合入前没发现
 
