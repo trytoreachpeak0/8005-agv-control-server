@@ -1,6 +1,6 @@
 # 缺陷：staged G3 的三条强制机械取出判据仍断言 control-server#137 之前的「断头」行为
 
-Status: open（G3 装置判据，不是产品缺陷；修复票待调度会话开）
+Status: open（G3 装置判据，不是产品缺陷），修复票 [control-server#151](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/151)
 Owner repository: `8005-agv-control-server`（`scripts/run-staged-g3.ps1` 第 3282～3308 行附近的 `$recoveryGenerationAdvancePass`、`$recoverySupersededResultHistoricalPass`、`$recoveryNoFalseClosurePass`）
 Found by: control-server#90（批次 5 出口）第 4 步，`run-staged-g3.ps1`，2026-09-18 23:45:42～23:47:45（本地时间），
 [`evidence/g3/20260918-protocol-v2.0.0-staged-06b65688/run-result.json`](../../evidence/g3/20260918-protocol-v2.0.0-staged-06b65688/run-result.json)

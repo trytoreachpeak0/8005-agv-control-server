@@ -1,6 +1,6 @@
 # 缺陷：onboard-hmi#109 合入后，车载端重启进入 `RecoveryRequired` 时四个管理员恢复入口都不出现
 
-Status: open（车载端回归；修复票待调度会话开）
+Status: open（车载端回归），修复票 [onboard-hmi#112](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/112)
 Owner repository: `8005-agv-onboard-hmi`（`w2g/fp-v2-impl`，onboard-hmi PR #111 的合并提交 `9748c418` 引入；`8f308bb1` 上没有）
 Found by: control-server#90（批次 5 出口）第 4 步 `run-journey-g3.ps1` 与第 6 步真装置 L2，2026-09-19：
 - [`evidence/g3/20260918-protocol-v2.0.0-journey-06b65688/`](../../evidence/g3/20260918-protocol-v2.0.0-journey-06b65688/)：`JOURNEY_G3_SLICE_FAIL`，`FP-IS-07` 四条恢复场景红
