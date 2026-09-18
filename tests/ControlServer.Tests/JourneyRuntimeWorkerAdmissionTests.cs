@@ -354,6 +354,30 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task TheBaselineSnapshotIsTheSessionsLowestSafetyVersionEvenWhenTheServerClockSaysOtherwise()
+    {
+        // control-server#142 review: the baseline is the snapshot with the session's lowest safetyStateVersion. The
+        // vehicle allocates versions under one lock and they are what orders its safety facts; the server's receive
+        // time is not, and a clock stepped back between the two snapshots would make the mid-session answer look
+        // first.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AddMidSessionSafetySnapshotAsync(8, receivedBeforeBaseline: true);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "ACCEPTED",
+            (await fixture.BacklogAsync("10000000-0000-4000-8000-000000000001")).ReasonCode);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task ArrivalIsNotTrustedWhileTheLatestSafetyStateSaysTheVehicleIsMoving()
     {
         // The same staleness in the other direction, and the dangerous one: the session-start

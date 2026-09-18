@@ -204,6 +204,68 @@ public sealed class ExpectedActionOverdueTests
     }
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task AMidSessionSnapshotLeavesASessionHeldForPendingFactsHeldForThem()
+    {
+        // 中途快照重判就绪，但只能沿用同一套判据：恢复报告里还有没对上的结果时，会话照旧停在需要恢复，原因也不变。
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.HelloAsync();
+        await fixture.CapabilityAsync();
+        await fixture.SafetySnapshotAsync(1, Slots());
+        await fixture.RecoveryReportAsync(pendingResultMessageIds: [Guid.NewGuid().ToString("D")]);
+        Assert.Equal("PENDING_FACT_RECONCILIATION_REQUIRED", (await fixture.SessionAsync()).ReasonCode);
+
+        string response = await fixture.SafetySnapshotAsync(2, Slots(slot3Physical: "OCCUPIED"));
+
+        Assert.Equal("RECOVERY_REQUIRED", Readiness(response));
+        SessionRecoveryRow after = await fixture.SessionAsync();
+        Assert.Equal(SessionReadiness.RecoveryRequired, after.Readiness);
+        Assert.Equal("PENDING_FACT_RECONCILIATION_REQUIRED", after.ReasonCode);
+        Assert.Equal(SessionReadiness.RecoveryRequired, fixture.State.Readiness);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task AMidSessionSnapshotLeavesAVehicleHeldForItsHardwareRecoveryRecordHeld()
+    {
+        // control-server#137（#140）：强制机械取出之后，没有硬件恢复记录，车就一直不就绪。中途快照与 SafetyStateChanged 走同一个
+        // DecideReadinessAsync，这一条照样生效——读数再干净，也不能替那份记录把车放出来。
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.ReachReadyAsync();
+        await fixture.AddForcedRecoveryAwaitingHardwareRecordAsync();
+        await fixture.SafetyChangedAsync(2, affectedSlots: [3]);
+        Assert.Equal("FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED", (await fixture.SessionAsync()).ReasonCode);
+
+        string response = await fixture.SafetySnapshotAsync(3, Slots());
+
+        Assert.Equal("RECOVERY_REQUIRED", Readiness(response));
+        SessionRecoveryRow after = await fixture.SessionAsync();
+        Assert.Equal(SessionReadiness.RecoveryRequired, after.Readiness);
+        Assert.Equal("FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED", after.ReasonCode);
+        Assert.Equal(SessionReadiness.RecoveryRequired, fixture.State.Readiness);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    public async Task ASecondSnapshotInsideTheHandshakeIsStillAHandshakeSnapshot()
+    {
+        // 判「中途」要看这条连接的握手做没做完，与「能不能发请求」同一个判据。握手里车每发一份就读一个回应，库里已有基线不等于
+        // 握手已完：此时多回一行 SessionReadiness，会被车当成下一份消息的回应读掉。
+        await using Fixture fixture = await Fixture.CreateAsync();
+        await fixture.HelloAsync();
+        await fixture.CapabilityAsync();
+        await fixture.SafetySnapshotAsync(1, Slots());
+
+        string response = await fixture.SafetySnapshotAsync(2, Slots());
+
+        Assert.Equal(["SnapshotAppliedAck"], Lines(response).Select(MessageType));
+        SessionRecoveryRow handshaking = await fixture.SessionAsync();
+        Assert.Equal(2, handshaking.SafetyRevision);
+        Assert.Equal("HANDSHAKE_INCOMPLETE", handshaking.ReasonCode);
+        Assert.Equal("READY", Readiness(await fixture.RecoveryReportAsync()));
+    }
+
+    [Fact]
     [Trait("IntegrationSlice", "FP-IS-00")]
     public async Task TheHandshakeSnapshotStillCarriesTheSessionToReadyExactlyAsBefore()
     {
@@ -693,7 +755,7 @@ public sealed class ExpectedActionOverdueTests
                 affectedSlots
             });
 
-        public Task<string> RecoveryReportAsync() => Send(
+        public Task<string> RecoveryReportAsync(string[]? pendingResultMessageIds = null) => Send(
             "RecoveryStateReport",
             State.SessionGeneration,
             new
@@ -703,8 +765,31 @@ public sealed class ExpectedActionOverdueTests
                 provenRecoveryCheckpoint = (string?)null,
                 activeUnlockSlots = Array.Empty<int>(),
                 forcedRecoveryGeneration = 0,
-                pendingResults = Array.Empty<object>()
+                pendingResults = (pendingResultMessageIds ?? []).Select(id => new { messageId = id }).ToArray()
             });
+
+        /// <summary>
+        /// A forced mechanical recovery this vehicle has had, with no HardwareRecoveryRecord taken against it yet
+        /// (control-server#137): the state in which DecideReadinessAsync holds the vehicle.
+        /// </summary>
+        public async Task AddForcedRecoveryAwaitingHardwareRecordAsync()
+        {
+            Context.RecoveryWorkflows.Add(new RecoveryWorkflowRow
+            {
+                WorkflowId = Guid.NewGuid().ToString("D"),
+                WorkflowType = "FORCED_MECHANICAL_RECOVERY",
+                AgvId = AgvId,
+                SlotsJson = "[3]",
+                State = RecoveryWorkflowState.Reconciled,
+                RequestMessageId = Guid.NewGuid().ToString("D"),
+                RequestContentHash = new string('a', 64),
+                Outcome = "SUCCEEDED",
+                CreatedAt = Clock.GetUtcNow(),
+                UpdatedAt = Clock.GetUtcNow()
+            });
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
 
         public Task<string> SendAlarmsAsync(long revision, params object[] alarms) => Send(
             "OnboardAlarmSnapshot",
