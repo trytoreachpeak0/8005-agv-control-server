@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "scenario": "normal-load",
+  "runId": "20260915T032819554Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "1.0.0",
+      "tag": "protocol-v1.0.0",
+      "commit": "9f22db825d52ad86c1d803bd0c1925dcc58d6793",
+      "protocolVersion": 2,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23",
+      "schemaBundleSha256": "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685",
+      "vectorsSha256": "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "batch-2",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "ef269be8f13c0b779b7b82def5b5dbcbac271c6e",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260915T032819554Z",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-NL-01",
+      "description": "受理后建出 TO_PICKUP 单并确认",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-NL-02",
+      "description": "候选判定结果是 ACCEPTED",
+      "outcome": "PASS",
+      "expected": "ACCEPTED",
+      "actual": "ACCEPTED"
+    },
+    {
+      "id": "L2-NL-03",
+      "description": "车在路上时不采信到站",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival",
+      "actual": "AwaitingPickupArrival"
+    },
+    {
+      "id": "L2-NL-04",
+      "description": "装载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-NL-05",
+      "description": "出发前安全检查通过后才建 TO_GATE 单",
+      "outcome": "PASS",
+      "expected": "CONFIRMED",
+      "actual": "CONFIRMED"
+    },
+    {
+      "id": "L2-NL-06",
+      "description": "journey 走到 Completed",
+      "outcome": "PASS",
+      "expected": "Completed",
+      "actual": "Completed"
+    },
+    {
+      "id": "L2-NL-07",
+      "description": "卸载操作提交（Committed）",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-NL-08",
+      "description": "需求终态为 Succeeded",
+      "outcome": "PASS",
+      "expected": "Succeeded",
+      "actual": "Succeeded"
+    },
+    {
+      "id": "L2-NL-09",
+      "description": "全程只建了两条 RIoT 单（取货一条、关卡一条）",
+      "outcome": "PASS",
+      "expected": 2,
+      "actual": 2
+    }
+  ]
+}

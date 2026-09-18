@@ -87,6 +87,7 @@ public static class StructuralDispatchClassification
     private const int StationResolution = 60;
     private const int DispatchZoneVehicle = 65;
     private const int PackageCapacity = 70;
+    private const int AdmissionPolicyDrift = 75;
     private const int VehicleDynamicFacts = 80;
     private const int StationTaskType = 90;
     private const int RouteGraphReachability = 95;
@@ -164,6 +165,12 @@ public static class StructuralDispatchClassification
         Backlog("PACKAGE_CAPACITY_NOT_UNIQUE", PackageCapacity,
             "The package's capacity is not resolved to one value. Master data that can be fixed without the " +
             "demand changing, and not in the ticket's structural list. Doubtful, so backlog."),
+
+        // ---- AdmissionPolicyDriftCriterion (75) ---------------------------------------------------------
+        Backlog(AdmissionPolicyDriftCriterion.Reason, AdmissionPolicyDrift,
+            "Blocks every demand at once and is about the configured admission policy version against the live " +
+            "Map, not about this demand; REQ-0210's alarm is per task. Raising the version clears it. Doubtful, " +
+            "so backlog."),
 
         // ---- VehicleDynamicFactsCriterion (80) ----------------------------------------------------------
         Backlog("ONBOARD_FACTS_NOT_READY", VehicleDynamicFacts, "This vehicle's session is not ready."),

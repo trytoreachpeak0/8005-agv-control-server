@@ -393,8 +393,8 @@ internal static class JourneyRuntimeWorkerTestKit
             return await RuntimeAsync();
         }
 
-        /// <summary>Carries the journey on to the gate, where the unload command is issued.</summary>
-        public async Task<JourneyRuntimeRow> RunToGateUnloadAsync()
+        /// <summary>Carries the journey through a safe departure check onto its way to the gate.</summary>
+        public async Task<JourneyRuntimeRow> AdvanceToGateArrivalAsync()
         {
             JourneyRuntimeRow runtime = await AdvanceToDepartureSafetyAsync();
             await AddInboxAsync(
@@ -419,6 +419,13 @@ internal static class JourneyRuntimeWorkerTestKit
                 },
                 runtime.PreDepartureSafetyCheckMessageId);
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+            return await RuntimeAsync();
+        }
+
+        /// <summary>Carries the journey on to the gate, where the unload command is issued.</summary>
+        public async Task<JourneyRuntimeRow> RunToGateUnloadAsync()
+        {
+            await AdvanceToGateArrivalAsync();
             Riot.SetSuccessfulArrival("TO_GATE", Options.GateStationRiotId);
             Riot.Vehicle = Riot.Vehicle with { CurrentStationId = Options.GateStationRiotId };
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);

@@ -37,6 +37,12 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// two candidates of one round against two versions, and a demand must freeze the version its slot group
 /// was chosen from (REQ-0350).
 /// </param>
+/// <param name="AdmissionPolicyDrifted">
+/// Whether the store refused, this round, to bind the live Map's area-named stations to the
+/// configured admission policy version. The bound policy stays in force for journeys under way;
+/// <see cref="Criteria.AdmissionPolicyDriftCriterion"/> refuses new work on it. False by default, so
+/// a round built outside the engine is the ordinary case.
+/// </param>
 public sealed record DispatchRoundFacts(
     DemandCatalogSnapshot Catalog,
     RiotMapStationCatalogSnapshot Map,
@@ -44,7 +50,8 @@ public sealed record DispatchRoundFacts(
     IReadOnlySet<string> AcceptedDemandIds,
     DateTimeOffset Now,
     VehicleDispatchPolicy Policy,
-    AreaAssignmentTableVersion? AreaAssignments = null);
+    AreaAssignmentTableVersion? AreaAssignments = null,
+    bool AdmissionPolicyDrifted = false);
 
 /// <summary>
 /// One vehicle's facts for this round, plus the configuration slice that applies to it.

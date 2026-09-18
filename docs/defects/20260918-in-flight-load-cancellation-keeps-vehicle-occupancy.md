@@ -1,6 +1,6 @@
 # 缺陷：在途装货经操作员取消终结后车辆占用不释放，同一台车再也派不出单
 
-Status: open（修复票 [control-server#131](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/131)）
+Status: fixed（修复票 [control-server#131](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/131)，PR [#133](https://github.com/trytoreachpeak0/8005-agv-control-server/pull/133)）
 Owner repository: `8005-agv-control-server`
 Found by: 真装置 L2 场景 `real-onboard-load-door-closed-empty-reopens`（control-server#86）本机调试跑
 `C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs86-l2\load-door-closed-empty-reopens-003\SUMMARY.md`
@@ -66,3 +66,13 @@ program#55 把操作员按取消定为期限后放弃装货的唯一出口，所
 不在 control-server#86 修（那张票只写场景）。方向见 control-server#131：三条路径收敛到 `PickupStopTermination`，
 或在同一次提交里补上 TO_PICKUP 单的占用释放；另加 L1 钉住三种结果都释放占用。修复后
 `real-onboard-load-door-closed-empty-reopens` 应整条变绿。
+
+## 修复结果
+
+control-server#131（PR #133）把三条路径的终结收敛到 `PickupStopTermination`：仓位操作仍由协调器置 `Cancelled`，
+需求、租约、车辆占用、旅程走同一段收尾，与结果证据在同一次保存里提交。L1 钉住了三种 messageType 都释放占用、同一台车能再占用，
+以及在途取消后真运行时把下一单派给同一台车。
+
+真装置复验：`C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs131-l2\load-door-closed-empty-reopens-001\SUMMARY.md`
+（工作区侧，不入库），服务端 `bfdc4608`，车载端 `8153946b`、模拟器 `fb5f7c59` 与 `-003` 相同，12/12 PASS：`L2-DC-10` 租约与占用
+同时释放，`L2-DC-12` 下一单 `AwaitingPickupArrival`、同一台车。补偿与故障交接两条只有 L1，没有单独的真装置复验。
