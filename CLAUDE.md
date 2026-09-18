@@ -137,7 +137,10 @@ with exit code 1; the detail is in the TRX and in `schema-conformance/` next to 
 Never "fix" such a failure by adding to `tests/ControlServer.Tests/schema-known-violations.json`
 without an issue that owns the violation -- that list is for defects already filed, and every entry
 names one. It adds about 40 to 50 seconds of Roslyn schema compilation per run (measured 38.6 s and
-47.9 s on the two runs that landed control-server#85).
+47.9 s on the two runs that landed control-server#85); since control-server#130 the message types are
+split over four copies of the tool (`--processes`, default 4), because Corvus compiles serially inside
+one process. The merged report is the serial one, timings aside -- `SchemaConformanceToolTests` compares
+the two byte for byte.
 
 Test authorization is scoped to the current task. A request to inspect, tidy,
 commit, or push an already-dirty worktree does **not** authorize a test run. Run
@@ -171,6 +174,14 @@ that has it. What the lock cannot stop, the startup waits catch: `Wait-L2Conditi
 unless the port is held by the component this run started, and names whoever holds it instead.
 Anything new that binds this block must take the lock the same way, inside the script. The self-check
 is `scripts/l2/Test-L2PortLockQueueing.ps1` (about a minute; it runs two real orchestrators).
+
+**That block and that lock are port slot 0, and slot 0 never changes** (control-server#130).
+`-PortSlot 1..4` moves every port down by 1000 x N under the lock `Global\W2G-L2PortBlock-slotN`, so
+runs in different slots do not queue for each other. The real-onboard rig, `run-journey-g3.ps1` and
+every older checkout keep slot 0; CI's `l2.yml` builds once and runs its scenarios in lanes on slots
+1..N (`scripts/l2/L2Lanes.psm1`), each run with `-SkipBuild` because a build under a running slot
+overwrites its executables. Never move a CI lane onto slot 0, and never change slot 0's ports or name --
+the self-check asserts both literally.
 
 A scenario whose sibling `scenarios/<name>.setup.psd1` says `Onboard = 'Real'` runs a second rig
 instead: the shipped onboard WPF from `8005-agv-onboard-hmi` driven through UI Automation, plus
