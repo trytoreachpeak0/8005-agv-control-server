@@ -99,6 +99,31 @@ public sealed class OnboardAlarmProjectionStore(ControlServerDbContext context, 
     }
 
     /// <summary>
+    /// 这台车库里那一份快照里，此刻挂着期待动作超时的那些告警（REQ-0358）。没有快照时为空。
+    /// </summary>
+    /// <remarks>
+    /// 读的是库里的那一份，不问车在不在线：Host 用它判断「这一份快照里的超时是不是新出现的」「这次安全变化涉及的是不是超时仓」，
+    /// 两处都在收到这台车的消息时调用，车显然在线。看板那一侧的在线判定仍在 <see cref="ReadDashboardProjectionAsync"/>。
+    /// </remarks>
+    public async Task<IReadOnlyList<OnboardAlarmEntry>> ReadExpectedActionOverdueAsync(
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+
+        string? alarmsJson = await _context.Set<OnboardAlarmSnapshotRow>().AsNoTracking()
+            .Where(row => row.AgvId == agvId)
+            .Select(row => row.AlarmsJson)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (alarmsJson is null)
+        {
+            return [];
+        }
+        OnboardAlarmEntry[] alarms = JsonSerializer.Deserialize<OnboardAlarmEntry[]>(alarmsJson, AlarmJson) ?? [];
+        return [.. alarms.Where(OnboardAlarmCodes.IsSlotExpectedActionOverdue)];
+    }
+
+    /// <summary>
     /// 这一份是不是比库里那一份更新——<c>(会话代, 序号)</c> 按字典序比。
     /// </summary>
     private static bool Advances(OnboardAlarmSnapshotRow existing, long sessionGeneration, long sequence) =>

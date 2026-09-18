@@ -112,3 +112,24 @@ public sealed record VehicleAlarmProjection(
 
     public bool IsAvailable => UnavailableReason is null;
 }
+
+/// <summary>
+/// 服务端要认得的那几个车载告警码。告警码是开放集合（见 <see cref="OnboardAlarmEntry"/>），这里只放服务端据以做事的那些。
+/// </summary>
+public static class OnboardAlarmCodes
+{
+    /// <summary>
+    /// 当前仓位等待操作员过久（REQ-0358，CP-0005 第 4.1 节）。<c>subjectType=SLOT</c>，<c>subjectId</c> 为仓位号，
+    /// <c>raisedAt</c> 为越过门槛的时刻，<c>displayMessage</c> 为期待的动作。车载端在该仓闭环、判为 UNKNOWN 或操作结束时撤下。
+    /// </summary>
+    public const string SlotExpectedActionOverdue = "SLOT_EXPECTED_ACTION_OVERDUE";
+
+    /// <summary>这一条是不是某个仓的期待动作超时：码对上，并且认得出仓位号。</summary>
+    public static bool IsSlotExpectedActionOverdue(OnboardAlarmEntry alarm)
+    {
+        ArgumentNullException.ThrowIfNull(alarm);
+
+        return string.Equals(alarm.AlarmCode, SlotExpectedActionOverdue, StringComparison.Ordinal)
+               && alarm.PhysicalSlotNumber is not null;
+    }
+}

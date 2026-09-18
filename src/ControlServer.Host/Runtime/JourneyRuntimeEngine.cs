@@ -1763,7 +1763,11 @@ public sealed class JourneyRuntimeEngine(
         ProtocolInboxRow? capability = await LatestInboxForSessionAsync(
             "CapabilitySnapshot", agvId, session.SessionGeneration, cancellationToken)
             .ConfigureAwait(false);
-        ProtocolInboxRow? safetyRow = await LatestInboxForSessionAsync(
+        // The session's first SafetyStateSnapshot, not its latest: slot availability is the session baseline
+        // (see below), and since control-server#142 a session can carry later snapshots -- the vehicle's answer
+        // when the dashboard asks for an overdue slot's readings, which reads a slot mid-operation as occupied
+        // or unlocked. Their safety summary still counts, through LatestSafetySummaryForSessionAsync.
+        ProtocolInboxRow? safetyRow = await FirstInboxForSessionAsync(
             "SafetyStateSnapshot", agvId, session.SessionGeneration, cancellationToken)
             .ConfigureAwait(false);
         // The snapshot is sent once per session; every later change arrives as SafetyStateChanged
@@ -1856,16 +1860,33 @@ public sealed class JourneyRuntimeEngine(
                RequiredString(safety, "unlockOutputState") == "RESET";
     }
 
-    private async Task<ProtocolInboxRow?> LatestInboxForSessionAsync(
+    private Task<ProtocolInboxRow?> LatestInboxForSessionAsync(
         string messageType,
         string agvId,
         long generation,
+        CancellationToken cancellationToken) =>
+        InboxForSessionAsync(messageType, agvId, generation, latest: true, cancellationToken);
+
+    private Task<ProtocolInboxRow?> FirstInboxForSessionAsync(
+        string messageType,
+        string agvId,
+        long generation,
+        CancellationToken cancellationToken) =>
+        InboxForSessionAsync(messageType, agvId, generation, latest: false, cancellationToken);
+
+    private async Task<ProtocolInboxRow?> InboxForSessionAsync(
+        string messageType,
+        string agvId,
+        long generation,
+        bool latest,
         CancellationToken cancellationToken)
     {
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == messageType)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        rows = rows.OrderByDescending(row => row.ReceivedAt).ToArray();
+        rows = latest
+            ? rows.OrderByDescending(row => row.ReceivedAt).ToArray()
+            : rows.OrderBy(row => row.ReceivedAt).ToArray();
         return rows.FirstOrDefault(row =>
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
