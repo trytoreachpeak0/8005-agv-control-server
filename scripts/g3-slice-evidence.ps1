@@ -19,6 +19,35 @@
 # something that was already recorded, and it deserves review by whoever owns the slice family.
 # What makes it safe to rely on today is Assert-G3ClaimCoversReport: a runner that grows, renames or
 # drops an assertion without updating its claim throws instead of quietly reattributing evidence.
+# That review happened on 2026-09-18; see the next section.
+#
+# The review, 2026-09-18 (control-server#60, closed by control-server#87). docs/g3-slice-claim-review.md
+# lists every assertion of the four runners with its slice, the vector it answers, what the runner code
+# actually checks, and 31 flagged items with a recommendation each. The user's ruling that day:
+#
+#   Accept every recommendation as written, and make the runner-code changes in the same ticket.
+#   (As relayed to this ticket: 「用户 2026-09-18 复核：整体按推荐，E 组在本票改」; group E is items 1 and 13.)
+#
+# What that changed, by item number in the document:
+#   - 4-10: seven staged assertions move from FP-IS-00 to FP-IS-07 (recovery sessions, forced
+#     mechanical recovery). 16: the onboard journal epoch moves from FP-IS-00 to FP-IS-06. 20-21: the
+#     two OperationResult retry assertions move from FP-IS-04 to FP-IS-06.
+#   - 15, 17, 26: three preconditions become run-wide.
+#   - 19: the four riot* assertions stop being assertions. They read the restored field store's
+#     history, so the demand-bearing runner records them and decides nothing on them.
+#   - 3: two names for one boolean merge into one; 9: one boolean behind two names splits into two.
+#   - 1, 13 (runner code): staged identityRejections reads the identity rejection cases only; restart
+#     noMovementOrExternalSideEffects loses its readiness half to a new FP-IS-00 assertion,
+#     readinessWithheldWhileRecoveryIsUnreconciled.
+#   - Not a review item, found by the self-check that followed it: two staged judgments still asserted
+#     the onboard reconnect of before batch 5 (the unacknowledged RecoveryStateReport replayed under its
+#     own messageId; a resumed connection that republishes no alarm snapshot). protocol-v2.0.0's
+#     CV-SESSION-RECONNECT-DURING-RECOVERY and onboard-hmi#69 make every reconnect a full handshake with a
+#     new report, so both were rewritten and renamed: recoveryStateResubmittedAsANewReportAfterAckDrop
+#     (FP-IS-00) and onboardAlarmSnapshotRepublishedOnlyOnHandshakeOrChange (FP-IS-15).
+#   - Everything else is kept, with the note the document gives it next to the entry below.
+# G3 evidence already committed under the old attribution is not rewritten; control-server#90 re-runs
+# the gates under this one.
 #
 # ---------------------------------------------------------------------------------------------
 # The ruling, 2026-09-09 (ticket 23, the user's decision -- recorded here rather than only in a
@@ -99,9 +128,16 @@ function Get-G3RunnerClaim {
                 'noMovementOrExternalSideEffects',
                 'secretScan')
             slices = [ordered]@{
+                # CV-SESSION-RECONNECT-DURING-RECOVERY, which FP-IS-05 lists too (review item 2). Its
+                # ...OverPlaintext twin was the same boolean and was merged away (item 3); the name and the
+                # judgment then moved to the v2 behaviour -- a new report after a full handshake, not the
+                # old messageId replayed -- in control-server#87.
                 'FP-IS-00' = @(
-                    'recoveryStateReportFirstAckDropReplay',
-                    'recoveryStateReportFirstAckDropReplayOverPlaintext',
+                    'recoveryStateResubmittedAsANewReportAfterAckDrop')
+                # Moved from FP-IS-00 by the 2026-09-18 review (items 4-10): exception recovery
+                # sessions and forced mechanical recovery, which no FP-IS-00 vector covers.
+                # hardwareRecoveryRecordScopeEnforced has no vector of its own (item 6).
+                'FP-IS-07' = @(
                     'recoverySessionAuthorisationBoundary',
                     'recoveryActionsRefusedWithoutPersistedOperation',
                     'hardwareRecoveryRecordScopeEnforced',
@@ -109,6 +145,9 @@ function Get-G3RunnerClaim {
                     'forcedRecoveryGenerationAdvancesMonotonically',
                     'supersededGenerationResultIsHistoricalEvidenceOnly',
                     'recoveryNeverReportsFalseCompletion')
+                # Weaker than the vectors in two places (review items 11-12): the conflict pair asserts
+                # the connection closed, not the MESSAGE_ID_CONTENT_CONFLICT problem; delay and reorder
+                # have no vector of their own in this slice.
                 'FP-IS-06' = @(
                     'sameConnectionSameMessageIdSameContent',
                     'sameMessageIdDifferentContentStableConflict',
@@ -149,7 +188,7 @@ function Get-G3RunnerClaim {
                 'FP-IS-15' = @(
                     'onboardAlarmSnapshotPublishedOnTheFullHandshake',
                     'onboardAlarmSnapshotAppliedAckOnEverySnapshot',
-                    'onboardAlarmSnapshotNotRepublishedOnRecoveryResume',
+                    'onboardAlarmSnapshotRepublishedOnlyOnHandshakeOrChange',
                     'onboardAlarmProjectionKeptOnlyTheLatestOfSeveralSnapshots',
                     'onboardAlarmProjectionIsASingletonPerVehicle',
                     'onboardAlarmProjectionCarriesTheGenerationItArrivedIn')
@@ -165,20 +204,28 @@ function Get-G3RunnerClaim {
                 'noPeerExitedUnexpectedly',
                 'onboardHostProcessReplacedOnlyInPhaseTwo',
                 'controlServerHostProcessReplacedOnlyInPhaseThree',
+                # Preconditions with no vector of their own, made run-wide by the 2026-09-18 review
+                # (items 15, 17).
+                'serverSessionIdentityIsScopedPerConnection',
+                'controlDatabaseFileReusedAcrossServerRestart',
                 'noMovementOrExternalSideEffects',
                 'secretScan')
             slices = [ordered]@{
+                # The two generation-advance assertions answer CV-SESSION-RECONNECT-DURING-RECOVERY,
+                # which FP-IS-05 lists too (item 14). The readiness assertion was split out of
+                # noMovementOrExternalSideEffects by the same review (item 13).
                 'FP-IS-00' = @(
                     'freshDatabaseStartsAtGenerationOne',
                     'onboardRestartAdvancesGenerationByExactlyOne',
                     'controlServerRestartAdvancesGenerationByExactlyOne',
                     'sessionGenerationStableWithinEveryPhase',
-                    'serverSessionIdentityIsScopedPerConnection',
                     'recoveryReportIdentityAgreesAcrossPeers',
                     'sessionRecoveryRowStaysASingletonPerAgv',
-                    'onboardJournalEpochStableAcrossOnboardRestart')
+                    'readinessWithheldWhileRecoveryIsUnreconciled')
+                # Durability across restarts; the retry vectors fit only through their common
+                # persistenceCheckpoints (item 18). The journal epoch moved here from FP-IS-00 (item 16).
                 'FP-IS-06' = @(
-                    'controlDatabaseFileReusedAcrossServerRestart',
+                    'onboardJournalEpochStableAcrossOnboardRestart',
                     'controlInboxRowsSurviveServerRestart',
                     'onboardOutboxRowsSurviveOnboardRestart')
                 # FP-IS-15's other half, which only this runner can reach. The staged runner proves
@@ -206,28 +253,39 @@ function Get-G3RunnerClaim {
             assuranceLevel = 'DEMAND_BEARING_RESTORE'
             runWide = @(
                 'protocolAndBuildIdentityBoundToTheSharedBinding',
+                # Proves the restart happened; a precondition, not evidence (item 26).
+                'controlServerHostProcessWasActuallyReplaced',
                 'noMovementOrExternalSideEffects',
                 'listenersReleased',
                 'secretScan')
+            # The four riot* judgments that used to open FP-IS-04 read the RIoT create audit of the
+            # restored 2026-08-29 field store -- rows the field run's build wrote before this server
+            # started -- so they judged that history, not the bound commit. Since the 2026-09-18
+            # review (item 19) the runner records them under fieldStoreProvenance.riotCreateAuditHistory
+            # and asserts none of them.
             slices = [ordered]@{
+                # Only the server half of CV-DESTINATION-UNLOAD-ALL-EMPTY: a synthetic peer reports the
+                # result (item 24). The already-committed attempt is the store's first Committed row,
+                # which the runner does not restrict to an unload (item 23, kept as is).
                 'FP-IS-04' = @(
-                    'riotPreCreateReconciliationObservesUnknownOnEveryLeg',
-                    'riotUnknownIsAnExactAbsentAtObservation',
-                    'riotUnknownStillCreatesExactlyOncePerLeg',
-                    'riotUnknownResolvesToTheOrderItCreated',
                     'preparedAttemptAcceptsItsFirstResult',
-                    'identicalResultReplayReturnsTheStoredAcknowledgement',
-                    'sameMessageIdWithDifferentContentIsRefused',
                     'sameAttemptAndGenerationUnderANewMessageIdIsRefused',
                     'alreadyCommittedAttemptRefusesASecondResult',
                     'replayedResultWasNotProcessedTwice',
                     'unloadResultClosedTheDemandAtomically')
+                # The superseded-generation refusal answers CV-SESSION-RECONNECT-DURING-RECOVERY, shared
+                # with FP-IS-00 (item 25). Demand and lease surviving a host restart have no vector in
+                # any slice: supplementary evidence kept here (item 27).
                 'FP-IS-05' = @(
                     'resultFromASupersededSessionGenerationIsRefused',
-                    'controlServerHostProcessWasActuallyReplaced',
                     'acceptedDemandSurvivesTheHostRestart',
                     'vehicleDispatchLeaseSurvivesTheHostRestart',
                     'restartedHostServesTheSameStore')
+                # CV-RELIABLE-RETRY-SAME-CONTENT and CV-RELIABLE-RETRY-DIFFERENT-CONTENT on an
+                # OperationResult; moved from FP-IS-04 (items 20, 21).
+                'FP-IS-06' = @(
+                    'identicalResultReplayReturnsTheStoredAcknowledgement',
+                    'sameMessageIdWithDifferentContentIsRefused')
             }
         }
         # scripts/run-journey-g3.ps1, since 2026-09-13. Each assertion is one judgment of an L2
@@ -261,9 +319,14 @@ function Get-G3RunnerClaim {
                     'finalStateOneDemandOneOrderAtPickupNoSlotOperation',
                     'onboardNeverDiscoversSelectsOrBindsDemand')
                 # CV-PICKUP-SUBLOT-LOAD and CV-LOAD-CORRECTION on one two-slot load, then
-                # CV-LOAD-CANCELLATION-ALL-EMPTY on another; the three vectors of the slice, each with
-                # its ordered messages, both owners' product assertions and its finalState. The
-                # cancellation's last judgment is taken after the cancelled load's own late result.
+                # CV-LOAD-CANCELLATION-ALL-EMPTY on another; until protocol-v2.0.0 the three vectors of
+                # the slice, each with its ordered messages, both owners' product assertions and its
+                # finalState. The cancellation's last judgment is taken after the cancelled load's own
+                # late result. protocol-v2.0.0 added two more vectors to this slice; their scenarios
+                # (g3-load-cancellation-before-load, g3-sublot-rejected) are the last two groups.
+                # correctionOnlyBeforeDepartureAndHoldsTheVehicle rests on REQ-0237, not a vector
+                # (item 30); loadClosedOverRealModbus and the three onboardOffers* entries are
+                # preconditions of the vector steps, not product assertions of them (item 31).
                 'FP-IS-02' = @(
                     'sublotBoundToOperationSession',
                     'slotSetAuthorizedOnce',
@@ -284,10 +347,29 @@ function Get-G3RunnerClaim {
                     'cancellationProvesEmptyWithoutUnlocking',
                     'allSlotsProvenEmpty',
                     'cancellationReconciledToEmptyFinalState',
-                    'finalStateSurvivesLateLoadResult')
+                    'finalStateSurvivesLateLoadResult',
+                    # CV-LOAD-CANCELLATION-BEFORE-LOAD (protocol-v2.0.0, control-server#87): the four
+                    # steps with an empty slot set and an ALL_EMPTY result carrying no slot entries.
+                    'onboardOffersLoadCancellationBeforeSublot',
+                    'beforeLoadCancellationAuthorizedWithoutSlotOperation',
+                    'beforeLoadCancellationSequenceMatchesVector',
+                    'beforeLoadCancellationReportedAllEmptyWithoutSlotIo',
+                    'beforeLoadCancellationTerminatedOnlyOnTheResult',
+                    'beforeLoadCancellationLeftNoSlotCommandOrDoorMovement',
+                    # CV-SUBLOT-REJECTED-AFTER-ENTRY (protocol-v2.0.0, control-server#87): entry,
+                    # rejection after revalidation, the reason on the HMI, and the rescan that loads.
+                    'sublotRejectedSequenceMatchesVector',
+                    'sublotRevalidatedAfterEntry',
+                    'neverUnlockOnRejectedEntry',
+                    'onboardDisplaysServerRejectionReason',
+                    'entryKeptOpenForRescan',
+                    'rescanAfterRestoredDataLoadsNormally',
+                    'rejectionLeavesNoDuplicateCommit')
                 # CV-PREDEPARTURE-SAFETY-EXPIRES on a departure held by an unreachable gate route, then
                 # CV-OPERATION-RESULT-UNKNOWN-RECONCILE across an onboard restart. Both halves of both
                 # vectors were added on 2026-09-13 at the user's ruling; neither end produced them before.
+                # CV-OPERATION-RESULT-UNKNOWN-RECONCILE is FP-IS-07's too; both slices keep their own
+                # run of it under their own names (review item 28).
                 'FP-IS-03' = @(
                     'predepartureExpirySequenceMatchesVector',
                     'neverDepartOnExpiredCheck',
@@ -306,6 +388,8 @@ function Get-G3RunnerClaim {
                 # because one assertion cannot be attributed to two slices of one claim. The forced
                 # mechanical and manual charging entries were added to the HMI on 2026-09-14 at the
                 # user's ruling; before that neither vector could be reached from the vehicle.
+                # CV-MANUAL-CHARGING-RETURN is FP-IS-13's as well; FP-IS-13 claims it later under names
+                # of its own, and nothing here asserts NEVER_CLEAR_HOLD_LOCALLY (review item 29).
                 'FP-IS-07' = @(
                     'recoveryUnknownResultSequenceMatchesVector',
                     'recoveryUnknownReportedAsUnknownAndReplayedFromJournal',
