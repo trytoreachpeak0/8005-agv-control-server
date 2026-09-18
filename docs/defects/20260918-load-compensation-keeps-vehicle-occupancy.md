@@ -84,3 +84,6 @@ L2-CAL-09 FAIL | VehicleOccupancyReleasedAt 为空（30 s 内）
 `TimeoutException`。原因在场景驱动：车载端给第 1 仓开锁后 0.55 s 场景就取货关门，车载端等不到稳定的开锁反馈，3 s 的
 `UnlockFeedbackTimeout` 到期（进度报文 `UNLOCKING [1]` 之后直接 `PAUSED`，没有 `WAITING_OPERATOR`）。`99fc792f` 改为等车载端
 对第 1 仓报 `WAITING_OPERATOR` 再取货关门，`-002` 全绿。
+
+运行环境的一处干扰：这组复验占着真装置时段期间，另一个会话（onboard-hmi#107）误在本机跑了约 35 秒全量测试。`-001` 的红
+已由进度报文定位到场景驱动时机，与机器负载无关；其余运行都通过。记在这里，免得日后读证据的人把负载当成未排除的变量。
