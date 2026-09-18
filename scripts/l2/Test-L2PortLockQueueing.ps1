@@ -127,7 +127,8 @@ $waiterScript = Join-Path $stage 'waiter.ps1'
 #Requires -Version 7
 param([Parameter(Mandatory)][string]$ModulePath,
       [Parameter(Mandatory)][int]$TimeoutSeconds,
-      [Parameter(Mandatory)][string]$ResultFile)
+      [Parameter(Mandatory)][string]$ResultFile,
+      [int]$Slot = 0)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -139,7 +140,7 @@ $acquired = $false
 $message = ''
 try {
     # Line by line, so the parent sees "blocked" while the waiter is still blocked.
-    $handle = Enter-L2PortLock -Reason 'L2 port lock self-check' -TimeoutSeconds $TimeoutSeconds *>&1 |
+    $handle = Enter-L2PortLock -Reason 'L2 port lock self-check' -TimeoutSeconds $TimeoutSeconds -Slot $Slot *>&1 |
         ForEach-Object {
             if ($_ -is [Management.Automation.InformationRecord] -or
                 $_ -is [Management.Automation.WarningRecord]) {
@@ -196,11 +197,13 @@ function Start-Holder {
 
 function Start-Waiter {
     param([Parameter(Mandatory)][int]$TimeoutSeconds,
-          [Parameter(Mandatory)][string]$ResultFile)
+          [Parameter(Mandatory)][string]$ResultFile,
+          [int]$Slot = 0)
 
     return Start-Process -FilePath 'pwsh' -PassThru -WindowStyle Hidden -ArgumentList @(
         '-NoProfile', '-NonInteractive', '-File', $waiterScript,
-        '-ModulePath', $modulePath, '-TimeoutSeconds', $TimeoutSeconds, '-ResultFile', $ResultFile)
+        '-ModulePath', $modulePath, '-TimeoutSeconds', $TimeoutSeconds, '-ResultFile', $ResultFile,
+        '-Slot', $Slot)
 }
 
 # Returns as soon as $Path contains $Pattern; throws if $Process exits first or the deadline passes.
@@ -288,6 +291,58 @@ try {
         -Condition ($lockName -eq 'Global\W2G-L2PortBlock') `
         -Detail "Get-L2PortLockName returned '$lockName'"
 
+    # 1a. Slot 0 is the block every rig bound before port slots existed, spelled out here rather than
+    #     read back from the module: the real-onboard rig, run-journey-g3.ps1 and every checkout older
+    #     than the slots bind exactly these ports under exactly this lock name, and a slot 0 that drifted
+    #     by one port would stop queueing against them.
+    $slotZeroLiteral = [ordered]@{
+        ControlPort = 48405; HealthPort = 48407; FakeRiotPort = 48408; FakeMesIngestPort = 48409
+        SimulatorHttpPort = 48411; SimulatorModbusPort = 48412; ClockSkewProxyPort = 48413
+        DashboardPort = 48414; FakeOnboardPort = 48420
+    }
+    $slotZero = Get-L2PortBlock -Slot 0
+    $slotZeroDiff = @($slotZeroLiteral.Keys | Where-Object { $slotZero[$_] -ne $slotZeroLiteral[$_] }) +
+        @($slotZero.Keys | Where-Object { -not $slotZeroLiteral.Contains($_) })
+    Assert-Case -Name 'slot-0-ports-and-lock-name-are-unchanged' `
+        -Condition ($slotZeroDiff.Count -eq 0 -and (Get-L2PortLockName -Slot 0) -ceq 'Global\W2G-L2PortBlock') `
+        -Detail ("slot 0: " + (($slotZero.Keys | ForEach-Object { "$_=$($slotZero[$_])" }) -join ', ') +
+            "; lock '$(Get-L2PortLockName -Slot 0)'; differing: $($slotZeroDiff -join ', ')")
+
+    # 1b. The orchestrator's own parameter defaults are slot 0, so a bare invocation -- the way the
+    #     real-onboard rig and run-journey-g3.ps1 call it -- binds what it always bound.
+    $parseErrors = $null
+    $orchestratorAst = [Management.Automation.Language.Parser]::ParseFile($orchestratorPath, [ref]$null, [ref]$parseErrors)
+    $defaults = @{}
+    foreach ($parameter in $orchestratorAst.ParamBlock.Parameters) {
+        if ($null -ne $parameter.DefaultValue) {
+            $defaults[$parameter.Name.VariablePath.UserPath] = $parameter.DefaultValue.Extent.Text
+        }
+    }
+    $defaultDiff = @($slotZeroLiteral.Keys | Where-Object { $defaults[$_] -ne [string]$slotZeroLiteral[$_] })
+    Assert-Case -Name 'orchestrator-defaults-are-slot-0' `
+        -Condition ($defaultDiff.Count -eq 0 -and $defaults['PortSlot'] -eq '0') `
+        -Detail "PortSlot default '$($defaults['PortSlot'])'; port defaults differing from slot 0: $($defaultDiff -join ', ')"
+
+    # 1c. Every slot a CI lane can take: its own lock, and ports no other slot binds, all below the
+    #     dynamic range (49152 up) and off the ports Windows reserves for itself below it.
+    $slotRanges = foreach ($slot in 0..4) {
+        $block = Get-L2PortBlock -Slot $slot
+        # Ten synthetic peers is more than any scenario starts; the range is what the slot promises.
+        $ports = @($block.Keys | Where-Object { $_ -ne 'FakeOnboardPort' } | ForEach-Object { $block[$_] }) +
+            @(0..9 | ForEach-Object { $block.FakeOnboardPort + $_ })
+        [pscustomobject]@{ Slot = $slot; Ports = $ports; Lock = Get-L2PortLockName -Slot $slot }
+    }
+    $allPorts = @($slotRanges | ForEach-Object { $_.Ports })
+    $duplicates = @($allPorts | Group-Object | Where-Object Count -gt 1 | ForEach-Object Name)
+    $outOfRange = @($allPorts | Where-Object { $_ -ge 49152 -or $_ -lt 1024 -or $_ -in @(5357, 5985, 47001) })
+    $locks = @($slotRanges.Lock)
+    Assert-Case -Name 'slots-are-disjoint-and-below-the-dynamic-range' `
+        -Condition ($duplicates.Count -eq 0 -and $outOfRange.Count -eq 0 -and
+            @($locks | Select-Object -Unique).Count -eq $locks.Count -and
+            (Get-L2PortLockName -Slot 3) -ceq 'Global\W2G-L2PortBlock-slot3') `
+        -Detail ("locks: $($locks -join ', '); ports shared by two slots: $($duplicates -join ', '); " +
+            "out of range or reserved: $($outOfRange -join ', ')")
+
     # 2. Open to every authenticated account. Read from the object this process holds, so it is the
     #    DACL the kernel actually has, not the one the module meant to write.
     try {
@@ -319,6 +374,15 @@ try {
         -Condition ((-not $result.Acquired) -and $result.Message -match 'L2_PORT_LOCK_BUSY' -and
             $result.ElapsedSeconds -lt 10) `
         -Detail ("acquired={0}, {1:N1}s, message='{2}'" -f
+            $result.Acquired, $result.ElapsedSeconds, $result.Message)
+    # 3a. The same held slot-0 lock does not hold up another slot: that is the whole point of slots.
+    $resultFile = Join-Path $stage 'result-3a.json'
+    $waiter = Start-Waiter -TimeoutSeconds 0 -ResultFile $resultFile -Slot 1
+    $waiter.WaitForExit()
+    $result = Read-WaiterResult -ResultFile $resultFile
+    Assert-Case -Name 'another-slot-is-not-held-up-by-slot-0' `
+        -Condition $result.Acquired `
+        -Detail ("slot 1 with slot 0 held: acquired={0}, {1:N1}s, message='{2}'" -f
             $result.Acquired, $result.ElapsedSeconds, $result.Message)
     Set-Content -LiteralPath $release3 -Value 'go' -Encoding utf8NoBOM
     $holder.WaitForExit(60000) | Out-Null
@@ -430,6 +494,20 @@ try {
         Assert-Case -Name 'both-orchestrators-pass' `
             -Condition ($firstExit -eq 0 -and $secondExit -eq 0) `
             -Detail "A exited $firstExit, B exited $secondExit (evidence under $stage)"
+
+        # A passing run leaves nothing under %TEMP%. Before control-server#130 every run did: the read-only
+        # connection's pool kept controlserver.db open, the stage root's removal failed silently, and
+        # win11-01 had collected 3607 of them.
+        $leftBehind = @(foreach ($orchestrator in @($first, $second)) {
+            $assertionsPath = Join-Path $orchestrator.Evidence 'assertions.json'
+            $stageRoot = if (Test-Path -LiteralPath $assertionsPath) {
+                (Get-Content -LiteralPath $assertionsPath -Raw | ConvertFrom-Json).identity.stageRoot
+            }
+            if (-not $stageRoot -or (Test-Path -LiteralPath $stageRoot)) { "$($orchestrator.Name): '$stageRoot'" }
+        })
+        Assert-Case -Name 'passing-runs-remove-their-stage-root' `
+            -Condition ($leftBehind.Count -eq 0) `
+            -Detail "stage roots still present or unrecorded: $($leftBehind -join '; ')"
 
         $secondOut = Get-Content -LiteralPath $second.OutLog -Raw
         Assert-Case -Name 'queued-orchestrator-says-it-proceeds' `

@@ -63,6 +63,18 @@ param(
     # rather than a live one -- the kind that surfaces the first time someone relaxes that.
     [int]$FakeOnboardPort = 48420,
 
+    # Which port slot this run binds, and whose lock it queues for (L2PortLock.psm1). 0 is the block
+    # above, under the lock every checkout has always taken; the real-onboard rig and run-journey-g3.ps1
+    # never pass this. Slots 1-4 exist so CI can run several synthetic scenarios at once, each in its
+    # own slot. A port given explicitly above wins over the slot's.
+    [ValidateRange(0, 4)]
+    [int]$PortSlot = 0,
+
+    # Run what is already built instead of building first. For a caller that runs several slots at
+    # once from one checkout: it builds once, and a build under a running slot would overwrite the
+    # executables that slot is running. The run still fails if the build output is missing.
+    [switch]$SkipBuild,
+
     # The two peer repositories are read-only for agents, so they are never built in place: each is
     # cloned to the cache below and published from the clone. Siblings of this repository by
     # default, which is how the workspace lays them out.
@@ -87,6 +99,17 @@ Import-Module (Join-Path $PSScriptRoot 'L2PortLock.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
+
+# The slot's ports, for every port parameter the caller left at its default. Slot 0 changes nothing:
+# its block is these parameters' own defaults, which Test-L2PortLockQueueing.ps1 holds together.
+if ($PortSlot -ne 0) {
+    $slotPorts = Get-L2PortBlock -Slot $PortSlot
+    foreach ($name in $slotPorts.Keys) {
+        if (-not $PSBoundParameters.ContainsKey($name)) {
+            Set-Variable -Name $name -Value $slotPorts[$name]
+        }
+    }
+}
 
 $scenarioPath = Join-Path $PSScriptRoot "scenarios/$Scenario.ps1"
 if (-not (Test-Path -LiteralPath $scenarioPath -PathType Leaf)) {
@@ -260,7 +283,8 @@ $snapshotRoot = Join-Path $EvidenceRoot 'snapshots'
 $null = New-Item -ItemType Directory -Path $logRoot -Force
 $null = New-Item -ItemType Directory -Path $snapshotRoot -Force
 
-$stageRoot = Join-Path ([IO.Path]::GetTempPath()) "l2-$runId"
+# The slot in the name keeps two slots that start in the same millisecond out of each other's stage.
+$stageRoot = Join-Path ([IO.Path]::GetTempPath()) $(if ($PortSlot -eq 0) { "l2-$runId" } else { "l2-$runId-slot$PortSlot" })
 $null = New-Item -ItemType Directory -Path $stageRoot -Force
 $databasePath = Join-Path $stageRoot 'controlserver.db'
 
@@ -303,24 +327,28 @@ try {
     # run-journey-g3.ps1, and a wrapper would leave the bare invocation unprotected. It is the first
     # of the two locks; the desktop lock a real-onboard run takes below always comes second
     # (L2PortLock.psm1 explains why that order cannot deadlock).
-    $portLock = Enter-L2PortLock -Reason "L2 scenario '$Scenario' (evidence $EvidenceRoot)"
-    $journal.Note('L2 port block lock acquired.')
+    $portLock = Enter-L2PortLock -Reason "L2 scenario '$Scenario' (evidence $EvidenceRoot)" -Slot $PortSlot
+    $journal.Note("L2 port block lock acquired (slot $PortSlot, $($portLock.Name)).")
 
     # Build once, run the built output. `dotnet run` would rebuild under the scenario and put a
     # compiler on the critical path of a timing test.
-    $journal.Note('Building ControlServer and the test doubles.')
-    $buildLog = Join-Path $logRoot 'build.log'
-    # From inside the repository, so its global.json picks the SDK. Launched from anywhere else the
-    # newest installed SDK builds it, and with AnalysisLevel=latest-recommended plus warnings as
-    # errors a newer analyzer fails a commit that builds clean in CI (CA1859 under SDK 10, 2026-09-13).
-    Push-Location -LiteralPath $Repository
-    try {
-        & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
-            Tee-Object -FilePath $buildLog | Out-Null
-    } finally {
-        Pop-Location
+    if ($SkipBuild) {
+        $journal.Note('Build skipped (-SkipBuild); running the output already built.')
+    } else {
+        $journal.Note('Building ControlServer and the test doubles.')
+        $buildLog = Join-Path $logRoot 'build.log'
+        # From inside the repository, so its global.json picks the SDK. Launched from anywhere else the
+        # newest installed SDK builds it, and with AnalysisLevel=latest-recommended plus warnings as
+        # errors a newer analyzer fails a commit that builds clean in CI (CA1859 under SDK 10, 2026-09-13).
+        Push-Location -LiteralPath $Repository
+        try {
+            & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
+                Tee-Object -FilePath $buildLog | Out-Null
+        } finally {
+            Pop-Location
+        }
+        if ($LASTEXITCODE -ne 0) { throw "Build failed; see $buildLog" }
     }
-    if ($LASTEXITCODE -ne 0) { throw "Build failed; see $buildLog" }
 
     # The two peers come from repositories this workspace may not write to, so they are published
     # out of throwaway clones and cached by commit. First run of a given commit pays for a build;
@@ -359,6 +387,17 @@ try {
     $skewProxyDirectory = Join-Path $Repository "tools/ControlServer.ClockSkewProxy/bin/$configuration/$framework"
     $fieldOpsDirectory = Join-Path $Repository "tools/ControlServer.FieldOps/bin/$configuration/$framework"
     $dashboardDirectory = Join-Path $Repository "src/ControlServer.Dashboard/bin/$configuration/$framework"
+    if ($SkipBuild) {
+        foreach ($executable in @((Join-Path $hostDirectory 'ControlServer.Host.exe'),
+                                  (Join-Path $riotDirectory 'ControlServer.FakeRiot.exe'),
+                                  (Join-Path $mesDirectory 'ControlServer.FakeMesIngest.exe'),
+                                  (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe'),
+                                  (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe'))) {
+            if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+                throw "-SkipBuild, but nothing is built at $executable; build ControlServer.sln -c Release first."
+            }
+        }
+    }
 
     $credential = [guid]::NewGuid().ToString('N')
     $agvId = 'AGV-L2-001'
@@ -1146,9 +1185,14 @@ try {
         -Rig $identity.rig -Identity $identity
 
     # The stage root is left behind on failure: its controlserver.db is usually the only place the
-    # cause is written down.
+    # cause is written down. On a pass it goes, and a pass that could not remove it says so: until
+    # control-server#130 the read-only connection's pool held controlserver.db open past Close(), the
+    # removal failed without a word, and win11-01 had collected 3607 of these.
     if ($outcome -eq 'PASS') {
         Remove-Item -LiteralPath $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $stageRoot) {
+            Write-Warning "Could not remove the stage root of a passing run: $stageRoot"
+        }
     } else {
         Write-Warning "Stage root kept for diagnosis: $stageRoot"
     }

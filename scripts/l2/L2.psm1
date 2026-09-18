@@ -772,7 +772,8 @@ public static extern bool PostMessage(System.IntPtr hWnd, uint msg, System.IntPt
 <#
 Opens the server's own SQLite store read-only, borrowing Microsoft.Data.Sqlite and SQLitePCLRaw
 from the ControlServer build under test rather than adding a dependency of its own. Read-only and
-shared-cache so reading can never block or alter the server that owns the file.
+shared-cache so reading can never block or alter the server that owns the file. Unpooled, because a
+pooled connection keeps the file open after Close(), and the run can then never delete its stage root.
 #>
 function Open-L2Database {
     param(
@@ -789,7 +790,7 @@ function Open-L2Database {
     # is deliberately swallowed rather than allowed to fail the run before it starts.
     try { [SQLitePCL.Batteries_V2]::Init() } catch { }
     $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new(
-        "Data Source=$DatabasePath;Mode=ReadOnly;Cache=Shared")
+        "Data Source=$DatabasePath;Mode=ReadOnly;Cache=Shared;Pooling=False")
     $connection.Open()
     return $connection
 }
