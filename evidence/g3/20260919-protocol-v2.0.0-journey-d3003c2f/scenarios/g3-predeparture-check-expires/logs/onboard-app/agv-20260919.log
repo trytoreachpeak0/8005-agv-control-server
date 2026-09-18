@@ -1,0 +1,17 @@
+2026-09-19T02:35:32.3266259+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+29fbf65e0b4d58c80849d5e6d0e44f40903c411e。
+2026-09-19T02:35:32.9683467+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T02:35:32.9841504+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T02:35:32.9852161+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T02:35:33.5278684+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-19T02:35:39.7761436+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-03E-20260918T183520891Z。 
+2026-09-19T02:35:40.7021291+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-03E-20260918T183520891Z。 
+2026-09-19T02:35:40.8952105+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-19T02:35:40.9690844+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-19T02:35:41.0790750+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-19T02:35:41.5152340+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-19T02:35:41.7151947+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=f0a3ecef-e034-4353-914a-43352202fc98。
+2026-09-19T02:35:42.0624981+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->0。
+2026-09-19T02:35:42.7121387+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=f0a3ecef-e034-4353-914a-43352202fc98，保留原OperationResult重放。
+2026-09-19T02:36:23.8831797+08:00	Information	ModbusTcpIoModuleClient	8号仓IO变化：DO 0->0，锁DI 1->0，光幕DI 1->1。
+2026-09-19T02:36:24.2223495+08:00	Information	ModbusTcpIoModuleClient	8号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
+2026-09-19T02:36:24.7070104+08:00	Warning	WireToGateBusinessService	出发前安全检查已过期：check=1dce2653-1048-f45d-b702-7dd1ae1c282e，询问的安全版本=6，本端已被接受的版本=8。回PREDEPARTURE_CHECK_EXPIRED，不作答。

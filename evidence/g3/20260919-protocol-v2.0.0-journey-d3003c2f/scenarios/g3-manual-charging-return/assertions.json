@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-manual-charging-return",
+  "runId": "20260918T183904016Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "29fbf65e0b4d58c80849d5e6d0e44f40903c411e",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260918T183904016Z",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "rig": "RealOnboard",
+    "controlServerCommit": "d3003c2f688431436850df634a7d028fcb14f346",
+    "batchId": "batch-2",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "G3-07-51",
+      "description": "消息顺序与向量一致：每次申请 ManualChargingReturnToServiceRequested 都得到一份关联到它的 ManualChargingReturnToServiceResult，两次申请请求号不同（CV-MANUAL-CHARGING-RETURN orderedExpectedMessages）",
+      "outcome": "PASS",
+      "expected": "申请 2 / 关联应答 2 / 请求号不同",
+      "actual": "申请 2 / 关联应答 2 / 请求号 a9c13bfd-bc89-48cc-8c0e-b500db6e31be, 0d94d364-8528-45a3-907f-6e61ec6e8274"
+    },
+    {
+      "id": "G3-07-52",
+      "description": "申请带着已验证的管理员：两次请求都带车上配置的管理员号与核验方式，服务端记下同一管理员与 MAINTENANCE_ADMINISTRATOR 角色（REQUIRE_VERIFIED_ADMINISTRATOR / REQUEST_RETURN_WITH_OPERATOR_CONTEXT）",
+      "outcome": "PASS",
+      "expected": "2 行 / 管理员号一致 / MAINTENANCE_ADMINISTRATOR",
+      "actual": "2 行 / L2-OPERATOR(MAINTENANCE_ADMINISTRATOR), L2-OPERATOR(MAINTENANCE_ADMINISTRATOR)"
+    },
+    {
+      "id": "G3-07-53",
+      "description": "服务端据会话当时的状态重新评估：会话 RecoveryRequired 时拒绝（带原因），会话 Ready 时受理为 RETURNED_TO_ELIGIBILITY_EVALUATION（REEVALUATE_ELIGIBILITY_AFTER_RETURN）",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired → REJECTED(原因) / Ready → RETURNED_TO_ELIGIBILITY_EVALUATION",
+      "actual": "RecoveryRequired → REJECTED(SESSION_RECOVERY_REQUIRED) / Ready → RETURNED_TO_ELIGIBILITY_EVALUATION"
+    },
+    {
+      "id": "G3-07-54",
+      "description": "申请本身没有副作用：会话仍 Ready，没有需求、仓位操作、开锁进度或 RIoT 单，八个仓都关着、空、锁上（forbidden duplicate-riot-order、duplicate-slot-unlock、ready-before-reconciliation / NO_UNPROVEN_STATE）",
+      "outcome": "PASS",
+      "expected": "Ready / 需求 0 / 操作 0 / 进度 0 / RIoT 单 0 / CLOSED/EMPTY/1/0",
+      "actual": "Ready / 需求 0 / 操作 0 / 进度 0 / RIoT 单 0 / CLOSED/EMPTY/1/0"
+    }
+  ]
+}

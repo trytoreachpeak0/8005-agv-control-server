@@ -1,6 +1,6 @@
 # 缺陷：journey 场景 `g3-forced-mechanical-recovery` 不按 onboard-hmi#107 加的「已隔离并完成机械取出」，车载端一直不上报结果
 
-Status: open（场景脚本缺陷，不是产品缺陷；修复票待调度会话开）
+Status: fixed，由 [control-server#156](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/156) 修复（PR [#157](https://github.com/trytoreachpeak0/8005-agv-control-server/pull/157)，合并提交 `d3003c2f`），control-server#90 重跑 PASS
 Owner repository: `8005-agv-control-server`（`scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1`，第 52 行按下入口之后）
 Found by: control-server#90（批次 5 出口）修复后的重跑，`run-journey-g3.ps1`，2026-09-19，
 [`evidence/g3/20260919-protocol-v2.0.0-journey-c12f0498/`](../../evidence/g3/20260919-protocol-v2.0.0-journey-c12f0498/)
@@ -53,3 +53,23 @@ Timed out after 120s waiting for: the server received ForcedMechanicalRecoveryRe
 - **怎么证明红变绿**：在 `c12f0498`＋修复、车载端 `29fbf65e` 上单跑这条场景 PASS（`G3-07-41`～`45`）；修复前的红证据即本单的 `Found by`。
 - **对 control-server#90 的影响**：journey runner 从 G3 共享绑定的 `ControlServerCommit` 克隆场景脚本，所以修复合入后要把绑定移到新提交；
   为了四份 G3 证据绑同一身份，建议四个 G3 runner 一起重跑（约 17 分钟）。车载端 G2、真装置七条、服务端 G2 与 CI 三连都不经过这个文件，证据保留。
+
+## 修复
+
+control-server#156（PR #157，`d3003c2f`）只改 `scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1`：按「强制机械恢复」并确认后，等「已隔离并完成机械取出」可用（60 秒），
+按下并在「确认强制机械取出」答是，再等 `ForcedMechanicalRecoveryResult`；拒绝判定补上车载端的「确认失败」窗口。场景仍不按「提交硬件恢复记录」，
+所以 `G3-07-44` 读到的是记录到达前的就绪，判据不变。
+
+修复票的单跑（服务端 `b30b7248`、车载端 `29fbf65e`）：`G3-07-41`～`45` 全 PASS，`G3-07-44` 实测 `RecoveryRequired (FORCED_RECOVERY_GENERATION_MISMATCH)`，
+证据 `evidence/l2/20260919-b5-156-g3-forced-mechanical-recovery-b30b7248-001/`。PR #157 的 CI `test`、`l2` 均绿。
+
+## 复验（2026-09-19，control-server#90 在合并提交上重跑）
+
+G3 共享绑定 `ControlServerCommit d3003c2f`、`OnboardCommit 29fbf65e`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456`（绑定提交 `90654ade`），四个 G3 runner 从头重跑：
+
+| runner | 结果 | 证据 |
+| --- | --- | --- |
+| `run-journey-g3.ps1` | **`JOURNEY_G3_PASS`**，12/12 场景退出码 0，`FP-IS-01`／`02`／`03`／`07` PASS；`g3-forced-mechanical-recovery` 的 `G3-07-41`～`45` 全 PASS | [`evidence/g3/20260919-protocol-v2.0.0-journey-d3003c2f/`](../../evidence/g3/20260919-protocol-v2.0.0-journey-d3003c2f/) |
+| `run-staged-g3.ps1` | `STAGED_G3_RECOVERY_REPLAY_PASS` | [`evidence/g3/20260919-protocol-v2.0.0-staged-d3003c2f/`](../../evidence/g3/20260919-protocol-v2.0.0-staged-d3003c2f/) |
+| `run-staged-g3-restart.ps1` | `STAGED_G3_PROCESS_RESTART_PASS` | [`evidence/g3/20260919-protocol-v2.0.0-restart-d3003c2f/`](../../evidence/g3/20260919-protocol-v2.0.0-restart-d3003c2f/) |
+| `run-demand-bearing-g3-vectors.ps1` | `DEMAND_BEARING_G3_VECTORS_PASS` | [`evidence/g3/20260919-protocol-v2.0.0-demand-bearing-d3003c2f/`](../../evidence/g3/20260919-protocol-v2.0.0-demand-bearing-d3003c2f/) |

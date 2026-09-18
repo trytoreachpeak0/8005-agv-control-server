@@ -1,0 +1,41 @@
+{
+  "loopbackOnly": true,
+  "unattended": true,
+  "interactiveDesktopRequired": true,
+  "rig": "L2 real-onboard rig, run from the ControlServer clone at the bound commit",
+  "onboard": "shipped SQCD.Agv.Wpf, driven through UI Automation",
+  "slotsSimulator": "real SQCD_8005AGV_Simulator over Modbus",
+  "riot": "tools/ControlServer.FakeRiot (loopback)",
+  "mesIngest": "tools/ControlServer.FakeMesIngest (loopback)",
+  "journeyRuntimeEnabled": true,
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "realVehicleMoved": false,
+  "commitBinding": {
+    "source": "scripts/run-staged-g3.ps1",
+    "sourceSha256": "ca82400cb926f4867c74f8d8c11163242e596d3f83b207d76d53fba0872162b3",
+    "readFrom": "param-block-defaults",
+    "controlServerCommitSource": "SHARED_BINDING"
+  },
+  "scenarios": [
+    "g3-journey-demand-to-pickup",
+    "g3-pickup-load-and-correction",
+    "g3-load-cancellation",
+    "g3-load-cancellation-before-load",
+    "g3-sublot-rejected",
+    "g3-predeparture-check-expires",
+    "g3-operation-result-unknown-reconcile",
+    "g3-exception-resume",
+    "g3-exception-compensate",
+    "g3-fault-cargo-handoff",
+    "g3-forced-mechanical-recovery",
+    "g3-manual-charging-return"
+  ],
+  "secretVariablesScanned": [
+    "CONTROL_SERVER_RIOT_CALL_API_KEY",
+    "RIOT_CALL_API_KEY",
+    "CONTROL_SERVER_ONBOARD_CREDENTIAL",
+    "CONTROL_SERVER_GOVERNANCE_CREDENTIAL",
+    "CONTROL_SERVER_RECOVERY_PROOF"
+  ]
+}

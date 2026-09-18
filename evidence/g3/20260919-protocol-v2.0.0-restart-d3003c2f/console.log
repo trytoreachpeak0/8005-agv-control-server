@@ -1,0 +1,1407 @@
+{
+  "schemaVersion": "1.0.0",
+  "runKind": "STAGED_G3_REAL_PEERS_PROCESS_RESTART_NO_MOVEMENT",
+  "runId": "20260918T182759126Z",
+  "startedAtUtc": "2026-09-18T18:27:59.1267348+00:00",
+  "completedAtUtc": "2026-09-18T18:29:50.8079391+00:00",
+  "status": "STAGED_G3_PROCESS_RESTART_PASS",
+  "classification": {
+    "runStatus": "STAGED_G3_PROCESS_RESTART_PASS",
+    "assuranceLevel": "STAGED_REBUILD",
+    "formalSlicePass": true,
+    "officialSlices": [
+      {
+        "integrationSliceId": "FP-IS-00",
+        "status": "PASS",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": true
+      },
+      {
+        "integrationSliceId": "FP-IS-06",
+        "status": "PASS",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": true
+      },
+      {
+        "integrationSliceId": "FP-IS-15",
+        "status": "PASS",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": true
+      },
+      {
+        "integrationSliceId": "FP-IS-14",
+        "status": "PASS",
+        "assuranceLevel": "STAGED_REBUILD",
+        "formalSlicePass": true
+      }
+    ],
+    "slicesWithoutSurfaceThisBatch": [],
+    "fullG3": "INCONCLUSIVE",
+    "releaseCandidate": "INCONCLUSIVE"
+  },
+  "gateResults": [
+    "slices/FP-IS-00/gate-result.json",
+    "slices/FP-IS-06/gate-result.json",
+    "slices/FP-IS-15/gate-result.json",
+    "slices/FP-IS-14/gate-result.json"
+  ],
+  "commits": {
+    "controlServer": "d3003c2f688431436850df634a7d028fcb14f346",
+    "onboardHmi": "29fbf65e0b4d58c80849d5e6d0e44f40903c411e",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "86575456c847041515b7b75e8851a00e0d939804",
+    "runner": "90654adee256fa2585956f28a411dd969e78b193",
+    "runnerWorktreeCleanAtStart": true
+  },
+  "configurationSha256": "3c1217f3ac5d9f2d9979b82e3588f00118dffde7aff7db7ccefe9f50560daeed",
+  "configuration": {
+    "loopbackOnly": true,
+    "tls": false,
+    "temporaryTrustRootInstalled": false,
+    "unattended": true,
+    "commitBinding": {
+      "source": "scripts/run-staged-g3.ps1",
+      "sourceSha256": "ca82400cb926f4867c74f8d8c11163242e596d3f83b207d76d53fba0872162b3",
+      "readFrom": "param-block-defaults",
+      "controlServer": "d3003c2f688431436850df634a7d028fcb14f346",
+      "onboardHmi": "29fbf65e0b4d58c80849d5e6d0e44f40903c411e",
+      "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+      "protocol": "86575456c847041515b7b75e8851a00e0d939804"
+    },
+    "ports": {
+      "controlPlaintext": 58105,
+      "controlHealth": 58107,
+      "simulatorModbus": 1502,
+      "simulatorHttp": 58006
+    },
+    "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+    "onboardConfigSha256": "e264b67042abfb612e2060d825ab777fec52239e13d0bca97194687cffcbf95b",
+    "onboardActiveConfigurationSha256BeforeTamper": "facb744bed1ad40765501a3690f605cd79c9956cf54185d5142ca8c095bbaf69",
+    "onboardActiveConfigurationSha256AfterTamper": "bbd0aad5a20a147edc7e9f04dea6b805dbb24b2e4bf1e7ba7868bb2f8786923e",
+    "slotConfigurationActivations": {
+      "whileMatching": {
+        "ok": true,
+        "activationId": "c3f61698-df2a-4980-8f6b-7def59bd0425",
+        "state": "PENDING_RESULT",
+        "error": null
+      },
+      "afterTamper": {
+        "ok": true,
+        "activationId": "4a0864c4-5690-4aa6-a4d7-a06f547e1168",
+        "state": "PENDING_RESULT",
+        "error": null
+      },
+      "rowsAtRestart": [
+        {
+          "activationId": "c3f61698-df2a-4980-8f6b-7def59bd0425",
+          "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+          "state": "ACTIVATED",
+          "configurationVersion": 2,
+          "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+          "commandMessageId": "3618dba7-9b67-4288-b0ee-f2b0b6e4b0b4",
+          "resultJson": "{\"Succeeded\":true,\"ReasonCode\":null}"
+        },
+        {
+          "activationId": "4a0864c4-5690-4aa6-a4d7-a06f547e1168",
+          "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+          "state": "FAILED",
+          "configurationVersion": 3,
+          "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+          "commandMessageId": "e1e34679-c155-4d60-934a-440b5c094bbf",
+          "resultJson": "{\"Succeeded\":false,\"ReasonCode\":\"SLOT_CONFIGURATION_FINGERPRINT_MISMATCH\"}"
+        }
+      ],
+      "activeRowsAtRestart": [
+        {
+          "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+          "configurationVersion": 2,
+          "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+          "activationId": "c3f61698-df2a-4980-8f6b-7def59bd0425"
+        }
+      ]
+    },
+    "stableWindowSamplesPerPhase": 12,
+    "journeyRuntimeEnabled": false,
+    "realExternalCredentialsUsed": false,
+    "realRiotOrderCreated": false,
+    "movementCommandSent": false,
+    "vehicleSafetyEligibilityFabricated": false,
+    "vectorsNotReachableWithoutAnAcceptedDemand": [
+      "demandReusedAcrossRestart",
+      "vehicleDispatchLeaseReusedAcrossRestart"
+    ]
+  },
+  "commands": [
+    {
+      "name": "clone-control-server",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "C:\\Users\\szy\\Desktop\\8005-workspace-v2\\repos\\8005-agv-control-server",
+        "C:\\s5g\\st-restart\\sources\\control-server"
+      ],
+      "startedAtUtc": "2026-09-18T18:27:59.3826403+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-control-server.log"
+    },
+    {
+      "name": "fetch-control-server",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\control-server",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-18T18:27:59.6959356+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-control-server.log"
+    },
+    {
+      "name": "checkout-control-server",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\control-server",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "d3003c2f688431436850df634a7d028fcb14f346"
+      ],
+      "startedAtUtc": "2026-09-18T18:27:59.8450703+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-control-server.log"
+    },
+    {
+      "name": "clone-onboard-hmi",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git",
+        "C:\\s5g\\st-restart\\sources\\onboard-hmi"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:05.3377843+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-onboard-hmi.log"
+    },
+    {
+      "name": "fetch-onboard-hmi",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\onboard-hmi",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:08.6699242+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-onboard-hmi.log"
+    },
+    {
+      "name": "checkout-onboard-hmi",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\onboard-hmi",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "29fbf65e0b4d58c80849d5e6d0e44f40903c411e"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:10.024414+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-onboard-hmi.log"
+    },
+    {
+      "name": "clone-slots-simulator",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources",
+      "file": "git",
+      "arguments": [
+        "-c",
+        "core.autocrlf=false",
+        "clone",
+        "--no-hardlinks",
+        "--no-checkout",
+        "https://github.com/trytoreachpeak0/slots-simulator.git",
+        "C:\\s5g\\st-restart\\sources\\slots-simulator"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:10.8726497+00:00",
+      "exitCode": 0,
+      "log": "logs/clone-slots-simulator.log"
+    },
+    {
+      "name": "fetch-slots-simulator",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\slots-simulator",
+      "file": "git",
+      "arguments": [
+        "fetch",
+        "origin",
+        "--prune",
+        "--tags"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:12.868322+00:00",
+      "exitCode": 0,
+      "log": "logs/fetch-slots-simulator.log"
+    },
+    {
+      "name": "checkout-slots-simulator",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\slots-simulator",
+      "file": "git",
+      "arguments": [
+        "checkout",
+        "--detach",
+        "fb5f7c593742bf98bc3957b8729a38aad5321f28"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:14.1081086+00:00",
+      "exitCode": 0,
+      "log": "logs/checkout-slots-simulator.log"
+    },
+    {
+      "name": "publish-control-server",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\control-server",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\ControlServer.Host\\ControlServer.Host.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\s5g\\st-restart\\publish\\control-server"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:14.2753834+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-control-server.log"
+    },
+    {
+      "name": "publish-onboard-hmi",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\onboard-hmi",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\SQCD.Agv.Wpf\\SQCD.Agv.Wpf.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\s5g\\st-restart\\publish\\onboard-hmi"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:24.5832311+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-onboard-hmi.log"
+    },
+    {
+      "name": "publish-slots-simulator",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\slots-simulator",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\src\\SQCD_8005AGV_Simulator\\SQCD_8005AGV_Simulator.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\s5g\\st-restart\\publish\\slots-simulator"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:32.9687372+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-slots-simulator.log"
+    },
+    {
+      "name": "publish-field-ops",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\control-server",
+      "file": "dotnet",
+      "arguments": [
+        "publish",
+        ".\\tools\\ControlServer.FieldOps\\ControlServer.FieldOps.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "C:\\s5g\\st-restart\\publish\\field-ops"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:37.8539634+00:00",
+      "exitCode": 0,
+      "log": "logs/publish-field-ops.log"
+    },
+    {
+      "name": "build-server-shutdown",
+      "workingDirectory": "C:\\s5g\\st-restart\\sources\\control-server",
+      "file": "dotnet",
+      "arguments": [
+        "build-server",
+        "shutdown"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:41.7225677+00:00",
+      "exitCode": 0,
+      "log": "logs/build-server-shutdown.log"
+    },
+    {
+      "name": "field-ops-seed-approved-facts",
+      "workingDirectory": "C:\\s5g\\st-restart\\publish\\field-ops",
+      "file": "dotnet",
+      "arguments": [
+        "C:\\s5g\\st-restart\\publish\\field-ops\\ControlServer.FieldOps.dll",
+        "seed-approved-facts",
+        "--database",
+        "C:\\s5g\\st-restart\\runtime\\controlserver.db"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:47.1767084+00:00",
+      "exitCode": 0,
+      "log": "logs/field-ops-seed-approved-facts.log"
+    },
+    {
+      "name": "field-ops-bind-io",
+      "workingDirectory": "C:\\s5g\\st-restart\\publish\\field-ops",
+      "file": "dotnet",
+      "arguments": [
+        "C:\\s5g\\st-restart\\publish\\field-ops\\ControlServer.FieldOps.dll",
+        "bind-io",
+        "--database",
+        "C:\\s5g\\st-restart\\runtime\\controlserver.db",
+        "--agv",
+        "AGV-8005-STAGED-G3-RESTART-01"
+      ],
+      "startedAtUtc": "2026-09-18T18:28:49.1023182+00:00",
+      "exitCode": 0,
+      "log": "logs/field-ops-bind-io.log"
+    }
+  ],
+  "assertions": {
+    "commitBindingSharedWithMainRunner": "PASS",
+    "runningControlServerReportsBoundBuildCommit": "PASS",
+    "runningOnboardReportsBoundBuildCommit": "PASS",
+    "protocolIdentityBoundToRelease": "PASS",
+    "freshDatabaseStartsAtGenerationOne": "PASS",
+    "onboardRestartAdvancesGenerationByExactlyOne": "PASS",
+    "controlServerRestartAdvancesGenerationByExactlyOne": "PASS",
+    "sessionGenerationStableWithinEveryPhase": "PASS",
+    "noPeerExitedUnexpectedly": "PASS",
+    "onboardHostProcessReplacedOnlyInPhaseTwo": "PASS",
+    "controlServerHostProcessReplacedOnlyInPhaseThree": "PASS",
+    "serverSessionIdentityIsScopedPerConnection": "PASS",
+    "controlDatabaseFileReusedAcrossServerRestart": "PASS",
+    "onboardJournalEpochStableAcrossOnboardRestart": "PASS",
+    "controlInboxRowsSurviveServerRestart": "PASS",
+    "onboardOutboxRowsSurviveOnboardRestart": "PASS",
+    "recoveryReportIdentityAgreesAcrossPeers": "PASS",
+    "sessionRecoveryRowStaysASingletonPerAgv": "PASS",
+    "slotConfigurationActivationAcceptedWhileTheVehicleMatched": "PASS",
+    "slotConfigurationActivationRefusedAfterTheVehicleConfigurationChanged": "PASS",
+    "aRefusedActivationLeftTheActiveConfigurationUntouched": "PASS",
+    "onboardAlarmProjectionAdoptedTheRestartedVehiclesSnapshot": "PASS",
+    "onboardAlarmProjectionNeverRegressedToAnEarlierGeneration": "PASS",
+    "readinessWithheldWhileRecoveryIsUnreconciled": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "secretScan": "PASS"
+  },
+  "failedAssertions": [],
+  "phases": [
+    {
+      "phase": "fresh-start",
+      "sessionGeneration": 1,
+      "stableWindow": [
+        {
+          "sampledAtUtc": "2026-09-18T18:28:53.3790584+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:28:54.4008037+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:28:55.4216018+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:28:56.4406119+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:28:57.4608509+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:28:58.4749555+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:28:59.4969249+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:00.5063582+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:01.5253607+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:02.5324649+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:03.5457875+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:04.5546582+00:00",
+          "sessionGeneration": 1,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "DEPARTURE_SAFETY_NOT_READY"
+        }
+      ]
+    },
+    {
+      "phase": "onboard-process-restart-same-journal",
+      "sessionGeneration": 2,
+      "stableWindow": [
+        {
+          "sampledAtUtc": "2026-09-18T18:29:14.0818367+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:15.0872386+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:16.1104092+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:17.1233531+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:18.1321434+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:19.1502163+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:20.1586988+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:21.1742565+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:22.1818272+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:23.2024097+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:24.221633+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:25.2396662+00:00",
+          "sessionGeneration": 2,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        }
+      ]
+    },
+    {
+      "phase": "controlserver-process-restart-same-database",
+      "sessionGeneration": 3,
+      "stableWindow": [
+        {
+          "sampledAtUtc": "2026-09-18T18:29:37.0291349+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:38.038365+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:39.0590663+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:40.078482+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:41.0984341+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:42.1175407+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:43.1397147+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:44.1566359+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:45.1635507+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:46.1867564+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:47.2018153+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        },
+        {
+          "sampledAtUtc": "2026-09-18T18:29:48.2205996+00:00",
+          "sessionGeneration": 3,
+          "readiness": "RecoveryRequired",
+          "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH"
+        }
+      ]
+    }
+  ],
+  "peerExitObservations": [
+    {
+      "phase": "fresh-start",
+      "onboardProcessId": 14992,
+      "controlProcessId": 29064,
+      "onboardExited": false,
+      "controlExited": false
+    },
+    {
+      "phase": "onboard-process-restart-same-journal",
+      "onboardProcessId": 2000,
+      "controlProcessId": 29064,
+      "onboardExited": false,
+      "controlExited": false,
+      "retiredOnboardProcessId": 14992,
+      "retiredOnboardExited": true
+    },
+    {
+      "phase": "controlserver-process-restart-same-database",
+      "onboardProcessId": 2000,
+      "controlProcessId": 15956,
+      "onboardExited": false,
+      "controlExited": false,
+      "retiredControlProcessId": 29064,
+      "retiredControlExited": true
+    }
+  ],
+  "sessionIdentity": {
+    "serverInstanceIds": [
+      "b400cef7-1da0-49aa-ba10-d4eda8691ea1",
+      "de7d47dd-4917-45db-8aa3-a8e746feb034",
+      "7109de9f-8d36-4ba8-92eb-542e3864bcb5"
+    ],
+    "serverBuildCommits": [
+      "d3003c2f688431436850df634a7d028fcb14f346",
+      "d3003c2f688431436850df634a7d028fcb14f346",
+      "d3003c2f688431436850df634a7d028fcb14f346"
+    ],
+    "onboardBuildCommits": [
+      "29fbf65e0b4d58c80849d5e6d0e44f40903c411e",
+      "29fbf65e0b4d58c80849d5e6d0e44f40903c411e",
+      "29fbf65e0b4d58c80849d5e6d0e44f40903c411e"
+    ],
+    "onboardInstanceIds": [
+      "2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19",
+      "2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19",
+      "2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19"
+    ],
+    "recoveryReportMessageIdsInOnboardJournal": [
+      "1d303e62-02a6-4ed6-8fad-06c997f50e0c",
+      "5b885017-0d67-4e02-b9c7-eba98b4043a4",
+      "75887b4a-043a-47eb-9c6a-d532e8c61600"
+    ],
+    "recoveryReportMessageIdsInControlInbox": [
+      "1d303e62-02a6-4ed6-8fad-06c997f50e0c",
+      "5b885017-0d67-4e02-b9c7-eba98b4043a4",
+      "75887b4a-043a-47eb-9c6a-d532e8c61600"
+    ]
+  },
+  "onboardJournalBeforeRestart": {
+    "file": {
+      "path": "runtime/onboard-journal.db",
+      "creationTimeUtc": "2026-09-18T18:28:51.5911437Z",
+      "length": 36864
+    },
+    "journalEpoch": "b7728f99-e097-418d-9cac-6318b7fbdc33",
+    "outboxRows": [
+      {
+        "deduplicationKey": "recovery:1:ab2b0f37-51ad-405c-a821-1effe4e3e847",
+        "messageType": "RecoveryStateReport",
+        "messageId": "5b885017-0d67-4e02-b9c7-eba98b4043a4",
+        "contentSha256": "f2d4bae49fce3d39cda1f7b63d2ff3f7c7ab57e318edb0efa95e5b9c8de90ef7",
+        "acknowledged": 1
+      },
+      {
+        "deduplicationKey": "safety-state-changed:b7728f99-e097-418d-9cac-6318b7fbdc33:2:2026-09-18T18:28:52.1319028+00:00",
+        "messageType": "SafetyStateChanged",
+        "messageId": "b1bb46a4-0d07-df51-9ad6-d770ef77df7b",
+        "contentSha256": "99afede9d6fc29f60851e3125e138d3cf2470b7f897e92416637d377ed2c752e",
+        "acknowledged": 1
+      }
+    ]
+  },
+  "onboardJournalAfterRun": {
+    "file": {
+      "path": "runtime/onboard-journal.db",
+      "creationTimeUtc": "2026-09-18T18:28:51.5911437Z",
+      "length": 36864
+    },
+    "journalEpoch": "b7728f99-e097-418d-9cac-6318b7fbdc33",
+    "outboxRows": [
+      {
+        "deduplicationKey": "recovery:1:ab2b0f37-51ad-405c-a821-1effe4e3e847",
+        "messageType": "RecoveryStateReport",
+        "messageId": "5b885017-0d67-4e02-b9c7-eba98b4043a4",
+        "contentSha256": "f2d4bae49fce3d39cda1f7b63d2ff3f7c7ab57e318edb0efa95e5b9c8de90ef7",
+        "acknowledged": 1
+      },
+      {
+        "deduplicationKey": "safety-state-changed:b7728f99-e097-418d-9cac-6318b7fbdc33:2:2026-09-18T18:28:52.1319028+00:00",
+        "messageType": "SafetyStateChanged",
+        "messageId": "b1bb46a4-0d07-df51-9ad6-d770ef77df7b",
+        "contentSha256": "99afede9d6fc29f60851e3125e138d3cf2470b7f897e92416637d377ed2c752e",
+        "acknowledged": 1
+      },
+      {
+        "deduplicationKey": "recovery:2:53a2f639-17ed-4e2b-845c-1a654f59f688",
+        "messageType": "RecoveryStateReport",
+        "messageId": "1d303e62-02a6-4ed6-8fad-06c997f50e0c",
+        "contentSha256": "fbfb741d220309669f846a2a0a22f7d5d88b3636e2d7adc2dce68c362573496a",
+        "acknowledged": 1
+      },
+      {
+        "deduplicationKey": "safety-state-changed:b7728f99-e097-418d-9cac-6318b7fbdc33:2:2026-09-18T18:29:12.8674403+00:00",
+        "messageType": "SafetyStateChanged",
+        "messageId": "757209e7-ae55-9a56-b037-3213cc0ec893",
+        "contentSha256": "fefbda6e70f447e04902d1b3a9f7f91e2d4defa899b0d0392eb9172ba592b61a",
+        "acknowledged": 1
+      },
+      {
+        "deduplicationKey": "recovery:3:8954a7a6-9475-4cb7-bca3-e5847a33b100",
+        "messageType": "RecoveryStateReport",
+        "messageId": "75887b4a-043a-47eb-9c6a-d532e8c61600",
+        "contentSha256": "821cc21f48941ee66ff1d45a5a3b05c8794d307088c9a8f248695149b7a00522",
+        "acknowledged": 1
+      },
+      {
+        "deduplicationKey": "safety-state-changed:b7728f99-e097-418d-9cac-6318b7fbdc33:3:2026-09-18T18:29:35.8234590+00:00",
+        "messageType": "SafetyStateChanged",
+        "messageId": "bdb864fa-fc5d-855d-98e0-a3bd4b6e07e5",
+        "contentSha256": "1f390178d15b8582c42c8bae91fcfed056744a01bf06a189e4638ea04d31f272",
+        "acknowledged": 1
+      }
+    ]
+  },
+  "controlDatabaseBeforeServerRestart": {
+    "file": {
+      "path": "runtime/controlserver.db",
+      "creationTimeUtc": "2026-09-18T18:28:45.5294720Z",
+      "length": 4096
+    },
+    "inboxRows": [
+      {
+        "messageId": "3592e7ad-9fc3-470c-a517-b6f7884ad4dc",
+        "messageType": "SessionHello",
+        "contentHash": "fafac78fe348e35f969164db3a11a8ae83409d504887e81aaf412413c59e3238"
+      },
+      {
+        "messageId": "cef242b3-9d6e-430c-851f-cc7bc185cc33",
+        "messageType": "CapabilitySnapshot",
+        "contentHash": "9b5c2b5fcaa4956ca5bedffb869f0bcad394960f76492c25136b6593c1ed7b5b"
+      },
+      {
+        "messageId": "8a3a9a01-5a4e-4f2b-97cb-ca27c8790350",
+        "messageType": "SafetyStateSnapshot",
+        "contentHash": "c68a359b4a377317c5cab5d9b5a18826473e07169e7dbc5c7115bc83ea14a51f"
+      },
+      {
+        "messageId": "06bbb5c6-73d4-47eb-a873-7e5516bb17ff",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "8cc0c80c7993d52da431145327df4a8738a7ad8279c75275b533bccecb354c6b"
+      },
+      {
+        "messageId": "5b885017-0d67-4e02-b9c7-eba98b4043a4",
+        "messageType": "RecoveryStateReport",
+        "contentHash": "f2d4bae49fce3d39cda1f7b63d2ff3f7c7ab57e318edb0efa95e5b9c8de90ef7"
+      },
+      {
+        "messageId": "b1bb46a4-0d07-df51-9ad6-d770ef77df7b",
+        "messageType": "SafetyStateChanged",
+        "contentHash": "99afede9d6fc29f60851e3125e138d3cf2470b7f897e92416637d377ed2c752e"
+      },
+      {
+        "messageId": "8dcfbecd-b951-4f5f-abf4-2767f3d8d6b2",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "3ca63e77cc065a086154c69d6fd1a5bc10bea68249f787673a1b29eaed11fffe"
+      },
+      {
+        "messageId": "eb0c5e3c-9696-4a1c-bdd2-a40196a59b44",
+        "messageType": "Heartbeat",
+        "contentHash": "f76d2543176994db3cf973a187ed77d1f28b76444bbe477740f37170b1bb0960"
+      },
+      {
+        "messageId": "6e58340e-0efc-499e-9d26-885b419e4af1",
+        "messageType": "Heartbeat",
+        "contentHash": "760e8a4ee06a91d1514aa5c31ba38d924263c307d1aea5f62e24bab96906930c"
+      },
+      {
+        "messageId": "0dbf90e7-b59a-4536-b19e-4f8060e318fd",
+        "messageType": "SlotConfigurationActivationResult",
+        "contentHash": "5bdeb6cb1d97fc92fcc4cabca3b5b0e9bf2abac61900782773f66725e0996257"
+      },
+      {
+        "messageId": "769ba6d2-1335-4971-a3e3-5e5762abc81c",
+        "messageType": "Heartbeat",
+        "contentHash": "c0b29ef87300379cadae350f2b4121d97155d6bda64bf4e470567b7f44dff138"
+      },
+      {
+        "messageId": "45a3d6b0-65ce-4b70-8317-cc7320ec944f",
+        "messageType": "SessionHello",
+        "contentHash": "eedbc8961c1b81209cb5eceb7a2697617806013a37ea9c9a1e2a0d7dbe74ade7"
+      },
+      {
+        "messageId": "de61b91a-89f5-4821-b9a9-06fbf9ca31eb",
+        "messageType": "CapabilitySnapshot",
+        "contentHash": "8fe6d3b4b38ade174dcc734a393ea662d71242d8c2f5895588e437399e522af5"
+      },
+      {
+        "messageId": "8cb70461-7968-4ff1-a835-55482bb0c62b",
+        "messageType": "SafetyStateSnapshot",
+        "contentHash": "2ca79e109f25d47e66418b2f79932c3c5436082b516f0ad0e2714472e71cc4fe"
+      },
+      {
+        "messageId": "85c0cc6d-c5d7-49fb-8e66-b220dcd2d091",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "1ac3f08589c3079eb49d56829c52f72113e32d034cf0ac2e2ec3944039355618"
+      },
+      {
+        "messageId": "1d303e62-02a6-4ed6-8fad-06c997f50e0c",
+        "messageType": "RecoveryStateReport",
+        "contentHash": "fbfb741d220309669f846a2a0a22f7d5d88b3636e2d7adc2dce68c362573496a"
+      },
+      {
+        "messageId": "757209e7-ae55-9a56-b037-3213cc0ec893",
+        "messageType": "SafetyStateChanged",
+        "contentHash": "fefbda6e70f447e04902d1b3a9f7f91e2d4defa899b0d0392eb9172ba592b61a"
+      },
+      {
+        "messageId": "b19a8abb-d854-46df-a788-88493ea4bcc0",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "3c5840dd751c7b0062d5f354396c1eeca93c4f1cf2cb636d7debb8aba831dce1"
+      },
+      {
+        "messageId": "461337d0-80ee-4daf-a617-56896a85cdac",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "55efb311ff12c3ad2f56522dda27bd8581fef384cf6a5764b757e72c214b7bb1"
+      },
+      {
+        "messageId": "b144aeb4-7273-41df-af58-3f9741d3312b",
+        "messageType": "Heartbeat",
+        "contentHash": "2824951f21174d0544297d93ae58461c65e3fbc68f3f7894035c279e0bfdea77"
+      },
+      {
+        "messageId": "43e03425-c6a2-42b2-8994-491de1a21e7a",
+        "messageType": "Heartbeat",
+        "contentHash": "f918bf0b04e0df399946b596de68ed09cfe0067d96643f95cfbee93ccff9d44c"
+      },
+      {
+        "messageId": "5482ac89-598a-4ee3-b489-241d67a0216a",
+        "messageType": "SlotConfigurationActivationResult",
+        "contentHash": "6b863690c79c7ce1bae14588693dc5fb508121a1e37324a4b84f3ba7881cd170"
+      },
+      {
+        "messageId": "ba03ba9d-e458-4bda-a741-af5d209514b9",
+        "messageType": "Heartbeat",
+        "contentHash": "8210e9684b3ac77b35d6eb44acef28b712c9a40a047ac9c120ca414570e01cf3"
+      }
+    ],
+    "sessionHelloRows": [
+      {
+        "messageId": "3592e7ad-9fc3-470c-a517-b6f7884ad4dc",
+        "requestJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionHello\",\"messageId\":\"3592e7ad-9fc3-470c-a517-b6f7884ad4dc\",\"correlationId\":null,\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":null,\"sentAt\":\"2026-09-18T18:28:51.6648541\\u002B00:00\",\"payload\":{\"onboardInstanceId\":\"2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19\",\"onboardBuildCommit\":\"29fbf65e0b4d58c80849d5e6d0e44f40903c411e\",\"supportedProtocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"credentialProof\":\"[REDACTED]\"}}",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionAccepted\",\"messageId\":\"a9321f97-7685-448b-9e6b-2dc3579148d3\",\"correlationId\":\"3592e7ad-9fc3-470c-a517-b6f7884ad4dc\",\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-18T18:28:51.7985309+00:00\",\"payload\":{\"sessionGeneration\":1,\"serverInstanceId\":\"b400cef7-1da0-49aa-ba10-d4eda8691ea1\",\"serverBuildCommit\":\"d3003c2f688431436850df634a7d028fcb14f346\",\"acceptedProtocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"acceptedAt\":\"2026-09-18T18:28:51.798371+00:00\"}}"
+      },
+      {
+        "messageId": "45a3d6b0-65ce-4b70-8317-cc7320ec944f",
+        "requestJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionHello\",\"messageId\":\"45a3d6b0-65ce-4b70-8317-cc7320ec944f\",\"correlationId\":null,\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":null,\"sentAt\":\"2026-09-18T18:29:12.7639975\\u002B00:00\",\"payload\":{\"onboardInstanceId\":\"2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19\",\"onboardBuildCommit\":\"29fbf65e0b4d58c80849d5e6d0e44f40903c411e\",\"supportedProtocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"credentialProof\":\"[REDACTED]\"}}",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionAccepted\",\"messageId\":\"f4483077-3d1a-47ed-afdb-915c1bb2c8c4\",\"correlationId\":\"45a3d6b0-65ce-4b70-8317-cc7320ec944f\",\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":2,\"sentAt\":\"2026-09-18T18:29:12.7835571+00:00\",\"payload\":{\"sessionGeneration\":2,\"serverInstanceId\":\"de7d47dd-4917-45db-8aa3-a8e746feb034\",\"serverBuildCommit\":\"d3003c2f688431436850df634a7d028fcb14f346\",\"acceptedProtocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"acceptedAt\":\"2026-09-18T18:29:12.783552+00:00\"}}"
+      }
+    ],
+    "sessionRecoveryRows": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "sessionGeneration": 2,
+        "readiness": "RecoveryRequired",
+        "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH",
+        "forcedRecoveryGeneration": 0,
+        "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804",
+        "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7"
+      }
+    ],
+    "connectionRecoveryRows": [],
+    "onboardAlarmSnapshotRows": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "sessionGeneration": 2,
+        "snapshotSequence": 3
+      }
+    ],
+    "slotConfigurationActivationRows": [
+      {
+        "activationId": "c3f61698-df2a-4980-8f6b-7def59bd0425",
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "state": "ACTIVATED",
+        "configurationVersion": 2,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "commandMessageId": "3618dba7-9b67-4288-b0ee-f2b0b6e4b0b4",
+        "resultJson": "{\"Succeeded\":true,\"ReasonCode\":null}"
+      },
+      {
+        "activationId": "4a0864c4-5690-4aa6-a4d7-a06f547e1168",
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "state": "FAILED",
+        "configurationVersion": 3,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "commandMessageId": "e1e34679-c155-4d60-934a-440b5c094bbf",
+        "resultJson": "{\"Succeeded\":false,\"ReasonCode\":\"SLOT_CONFIGURATION_FINGERPRINT_MISMATCH\"}"
+      }
+    ],
+    "activeSlotConfigurationRows": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "configurationVersion": 2,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "activationId": "c3f61698-df2a-4980-8f6b-7def59bd0425"
+      }
+    ],
+    "sideEffectCounts": {
+      "OrderIntents": 0,
+      "AcceptedDemands": 0,
+      "StationOperations": 0,
+      "VehicleDispatchLeases": 0,
+      "RiotDispatchAuditEvents": 0,
+      "UnloadBatches": 0,
+      "TransportDemandCompletions": 0,
+      "RecoveryWorkflows": 0,
+      "ExceptionRecoverySessions": 0,
+      "HardwareRecoveryRecords": 0
+    }
+  },
+  "controlDatabaseAfterRun": {
+    "file": {
+      "path": "runtime/controlserver.db",
+      "creationTimeUtc": "2026-09-18T18:28:45.5294720Z",
+      "length": 4096
+    },
+    "inboxRows": [
+      {
+        "messageId": "3592e7ad-9fc3-470c-a517-b6f7884ad4dc",
+        "messageType": "SessionHello",
+        "contentHash": "fafac78fe348e35f969164db3a11a8ae83409d504887e81aaf412413c59e3238"
+      },
+      {
+        "messageId": "cef242b3-9d6e-430c-851f-cc7bc185cc33",
+        "messageType": "CapabilitySnapshot",
+        "contentHash": "9b5c2b5fcaa4956ca5bedffb869f0bcad394960f76492c25136b6593c1ed7b5b"
+      },
+      {
+        "messageId": "8a3a9a01-5a4e-4f2b-97cb-ca27c8790350",
+        "messageType": "SafetyStateSnapshot",
+        "contentHash": "c68a359b4a377317c5cab5d9b5a18826473e07169e7dbc5c7115bc83ea14a51f"
+      },
+      {
+        "messageId": "06bbb5c6-73d4-47eb-a873-7e5516bb17ff",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "8cc0c80c7993d52da431145327df4a8738a7ad8279c75275b533bccecb354c6b"
+      },
+      {
+        "messageId": "5b885017-0d67-4e02-b9c7-eba98b4043a4",
+        "messageType": "RecoveryStateReport",
+        "contentHash": "f2d4bae49fce3d39cda1f7b63d2ff3f7c7ab57e318edb0efa95e5b9c8de90ef7"
+      },
+      {
+        "messageId": "b1bb46a4-0d07-df51-9ad6-d770ef77df7b",
+        "messageType": "SafetyStateChanged",
+        "contentHash": "99afede9d6fc29f60851e3125e138d3cf2470b7f897e92416637d377ed2c752e"
+      },
+      {
+        "messageId": "8dcfbecd-b951-4f5f-abf4-2767f3d8d6b2",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "3ca63e77cc065a086154c69d6fd1a5bc10bea68249f787673a1b29eaed11fffe"
+      },
+      {
+        "messageId": "eb0c5e3c-9696-4a1c-bdd2-a40196a59b44",
+        "messageType": "Heartbeat",
+        "contentHash": "f76d2543176994db3cf973a187ed77d1f28b76444bbe477740f37170b1bb0960"
+      },
+      {
+        "messageId": "6e58340e-0efc-499e-9d26-885b419e4af1",
+        "messageType": "Heartbeat",
+        "contentHash": "760e8a4ee06a91d1514aa5c31ba38d924263c307d1aea5f62e24bab96906930c"
+      },
+      {
+        "messageId": "0dbf90e7-b59a-4536-b19e-4f8060e318fd",
+        "messageType": "SlotConfigurationActivationResult",
+        "contentHash": "5bdeb6cb1d97fc92fcc4cabca3b5b0e9bf2abac61900782773f66725e0996257"
+      },
+      {
+        "messageId": "769ba6d2-1335-4971-a3e3-5e5762abc81c",
+        "messageType": "Heartbeat",
+        "contentHash": "c0b29ef87300379cadae350f2b4121d97155d6bda64bf4e470567b7f44dff138"
+      },
+      {
+        "messageId": "45a3d6b0-65ce-4b70-8317-cc7320ec944f",
+        "messageType": "SessionHello",
+        "contentHash": "eedbc8961c1b81209cb5eceb7a2697617806013a37ea9c9a1e2a0d7dbe74ade7"
+      },
+      {
+        "messageId": "de61b91a-89f5-4821-b9a9-06fbf9ca31eb",
+        "messageType": "CapabilitySnapshot",
+        "contentHash": "8fe6d3b4b38ade174dcc734a393ea662d71242d8c2f5895588e437399e522af5"
+      },
+      {
+        "messageId": "8cb70461-7968-4ff1-a835-55482bb0c62b",
+        "messageType": "SafetyStateSnapshot",
+        "contentHash": "2ca79e109f25d47e66418b2f79932c3c5436082b516f0ad0e2714472e71cc4fe"
+      },
+      {
+        "messageId": "85c0cc6d-c5d7-49fb-8e66-b220dcd2d091",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "1ac3f08589c3079eb49d56829c52f72113e32d034cf0ac2e2ec3944039355618"
+      },
+      {
+        "messageId": "1d303e62-02a6-4ed6-8fad-06c997f50e0c",
+        "messageType": "RecoveryStateReport",
+        "contentHash": "fbfb741d220309669f846a2a0a22f7d5d88b3636e2d7adc2dce68c362573496a"
+      },
+      {
+        "messageId": "757209e7-ae55-9a56-b037-3213cc0ec893",
+        "messageType": "SafetyStateChanged",
+        "contentHash": "fefbda6e70f447e04902d1b3a9f7f91e2d4defa899b0d0392eb9172ba592b61a"
+      },
+      {
+        "messageId": "b19a8abb-d854-46df-a788-88493ea4bcc0",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "3c5840dd751c7b0062d5f354396c1eeca93c4f1cf2cb636d7debb8aba831dce1"
+      },
+      {
+        "messageId": "461337d0-80ee-4daf-a617-56896a85cdac",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "55efb311ff12c3ad2f56522dda27bd8581fef384cf6a5764b757e72c214b7bb1"
+      },
+      {
+        "messageId": "b144aeb4-7273-41df-af58-3f9741d3312b",
+        "messageType": "Heartbeat",
+        "contentHash": "2824951f21174d0544297d93ae58461c65e3fbc68f3f7894035c279e0bfdea77"
+      },
+      {
+        "messageId": "43e03425-c6a2-42b2-8994-491de1a21e7a",
+        "messageType": "Heartbeat",
+        "contentHash": "f918bf0b04e0df399946b596de68ed09cfe0067d96643f95cfbee93ccff9d44c"
+      },
+      {
+        "messageId": "5482ac89-598a-4ee3-b489-241d67a0216a",
+        "messageType": "SlotConfigurationActivationResult",
+        "contentHash": "6b863690c79c7ce1bae14588693dc5fb508121a1e37324a4b84f3ba7881cd170"
+      },
+      {
+        "messageId": "ba03ba9d-e458-4bda-a741-af5d209514b9",
+        "messageType": "Heartbeat",
+        "contentHash": "8210e9684b3ac77b35d6eb44acef28b712c9a40a047ac9c120ca414570e01cf3"
+      },
+      {
+        "messageId": "2f63f10e-42e5-4c2b-b46e-f2b6cd5dd850",
+        "messageType": "SessionHello",
+        "contentHash": "7488f3e163134b6267246f8bded57d969d1d72a625c9571587b8967a511468fc"
+      },
+      {
+        "messageId": "ddc49b06-f8de-46cd-9b05-b68410f942c5",
+        "messageType": "CapabilitySnapshot",
+        "contentHash": "6cfed9f820929e042c0c08d4db598e54fb66871026de0b44cfd0bcf435294f72"
+      },
+      {
+        "messageId": "c0344be7-1511-4b65-9a4f-8561fa3ca9e7",
+        "messageType": "SafetyStateSnapshot",
+        "contentHash": "a40299f6bceb35d89cc8901d60a4009752634d0b1411c61f838f0b44f33606cf"
+      },
+      {
+        "messageId": "9d65d0ad-7cdb-4fb2-b9e0-f356b5d028bb",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "8c83dda537889375ed3d7df3465d7c58608ce9f9ab7845d913e4533d25379e20"
+      },
+      {
+        "messageId": "75887b4a-043a-47eb-9c6a-d532e8c61600",
+        "messageType": "RecoveryStateReport",
+        "contentHash": "821cc21f48941ee66ff1d45a5a3b05c8794d307088c9a8f248695149b7a00522"
+      },
+      {
+        "messageId": "bdb864fa-fc5d-855d-98e0-a3bd4b6e07e5",
+        "messageType": "SafetyStateChanged",
+        "contentHash": "1f390178d15b8582c42c8bae91fcfed056744a01bf06a189e4638ea04d31f272"
+      },
+      {
+        "messageId": "8b2784e6-0251-4218-acea-484cf1869cc7",
+        "messageType": "OnboardAlarmSnapshot",
+        "contentHash": "970befd2302de5aed553f7d17c79e67ea703797d901386f92218ccac4736fa3e"
+      },
+      {
+        "messageId": "435df8ad-0217-426c-8354-ea680082e2cf",
+        "messageType": "Heartbeat",
+        "contentHash": "81ef74e848e1e022c1fed4d5b214a5e3e33c6ae280a70d55b43b5fc20f53888c"
+      },
+      {
+        "messageId": "1f9ebc59-6f26-4df8-9b44-f0932201362f",
+        "messageType": "Heartbeat",
+        "contentHash": "a3bb37c6147c23027873d9d1291fe1e03ba5b09f0df06dfdd7f977b4bf881c9a"
+      }
+    ],
+    "sessionHelloRows": [
+      {
+        "messageId": "3592e7ad-9fc3-470c-a517-b6f7884ad4dc",
+        "requestJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionHello\",\"messageId\":\"3592e7ad-9fc3-470c-a517-b6f7884ad4dc\",\"correlationId\":null,\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":null,\"sentAt\":\"2026-09-18T18:28:51.6648541\\u002B00:00\",\"payload\":{\"onboardInstanceId\":\"2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19\",\"onboardBuildCommit\":\"29fbf65e0b4d58c80849d5e6d0e44f40903c411e\",\"supportedProtocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"credentialProof\":\"[REDACTED]\"}}",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionAccepted\",\"messageId\":\"a9321f97-7685-448b-9e6b-2dc3579148d3\",\"correlationId\":\"3592e7ad-9fc3-470c-a517-b6f7884ad4dc\",\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":1,\"sentAt\":\"2026-09-18T18:28:51.7985309+00:00\",\"payload\":{\"sessionGeneration\":1,\"serverInstanceId\":\"b400cef7-1da0-49aa-ba10-d4eda8691ea1\",\"serverBuildCommit\":\"d3003c2f688431436850df634a7d028fcb14f346\",\"acceptedProtocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"acceptedAt\":\"2026-09-18T18:28:51.798371+00:00\"}}"
+      },
+      {
+        "messageId": "45a3d6b0-65ce-4b70-8317-cc7320ec944f",
+        "requestJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionHello\",\"messageId\":\"45a3d6b0-65ce-4b70-8317-cc7320ec944f\",\"correlationId\":null,\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":null,\"sentAt\":\"2026-09-18T18:29:12.7639975\\u002B00:00\",\"payload\":{\"onboardInstanceId\":\"2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19\",\"onboardBuildCommit\":\"29fbf65e0b4d58c80849d5e6d0e44f40903c411e\",\"supportedProtocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"credentialProof\":\"[REDACTED]\"}}",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionAccepted\",\"messageId\":\"f4483077-3d1a-47ed-afdb-915c1bb2c8c4\",\"correlationId\":\"45a3d6b0-65ce-4b70-8317-cc7320ec944f\",\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":2,\"sentAt\":\"2026-09-18T18:29:12.7835571+00:00\",\"payload\":{\"sessionGeneration\":2,\"serverInstanceId\":\"de7d47dd-4917-45db-8aa3-a8e746feb034\",\"serverBuildCommit\":\"d3003c2f688431436850df634a7d028fcb14f346\",\"acceptedProtocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"acceptedAt\":\"2026-09-18T18:29:12.783552+00:00\"}}"
+      },
+      {
+        "messageId": "2f63f10e-42e5-4c2b-b46e-f2b6cd5dd850",
+        "requestJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionHello\",\"messageId\":\"2f63f10e-42e5-4c2b-b46e-f2b6cd5dd850\",\"correlationId\":null,\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":null,\"sentAt\":\"2026-09-18T18:29:35.4696801\\u002B00:00\",\"payload\":{\"onboardInstanceId\":\"2f2a2f01-3a58-4a2f-9b41-8b7f3f7b2c19\",\"onboardBuildCommit\":\"29fbf65e0b4d58c80849d5e6d0e44f40903c411e\",\"supportedProtocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"credentialProof\":\"[REDACTED]\"}}",
+        "firstResponseJson": "{\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"protocolReleaseVersion\":\"2.0.0\",\"protocolReleaseManifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"messageType\":\"SessionAccepted\",\"messageId\":\"42e599be-96d0-4848-b493-41672b8ce512\",\"correlationId\":\"2f63f10e-42e5-4c2b-b46e-f2b6cd5dd850\",\"agvId\":\"AGV-8005-STAGED-G3-RESTART-01\",\"sessionGeneration\":3,\"sentAt\":\"2026-09-18T18:29:35.646974+00:00\",\"payload\":{\"sessionGeneration\":3,\"serverInstanceId\":\"7109de9f-8d36-4ba8-92eb-542e3864bcb5\",\"serverBuildCommit\":\"d3003c2f688431436850df634a7d028fcb14f346\",\"acceptedProtocolReleaseIdentity\":{\"repository\":\"8005-agv-protocol\",\"releaseVersion\":\"2.0.0\",\"tag\":\"protocol-v2.0.0\",\"commit\":\"86575456c847041515b7b75e8851a00e0d939804\",\"protocolVersion\":3,\"profileId\":\"AGV_FULL_PRODUCT\",\"manifestSha256\":\"4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7\",\"schemaBundleSha256\":\"9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221\",\"vectorsSha256\":\"391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a\"},\"acceptedAt\":\"2026-09-18T18:29:35.6468731+00:00\"}}"
+      }
+    ],
+    "sessionRecoveryRows": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "sessionGeneration": 3,
+        "readiness": "RecoveryRequired",
+        "reasonCode": "SLOT_CONFIGURATION_FINGERPRINT_MISMATCH",
+        "forcedRecoveryGeneration": 0,
+        "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804",
+        "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7"
+      }
+    ],
+    "connectionRecoveryRows": [],
+    "onboardAlarmSnapshotRows": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "sessionGeneration": 3,
+        "snapshotSequence": 5
+      }
+    ],
+    "slotConfigurationActivationRows": [
+      {
+        "activationId": "c3f61698-df2a-4980-8f6b-7def59bd0425",
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "state": "ACTIVATED",
+        "configurationVersion": 2,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "commandMessageId": "3618dba7-9b67-4288-b0ee-f2b0b6e4b0b4",
+        "resultJson": "{\"Succeeded\":true,\"ReasonCode\":null}"
+      },
+      {
+        "activationId": "4a0864c4-5690-4aa6-a4d7-a06f547e1168",
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "state": "FAILED",
+        "configurationVersion": 3,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "commandMessageId": "e1e34679-c155-4d60-934a-440b5c094bbf",
+        "resultJson": "{\"Succeeded\":false,\"ReasonCode\":\"SLOT_CONFIGURATION_FINGERPRINT_MISMATCH\"}"
+      }
+    ],
+    "activeSlotConfigurationRows": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "configurationVersion": 2,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "activationId": "c3f61698-df2a-4980-8f6b-7def59bd0425"
+      }
+    ],
+    "sideEffectCounts": {
+      "OrderIntents": 0,
+      "AcceptedDemands": 0,
+      "StationOperations": 0,
+      "VehicleDispatchLeases": 0,
+      "RiotDispatchAuditEvents": 0,
+      "UnloadBatches": 0,
+      "TransportDemandCompletions": 0,
+      "RecoveryWorkflows": 0,
+      "ExceptionRecoverySessions": 0,
+      "HardwareRecoveryRecords": 0
+    }
+  },
+  "healthReadyHttpStatus": 503,
+  "controlServerVersion": {
+    "protocolVersion": 3,
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolReleaseVersion": "2.0.0",
+    "protocolTag": "protocol-v2.0.0",
+    "protocolCommit": "86575456c847041515b7b75e8851a00e0d939804",
+    "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+    "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+    "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+    "approvalStatus": "APPROVED_RELEASE"
+  },
+  "simulatorHealth": {
+    "schemaVersion": "1.0",
+    "instanceId": "agv-slot-simulator-01",
+    "runId": "run-789aeaa2334648cbb7e506dca65d1200",
+    "revision": 1,
+    "observedAt": "2026-09-19T02:28:43.4216146+08:00",
+    "status": "READY",
+    "modbus": {
+      "listenAddress": "127.0.0.1",
+      "port": 1502,
+      "unitId": 255,
+      "isRunning": true,
+      "clientCount": 0,
+      "faultMode": "NORMAL",
+      "delayMs": 0
+    }
+  },
+  "error": null,
+  "secretLeakFiles": [],
+  "evidenceFiles": [
+    {
+      "path": "configuration.json",
+      "sha256": "3c1217f3ac5d9f2d9979b82e3588f00118dffde7aff7db7ccefe9f50560daeed",
+      "length": 3052
+    },
+    {
+      "path": "logs/agv-20260919.log",
+      "sha256": "2785b6131b7c3a2ca2527987a6b723cc1e38c69e2fef3fcf8bdeda13bcad377d",
+      "length": 1602
+    },
+    {
+      "path": "logs/build-server-shutdown.log",
+      "sha256": "b8028200bc3b12a3210641024da80eb85dffe587d8192df519108d0a20cfe822",
+      "length": 160
+    },
+    {
+      "path": "logs/checkout-control-server.log",
+      "sha256": "fdcb6959dfcfa44413957c14cdae49156012a380292bd001db1d87a458012ccb",
+      "length": 111
+    },
+    {
+      "path": "logs/checkout-onboard-hmi.log",
+      "sha256": "076fecdb2555c6b0aa344cec15f859811d3800e75508e172838cbd4c94c383e5",
+      "length": 97
+    },
+    {
+      "path": "logs/checkout-slots-simulator.log",
+      "sha256": "769de68d1abed1f6df95d49f6b766cf1dd20cd003759385a2b6b773b1a0a8975",
+      "length": 73
+    },
+    {
+      "path": "logs/clone-control-server.log",
+      "sha256": "5f5d7395497b0df1cc7d7b165ed3623f09ec346064c81609dfb3015ae4377f38",
+      "length": 67
+    },
+    {
+      "path": "logs/clone-onboard-hmi.log",
+      "sha256": "d1d19dbdeb001aa4e38a22b595e0db31670a874363e878ddc21e1425dbde7aea",
+      "length": 57
+    },
+    {
+      "path": "logs/clone-slots-simulator.log",
+      "sha256": "0b9d9f7ee44389dae7ebfec5fd219e841e123a0c73a48324d120b81bf8f6de16",
+      "length": 61
+    },
+    {
+      "path": "logs/control-1.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/control-1.out.log",
+      "sha256": "b1e65cb1cec5d7a397092d28f51cee371d99b446a30d3264c31da256af7bbb29",
+      "length": 156215
+    },
+    {
+      "path": "logs/control-2.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/control-2.out.log",
+      "sha256": "eea439329bbdc55bffe87dca662e0e0542f154abc34f77829d445cdd53d66314",
+      "length": 32717
+    },
+    {
+      "path": "logs/fetch-control-server.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/fetch-onboard-hmi.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/fetch-slots-simulator.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/field-ops-bind-io.log",
+      "sha256": "9afb47a3d9d0e4630353c2b3dbb9def06352b1609fbc4bd51a81877d221e094a",
+      "length": 161
+    },
+    {
+      "path": "logs/field-ops-seed-approved-facts.log",
+      "sha256": "6c0931959db3ac8e1d1317482516ffccd0a5aca7b4637514e8f65dff5fd05a3f",
+      "length": 161
+    },
+    {
+      "path": "logs/onboard-1.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/onboard-1.out.log",
+      "sha256": "a2801a48281e2fa7272480a82f84b3318b6a43c622a9f875c2cd7c3a5df5f071",
+      "length": 613
+    },
+    {
+      "path": "logs/onboard-2.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/onboard-2.out.log",
+      "sha256": "ae7085e4138c28f69b721a1bed4212dcc7f9bf3acb4ee4db03a1a064273eac25",
+      "length": 872
+    },
+    {
+      "path": "logs/publish-control-server.log",
+      "sha256": "d514a66dda86f473df5f204f704e667877498d1c23e903de8ca76ba1ac515ffb",
+      "length": 1214
+    },
+    {
+      "path": "logs/publish-field-ops.log",
+      "sha256": "29943dde2c09d189cb1e377b97c9fc1c008ba0b99143243088b949612da4bf72",
+      "length": 903
+    },
+    {
+      "path": "logs/publish-onboard-hmi.log",
+      "sha256": "7a43fb4539c49a253d9d24fe43ad27fac14792e7a0df81e26b046e44092ea92f",
+      "length": 1593
+    },
+    {
+      "path": "logs/publish-slots-simulator.log",
+      "sha256": "30205d629b8f3e9c30edf0ae15858d22af360bba4bcccf4bf1d05d2d9cd55fb8",
+      "length": 1022
+    },
+    {
+      "path": "logs/simulator.err.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "logs/simulator.out.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "length": 0
+    },
+    {
+      "path": "slices/FP-IS-00/gate-result.json",
+      "sha256": "b046e1860b40617dcb05fac9767d451f895f521121ceebd4881aade31dfdd996",
+      "length": 2758
+    },
+    {
+      "path": "slices/FP-IS-06/gate-result.json",
+      "sha256": "63702857d7bad6e7ce134d547c4a9604202da09a71151ccced5eae037f04781c",
+      "length": 2484
+    },
+    {
+      "path": "slices/FP-IS-14/gate-result.json",
+      "sha256": "7305f8f24c51584f3e3ec61efff98b5d587a8626d4cb769edc2e96938cb32c26",
+      "length": 2463
+    },
+    {
+      "path": "slices/FP-IS-15/gate-result.json",
+      "sha256": "fe91f8005a38c6735c5a4a0f29c5ad582080d682cef7317486db9ccaf83a8ba4",
+      "length": 2374
+    }
+  ]
+}
