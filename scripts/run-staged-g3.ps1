@@ -3149,6 +3149,14 @@ $noMovementPass = $null -ne $databaseObservation -and
     $databaseObservation.acceptedDemandCount -eq 0 -and
     $databaseObservation.stationOperationCount -eq 0
 $probePass = $null -ne $probeResult -and $probeResult.status -eq 'PASS'
+# control-server#60 review (2026-09-18): the probe's overall status also carries the FP-IS-06 heartbeat
+# duplicate and conflict cases, so a red FP-IS-06 turned this run-wide precondition red and dragged
+# FP-IS-14/15 down with it. The run-wide assertion reads the identity rejection cases alone, and the
+# two heartbeat assertions no longer require the identity cases.
+$identityRejectionCases = @()
+if ($null -ne $probeResult) { $identityRejectionCases = @($probeResult.identityRejections) }
+$identityRejectionsPass = $identityRejectionCases.Count -ge 1 -and
+    @($identityRejectionCases | Where-Object { $_.status -ne 'PASS' }).Count -eq 0
 
 $businessProbePass = $null -ne $businessProbeResult -and $businessProbeResult.status -eq 'PASS'
 $businessDuplicatePass = $null -ne $businessProbeResult -and
@@ -3219,18 +3227,22 @@ $currentEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Obj
 
 # Monotonic advance, and a result that names the superseded generation may only become historical
 # evidence: it must not reconcile the workflow, close the session, or move the vehicle generation.
-$recoveryGenerationPass = $null -ne $recoveryProbeResult -and
+# Two judgments, split by the control-server#60 review (2026-09-18); they used to share one boolean
+# under two names, so either half going red failed both.
+$recoveryGenerationAdvancePass = $null -ne $recoveryProbeResult -and
     $recoveryProbeResult.forcedRecoveryGenerationBranches.status -eq 'PASS' -and
     $null -ne $databaseObservation -and
     $databaseObservation.vehicleForcedRecoveryGeneration -eq 2 -and
-    $staleWorkflow.Count -eq 1 -and $staleWorkflow[0].state -eq 'HistoricalOnly' -and
-    $staleWorkflow[0].forcedRecoveryGeneration -eq 1 -and
     $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'RecoveryRequired' -and
     $currentWorkflow[0].forcedRecoveryGeneration -eq 2 -and
-    $staleEvidence.Count -eq 1 -and $staleEvidence[0].historicalOnly -and
-    $staleEvidence[0].forcedRecoveryGeneration -eq 1 -and
     $currentEvidence.Count -eq 1 -and -not $currentEvidence[0].historicalOnly -and
     $currentEvidence[0].forcedRecoveryGeneration -eq 2
+$recoverySupersededResultHistoricalPass = $null -ne $databaseObservation -and
+    $staleWorkflow.Count -eq 1 -and $staleWorkflow[0].state -eq 'HistoricalOnly' -and
+    $staleWorkflow[0].forcedRecoveryGeneration -eq 1 -and
+    $staleEvidence.Count -eq 1 -and $staleEvidence[0].historicalOnly -and
+    $staleEvidence[0].forcedRecoveryGeneration -eq 1 -and
+    $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'RecoveryRequired'
 
 # A forced mechanical recovery is an isolation, not a completion: nothing in this plane may close the
 # session, reconcile a workflow, create an order or a demand, or touch a station operation.
@@ -3246,7 +3258,8 @@ $recoveryNoFalseClosurePass = $null -ne $databaseObservation -and
     @($databaseObservation.recoveryWorkflowRows | Where-Object { $null -ne $_.slotOperationAttemptId }).Count -eq 0
 
 $recoveryPass = $recoveryProbePass -and $recoveryAuthorisationPass -and $recoveryActionBoundaryPass -and
-    $recoveryHardwareRecordPass -and $recoveryDisconnectPass -and $recoveryGenerationPass -and
+    $recoveryHardwareRecordPass -and $recoveryDisconnectPass -and $recoveryGenerationAdvancePass -and
+    $recoverySupersededResultHistoricalPass -and
     $recoveryNoFalseClosurePass
 
 $status = if ($null -ne $runError) {
@@ -3331,11 +3344,12 @@ foreach ($file in @(Get-ChildItem -LiteralPath $EvidenceRoot -Recurse -File)) {
 }
 
 $assertionReport = [ordered]@{
-    identityRejections = if ($probePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    sameConnectionSameMessageIdSameContent = if ($probePass -and $probeResult.duplicate.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    sameMessageIdDifferentContentStableConflict = if ($probePass -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    identityRejections = if ($identityRejectionsPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    sameConnectionSameMessageIdSameContent = if ($null -ne $probeResult -and $probeResult.duplicate.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    sameMessageIdDifferentContentStableConflict = if ($null -ne $probeResult -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    # One check, one name: recoveryStateReportFirstAckDropReplayOverPlaintext was the same boolean and
+    # was merged into this one by the control-server#60 review (2026-09-18).
     recoveryStateReportFirstAckDropReplay = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    recoveryStateReportFirstAckDropReplayOverPlaintext = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     businessMessageSameMessageIdSameContentReplay = if ($businessDuplicatePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     businessMessageSameMessageIdDifferentContentStableConflict = if ($businessConflictPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     businessMessageAckDropInSessionReplay = if ($businessAckDropPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
@@ -3345,8 +3359,8 @@ $assertionReport = [ordered]@{
     recoveryActionsRefusedWithoutPersistedOperation = if ($recoveryActionBoundaryPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     hardwareRecoveryRecordScopeEnforced = if ($recoveryHardwareRecordPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     recoveryCommandSurvivesMidFlightDisconnect = if ($recoveryDisconnectPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoveryGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationAdvancePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoverySupersededResultHistoricalPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     slotConfigurationActivationCarriesOneMessageIdOnly = if ($activationCommandPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     slotConfigurationActivationReplayedByteForByteAfterAMidFlightDrop = if ($activationReplayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
