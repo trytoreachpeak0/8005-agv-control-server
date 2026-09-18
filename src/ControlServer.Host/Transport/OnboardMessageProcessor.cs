@@ -331,8 +331,14 @@ public sealed partial class OnboardMessageProcessor(
                     // different content or a revision going backwards is still a content conflict -- and, like
                     // SafetyStateChanged, has readiness decided again rather than left at HANDSHAKE_INCOMPLETE,
                     // which ApplySafetySnapshotAsync writes and only the handshake's recovery report clears.
-                    bool midSession = await store.HasSafetyBaselineAsync(agvId, generation, cancellationToken)
-                        .ConfigureAwait(false);
+                    //
+                    // Mid-session also needs this connection's handshake to be done -- the same test that decides
+                    // whether the server may send a request. Inside the handshake the vehicle reads one answer per
+                    // message it sends, so a SessionReadiness line added here would be read as the next answer, and a
+                    // baseline already on file does not by itself mean the handshake is over.
+                    bool midSession = state.HandshakeCompleted &&
+                                      await store.HasSafetyBaselineAsync(agvId, generation, cancellationToken)
+                                          .ConfigureAwait(false);
                     await store.ApplySafetySnapshotAsync(
                         agvId, generation, revision, departureSafe, contentHash, cancellationToken,
                         SafetyReasonCodes(safety), SafetyUnknownPresent(safety)).ConfigureAwait(false);
