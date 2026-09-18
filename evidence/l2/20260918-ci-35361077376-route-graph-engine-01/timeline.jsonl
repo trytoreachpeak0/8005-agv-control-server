@@ -1,0 +1,26 @@
+{"at":"2026-09-18T15:25:56.5266233+00:00","note":"L2 run 20260918T152556487Z starting for scenario 'route-graph-engine'."}
+{"at":"2026-09-18T15:25:56.5646836+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-18T15:25:56.5674427+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-18T15:25:57.4858581+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T15:25:57.7289885+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T15:25:57.7939974+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-18T15:26:00.8922136+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T15:26:03.0645570+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T15:26:03.1830340+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T15:26:03.8742171+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:26:04.1439542+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:26:04.2339668+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T15:26:04.2869664+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152556487Z-slot4\\controlserver.db"}
+{"at":"2026-09-18T15:26:05.8941781+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"a55effb77949433b8d2f8cdb5b062e33","version":1,"slotCount":8}}}
+{"at":"2026-09-18T15:26:05.9032228+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152556487Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T15:26:07.6109129+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"a55effb77949433b8d2f8cdb5b062e33","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T15:26:07.7406631+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T15:26:07.7433034+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152556487Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\route-graph-engine-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T15:26:09.4685255+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\route-graph-engine-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"a057edcff6204fb38dbc6ea84fd5ca2c","importedAt":"2026-09-18T23:26:07.997501+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T15:26:09.4737569+00:00","note":"Environment is up; entering scenario 'route-graph-engine'."}
+{"at":"2026-09-18T15:26:09.5418080+00:00","criterion":"route-graph-design","value":"8"}
+{"at":"2026-09-18T15:26:09.5798340+00:00","note":"Publishing demand 39b6f4cbcd2f404693f27eb72feb046e (sublot L2-RG-20260918T152556487Z) with the engine enabled."}
+{"at":"2026-09-18T15:26:09.6652663+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-18T15:26:11.4444809+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-18T15:26:11.4565971+00:00","note":"引擎在真链路里工作：双周期都跑过、快照不陈旧、可达性判据放行、派车成立。"}
+{"at":"2026-09-18T15:26:11.8741467+00:00","note":"L2 port block lock released."}

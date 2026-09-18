@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "area-assignment-unmapped-silent",
+  "runId": "20260918T152416392Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001",
+    "controlServerCommit": "06b656880ce6a32c8250b4ad62ad8ad3ce11b936",
+    "agvId": "AGV-L2-001",
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152416392Z-slot4",
+    "batchId": "batch-4"
+  },
+  "assertions": [
+    {
+      "id": "L2-AAU-01",
+      "description": "默认前置按边车导入了分区归属表：只有一版，只含 N1-3 与 T5-2，N1-7 不在表里",
+      "outcome": "PASS",
+      "expected": "OK / 1 version / N1-3/MAP-25-WIRE_TO_GATE/FRONT,T5-2/MAP-25-WIRE_TO_GATE/REAR",
+      "actual": "OK / 1 version / N1-3/MAP-25-WIRE_TO_GATE/FRONT,T5-2/MAP-25-WIRE_TO_GATE/REAR"
+    },
+    {
+      "id": "L2-AAU-02",
+      "description": "N1-7（N 开头、地图上有站点，但表里没有）被白名单挡住：积压原因 OUT_OF_SCOPE_AREA，未受理",
+      "outcome": "PASS",
+      "expected": "OUT_OF_SCOPE_AREA / not accepted / 0 rows",
+      "actual": "OUT_OF_SCOPE_AREA / AcceptedAt= / 0 rows"
+    },
+    {
+      "id": "L2-AAU-03",
+      "description": "T5-2（T 开头、表里有）通过白名单：被后面的判据挡住，原因不再是 OUT_OF_SCOPE_AREA",
+      "outcome": "PASS",
+      "expected": "any reason but OUT_OF_SCOPE_AREA (no station on the map: AREA_STATION_NOT_FOUND)",
+      "actual": "AREA_STATION_NOT_FOUND"
+    },
+    {
+      "id": "L2-AAU-04",
+      "description": "N1-3 正常受理：冻结行的版本等于当前版本、快照是那一版的快照，路线调度区取自表",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / frozen v1 = current / own snapshot / MAP-25-WIRE_TO_GATE",
+      "actual": "AwaitingPickupArrival / frozen v1, current v1 / True / MAP-25-WIRE_TO_GATE"
+    },
+    {
+      "id": "L2-AAU-05",
+      "description": "N1-3 受理之后，N1-7 仍然一行受理记录、旅程、订单意图、冻结行都没有，积压原因仍是 OUT_OF_SCOPE_AREA",
+      "outcome": "PASS",
+      "expected": "0 rows / OUT_OF_SCOPE_AREA",
+      "actual": "0 rows / OUT_OF_SCOPE_AREA"
+    },
+    {
+      "id": "L2-AAU-06",
+      "description": "StructuralDispatchBlocks 没有 N1-7 这条需求的行：未映射 AREA 不是结构性派车阻断",
+      "outcome": "PASS",
+      "expected": "0",
+      "actual": 0
+    },
+    {
+      "id": "L2-AAU-07",
+      "description": "服务端日志里没有提到 N1-7 这条需求（两种写法）或 OUT_OF_SCOPE_AREA 的 Warning 及以上记录",
+      "outcome": "PASS",
+      "expected": "0 records",
+      "actual": "0 records"
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "scenario": "emergency-stop-operator-release",
+  "runId": "20260918T152255059Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "06b656880ce6a32c8250b4ad62ad8ad3ce11b936",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152255059Z-slot4",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-2",
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-ESR-01",
+      "description": "锁住即停稳（REQ-0247）：车报 MT_RUNNING、车速 0、站点 0，故障事实仍记为已停稳，服务端没有再请求停车",
+      "outcome": "PASS",
+      "expected": "StopProven 1 / 1 行 / 1 次",
+      "actual": "StopProven 1 / 1 行 / 1 次"
+    },
+    {
+      "id": "L2-ESR-02",
+      "description": "没确认「车上无货」：入口回 409，原因里点名 EMERGENCY_VEHICLE_EMPTY_NOT_CONFIRMED，没有发 cancelEmergency",
+      "outcome": "PASS",
+      "expected": "409 / EMERGENCY_VEHICLE_EMPTY_NOT_CONFIRMED / 0 次",
+      "actual": "409 / EMERGENCY_VEHICLE_EMPTY_NOT_CONFIRMED / 0 次"
+    },
+    {
+      "id": "L2-ESR-03",
+      "description": "这台车在 RIoT 里还有未结束的订单：入口回 409，原因 EMERGENCY_VEHICLE_ORDER_NOT_FINISHED，没有发 cancelEmergency（REQ-0356）",
+      "outcome": "PASS",
+      "expected": "409 / EMERGENCY_VEHICLE_ORDER_NOT_FINISHED / 0 次",
+      "actual": "409 / EMERGENCY_VEHICLE_ORDER_NOT_FINISHED / 0 次"
+    },
+    {
+      "id": "L2-ESR-04",
+      "description": "确认齐全：服务端对这台车发出一次 cancelEmergency；RIoT 还没解锁，入口回 202、动作 RecoveryUnconfirmed，不谎报成功",
+      "outcome": "PASS",
+      "expected": "202 / RecoveryUnconfirmed / 1 次 @ BROKERX-L2-0001 / 1 行",
+      "actual": "202 / RecoveryUnconfirmed / 1 次 / 1 行"
+    },
+    {
+      "id": "L2-ESR-05",
+      "description": "解除记下了确认人与三项确认：来源 ServerOperator、工号 L2-OPERATOR-07、causeCleared/vehicleEmpty/allDoorsClosed 均为 true",
+      "outcome": "PASS",
+      "expected": "ServerOperator / L2-OPERATOR-07 / 三项 true",
+      "actual": "{\"source\":\"ServerOperator\",\"requesterIdentity\":\"L2-OPERATOR-07\",\"agvId\":\"AGV-L2-001\",\"deviceKey\":\"BROKERX-L2-0001\",\"Reason\":\"EMERGENCY_RELEASE_CONFIRMED_BY_OPERATOR\",\"call\":{\"disposition\":\"Accepted\",\"Operation\":\"cancelEmergency\",\"Classification\":\"SdkAccepted\",\"HttpStatusCode\":null,\"BusinessCode\":null,\"FailureCategory\":null,\"observedAt\":\"2026-09-18T15:23:15.727379\\u002B00:00\"},\"emergencyState\":\"CAN_RECOVER\",\"releaseConfirmation\":{\"causeCleared\":true,\"vehicleEmpty\":true,\"allDoorsClosed\":true,\"note\":\"L2 20260918T152255059Z\"}}"
+    },
+    {
+      "id": "L2-ESR-06",
+      "description": "RIoT 读到 OK 之后，那一次解除被改记为 Confirmed，急停就此结束",
+      "outcome": "PASS",
+      "expected": "Confirmed",
+      "actual": "Confirmed"
+    },
+    {
+      "id": "L2-ESR-07",
+      "description": "解除之后又评估了 6 轮：车停在两站之间、位置读不到，服务端既没有按意外恢复重触发，也没有再急停（仍只 1 次 triggerEmergency、1 次 cancelEmergency）",
+      "outcome": "PASS",
+      "expected": "1 行 / 1 次 / 1 次",
+      "actual": "1 行 / 1 次 / 1 次"
+    },
+    {
+      "id": "L2-ESR-08",
+      "description": "解除只结束急停：车辆故障事实仍是 SuspectedBlocked、未清除，这台车照样不派新单",
+      "outcome": "PASS",
+      "expected": "SuspectedBlocked / 未清除",
+      "actual": "SuspectedBlocked / ClearedAt="
+    },
+    {
+      "id": "L2-ESR-09",
+      "description": "急停已经解开后再点一次确认：入口回 409（EMERGENCY_NOT_CAN_RECOVER），不再发任何调用",
+      "outcome": "PASS",
+      "expected": "409 / EMERGENCY_NOT_CAN_RECOVER / 仍 1 次",
+      "actual": "409 / EMERGENCY_NOT_CAN_RECOVER,EMERGENCY_NOT_RAISED_BY_8005 / 1 次"
+    },
+    {
+      "id": "L2-ESR-10",
+      "description": "解除之后读到车在动：服务端发出新的一次 triggerEmergency，原因不是 EMERGENCY_LATCH_RELEASED_EXTERNALLY（不是意外恢复，是新的急停）",
+      "outcome": "PASS",
+      "expected": "AttemptNumber 2 / 非意外恢复 / 2 次",
+      "actual": "AttemptNumber 2 / {\"source\":\"Automatic\",\"requesterIdentity\":null,\"agvId\":\"AGV-L2-001\",\"deviceKey\":\"BROKERX-L2-0001\",\"Reason\":\"STOP_PROOF_MOTION_OBSERVED,STOP_PROOF_POSITION_UNKNOWN\",\"call\":{\"disposition\":\"Accepted\",\"Operation\":\"triggerEmergency\",\"Classification\":\"SdkAccepted\",\"HttpStatusCode\":null,\"BusinessCode\":null,\"FailureCategory\":null,\"observedAt\":\"2026-09-18T15:23:23.3592596\\u002B00:00\"},\"emergencyState\":\"OK\"} / 2 次"
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "loopbackOnly": true,
+  "tls": false,
+  "temporaryTrustRootInstalled": false,
+  "unattended": true,
+  "commitBinding": {
+    "source": "scripts/run-staged-g3.ps1",
+    "sourceSha256": "a1c0e0ac8d7dd0ccd9a3ec73ec4a4495a154d5cd9890acaf9f15e0e37dabaf34",
+    "readFrom": "param-block-defaults",
+    "controlServer": "c12f0498281a39e4fa94a51bd4506c3d3af97a1c",
+    "onboardHmi": "29fbf65e0b4d58c80849d5e6d0e44f40903c411e",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "86575456c847041515b7b75e8851a00e0d939804"
+  },
+  "ports": {
+    "controlPlaintext": 58105,
+    "controlHealth": 58107,
+    "simulatorModbus": 1502,
+    "simulatorHttp": 58006
+  },
+  "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+  "onboardConfigSha256": "e84cc2ee594d72a545ef038f98bce3c69538535ff99e96bebd7596ae84438ef6",
+  "onboardActiveConfigurationSha256BeforeTamper": "ec103aeb960cf6c1ff39cd7c623e2d88f69f54fdac800c4186d0a5d63f4bc9f8",
+  "onboardActiveConfigurationSha256AfterTamper": "4bb80660feabe166e8af25607f90b2e252d77c4cf884fef6caf7ce183caa6aa8",
+  "slotConfigurationActivations": {
+    "whileMatching": {
+      "ok": true,
+      "activationId": "34fc6fa5-f4bc-47fe-af3c-a0beb198ffd3",
+      "state": "PENDING_RESULT",
+      "error": null
+    },
+    "afterTamper": {
+      "ok": true,
+      "activationId": "997e9818-ee61-4cb2-8692-5c5263f85d82",
+      "state": "PENDING_RESULT",
+      "error": null
+    },
+    "rowsAtRestart": [
+      {
+        "activationId": "34fc6fa5-f4bc-47fe-af3c-a0beb198ffd3",
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "state": "ACTIVATED",
+        "configurationVersion": 2,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "commandMessageId": "f1ebad48-077a-459d-9832-320fc8d3fe24",
+        "resultJson": "{\"Succeeded\":true,\"ReasonCode\":null}"
+      },
+      {
+        "activationId": "997e9818-ee61-4cb2-8692-5c5263f85d82",
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "state": "FAILED",
+        "configurationVersion": 3,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "commandMessageId": "355bd52f-2adb-4a4d-9cb1-8ddc7b7ea953",
+        "resultJson": "{\"Succeeded\":false,\"ReasonCode\":\"SLOT_CONFIGURATION_FINGERPRINT_MISMATCH\"}"
+      }
+    ],
+    "activeRowsAtRestart": [
+      {
+        "agvId": "AGV-8005-STAGED-G3-RESTART-01",
+        "configurationVersion": 2,
+        "fingerprint": "de93ca3d9eda7b619dd3ea2e8824f8592a3471b11ff723eba3dbc12ea6f69da9",
+        "activationId": "34fc6fa5-f4bc-47fe-af3c-a0beb198ffd3"
+      }
+    ]
+  },
+  "stableWindowSamplesPerPhase": 12,
+  "journeyRuntimeEnabled": false,
+  "realExternalCredentialsUsed": false,
+  "realRiotOrderCreated": false,
+  "movementCommandSent": false,
+  "vehicleSafetyEligibilityFabricated": false,
+  "vectorsNotReachableWithoutAnAcceptedDemand": [
+    "demandReusedAcrossRestart",
+    "vehicleDispatchLeaseReusedAcrossRestart"
+  ]
+}

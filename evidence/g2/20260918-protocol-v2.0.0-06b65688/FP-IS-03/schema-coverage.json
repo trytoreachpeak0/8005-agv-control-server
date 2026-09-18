@@ -1,0 +1,82 @@
+{
+  "protocol": {
+    "tag": "protocol-v2.0.0",
+    "releaseVersion": "2.0.0",
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolVersion": 3,
+    "approvalStatus": "APPROVED_RELEASE",
+    "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+    "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+    "vendoredSchemaFiles": 69
+  },
+  "validator": "Corvus.Json.Validator 4.6.7",
+  "linesObserved": 101,
+  "testAuthoredLinesSkipped": 0,
+  "linesChecked": 101,
+  "distinctLinesChecked": 57,
+  "linesInViolation": 0,
+  "linesInKnownViolation": 0,
+  "knownViolationsMatched": 0,
+  "knownViolationEntriesNotMatched": [],
+  "schemaCompilationMilliseconds": 96048,
+  "validationMilliseconds": 2635,
+  "schemaCompilationProcesses": 4,
+  "serverMessageTypesNotObserved": [
+    "CapabilitySnapshotRequested",
+    "DemandSelectionResult",
+    "ExceptionRecoverySessionOpened",
+    "ExceptionRecoverySessionRejected",
+    "ExceptionRecoverySessionSnapshot",
+    "FaultCargoRecoveryCommand",
+    "ForcedMechanicalRecoveryCommand",
+    "HardwareRecoveryRecordResult",
+    "HeartbeatAck",
+    "LoadCancellationAuthorization",
+    "LoadCompensationCommand",
+    "LoadCompensationRejected",
+    "LoadCorrectionCommand",
+    "LoadCorrectionRejected",
+    "ManualChargingReturnToServiceResult",
+    "ManualStationClearanceConfirmationResult",
+    "RecoveryActionAccepted",
+    "RecoveryActionRejected",
+    "SafetyStateSnapshotRequested",
+    "SessionRejected",
+    "SlotConfigurationActivationCommand",
+    "SlotOperationResumeCommand",
+    "SublotRejected",
+    "UnableToChargeFieldConfirmationResult"
+  ],
+  "byMessageType": {
+    "CurrentStopWorklistSnapshot": {
+      "product": 10
+    },
+    "DurableAck": {
+      "product": 9
+    },
+    "PreDepartureSafetyCheck": {
+      "product": 13
+    },
+    "SessionAccepted": {
+      "product": 4
+    },
+    "SessionReadiness": {
+      "product": 7
+    },
+    "SlotOperationCommand": {
+      "product": 12
+    },
+    "SnapshotAppliedAck": {
+      "product": 8
+    },
+    "SublotEntryRequested": {
+      "product": 9
+    },
+    "UpcomingStopPlanSnapshot": {
+      "product": 19
+    },
+    "VehicleBusinessStateSnapshot": {
+      "product": 10
+    }
+  }
+}

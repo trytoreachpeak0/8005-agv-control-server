@@ -1,0 +1,18 @@
+2026-09-19T00:17:34.9748402+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+9748c4187e74aeb46cf95557e8f2430e8fe2abf3。
+2026-09-19T00:17:35.7417091+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T00:17:35.7643555+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T00:17:35.7659699+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T00:17:36.3904706+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-19T00:17:43.7327742+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=L2-CR-20260918T161723461Z。 
+2026-09-19T00:17:44.4811365+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=L2-CR-20260918T161723461Z。 
+2026-09-19T00:17:44.7370216+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-19T00:17:44.7605794+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-19T00:17:44.8831339+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-19T00:17:45.3129991+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-19T00:17:45.4790027+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=a5d6ad42-16e6-045c-90ea-2e29b7aaec5d。
+2026-09-19T00:17:46.9115561+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+9748c4187e74aeb46cf95557e8f2430e8fe2abf3。
+2026-09-19T00:17:47.5377910+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T00:17:47.5456605+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T00:17:47.5484259+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T00:17:47.8919341+08:00	Warning	WireToGateBusinessService	上次仓位操作在执行中中断，未再输出开锁，按实时IO结算：attempt=a5d6ad42-16e6-045c-90ea-2e29b7aaec5d，outcome=UNKNOWN，checkpoint=SAFE_FINISH_REACHED。
+2026-09-19T00:17:47.9069794+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。

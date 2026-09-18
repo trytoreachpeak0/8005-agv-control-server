@@ -1,0 +1,24 @@
+{"at":"2026-09-18T15:26:10.6003044+00:00","note":"L2 run 20260918T152610559Z starting for scenario 'three-synthetic-peers'."}
+{"at":"2026-09-18T15:26:10.6494039+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-09-18T15:26:10.6545759+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-18T15:26:11.5295440+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T15:26:11.8070323+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T15:26:14.9847391+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T15:26:17.1156215+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T15:26:17.2273655+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T15:26:17.9244941+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:26:18.2075486+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:26:18.9433728+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:26:19.2215723+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:26:19.9989242+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T15:26:20.0585014+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152610559Z-slot1\\controlserver.db"}
+{"at":"2026-09-18T15:26:21.7009242+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"4cbba131af5b4d08b32814b2a016db4b","version":1,"slotCount":8}}}
+{"at":"2026-09-18T15:26:21.7126293+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152610559Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T15:26:23.3294105+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"4cbba131af5b4d08b32814b2a016db4b","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T15:26:23.4470415+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T15:26:23.4519996+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152610559Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\three-synthetic-peers-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T15:26:25.1845560+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\three-synthetic-peers-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"a5af7f86e1934452bfeeca247af96413","importedAt":"2026-09-18T23:26:23.7119461+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T15:26:25.1905799+00:00","note":"Environment is up; entering scenario 'three-synthetic-peers'."}
+{"at":"2026-09-18T15:26:25.2603658+00:00","note":"合成车载端 3 个：fake-onboard=AGV-FAKE-001@47420, fake-onboard-1=AGV-FAKE-002@47421, fake-onboard-2=AGV-FAKE-003@47422"}
+{"at":"2026-09-18T15:26:25.3724451+00:00","note":"合成侧三实例各自独立，服务端同时持有三条 Ready 会话。三车端到端出口属票 18。"}
+{"at":"2026-09-18T15:26:25.8679423+00:00","note":"L2 port block lock released."}

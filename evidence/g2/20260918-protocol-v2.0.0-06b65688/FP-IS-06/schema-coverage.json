@@ -1,0 +1,100 @@
+{
+  "protocol": {
+    "tag": "protocol-v2.0.0",
+    "releaseVersion": "2.0.0",
+    "profileId": "AGV_FULL_PRODUCT",
+    "protocolVersion": 3,
+    "approvalStatus": "APPROVED_RELEASE",
+    "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+    "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+    "vendoredSchemaFiles": 69
+  },
+  "validator": "Corvus.Json.Validator 4.6.7",
+  "linesObserved": 293,
+  "testAuthoredLinesSkipped": 1,
+  "linesChecked": 292,
+  "distinctLinesChecked": 121,
+  "linesInViolation": 0,
+  "linesInKnownViolation": 0,
+  "knownViolationsMatched": 0,
+  "knownViolationEntriesNotMatched": [],
+  "schemaCompilationMilliseconds": 161217,
+  "validationMilliseconds": 6525,
+  "schemaCompilationProcesses": 4,
+  "serverMessageTypesNotObserved": [
+    "CapabilitySnapshotRequested",
+    "DemandSelectionResult",
+    "ExceptionRecoverySessionRejected",
+    "ForcedMechanicalRecoveryCommand",
+    "HardwareRecoveryRecordResult",
+    "HeartbeatAck",
+    "LoadCompensationRejected",
+    "LoadCorrectionRejected",
+    "ManualStationClearanceConfirmationResult",
+    "RecoveryActionRejected",
+    "SafetyStateSnapshotRequested",
+    "SessionRejected",
+    "SlotConfigurationActivationCommand",
+    "SublotRejected",
+    "UnableToChargeFieldConfirmationResult"
+  ],
+  "byMessageType": {
+    "CurrentStopWorklistSnapshot": {
+      "product": 32
+    },
+    "DurableAck": {
+      "product": 25
+    },
+    "ExceptionRecoverySessionOpened": {
+      "product": 7
+    },
+    "ExceptionRecoverySessionSnapshot": {
+      "product": 23
+    },
+    "FaultCargoRecoveryCommand": {
+      "product": 1
+    },
+    "LoadCancellationAuthorization": {
+      "product": 1
+    },
+    "LoadCompensationCommand": {
+      "product": 1
+    },
+    "LoadCorrectionCommand": {
+      "product": 1
+    },
+    "ManualChargingReturnToServiceResult": {
+      "product": 2
+    },
+    "PreDepartureSafetyCheck": {
+      "product": 15
+    },
+    "RecoveryActionAccepted": {
+      "product": 7
+    },
+    "SessionAccepted": {
+      "product": 6
+    },
+    "SessionReadiness": {
+      "product": 9
+    },
+    "SlotOperationCommand": {
+      "product": 29
+    },
+    "SlotOperationResumeCommand": {
+      "product": 6
+    },
+    "SnapshotAppliedAck": {
+      "product": 10
+    },
+    "SublotEntryRequested": {
+      "product": 22
+    },
+    "UpcomingStopPlanSnapshot": {
+      "product": 50
+    },
+    "VehicleBusinessStateSnapshot": {
+      "product": 45
+    }
+  }
+}

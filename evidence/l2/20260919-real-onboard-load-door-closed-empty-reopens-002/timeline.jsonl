@@ -1,0 +1,125 @@
+{"at":"2026-09-18T17:56:28.5054290+00:00","note":"L2 run 20260918T175628473Z starting for scenario 'real-onboard-load-door-closed-empty-reopens'."}
+{"at":"2026-09-18T17:56:28.5392062+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-18T17:56:28.5421818+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-18T17:56:45.5003937+00:00","note":"Building onboard-hmi at 29fbf65e0b4d58c80849d5e6d0e44f40903c411e from a throwaway clone."}
+{"at":"2026-09-18T17:56:52.8511940+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-18T17:56:52.8548608+00:00","note":"Peers: onboard-hmi@29fbf65e0b4d58c80849d5e6d0e44f40903c411e, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-18T17:56:52.8679602+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-18T17:56:53.7264741+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T17:56:53.9147938+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T17:56:55.6836421+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-18T17:56:58.1376458+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T17:56:59.7543061+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T17:56:59.8245071+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T17:57:02.5322784+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-18T17:57:02.5472563+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-18T17:57:02.6322486+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-18T17:57:03.1673713+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T17:57:03.2310081+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260918T175628473Z\\controlserver.db"}
+{"at":"2026-09-18T17:57:04.8789205+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"2a962f8029a64b1e97e22d2b0c36f831","version":1,"slotCount":8}}}
+{"at":"2026-09-18T17:57:04.8860588+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260918T175628473Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T17:57:06.0432458+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"2a962f8029a64b1e97e22d2b0c36f831","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T17:57:06.1559406+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T17:57:06.1585186+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260918T175628473Z\\controlserver.db --input C:\\s5r\\l2\\20260919-real-onboard-load-door-closed-empty-reopens-002\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T17:57:07.3220573+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\s5r\\l2\\20260919-real-onboard-load-door-closed-empty-reopens-002\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"2cf2b7220c7f436facc0bcf81250e98e","importedAt":"2026-09-19T01:57:06.3343032+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T17:57:07.3272929+00:00","note":"Environment is up; entering scenario 'real-onboard-load-door-closed-empty-reopens'."}
+{"at":"2026-09-18T17:57:07.5000700+00:00","note":"Publishing demand 5e89dc3e7fb64cec9608b75022264bb6 (sublot L2-DC-20260918T175628473Z) to the fake MesIngest catalog."}
+{"at":"2026-09-18T17:57:07.5725725+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-18T17:57:09.1110161+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-18T17:57:09.1384590+00:00","criterion":"to_pickup-intent","value":"@{UpperId=W2G-5e89dc3e-7fb6-4cec-9608-b75022264bb6-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-18T17:57:09.1418584+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-18T17:57:09.2316734+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-18T17:57:09.7882823+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-18T17:57:09.7895090+00:00","note":"Typing sublot L2-DC-20260918T175628473Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-18T17:57:09.8373395+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-18T17:57:09.8589201+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-18T17:57:09.8795276+00:00","criterion":"sublot-submitted","value":"0"}
+{"at":"2026-09-18T17:57:10.1804887+00:00","criterion":"sublot-submitted","value":"1"}
+{"at":"2026-09-18T17:57:10.2000662+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-18T17:57:10.7125216+00:00","criterion":"load-attempt","value":"2ae84e97-910a-db5a-b901-b687fb22dc1a"}
+{"at":"2026-09-18T17:57:10.7449309+00:00","criterion":"load-waiting-operator","value":"(null)"}
+{"at":"2026-09-18T17:57:11.5369895+00:00","criterion":"load-waiting-operator","value":"@{At=09/18/2026 17:57:11 +00:00; Phase=WAITING_OPERATOR; Slots=System.Object[]}"}
+{"at":"2026-09-18T17:57:11.5601851+00:00","criterion":"awaiting-load-result","value":"@{DemandId=5e89dc3e-7fb6-4cec-9608-b75022264bb6; Stage=AwaitingLoadResult; AgvId=AGV-L2-001; VehicleKey=BROKERX-L2-0001; AgvLifecycleGeneration=1; MapId=25; MapIdentity=MAP-L2; DispatchZone=MAP-25-WIRE_TO_GATE; RouteEvidenceId=MAPCAT-211ca7624e8c3bf810bfe2e2c959b5c9016030d343fa634b988a4b64aa273d6f; PickupStationId=N1-3_N1-7; PickupStationRiotId=12; GateStationId=关卡; GateStationRiotId=210; ExpectedBasketCount=1; TargetSlotsJson=[1]; OperationSessionId=cb3d9c7c-462b-035b-a706-2d96d9136ea8; PickupMovementLegId=e2debcec-4080-1257-8705-286cde545059; PickupUpperId=W2G-5e89dc3e-7fb6-4cec-9608-b75022264bb6-PICKUP-1; GateMovementLegId=1f99f25b-fedd-8f52-a2eb-70ba06dc7d93; GateUpperId=W2G-5e89dc3e-7fb6-4cec-9608-b75022264bb6-GATE-1; DispatchGeneration=1; VehicleBusinessRevision=1; WorklistRevision=1; PlanRevision=1; VehicleBusinessMessageId=887df0f9-4400-d75d-af85-ed921c9a9f5f; WorklistMessageId=6585bfcd-7b28-e95b-9faf-8059437ae4d1; PlanMessageId=de6d3ef6-3c9e-9b57-a1f9-594de1b566ed; SublotRequestMessageId=4d8ce3c6-5afc-ab51-b393-dff5febd9dbb; LoadCommandMessageId=2ec013ce-87cf-5f51-aed0-7585582e2dd6; LoadSlotOperationAttemptId=2ae84e97-910a-db5a-b901-b687fb22dc1a; PreDepartureSafetyCheckMessageId=143d7475-1609-d15f-a032-86d3ea61602a; PreDepartureSafetyCheckId=a48d8e06-646c-2957-8900-95d322dc32ad; GateVehicleBusinessMessageId=9e46230c-f37c-d653-b6bd-22f48e3d290f; GateWorklistMessageId=8e3b8753-23a2-025a-be4d-e0ac69a56527; GatePlanMessageId=10dcccff-022f-4557-9356-b7c7016582e6; UnloadCommandMessageId=3e4dd82b-d6e7-ee58-9d3c-5c183c6a1284; UnloadSlotOperationAttemptId=d30937f9-f0c5-f456-b6d7-9ecbcc07209d; ConsumedSublotMessageId=53e671fe-1eb1-40f4-ab77-1ba4339a1453; ConsumedSafetyResultMessageId=; BlockReasonCode=; CreatedAt=2026-09-18 17:57:08.6225371+00:00; UpdatedAt=2026-09-18 17:57:10.374957+00:00; StationDepartureWaitStartedAt=2026-09-18 17:57:09.4840101+00:00; BlockReasonSince=}"}
+{"at":"2026-09-18T17:57:11.5845737+00:00","note":"Station deadline is 2026-09-18T17:57:49.4840101+00:00 (arrival + 00:00:40)."}
+{"at":"2026-09-18T17:57:11.6284835+00:00","note":"reopen-before-deadline: closing slot 1 over the opposite occupancy."}
+{"at":"2026-09-18T17:57:11.6652175+00:00","criterion":"reopen-before-deadline-baseline","value":"@{Unlocking=1; Waiting=1; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:11.7318351+00:00","criterion":"reopen-before-deadline","value":"@{Unlocking=1; Waiting=1; LastUnlock=; Physical=CLOSED/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:12.0232889+00:00","criterion":"reopen-before-deadline","value":"@{Unlocking=1; Waiting=1; LastUnlock=; Physical=CLOSED/EMPTY/1/0}"}
+{"at":"2026-09-18T17:57:12.2886872+00:00","criterion":"reopen-before-deadline","value":"@{Unlocking=2; Waiting=1; LastUnlock=; Physical=OPEN/EMPTY/1/1}"}
+{"at":"2026-09-18T17:57:12.5580698+00:00","criterion":"reopen-before-deadline","value":"@{Unlocking=2; Waiting=1; LastUnlock=; Physical=OPEN/EMPTY/0/1}"}
+{"at":"2026-09-18T17:57:12.8256498+00:00","criterion":"reopen-before-deadline","value":"@{Unlocking=2; Waiting=1; LastUnlock=; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:13.3781819+00:00","criterion":"reopen-before-deadline","value":"@{Unlocking=2; Waiting=2; LastUnlock=; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:13.4195744+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:13 +00:00"}
+{"at":"2026-09-18T17:57:14.2187261+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:14 +00:00"}
+{"at":"2026-09-18T17:57:15.2232027+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:15 +00:00"}
+{"at":"2026-09-18T17:57:16.0073381+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:16 +00:00"}
+{"at":"2026-09-18T17:57:17.0295094+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:17 +00:00"}
+{"at":"2026-09-18T17:57:18.0651221+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:18 +00:00"}
+{"at":"2026-09-18T17:57:19.1013809+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:19 +00:00"}
+{"at":"2026-09-18T17:57:20.1095115+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:20 +00:00"}
+{"at":"2026-09-18T17:57:21.1293925+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:21 +00:00"}
+{"at":"2026-09-18T17:57:22.1381811+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:22 +00:00"}
+{"at":"2026-09-18T17:57:23.1439192+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:23 +00:00"}
+{"at":"2026-09-18T17:57:24.1773155+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:24 +00:00"}
+{"at":"2026-09-18T17:57:25.2110473+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:25 +00:00"}
+{"at":"2026-09-18T17:57:26.2464872+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:26 +00:00"}
+{"at":"2026-09-18T17:57:27.0036634+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:27 +00:00"}
+{"at":"2026-09-18T17:57:28.0259715+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:28 +00:00"}
+{"at":"2026-09-18T17:57:29.0456558+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:29 +00:00"}
+{"at":"2026-09-18T17:57:30.0804204+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:30 +00:00"}
+{"at":"2026-09-18T17:57:31.1157638+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:31 +00:00"}
+{"at":"2026-09-18T17:57:32.1350423+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:32 +00:00"}
+{"at":"2026-09-18T17:57:33.1682912+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:33 +00:00"}
+{"at":"2026-09-18T17:57:34.1890296+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:34 +00:00"}
+{"at":"2026-09-18T17:57:35.2110886+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:35 +00:00"}
+{"at":"2026-09-18T17:57:36.2490096+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:36 +00:00"}
+{"at":"2026-09-18T17:57:37.0318633+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:37 +00:00"}
+{"at":"2026-09-18T17:57:38.0776935+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:38 +00:00"}
+{"at":"2026-09-18T17:57:39.1093715+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:39 +00:00"}
+{"at":"2026-09-18T17:57:40.1436268+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:40 +00:00"}
+{"at":"2026-09-18T17:57:41.1810004+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:41 +00:00"}
+{"at":"2026-09-18T17:57:42.2019940+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:42 +00:00"}
+{"at":"2026-09-18T17:57:43.2120603+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:43 +00:00"}
+{"at":"2026-09-18T17:57:44.2303097+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:44 +00:00"}
+{"at":"2026-09-18T17:57:45.0118788+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:45 +00:00"}
+{"at":"2026-09-18T17:57:46.0169159+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:46 +00:00"}
+{"at":"2026-09-18T17:57:47.0413852+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:47 +00:00"}
+{"at":"2026-09-18T17:57:48.0598698+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:48 +00:00"}
+{"at":"2026-09-18T17:57:49.0935270+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:49 +00:00"}
+{"at":"2026-09-18T17:57:50.1231384+00:00","criterion":"past-deadline","value":"09/18/2026 17:57:50 +00:00"}
+{"at":"2026-09-18T17:57:50.6668557+00:00","criterion":"onboard-countdown-expired","value":"Expired"}
+{"at":"2026-09-18T17:57:50.6840112+00:00","note":"reopen-after-deadline-1: closing slot 1 over the opposite occupancy."}
+{"at":"2026-09-18T17:57:50.6946364+00:00","criterion":"reopen-after-deadline-1-baseline","value":"@{Unlocking=2; Waiting=2; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:50.7104160+00:00","criterion":"reopen-after-deadline-1","value":"@{Unlocking=2; Waiting=2; LastUnlock=; Physical=CLOSED/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:50.9752752+00:00","criterion":"reopen-after-deadline-1","value":"@{Unlocking=2; Waiting=2; LastUnlock=; Physical=CLOSED/EMPTY/1/0}"}
+{"at":"2026-09-18T17:57:51.5077010+00:00","criterion":"reopen-after-deadline-1","value":"@{Unlocking=3; Waiting=2; LastUnlock=; Physical=OPEN/EMPTY/0/1}"}
+{"at":"2026-09-18T17:57:52.0364218+00:00","criterion":"reopen-after-deadline-1","value":"@{Unlocking=3; Waiting=2; LastUnlock=; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:52.3008952+00:00","criterion":"reopen-after-deadline-1","value":"@{Unlocking=3; Waiting=3; LastUnlock=; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:52.3037142+00:00","note":"reopen-after-deadline-2: closing slot 1 over the opposite occupancy."}
+{"at":"2026-09-18T17:57:52.3181750+00:00","criterion":"reopen-after-deadline-2-baseline","value":"@{Unlocking=3; Waiting=3; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:52.3360993+00:00","criterion":"reopen-after-deadline-2","value":"@{Unlocking=3; Waiting=3; LastUnlock=; Physical=CLOSED/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:52.5992647+00:00","criterion":"reopen-after-deadline-2","value":"@{Unlocking=3; Waiting=3; LastUnlock=; Physical=CLOSED/EMPTY/1/0}"}
+{"at":"2026-09-18T17:57:52.8683084+00:00","criterion":"reopen-after-deadline-2","value":"@{Unlocking=4; Waiting=3; LastUnlock=; Physical=OPEN/EMPTY/1/1}"}
+{"at":"2026-09-18T17:57:53.1301569+00:00","criterion":"reopen-after-deadline-2","value":"@{Unlocking=4; Waiting=3; LastUnlock=; Physical=OPEN/EMPTY/0/1}"}
+{"at":"2026-09-18T17:57:53.3953453+00:00","criterion":"reopen-after-deadline-2","value":"@{Unlocking=4; Waiting=3; LastUnlock=; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:53.9421653+00:00","criterion":"reopen-after-deadline-2","value":"@{Unlocking=4; Waiting=4; LastUnlock=; Physical=OPEN/EMPTY/0/0}"}
+{"at":"2026-09-18T17:57:53.9633659+00:00","criterion":"runtime-iterations","value":"55"}
+{"at":"2026-09-18T17:57:54.4992949+00:00","criterion":"runtime-iterations","value":"56"}
+{"at":"2026-09-18T17:57:55.5490090+00:00","criterion":"runtime-iterations","value":"57"}
+{"at":"2026-09-18T17:57:56.6156615+00:00","criterion":"runtime-iterations","value":"58"}
+{"at":"2026-09-18T17:57:56.6580947+00:00","criterion":"onboard-cancel-offered","value":"True"}
+{"at":"2026-09-18T17:57:56.6600694+00:00","note":"The operator presses cancel and confirms it."}
+{"at":"2026-09-18T17:57:56.9673942+00:00","criterion":"cancellation-requested","value":"@{MessageId=60c7f1a3-1557-4307-8ae2-73d49a96739e; At=09/18/2026 17:57:56 +00:00; Payload=; Response=LoadCancellationAuthorization; ResponsePayload=}"}
+{"at":"2026-09-18T17:57:56.9739183+00:00","note":"The operator shuts the empty slot 1."}
+{"at":"2026-09-18T17:57:57.0082969+00:00","criterion":"cancellation-settled","value":"@{Demand=Accepted; Stage=AwaitingLoadResult; Reason=STATION_TIMEOUT_DOOR_NOT_CLOSED}"}
+{"at":"2026-09-18T17:57:57.5420071+00:00","criterion":"cancellation-settled","value":"@{Demand=Accepted; Stage=AwaitingLoadResult; Reason=}"}
+{"at":"2026-09-18T17:57:57.8044347+00:00","criterion":"cancellation-settled","value":"@{Demand=Cancelled; Stage=Completed; Reason=CANCELLED_BY_OPERATOR}"}
+{"at":"2026-09-18T17:57:57.8116548+00:00","criterion":"runtime-iterations","value":"59"}
+{"at":"2026-09-18T17:57:58.5986198+00:00","criterion":"runtime-iterations","value":"60"}
+{"at":"2026-09-18T17:57:59.3979151+00:00","criterion":"runtime-iterations","value":"61"}
+{"at":"2026-09-18T17:58:00.4592308+00:00","criterion":"runtime-iterations","value":"62"}
+{"at":"2026-09-18T17:58:00.4740614+00:00","note":"Publishing the next demand 9d231a3a503049249211cc6d4c3bd3a5 to see whether the vehicle takes it."}
+{"at":"2026-09-18T17:58:00.4864471+00:00","criterion":"next-demand-dispatched","value":"(null)"}
+{"at":"2026-09-18T17:58:01.5087845+00:00","criterion":"next-demand-dispatched","value":"AwaitingPickupArrival"}
+{"at":"2026-09-18T17:58:01.5337987+00:00","note":"Scenario finished."}
+{"at":"2026-09-18T17:58:02.1868665+00:00","note":"L2 port block lock released."}

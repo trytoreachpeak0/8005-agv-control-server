@@ -635,7 +635,7 @@ $restartedHostServesTheSameStorePass = $null -ne $handshakeResult -and $null -ne
 # So it is recorded below instead of asserted, and the exemption is written against that one fact.
 $protocolBindingPass = $null -ne $version -and
     $version.protocolCommit -eq $ProtocolCommit -and
-    $version.protocolTag -eq 'protocol-v1.0.0' -and
+    $version.protocolTag -eq 'protocol-v2.0.0' -and
     $null -ne $probeResult -and
     [string]$probeResult.serverBuildCommit -eq $ControlServerCommit -and
     $null -ne $baseline

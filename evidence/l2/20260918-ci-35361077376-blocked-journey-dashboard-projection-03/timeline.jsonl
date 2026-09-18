@@ -1,0 +1,72 @@
+{"at":"2026-09-18T15:24:21.1241352+00:00","note":"L2 run 20260918T152421083Z starting for scenario 'blocked-journey-dashboard-projection'."}
+{"at":"2026-09-18T15:24:21.1622295+00:00","note":"L2 port block lock acquired (slot 2, Global\\W2G-L2PortBlock-slot2)."}
+{"at":"2026-09-18T15:24:21.1649885+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-18T15:24:22.0769076+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T15:24:22.3290669+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T15:24:25.4117195+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T15:24:27.5857101+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T15:24:27.7396708+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T15:24:28.4345973+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:24:28.7216146+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:24:28.7942240+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T15:24:29.7201463+00:00","criterion":"dashboard-live","value":"200"}
+{"at":"2026-09-18T15:24:29.8321817+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152421083Z-slot2\\controlserver.db"}
+{"at":"2026-09-18T15:24:31.4607114+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"a99a3f7495c94e779f9cb11dc228d604","version":1,"slotCount":8}}}
+{"at":"2026-09-18T15:24:31.4695595+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152421083Z-slot2\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T15:24:33.0846734+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"a99a3f7495c94e779f9cb11dc228d604","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T15:24:33.1949736+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T15:24:33.1972483+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152421083Z-slot2\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\blocked-journey-dashboard-projection-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T15:24:35.0769363+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\blocked-journey-dashboard-projection-03\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"a64646ad7d48429783509d702fddb76e","importedAt":"2026-09-18T23:24:33.4858967+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T15:24:35.0866060+00:00","note":"Environment is up; entering scenario 'blocked-journey-dashboard-projection'."}
+{"at":"2026-09-18T15:24:35.2256446+00:00","note":"Publishing demand 72b5851c79074b94b26b783d54f90907 (sublot L2-SUBLOT-20260918T152421083Z)."}
+{"at":"2026-09-18T15:24:35.2975743+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-18T15:24:36.8166555+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-18T15:24:36.8227579+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-18T15:24:37.0864200+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-72b5851c-7907-4b94-b26b-783d54f90907-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-18T15:24:37.0909556+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-18T15:24:37.1690372+00:00","criterion":"endpoint-checkpoint-wait-baseline","value":"(null)"}
+{"at":"2026-09-18T15:24:37.1713475+00:00","note":"RIoT reports the vehicle holding at a traffic checkpoint."}
+{"at":"2026-09-18T15:24:37.2023641+00:00","criterion":"endpoint-checkpoint-wait","value":"(null)"}
+{"at":"2026-09-18T15:24:38.2966017+00:00","criterion":"endpoint-checkpoint-wait","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=AwaitingPickupArrival; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=VEHICLE_WAITING_AT_CHECKPOINT; blockReasonSince=2026-09-18T15:24:38.0714526+00:00; blockedSeconds=0; escalationLevel=Operator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:24:38.3562134+00:00","criterion":"endpoint-checkpoint-cleared-baseline","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=AwaitingPickupArrival; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=VEHICLE_WAITING_AT_CHECKPOINT; blockReasonSince=2026-09-18T15:24:38.0714526+00:00; blockedSeconds=0; escalationLevel=Operator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:24:38.3600232+00:00","note":"The checkpoint releases the vehicle; it is moving again."}
+{"at":"2026-09-18T15:24:38.3990779+00:00","criterion":"endpoint-checkpoint-cleared","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=AwaitingPickupArrival; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=VEHICLE_WAITING_AT_CHECKPOINT; blockReasonSince=2026-09-18T15:24:38.0714526+00:00; blockedSeconds=0; escalationLevel=Operator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:24:39.2188347+00:00","criterion":"endpoint-checkpoint-cleared","value":"(not listed)"}
+{"at":"2026-09-18T15:24:39.2405631+00:00","criterion":"endpoint-session-not-ready-baseline","value":"(null)"}
+{"at":"2026-09-18T15:24:39.2427263+00:00","note":"The peer reports departure safety it cannot fully establish: one fact unknown."}
+{"at":"2026-09-18T15:24:39.2815667+00:00","criterion":"endpoint-session-not-ready","value":"(null)"}
+{"at":"2026-09-18T15:24:40.0907052+00:00","criterion":"endpoint-session-not-ready","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=AwaitingPickupArrival; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=ONBOARD_SESSION_NOT_READY; blockReasonSince=2026-09-18T15:24:40.0433195+00:00; blockedSeconds=0; escalationLevel=MaintenanceAdministrator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:24:40.1336323+00:00","criterion":"runtime-rewritten-after-block","value":"@{Stage=AwaitingPickupArrival; BlockReasonCode=ONBOARD_SESSION_NOT_READY; BlockReasonSince=2026-09-18 15:24:40.0433195+00:00; UpdatedAt=2026-09-18 15:24:40.0433195+00:00; PickupStationId=N1-3_N1-7}"}
+{"at":"2026-09-18T15:24:41.1496892+00:00","criterion":"runtime-rewritten-after-block","value":"@{Stage=AwaitingPickupArrival; BlockReasonCode=ONBOARD_SESSION_NOT_READY; BlockReasonSince=2026-09-18 15:24:40.0433195+00:00; UpdatedAt=2026-09-18 15:24:41.053673+00:00; PickupStationId=N1-3_N1-7}"}
+{"at":"2026-09-18T15:24:42.1629832+00:00","criterion":"runtime-rewritten-after-block","value":"@{Stage=AwaitingPickupArrival; BlockReasonCode=ONBOARD_SESSION_NOT_READY; BlockReasonSince=2026-09-18 15:24:40.0433195+00:00; UpdatedAt=2026-09-18 15:24:42.0480639+00:00; PickupStationId=N1-3_N1-7}"}
+{"at":"2026-09-18T15:24:42.1936111+00:00","criterion":"endpoint-after-rewrite","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=AwaitingPickupArrival; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=ONBOARD_SESSION_NOT_READY; blockReasonSince=2026-09-18T15:24:40.0433195+00:00; blockedSeconds=2; escalationLevel=MaintenanceAdministrator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:24:42.3161141+00:00","criterion":"dashboard-blocked-row","value":"escalation-maintenance-administrator AGV-L2-001  N1-3_N1-7  ONBOARD_SESSION_NOT_READY  2026-09-18 23:24:40  0 分 2 秒  维护管理员  原因码 DEPARTURE_SAFETY_NOT_READY；安全原因码 [\"IO_FACT_UNKNOWN\"]；安全证据有未知项：是"}
+{"at":"2026-09-18T15:24:42.3213209+00:00","note":"The peer establishes departure safety again."}
+{"at":"2026-09-18T15:24:42.3438810+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-18T15:24:42.3708016+00:00","criterion":"pending-operation","value":"(null)"}
+{"at":"2026-09-18T15:24:44.4158229+00:00","criterion":"pending-operation","value":"operation:a3d5b2ca-5dfa-7a55-af48-3ee0fe47e590"}
+{"at":"2026-09-18T15:24:44.4201060+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-18T15:24:44.4532938+00:00","criterion":"endpoint-door-not-closed-baseline","value":"(null)"}
+{"at":"2026-09-18T15:24:44.4578668+00:00","note":"Peer reports a slot door not closed while the load is still underway; the stop runs out its deadline."}
+{"at":"2026-09-18T15:24:44.4913594+00:00","criterion":"endpoint-door-not-closed","value":"(null)"}
+{"at":"2026-09-18T15:25:14.3164050+00:00","criterion":"endpoint-door-not-closed","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=AwaitingLoadResult; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=STATION_TIMEOUT_DOOR_NOT_CLOSED; blockReasonSince=2026-09-18T15:25:14.0489688+00:00; blockedSeconds=0; escalationLevel=Operator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:25:14.3402901+00:00","criterion":"runtime-iterations","value":"48"}
+{"at":"2026-09-18T15:25:15.0951108+00:00","criterion":"runtime-iterations","value":"49"}
+{"at":"2026-09-18T15:25:16.1148796+00:00","criterion":"runtime-iterations","value":"50"}
+{"at":"2026-09-18T15:25:17.1275725+00:00","criterion":"runtime-iterations","value":"51"}
+{"at":"2026-09-18T15:25:18.1542231+00:00","criterion":"runtime-iterations","value":"52"}
+{"at":"2026-09-18T15:25:18.1817031+00:00","criterion":"endpoint-door-closed-baseline","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=AwaitingLoadResult; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=STATION_TIMEOUT_DOOR_NOT_CLOSED; blockReasonSince=2026-09-18T15:25:14.0489688+00:00; blockedSeconds=4; escalationLevel=Operator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:25:18.1859846+00:00","note":"The operator shuts the door; the peer reports every slot locked again."}
+{"at":"2026-09-18T15:25:18.2305636+00:00","criterion":"endpoint-door-closed","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=AwaitingLoadResult; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=STATION_TIMEOUT_DOOR_NOT_CLOSED; blockReasonSince=2026-09-18T15:25:14.0489688+00:00; blockedSeconds=4; escalationLevel=Operator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:25:19.3226652+00:00","criterion":"endpoint-door-closed","value":"(not listed)"}
+{"at":"2026-09-18T15:25:19.3429036+00:00","criterion":"endpoint-load-result-block-baseline","value":"(null)"}
+{"at":"2026-09-18T15:25:19.3454090+00:00","note":"Operator timeout ran out on the peer; it reports an incomplete OperationResult (operation:a3d5b2ca-5dfa-7a55-af48-3ee0fe47e590)."}
+{"at":"2026-09-18T15:25:19.3902920+00:00","criterion":"endpoint-load-result-block","value":"(null)"}
+{"at":"2026-09-18T15:25:20.1782221+00:00","criterion":"endpoint-load-result-block","value":"@{agvId=AGV-L2-001; demandId=72b5851c-7907-4b94-b26b-783d54f90907; stage=Blocked; stationId=N1-3_N1-7; pickupStationId=N1-3_N1-7; gateStationId=关卡; blockReasonCode=LOAD_RESULT_REQUIRES_RECOVERY; blockReasonSince=2026-09-18T15:25:20.049329+00:00; blockedSeconds=0; escalationLevel=Operator; unknownExplainedBy=; session=}"}
+{"at":"2026-09-18T15:25:20.1891821+00:00","criterion":"runtime-iterations","value":"54"}
+{"at":"2026-09-18T15:25:21.2104757+00:00","criterion":"runtime-iterations","value":"55"}
+{"at":"2026-09-18T15:25:22.2204521+00:00","criterion":"runtime-iterations","value":"56"}
+{"at":"2026-09-18T15:25:23.2328498+00:00","criterion":"runtime-iterations","value":"57"}
+{"at":"2026-09-18T15:25:24.2602543+00:00","criterion":"runtime-iterations","value":"58"}
+{"at":"2026-09-18T15:25:24.2799889+00:00","note":"Scenario finished at Blocked."}
+{"at":"2026-09-18T15:25:24.7164089+00:00","note":"L2 port block lock released."}

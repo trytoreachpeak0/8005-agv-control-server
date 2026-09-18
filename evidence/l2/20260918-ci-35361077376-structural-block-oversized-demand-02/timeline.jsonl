@@ -1,0 +1,31 @@
+{"at":"2026-09-18T15:25:18.2780937+00:00","note":"L2 run 20260918T152518226Z starting for scenario 'structural-block-oversized-demand'."}
+{"at":"2026-09-18T15:25:18.3156615+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-18T15:25:18.3184212+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-18T15:25:19.2584852+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T15:25:19.5153083+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T15:25:22.7457744+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T15:25:24.9103319+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T15:25:25.0409659+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T15:25:25.7327930+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:25:26.0319256+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:25:26.1262204+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T15:25:26.1854294+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152518226Z-slot4\\controlserver.db"}
+{"at":"2026-09-18T15:25:27.8113629+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"0d3dc1e41c904a8282a8a203ad1d8259","version":1,"slotCount":8}}}
+{"at":"2026-09-18T15:25:27.8194818+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152518226Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T15:25:29.4295575+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"0d3dc1e41c904a8282a8a203ad1d8259","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T15:25:29.5083115+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T15:25:29.5117918+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152518226Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\structural-block-oversized-demand-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T15:25:31.2365158+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\structural-block-oversized-demand-02\\snapshots\\preseed-area-assignments.csv","entryCount":1,"version":1,"contentSha256":"8ab62504edb88283c1f89062bdec82316bfea9ff44c986b884a1ec00d5a5b50f","snapshotId":"ef8707896de549c08e812fefad55e1a8","importedAt":"2026-09-18T23:25:29.7915785+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T15:25:31.2439591+00:00","note":"Environment is up; entering scenario 'structural-block-oversized-demand'."}
+{"at":"2026-09-18T15:25:31.3373881+00:00","note":"Publishing demand ae1d3dbb07574c2f8442196fa53355ed (area N1-3, 20 boxes = 5 baskets)."}
+{"at":"2026-09-18T15:25:31.4367418+00:00","criterion":"structural-block","value":"0"}
+{"at":"2026-09-18T15:25:31.9507058+00:00","criterion":"structural-block","value":"1"}
+{"at":"2026-09-18T15:25:32.0346241+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-18T15:25:32.5375782+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-18T15:25:33.5685807+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-18T15:25:34.5812243+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-18T15:25:34.6452740+00:00","note":"Deleting demand ae1d3dbb07574c2f8442196fa53355ed from the fake MesIngest catalog."}
+{"at":"2026-09-18T15:25:34.6656923+00:00","criterion":"structural-block-cleared","value":"0"}
+{"at":"2026-09-18T15:25:35.6714113+00:00","criterion":"structural-block-cleared","value":"1"}
+{"at":"2026-09-18T15:25:35.6788859+00:00","note":"超大需求立即形成一条结构性派车阻断，持续成立只刷新，需求离开目录后清除，始终未派车。"}
+{"at":"2026-09-18T15:25:36.1223543+00:00","note":"L2 port block lock released."}

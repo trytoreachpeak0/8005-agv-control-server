@@ -1,0 +1,26 @@
+{"at":"2026-09-18T15:26:27.8758529+00:00","note":"L2 run 20260918T152627836Z starting for scenario 'route-graph-engine'."}
+{"at":"2026-09-18T15:26:27.9141616+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-18T15:26:27.9170659+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-18T15:26:28.7948501+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T15:26:29.0639972+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T15:26:29.1414477+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-18T15:26:32.2684696+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T15:26:34.4483526+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T15:26:34.5556971+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T15:26:35.2534565+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:26:35.5375107+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:26:35.6192441+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T15:26:35.6842935+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152627836Z-slot4\\controlserver.db"}
+{"at":"2026-09-18T15:26:37.3405639+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"6dea7b59d0ec40c3aca93eabd7c52ed1","version":1,"slotCount":8}}}
+{"at":"2026-09-18T15:26:37.3487449+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152627836Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T15:26:38.9394221+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"6dea7b59d0ec40c3aca93eabd7c52ed1","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T15:26:39.0669924+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T15:26:39.0695485+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152627836Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\route-graph-engine-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T15:26:40.8346019+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\route-graph-engine-03\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"2ab657ca8f524a95b1a7940b3e94cc70","importedAt":"2026-09-18T23:26:39.3324659+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T15:26:40.8411576+00:00","note":"Environment is up; entering scenario 'route-graph-engine'."}
+{"at":"2026-09-18T15:26:40.8719404+00:00","criterion":"route-graph-design","value":"8"}
+{"at":"2026-09-18T15:26:40.8914090+00:00","note":"Publishing demand 311a0ceb48934263b70dc88beb1b2034 (sublot L2-RG-20260918T152627836Z) with the engine enabled."}
+{"at":"2026-09-18T15:26:40.9722849+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-18T15:26:41.7339065+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-18T15:26:41.7444117+00:00","note":"引擎在真链路里工作：双周期都跑过、快照不陈旧、可达性判据放行、派车成立。"}
+{"at":"2026-09-18T15:26:42.1584260+00:00","note":"L2 port block lock released."}

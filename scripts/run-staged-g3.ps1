@@ -52,10 +52,27 @@ param(
     #   Same day, $ControlServerCommit -> 052759bc: the L2 driver's Confirm() posts BM_CLICK when the
     #     dialog is not in the foreground (the journey run on 1b1f3dd7 lost two FP-IS-02 scenarios to
     #     it), on top of 05a43920 (two non-G3 scenarios). src/ and tests/ are unchanged from 1b1f3dd7.
-    [string]$ControlServerCommit = '052759bca58a04316dfda260249b3b5697f2cf8e',
-    [string]$OnboardCommit = 'b96010825d43aeee3b861cb3b4716f4d0873c8a0',
+    #
+    # 2026-09-18, batch 5 exit (control-server#90): all four move onto the released protocol-v2.0.0.
+    #   $ControlServerCommit -> e0f26b37, the fp/v2-impl tip before the exit ticket: every batch-5 server
+    #     ticket, cs#137's forced mechanical recovery settlement and cs#142's overdue card included.
+    #   $OnboardCommit -> 9748c418, the w2g/fp-v2-impl tip: every batch-5 onboard ticket through hmi#109.
+    #   $SimulatorCommit unchanged.
+    #   $ProtocolCommit -> 86575456, what the protocol-v2.0.0 tag dereferences to. The synthetic peer's
+    #     embedded identity below moved with it (release 2.0.0, ProtocolVersion 3, its three hashes).
+    #   2026-09-19, the batch 5 exit re-run after its two red G3 surfaces were fixed:
+    #   $ControlServerCommit -> c12f0498, the fp/v2-impl tip with cs#151 (staged forced-recovery criteria, c3c81eaf)
+    #     and cs#154 (Get-L2RealInbound on a single answer, c12f0498). Both touch scripts only; src/ and tests/
+    #     are unchanged from e0f26b37.
+    #   $OnboardCommit -> 29fbf65e, the w2g/fp-v2-impl tip with hmi#112 (recovery entries announced under their
+    #     own property names again, PR #114).
+    #   $SimulatorCommit and $ProtocolCommit unchanged.
+    #   Same day, $ControlServerCommit -> d3003c2f: cs#156 (PR #157), g3-forced-mechanical-recovery presses the
+    #     second step onboard-hmi#107 added. Scripts only; src/ and tests/ are still those of e0f26b37.
+    [string]$ControlServerCommit = 'd3003c2f688431436850df634a7d028fcb14f346',
+    [string]$OnboardCommit = '29fbf65e0b4d58c80849d5e6d0e44f40903c411e',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
-    [string]$ProtocolCommit = '9f22db825d52ad86c1d803bd0c1925dcc58d6793',
+    [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
     # branch carrying a line's onboard half moves with the line: batch 3 on the v2 line lives on
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
@@ -2000,9 +2017,9 @@ public static class StagedG3TlsHarness
         {
             ["repository"] = "8005-agv-protocol",
             ["releaseVersion"] = release,
-            ["tag"] = "protocol-v1.0.0",
+            ["tag"] = "protocol-v2.0.0",
             ["commit"] = Protocol.Commit,
-            ["protocolVersion"] = 2,
+            ["protocolVersion"] = 3,
             ["profileId"] = Protocol.Profile,
             ["manifestSha256"] = manifest,
             ["schemaBundleSha256"] = Protocol.Schema,
@@ -2049,7 +2066,7 @@ public static class StagedG3TlsHarness
         long? generation,
         object payload) => JsonSerializer.Serialize(new Dictionary<string, object?>
         {
-            ["protocolVersion"] = 2,
+            ["protocolVersion"] = 3,
             ["profileId"] = Protocol.Profile,
             ["protocolReleaseVersion"] = release,
             ["protocolReleaseManifestSha256"] = manifest,
@@ -2107,12 +2124,12 @@ public static class StagedG3TlsHarness
 
     private static class Protocol
     {
-        public const string Release = "1.0.0";
+        public const string Release = "2.0.0";
         public const string Profile = "AGV_FULL_PRODUCT";
-        public const string Commit = "9f22db825d52ad86c1d803bd0c1925dcc58d6793";
-        public const string Manifest = "a0e1deedb50419057dbe6aa7a7e8df983fb9ea901bbc452f97020ebf4743ef23";
-        public const string Schema = "885191e7a9e5da98a44f17f131756f9eb2033e7e11f13f4df965d4e35ac55685";
-        public const string Vectors = "51c5aaca2ca02326d16e02af7e76c9954d84414a9772c5b208a92969a417d1df";
+        public const string Commit = "86575456c847041515b7b75e8851a00e0d939804";
+        public const string Manifest = "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7";
+        public const string Schema = "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221";
+        public const string Vectors = "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a";
     }
 
     private sealed class Connection : IAsyncDisposable
