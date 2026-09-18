@@ -124,8 +124,11 @@ function Get-Note {
 }
 
 function Get-Criterion {
-    param([Parameter(Mandatory)][object[]]$Assertions, [Parameter(Mandatory)][string]$Id)
-    return @($Assertions | Where-Object { $_.id -eq $Id })[0]
+    param([object[]]$Assertions, [Parameter(Mandatory)][string]$Id)
+    $found = @($Assertions | Where-Object { $_.id -eq $Id })
+    # A run that died before reaching the criterion records none; say so rather than index past the end.
+    if ($found.Count -eq 0) { return [pscustomobject]@{ outcome = '(not recorded)'; expected = ''; actual = '' } }
+    return $found[0]
 }
 
 # --- 1. old ordering ------------------------------------------------------------------------------

@@ -16,6 +16,9 @@ Two rules run through all of it.
 
 Set-StrictMode -Version Latest
 
+# The thread job releasing a self-check write hold (Start-L2ServerWriteHold); null when none is running.
+$script:L2ServerWriteHold = $null
+
 class L2Journal {
     [string]$Path
     [hashtable]$Last = @{}
