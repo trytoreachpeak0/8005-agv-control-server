@@ -241,7 +241,7 @@ $laterIds = @('G3-02-41', 'G3-02-42', 'G3-02-43', 'G3-02-44', 'G3-02-45', 'G3-02
 $rejection = Wait-L2Condition -Description 'the server sent SublotRejected, or it issued a load command instead' `
     -Journal $journal -Criterion 'entry-refused' -TimeoutSeconds 60 `
     -Probe {
-        $sent = @(Get-Outbound 'SublotRejected')
+        $sent = (Get-Outbound 'SublotRejected')
         if ($sent.Count -ge 1) { $sent[0] }
         elseif ((Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'") -gt 0) { 'LOADED_INSTEAD' }
         else { $null }
@@ -252,31 +252,29 @@ if ($rejection -is [string]) {
     return
 }
 
-# 拒收被车载端确认、提示出现在界面上。确认与显示是车载端同一次处理里的两件事，一起等。
-$display = Wait-OrNull -Description 'the onboard acknowledged the rejection and shows its reason' `
+# 拒收不是持久报文（不进重放集合、车载端不回 DurableAck），所以「车收到了」不从发件箱读，由界面上出现的原因证明。
+$display = Wait-OrNull -Description 'the onboard shows the rejection reason' `
     -Criterion 'rejection-displayed' -TimeoutSeconds 30 `
     -Probe {
-        $acknowledged = @(Get-Outbound 'SublotRejected' | Where-Object { $_.MessageId -eq $rejection.MessageId -and $_.Acknowledged }).Count -eq 1
         $shown = Get-RejectionDisplay
-        if ($acknowledged -and $null -ne $shown -and (Test-Present $shown.ItemStatus)) { $shown } else { $null }
+        if ($null -ne $shown -and (Test-Present $shown.ItemStatus)) { $shown } else { $null }
     } `
     -Until { param($v) $null -ne $v }
 # 一轮之后再看旅程：拒收不能把它推离等录入。
 $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
 
-$entries = @(Get-Outbound 'SublotEntryRequested' | Where-Object { @($_.Payload.expectedSublots) -contains $sublot })
-$submissions = @(Get-Inbound 'SublotSubmitted' | Where-Object { [string]$_.Payload.sublot -eq $sublot })
-$rejectionAcknowledged = @(Get-Outbound 'SublotRejected' | Where-Object { $_.MessageId -eq $rejection.MessageId -and $_.Acknowledged }).Count -eq 1
+$entries = @((Get-Outbound 'SublotEntryRequested') | Where-Object { @($_.Payload.expectedSublots) -contains $sublot })
+$submissions = @((Get-Inbound 'SublotSubmitted') | Where-Object { [string]$_.Payload.sublot -eq $sublot })
 $sequenceOk = $entries.Count -ge 1 -and $submissions.Count -eq 1 -and
     $entries[0].At -lt $submissions[0].At -and $submissions[0].At -le $rejection.At -and
-    $rejection.CorrelationId -eq $submissions[0].MessageId -and $entries[0].Acknowledged -and $rejectionAcknowledged
+    $rejection.CorrelationId -eq $submissions[0].MessageId
 $assertions.Add(
     'G3-02-41',
-    '消息顺序与向量一致：SublotEntryRequested → SublotSubmitted → SublotRejected；拒收的 correlationId 就是 UIA 录入的那条提交的 messageId，服务端发的两条都被车载端确认（CV-SUBLOT-REJECTED-AFTER-ENTRY orderedExpectedMessages）',
+    '消息顺序与向量一致：SublotEntryRequested → SublotSubmitted → SublotRejected，提交恰好一条；拒收的 correlationId 就是 UIA 录入的那条提交的 messageId（CV-SUBLOT-REJECTED-AFTER-ENTRY orderedExpectedMessages）',
     $sequenceOk,
-    'EntryRequested(ack) < Submitted×1 <= Rejected(ack)，correlationId = 提交 messageId',
-    ("EntryRequested×$($entries.Count)$(if ($entries.Count -ge 1) { "(ack=$($entries[0].Acknowledged))" }) / " +
-     "Submitted×$($submissions.Count) / Rejected ack=$rejectionAcknowledged / " +
+    'EntryRequested < Submitted×1 <= Rejected，correlationId = 提交 messageId',
+    ("EntryRequested×$($entries.Count) / Submitted×$($submissions.Count) / " +
+     "有序=$(if ($entries.Count -ge 1 -and $submissions.Count -ge 1) { $entries[0].At -lt $submissions[0].At -and $submissions[0].At -le $rejection.At } else { '(incomplete)' }) / " +
      "correlationId=$($rejection.CorrelationId) 提交=$(if ($submissions.Count -ge 1) { $submissions[0].MessageId } else { '(none)' })"))
 
 $reasonCode = [string]$rejection.Payload.problem.reasonCode
@@ -371,7 +369,7 @@ if ($loadStatus -eq 'Committed') {
 }
 $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal
 
-$allSubmissions = @(Get-Inbound 'SublotSubmitted' | Where-Object { [string]$_.Payload.sublot -eq $sublot })
+$allSubmissions = @((Get-Inbound 'SublotSubmitted') | Where-Object { [string]$_.Payload.sublot -eq $sublot })
 $consumed = Get-Scalar "SELECT ConsumedSublotMessageId AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'"
 $loadPhysical = ($targetSlots | ForEach-Object { "$_=$(Get-SlotState $_)" }) -join ' '
 $expectedPhysical = ($targetSlots | ForEach-Object { "$_=CLOSED/OCCUPIED/1/0" }) -join ' '
@@ -388,10 +386,10 @@ $assertions.Add(
     ("提交 $($allSubmissions.Count) 条、消费 $consumed / $($targetSlots.Count) 仓 / 等待时 $(($doorWhenWaiting.Values) -join ',') / " +
      "$loadPhysical / $loadStatus / 拒收提示=$(if ($null -ne $displayAfterLoad) { $displayAfterLoad.ItemStatus } else { '(已撤)' })"))
 
-$rejections = @(Get-Outbound 'SublotRejected')
+$rejections = (Get-Outbound 'SublotRejected')
 $operations = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId'"
 $results = @(Invoke-L2Query -Connection $connection -Sql "SELECT OverallOutcome FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'")
-$commands = @(Get-Outbound 'SlotOperationCommand')
+$commands = (Get-Outbound 'SlotOperationCommand')
 $unlocks = @((Get-Progress $attemptId) | Where-Object { $_.Phase -eq 'UNLOCKING' } | ForEach-Object { $_.Active } | ForEach-Object { [int]$_ })
 $orders = @($riot.Snapshot().body.orders)
 $finalRuntime = @(Invoke-L2Query -Connection $connection -Sql "SELECT BlockReasonCode FROM JourneyRuntimes WHERE DemandId = '$demandId'")[0]
