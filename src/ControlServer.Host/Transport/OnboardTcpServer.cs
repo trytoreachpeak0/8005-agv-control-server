@@ -11,6 +11,8 @@ public sealed partial class OnboardTcpServer(
     OnboardPeer peer,
     ILogger<OnboardTcpServer> logger) : BackgroundService
 {
+    private static readonly TimeSpan AcceptRetryDelay = TimeSpan.FromMilliseconds(100);
+
     private readonly OnboardTransportOptions _options = options.Value;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -31,7 +33,12 @@ public sealed partial class OnboardTcpServer(
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                using TcpClient client = await listener.AcceptTcpClientAsync(stoppingToken).ConfigureAwait(false);
+                TcpClient? accepted = await AcceptNextClientAsync(listener, stoppingToken).ConfigureAwait(false);
+                if (accepted is null)
+                {
+                    continue;
+                }
+                using TcpClient client = accepted;
                 try
                 {
                     await HandleClientAsync(client, stoppingToken).ConfigureAwait(false);
@@ -49,6 +56,32 @@ public sealed partial class OnboardTcpServer(
         finally
         {
             listener.Stop();
+        }
+    }
+
+    /// <summary>
+    /// Test seam for the accept call. Production always uses the listener's own.
+    /// </summary>
+    internal Func<TcpListener, CancellationToken, ValueTask<TcpClient>> Accept { get; init; } =
+        static (listener, cancellationToken) => listener.AcceptTcpClientAsync(cancellationToken);
+
+    // Connections are served one at a time, so a second vehicle process connecting with the same
+    // identity waits in the listen backlog. When both processes die at once -- what agv01 did at
+    // 22:39 on 2026-09-18 -- the waiting connection can be reset before it is accepted, and the
+    // accept then fails with a SocketException for a connection that no longer exists. Kestrel
+    // retries the same case. Left uncaught it ended ExecuteAsync, and with it the whole host.
+    private async Task<TcpClient?> AcceptNextClientAsync(TcpListener listener, CancellationToken stoppingToken)
+    {
+        try
+        {
+            return await Accept(listener, stoppingToken).ConfigureAwait(false);
+        }
+        catch (SocketException error) when (!stoppingToken.IsCancellationRequested)
+        {
+            LogAcceptFailed(logger, error, error.SocketErrorCode);
+            // Keeps a listener that fails every time from spinning; a reset backlog entry costs one pause.
+            await Task.Delay(AcceptRetryDelay, stoppingToken).ConfigureAwait(false);
+            return null;
         }
     }
 
@@ -121,4 +154,8 @@ public sealed partial class OnboardTcpServer(
     [LoggerMessage(EventId = 1003, Level = LogLevel.Warning,
         Message = "Onboard connection ended with a protocol or transport error.")]
     private static partial void LogConnectionEnded(ILogger logger, Exception error);
+
+    [LoggerMessage(EventId = 1004, Level = LogLevel.Warning,
+        Message = "Accepting an Onboard connection failed with {SocketError}; the listener keeps accepting.")]
+    private static partial void LogAcceptFailed(ILogger logger, Exception error, SocketError socketError);
 }

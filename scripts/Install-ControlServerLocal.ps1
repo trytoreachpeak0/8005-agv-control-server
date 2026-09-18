@@ -52,6 +52,67 @@ $dataBackupCreated = $false
 $oldRiotMachine = [Environment]::GetEnvironmentVariable('CONTROL_SERVER_RIOT_CALL_API_KEY', 'Machine')
 $machineEnvironmentInjected = $false
 
+# Issue #149. Serilog's file sink defaults to a 1 GB file that, once full, silently drops every later
+# event until the next day's file -- on 2026-09-18 that erased the two hours before the service stopped.
+# Roll at 100 MB instead; keep at most 50 files (a 5 GB ceiling) and nothing older than 14 days, the
+# retention the sink had before. Update-ControlServerLocal.ps1 writes the same four values into an
+# existing installation's configuration, so change them in both.
+$logFileLimits = [ordered]@{
+    rollOnFileSizeLimit = $true
+    fileSizeLimitBytes = 104857600
+    retainedFileCountLimit = 50
+    retainedFileTimeLimit = '14.00:00:00'
+}
+
+# Issue #148. A background service that faults stops the host with exit code 1; these make the service
+# control manager start it again instead of leaving it stopped. failureflag 1 is the half that matters:
+# without it only a crash counts. Stop-Service and every other deliberate stop exit 0 and are never
+# restarted. Update-ControlServerLocal.ps1 carries the same policy.
+$serviceRecoveryResetSeconds = 86400
+$serviceRecoveryActions = 'restart/10000/restart/30000/restart/60000'
+
+function Get-ServiceRecoveryPolicy([string]$Name) {
+    # Read back from the registry rather than sc.exe qfailure, whose output is localized.
+    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$Name")
+    if ($null -eq $key) { throw "The service registry key is missing: $Name" }
+    try {
+        [byte[]]$raw = $key.GetValue('FailureActions')
+        $flag = $key.GetValue('FailureActionsOnNonCrashFailures')
+    }
+    finally {
+        $key.Close()
+    }
+    if ($null -eq $raw -or $raw.Length -lt 20) {
+        return [ordered]@{ resetSeconds = 0; actions = ''; failureFlag = [int]($flag ?? 0) }
+    }
+    # SERVICE_FAILURE_ACTIONS as the registry stores it: reset period, two 32-bit string offsets, the
+    # action count and the array offset, then (type, delay) pairs. Type 1 is restart.
+    $count = [BitConverter]::ToUInt32($raw, 12)
+    $actions = for ($i = 0; $i -lt $count; $i++) {
+        $offset = 20 + 8 * $i
+        '{0}/{1}' -f @('none', 'restart', 'reboot', 'run')[[BitConverter]::ToUInt32($raw, $offset)],
+            [BitConverter]::ToUInt32($raw, $offset + 4)
+    }
+    return [ordered]@{
+        resetSeconds = [int][BitConverter]::ToUInt32($raw, 0)
+        actions = $actions -join '/'
+        failureFlag = [int]($flag ?? 0)
+    }
+}
+
+function Set-ServiceRecoveryPolicy([string]$Name) {
+    & sc.exe failure $Name reset= $serviceRecoveryResetSeconds actions= $serviceRecoveryActions | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "sc.exe failure exited with $LASTEXITCODE for $Name." }
+    & sc.exe failureflag $Name 1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "sc.exe failureflag exited with $LASTEXITCODE for $Name." }
+    $policy = Get-ServiceRecoveryPolicy $Name
+    if ($policy.resetSeconds -ne $serviceRecoveryResetSeconds -or
+        $policy.actions -ne $serviceRecoveryActions -or $policy.failureFlag -ne 1) {
+        throw "The service recovery policy did not take: $($policy | ConvertTo-Json -Compress)"
+    }
+    return $policy
+}
+
 function Assert-Administrator {
     $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -257,7 +318,10 @@ try {
                         path = (Join-Path $logDirectory 'controlserver-.ndjson')
                         formatter = 'Serilog.Formatting.Compact.CompactJsonFormatter, Serilog.Formatting.Compact'
                         rollingInterval = 'Day'
-                        retainedFileCountLimit = 14
+                        rollOnFileSizeLimit = $logFileLimits.rollOnFileSizeLimit
+                        fileSizeLimitBytes = $logFileLimits.fileSizeLimitBytes
+                        retainedFileCountLimit = $logFileLimits.retainedFileCountLimit
+                        retainedFileTimeLimit = $logFileLimits.retainedFileTimeLimit
                         shared = $true
                     }
                 }
@@ -311,6 +375,10 @@ try {
     Wait-ServiceState 'Running'
     Invoke-LiveCheck
     Write-Diagnostic 'service-lifecycle-checks-complete'
+    # Only after the lifecycle checks: set earlier, a binary that fails to start would be restarted by the
+    # service control manager while the rollback below is deleting the service.
+    $serviceRecovery = Set-ServiceRecoveryPolicy $serviceName
+    Write-Diagnostic 'service-recovery-policy-complete'
 
     $databaseCreated = Test-Path -LiteralPath $databasePath -PathType Leaf
     if (-not $databaseCreated) { throw "The service did not create the SQLite database at $databasePath." }
@@ -358,7 +426,9 @@ try {
             serviceSpecificEnvironmentPresent = $serviceEnvironmentVerified
             valuesDisclosed = $false
         }
-        checks = @('package-hashes', 'sqlite-migrations-at-start', 'http-live-after-start', 'http-ready-after-start', 'stop-start', 'restart', 'http-version', 'log-file-written')
+        checks = @('package-hashes', 'sqlite-migrations-at-start', 'http-live-after-start', 'http-ready-after-start', 'stop-start', 'restart', 'http-version', 'log-file-written', 'service-recovery-policy')
+        serviceRecovery = $serviceRecovery
+        logFileLimits = $logFileLimits
         journeyRuntimeEnabled = $false
         riotMutationPerformed = $false
         orderCreated = $false

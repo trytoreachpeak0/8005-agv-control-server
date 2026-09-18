@@ -51,6 +51,67 @@ $certificateDirectoryRemoved = $false
 $checkHost = '127.0.0.1'
 $checkOrigin = 'http://127.0.0.1:58007'
 
+# Issue #149. Serilog's file sink defaults to a 1 GB file that, once full, silently drops every later
+# event until the next day's file -- on 2026-09-18 that erased the two hours before the service stopped.
+# Roll at 100 MB instead; keep at most 50 files (a 5 GB ceiling) and nothing older than 14 days, the
+# retention the sink had before. Install-ControlServerLocal.ps1 writes the same four values into a new
+# installation's configuration, so change them in both.
+$logFileLimits = [ordered]@{
+    rollOnFileSizeLimit = $true
+    fileSizeLimitBytes = 104857600
+    retainedFileCountLimit = 50
+    retainedFileTimeLimit = '14.00:00:00'
+}
+
+# Issue #148. A background service that faults stops the host with exit code 1; these make the service
+# control manager start it again instead of leaving it stopped. failureflag 1 is the half that matters:
+# without it only a crash counts. Stop-Service and every other deliberate stop exit 0 and are never
+# restarted. Install-ControlServerLocal.ps1 carries the same policy.
+$serviceRecoveryResetSeconds = 86400
+$serviceRecoveryActions = 'restart/10000/restart/30000/restart/60000'
+
+function Get-ServiceRecoveryPolicy([string]$Name) {
+    # Read back from the registry rather than sc.exe qfailure, whose output is localized.
+    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$Name")
+    if ($null -eq $key) { throw "The service registry key is missing: $Name" }
+    try {
+        [byte[]]$raw = $key.GetValue('FailureActions')
+        $flag = $key.GetValue('FailureActionsOnNonCrashFailures')
+    }
+    finally {
+        $key.Close()
+    }
+    if ($null -eq $raw -or $raw.Length -lt 20) {
+        return [ordered]@{ resetSeconds = 0; actions = ''; failureFlag = [int]($flag ?? 0) }
+    }
+    # SERVICE_FAILURE_ACTIONS as the registry stores it: reset period, two 32-bit string offsets, the
+    # action count and the array offset, then (type, delay) pairs. Type 1 is restart.
+    $count = [BitConverter]::ToUInt32($raw, 12)
+    $actions = for ($i = 0; $i -lt $count; $i++) {
+        $offset = 20 + 8 * $i
+        '{0}/{1}' -f @('none', 'restart', 'reboot', 'run')[[BitConverter]::ToUInt32($raw, $offset)],
+            [BitConverter]::ToUInt32($raw, $offset + 4)
+    }
+    return [ordered]@{
+        resetSeconds = [int][BitConverter]::ToUInt32($raw, 0)
+        actions = $actions -join '/'
+        failureFlag = [int]($flag ?? 0)
+    }
+}
+
+function Set-ServiceRecoveryPolicy([string]$Name) {
+    & sc.exe failure $Name reset= $serviceRecoveryResetSeconds actions= $serviceRecoveryActions | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "sc.exe failure exited with $LASTEXITCODE for $Name." }
+    & sc.exe failureflag $Name 1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "sc.exe failureflag exited with $LASTEXITCODE for $Name." }
+    $policy = Get-ServiceRecoveryPolicy $Name
+    if ($policy.resetSeconds -ne $serviceRecoveryResetSeconds -or
+        $policy.actions -ne $serviceRecoveryActions -or $policy.failureFlag -ne 1) {
+        throw "The service recovery policy did not take: $($policy | ConvertTo-Json -Compress)"
+    }
+    return $policy
+}
+
 function Write-Diagnostic([string]$Message) {
     if ([string]::IsNullOrWhiteSpace($resolvedDiagnostic)) { return }
     $directory = Split-Path -Parent $resolvedDiagnostic
@@ -197,6 +258,42 @@ function Convert-RetainedConfigurationToPlaintext([string]$Path) {
     }
 }
 
+<#
+.SYNOPSIS
+Brings the retained production configuration's file sink up to the shipped log limits.
+.DESCRIPTION
+The upgrade carries appsettings.Production.json forward, and the Serilog file sink is configured there
+rather than in the package, so a fix to the sink's limits reaches an existing installation only through
+this rewrite (issue #149). Only the Args of sinks named File change. The journey gates live in the same
+file and are verified unchanged, because Set-JourneyRuntime.ps1 is the only thing that may move them.
+#>
+function Set-RetainedLogFileLimits([string]$Path) {
+    $configuration = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
+    $gatesBefore = @($configuration.JourneyRuntime.enabled, $configuration.RiotCreateDispatch.enabled)
+    $fileSinks = @()
+    if ($null -ne $configuration.Serilog -and $null -ne $configuration.Serilog.WriteTo) {
+        $fileSinks = @($configuration.Serilog.WriteTo | Where-Object { $_.Name -eq 'File' -and $null -ne $_.Args })
+    }
+    foreach ($sink in $fileSinks) {
+        foreach ($name in $logFileLimits.Keys) {
+            $sink.Args | Add-Member -NotePropertyName $name -NotePropertyValue $logFileLimits[$name] -Force
+        }
+    }
+    [IO.File]::WriteAllText(
+        $Path,
+        ($configuration | ConvertTo-Json -Depth 10),
+        [Text.UTF8Encoding]::new($false))
+    $written = Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json
+    $gatesAfter = @($written.JourneyRuntime.enabled, $written.RiotCreateDispatch.enabled)
+    if (($gatesBefore | ConvertTo-Json -Compress) -ne ($gatesAfter | ConvertTo-Json -Compress)) {
+        throw 'Rewriting the log limits changed a journey gate in appsettings.Production.json.'
+    }
+    return [ordered]@{
+        fileSinksUpdated = $fileSinks.Count
+        limits = $logFileLimits
+    }
+}
+
 Assert-Administrator
 foreach ($path in @($resolvedResult, $resolvedDiagnostic, $stagingPath, $backupPath)) {
     if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path)) {
@@ -243,6 +340,7 @@ try {
     if ([string]::IsNullOrWhiteSpace($configurationMigration.healthUrl)) {
         throw 'The retained production configuration has no Health:url to check the upgrade against.'
     }
+    $logFileMigration = Set-RetainedLogFileLimits (Join-Path $stagingPath 'appsettings.Production.json')
     $healthBinding = [Uri]$configurationMigration.healthUrl
     $checkHost = if ($healthBinding.Host -in @('0.0.0.0', '*', '+', '::', '[::]')) {
         '127.0.0.1'
@@ -251,8 +349,9 @@ try {
     }
     $checkOrigin = "http://${checkHost}:$($healthBinding.Port)"
     Set-RestrictedDirectoryAcl $stagingPath
-    Write-Diagnostic ("staging-complete removedKeys={0} healthUrlRewritten={1}" -f
-        $configurationMigration.removedKeys.Count, $configurationMigration.healthUrlRewritten)
+    Write-Diagnostic ("staging-complete removedKeys={0} healthUrlRewritten={1} logFileSinksUpdated={2}" -f
+        $configurationMigration.removedKeys.Count, $configurationMigration.healthUrlRewritten,
+        $logFileMigration.fileSinksUpdated)
 
     # The certificate directory is inside the data root, so the backup above already holds it and the
     # rollback path restores it with everything else.
@@ -292,6 +391,12 @@ try {
     if ($VerifySafetyProjectionReadOnly) { $safety = Invoke-SafetyProjection }
     Write-Diagnostic 'lifecycle-and-readonly-checks-complete'
 
+    # Set on every upgrade, so an installation made before issue #148 gets the policy without a reinstall,
+    # and only once the new binary has started and restarted cleanly: set earlier, a binary that fails to
+    # start would be restarted by the service control manager while the rollback below is replacing it.
+    $serviceRecovery = Set-ServiceRecoveryPolicy $serviceName
+    Write-Diagnostic 'service-recovery-policy-complete'
+
     $resultDirectory = Split-Path -Parent $resolvedResult
     New-Item -ItemType Directory -Path $resultDirectory -Force | Out-Null
     $result = [ordered]@{
@@ -327,6 +432,8 @@ try {
             source = $safety.source
             reasonCount = @($safety.reasonCodes).Count
         }} else { $null }
+        serviceRecovery = $serviceRecovery
+        logFileLimits = $logFileMigration
         journeyRuntimeEnabled = $false
         riotMutationPerformed = $false
         orderCreated = $false

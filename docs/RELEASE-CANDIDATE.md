@@ -209,6 +209,15 @@ curl.exe --noproxy 192.168.200.1 --max-time 10 'http://192.168.200.1:58007/healt
 清除证书遗留物 → 换二进制 → 起服并回读 `/health/live`、`/version` 与（给了开关时）只读投影；任一步
 失败即回滚二进制、SQLite 与被清除的机器级变量。
 
+升级还会顺带做两件与证书无关的事（#148、#149），结果 JSON 各有一段：
+
+- `logFileLimits`：把保留配置里 File sink 的 `rollOnFileSizeLimit`、`fileSizeLimitBytes`、
+  `retainedFileCountLimit`、`retainedFileTimeLimit` 改成产品当前的值（见第 7 节）。只动这四个参数，
+  `JourneyRuntime.enabled` 与 `RiotCreateDispatch.enabled` 写回后会逐一核对未变。
+- `serviceRecovery`：用 `sc.exe failure` 与 `sc.exe failureflag` 给服务设失败后自动重启
+  （10 秒、30 秒、60 秒，一天无失败后计数清零），并从注册表读回核对。只在新二进制通过起停检查之后才设，
+  免得回滚过程中被服务控制管理器抢着拉起。
+
 脚本自动完成的三件事，逐项记录在结果 JSON 的 `certificateRemoval` 段：
 
 1. 从保留的生产配置中删除 `OnboardTransport:serverCertificatePath`、
@@ -291,12 +300,21 @@ curl.exe --noproxy 127.0.0.1 --max-time 10 'http://127.0.0.1:58007/health/live'
 
 | 组件 | 路径 | 格式 |
 | --- | --- | --- |
-| ControlServer | `<DataRoot>\logs\controlserver-<yyyyMMdd>.ndjson` | Serilog Compact JSON，按天滚动，保留 14 份 |
+| ControlServer | `<DataRoot>\logs\controlserver-<yyyyMMdd>.ndjson`，单个文件满 100 MB 后续写 `_001`、`_002`… | Serilog Compact JSON，按天滚动，最多保留 50 个文件、不超过 14 天 |
 | OnboardHmi | `<车载端安装目录>\logs\agv-<yyyyMMdd>.log` | 行文本，目录由 `logging.directory` 相对程序目录解析 |
 | 安装过程 | `-DiagnosticPath` 指定的文件 | 每行一个带 UTC 时间戳的阶段标记 |
 
 服务端的文件日志由安装脚本生成的 `appsettings.Production.json` 配置。产品默认配置只有 Console
 sink——服务模式下控制台输出无处可去，**因此不要绕过安装脚本手工部署**，否则没有持久日志。
+
+File sink 必须带 `rollOnFileSizeLimit: true`。Serilog 默认单文件 1 GB、写满后**丢弃当天之后的所有日志**，
+2026-09-18 生产服务端就是这样在停机前两小时失去了日志（#149）。日志级别在产品默认配置里：
+`Microsoft.EntityFrameworkCore` 与 `System.Net.Http.HttpClient` 只记 Warning 及以上，否则每条 SQL、
+每次 RIoT／MesIngest 请求都会按 Information 写一遍。
+
+后台服务（车载 TCP 监听、旅程循环）抛出未处理异常时，宿主会停下并以退出码 1 结束，同时把异常以 Error
+级别写进文件日志和 Windows 应用程序事件日志（来源 `8005 AGV ControlServer`，事件 ID 9001）。配合上面的
+服务恢复策略，服务会在 10 秒后自动重启。人为的 `Stop-Service` 退出码是 0，不会被自动拉起（#148）。
 
 日志与安装结果 JSON 都不写入任何秘密值，只记录「是否存在」。
 
