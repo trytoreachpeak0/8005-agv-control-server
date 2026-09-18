@@ -13,7 +13,7 @@ using Corvus.Json.Validator;
 // (8005-agv-control-server#85).
 //
 //   ControlServer.SchemaConformance --lines <ndjson> --report <directory> [--vendor <directory>]
-//                                     [--known <json>]
+//                                     [--known <json>] [--processes <n>]
 //
 // Each input line is {"messageType","origin","site","line"}: origin is product, synthetic-peer or
 // test, site names the sending method. Writes schema-coverage.json always and schema-violations.json
@@ -26,6 +26,13 @@ using Corvus.Json.Validator;
 // System.Text.Json 10.x and Roslyn with it: loaded into the test host, that System.Text.Json would
 // replace the 8.0 one the product ships with, and the tests would then measure a serializer
 // production never runs.
+//
+// Compiling the schemas is most of what a run costs: 1-5 s a schema, and Corvus compiles them one after
+// another however many threads ask (control-server#130 measured Parallel.ForEach at 44.3 s against 47.6 s
+// serial). So the message types are split over --processes copies of this program (default 4), each
+// validating its share and handing back what it found; the report is merged from those and is the
+// report a serial run writes, timings aside. --processes 1 validates everything in this process.
+// A copy is started with --partial <file> instead of --report, and writes only that file.
 const int ErrorsPerLine = 5;
 const string Validator = "Corvus.Json.Validator 4.6.7";
 
@@ -34,15 +41,25 @@ const string Validator = "Corvus.Json.Validator 4.6.7";
 // which a caller that reads the exit code -- a test fixture, the G2 script -- cannot tell apart from
 // a crash in the schema library. Caught rather than avoided, so --name value pairs stay the only
 // spelling and nothing has to be checked twice.
-const string Usage = "Usage: ControlServer.SchemaConformance --lines <ndjson> --report <directory> [--vendor <directory>]";
+const string Usage = "Usage: ControlServer.SchemaConformance --lines <ndjson> --report <directory> [--vendor <directory>] [--processes <n>]";
+const int DefaultProcesses = 4;
 Dictionary<string, string> arguments;
 string linesPath;
 string reportDirectory;
+// Set only in a copy started by another run of this program: where it writes what it found.
+string? partialPath;
+int processes;
 try
 {
     arguments = ParseArguments(args);
     linesPath = Required(arguments, "lines");
-    reportDirectory = Required(arguments, "report");
+    partialPath = arguments.GetValueOrDefault("partial");
+    reportDirectory = partialPath is null ? Required(arguments, "report") : string.Empty;
+    processes = arguments.GetValueOrDefault("processes") is { } count
+        ? int.TryParse(count, NumberStyles.None, CultureInfo.InvariantCulture, out int parsed) && parsed is >= 1 and <= 16
+            ? parsed
+            : throw new ArgumentException("--processes must be a whole number from 1 to 16.")
+        : DefaultProcesses;
 }
 catch (ArgumentException exception)
 {
@@ -63,9 +80,12 @@ if (known.FirstOrDefault(entry => !entry.IsWellFormed) is { } malformed)
         "Every known-violation entry names messageType, pointer, keyword and actual, and an issue URL " +
         "(the protocol's for a contract defect, this repository's for a product one): " + malformed);
 }
-Directory.CreateDirectory(reportDirectory);
-// A violations file an earlier run left in the same directory must not outlive the run that wrote it.
-File.Delete(Path.Combine(reportDirectory, "schema-violations.json"));
+if (partialPath is null)
+{
+    Directory.CreateDirectory(reportDirectory);
+    // A violations file an earlier run left in the same directory must not outlive the run that wrote it.
+    File.Delete(Path.Combine(reportDirectory, "schema-violations.json"));
+}
 
 string manifestPath = Path.Combine(vendorRoot, "manifest", "release.json");
 string schemaRoot = Path.Combine(vendorRoot, "schemas");
@@ -141,6 +161,9 @@ JsonSchema.Options schemaOptions = new(resolver, false, null, true);
 
 Stopwatch compileTime = new();
 Stopwatch validationTime = new();
+// Milliseconds reported by the copies of this program that did the work, when it was split.
+long splitCompileMilliseconds = 0;
+long splitValidationMilliseconds = 0;
 JsonSchema Compile(string manifestRelativePath)
 {
     compileTime.Start();
@@ -155,37 +178,131 @@ JsonSchema Compile(string manifestRelativePath)
     }
 }
 
-// Compiled only when there is something to validate: a run that sent nothing pays nothing.
-JsonSchema[] envelopeSchema = checkedLines.Length > 0 ? [Compile("schemas/envelope.schema.json")] : [];
 Dictionary<string, Violation> violations = [];
 int distinctLines = 0;
-foreach (IGrouping<string, ObservedLine> byType in checkedLines.GroupBy(line => line.MessageType).OrderBy(group => group.Key, StringComparer.Ordinal))
+IGrouping<string, ObservedLine>[] byMessageType = [.. checkedLines.GroupBy(line => line.MessageType).OrderBy(group => group.Key, StringComparer.Ordinal)];
+// A copy never splits again. Nor does a run with fewer than two message types: there is nothing to share.
+int compilationProcesses = partialPath is null && processes > 1 && byMessageType.Length > 1
+    ? Math.Min(processes, byMessageType.Length)
+    : 1;
+int validationExit = compilationProcesses > 1 ? await ValidateInProcessesAsync() : ValidateHere(byMessageType);
+if (validationExit != 0)
 {
-    // One schema per messageType, never the bundle's oneOf: every message schema repeats the envelope
-    // fields and adds the payload, so one file is self-contained, and a oneOf failure buries the real
-    // cause under every other branch's.
-    string? schemaPath = messages[byType.Key]?["schema"]?.GetValue<string>();
-    if (schemaPath is not null && !schemaIds.ContainsKey(schemaPath))
+    return validationExit;
+}
+
+if (partialPath is not null)
+{
+    File.WriteAllText(partialPath, JsonSerializer.Serialize(new PartialResult(
+        distinctLines, compileTime.ElapsedMilliseconds, validationTime.ElapsedMilliseconds, [.. violations.Values]),
+        JsonSerializerOptions.Web));
+    return 0;
+}
+
+int ValidateHere(IEnumerable<IGrouping<string, ObservedLine>> groups)
+{
+    // Compiled only when there is something to validate: a run that sent nothing pays nothing.
+    JsonSchema[] envelopeSchema = checkedLines.Length > 0 ? [Compile("schemas/envelope.schema.json")] : [];
+    foreach (IGrouping<string, ObservedLine> byType in groups)
     {
-        return Fail($"{schemaPath} is named by the manifest but is not vendored.");
-    }
-    JsonSchema[] messageSchema = schemaPath is null ? [] : [Compile(schemaPath)];
-    validationTime.Start();
-    foreach (IGrouping<string, ObservedLine> byContent in byType.GroupBy(line => line.Line, StringComparer.Ordinal))
-    {
-        distinctLines++;
-        Error[] errors = schemaPath is null
-            ? [new Error("#/messageType", "messageType", $"'{byType.Key}' is not a message of {ProtocolCandidateIdentity.Tag} {ProtocolCandidateIdentity.ReleaseVersion}.", Quote(byType.Key))]
-            : Validate(envelopeSchema, messageSchema, byContent.Key);
-        if (errors.Length > 0)
+        // One schema per messageType, never the bundle's oneOf: every message schema repeats the envelope
+        // fields and adds the payload, so one file is self-contained, and a oneOf failure buries the real
+        // cause under every other branch's.
+        string? schemaPath = messages[byType.Key]?["schema"]?.GetValue<string>();
+        if (schemaPath is not null && !schemaIds.ContainsKey(schemaPath))
         {
-            foreach (ObservedLine line in byContent)
+            return Fail($"{schemaPath} is named by the manifest but is not vendored.");
+        }
+        JsonSchema[] messageSchema = schemaPath is null ? [] : [Compile(schemaPath)];
+        validationTime.Start();
+        foreach (IGrouping<string, ObservedLine> byContent in byType.GroupBy(line => line.Line, StringComparer.Ordinal))
+        {
+            distinctLines++;
+            Error[] errors = schemaPath is null
+                ? [new Error("#/messageType", "messageType", $"'{byType.Key}' is not a message of {ProtocolCandidateIdentity.Tag} {ProtocolCandidateIdentity.ReleaseVersion}.", Quote(byType.Key))]
+                : Validate(envelopeSchema, messageSchema, byContent.Key);
+            if (errors.Length > 0)
             {
-                Record(line, errors);
+                foreach (ObservedLine line in byContent)
+                {
+                    Record(line, errors);
+                }
             }
         }
+        validationTime.Stop();
     }
-    validationTime.Stop();
+    return 0;
+}
+
+// Each copy gets whole message types, dealt round-robin from the busiest down so no copy draws all the
+// heavy ones, and a lines file of its own holding only those types' lines in their original order. What
+// comes back is merged in message-type order: a violation's key begins with its type and a type is only
+// ever in one copy, so within a type the order is the order a serial run records them in, and the sort
+// below settles the rest exactly as it would for a serial run.
+async Task<int> ValidateInProcessesAsync()
+{
+    string scratch = Path.Combine(Path.GetTempPath(), "w2g-schema-split-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(scratch);
+    try
+    {
+        List<IGrouping<string, ObservedLine>>[] shares =
+            [.. Enumerable.Range(0, compilationProcesses).Select(_ => new List<IGrouping<string, ObservedLine>>())];
+        int next = 0;
+        foreach (IGrouping<string, ObservedLine> group in byMessageType
+            .OrderByDescending(group => group.Count()).ThenBy(group => group.Key, StringComparer.Ordinal))
+        {
+            shares[next++ % compilationProcesses].Add(group);
+        }
+        (int ExitCode, string Output)[] results = await Task.WhenAll(shares.Select(RunShareAsync));
+        List<Violation> found = [];
+        for (int index = 0; index < results.Length; index++)
+        {
+            if (results[index].ExitCode != 0)
+            {
+                Console.Error.Write(results[index].Output);
+                return results[index].ExitCode;
+            }
+            PartialResult partial = JsonSerializer.Deserialize<PartialResult>(
+                File.ReadAllText(Path.Combine(scratch, $"partial-{index}.json")), JsonSerializerOptions.Web)
+                ?? throw new InvalidDataException($"Copy {index} of the validator wrote an empty result.");
+            distinctLines += partial.DistinctLines;
+            splitCompileMilliseconds += partial.CompileMilliseconds;
+            splitValidationMilliseconds += partial.ValidationMilliseconds;
+            found.AddRange(partial.Violations);
+        }
+        foreach (Violation violation in found.OrderBy(violation => violation.MessageType, StringComparer.Ordinal))
+        {
+            violations[violation.Key] = violation;
+        }
+        return 0;
+    }
+    finally
+    {
+        Directory.Delete(scratch, recursive: true);
+    }
+
+    async Task<(int ExitCode, string Output)> RunShareAsync(List<IGrouping<string, ObservedLine>> share, int index)
+    {
+        HashSet<string> types = new(share.Select(group => group.Key), StringComparer.Ordinal);
+        string sharePath = Path.Combine(scratch, $"lines-{index}.ndjson");
+        await File.WriteAllLinesAsync(sharePath, checkedLines
+            .Where(line => types.Contains(line.MessageType))
+            .Select(line => JsonSerializer.Serialize(line, JsonSerializerOptions.Web)));
+        ProcessStartInfo start = new(Environment.ProcessPath ?? throw new InvalidOperationException("No process path."))
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        foreach (string argument in (string[])["--lines", sharePath, "--partial", Path.Combine(scratch, $"partial-{index}.json"), "--vendor", vendorRoot])
+        {
+            start.ArgumentList.Add(argument);
+        }
+        using Process process = Process.Start(start) ?? throw new InvalidOperationException("Could not start " + start.FileName);
+        Task<string> output = process.StandardOutput.ReadToEndAsync();
+        Task<string> error = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return (process.ExitCode, await output + await error);
+    }
 }
 
 Violation[] ordered = violations.Values
@@ -251,8 +368,10 @@ File.WriteAllText(
         linesInKnownViolation = LinesWhere(violation => violation.OnFile is not null),
         knownViolationsMatched = usedEntries.Count,
         knownViolationEntriesNotMatched = known.Where(entry => !usedEntries.Contains(entry)).ToArray(),
-        schemaCompilationMilliseconds = compileTime.ElapsedMilliseconds,
-        validationMilliseconds = validationTime.ElapsedMilliseconds,
+        // Summed over the processes when the work was split, so it is effort rather than wall-clock time.
+        schemaCompilationMilliseconds = compileTime.ElapsedMilliseconds + splitCompileMilliseconds,
+        validationMilliseconds = validationTime.ElapsedMilliseconds + splitValidationMilliseconds,
+        schemaCompilationProcesses = compilationProcesses,
         // The server's own message types this run never sent. Reported, not judged: which messages a
         // test happens to send says nothing about whether the ones it sent are right.
         serverMessageTypesNotObserved = notObserved,
@@ -273,7 +392,8 @@ Console.WriteLine(string.Create(
     $"{checkedLines.Length} lines, {distinctLines} distinct, {observedTypes.Count} message types; " +
     $"{ordered.Length} distinct violations, {unknownViolations} of them not on file; " +
     $"{known.Length - usedEntries.Count} known-violation entries matched nothing; " +
-    $"schema compilation {compileTime.ElapsedMilliseconds} ms, validation {validationTime.ElapsedMilliseconds} ms."));
+    $"schema compilation {compileTime.ElapsedMilliseconds + splitCompileMilliseconds} ms, " +
+    $"validation {validationTime.ElapsedMilliseconds + splitValidationMilliseconds} ms, in {compilationProcesses} process(es)."));
 // Printed before the early return: an entry that matched nothing on a run with no violations at all
 // is exactly the case worth seeing, and it would otherwise only ever appear in the report file.
 foreach (KnownViolation entry in known.Where(entry => !usedEntries.Contains(entry)))
@@ -305,8 +425,7 @@ return unknownViolations > 0 ? 1 : 0;
 
 void Record(ObservedLine line, Error[] errors)
 {
-    string key = line.MessageType + "\n" + line.Origin + "\n" + line.Site + "\n" +
-        string.Join("\n", errors.Select(error => error.Pointer + " " + error.Keyword + " " + error.Actual));
+    string key = Violation.KeyOf(line.MessageType, line.Origin, line.Site, errors);
     if (violations.TryGetValue(key, out Violation? existing))
     {
         existing.Count++;
@@ -492,9 +611,20 @@ internal sealed record ObservedLine(string MessageType, string Origin, string Si
 
 internal sealed record Error(string Pointer, string Keyword, string Message, string Actual);
 
+/// <summary>What one copy of this program found in its share of the message types.</summary>
+internal sealed record PartialResult(int DistinctLines, long CompileMilliseconds, long ValidationMilliseconds, Violation[] Violations);
+
 internal sealed record Violation(string MessageType, string Origin, string Site, Error[] Errors, string SampleLine)
 {
     public int Count { get; set; }
+
+    /// <summary>What makes lines one violation: the same type, sender and errors.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Key => KeyOf(MessageType, Origin, Site, Errors);
+
+    public static string KeyOf(string messageType, string origin, string site, Error[] errors) =>
+        messageType + "\n" + origin + "\n" + site + "\n" +
+        string.Join("\n", errors.Select(error => error.Pointer + " " + error.Keyword + " " + error.Actual));
 
     /// <summary>The entries that cover every error of this line, or null while one is uncovered.</summary>
     public KnownViolation[]? OnFile { get; set; }

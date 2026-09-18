@@ -257,6 +257,51 @@ public sealed class SchemaConformanceToolTests : IDisposable
         Assert.Contains("--name value pairs", unpaired.Error, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Compiling the schemas is most of what this tool costs -- one to five seconds a schema, and Corvus
+    /// compiles them one after another however many threads ask -- so it splits the message types over
+    /// several processes of itself (control-server#130). That may only ever make it faster: the report
+    /// of a split run, timings aside, is the report of a serial one, violations and their order included.
+    /// </summary>
+    [Fact]
+    public async Task SplittingTheCompilationAcrossProcessesChangesNothingButTheTimings()
+    {
+        string[] records =
+        [
+            Record("DurableAck", DurableAckSite, DurableAckLine()),
+            Record("DurableAck", DurableAckSite, DurableAckLine(without: "durablyAcceptedAt")),
+            Record("DurableAck", "OnboardRecoveryCoordinator.Other", DurableAckLine(without: "acceptedMessageId")),
+            Record("HeartbeatAck", "Site.HeartbeatAck", DurableAckLine(messageType: "HeartbeatAck")),
+            Record("ProtocolProblem", "Site.ProtocolProblem", DurableAckLine(messageType: "ProtocolProblem")),
+            Record("PreDepartureSafetyCheck", "Site.PreDeparture", DurableAckLine(messageType: "PreDepartureSafetyCheck")),
+            Record("NotAMessage", DurableAckSite, DurableAckLine(messageType: "NotAMessage")),
+            Record("DurableAck", DurableAckSite, DurableAckLine(without: "durablyAcceptedAt"))
+        ];
+
+        ToolRun serial = await RunToolAsync("serial", records, processes: 1);
+        ToolRun split = await RunToolAsync("split", records, processes: 3);
+
+        Assert.Equal(1, serial.ExitCode);
+        Assert.Equal(serial.ExitCode, split.ExitCode);
+        Assert.Equal(1, Coverage(serial)["schemaCompilationProcesses"]!.GetValue<int>());
+        Assert.Equal(3, Coverage(split)["schemaCompilationProcesses"]!.GetValue<int>());
+        Assert.Equal(WithoutTimings(Coverage(serial)), WithoutTimings(Coverage(split)));
+        // Several message types in violation, so the split had something to merge back in order.
+        Assert.True(
+            Violations(serial).Select(violation => violation!["messageType"]!.GetValue<string>()).Distinct().Count() >= 4,
+            Violations(serial).ToJsonString());
+        Assert.Equal(Violations(serial).ToJsonString(), Violations(split).ToJsonString());
+    }
+
+    private static string WithoutTimings(JsonNode coverage)
+    {
+        JsonObject copy = coverage.DeepClone().AsObject();
+        copy.Remove("schemaCompilationMilliseconds");
+        copy.Remove("validationMilliseconds");
+        copy.Remove("schemaCompilationProcesses");
+        return copy.ToJsonString();
+    }
+
     [Fact]
     public void TheTestHostStillLoadsTheSystemTextJsonTheProductShipsWith()
     {
@@ -364,14 +409,15 @@ public sealed class SchemaConformanceToolTests : IDisposable
     }
 
     private async Task<ToolRun> RunToolAsync(
-        string name, string[] records, string? vendor = null, string? known = null)
+        string name, string[] records, string? vendor = null, string? known = null, int? processes = null)
     {
         string linesPath = Path.Combine(_directory, name + ".ndjson");
         await File.WriteAllLinesAsync(linesPath, records, TestContext.Current.CancellationToken);
-        return await RunToolOnAsync(name, linesPath, vendor, known);
+        return await RunToolOnAsync(name, linesPath, vendor, known, processes);
     }
 
-    private async Task<ToolRun> RunToolOnAsync(string name, string linesPath, string? vendor = null, string? known = null)
+    private async Task<ToolRun> RunToolOnAsync(
+        string name, string linesPath, string? vendor = null, string? known = null, int? processes = null)
     {
         string reportDirectory = Path.Combine(_directory, name + "-report");
         List<string> arguments = ["--lines", linesPath, "--report", reportDirectory];
@@ -382,6 +428,10 @@ public sealed class SchemaConformanceToolTests : IDisposable
         if (known is not null)
         {
             arguments.AddRange(["--known", known]);
+        }
+        if (processes is not null)
+        {
+            arguments.AddRange(["--processes", processes.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)]);
         }
         return await RunToolWithArgumentsAsync(arguments, reportDirectory);
     }
