@@ -182,13 +182,21 @@ $second = Wait-L2RealOrLast -Description 'the second cancellation request was an
     -Probe { $all = Get-Requests $demandId; if ($all.Count -ge 2) { $all[1] } else { $null } } `
     -Until { param($v) $null -ne $v -and $v.Response -ne '' }
 $journal.Note("Operator takes nothing out and closes the open slot $openSlot.")
+$handedOverClosedAt = [DateTimeOffset]::UtcNow
 $null = $simulator.Command('Post', "slots/$openSlot/close-door", @{})
 
-# onboard-hmi#106：接手的那扇门闭环之后，取消执行器才给已装货的仓开锁。门开了，操作员把货取出、关门。
-$reopened = Wait-L2RealOrLast -Description "the cancellation opened the loaded slot $loadedSlot" -Journal $journal `
-    -Criterion 'loaded-slot-opened' -TimeoutSeconds 60 `
-    -Probe { Get-L2RealSlotReading $simulator $loadedSlot } -Until { param($v) $v -like 'OPEN/*' }
-if ($reopened -like 'OPEN/*') {
+# onboard-hmi#106：接手的那扇门闭环之后，取消执行器才给已装货的仓开锁。操作员等车载端报 WAITING_OPERATOR 再取货关门：
+# 车载端要先看到开锁反馈稳定、输出复位，才进入等人（与 Start-L2RealLoad 同一个前提）。开门半秒就关上，车载端等不到
+# 稳定的开锁反馈，UnlockFeedbackTimeout 到期报 UNKNOWN——after131-001 就是这样红的，那是驱动太快，不是产品行为。
+$reopened = Wait-L2RealOrLast -Description "the cancellation opened the loaded slot $loadedSlot and waits for the operator" `
+    -Journal $journal -Criterion 'loaded-slot-waiting-operator' -TimeoutSeconds 60 `
+    -Probe {
+        @((Get-L2RealProgress $connection $attemptId) | Where-Object {
+                $_.At -ge $handedOverClosedAt -and $_.Phase -eq 'WAITING_OPERATOR' -and
+                $_.Active.Count -eq 1 -and $_.Active[0] -eq $loadedSlot }).Count -ge 1
+    } `
+    -Until { param($v) $v }
+if ($reopened) {
     $journal.Note("Operator takes the basket out of slot $loadedSlot and closes the door.")
     $null = $simulator.Command('Put', "slots/$loadedSlot/cargo", @{ state = 'EMPTY' })
     $null = $simulator.Command('Post', "slots/$loadedSlot/close-door", @{})
