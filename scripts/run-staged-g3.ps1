@@ -3326,8 +3326,9 @@ $recoverySupersededResultHistoricalPass = $null -ne $databaseObservation -and
 #     HardwareRecoveryRecord naming it. The probe submits exactly one such record, after the result, so
 #     the only record on file must name the current workflow and its session -- a record against anything
 #     else, or a second one, would mean the hold was lifted by something other than the record for it.
-# Coverage limit: the recovery probe's vehicle never sends a capability or safety snapshot, so its
-# readiness reason is an earlier one (CAPABILITY_SNAPSHOT_REQUIRED) and this plane cannot watch the
+# Coverage limit: the recovery probe's vehicle never completes its handshake (no capability or safety
+# snapshot), so its readiness reason is an earlier one (HANDSHAKE_INCOMPLETE, observed in
+# evidence/g3/20260919-b5-151-staged-new-criteria-06b65688) and this plane cannot watch the
 # forced hold alone flip readiness. RecoveryRequired below is therefore a floor, not that proof; the proof
 # is RecoveryStateMachineG2Tests.AfterAForcedRecoveryTheVehicleStaysUnreadyUntilAHardwareRecoveryRecordForItArrives
 # and G3-07-44 of the real-onboard scenario g3-forced-mechanical-recovery.
