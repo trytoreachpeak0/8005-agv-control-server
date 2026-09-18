@@ -138,6 +138,8 @@ public static class ProtocolErrorCodes
         "RECOVERY_REPORT_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
         "PENDING_FACT_RECONCILIATION_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
         "OPERATION_RECOVERY_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
+        // After a forced mechanical recovery, until its HardwareRecoveryRecord (control-server#137).
+        "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
         "RECOVERY_REQUIRED" => "SESSION_RECOVERY_REQUIRED",
 
         // An unmapped code is a bug in this switch, not something to put on the wire. Failing here

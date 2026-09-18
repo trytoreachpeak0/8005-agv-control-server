@@ -19,6 +19,10 @@ public sealed class RecoveryStateMachineG2Tests
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private static readonly int[] RecoverySlots = [1, 2];
     private static readonly string[] UnknownReasonCodes = ["PHYSICAL_STATE_UNKNOWN"];
+    // The fixed values onboard-hmi#107 sends; the server only files them.
+    private static readonly string[] HardwareChecks = ["LIVE_SLOT_SIGNALS_VALID"];
+    private static readonly string[] HardwareActions = ["ADMINISTRATOR_CONFIRMED_HARDWARE_REPAIRED"];
+    private static readonly string[] HardwareObservations = ["Lock 1 replaced; both doors shut and read locked."];
     private static readonly string[] ExpectedRecoveryCommandReplay =
         ["LoadCorrectionCommand", "FaultCargoRecoveryCommand", "LoadCorrectionCommand"];
     private static readonly string[] ExpectedResumeSends =
@@ -882,6 +886,72 @@ public sealed class RecoveryStateMachineG2Tests
             string opened = await processor.ProcessAsync(next.ToJsonString(), state, token);
 
             Assert.Equal("ExceptionRecoverySessionOpened", MessageType(opened));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// REQ-0241/0242, device half (control-server#137). Ending the cargo's business proves nothing about
+    /// the slots: once the forced result settled the operation, every other readiness input -- the vehicle
+    /// reporting the new forced generation, nothing pending, departure safe -- says Ready, and without this
+    /// hold the vehicle would be handed work on slots nobody has proved. It stays RecoveryRequired until a
+    /// HardwareRecoveryRecord for the forced workflow arrives (ADR-cross-0036), and that record is taken
+    /// against the session the forced result closed. A record for another scope is refused and lifts
+    /// nothing. The record lifts only this hold; it resumes nothing.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AfterAForcedRecoveryTheVehicleStaysUnreadyUntilAHardwareRecoveryRecordForItArrives()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_HARDWARE";
+        const string proof = "forced-hardware-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, token);
+            // The vehicle comes back having adopted the new generation, with nothing of its own left open.
+            await store.ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000000137", forcedRecoveryGeneration: 1,
+                null, "NONE", [], [], [], token);
+
+            SessionReadinessDecision held = await store.DecideReadinessAsync(AgvId, 3, token);
+
+            Assert.Equal(SessionReadiness.RecoveryRequired, held.Readiness);
+            Assert.Equal("FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED", held.ReasonCode);
+            Assert.Equal("SESSION_RECOVERY_REQUIRED", ProtocolErrorCodes.ToSessionReadinessReasonCode(held.ReasonCode));
+
+            string refused = await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000000001", slots: [1]), state, token);
+            Assert.Equal("REJECTED", FirstPayload(refused).GetProperty("outcome").GetString());
+            Assert.Equal("FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED",
+                (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+
+            state.Readiness = SessionReadiness.RecoveryRequired;
+            string recorded = await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000000002", slots: RecoverySlots), state, token);
+
+            Assert.Equal("HardwareRecoveryRecordResult", MessageType(recorded));
+            Assert.Equal("RECORDED", FirstPayload(recorded).GetProperty("outcome").GetString());
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.SingleAsync(token)).State);
+            string[] lines = recorded.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            Assert.Equal(2, lines.Length);
+            Assert.Equal("SessionReadiness", MessageType(lines[1]));
+            Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
+            Assert.Equal(JourneyRuntimeStage.Completed, (await context.JourneyRuntimes.SingleAsync(token)).Stage);
         }
         finally
         {
@@ -2687,6 +2757,34 @@ public sealed class RecoveryStateMachineG2Tests
             sentAt = Now,
             payload
         }, SerializerOptions);
+
+    private static JsonElement FirstPayload(string wire)
+    {
+        string first = wire.Split('\n', StringSplitOptions.RemoveEmptyEntries).First();
+        using JsonDocument document = JsonDocument.Parse(first);
+        return document.RootElement.GetProperty("payload").Clone();
+    }
+
+    /// <summary>
+    /// The administrator's record of the hardware after a forced recovery of the seeded session, in the
+    /// shape onboard-hmi#107 sends it.
+    /// </summary>
+    private static string HardwareRecoveryRecord(string recordId, int[] slots) => Envelope(
+        "e2" + recordId[2..],
+        "HardwareRecoveryRecordSubmitted",
+        new
+        {
+            recordId,
+            exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
+            recoveryActionId = ActionId,
+            @operator = Operator(),
+            administratorRole = "MAINTENANCE_ADMINISTRATOR",
+            slots,
+            checksPerformed = HardwareChecks,
+            actionsPerformed = HardwareActions,
+            observations = HardwareObservations,
+            observedAt = Now.AddMinutes(30)
+        });
 
     private static string MessageType(string wire)
     {
