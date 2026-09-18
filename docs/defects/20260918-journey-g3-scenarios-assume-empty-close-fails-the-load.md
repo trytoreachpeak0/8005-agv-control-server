@@ -38,6 +38,15 @@ Timed out after 240s waiting for: the onboard reported the load result and the s
 
 这正是 onboard-hmi#78 第 5 项要补的：授权取消后先中止原执行器对该 attempt 的目标态闭环，再由取消执行器清空。在它合入之前，这条场景在 v2 车载端上不会绿，也不该为变绿改断言。
 
+## 同一类：staged runner 的两条判据仍按批次 5 之前的重连行为写
+
+control-server#87 在 E 组改动之后跑 `run-staged-g3.ps1` 自检（2026-09-18 07:52–07:55Z，控制端 `96e617df`、车载端 `eafec8b0`、模拟器 `fb5f7c59`、协议 `86575456`；证据 `selfcheck/staged-001/`），29 条里红了两条，两条的判定代码本票都没动：
+
+- `recoveryStateReportFirstAckDropReplay`（`FP-IS-00`）：判据要求丢掉第一份 `RecoveryStateReport` 的确认后，车载端在新连接上**以同一 `messageId`、同一载荷**补发。实测（`fault-proxy-events.ndjson`）车载端重连后先走完整握手，再发一条**新 `messageId`** 的 `RecoveryStateReport`（`recoveryReportSendCount 1`、`forwardedReplayAckCount 0`）。
+- `onboardAlarmSnapshotNotRepublishedOnRecoveryResume`（`FP-IS-15`）：判据要求恢复续连时不重发告警快照；实测重连后走了完整握手，快照照发。
+
+两者都对得上批次 5 车载端已合入的改动：onboard-hmi#69（批次5-14，补发后照常握手）与 onboard-hmi#71（批次5-19，每次发送用新 `messageId`、逻辑 id 不变）。所以这是 runner 判据落后于 v2 车载端的已定行为，与上面的六条场景同一类，一并交 control-server#128 核对后改判据（或在确认是缺陷时另开单）。同一轮 `run-staged-g3-restart.ps1` 26/26、`run-demand-bearing-g3-vectors.ps1` 16/16 全部通过。
+
 ## 怎么收口
 
 已开票 control-server#128（批次5-37）承接下面两项；它被 control-server#87 与 onboard-hmi#78 阻塞，同时阻塞 control-server#90。
