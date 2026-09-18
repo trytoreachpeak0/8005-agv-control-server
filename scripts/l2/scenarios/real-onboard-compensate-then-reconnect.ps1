@@ -45,9 +45,16 @@ function Get-RecoveryOutbox {
             Sort-Object At)
 }
 
+# Only the recovery session snapshot carries a state; the compensation command has none, and StrictMode throws on
+# reading a property that is not there (compensate-then-reconnect-001 died on exactly that).
+function Get-SnapshotState([object]$row) {
+    $property = $row.Payload.PSObject.Properties['state']
+    return $(if ($null -ne $property) { [string]$property.Value } else { '' })
+}
+
 function Format-Outbox([object[]]$rows) {
     return (@($rows | ForEach-Object {
-                "$($_.MessageType)[$($_.MessageId.Substring(0, 8))] state=$([string]$_.Payload.state) ack=$($_.Acknowledged) fenced=$($_.Fenced)"
+                "$($_.MessageType)[$($_.MessageId.Substring(0, 8))] state=$(Get-SnapshotState $_) ack=$($_.Acknowledged) fenced=$($_.Fenced)"
             }) -join '; ')
 }
 
@@ -149,7 +156,7 @@ $live = Wait-L2RealOrLast -Description 'the recovery session messages were settl
     -Probe { @((Get-RecoveryOutbox) | Where-Object { -not $_.Acknowledged -and -not $_.Fenced }).Count } `
     -Until { param($v) $v -eq 0 }
 $recoveryBefore = Get-RecoveryOutbox
-$closedSnapshots = @($recoveryBefore | Where-Object { $_.MessageType -eq 'ExceptionRecoverySessionSnapshot' -and [string]$_.Payload.state -eq 'CLOSED' })
+$closedSnapshots = @($recoveryBefore | Where-Object { $_.MessageType -eq 'ExceptionRecoverySessionSnapshot' -and (Get-SnapshotState $_) -eq 'CLOSED' })
 $assertions.Add(
     'L2-CR-04', '补偿对账之后，恢复会话快照与补偿命令都已结清：CLOSED 那份快照被车确认，旧 revision 被取代，补偿命令被补偿结果结算',
     ($recoveryBefore.Count -ge 2 -and [int]$live -eq 0 -and $closedSnapshots.Count -ge 1 -and @($closedSnapshots | Where-Object { -not $_.Acknowledged }).Count -eq 0),
