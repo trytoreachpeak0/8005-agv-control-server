@@ -60,8 +60,15 @@ param(
     #   $SimulatorCommit unchanged.
     #   $ProtocolCommit -> 86575456, what the protocol-v2.0.0 tag dereferences to. The synthetic peer's
     #     embedded identity below moved with it (release 2.0.0, ProtocolVersion 3, its three hashes).
-    [string]$ControlServerCommit = 'e0f26b3725329c7a05c252c66a444ae9075d9747',
-    [string]$OnboardCommit = '9748c4187e74aeb46cf95557e8f2430e8fe2abf3',
+    #   2026-09-19, the batch 5 exit re-run after its two red G3 surfaces were fixed:
+    #   $ControlServerCommit -> c12f0498, the fp/v2-impl tip with cs#151 (staged forced-recovery criteria, c3c81eaf)
+    #     and cs#154 (Get-L2RealInbound on a single answer, c12f0498). Both touch scripts only; src/ and tests/
+    #     are unchanged from e0f26b37.
+    #   $OnboardCommit -> 29fbf65e, the w2g/fp-v2-impl tip with hmi#112 (recovery entries announced under their
+    #     own property names again, PR #114).
+    #   $SimulatorCommit and $ProtocolCommit unchanged.
+    [string]$ControlServerCommit = 'c12f0498281a39e4fa94a51bd4506c3d3af97a1c',
+    [string]$OnboardCommit = '29fbf65e0b4d58c80849d5e6d0e44f40903c411e',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
