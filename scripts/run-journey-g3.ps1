@@ -50,8 +50,10 @@ param(
     [string]$OnboardRepository = 'https://github.com/trytoreachpeak0/8005-agv-onboard-hmi.git',
     [string]$SimulatorRepository = 'https://github.com/trytoreachpeak0/slots-simulator.git',
     [string]$ProtocolRepository = 'https://github.com/trytoreachpeak0/8005-agv-protocol.git',
-    # The same ref run-staged-g3.ps1 asserts the onboard commit is the tip of.
-    [string]$OnboardRemoteRef = 'origin/w2g/b3-on-v2',
+    # The same ref run-staged-g3.ps1 asserts the onboard commit is the tip of. Batch 5 onboard tickets
+    # merge straight back into w2g/fp-v2-impl; w2g/b3-on-v2 was folded into it by onboard-hmi#67 and
+    # carries no new work (control-server#87). The commit bindings move separately, in control-server#90.
+    [string]$OnboardRemoteRef = 'origin/w2g/fp-v2-impl',
     [string]$SharedRunnerSource = (Join-Path $PSScriptRoot 'run-staged-g3.ps1'),
     [string]$CommitBindingFunctionSource = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1'),
     [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit
@@ -105,6 +107,24 @@ $scenarioAssertions = [ordered]@{
         'G3-02-25' = 'allSlotsProvenEmpty'
         'G3-02-26' = 'cancellationReconciledToEmptyFinalState'
         'G3-02-27' = 'finalStateSurvivesLateLoadResult'
+    }
+    # Batch 5 (control-server#87): the two vectors protocol-v2.0.0 added to FP-IS-02.
+    'g3-load-cancellation-before-load' = [ordered]@{
+        'G3-02-31' = 'onboardOffersLoadCancellationBeforeSublot'
+        'G3-02-32' = 'beforeLoadCancellationAuthorizedWithoutSlotOperation'
+        'G3-02-33' = 'beforeLoadCancellationSequenceMatchesVector'
+        'G3-02-34' = 'beforeLoadCancellationReportedAllEmptyWithoutSlotIo'
+        'G3-02-35' = 'beforeLoadCancellationTerminatedOnlyOnTheResult'
+        'G3-02-36' = 'beforeLoadCancellationLeftNoSlotCommandOrDoorMovement'
+    }
+    'g3-sublot-rejected' = [ordered]@{
+        'G3-02-41' = 'sublotRejectedSequenceMatchesVector'
+        'G3-02-42' = 'sublotRevalidatedAfterEntry'
+        'G3-02-43' = 'neverUnlockOnRejectedEntry'
+        'G3-02-44' = 'onboardDisplaysServerRejectionReason'
+        'G3-02-45' = 'entryKeptOpenForRescan'
+        'G3-02-46' = 'rescanAfterRestoredDataLoadsNormally'
+        'G3-02-47' = 'rejectionLeavesNoDuplicateCommit'
     }
     'g3-predeparture-check-expires' = [ordered]@{
         'G3-03-01' = 'predepartureExpirySequenceMatchesVector'

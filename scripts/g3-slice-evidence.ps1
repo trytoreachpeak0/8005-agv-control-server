@@ -261,9 +261,11 @@ function Get-G3RunnerClaim {
                     'finalStateOneDemandOneOrderAtPickupNoSlotOperation',
                     'onboardNeverDiscoversSelectsOrBindsDemand')
                 # CV-PICKUP-SUBLOT-LOAD and CV-LOAD-CORRECTION on one two-slot load, then
-                # CV-LOAD-CANCELLATION-ALL-EMPTY on another; the three vectors of the slice, each with
-                # its ordered messages, both owners' product assertions and its finalState. The
-                # cancellation's last judgment is taken after the cancelled load's own late result.
+                # CV-LOAD-CANCELLATION-ALL-EMPTY on another; until protocol-v2.0.0 the three vectors of
+                # the slice, each with its ordered messages, both owners' product assertions and its
+                # finalState. The cancellation's last judgment is taken after the cancelled load's own
+                # late result. protocol-v2.0.0 added two more vectors to this slice; their scenarios
+                # (g3-load-cancellation-before-load, g3-sublot-rejected) are the last two groups.
                 'FP-IS-02' = @(
                     'sublotBoundToOperationSession',
                     'slotSetAuthorizedOnce',
@@ -284,7 +286,24 @@ function Get-G3RunnerClaim {
                     'cancellationProvesEmptyWithoutUnlocking',
                     'allSlotsProvenEmpty',
                     'cancellationReconciledToEmptyFinalState',
-                    'finalStateSurvivesLateLoadResult')
+                    'finalStateSurvivesLateLoadResult',
+                    # CV-LOAD-CANCELLATION-BEFORE-LOAD (protocol-v2.0.0, control-server#87): the four
+                    # steps with an empty slot set and an ALL_EMPTY result carrying no slot entries.
+                    'onboardOffersLoadCancellationBeforeSublot',
+                    'beforeLoadCancellationAuthorizedWithoutSlotOperation',
+                    'beforeLoadCancellationSequenceMatchesVector',
+                    'beforeLoadCancellationReportedAllEmptyWithoutSlotIo',
+                    'beforeLoadCancellationTerminatedOnlyOnTheResult',
+                    'beforeLoadCancellationLeftNoSlotCommandOrDoorMovement',
+                    # CV-SUBLOT-REJECTED-AFTER-ENTRY (protocol-v2.0.0, control-server#87): entry,
+                    # rejection after revalidation, the reason on the HMI, and the rescan that loads.
+                    'sublotRejectedSequenceMatchesVector',
+                    'sublotRevalidatedAfterEntry',
+                    'neverUnlockOnRejectedEntry',
+                    'onboardDisplaysServerRejectionReason',
+                    'entryKeptOpenForRescan',
+                    'rescanAfterRestoredDataLoadsNormally',
+                    'rejectionLeavesNoDuplicateCommit')
                 # CV-PREDEPARTURE-SAFETY-EXPIRES on a departure held by an unreachable gate route, then
                 # CV-OPERATION-RESULT-UNKNOWN-RECONCILE across an onboard restart. Both halves of both
                 # vectors were added on 2026-09-13 at the user's ruling; neither end produced them before.

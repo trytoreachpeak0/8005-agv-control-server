@@ -61,7 +61,14 @@ param(
     # w2g/b3-on-v2, not on w2g/fp-v2-impl. The assertion is not weakened -- the clone source must
     # still name that commit as a branch tip, so evidence cannot bind a commit that exists only as a
     # detached object somebody handed the runner.
-    [string]$OnboardRemoteRef = 'origin/w2g/b3-on-v2'
+    #
+    # 2026-09-18, batch 5 (control-server#87): origin/w2g/b3-on-v2 -> origin/w2g/fp-v2-impl. From batch 5
+    # on every onboard ticket merges straight back into w2g/fp-v2-impl, and w2g/b3-on-v2 was folded into
+    # it by onboard-hmi#67 and carries no new work. The four commit bindings above were deliberately NOT
+    # moved with it: control-server#90 moves them once protocol-v2.0.0 is bound on both ends. Until then
+    # $OnboardCommit is not the tip of this ref and a run on the defaults stops at the clone check, which
+    # is the check doing its job rather than a reason to point the ref back.
+    [string]$OnboardRemoteRef = 'origin/w2g/fp-v2-impl'
 )
 
 $ErrorActionPreference = 'Stop'
