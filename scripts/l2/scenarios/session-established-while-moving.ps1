@@ -117,7 +117,8 @@ $assertions.Add(
 # --- 2. 车停稳，车载端发 SafetyStateChanged，服务端据此受理 ------------------------------------------
 
 $journal.Note('Vehicle comes to rest; the peer reports the change.')
-$null = $onboard.Command('Put', 'safety', @{ vehicleStopped = $true })
+$null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Context.AgvId `
+    -Safety @{ vehicleStopped = $true } -Journal $journal
 
 $stage = Wait-L2Condition -Description 'the demand was accepted once the vehicle reported itself stopped' `
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 90 `
@@ -144,7 +145,11 @@ $pickupIntent = Wait-L2Condition -Description 'the TO_PICKUP intent was confirme
 # --- 3. 危险的反方向：RIoT 说到站了，车载端说还在动 --------------------------------------------------
 
 $journal.Note('Vehicle departs for the pickup station; the peer reports it moving again.')
-$null = $onboard.Command('Put', 'safety', @{ vehicleStopped = $false })
+# 等服务端把「在动」落库再往下走，不能只等车载端发出去（control-server#141）。原来这里 PUT 完就摆到站，
+# CI 四路并跑时服务端处理这条报告用了 183 ms，运行时在这段空当里读到的还是上一条「停稳」，采信了到站。
+# 服务端没法对一份还没收到的报告保守，所以错在场景：L2-MV-08 要证的是「已知车在动时不采信」。
+$null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Context.AgvId `
+    -Safety @{ vehicleStopped = $false } -Journal $journal
 $null = $riot.Command('Put', "orders/$($pickupIntent.UpperId)", @{
     orderState        = 3
     executeVehicleKey = $Context.VehicleKey
@@ -181,7 +186,8 @@ $assertions.Add(
 # --- 4. 车真的停稳了，到站才被采信 ------------------------------------------------------------------
 
 $journal.Note('Vehicle comes to rest at the pickup station; the peer reports the change.')
-$null = $onboard.Command('Put', 'safety', @{ vehicleStopped = $true })
+$null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Context.AgvId `
+    -Safety @{ vehicleStopped = $true } -Journal $journal
 
 $stage = Wait-L2Condition -Description 'the arrival was trusted once the peer reported the vehicle stopped' `
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 90 `
