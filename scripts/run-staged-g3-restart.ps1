@@ -983,8 +983,14 @@ $sessionRowSingletonPass = $null -ne $controlDatabaseAfterRun -and
 
 $noMovementPass = $null -ne $controlDatabaseAfterRun -and
     @($controlDatabaseAfterRun.sideEffectCounts.Keys | Where-Object {
-        $controlDatabaseAfterRun.sideEffectCounts[$_] -ne 0 }).Count -eq 0 -and
+        $controlDatabaseAfterRun.sideEffectCounts[$_] -ne 0 }).Count -eq 0
+
+# Split out of noMovementOrExternalSideEffects by the control-server#60 review (2026-09-18): readiness
+# is decided by the server and withheld until recovery reconciles -- FP-IS-00 evidence, not a
+# whole-run safety check, so it must not fail every slice this runner certifies when it goes red.
+$readinessWithheldPass = $null -ne $controlDatabaseAfterRun -and
     $healthReadyStatus -eq 503 -and
+    @($controlDatabaseAfterRun.sessionRecoveryRows).Count -ge 1 -and
     $controlDatabaseAfterRun.sessionRecoveryRows[0]['readiness'] -eq 'RecoveryRequired'
 
 $configuration = [ordered]@{
@@ -1071,6 +1077,7 @@ $assertions = [ordered]@{
     aRefusedActivationLeftTheActiveConfigurationUntouched = $activationRefusalInertPass
     onboardAlarmProjectionAdoptedTheRestartedVehiclesSnapshot = $alarmRestartAdoptionPass
     onboardAlarmProjectionNeverRegressedToAnEarlierGeneration = $alarmNoRegressionPass
+    readinessWithheldWhileRecoveryIsUnreconciled = $readinessWithheldPass
     noMovementOrExternalSideEffects = $noMovementPass
     secretScan = $secretLeakFiles.Count -eq 0
 }

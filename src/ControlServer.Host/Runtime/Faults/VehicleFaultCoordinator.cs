@@ -244,6 +244,7 @@ public sealed class VehicleFaultCoordinator(
             hardEvidence ? VehicleFaultLevel.ConfirmedIsolated : VehicleFaultLevel.SuspectedBlocked,
             evidenceCode,
             context,
+            emergency,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -277,11 +278,14 @@ public sealed class VehicleFaultCoordinator(
         ArgumentException.ThrowIfNullOrWhiteSpace(exceptionRecoverySessionId);
 
         LogOperatorConfirmation(logger, subject.AgvId, requesterIdentity, exceptionRecoverySessionId, null);
+        RiotVehicleEmergencyObservation emergency = await emergencyFacts
+            .ReadEmergencyStateAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         return await ApplyAsync(
             subject,
             VehicleFaultLevel.ConfirmedIsolated,
             VehicleFaultEvidence.OperatorConfirmed,
             context,
+            emergency,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -441,24 +445,42 @@ public sealed class VehicleFaultCoordinator(
     /// expensive: an offline vehicle will escalate, its emergency stop will not confirm, and a
     /// person will be sent. A vehicle nobody can see is a vehicle nobody can say is stopped.
     /// </para>
+    /// <para>
+    /// <b>A latched vehicle is not escalated.</b> The latch is the stop proof (REQ-0247 as revised
+    /// by CP-0003): the stop an escalation would ask for is already in place, and from there it is
+    /// REQ-0248's watch on the latch, driven below for an escalated fault, that re-triggers if the
+    /// latch comes off while the cause stands.
+    /// </para>
+    /// <para>
+    /// <b>After a release on a person's confirmation, standing between stations does not escalate
+    /// on its own.</b> RIoT reports no station there, so the rule above reads every such vehicle as
+    /// unwatched and would stop it again on the very next evaluation, undoing REQ-0356 for exactly
+    /// the vehicles it was written for. The user ruled on 2026-09-15 that for the rest of that fault
+    /// generation the vehicle is stopped again when a reading shows motion, cannot be read, is stale,
+    /// or places it at a different station — and not for want of a station alone. REQ-0356 has
+    /// required its orders to be finished before the release, so RIoT has nothing left to drive it
+    /// with.
+    /// </para>
     /// </remarks>
     internal static bool RequiresEscalation(
         bool holdConfirmed,
         StopProofVerdict proof,
-        VehicleMotionSample latest)
+        VehicleMotionSample latest,
+        bool latched,
+        bool releasedOnConfirmation)
     {
         ArgumentNullException.ThrowIfNull(proof);
         ArgumentNullException.ThrowIfNull(latest);
 
-        if (holdConfirmed && proof.Proven)
+        if (latched || (holdConfirmed && proof.Proven))
         {
             return false;
         }
 
-        return latest.Reading != VehicleMotionReading.NotMoving ||
-            !latest.HasKnownPosition ||
+        bool motionOrFailedWatch = latest.Reading != VehicleMotionReading.NotMoving ||
             proof.MissingFacts.Contains(StopProof.PositionChanged) ||
             proof.MissingFacts.Contains(StopProof.EvidenceStale);
+        return motionOrFailedWatch || (!releasedOnConfirmation && !latest.HasKnownPosition);
     }
 
     private async Task<VehicleFaultDecision> ApplyAsync(
@@ -466,6 +488,7 @@ public sealed class VehicleFaultCoordinator(
         VehicleFaultLevel level,
         string evidenceCode,
         FaultedVehicleContext context,
+        RiotVehicleEmergencyObservation emergency,
         CancellationToken cancellationToken)
     {
         VehicleFaultFact? existing = await faults.ReadAsync(subject.AgvId, cancellationToken)
@@ -501,9 +524,22 @@ public sealed class VehicleFaultCoordinator(
         RiotOrderCommandOutcome? hold = await HoldCurrentOrderAsync(fault, context, cancellationToken)
             .ConfigureAwait(false);
         (StopProofVerdict proof, VehicleMotionSample latest) = await ProveStopAsync(
-            subject, fault, cancellationToken).ConfigureAwait(false);
+            subject, fault, emergency, cancellationToken).ConfigureAwait(false);
 
-        bool escalated = RequiresEscalation(hold == RiotOrderCommandOutcome.Confirmed, proof, latest);
+        // Asked only when it can change the answer: a latched vehicle is not escalated either way.
+        // A release RIoT has carried out since its read-back is settled first, or this evaluation
+        // would find it unconfirmed and stop the vehicle it has just released.
+        bool releasedOnConfirmation = false;
+        if (!emergency.IsLatched)
+        {
+            await emergencyStop.SettleReleaseTakenEffectAsync(subject, emergency, cancellationToken)
+                .ConfigureAwait(false);
+            releasedOnConfirmation = await emergencyStop
+                .WasReleasedOnConfirmationAsync(subject, fault.FaultGeneration, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        bool escalated = RequiresEscalation(
+            hold == RiotOrderCommandOutcome.Confirmed, proof, latest, emergency.IsLatched, releasedOnConfirmation);
         if (escalated)
         {
             await EscalateAsync(subject, fault, proof, cancellationToken).ConfigureAwait(false);
@@ -643,22 +679,30 @@ public sealed class VehicleFaultCoordinator(
     }
 
     /// <summary>
-    /// Takes one motion sample, adds it to the window, and records what the combined evidence says.
+    /// Takes one motion sample, adds it to the window, and records what the stop proof says: the
+    /// latch read in this evaluation when it is engaged, the combined evidence otherwise.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The verdict is written either way. A recorded <c>false</c> is not nothing: it is the fact
     /// that this server looked and could not prove the vehicle had stopped, at a time that is now
     /// on the record, and it is what keeps a stale <c>true</c> from an earlier moment standing.
+    /// </para>
+    /// <para>
+    /// The sample is taken while the latch is engaged too, although the proof does not read it, so
+    /// that the window is already filling when the latch comes off.
+    /// </para>
     /// </remarks>
     private async Task<(StopProofVerdict Proof, VehicleMotionSample Latest)> ProveStopAsync(
         EmergencyStopSubject subject,
         VehicleFaultFact fault,
+        RiotVehicleEmergencyObservation emergency,
         CancellationToken cancellationToken)
     {
         VehicleMotionSample sample = await motionFacts
             .SampleMotionAsync(subject.DeviceKey, cancellationToken).ConfigureAwait(false);
         VehicleMotionSample[] window = ledger.Record(sample);
-        StopProofVerdict proof = StopProof.Evaluate(window, timeProvider.GetUtcNow(), faultOptions);
+        StopProofVerdict proof = StopProof.Evaluate(window, emergency, timeProvider.GetUtcNow(), faultOptions);
 
         await faults.RecordStopProofAsync(
             subject.AgvId,

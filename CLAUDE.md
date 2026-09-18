@@ -5,16 +5,21 @@ agent's instructions for working here.
 
 ## Write authority
 
-This repository is writable. The others in the workspace are not, each in its
-own way:
+This repository is writable. The workspace `CLAUDE.md` is the authority on write
+access and wins where this file differs; the two restrictions an agent here is
+most likely to meet:
 
 - `8005-agv-onboard-hmi` and `slots-simulator` — **writable on `w2g/*` branches
   only** (changed 2026-09-04; they were read-only for agents before). The
-  development work on both is now ours, but their working branches
-  (`OnboardHmi_MVP` and `main`) are not: changes reach Kun Wang as a pull request
-  he decides on, and **we never merge it ourselves**.
-- `8005-agv-protocol` — writable, but every push there must be announced to Kun
-  Wang in an issue that `@SocialKKKK`.
+  development work on both is ours. A change reaches their working branches
+  (`OnboardHmi_MVP` and `main`) only as a pull request, and **since 2026-09-09
+  both the agreement and the merge are ours**. Never push to those branches
+  directly, never force-push, never delete or rewrite a branch that is not ours,
+  never tag or release there.
+- `8005-agv-protocol` — writable, with **no announcement duty since 2026-09-08**:
+  do not open announcement issues and do not `@SocialKKKK`. A push still voids
+  gate evidence — ours — so its commit message states which `FP-IS-*` slices it
+  touches and which evidence it voids.
 
 Reaching a machine, or routing a problem to a repository, never grants write
 access to it.
@@ -47,53 +52,52 @@ Installed as the `mattpocock-skills` plugin (user-level). Invoke them namespaced
 it. `code-review` collides with the bundled `/code-review`; use
 `/mattpocock-skills:code-review` for the Standards+Spec review.
 
-### Deciding what to work on
-
-The workspace ships a `w2g-next` skill. When the next step is unclear, it reads
-the real state — working tree, the slice board issue, `integration-slices/index.json`,
-open issues, gate evidence — and applies a fixed priority ladder to name one
-action. Prefer it over guessing.
-
 ## Collaboration workflow
 
-Two people drive this project. Kun Wang (GitHub `SocialKKKK`) owns
-`8005-agv-onboard-hmi` and `slots-simulator`; Zhengyu Shao owns this repository;
-`8005-agv-protocol` is jointly maintained. The full account, written for humans
-and in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
+Zhengyu Shao is the sole developer. Kun Wang (GitHub `SocialKKKK`) no longer
+works on the project: development of `8005-agv-onboard-hmi` and `slots-simulator`
+moved to us on 2026-09-04, and this repository and `8005-agv-protocol` are ours
+too. The workspace `CLAUDE.md` is the authority on these rules; the account
+written for humans, in Chinese, is `8005-agv-program/docs/collaboration-workflow.md`.
 
 What an agent must follow:
 
 - **The unit of collaboration is the integration slice.** Do not invent another
   one. `8005-agv-protocol/integration-slices/index.json` defines `FP-IS-00`
   through `FP-IS-15`, each with a `sequence` and `prerequisites`. Each slice's
-  `gates` array *is* the division of labour: `G1` shared, `CONTROL_SERVER_G2`
-  this repository, `ONBOARD_HMI_G2` theirs, `G3` together.
+  `gates` array names who proves what: `G1` the protocol, `CONTROL_SERVER_G2`
+  this repository, `ONBOARD_HMI_G2` the onboard HMI (run by us since
+  2026-09-04), `G3` both ends together.
   **The family replaced `W2G-IS-00` through `07` rather than joining them**
   (scope specification 7.1); `FP-IS-00` through `07` correspond to the old eight
   one for one, but as *recertification under v2* — there is no passing verdict to
   carry over, and section 12 of `docs/RELEASE-CANDIDATE.md` says so in as many
   words. Existing evidence directories keep the `W2G-IS-NN` ids they were written
   with; nothing renames them.
-- **The two G2 gates have no dependency and run in parallel.** G3 needs both
-  people present and is the most expensive resource, so do not propose it while
-  the other side's G2 is not green.
+- **The two G2 gates have no dependency and run in parallel.** G3 has been run by
+  one person since 2026-09-08, but it is still the most expensive gate: do not
+  propose it while either G2 is not green, and before entering it say what it
+  costs and ask.
 - **Cross-repository feedback takes one of three routes.** A contract ambiguity
   or error goes to an issue in `8005-agv-protocol` carrying the `vectorId` that
-  triggered it. The other side failing the contract goes to an issue in *their*
-  repository — **run G3 for evidence first** and attach the evidence directory.
+  triggered it. A peer (`8005-agv-onboard-hmi`, `slots-simulator`) failing the
+  contract goes to an issue in *that* repository — **run G3 for evidence first**
+  and attach the evidence directory.
   Work inside this repository stays in this repository's issues.
   **A cross-repository claim must carry reproducible gate evidence; "it does not
   work on my side" is not a report.** Follow the shape already used in
   `docs/defects/`: a `Found by:` line linking the G3 evidence `SUMMARY.md`.
 - **`8005-agv-protocol` needs no advance approval** — Zhengyu Shao decides its
-  content alone — **but every push must be announced in an issue that
-  `@SocialKKKK`**, stating what changed, which `FP-IS-*` slices it touches, and
-  whether their `ONBOARD_HMI_G2` evidence is now void, in the same task as the
-  push. Tagging a release still needs the two-owner attestation; **AI and CI
-  cannot approve.**
+  content alone — **and since 2026-09-08 no announcement either**: do not open
+  announcement issues and do not `@SocialKKKK`. A push still voids gate evidence,
+  now ours, so its commit message states which `FP-IS-*` slices it touches and
+  which evidence it voids. Tagging a release needs an attestation with **exactly
+  one approval** (two before 2026-09-08): the product owner, or since 2026-09-12
+  an AI agent the user authorized for that specific release, recorded as
+  `approverKind: AI_AGENT` with `authorizedBy`. **CI cannot approve.**
 - **Batch protocol changes.** A patch release voids the affected G1/G2/G3
-  evidence on both sides, so every small change costs the other side a full gate
-  re-run.
+  evidence on both ends — all of it ours now — so every small change costs a full
+  gate re-run.
 
 ## Language
 
@@ -123,6 +127,20 @@ Historically 583 passed / 0 skipped. Build with the .NET SDK pinned in
 `global.json` (`8.0.424`); when it is not on `PATH`, point
 `WIRE_TO_GATE_DOTNET_EXE` at that version's `dotnet.exe` and run
 `.\scripts\build.ps1`.
+
+**That command also checks every outbound protocol line against the protocol JSON Schema**, and it
+can fail while its console summary says `Failed: 0`. When the run ends,
+`tests/ControlServer.Tests/OutboundSchemaConformance.cs` hands what the tests sent to
+`tools/ControlServer.SchemaConformance` (its own process: its System.Text.Json 10 must not enter the
+test host). A violation is reported as `[Test Assembly Cleanup Failure] Xunit.Sdk.TestPipelineException`
+with exit code 1; the detail is in the TRX and in `schema-conformance/` next to the test assembly.
+Never "fix" such a failure by adding to `tests/ControlServer.Tests/schema-known-violations.json`
+without an issue that owns the violation -- that list is for defects already filed, and every entry
+names one. It adds about 40 to 50 seconds of Roslyn schema compilation per run (measured 38.6 s and
+47.9 s on the two runs that landed control-server#85); since control-server#130 the message types are
+split over four copies of the tool (`--processes`, default 4), because Corvus compiles serially inside
+one process. The merged report is the serial one, timings aside -- `SchemaConformanceToolTests` compares
+the two byte for byte.
 
 Test authorization is scoped to the current task. A request to inspect, tidy,
 commit, or push an already-dirty worktree does **not** authorize a test run. Run
@@ -156,6 +174,14 @@ that has it. What the lock cannot stop, the startup waits catch: `Wait-L2Conditi
 unless the port is held by the component this run started, and names whoever holds it instead.
 Anything new that binds this block must take the lock the same way, inside the script. The self-check
 is `scripts/l2/Test-L2PortLockQueueing.ps1` (about a minute; it runs two real orchestrators).
+
+**That block and that lock are port slot 0, and slot 0 never changes** (control-server#130).
+`-PortSlot 1..4` moves every port down by 1000 x N under the lock `Global\W2G-L2PortBlock-slotN`, so
+runs in different slots do not queue for each other. The real-onboard rig, `run-journey-g3.ps1` and
+every older checkout keep slot 0; CI's `l2.yml` builds once and runs its scenarios in lanes on slots
+1..N (`scripts/l2/L2Lanes.psm1`), each run with `-SkipBuild` because a build under a running slot
+overwrites its executables. Never move a CI lane onto slot 0, and never change slot 0's ports or name --
+the self-check asserts both literally.
 
 A scenario whose sibling `scenarios/<name>.setup.psd1` says `Onboard = 'Real'` runs a second rig
 instead: the shipped onboard WPF from `8005-agv-onboard-hmi` driven through UI Automation, plus
@@ -217,8 +243,14 @@ Load-bearing details:
 - **Check the commit bindings before a G3 run, and move them.** They are literal
   defaults, so a run inherits whatever the last run froze and silently gates old
   code — on 2026-09-04 they still pointed at a ControlServer and an onboard from
-  several days earlier. `$OnboardCommit` must be the tip of `origin/OnboardHmi_MVP`,
-  which `New-ExactClone -RemoteRef` enforces; the other three are unchecked.
+  several days earlier. `$OnboardCommit` must be the tip of `$OnboardRemoteRef` (a parameter of
+  `run-staged-g3.ps1` and `run-journey-g3.ps1`; `origin/w2g/fp-v2-impl` since batch 5), which
+  `New-ExactClone -RemoteRef` enforces; the other three are unchecked. It is never
+  `origin/OnboardHmi_MVP`: that branch is the MVP line, on a different protocol.
+- **A protocol release needs one approver**: the product owner, or an AI agent the product owner
+  authorized for that specific release (scope specification 6.4). **CI cannot approve.** Pushing to
+  the protocol repository notifies nobody; its commit message states which `FP-IS-*` slices it
+  touches and which evidence it voids.
 - **Evidence for individual G3 vectors is not the same as eight slices passing.**
   A slice passes only with all four gates.
 - Full procedure: `docs/RELEASE-CANDIDATE.md`.

@@ -48,6 +48,7 @@ public sealed class WireToGateStoreTests
         // had just asked for, and the journey could never leave the load stage.
         await using StoreFixture fixture = await StoreFixture.CreateAsync();
         await ReachReadyAsync(fixture);
+        await fixture.AddJourneyAsync("D-401", "AGV-001");
         await fixture.Store.PrepareSlotOperationAsync(
             new StationOperationPlan(
                 "ATTEMPT-401", "D-401", "SUBLOT-401", [1], SlotOperationType.Load, 0, "plan-hash", fixture.Now),
@@ -63,6 +64,164 @@ public sealed class WireToGateStoreTests
 
         Assert.Equal(SessionReadiness.Ready, duringOperation.Readiness);
         Assert.Equal("READY", duringOperation.ReasonCode);
+    }
+
+    /// <summary>
+    /// The exemption is earned by this vehicle's own operation. It used to be granted whenever any operation
+    /// anywhere was Prepared, so in a fleet one vehicle mid-load gave every other vehicle standing with a
+    /// door ajar a Ready session -- and a vehicle judged Ready never shows its recovery entry
+    /// (8005-agv-program#61, MVP <c>770447f5</c>).
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    public async Task AnotherVehiclesLoadDoesNotExplainThisVehiclesOpenDoor()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await ReachReadyAsync(fixture);
+        await fixture.AddJourneyAsync("D-402", "AGV-002");
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-402", "D-402", "SUBLOT-402", [1], SlotOperationType.Load, 0, "plan-hash", fixture.Now),
+            "MSG-CMD-402",
+            "command-json",
+            fixture.CancellationToken);
+
+        await fixture.Store.ApplySafetySnapshotAsync(
+            "AGV-001", 1, 10, false, "ajar-hash", fixture.CancellationToken,
+            ["LOCK_NOT_CLOSED"], unknownPresent: false);
+        SessionReadinessDecision idleVehicle = await fixture.Store.DecideReadinessAsync(
+            "AGV-001", 1, fixture.CancellationToken);
+
+        Assert.Equal(SessionReadiness.RecoveryRequired, idleVehicle.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", idleVehicle.ReasonCode);
+    }
+
+    /// <summary>
+    /// ADR-cross-0058 decision 5 in the store: a load that missed its target is Failed, not RecoveryRequired,
+    /// only when every part of the account is determinate -- overall FAILED; every commanded slot's occupancy
+    /// known, door locked and unlock output reset; each slot COMPLETED, FAILED or NOT_STARTED (an unstarted
+    /// slot says so rather than UNKNOWN); received at or after the station deadline; and the failed slot's
+    /// reason one with a terminal state. Each case below takes exactly one of those away from the settleable
+    /// result. A Failed load leaves its demand Accepted for the runtime to end; recovery marks it
+    /// RecoveryRequired.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("settleable", OperationResultDisposition.DeterminateFailure)]
+    [InlineData("received-at-the-deadline", OperationResultDisposition.DeterminateFailure)]
+    [InlineData("occupancy-unknown", OperationResultDisposition.RecoveryRequired)]
+    [InlineData("door-unlocked", OperationResultDisposition.RecoveryRequired)]
+    [InlineData("unlock-output-active", OperationResultDisposition.RecoveryRequired)]
+    [InlineData("unstarted-slot-unknown", OperationResultDisposition.RecoveryRequired)]
+    [InlineData("no-slot-outcomes", OperationResultDisposition.RecoveryRequired)]
+    [InlineData("no-failed-slot", OperationResultDisposition.RecoveryRequired)]
+    [InlineData("slot-missing", OperationResultDisposition.RecoveryRequired)]
+    [InlineData("overall-unknown", OperationResultDisposition.RecoveryRequired)]
+    [InlineData("before-the-deadline", OperationResultDisposition.FailedBeforeStationDeadline)]
+    [InlineData("no-deadline", OperationResultDisposition.FailedBeforeStationDeadline)]
+    [InlineData("reason-without-terminal-state", OperationResultDisposition.FailureReasonWithoutTerminalState)]
+    [InlineData("failed-slot-without-reason", OperationResultDisposition.FailureReasonWithoutTerminalState)]
+    public async Task OnlyACompletelyDeterminateLoadFailureAfterTheDeadlineIsFailed(
+        string variant,
+        OperationResultDisposition expected)
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.PrepareOperationAsync(SlotOperationType.Load, [1, 2]);
+        DateTimeOffset deadline = fixture.Now.AddMinutes(5);
+
+        SlotPhysicalEvidence failedSlot = new(1, SlotBusinessState.Empty, true, true);
+        SlotPhysicalEvidence unstartedSlot = new(2, SlotBusinessState.Empty, true, true);
+        SlotOutcomeReport failedOutcome = new(1, "FAILED", ["OPERATOR_TIMEOUT"]);
+        SlotOutcomeReport unstartedOutcome = new(2, "NOT_STARTED", []);
+        string overall = "FAILED";
+        OperationResultReceipt? receipt = new(deadline.AddSeconds(1), deadline);
+        switch (variant)
+        {
+            case "received-at-the-deadline": receipt = new(deadline, deadline); break;
+            case "occupancy-unknown": failedSlot = failedSlot with { State = SlotBusinessState.Unknown }; break;
+            case "door-unlocked": unstartedSlot = unstartedSlot with { DoorLocked = false }; break;
+            case "unlock-output-active": failedSlot = failedSlot with { UnlockOutputReset = false }; break;
+            case "unstarted-slot-unknown": unstartedOutcome = unstartedOutcome with { Outcome = "UNKNOWN" }; break;
+            case "no-failed-slot": failedOutcome = failedOutcome with { Outcome = "COMPLETED" }; break;
+            case "overall-unknown": overall = "UNKNOWN"; break;
+            case "before-the-deadline": receipt = new(deadline.AddSeconds(-1), deadline); break;
+            case "no-deadline": receipt = new(deadline.AddSeconds(1), null); break;
+            case "reason-without-terminal-state":
+                failedOutcome = failedOutcome with { ReasonCodes = ["ACTION_NOT_ALLOWED_IN_STATE"] };
+                break;
+            case "failed-slot-without-reason": failedOutcome = failedOutcome with { ReasonCodes = [] }; break;
+        }
+        SlotPhysicalEvidence[] evidence = variant == "slot-missing" ? [failedSlot] : [failedSlot, unstartedSlot];
+        SlotOutcomeReport[]? outcomes = variant switch
+        {
+            "no-slot-outcomes" => null,
+            "slot-missing" => [failedOutcome],
+            _ => [failedOutcome, unstartedOutcome]
+        };
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-001", "ATTEMPT-001", "D-001", SlotOperationType.Load, overall, evidence, false,
+                fixture.Now, "result-hash", "wire-hash", outcomes),
+            "AGV-001",
+            0,
+            fixture.CancellationToken,
+            receipt);
+
+        Assert.Equal(expected, disposition);
+        StationOperationStatus status =
+            (await fixture.Context.StationOperations.AsNoTracking().SingleAsync(fixture.CancellationToken)).Status;
+        DemandExecutionStatus demand =
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(fixture.CancellationToken)).Status;
+        if (expected == OperationResultDisposition.DeterminateFailure)
+        {
+            Assert.Equal(StationOperationStatus.Failed, status);
+            Assert.Equal(DemandExecutionStatus.Accepted, demand);
+        }
+        else
+        {
+            Assert.Equal(StationOperationStatus.RecoveryRequired, status);
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, demand);
+        }
+    }
+
+    /// <summary>
+    /// ADR-cross-0015 gives unload no cancellation branch: an unload that misses its target keeps closing the
+    /// loop until the slots are empty. So the determinate shape that settles a load, after its deadline and
+    /// under OPERATOR_TIMEOUT, still goes to recovery for an unload.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    public async Task AnUnloadOfTheSameDeterminateShapeStillNeedsRecovery()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await fixture.PrepareOperationAsync(SlotOperationType.Unload, [1, 2]);
+        DateTimeOffset deadline = fixture.Now.AddMinutes(5);
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-001", "ATTEMPT-001", "D-001", SlotOperationType.Unload, "FAILED",
+                [
+                    new SlotPhysicalEvidence(1, SlotBusinessState.Occupied, true, true),
+                    new SlotPhysicalEvidence(2, SlotBusinessState.Occupied, true, true)
+                ],
+                false,
+                fixture.Now,
+                "result-hash",
+                "wire-hash",
+                [new SlotOutcomeReport(1, "FAILED", ["OPERATOR_TIMEOUT"]), new SlotOutcomeReport(2, "NOT_STARTED", [])]),
+            "AGV-001",
+            0,
+            fixture.CancellationToken,
+            new OperationResultReceipt(deadline.AddMinutes(1), deadline));
+
+        Assert.Equal(OperationResultDisposition.RecoveryRequired, disposition);
+        Assert.Equal(
+            StationOperationStatus.RecoveryRequired,
+            (await fixture.Context.StationOperations.AsNoTracking().SingleAsync(fixture.CancellationToken)).Status);
     }
 
     [Fact]
@@ -462,6 +621,68 @@ public sealed class WireToGateStoreTests
             ControlServerDbContext context = new(options);
             await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
             return new StoreFixture(connection, context, TestContext.Current.CancellationToken);
+        }
+
+        /// <summary>An accepted demand D-001 whose slot operation ATTEMPT-001 has been commanded.</summary>
+        public async Task PrepareOperationAsync(SlotOperationType type, int[] slots)
+        {
+            await Store.AcceptWithOrderIntentAsync(
+                new AcceptedDemandSnapshot("D-001", "SUBLOT-001|WIRE_TO_GATE", 7, "history-1", 21, Now),
+                new OrderIntent("LEG-001", "D-001", "W2G-D-001-PICKUP-1", "TO_PICKUP", "ST-PICKUP", Now),
+                CancellationToken);
+            await Store.PrepareSlotOperationAsync(
+                new StationOperationPlan("ATTEMPT-001", "D-001", "SUBLOT-001", slots, type, 0, "plan-hash", Now),
+                "MSG-CMD-001",
+                "command-json",
+                CancellationToken);
+        }
+
+        /// <summary>The journey that carries <paramref name="demandId"/> on <paramref name="agvId"/>.</summary>
+        public async Task AddJourneyAsync(string demandId, string agvId)
+        {
+            Context.JourneyRuntimes.Add(new JourneyRuntimeRow
+            {
+                DemandId = demandId,
+                Stage = JourneyRuntimeStage.AwaitingLoadResult,
+                AgvId = agvId,
+                VehicleKey = "VEHICLE-" + agvId,
+                AgvLifecycleGeneration = 1,
+                MapId = 25,
+                MapIdentity = "MAP-25",
+                DispatchZone = "ZONE-01",
+                RouteEvidenceId = "ROUTE-01",
+                PickupStationId = "PICKUP",
+                PickupStationRiotId = 11,
+                GateStationId = "GATE",
+                GateStationRiotId = 22,
+                ExpectedBasketCount = 1,
+                TargetSlotsJson = "[1]",
+                OperationSessionId = $"session-{demandId}",
+                PickupMovementLegId = $"pickup-leg-{demandId}",
+                PickupUpperId = $"UPPER-PICKUP-{demandId}",
+                GateMovementLegId = $"gate-leg-{demandId}",
+                GateUpperId = $"UPPER-GATE-{demandId}",
+                DispatchGeneration = 1,
+                VehicleBusinessRevision = 1,
+                WorklistRevision = 1,
+                PlanRevision = 1,
+                VehicleBusinessMessageId = $"vb-{demandId}",
+                WorklistMessageId = $"wl-{demandId}",
+                PlanMessageId = $"plan-{demandId}",
+                SublotRequestMessageId = $"sublot-{demandId}",
+                LoadCommandMessageId = $"load-{demandId}",
+                LoadSlotOperationAttemptId = $"load-attempt-{demandId}",
+                PreDepartureSafetyCheckMessageId = $"safety-msg-{demandId}",
+                PreDepartureSafetyCheckId = $"safety-{demandId}",
+                GateVehicleBusinessMessageId = $"gate-vb-{demandId}",
+                GateWorklistMessageId = $"gate-wl-{demandId}",
+                GatePlanMessageId = $"gate-plan-{demandId}",
+                UnloadCommandMessageId = $"unload-{demandId}",
+                UnloadSlotOperationAttemptId = $"unload-attempt-{demandId}",
+                CreatedAt = Now,
+                UpdatedAt = Now
+            });
+            await Context.SaveChangesAsync(CancellationToken);
         }
 
         public async ValueTask DisposeAsync()

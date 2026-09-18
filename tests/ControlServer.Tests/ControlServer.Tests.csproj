@@ -22,7 +22,25 @@
     <ProjectReference Include="..\..\src\ControlServer.Domain\ControlServer.Domain.csproj" />
     <ProjectReference Include="..\..\src\ControlServer.Host\ControlServer.Host.csproj" />
     <ProjectReference Include="..\..\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj" />
+    <!-- ControlServer.FieldOps is the second process writing the server's database, so
+         SlotConfigurationVersionLineArchitectureTests scans its assembly alongside src/. -->
+    <ProjectReference Include="..\..\tools\ControlServer.FieldOps\ControlServer.FieldOps.csproj" />
     <ProjectReference Include="..\..\tools\ControlServer.FakeRiot\ControlServer.FakeRiot.csproj" />
+    <!-- FakeOnboardSlotStateSeedTests reads the synthetic peer's slot state seed (control-server#71). -->
+    <ProjectReference Include="..\..\tools\ControlServer.FakeOnboard\ControlServer.FakeOnboard.csproj" />
     <ProjectReference Include="..\..\tools\ControlServer.ClockSkewProxy\ControlServer.ClockSkewProxy.csproj" />
+    <!-- Build order only: SchemaConformanceToolTests runs this validator as its own process. Never let
+         its assembly in here: its System.Text.Json 10 would replace the product's 8.0 one, and the
+         gate would then be checking lines produced by a serializer production never runs. -->
+    <ProjectReference Include="..\..\tools\ControlServer.SchemaConformance\ControlServer.SchemaConformance.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Where the build put that validator. Threaded through an assembly attribute rather than derived
+         from this assembly's own path, which carries a configuration, a target framework and a RID
+         that the test would have to guess. -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ControlServer.SchemaConformance.Path</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)\..\..\tools\ControlServer.SchemaConformance\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ControlServer.SchemaConformance.dll</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 </Project>

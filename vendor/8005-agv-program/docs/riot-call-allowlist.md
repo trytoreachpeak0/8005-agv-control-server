@@ -9,7 +9,7 @@
 | 维护者 | Zhengyu Shao |
 | 绑定环境 | `RIOT-8005-RUNTIME`，运行 build `v2.2.0.14` |
 | 绑定契约快照 | `RIOT-OPENAPI-8005-202607-EARLY-01` |
-| 本版依据 | 需求基线 `v1.1.0`（SHA-256 `5fe4b701…fb53`，tag `requirements-baseline-v1.1.0`） |
+| 本版依据 | 需求基线 `v1.1.0`（SHA-256 `5fe4b701…fb53`，tag `requirements-baseline-v1.1.0`）；第 1.5 节「解除」随需求基线 `v1.3.0`（SHA-256 `ac74c78e…bec7`，tag `requirements-baseline-v1.3.0`，`CP-0003`）跟改 |
 | 首次成文 | 2026-09-08 |
 
 ## 这份文档是什么
@@ -155,8 +155,8 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
 
 ### 1.5 条件式软件急停
 
-**无基线载体，见第三节。**行为约束的载体是 `REQ-0246`／`REQ-0248`，但那两条只写动作名
-`triggerEmergency`，不写路径；路径只在票据 37 里。
+**无基线载体，见第三节。**行为约束的载体是 `REQ-0246`／`REQ-0247`／`REQ-0248`／`REQ-0356`，但它们只写
+动作名 `triggerEmergency`／`cancelEmergency`，不写路径；路径只在票据 37 里。
 
 | 方法 | 路径 | Facade | 用 |
 | --- | --- | --- | --- |
@@ -167,9 +167,14 @@ Evidence 段落按 `Snapshot SHA-256 = 205a1c4bd5760e3f5a50de3eec050d5d8e99eec4a
 - **触发**：车辆在仓门未安全锁闭时移动、无 RIoT 订单可供 `OrderHold`、且无其它获批 RIoT 停车
   动作时，8005 自动 `triggerEmergency` 并进入持续保持。外部系统提前解除而仓门仍不安全时立即
   重触发并告警。**不得以 Cancel 代替停车**（`REQ-0246`）。
-- **解除**：车载端与服务端都可请求解除 `CAN_RECOVER` 的软件急停锁存；**`CAN_NOT_RECOVER` 时
-  禁止调用**。解除前车载端必须确认车辆停止、全部仓门安全锁闭、开锁输出复位、`DepartureSafe`；
-  解除后必须回查 `emergencyState=OK`。车载端无需身份，服务端沿用现有登录会话且不再输入工号。
+- **解除**：只由服务端调用 `cancelEmergency`，只从 `CAN_RECOVER` 解除；**`CAN_NOT_RECOVER` 时禁止调用**，
+  转 RIoT 人员处理。解除后必须回查 `emergencyState=OK`，未回查到不算解除。急停状态经回查确认为
+  `CAN_RECOVER`／`CAN_NOT_RECOVER` 即视为车辆已停稳（`REQ-0247`）。两条路径：
+  - **自动解除**（`REQ-0167`）：8005 自己触发的急停，原原因消除且全部安全条件通过。
+  - **人工确认解除**（`REQ-0356`）：服务端已登录且具有车辆查看权限的人员，对明确选中的车辆确认急停原因
+    已消除、车上无货且全部仓门已关闭，并记下身份；该车仍有未进入终态的订单时不得调用，须先取消该订单。
+    车载端不能确认，不要求二次认证、审批或第二人确认。这样解除的不属于原因消除前的意外恢复，不重触发
+    （`REQ-0248`）。人员确认「仓门已关闭」只用于解除急停，不构成移动所需的锁闭证明（`REQ-0244`）。
 
 ### 1.6 鉴权面
 
@@ -227,7 +232,8 @@ CallApiKey 原值必须存在于 ControlServer 的部署密钥存储，**不得*
 名。**这是白名单里唯一一条没有基线载体的获批调用**，而它恰好是后果最重的那一条。
 
 处置建议：下一次变更提案（`CP-0002` 或之后）把路径补进一条基线条目。本文档不能代替那个动
-作——汇编不产生授权。
+作——汇编不产生授权。`CP-0003` 修订了急停的判停与解除，用户 2026-09-15 定该提案不补路径（`CP-0003`
+第三节），缺口仍在。
 
 ### 3.2 基线里有一个白名单没列的端点
 
@@ -301,6 +307,7 @@ Facade，全部在第一节的表里：
 | --- | --- |
 | `requirements/baselines/current-requirements-v1.1.0.md` | `REQ-0146`／`REQ-0147`／`REQ-0148`／`REQ-0149`（第一节主体）、`REQ-0294`（空闲返回）、`REQ-0309`（具名 Facade）、`REQ-0246`／`REQ-0248`（急停行为）、`REQ-0168`（诊断端点） |
 | `requirements/change-proposals/CP-0001.md` | 1.1 末尾五个 `imap` 端点的增列依据 |
+| `requirements/change-proposals/CP-0003.md` | 1.5「解除」按修订后的 `REQ-0247`／`REQ-0248` 与新增的 `REQ-0356` 跟改的依据（需求基线 `v1.3.0`） |
 | [票据 37](../.scratch/current-requirements-baseline/issues/37-decide-riot-api-allowlist-and-call-safety-boundary.md) | 冻结证据；1.5 与 1.6 的部分内容目前只有这一个来源 |
 | `.scratch/8005-full-product/issues/04-answer.md` 第 1.6 节 | 充电订单形态二 |
 | `rcs/riot-behavior-lab/` Round 24／25 | `act(78,…)` 的实测响应与自动插入行为 |

@@ -96,10 +96,16 @@ public sealed class ProtocolIdentityArchitectureTests
     /// </summary>
     /// <remarks>
     /// <c>scripts/New-WireToGateReleaseCandidate.ps1</c> gates on <c>APPROVED_RELEASE</c> and this
-    /// is the other half of that gate. Until 2026-09-12 this test asserted the opposite, because
-    /// <c>protocol-v1.0.0</c> had been neither approved nor tagged. The change was made here on purpose
-    /// the day both happened: an annotated tag on <see cref="ProtocolCandidateIdentity.RepositoryCommit"/>
-    /// and one approval in the external attestation, given by an AI agent the product owner authorized.
+    /// is the other half of that gate. This test has now flipped three times on purpose. It asserted
+    /// a candidate while the first v2 candidate was unreleased, asserted <c>APPROVED_RELEASE</c>
+    /// from 2026-09-12 when <c>protocol-v1.0.0</c> was tagged and approved, asserted a candidate
+    /// again from 2026-09-16 when the server moved to the unreleased <c>2.0.0</c> candidate
+    /// (<c>8005-agv-control-server#84</c>), and asserts <c>APPROVED_RELEASE</c> again since
+    /// <c>8005-agv-program#97</c> released <see cref="ProtocolCandidateIdentity.Tag"/> and
+    /// <c>8005-agv-control-server#89</c> bound that release. Each flip is made deliberately because
+    /// no other test says what the status is: <c>TheShippedSettingsMirrorTheIdentityConstants</c>
+    /// below compares the two copies to each other, so a stale value kept in both would ship
+    /// silently.
     /// </remarks>
     [Fact]
     public void ThisIdentityIsTheApprovedReleaseItNames()

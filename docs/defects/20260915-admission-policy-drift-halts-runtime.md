@@ -1,6 +1,7 @@
 # 缺陷：共享地图上的区号站点一变，运行时每轮抛异常，在途旅程一起停摆（v2 线）
 
-Status: fixed，未上线（修复分支 `fix/v2-admission-policy-drift`，基于 `fp/v2-impl` `d39983d7`）
+Status: fixed，未上线（修复分支 `fix/v2-admission-policy-drift`，基于 `fp/v2-impl` `d39983d7`；2026-09-18 merge 了
+`fp/v2-impl` `6ea64585`）
 Found by: 从 `ControlServer_MVP` 线上的同一缺陷移植而来（分支 `fix/admission-policy-drift`，PR #61，那边的缺陷记录与本文件同名）；
 v2 上的红测试 `AStationAddedToTheSharedMapDoesNotStrandCargoAlreadyBoundForTheGate`（提交 `0833e2b8`，只含测试）。
 v2 服务端没有上过现场，L2 里也没有在 v2 上观测到。
@@ -60,7 +61,7 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
    为真时返回原因码 `ADMISSION_POLICY_DRIFT`，由引擎写进 `JourneyBacklog`。一轮里每台车读的是同一份本轮事实，所以
    「一台车的旅程照常推进、另一台空闲车被拒」发生在同一轮里。v2 的旅程一车一单，也没有 MVP 那种「在途旅程到站时
    再追加需求」的入口，所以不需要第二处拦截。
-4. **单独记一条日志。**EventId 2108，Warning，写明版本号、地图号，以及实时地图比已绑定的集合多了哪些、少了哪些站点。
+4. **单独记一条日志。**EventId 2116，Warning，写明版本号、地图号，以及实时地图比已绑定的集合多了哪些、少了哪些站点。
 
 与 MVP 不同的两处：
 
@@ -70,15 +71,17 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
   `VehicleDynamicFactsCriterion`（80）与 `StationTaskTypeAdmissionCriterion`（90）之前。排在 90 之前，是因为 90 查的
   正是已经对不上的那份策略；排在 80 之前，是因为漂移要等人去改地图或版本号才会消失，比车辆忙闲这类一会儿就变的原因
   更值得让看 backlog 的人先看到。与 MVP 的优先顺序一致。
-- **EventId 用 2108，不是 MVP 上的 2111。**v2 上 2110–2113 都已经有主，2111 是 `CatalogAvailabilityAccess` 的
-  `LogDegraded`。2108 是引擎自己这段编号（2101–2107）的下一个空位。两条线的日志号因此不同，查日志时注意。
+- **EventId 用 2116，不是 MVP 上的 2111。**v2 上 2110–2113 都已经有主，2111 是 `CatalogAvailabilityAccess` 的
+  `LogDegraded`。本修复最初用的是 2108（引擎自己这段编号 2101–2107 的下一个空位），但 2026-09-18 merge 主线时
+  2108 已被 `LogStationDeadlineEndedStop` 占用，于是改用 2101–2120 里仍空着的第一个号 2116。两条线的日志号因此
+  不同，查日志时注意。主线上 2108、2110 各有两处定义，是另一个问题，这里没有动。
 
 版本号回退、`admissionPolicyDeploymentId` 对不上，存储层抛的是同一个异常，这里同样处理：配置指名的策略
 与库里绑定的不一致，新活不接，在途的照走。
 
 ## 恢复接单
 
-1. 从 EventId 2108 日志读出增减的站点，确认新的站点集合是想要的（新增站点会被允许做 `WIRE_TO_GATE`）。
+1. 从 EventId 2116 日志读出增减的站点，确认新的站点集合是想要的（新增站点会被允许做 `WIRE_TO_GATE`）。
 2. 把部署配置里的 `JourneyRuntime:admissionPolicyVersion` 加 1。选项在启动时读取，必须重启服务才生效。
 3. 下一轮服务端把新集合绑到新版本，写一行 `AdmissionPolicyAudit`，接单恢复。
 
@@ -86,10 +89,12 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
 
 ## 回归测试
 
-都在 `tests/ControlServer.Tests/JourneyRuntimeWorkerTests.cs`，名字与 MVP 线上对应的测试相同：
+都在 `tests/ControlServer.Tests/JourneyRuntimeWorkerAdmissionTests.cs`（主线 #135 把原来的
+`JourneyRuntimeWorkerTests` 拆成了多个类，夹具在 `JourneyRuntimeWorkerTestKit.cs`），名字与 MVP 线上对应的测试相同：
 
 - `AStationAddedToTheSharedMapDoesNotStrandCargoAlreadyBoundForTheGate`：开往关卡途中地图多了一个区号站点，
-  车到关卡照样转入 `AwaitingUnloadResult`，这一轮不抛异常。
+  车到关卡照样转入 `AwaitingUnloadResult`，这一轮不抛异常；同时新到的第二条需求在车空出来后记
+  `ADMISSION_POLICY_DRIFT`，不建新的取货订单。在 merge 前的主线（`6ea64585`）上它失败，原文见上面「现象」。
 - `AStationAddedToTheSharedMapTakesOnNoNewDemandUntilThePolicyVersionIsRaised`：车空闲时不接新单，
   原因码 `ADMISSION_POLICY_DRIFT`，库里准入关系与审计不变；版本号调高后当轮接单。
 - `AStationAddedToTheSharedMapBeforeArrivalLoadsTheJourneysOwnDemandAndTakesOnNoOther`：按 v2 改写。取货途中地图变了，
@@ -100,6 +105,12 @@ ADR-cross-0050 与 0051 的要求正相反：准入配置变化只影响尚未�
 MVP 线上的第四条 `AStationAddedToTheSharedMapDoesNotStopAChargingRunUnderWay` 没有移植：v2 没有自动充电运行时。
 
 测试夹具里把 `RunToGateUnloadAsync` 的前半段拆成了 `AdvanceToGateArrivalAsync`，好在车开往关卡途中改地图。
+
+## 结构性派车阻断分类表
+
+`StructuralDispatchClassification`（#74 的分类表，决定一个原因码是普通积压还是要报警的结构性阻断）登记了
+`ADMISSION_POLICY_DRIFT`，Order 75，类别 `Backlog`。理由与 `CATALOG_PARAMETERS_NOT_APPROVED` 那一行相同：它一次挡住
+所有需求，但原因在配置（版本号与实时地图对不上），不在某一条需求本身；REQ-0210 的报警是按任务的。调高版本号即解除。
 
 ## 没有做的
 

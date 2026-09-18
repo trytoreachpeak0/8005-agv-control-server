@@ -12,7 +12,9 @@ public sealed class OnboardJourneyPublisher(
     IOnboardPeer peer,
     TimeProvider timeProvider)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    // The envelope's own settings, not a second copy of them: this instance also materialises the
+    // payload and rewrites replayed lines, and both have to agree with the envelope byte for byte.
+    private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
     private static readonly string[] SublotEntryMethods = ["SCANNER", "KEYBOARD"];
     private static readonly string[] LoadCorrectionSequence = ["EMPTY", "OCCUPIED"];
 
@@ -52,6 +54,11 @@ public sealed class OnboardJourneyPublisher(
             envelope["sessionGeneration"] = sessionGeneration;
             envelope["sentAt"] = sentAt;
             string wire = envelope.ToJsonString(SerializerOptions);
+            // This line does not go through ProtocolEnvelope.Serialize -- it rewrites what was stored
+            // rather than building from fields, and it is the only outbound byte that does not -- so
+            // it hands itself to the observation point by hand. Without this the gate would be blind
+            // to every replayed envelope, which is exactly the kind of line a session resume sends.
+            ProtocolEnvelope.OutboundObserver?.Invoke(row.MessageType, wire);
             ProtocolOutboxRow current = await store.QueueOutboundEnvelopeAsync(
                 row.MessageId,
                 row.MessageType,
@@ -69,8 +76,18 @@ public sealed class OnboardJourneyPublisher(
         string agvId,
         long sessionGeneration,
         VehicleBusinessProjection projection,
-        CancellationToken cancellationToken) =>
-        PublishStampedSnapshotAsync(
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        if (!ChargingCycleStates.Contains(projection.ChargingCycleState))
+            throw new InvalidDataException("chargingCycleState is not allowed by the protocol.");
+        // loadingPhase is null exactly when the vehicle has no transport journey
+        // (8005-agv-program#94). The schema accepts null either way, so nothing downstream -- not even
+        // the outbound schema gate -- would notice a journey reported without its loading phase.
+        if ((projection.ActivePurpose == VehicleActivePurposes.Transport) != (projection.LoadingPhase is not null))
+            throw new InvalidDataException(
+                "loadingPhase must be present exactly when activePurpose is TRANSPORT.");
+        return PublishStampedSnapshotAsync(
             "VehicleBusinessStateSnapshot",
             messageId,
             agvId,
@@ -87,6 +104,15 @@ public sealed class OnboardJourneyPublisher(
                 projection.ActivePurpose,
                 projection.ManualChargingHold,
                 projection.BatteryState,
+                projection.ChargingCycleState,
+                loadingPhase = projection.LoadingPhase is not { } phase
+                    ? null
+                    : new
+                    {
+                        phase.State,
+                        phase.CargoHoldingDeadlineAt,
+                        phase.ClosedReason
+                    },
                 blockingFacts = projection.BlockingFacts.Select(fact => new
                 {
                     fact.ReasonCode,
@@ -96,6 +122,12 @@ public sealed class OnboardJourneyPublisher(
                 ObservedAt = sentAt
             },
             cancellationToken);
+    }
+
+    private static readonly HashSet<string> ChargingCycleStates = new(StringComparer.Ordinal)
+    {
+        "NOT_CHARGING", "ALLOCATED", "EN_ROUTE", "CHARGING", "COMPLETE", "UNABLE_TO_CHARGE", "UNKNOWN"
+    };
 
     public Task PublishSublotEntryRequestAsync(
         string messageId,
@@ -105,11 +137,15 @@ public sealed class OnboardJourneyPublisher(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ValidateUuid(request.DemandId, nameof(request.DemandId));
         ValidateUuid(request.OperationSessionId, nameof(request.OperationSessionId));
         ArgumentException.ThrowIfNullOrWhiteSpace(request.StationId);
         ArgumentOutOfRangeException.ThrowIfNegative(request.WorklistRevision);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.ExpectedSublot);
+        ArgumentNullException.ThrowIfNull(request.ExpectedSublots);
+        // The schema's own bounds: one to eight, each non-blank, no repeats.
+        if (request.ExpectedSublots.Count is < 1 or > 8 ||
+            request.ExpectedSublots.Any(string.IsNullOrWhiteSpace) ||
+            request.ExpectedSublots.Distinct(StringComparer.Ordinal).Count() != request.ExpectedSublots.Count)
+            throw new InvalidDataException("expectedSublots must hold one to eight distinct sublots.");
 
         return PublishEnvelopeAsync(
             "SublotEntryRequested",
@@ -119,13 +155,71 @@ public sealed class OnboardJourneyPublisher(
             sessionGeneration,
             new
             {
-                request.DemandId,
                 request.OperationSessionId,
                 request.StationId,
                 request.WorklistRevision,
-                request.ExpectedSublot,
+                request.ExpectedSublots,
                 entryMethods = SublotEntryMethods,
                 expiresOnRevisionChange = true
+            },
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The server refusing one <c>SublotSubmitted</c>: BR-013 section 2 could not establish the
+    /// authoritative basket count for the sublot the operator entered, or the sublot is not in this
+    /// vehicle's dispatch scope (protocol 2.0.0 item 2; <c>8005-agv-control-server#82</c>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It is a RESPONSE whose correlation rule is <c>REQUIRED_ORIGINAL_MESSAGE_ID</c>, so
+    /// <paramref name="submittedMessageId"/> is the submission being refused and not an id of ours. MVP
+    /// sent it with a null <c>correlationId</c>, which the vehicle answers with
+    /// <c>CORRELATION_INVALID</c>: BR-013's explicit refusal had never once reached an operator
+    /// (<c>8005-agv-control-server#20</c>).
+    /// </para>
+    /// <para>
+    /// Sent through the durable outbox rather than as a bare send, so the reason survives the connection
+    /// the entry arrived on — and so that the stored line is itself the record that this submission has
+    /// been judged, which is what keeps the runtime from refusing it again on every poll and what tells
+    /// the cancellation before a sublot that the stop is still the operator's to cancel.
+    /// </para>
+    /// </remarks>
+    public Task PublishSublotRejectedAsync(
+        string messageId,
+        string submittedMessageId,
+        string agvId,
+        long sessionGeneration,
+        SublotRejection rejection,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rejection);
+        ValidateUuid(messageId, nameof(messageId));
+        ValidateUuid(submittedMessageId, nameof(submittedMessageId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(agvId);
+        ArgumentOutOfRangeException.ThrowIfNegative(sessionGeneration);
+        if (rejection.DemandId is not null)
+        {
+            ValidateUuid(rejection.DemandId, nameof(rejection.DemandId));
+        }
+        ValidateUuid(rejection.OperationSessionId, nameof(rejection.OperationSessionId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(rejection.RejectedSublot);
+        ArgumentOutOfRangeException.ThrowIfNegative(rejection.CurrentWorklistRevision);
+        ArgumentNullException.ThrowIfNull(rejection.Problem);
+
+        return PublishEnvelopeAsync(
+            "SublotRejected",
+            messageId,
+            submittedMessageId,
+            agvId,
+            sessionGeneration,
+            new
+            {
+                rejection.DemandId,
+                rejection.OperationSessionId,
+                rejection.Problem,
+                rejection.CurrentWorklistRevision,
+                rejection.RejectedSublot
             },
             cancellationToken);
     }
@@ -272,6 +366,13 @@ public sealed class OnboardJourneyPublisher(
             throw new InvalidDataException("Recovery administrator role is not allowed by the protocol.");
         ValidateUuid(projection.EventId, nameof(projection.EventId));
         if (projection.DemandId is not null) ValidateUuid(projection.DemandId, nameof(projection.DemandId));
+        if (projection.SlotOperationAttemptId is not null)
+        {
+            ValidateUuid(projection.SlotOperationAttemptId, nameof(projection.SlotOperationAttemptId));
+            // An attempt belongs to a demand; a session with none has no attempt to name.
+            if (projection.DemandId is null)
+                throw new InvalidDataException("A recovery session without a demand names no slot operation attempt.");
+        }
         ValidateSlots(projection.Slots);
         return QueueEnvelopeAsync(
             "ExceptionRecoverySessionSnapshot", messageId, null, agvId, sessionGeneration,
@@ -284,6 +385,7 @@ public sealed class OnboardJourneyPublisher(
                 projection.AdministratorRole,
                 projection.EventId,
                 projection.DemandId,
+                projection.SlotOperationAttemptId,
                 projection.Slots,
                 projection.SelectedAction,
                 projection.AllowedActions,
@@ -454,6 +556,7 @@ public sealed class OnboardJourneyPublisher(
                 projection.StationId,
                 worklistRevision = projection.Revision,
                 projection.OperationSessionId,
+                projection.StationDepartureDeadlineAt,
                 items = projection.Items.Select(item => new
                 {
                     item.DemandId,
@@ -595,9 +698,13 @@ public sealed class OnboardJourneyPublisher(
     /// through the encoder, so anything a converter emits verbatim -- the '+' in a DateTimeOffset
     /// offset -- comes back as its six-character unicode escape, so the peer can never reproduce
     /// our bytes. That failed the acknowledgement and dropped the connection. Materialising it first,
-    /// the way the contract type itself builds it, makes the line reproducible. It also makes the
-    /// line a fixed point of the replay rewrite in ReplayPendingForSessionAsync, so re-publishing at
-    /// the same generation stays a byte-identical no-op instead of a change that
+    /// the way the contract type itself builds it, makes the line reproducible. Which side of the
+    /// call that happens on is deliberate: ProtocolEnvelope.Serialize serializes its payload exactly
+    /// as given, so doing it there would change every other sender's bytes instead.
+    /// </remarks>
+    /// <remarks>
+    /// It also makes the line a fixed point of the replay rewrite in ReplayPendingForSessionAsync, so
+    /// re-publishing at the same generation stays a byte-identical no-op instead of a change that
     /// RefreshOutboundEnvelopeAsync then refuses as a non-advancing session generation.
     /// </remarks>
     private static string SerializeWire(
@@ -608,20 +715,14 @@ public sealed class OnboardJourneyPublisher(
         long sessionGeneration,
         DateTimeOffset sentAt,
         object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        ProtocolEnvelope.Serialize(
             messageType,
             messageId,
             correlationId,
             agvId,
             sessionGeneration,
             sentAt,
-            payload = JsonSerializer.SerializeToElement(payload, SerializerOptions)
-        }, SerializerOptions);
+            JsonSerializer.SerializeToElement(payload, ProtocolEnvelope.SerializerOptions));
 
     private async Task PublishSlotOperationEnvelopeAsync(
         string messageType,

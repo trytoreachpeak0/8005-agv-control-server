@@ -54,20 +54,35 @@ public sealed class IntegrationSliceTraitArchitectureTests
         new(StringComparer.Ordinal)
         {
             ["AgvRestorationTests"] = "batch 3 FP-C5 archive-and-restore lifecycle; server-internal, no wire message",
+            ["AreaAssignmentDispatchTests"] = "batch 4 FP-C15 REQ-0191/REQ-0350 area assignment whitelist, route dispatch zone, startup check and acceptance freeze (control-server#72); server-internal, no wire message",
+            ["AreaAssignmentImportTests"] = "batch 4 FP-C15 REQ-0350 FieldOps whole-table import of the area assignment table; a controlled operations entry point, no wire message",
+            ["AreaAssignmentStoreTests"] = "batch 4 FP-C15 REQ-0350 area assignment table versions; the side is decided on the server only (spec 5.1 #10), no wire message",
             ["AuditExportTests"] = "batch 3 FP-C14 REQ-0271 audit query and export; server-internal, no wire message",
             ["Batch2CapabilityStoresTests"] = "batch 2 track B persistence foundation; server-internal, no wire message",
             ["Batch3MigrationDisciplineTests"] = "cross-cutting migration and startup guard; hanging it off a slice would defer the guard with the slice",
+            ["Batch4MigrationDisciplineTests"] = "cross-cutting migration guard for batch 4's one migration; hanging it off a slice would defer the guard with the slice",
+            ["Batch5MigrationDisciplineTests"] = "cross-cutting migration guard for batch 5's one migration (control-server#80); hanging it off a slice would defer the guard with the slice",
+            ["BlockedJourneyDashboardTests"] = "batch 5 control-server#80 blocked-journey start time and dashboard card; server and dashboard only, the dashboard is disjoint from the protocol and nothing is pushed (REQ-0270)",
+            ["ControlServerSqliteConnectionTests"] = "cross-cutting guard on the one place the server's SQLite connection string is built; the busy timeout two processes share is a policy, not a slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
             ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
+            ["DemandAreaAssignmentFreezeTests"] = "batch 4 FP-C15 REQ-0350 demand freeze of the area assignment version; server-internal, no wire message",
+            ["DispatchBacklogDashboardTests"] = "batch 4 FP-C15 REQ-0210 dispatch backlog and structural dispatch block dashboard card (control-server#70); reads only /api/dashboard/, reasons never go on the wire (spec 5.1 #10)",
+            ["DispatchChainSeamTests"] = "batch 4 FP-C15 dispatch chain seams (control-server#69): reason code names, the area assignment lookup and plan replay; server-internal, no wire message",
+            ["EmergencyStopReleaseEndpointsTests"] = "REQ-0356 release-on-confirmation HTTP entry point (control-server#63); single-ended server-to-RIoT, no wire message",
             ["EmergencyStopSupervisorTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateGateTests"] = "RIoT create experiment; single-ended server-to-RIoT",
             ["ExperimentalRiotCreateMigrationTests"] = "RIoT create experiment migration; server-internal",
+            ["FakeOnboardRequestAnswerTests"] = "L2 synthetic peer's per-request answer cache (control-server#75 review); a test double's replay behaviour, not the product's wire surface",
+            ["FakeOnboardSlotStateSeedTests"] = "L2 synthetic peer's handshake slot state seed (control-server#71); a test double's startup configuration, not the product's wire surface",
             ["GovernanceSnapshotAndAuditTests"] = "batch 3 FP-C7/FP-C5 shared snapshot and audit mechanism; server-internal, no wire message",
             ["IntegrationSliceTraitArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["MapStationResolverTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["MultiVehicleExecutionTests"] = "7.5 #1, FP-C2 B2 multi-vehicle; the conformance vector format has no vehicle dimension",
             ["OnboardVehicleSafetyEndpointsTests"] = "server-side safety projection endpoint; not a protocol wire message",
             ["PackageCapacityStoreTests"] = "server-internal store; no wire message",
+            ["ProtocolEnvelopeObserverArchitectureTests"] = "cross-cutting guard on the observation point every slice's outbound lines pass through (control-server#85); hanging it off one would defer the guard with that slice",
+            ["ProtocolEnvelopeTests"] = "cross-cutting guard on the one place an outbound protocol line is built (control-server#85); every slice sends through it, so hanging it off one would defer the guard with that slice",
             ["ProtocolIdentityArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["ProtocolMessageSurfaceArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
             ["ProtocolPayloadShapeArchitectureTests"] = "cross-cutting architecture guard; hanging it off a slice would defer the guard with the slice",
@@ -82,10 +97,18 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["RollbackAndImpactPreviewTests"] = "batch 3 rollback and impact preview; a rollback is a new activation of an existing frozen version, server-internal",
             ["RouteGraphDispatchTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
             ["RouteGraphEngineTests"] = "7.5 #6, RouteGraphSnapshot engine; single-ended server-to-RIoT",
+            ["SchemaConformanceToolTests"] = "cross-cutting guard on the outbound gate's own validator (control-server#85), driven as its own process over the vendored contract; the gate stands behind every slice, so hanging it off one would defer it with that slice",
             ["SlotConfigurationAuthorityTests"] = "batch 3 FP-C7 slot configuration authority; two-layer versioning inside the server, no wire message",
             ["SlotConfigurationGateModeTests"] = "readiness gate mode validation; no wire message",
             ["SlotConfigurationReadinessGateTests"] = "batch 3 per-vehicle IO integrity gate; a server-side readiness predicate, no wire message",
-            ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT"
+            ["SlotConfigurationVersionLineArchitectureTests"] = "cross-cutting guard that every writer on the shared ActiveSlotConfiguration line allocates through SlotConfigurationVersionLine; hanging it off a slice would defer the guard with the slice",
+            ["SlotConfigurationVersionLineCrossProcessTests"] = "batch 4 FP-C7/FP-C9b version allocation across two processes on one SQLite file; a server-internal write-ordering rule, no wire message",
+            ["SlotConfigurationVersionLineTests"] = "batch 4 FP-C7/FP-C9b version allocation on the shared ActiveSlotConfiguration line; a server-internal write-ordering rule between two processes, no wire message",
+            ["SlotGroupSelectionTests"] = "batch 4 FP-C15 REQ-0349/REQ-0351/REQ-0352 target slots chosen inside the demand's slot group (control-server#73); the side is decided on the server only (spec 5.1 #10), no wire message",
+            ["StructuralDispatchBlockTests"] = "batch 4 REQ-0210/REQ-0352 structural dispatch block summarised across vehicles at the end of a round (control-server#74); server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
+            ["StructuralDispatchBlockStoreTests"] = "batch 4 REQ-0210 structural dispatch block storage; server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
+            ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
+            ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"
         };
 
     /// <summary>
@@ -111,7 +134,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         new(StringComparer.Ordinal)
         {
             ["FakeRiotTests"] = (8, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
-            ["HttpRiotMovementGatewayTests"] = (20, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
+            ["HttpRiotMovementGatewayTests"] = (23, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
             ["JourneyRuntimeOptionsTests"] = (2, "option defaults; the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };

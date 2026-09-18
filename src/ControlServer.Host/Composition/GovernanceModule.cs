@@ -43,6 +43,11 @@ internal static class GovernanceModule
         services.AddScoped<GovernedActivationStore>();
         services.AddScoped<SlotConfigurationActivationCoordinator>();
         services.AddScoped<OnboardAlarmProjectionStore>();
+        // 批次 4 建表票 control-server#66 的四个端口，一次注册齐：后续 #68、#70、#72、#74 只取用，不再改这个文件。
+        services.AddScoped<IAreaAssignmentStore, AreaAssignmentStore>();
+        services.AddScoped<IDemandAreaAssignmentFreeze, DemandAreaAssignmentFreezeStore>();
+        services.AddScoped<IStructuralDispatchBlockStore, StructuralDispatchBlockStore>();
+        services.AddScoped<IVehicleSlotPositionReader, VehicleSlotPositionReader>();
         return services;
     }
 

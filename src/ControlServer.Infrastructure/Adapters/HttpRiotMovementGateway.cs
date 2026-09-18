@@ -17,7 +17,7 @@ namespace ControlServer.Infrastructure.Adapters;
 /// owns only ControlServer observation semantics.
 /// </summary>
 public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog,
-    IRiotVehicleSafetyFacts, IVehicleMotionFacts
+    IRiotVehicleSafetyFacts, IVehicleMotionFacts, IRiotVehicleOrderFacts
 {
     private static readonly int[] NonFinalOrderStates = [1, 3, 7, 9];
 
@@ -306,6 +306,58 @@ public sealed class HttpRiotMovementGateway : IRiotMovementGateway, IRiotVehicle
         catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
         {
             return UnknownSafety(vehicleKey, "RIOT_READ_FAILED");
+        }
+    }
+
+    /// <summary>
+    /// The unfinished orders RIoT holds for one vehicle, for REQ-0356's "no release while the
+    /// vehicle still has an unfinished order".
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same read, the same state list and the same vehicle match as the safety read's
+    /// <c>RIOT_NONFINAL_ORDER_PRESENT</c>, so the two cannot come to disagree about whether a
+    /// vehicle has an order. An order counts for the vehicle when either the appointed or the
+    /// executing key is its own: a QUEUEING order appointed to it has not been bound yet and will
+    /// still drive it.
+    /// </para>
+    /// <para>
+    /// A page that does not cover every record, and every failure, is an unknown answer rather than
+    /// an exception or an empty list. "No unfinished order" has to be something RIoT said.
+    /// </para>
+    /// </remarks>
+    public async Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
+        string deviceKey,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deviceKey);
+        try
+        {
+            OrderStatePage orders = await riotSession.Order.ListOrdersByStatesAsync(
+                NonFinalOrderStates,
+                pageNum: 1,
+                pageSize: 100,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (!orders.CoversAllRecords)
+            {
+                return new RiotVehicleOrderObservation(deviceKey, null, [], timeProvider.GetUtcNow());
+            }
+
+            string[] unfinished = [.. orders.Records
+                .Where(order =>
+                    string.Equals(order.AppointVehicleKey, deviceKey, StringComparison.Ordinal) ||
+                    string.Equals(order.ExecuteVehicleKey, deviceKey, StringComparison.Ordinal))
+                .Select(order => order.OrderId)];
+            return new RiotVehicleOrderObservation(
+                deviceKey, unfinished.Length > 0, unfinished, timeProvider.GetUtcNow());
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception error) when (RiotCallFailureClassification.IsSdkFailure(error))
+        {
+            return new RiotVehicleOrderObservation(deviceKey, null, [], timeProvider.GetUtcNow());
         }
     }
 

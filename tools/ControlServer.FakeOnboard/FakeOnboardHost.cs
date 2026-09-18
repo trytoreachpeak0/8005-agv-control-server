@@ -28,6 +28,11 @@ public static class FakeOnboardHost
         SafetySummary seedSafety = ReadSeedSafety(builder.Configuration);
         builder.Services.AddSingleton(_ => new CommandEngine<FakeOnboardState>(
             instanceId, () => new FakeOnboardState { Safety = seedSafety }));
+        // The per-slot states the two handshake snapshots carry. Same reason as the safety summary: the
+        // server reads availability off those snapshots, so a slot has to be occupied or disabled before
+        // the peer connects.
+        builder.Services.AddSingleton(SlotStateSeed.Read(builder.Configuration));
+        builder.Services.AddSingleton<FakeLoadCancellations>();
 
         IPEndPoint? listener = ControlPlaneConventions.ResolveLoopbackListener(
             builder.Configuration, "FakeOnboard", DefaultControlPort);
@@ -40,6 +45,9 @@ public static class FakeOnboardHost
         WebApplication app = builder.Build();
         app.MapControlPlane();
         app.MapControlPlaneV2();
+        app.MapControlPlaneLoadCancellation();
+        app.MapControlPlaneDeterminateLoadFailure();
+        app.MapControlPlaneSublotScan();
         return app;
     }
 
@@ -78,7 +86,9 @@ public static class FakeOnboardHost
         ArgumentNullException.ThrowIfNull(app);
         OnboardPeerSession peer = new(
             app.Services.GetRequiredService<CommandEngine<FakeOnboardState>>(),
-            app.Services.GetRequiredService<FakeOnboardOptions>());
+            app.Services.GetRequiredService<FakeOnboardOptions>(),
+            app.Services.GetRequiredService<SlotStateSeed>(),
+            app.Services.GetRequiredService<FakeLoadCancellations>());
         await peer.StartAsync(cancellationToken).ConfigureAwait(false);
         app.Services.GetRequiredService<OnboardPeerHolder>().Peer = peer;
         return peer;

@@ -218,6 +218,205 @@ public sealed class MultiVehicleExecutionTests
             StringComparer.Ordinal);
     }
 
+    // ---- batch 4 dispatch chain seams (control-server#69) ------------------------------------
+
+    /// <summary>
+    /// The area assignment table is read once per round, however many vehicles and candidates the round
+    /// judges, and every plan of the round carries the version that one read returned.
+    /// </summary>
+    /// <remarks>
+    /// Three vehicles judging three candidates would be nine reads if a criterion read the table for itself,
+    /// and nine reads can straddle an import: two candidates of one round judged against two tables.
+    /// </remarks>
+    [Fact]
+    public async Task TheRoundReadsTheAreaAssignmentTableOnceForAllItsVehiclesAndCandidates()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, fixture.AreaAssignments.CurrentReads);
+        Assert.Equal(3, fixture.AcceptedPlans.Count);
+        Assert.All(fixture.AcceptedPlans, plan =>
+        {
+            Assert.Equal(1, plan.AreaAssignmentVersion);
+            Assert.Equal("FRONT", plan.RequiredSlotPosition);
+        });
+    }
+
+    /// <summary>
+    /// Each vehicle's slot groups are read once in its own segment of the round, not once per candidate, and
+    /// what was read reaches every candidate judged for that vehicle.
+    /// </summary>
+    [Fact]
+    public async Task EachVehiclesSlotGroupsAreReadOncePerRoundAndReachEveryCandidateItJudges()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            FleetFixture.AgvIds.Order(StringComparer.Ordinal).ToArray(),
+            fixture.SlotPositions.Reads.Order(StringComparer.Ordinal).ToArray());
+        DispatchRoundOutcome outcome = Assert.Single(fixture.RoundOutcomes.Outcomes);
+        Assert.All(outcome.CompletedVehicles, vehicle =>
+        {
+            Assert.NotEmpty(vehicle.Verdicts);
+            Assert.All(vehicle.Verdicts, verdict =>
+                Assert.Equal(vehicle.AgvId, Assert.IsType<VehicleSlotPositions>(verdict.Evaluation.Vehicle.SlotPositions).AgvId));
+        });
+    }
+
+    /// <summary>
+    /// The version a candidate was looked up in and the slot group its AREA is assigned travel through the
+    /// eligible candidate into the plan intake accepts, candidate by candidate.
+    /// </summary>
+    [Fact]
+    public async Task ThePlanCarriesTheVersionAndSlotGroupItsCandidateWasLookedUpIn()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        AreaAssignmentTableVersion table = await fixture.AreaAssignments.ImportAsync(
+            [
+                new("N1-1", "MAP-25-WIRE_TO_GATE", "FRONT"),
+                new("N1-2", "MAP-25-WIRE_TO_GATE", "REAR"),
+                new("N1-3", "MAP-25-WIRE_TO_GATE", "FRONT"),
+            ],
+            Now);
+
+        await fixture.RunRoundAsync();
+
+        Assert.Equal(2, table.Version);
+        Assert.Equal(3, fixture.AcceptedPlans.Count);
+        Assert.All(fixture.AcceptedPlans, plan => Assert.Equal(table.Version, plan.AreaAssignmentVersion));
+        Assert.Equal(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["N1-1"] = "FRONT",
+                ["N1-2"] = "REAR",
+                ["N1-3"] = "FRONT",
+            },
+            fixture.AcceptedPlans.ToDictionary(plan => plan.PickupStationId, plan => plan.RequiredSlotPosition, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// A route's dispatch zone is the one the area assignment table gives its AREA, not the one zone the server
+    /// is configured with, and in one round each candidate is judged against its own zone's vehicles
+    /// (control-server#72).
+    /// </summary>
+    /// <remarks>
+    /// The first vehicle serves only zone A and the other two only zone B. Were the route zone still
+    /// <c>JourneyRuntime:dispatchZone</c> (zone A), the first vehicle would be admitted to every candidate and
+    /// the other two to none.
+    /// </remarks>
+    [Fact]
+    public async Task EachCandidateOfOneRoundIsRoutedIntoItsAssignedZoneAndJudgedAgainstThatZonesVehicles()
+    {
+        const string ZoneA = "MAP-25-ZONE-A";
+        const string ZoneB = "MAP-25-ZONE-B";
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(configure: options =>
+        {
+            options.DispatchZone = ZoneA;
+            options.AllowedDispatchZones = [ZoneA, ZoneB];
+            options.Fleet[0].Zones = [ZoneA];
+            options.Fleet[1].Zones = [ZoneB];
+            options.Fleet[2].Zones = [ZoneB];
+        });
+        await fixture.AreaAssignments.ImportAsync(
+            [
+                new("N1-1", ZoneA, "FRONT"),
+                new("N1-2", ZoneB, "FRONT"),
+                new("N1-3", ZoneB, "FRONT"),
+            ],
+            Now);
+
+        await fixture.RunRoundAsync();
+
+        Assert.Equal(3, fixture.AcceptedPlans.Count);
+        JourneyExecutionPlan zoneAPlan = Assert.Single(fixture.AcceptedPlans, plan => plan.PickupStationId == "N1-1");
+        Assert.Equal(ZoneA, zoneAPlan.DispatchZone);
+        Assert.Equal(FleetFixture.AgvIds[0], zoneAPlan.AgvId);
+        JourneyExecutionPlan[] zoneBPlans = [.. fixture.AcceptedPlans.Where(plan => plan.PickupStationId != "N1-1")];
+        Assert.All(zoneBPlans, plan => Assert.Equal(ZoneB, plan.DispatchZone));
+        Assert.Equal(
+            FleetFixture.AgvIds[1..].Order(StringComparer.Ordinal).ToArray(),
+            zoneBPlans.Select(plan => plan.AgvId).Order(StringComparer.Ordinal).ToArray());
+
+        DispatchVehicleOutcome first = Assert.Single(
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles,
+            vehicle => vehicle.AgvId == FleetFixture.AgvIds[0]);
+        Assert.All(
+            first.Verdicts.Where(verdict => verdict.Evaluation.Candidate.LiveMesFields!.Area != "N1-1"),
+            verdict =>
+            {
+                Assert.Equal(ZoneB, verdict.Evaluation.Route!.DispatchZone);
+                Assert.Equal(DispatchZoneVehicleCriterion.VehicleNotInZoneReason, verdict.ReasonCode);
+            });
+    }
+
+    /// <summary>
+    /// Once the round has served every vehicle, the round-end hook is called once with every vehicle's
+    /// verdict on every candidate — the refusals included, since those are what a structural judgement reads.
+    /// </summary>
+    /// <remarks>
+    /// <c>JourneyBacklog</c> keeps one reason per demand and each vehicle overwrites it, so after a round it
+    /// holds the last vehicle's reason. "No vehicle could take this" can only be concluded from all of them,
+    /// which is why #74 needs this hook rather than the backlog.
+    /// </remarks>
+    [Fact]
+    public async Task AtTheEndOfTheRoundTheHookIsCalledOnceWithEveryVehiclesVerdictOnEveryCandidate()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        DispatchRoundOutcome outcome = Assert.Single(fixture.RoundOutcomes.Outcomes);
+        Assert.Equal(FleetFixture.AgvIds, outcome.CompletedVehicles.Select(vehicle => vehicle.AgvId).ToArray());
+        string[] demandIds =
+        [
+            .. (await fixture.Context.AcceptedDemands.Select(row => row.DemandId)
+                    .ToArrayAsync(TestContext.Current.CancellationToken))
+                .Order(StringComparer.Ordinal)
+        ];
+        Assert.Equal(3, demandIds.Length);
+        Assert.All(outcome.CompletedVehicles, vehicle => Assert.Equal(
+            demandIds,
+            vehicle.Verdicts.Select(verdict => verdict.Evaluation.Candidate.DemandId).Order(StringComparer.Ordinal).ToArray()));
+        string takenByFirst = (await fixture.JourneyOfAsync(FleetFixture.AgvIds[0])).DemandId;
+        Assert.Equal(
+            "DEMAND_ALREADY_ACCEPTED",
+            outcome.CompletedVehicles[1].Verdicts
+                .Single(verdict => verdict.Evaluation.Candidate.DemandId == takenByFirst)
+                .ReasonCode);
+    }
+
+    /// <summary>
+    /// A vehicle that runs out its budget does not cost the round its hook: the hook is still called once,
+    /// with only the vehicles that finished.
+    /// </summary>
+    /// <remarks>
+    /// The hang is placed after the first vehicle has judged every candidate — on intake's final catalog
+    /// re-read — so its verdicts exist and have to be left out. A vehicle cut off mid-segment has not
+    /// finished deciding, and counting its verdicts would let a structural judgement rest on a vehicle the
+    /// round never finished asking.
+    /// </remarks>
+    [Fact]
+    public async Task WhenAVehicleExhaustsItsBudgetTheHookIsStillCalledOnceWithOnlyTheVehiclesThatFinished()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(budgetMilliseconds: 1000);
+        // Read 1 is the round's decision read; read 2 is the first vehicle's intake re-read.
+        fixture.Catalog.HangOnRead = 2;
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        DispatchRoundOutcome outcome = Assert.Single(fixture.RoundOutcomes.Outcomes);
+        Assert.Equal(
+            [FleetFixture.AgvIds[1], FleetFixture.AgvIds[2]],
+            outcome.CompletedVehicles.Select(vehicle => vehicle.AgvId).ToArray());
+        Assert.DoesNotContain(
+            FleetFixture.AgvIds[0],
+            await fixture.Context.JourneyRuntimes.Select(row => row.AgvId).ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
     // ---- MT_WAIT_FOR_CHECKPOINT ------------------------------------------------------------
 
     /// <summary>
@@ -697,6 +896,12 @@ public sealed class MultiVehicleExecutionTests
             Options = options;
             Clock = clock;
             Riot = new FleetRiot(clock, options);
+            GovernanceStore governance = new(
+                context,
+                new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
+                AuditRetentionPolicy.Default);
+            AreaAssignments = new CountingAreaAssignments(
+                new AreaAssignmentStore(context, new GovernedConfigurationPublisher(governance, governance)));
             Engine = CreateEngine();
         }
 
@@ -706,16 +911,24 @@ public sealed class MultiVehicleExecutionTests
         public FleetRiot Riot { get; }
         public FleetCatalog Catalog { get; } = new();
         public CheckpointWaitLedger CheckpointWaits { get; } = new();
+        public CountingAreaAssignments AreaAssignments { get; }
+        public CountingSlotPositions SlotPositions { get; } = new();
+        public RecordingRoundOutcomes RoundOutcomes { get; } = new();
+        public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
         public JourneyRuntimeEngine Engine { get; private set; }
 
-        public static async Task<FleetFixture> CreateAsync(int budgetMilliseconds = 30_000)
+        public static async Task<FleetFixture> CreateAsync(
+            int budgetMilliseconds = 30_000,
+            Action<JourneyRuntimeOptions>? configure = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
             ControlServerDbContext context = new(
                 new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
             await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
-            FleetFixture fixture = new(connection, context, FleetOptions(budgetMilliseconds), new MovableClock(Now));
+            JourneyRuntimeOptions options = FleetOptions(budgetMilliseconds);
+            configure?.Invoke(options);
+            FleetFixture fixture = new(connection, context, options, new MovableClock(Now));
             await fixture.SeedAsync();
             return fixture;
         }
@@ -850,10 +1063,14 @@ public sealed class MultiVehicleExecutionTests
                 Riot,
                 Riot,
                 new MapStationResolver(),
-                new JourneyIntakeCoordinator(new DemandIntakeService(Catalog, store), movement),
+                new JourneyIntakeCoordinator(
+                    new DemandIntakeService(Catalog, new RecordingAcceptances(store, AcceptedPlans)),
+                    movement),
                 movement,
                 store,
                 new OnboardJourneyPublisher(store, new SilentPeer(), Clock),
+                new FleetBoxCounts(),
+                new PackageCapacityStore(Context),
                 new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
                     options,
                     new MapStationResolver(),
@@ -874,6 +1091,9 @@ public sealed class MultiVehicleExecutionTests
                 Riot,
                 CheckpointWaits,
                 CreateFaultCoordinator(),
+                AreaAssignments,
+                SlotPositions,
+                RoundOutcomes,
                 options,
                 Clock,
                 NullLogger<JourneyRuntimeEngine>.Instance);
@@ -893,6 +1113,7 @@ public sealed class MultiVehicleExecutionTests
                 audit,
                 new RiotOrderCommandService(Riot, audit, Riot, Clock),
                 new EmergencyStopSupervisor(
+                    Riot,
                     Riot,
                     Riot,
                     audit,
@@ -937,6 +1158,11 @@ public sealed class MultiVehicleExecutionTests
                 await AddSafetySnapshotAsync(agvId, 1, departureSafe: true);
             }
 
+            // Every demand's AREA in the configured zone: since control-server#72 the table is the whole
+            // execution whitelist, so without one no vehicle takes anything.
+            await AreaAssignments.ImportAsync(
+                [.. Areas.Select(area => new AreaAssignment(area, Options.DispatchZone, "FRONT"))], Now);
+            Context.ChangeTracker.Clear();
             Catalog.Set([.. Enumerable.Range(0, AgvIds.Length).Select(Demand)]);
         }
 
@@ -1080,16 +1306,23 @@ public sealed class MultiVehicleExecutionTests
 
         public int ReadCount { get; private set; }
 
+        /// <summary>The read, counted from 1, that never comes back; null when every read answers.</summary>
+        public int? HangOnRead { get; set; }
+
         public void Set(AcceptedDemandSnapshot[] items) => _items = items;
 
-        public Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken)
+        public async Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
             ReadCount++;
-            return Task.FromResult(new DemandCatalogSnapshot(
+            if (ReadCount == HangOnRead)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+
+            return new DemandCatalogSnapshot(
                 _items.FirstOrDefault()?.HistoryEpoch ?? "11111111-1111-4111-8111-111111111111",
                 21,
-                _items));
+                _items);
         }
 
         public Task<AcceptedDemandSnapshot?> ReadCurrentAsync(string demandId, CancellationToken cancellationToken)
@@ -1109,6 +1342,100 @@ public sealed class MultiVehicleExecutionTests
         }
     }
 
+    /// <summary>
+    /// The real area assignment store, counting how often a round asks for the current version.
+    /// </summary>
+    /// <remarks>
+    /// Real rather than a table held in memory: acceptance freezes the version a plan carries, and a version
+    /// that was never written cannot be frozen.
+    /// </remarks>
+    private sealed class CountingAreaAssignments(IAreaAssignmentStore inner) : IAreaAssignmentStore
+    {
+        public int CurrentReads { get; private set; }
+
+        public Task<AreaAssignmentTableVersion> ImportAsync(IReadOnlyList<AreaAssignment> assignments, DateTimeOffset at) =>
+            inner.WriteVersionAsync(assignments, at, TestContext.Current.CancellationToken);
+
+        public Task<AreaAssignmentTableVersion?> ReadCurrentAsync(CancellationToken cancellationToken)
+        {
+            CurrentReads++;
+            return inner.ReadCurrentAsync(cancellationToken);
+        }
+
+        public Task<AreaAssignmentTableVersion?> ReadVersionAsync(long version, CancellationToken cancellationToken) =>
+            inner.ReadVersionAsync(version, cancellationToken);
+
+        public Task<AreaAssignmentTableVersion> WriteVersionAsync(
+            IReadOnlyList<AreaAssignment> assignments,
+            DateTimeOffset importedAt,
+            CancellationToken cancellationToken) => inner.WriteVersionAsync(assignments, importedAt, cancellationToken);
+    }
+
+    /// <summary>Every vehicle on an eight-slot model, front four and rear four, with each read written down.</summary>
+    private sealed class CountingSlotPositions : IVehicleSlotPositionReader
+    {
+        public List<string> Reads { get; } = [];
+
+        public Task<VehicleSlotPositions?> ReadAsync(string agvId, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Reads.Add(agvId);
+            return Task.FromResult<VehicleSlotPositions?>(new VehicleSlotPositions(
+                agvId,
+                "SLOT-MODEL-1",
+                VehicleSlotPositionSource.ActiveSlotConfiguration,
+                new Dictionary<int, string>
+                {
+                    [1] = "FRONT",
+                    [2] = "FRONT",
+                    [3] = "FRONT",
+                    [4] = "FRONT",
+                    [5] = "REAR",
+                    [6] = "REAR",
+                    [7] = "REAR",
+                    [8] = "REAR",
+                }));
+        }
+
+        public Task<SlotPositionGroupCapacity> ReadLargestGroupCapacityAsync(
+            IReadOnlyCollection<string> agvIds,
+            string slotPosition,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingRoundOutcomes : IDispatchRoundOutcomeSink
+    {
+        public List<DispatchRoundOutcome> Outcomes { get; } = [];
+
+        public Task RecordAsync(DispatchRoundOutcome outcome, CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            Outcomes.Add(outcome);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>The real store, with every journey plan intake hands it written down first.</summary>
+    private sealed class RecordingAcceptances(WireToGateStore inner, List<JourneyExecutionPlan> plans)
+        : IJourneyAcceptanceStore
+    {
+        public Task AcceptWithOrderIntentAsync(
+            AcceptedDemandSnapshot snapshot,
+            OrderIntent orderIntent,
+            CancellationToken cancellationToken) =>
+            inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, cancellationToken);
+
+        public Task AcceptWithOrderIntentAsync(
+            AcceptedDemandSnapshot snapshot,
+            OrderIntent orderIntent,
+            JourneyExecutionPlan journey,
+            CancellationToken cancellationToken)
+        {
+            plans.Add(journey);
+            return inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, journey, cancellationToken);
+        }
+    }
+
     private sealed class SilentPeer : IOnboardPeer
     {
         public Task SendAsync(ReadOnlyMemory<byte> ndjsonLine, CancellationToken cancellationToken)
@@ -1125,7 +1452,7 @@ public sealed class MultiVehicleExecutionTests
     /// </summary>
     private sealed class FleetRiot(MovableClock clock, JourneyRuntimeOptions options)
         : IRiotMovementGateway, IRiotVehicleFacts, IRiotMapStationCatalog, IVehicleMotionFacts,
-          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts
+          IRiotRouteCostProbe, IRiotOrderCommandGateway, IRiotVehicleEmergencyFacts, IRiotVehicleOrderFacts
     {
         private readonly Dictionary<string, RiotOrderObservation> _orders = new(StringComparer.Ordinal);
 
@@ -1287,6 +1614,14 @@ public sealed class MultiVehicleExecutionTests
             _ = cancellationToken;
             return Task.FromResult(new RiotVehicleEmergencyObservation(
                 deviceKey, RiotVehicleEmergencyObservation.Ok, clock.GetUtcNow()));
+        }
+
+        public Task<RiotVehicleOrderObservation> ReadUnfinishedOrdersAsync(
+            string deviceKey,
+            CancellationToken cancellationToken)
+        {
+            _ = cancellationToken;
+            return Task.FromResult(new RiotVehicleOrderObservation(deviceKey, false, [], clock.GetUtcNow()));
         }
     }
 

@@ -84,6 +84,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.Readiness = SessionReadiness.RecoveryRequired;
         row.ReasonCode = "HANDSHAKE_INCOMPLETE";
         row.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // ADR-cross-0055: a disconnect voids the station departure wait, and it is refilled in full
+        // once the recovery handshake and the projection reconciliation are done. It is dropped here
+        // for the reason the facts above are: a clock that kept running while the vehicle was gone is
+        // not a fact about this session. Left running, a vehicle offline for longer than the wait came
+        // back to a stop ended before anyone could scan, or to a correction window already spent.
+        // Only voided, not refilled: the runtime refills it behind its readiness gate.
+        JourneyRuntimeRow[] waiting = await dbContext.JourneyRuntimes
+            .Where(item => item.AgvId == identity.AgvId && item.StationDepartureWaitStartedAt != null)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        foreach (JourneyRuntimeRow journey in waiting)
+        {
+            journey.StationDepartureWaitStartedAt = null;
+        }
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -147,6 +161,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.ActiveUnlockSlotsJson = JsonSerializer.Serialize(NormalizeSlots(activeUnlockSlots));
         row.PendingAttemptIdsJson = SerializeSorted(pendingAttemptIds);
         row.PendingResultIdsJson = SerializeSorted(pendingResultIds);
+        // The report can name an attempt this server settled long ago, and nothing may arrive for it
+        // afterwards: its result was accepted in an earlier session. Settling reported attempts only when
+        // a result arrives left such a session on PENDING_FACT_RECONCILIATION_REQUIRED until some later
+        // result or reconnect (8005-agv-program#61, residual of MVP 369919f5; 8005-agv-control-server#78).
+        // The same rule applies here as there, so an attempt with no conclusion yet stays pending.
+        await TryTakeOffSettledReportedAttemptsAsync(row, cancellationToken).ConfigureAwait(false);
         row.Readiness = SessionReadiness.RecoveryRequired;
         row.ReasonCode = "RECOVERY_RECONCILIATION_PENDING";
         row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -187,29 +207,47 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// The report is the vehicle's view at its handshake. Nothing changed it afterwards, so a session
     /// whose attempt a resume had just committed still read PENDING_FACT_RECONCILIATION_REQUIRED until
     /// the vehicle reconnected, and the journey waited on ONBOARD_SESSION_NOT_READY over a committed
-    /// load (G3 FP-IS-07 resume-007, 2026-09-14). An attempt whose operation is still Prepared or
-    /// RecoveryRequired stays pending.
+    /// load (G3 FP-IS-07 resume-007, 2026-09-14). A determinate load failure (Failed) is as settled as a
+    /// commit: its result is known and nothing about the slots is uncertain. An attempt whose operation is
+    /// still Prepared or RecoveryRequired stays pending.
     /// </remarks>
     public async Task SettleReportedAttemptsAsync(
         string agvId, long sessionGeneration, CancellationToken cancellationToken)
     {
         SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
             .ConfigureAwait(false);
+        if (!await TryTakeOffSettledReportedAttemptsAsync(row, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        row.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Takes off <paramref name="row"/> every reported attempt whose operation is committed, failed or cancelled,
+    /// without saving: the caller saves. Returns whether anything was taken off.
+    /// </summary>
+    private async Task<bool> TryTakeOffSettledReportedAttemptsAsync(
+        SessionRecoveryRow row, CancellationToken cancellationToken)
+    {
         string[] pending = DeserializeStrings(row.PendingAttemptIdsJson);
         if (pending.Length == 0)
         {
-            return;
+            return false;
         }
 
         string[] settled = await dbContext.StationOperations
             .Where(operation => pending.Contains(operation.SlotOperationAttemptId) &&
                                 (operation.Status == StationOperationStatus.Committed ||
+                                 operation.Status == StationOperationStatus.Failed ||
                                  operation.Status == StationOperationStatus.Cancelled))
             .Select(operation => operation.SlotOperationAttemptId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
         if (settled.Length == 0)
         {
-            return;
+            return false;
         }
 
         row.PendingAttemptIdsJson = SerializeSorted(pending.Except(settled, StringComparer.Ordinal));
@@ -218,8 +256,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             row.UnsettledSlotOperationAttemptId = null;
         }
-        row.UpdatedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     public async Task<SessionReadinessDecision> DecideReadinessAsync(
@@ -459,7 +496,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes
                     .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                     .ConfigureAwait(false);
-                if (runtime is null || !Matches(runtime, journey))
+                if (runtime is null || !Matches(runtime, journey) ||
+                    !await AreaAssignmentFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false))
                 {
                     throw new BusinessIdentityConflictException(
                         "Accepted demand replay does not match its persisted journey runtime.");
@@ -479,6 +517,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             throw new BusinessIdentityConflictException(
                 $"Vehicle '{orderIntent.VehicleKey}' is already bound to unresolved demand '{activeLease.DemandId}'.");
+        }
+
+        if (journey?.AreaAssignmentVersion is long areaAssignmentVersion)
+        {
+            await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);
         }
 
         dbContext.AcceptedDemands.Add(new AcceptedDemandRow
@@ -1280,7 +1323,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         Func<Task<string>> responseFactory, DateTimeOffset receivedAt,
         CancellationToken cancellationToken,
         Func<string, string>? replayEquivalenceHash = null,
-        Action<string>? equivalentReplayObserved = null)
+        Action<string>? equivalentReplayObserved = null,
+        Func<string, Task<string?>>? equivalentReplayResponse = null)
     {
         ProtocolInboxRow? existing = await dbContext.ProtocolInbox
             .SingleOrDefaultAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false);
@@ -1295,6 +1339,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 replayEquivalenceHash(existing.RequestJson) != replayEquivalenceHash(requestJson))
             {
                 throw new ProtocolContentConflictException("MessageId was replayed with different normalized content.");
+            }
+
+            // An equivalent resend answered from its first acceptance rather than processed again. The
+            // row keeps the bytes that were accepted; the caller decides whether the first response can
+            // be answered that way at all, and null means it cannot.
+            if (equivalentReplayResponse is not null)
+            {
+                return await equivalentReplayResponse(existing.FirstResponseJson).ConfigureAwait(false)
+                    ?? throw new ProtocolContentConflictException(
+                        "MessageId was replayed with different normalized content.");
             }
 
             await using var replayTransaction = await dbContext.Database
@@ -1560,11 +1614,17 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         return historicalOnly ? OperationResultDisposition.HistoricalOnly : OperationResultDisposition.Accepted;
     }
 
+    /// <param name="receipt">
+    /// When the result arrived and the station deadline that stood then. Without it no failure is
+    /// determinate (<see cref="DeterminateLoadFailure"/>): whether one may be settled turns on that
+    /// deadline, and a result judged without one goes to recovery as before.
+    /// </param>
     public async Task<OperationResultDisposition> ApplyOperationResultAsync(
         StationOperationResult result,
         string agvId,
         long forcedRecoveryGeneration,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        OperationResultReceipt? receipt = null)
     {
         ArgumentNullException.ThrowIfNull(result);
         int[] actualSlots = result.SlotEvidence.Select(item => item.SlotNumber).Distinct().Order().ToArray();
@@ -1673,6 +1733,22 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                                    item.State == expectedState && item.DoorLocked && item.UnlockOutputReset);
         if (!completedSafely)
         {
+            // ADR-cross-0058 decision 2 and 5: missing the target is not the same as not knowing what
+            // happened. A load that ran out its station deadline and came back with every slot's state
+            // known, door locked and unlock output reset is a complete account -- nobody handed the cargo
+            // over -- and sending it to manual recovery is exactly what ADR-cross-0040 forbids. Only that
+            // shape is lifted out; everything else still needs an administrator. Defensive: the v2
+            // onboard never reports it, the protocol lets another onboard version do so.
+            DeterminateLoadFailureVerdict verdict = DeterminateLoadFailure.Judge(result, expectedSlots, receipt);
+            if (verdict == DeterminateLoadFailureVerdict.Settleable)
+            {
+                // The demand stays Accepted: the runtime ends it, together with the vehicle's release.
+                operation.Status = StationOperationStatus.Failed;
+                operation.EvidenceJson = evidenceJson;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return OperationResultDisposition.DeterminateFailure;
+            }
+
             operation.Status = StationOperationStatus.RecoveryRequired;
             AcceptedDemandRow? blockedDemand = await dbContext.AcceptedDemands
                 .SingleOrDefaultAsync(row => row.DemandId == result.DemandId, cancellationToken)
@@ -1682,7 +1758,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 blockedDemand.Status = DemandExecutionStatus.RecoveryRequired;
             }
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return OperationResultDisposition.RecoveryRequired;
+            return verdict switch
+            {
+                DeterminateLoadFailureVerdict.BeforeStationDeadline =>
+                    OperationResultDisposition.FailedBeforeStationDeadline,
+                DeterminateLoadFailureVerdict.ReasonWithoutTerminalState =>
+                    OperationResultDisposition.FailureReasonWithoutTerminalState,
+                _ => OperationResultDisposition.RecoveryRequired
+            };
         }
 
         operation.Status = StationOperationStatus.Committed;
@@ -2093,6 +2176,86 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         row.DispatchGeneration == journey.DispatchGeneration;
 
     /// <summary>
+    /// Whether a plan's area assignment version and slot group are what the demand durably froze.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>JourneyRuntimes</c> has no column for either, deliberately: batch 7 rewrites that table's key, so
+    /// control-server#66 put the frozen version in <c>ConfigurationConsumerBindings</c>, and control-server#72
+    /// writes it in the same transaction as the journey row. That binding is the journey's record of
+    /// <see cref="JourneyExecutionPlan.AreaAssignmentVersion"/>, and the slot group is recovered from it: a
+    /// table version is immutable once written, so the group it assigns the demand's AREA is the group the
+    /// plan was built with.
+    /// </para>
+    /// <para>
+    /// No binding means nothing was frozen, and only a plan carrying neither field matches that. The binding
+    /// is written inside the transaction that writes the accepted demand (<see cref="FreezeAreaAssignmentAsync"/>),
+    /// so an accepted demand whose plan carried a version always has one: a crash between the two cannot leave
+    /// the demand accepted and unfrozen, and so cannot make its replay read as a different acceptance.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> AreaAssignmentFreezeMatchesAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyExecutionPlan journey,
+        CancellationToken cancellationToken)
+    {
+        long? frozenVersion = (await new DemandAreaAssignmentFreezeStore(dbContext)
+            .ReadAsync(snapshot.DemandId, cancellationToken)
+            .ConfigureAwait(false))?.Version;
+        if (frozenVersion != journey.AreaAssignmentVersion)
+        {
+            return false;
+        }
+
+        string? area = snapshot.LiveMesFields?.Area;
+        string? frozenSlotPosition = frozenVersion is null || area is null
+            ? null
+            : await dbContext.Set<DispatchZoneAreaAssignmentRow>()
+                .AsNoTracking()
+                .Where(row => row.Version == frozenVersion.Value && row.Area == area)
+                .Select(row => row.SlotPosition)
+                .SingleOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        return string.Equals(frozenSlotPosition, journey.RequiredSlotPosition, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Freezes the area assignment version the demand was evaluated against (REQ-0350), inside the acceptance
+    /// transaction and ahead of the rows that accept it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Same transaction, because the frozen version has to be the one the slot group was chosen from: frozen
+    /// separately, a crash in between leaves an accepted demand whose replay no binding vouches for, and an
+    /// import in between freezes a version other than the one the plan was built from.
+    /// </para>
+    /// <para>
+    /// The current version is compared first, inside the transaction the acceptance holds. If a new version was
+    /// imported after the round read the table, the demand was judged against a table that no longer governs
+    /// the site — its door side may have changed — so nothing is accepted and
+    /// <see cref="AreaAssignmentVersionChangedException"/> sends intake back to judge it next round.
+    /// </para>
+    /// </remarks>
+    private async Task FreezeAreaAssignmentAsync(
+        AcceptedDemandSnapshot snapshot,
+        long evaluatedVersion,
+        CancellationToken cancellationToken)
+    {
+        long? currentVersion = await dbContext.Set<DispatchZoneAreaAssignmentVersionRow>()
+            .MaxAsync(row => (long?)row.Version, cancellationToken)
+            .ConfigureAwait(false);
+        if (currentVersion != evaluatedVersion)
+        {
+            throw new AreaAssignmentVersionChangedException(FormattableString.Invariant(
+                $"Demand {snapshot.DemandId} was evaluated against area assignment version {evaluatedVersion}, but the current version is {currentVersion}."));
+        }
+
+        await new DemandAreaAssignmentFreezeStore(dbContext)
+            .FreezeAsync(snapshot.DemandId, evaluatedVersion, snapshot.AcceptedAt, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Carries every snapshot revision on from the highest this vehicle has already published.
     /// </summary>
     /// <remarks>
@@ -2278,7 +2441,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// </summary>
     /// <remarks>
     /// The relaxation is deliberately narrow. It applies only while this server has an authorized
-    /// operation in flight, only when every reported reason is one that operation explains, and
+    /// operation in flight on this vehicle, only when every reported reason is one that operation explains, and
     /// never when any evidence was unknown. It changes session readiness alone -- departure itself
     /// is still authorized from a separate, freshness-bounded PreDepartureSafetyCheckResult in
     /// AuthorizeMovementAsync, which this does not touch.
@@ -2304,8 +2467,19 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         {
             return false;
         }
+        // This vehicle's own operation, by the join operationNeedsRecovery takes in DecideReadinessAsync.
+        // The probe used to ask whether any operation anywhere was Prepared, so one vehicle mid-load
+        // handed every other vehicle an exemption it had not earned: an idle vehicle standing with a
+        // door ajar read Ready for as long as any vehicle in the fleet held a slot open.
         return await dbContext.StationOperations
-            .AnyAsync(item => item.Status == StationOperationStatus.Prepared, cancellationToken)
+            .Join(dbContext.JourneyRuntimes,
+                operation => operation.DemandId,
+                runtime => runtime.DemandId,
+                (operation, runtime) => new { operation, runtime })
+            .AnyAsync(
+                pair => pair.runtime.AgvId == row.AgvId &&
+                        pair.operation.Status == StationOperationStatus.Prepared,
+                cancellationToken)
             .ConfigureAwait(false);
     }
 

@@ -30,8 +30,13 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `command-surface-order-hold` | 合成 ×3 | **轨 B 出口**：一台车的在途单被报成 FAILED，命令面「该调用时调用了、参数正确、只调一次」，另两台不受牵连 | `evidence/l2/20260910-ticket18-command-surface-order-hold-002` |
 | `route-graph-staleness` | 合成 | **轨 B 出口**：引擎陈旧态三种触发各一次 fail-closed 证据 | `evidence/l2/20260910-ticket18-route-graph-staleness-001` |
 | `emergency-stop-single-trigger` | 合成 | **票 19 的前置**：车在动时单被报 FAILED，急停只发一次——闩锁晚锁、读不到、锁上都不重发；外部解除只重触发一次；原因还在就不解除 | `evidence/l2/20260913-b2close-emergency-stop-single-trigger-002`（修复前的代码上同一场景红：`-prefix-65bffc0c-001`） |
+| `emergency-stop-operator-release` | 合成 | **control-server#63（REQ-0356）**：车在两站之间被急停锁住后，锁住即停稳；确认不全或车上还有未结束订单就拒绝；确认齐全服务端自己发一次 `cancelEmergency`，稍后读到 `OK` 结算；解除后不重触发、不因位置读不到再急停；车再动按新急停处理 | 待本地与 CI 三连跑 |
 | `slot-configuration-activation-replay` | 合成 | **批次 3 出口（`FP-IS-14`）**：激活「下发 → 断线 → 重连 → 补报」——断线期间服务端不猜，补发同一行，只收敛一次；顺带经 `FieldOps export-audit` 导出这次激活的业务审计（REQ-0271） | 待 CI 三连跑 |
 | `onboard-alarm-snapshot-dashboard` | 合成 | **批次 3 出口（`FP-IS-15`）**：车载告警快照「车载产快照 → 服务端消费 → 看板可见」，断言读看板进程渲染出的页面；看板显示全部告警（REQ-0270）、整体取代、失联直述、重连采纳 | 待 CI 三连跑 |
+| `station-deadline-sublot-timeout` | 合成 | **批次 5（control-server#79，ADR-cross-0055、ADR-cross-0058 决策 7）**：到站起算站点期限，没人扫码到期服务端自己结束本站（需求 `Cancelled`、`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、录入请求结算、同一 `DemandId` 不再被派）；期限走到一半断联重连，从会话回到 Ready 那一刻重新计满 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `load-cancelled-before-sublot` | 合成 | **批次 5（control-server#83，ADR-cross-0046 第一种情形）**：到站没人扫码，操作员取消——授权 `slots` 为空，车报 `ALL_EMPTY` 空结果被确认之后服务端才终结（需求 `Cancelled`、`CANCELLED_BY_OPERATOR`、租约与占用释放、录入请求结算、没有仓位命令）；再加到站前断联重连、到站后在新连接上取消（control-server#40 那一格），之后再重连一次录入请求不被重放 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `load-determinate-failure-and-door-open-timeout` | 合成 | **批次 5（control-server#81，ADR-cross-0058 决策 4、5）**：装货中期限。期限后报确定失败（`FAILED`＋首仓 `OPERATOR_TIMEOUT`、其余 `NOT_STARTED`，全部 `EMPTY`／`LOCKED`／`RESET`）→ 操作 `Failed`、需求 `Cancelled`／`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、装货命令结算、无恢复，同一台车接下一单——**防御路径，v2 车载端不产出**；期限后不报结果、仓门未闭 → 挂 `STATION_TIMEOUT_DOOR_NOT_CLOSED`、stage 仍 `AwaitingLoadResult`、开始时间不动，关门撤销，再报 `COMPLETED` 提交 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `blocked-journey-dashboard-projection` | 合成 | **批次 5（control-server#80，program#55）**：旅程阻断带开始时间上看板——读只读端点 `/api/dashboard/blocked-journeys`：检查点等待挂上即列出、清掉即消失；会话未就绪带会话的三个安全字段、安全证据不全直接最高档，引擎每轮重写这一行而开始时间不动，看板按档上色；装货结果需要恢复停摆后开始时间不变；装货中期限过了门还开着（`STATION_TIMEOUT_DOOR_NOT_CLOSED`，control-server#81 补）列出 `AwaitingLoadResult`、门关上即消失 | 本地 PASS（证据未入库），三连在批次 5 出口 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -68,8 +73,104 @@ resume 是设计不是缺陷。
 
 ## CI 只跑合成场景
 
-`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。现在是四条，合计
-约两分钟，证据当作 artifact 传上去（失败时也传——失败那次的证据才是唯一说明原因的东西）。
+`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。证据当作 artifact 传上去
+（失败时也传——失败那次的证据才是唯一说明原因的东西）。
+
+**PR 上默认每个场景跑一遍，三连按需手动跑**（2026-09-17 起）。清单里每行的 `Runs` 是这个场景的**三连次数**，
+不再是每次 PR 都付的次数：
+
+| 模式 | 触发 | 每个场景跑几遍 |
+| --- | --- | --- |
+| `default` | push、PR | `DefaultRuns`，没写就是 1 |
+| `consecutive` | 手动 | `Runs` |
+| `consecutive-all` | 手动 | 至少 3（批次出口用） |
+
+手动三连对任意分支随时可跑，排上 runner 就开始，不等夜里：
+
+```powershell
+gh workflow run l2.yml --ref <分支> -f mode=consecutive                       # 按各行登记的 Runs
+gh workflow run l2.yml --ref <分支> -f mode=consecutive-all -f scenarios=a,b  # 只跑其中几条，各三遍
+```
+
+注意 `consecutive` 只按各行登记的 `Runs` 跑，登记 `Runs = 1` 的场景用它挑出来也只跑一遍；要挑几条各跑三遍，用
+`consecutive-all`。
+
+作业摘要里有一张表，列出每个场景实际跑到第几遍、结果如何、在哪一路哪个槽位跑的，引用三连证据时贴那次 run 的链接。
+
+### 分路并行（control-server#130，2026-09-18 起）
+
+作业先 `dotnet build ControlServer.sln -c Release` **构建一次**，再把场景分到几路（`L2_LANES`，现在是 4）同时跑，
+每一路占一个端口槽位（槽位 1～N，见下面「端口槽位」），路内一个接一个跑，每一趟都带 `-SkipBuild`。分路由
+`L2Lanes.psm1` 的 `Get-L2LanePlan` 做：按「单遍估时 × 遍数」从长到短，每次放进当前最空的那一路。估时是 `l2.yml`
+里的 `$estimates` 表（09-17 那 31 个作业的中位数），没列的场景按 30 秒算；估时只影响各路是否均衡，不影响跑什么。
+
+为什么这么做：以前所有 L2 共用一组端口、一把锁，29 趟只能排成一队，一次 L2 作业 19 分钟，而 win11-01 的 20 个
+vCPU 大部分时间闲着。每一趟里大头是起服务端和替身、再等业务超时（取货站那 30 秒），这些都不占 CPU。
+
+几条规则：
+
+- **同一场景的几遍总在同一路里连着跑。**三连说的是「连着三遍都绿」，分到三路同时跑就什么也证明不了。
+- **哪一遍红了，这个场景剩下的遍数不跑，这一路接着跑下一个场景**，和以前一样。
+- **PR 头换了，所有路在各自下一趟开始前停下**，同样不取消作业。
+- **每一趟的控制台输出写进证据目录旁边的 `<场景>-<遍>.log`**，跑的时候日志里只打每趟的开始和结束一行，全部跑完后
+  再按路逐趟分组打出来。几路交织在一起的日志没法读。
+- **每一趟的 stage root 放在证据目录下的 `_stage/`**（作业把 `TEMP` 指到那里）。通过的一趟自己删掉，失败的那一趟
+  跟着证据一起上传，作业最后一步连同证据目录一起删。以前它们留在 NetworkService 的临时目录里，到 09-18
+  攒了 3607 个。
+- **并行下哪个场景红了一次，不靠重跑，把它固定到单独一路**，并在 PR 里写明（票的验收标准）。
+
+`L2_LANES` 是 4，因为除槽位 0 外一共只有四个槽位。它依赖 win11-01 的页面文件：一路合成 L2 约占 0.7 GB 已提交内存，
+车载端一次 CI 约 2.9 GB，页面文件还是 512 MB 时提交上限只有 8.7 GB，两者撞在一起就会超，超过时内存申请直接失败
+而不是变慢。2026-09-18 页面文件调成固定 4 GB，上限 12.0 GB（`remote-ops/factory-server/scripts/06-configure-golden-renderer-vm.ps1 -GuestPageFile`）。
+
+**几个 pwsh 同时启动时，L2 模块里的 class 不能写 `Microsoft.PowerShell.Commands.*` 类型。**class 在模块解析时就编译，
+那些类型所在的程序集是 pwsh 懒加载的，几路同时起进程时偶尔还没加载，整趟直接 `ParserError` 死在场景开始之前
+（09-18 本机第一次 4 路跑，30 趟里 3 趟；48 次并发导入复现 4 次）。需要的话在方法里按类型名在运行时判断，
+`Test-L2Lanes.ps1` 有一条断言守着。
+
+本机要复现 CI 的分路跑法，用同一个模块：先构建，再 `Get-L2LanePlan` + `Invoke-L2LanePlan`。自检：
+
+```powershell
+pwsh -NoProfile -File .\scripts\l2\Test-L2Lanes.ps1
+```
+
+为什么改：服务端仓只有一个 runner，四张票并行时 PR 排队一小时以上，而三连的第 2、3 遍占了一次 L2 作业的 46%
+（run `35171499974`，1354 秒里的 618 秒）。**代价**：除 `DefaultRuns = 3` 的场景外，低频竞态在 PR 上只剩一遍机会。
+所以动到时序的票（引擎推进、连接会话、恢复协调、急停，或改动任一 `Runs = 3` 场景）合入前跑一次手动三连。
+`session-established-while-moving` 写了 `DefaultRuns = 3`，每个 PR 仍跑三遍：它守的是 CI 上真红过一次的竞态
+（`docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md`）。
+
+**PR 头已经换了的运行会自己跳过剩下的场景并正常结束**：作业开头与每个场景之前查一次 PR 当前头，不是本次提交
+就打一行 `L2 superseded` 说明后收尾，更新的那次推送有它自己的运行。这里**绝不取消作业**，手动取消与
+`cancel-in-progress` 都会让 runner 会话卡死（2026-09-03 空转 4 小时 14 分）。查询失败时照常跑完，不猜；
+手动触发的运行从不因此跳过。
+
+### 一张票只跑一轮 CI（2026-09-17 起）
+
+一张服务端票原来平均跑 3～4 轮 CI：开 PR 首跑、改审查意见后、带入顶端后，再加一次手动三连。现在的目标是一轮，
+三连也并进这一轮：
+
+1. **工作会话开 PR 一律开草稿**：`gh pr create --draft`。草稿 PR 上 `test` 与 `l2` 两个工作流都显示「跳过」，
+   是 GitHub 在分配 runner 之前按 job 级 `if` 判掉的，不占 runner，也不是取消。草稿期间推多少次都不跑。
+2. 本地全量测试与票里要求的 L2 场景跑完、调度的审查意见改完、带入集成分支顶端之后，**时序敏感的票在 PR 正文里
+   加一行**（行首写，大小写与空格随意，逗号或空格分隔）：
+
+   <pre>L2-Consecutive: three-vehicle-exit, emergency-stop-single-trigger</pre>
+
+   列出的场景这一轮各跑三遍，其余照默认（每场景一遍，`DefaultRuns` 的例外不变）。**写了清单里没有的名字，这一轮
+   直接失败**并说出是哪个名字，免得拼错之后三遍悄悄变成一遍。只写 `L2-Consecutive:` 不跟名字也算错。
+   时序敏感指：动到引擎推进、连接会话、恢复协调、急停，或改动任一 `Runs = 3` 场景。
+3. **`gh pr ready` 转正式，触发唯一的一轮。** 作业摘要表的 `Consecutive` 列标出哪些场景是按 `L2-Consecutive`
+   跑的、各自 n/3 的结果，引用三连证据就贴这次 run。
+4. 调度会话合并前核对这一轮：L1、L2 都绿，该三连的场景在表里是 3/3。
+
+几条要知道的：
+
+- 工作流只读**触发那一刻**的 PR 正文，改正文不会触发新一轮（刻意没有监听 `edited`）。所以先改正文，再 `gh pr ready`
+  或推送。
+- 正文里任何以 `L2-Consecutive:` 开头的行都算数，包括代码块里的示例行；PR 正文里要举例时别把它写在行首。
+- 转正式之后再推送照常每次都跑（`synchronize`），PR 头已换的旧运行照样自己跳过。已经不是草稿的 PR 不受这套流程影响。
+- `workflow_dispatch` 的 `consecutive`、`consecutive-all` 不变，不读 PR 正文。
 
 **真装置那三条刻意不进 CI，两个各自独立的原因：**
 
@@ -82,7 +183,8 @@ resume 是设计不是缺陷。
 所以这条流水线不受对方进度影响。
 
 **新写的合成场景记得加进 `l2.yml` 的清单**——那是一份手写数组，不是扫目录得来的。扫目录会把真装置
-那几条也一起领进来，而它们在服务 runner 上跑不了。
+那几条也一起领进来，而它们在服务 runner 上跑不了。加一行即可：`@{ Name = '<名字>'; Runs = 1 }`，要三连就写
+`Runs = 3`（PR 上仍只跑一遍）。`DefaultRuns = 3` 只给 CI 上真红过的竞态用，不要顺手加。
 
 ## 两套装置
 
@@ -165,13 +267,62 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 它把「12:56:49 STOPPED → 12:57:15 UNKNOWN」精确卡到秒。
 
 跑失败时 stage root（临时 `controlserver.db` 所在处）**不会删**，路径打在告警里：那个库通常是
-唯一写着原因的地方。
+唯一写着原因的地方。跑通过时删掉；删不掉会打告警。2026-09-18 之前通过的运行其实也删不掉：读库用的只读连接
+进了连接池，`Close()` 之后文件句柄还开着，删除静默失败，win11-01 上因此攒了 3607 个 `l2-*` 目录。现在那条连接
+不入池（`Pooling=False`），`Test-L2PortLockQueueing.ps1` 的第八组断言两趟通过的运行都没留下 stage root。
 
 ## 加一个场景
 
 `scenarios/<名字>.ps1`，接一个 `-Context` 参数。`Context` 上有 `Journal`、`Assertions`、
 `Riot`、`MesIngest`、`Onboard`、`Simulator`、`Connection`（只读 SQLite 连接）、`SnapshotRoot`、
-`StopComponent` 以及车辆与站点的身份。
+`StopComponent`、`InvokeFieldOps`、`DispatchZone`（服务端 `appsettings.json` 里的调度分区）、
+`SlotModelVersionId`（默认前置入库的那一版模型，没做入库时为 `$null`）以及车辆与站点的身份。
+
+### 派车场景的默认前置（control-server#71）
+
+批次 4 起，派车要求需求的 AREA 在分区归属表里、车辆有服务端仓位模型，缺一样就一辆车也派不出。所以**经本编排器跑的每个场景（两套装置都算）**，编排器在服务端就绪之后、进入场景之前，经
+`InvokeFieldOps` 依次做三步，与现场 W1 窗口用的是同一个 `ControlServer.FieldOps.exe`：
+
+1. `seed-approved-facts` —— 已批准八仓事实入库（1～4 号 `FRONT`，5～8 号 `REAR`）；
+2. 对名册里每台车 `bind-io --agv <车>`（`OnboardPeers` 里不在名册上的合成对端不绑，服务端不给它们派车）；
+3. `import-area-assignments` —— 默认表：假 RIoT **当时**站点表里每个站点名解析出的 AREA（与 `MapStationResolver`
+   同一规则：`_` 分隔的一到三个区号），全部归服务端的调度分区，分组 `FRONT`。默认站点下是 `C15-13`、`N1-3`、`N1-7`。
+   导入之前先等服务端把这个分区写进库内调度策略（`DispatchZoneVehicles`），否则导入会判「分区不存在」。
+
+**不设「只对派车场景」的开关**：编排器给每个服务端都写死 `JourneyRuntime__enabled = 'true'`，也没有边车键能关掉它，所以
+经它跑的场景都会派车，默认前置一律做；不要的场景用下面两个键退出。
+
+**不做激活握手**：`IVehicleSlotPositionReader` 在车辆没有生效配置时退到该车最新一版已发布 IO 绑定引用的模型
+（control-server#66），入库加绑定就足以让派车读到分组。每一步的 JSON 输出以
+`slot-model-preseed:seed-approved-facts`、`slot-model-preseed:bind-io:<车>`、`slot-model-preseed:import-area-assignments`
+三类判据写进 `timeline.jsonl`，导入的那份 CSV 留在 `snapshots/preseed-area-assignments.csv`；任一步失败整场景失败。
+
+三步都在场景发布第一条需求之前结束，而站点离站期限从车到站才起算，所以默认前置不会被 `StationDepartureWaitTimeout`
+截断，不论它是 5 秒还是 30 秒。
+
+`run-journey-g3.ps1` 经本编排器跑它的十个 `g3-*` 真装置场景，所以在它的 ControlServer 绑定挪到含这三步的提交之后，
+那十个场景同样获得默认前置（绑定不动，跑的仍是旧编排器）。
+
+与默认前置冲突的场景用下面「`SlotModelPreseed`」「`AreaAssignments`」两个键退出。今天退出的两条：
+`slot-configuration-activation-replay`（自己入库、绑定并断言计数，两者都关）、`area-assignment-import-rejects`
+（断言导入之前一版表都没有，只关导入）。
+
+### 批次 4 的辅助模块：`L2SlotGroups.psm1`
+
+与 `L2Change.psm1` 同样是单独一个文件，用的场景自己导入：
+`Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SlotGroups.psm1') -Force`。
+
+- `Get-L2VehicleSlotPositions -Connection -AgvId` —— 某车的「仓号 → `SlotPosition`」。从 `SlotModelSlots` 经该车的
+  记录读：生效配置引用的模型，没有就取最新一版已发布 IO 绑定引用的模型（与 `VehicleSlotModelResolver` 同一顺序）。
+  **脚本里不写 1～4／5～8**，那是今天这一版已批准模型的性质，不是车的性质。
+- `Get-L2AvailableSlots -Connection -AgvId` —— 服务端就这台车当前会话算出的可用仓：读该会话代次的
+  `CapabilitySnapshot` 与 `SafetyStateSnapshot`，规则同 `JourneyRuntimeEngine.SlotAvailable`。
+- `Assert-L2SlotGroupTargets -Assertions -Id -Connection -DemandId -SlotPosition [-AvailableSlots] [-Description]` —— 断言需求
+  旅程的 `TargetSlotsJson` 全部属于指定分组、严格升序，且恰好是该组内编号最小的 N 个可用仓。判定本体是不碰库的
+  `Test-L2SlotGroupTargets`；`scripts/l2/Test-L2SlotGroups.ps1` 用一份刻意不是 1～4／5～8 的构造模型给出两个通过、
+  七个各因一种原因失败的例子，并在模块内替换掉两处读库，核对不传与传 `-Description` 时证据行的判据文本（几秒钟，不起装置）。
+- `Get-L2StructuralDispatchBlock -Connection -DemandId [-IncludeCleared]`、`Get-L2JourneyBacklogRow -Connection -DemandId`
+  —— 读某需求在 `StructuralDispatchBlocks` 的当前行（默认只要未清除的）与 `JourneyBacklog` 的那一行。
 
 `Onboard` 在两套装置下**是两个不同的东西**：合成装置下是假车载端控制面的 `L2Double`，真装置下
 是 UIA 驱动（`CanSubmit()` / `SetSublot()` / `SubmitReady()` / `Submit()`）。`Simulator` 只在真装置
@@ -180,6 +331,17 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 `normal-load` 是合成装置的基线，`real-onboard-normal-load` 是真装置的基线：全程顺利，不注入任何
 故障。后面每个异常场景都只是在它上面改一处——把车载端某一类应答的策略从 `Auto` 改成 `Manual` 或
 `Silent`，或者给假 RIoT 或模拟器注入一个故障模式，然后断言服务端**没有**做它不该做的事。
+
+**两条读取纪律，都来自 MVP 线上「读完一个就顺手读下一个」那一串假红（control-server#26，下面第 14 条）。**
+
+- **断言的实际值来自等待的返回值，不来自等待之后的另一次读取。**要一起断言的第二个事实，若不与被等的条件在同一次
+  提交里，就写进同一个等待的 `Probe`，或者自己再等一次。判不准是不是同一次提交，看第 14 条记下的写入边界。
+- **「记下一个值、做一件事、再等它变」交给 `Wait-L2Change`**：
+  `Wait-L2Change -Baseline {…} -Action {…} -Probe {…} -Until { param($before, $now) … }`，返回 `Baseline` 与 `Value`。
+  基线在函数里、紧贴动作之前读；自己分三行写，基线就可能落到动作之后。它在单独的 `L2Change.psm1` 里（批次 4、5
+  并行加共享辅助函数，各占一个新文件，不改 `L2.psm1` 主体），用的场景自己导入：
+  `Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Change.psm1') -Force`。
+  已有场景里手写且写对了的地方不迁移，新写的用函数。
 
 **要改环境启动方式的场景，写一个同名的 `scenarios/<名字>.setup.psd1`。**目前认这些键：
 
@@ -209,11 +371,52 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 - `RiotCommands` —— `RiotCommandOptions` 的键原样变成 `RiotCommands__*`。目前只有
   `emergency-stop-single-trigger` 用它把急停重试退避调长：本装置每秒评估一次，默认退避会让「退避内
   又请求了一次」与「退避到期重试」挤在一起。退避是 `REQ-0248` 允许现场设的参数，不是开关。
+  `emergency-stop-operator-release` 出于同一个理由也用它。
+
+- `EmergencyStopRelease = $true` —— 打开 `REQ-0356` 的人工确认解除入口（`EmergencyStopRelease__enabled`），并给它
+  配一份本装置用的调用凭据，经 `Context.EmergencyReleaseCredential` 交给场景。产品里入口默认不挂；
+  `emergency-stop-operator-release` 用它。
 
 - `StationDepartureWaitTimeout` —— 服务端 `JourneyRuntime:stationDepartureWaitTimeout`，装载提交后车在取货点
   等多久才请求出发前安全检查（ADR-cross-0055，产品默认 5 分钟）。这段时间是普通放错唯一的修正窗口
-  （`REQ-0237`）。本装置不给这个键时用 `00:00:05`，让与修正无关的场景只多等五秒；
+  （`REQ-0237`）。本装置不给这个键时用 `00:00:30`（control-server#71 起；原来是 `00:00:05`，为什么改见下面「真装置场景」一段）；
   `g3-pickup-load-and-correction` 给 `00:00:20`，它要证修正期间车不走、修正收敛后等满才走。
+  **批次 5（control-server#79）起同一个值也从到站起算**：到站后这么久没人录入，服务端就以
+  `CANCELLED_BY_STATION_TIMEOUT` 结束本站。所以一条场景若要在 `AwaitingSublot` 停得比它久（让录入挂起、
+  到站后先做别的），就要在自己的 setup 里给足；`station-deadline-sublot-timeout` 给 `00:00:20`。
+
+  **真装置场景每一条都落在这条约束里，旧的五秒默认值不够用。**实测「服务端采信到站 → UIA 录入并提交」要
+  **4.7–5.4 秒**（`evidence/l2/20260913-b2close-real-onboard-normal-load-003`、
+  `20260914-real-onboard-restart-with-open-recovery-session-004` 的 `timeline.jsonl`），与当时装置默认的 5 秒是同一量级——
+  等于抛硬币。所以默认值在 control-server#71 抬到了 `00:00:30`（#79 的审查建议）。在那之前，`Onboard = 'Real'` 且会录入的
+  场景都在自己的 setup 里写了这个键，这些显式值保留不动：多数给 `00:00:30`；
+  `g3-journey-demand-to-pickup` 给 `00:05:00`（它刻意停在 `AwaitingSublot`，到站之后还要等快照确认、读车载端
+  日志库、判终态，整条尾巴都在期限内）；`g3-predeparture-check-expires` 由 `00:00:15` 抬到 `00:00:40`；
+  `g3-pickup-load-and-correction` 维持 `00:00:20`，因为场景里 `$stationDepartureWait` 与判据文案钉着同一个数，
+  改它要连脚本一起改。取值的上界来自装货提交之后那条等待的判据超时（例如 `real-onboard-normal-load` 是 180 秒，
+  `g3-predeparture-check-expires` 是 90 秒），下界来自录入那一段，两者之间才是安全区。
+  `real-onboard-clock-skew` 与 `g3-manual-charging-return` 不进 `AwaitingSublot`，不受影响，没有加这个键。
+
+下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
+`OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；
+只有 `SlotStates` 的取值是假车载端启动时按协议枚举校验，写错那台对端启动即失败。
+
+- `SlotModelPreseed = $false` —— 本场景不做默认的入库与绑定。分区归属表的导入要按已发布模型校验分组，所以同时
+  **必须**写 `AreaAssignments = $false`，否则编排器直接报错：自己入库的场景自己导入。
+- `AreaAssignments` —— 覆盖默认的分区归属表。给 `$false` 表示本场景不导入；给一组行则导入的就是这些行，每行
+  `@{ Area = 'N1-3'; DispatchZone = 'MAP-25-WIRE_TO_GATE'; SlotPosition = 'REAR' }`，三项都必填，原样写进那份 CSV。
+  写 `$true` 或空数组会报错（要默认表就不写这个键）。
+- `SlotStates` —— 合成对端握手快照（`CapabilitySnapshot` 与 `SafetyStateSnapshot`）里逐仓状态的覆盖，每项 `SlotNo`
+  加 `physicalState`／`administrativeAvailability`／`operability` 中要改的字段，例如
+  `@(@{ SlotNo = 1; physicalState = 'OCCUPIED' }, @{ SlotNo = 2; administrativeAvailability = 'DISABLED' })`。
+  变成 `--FakeOnboard:Seed:slotStates:<i>:*`，未给的仓保持 `OPERABLE`／`ENABLED`／`EMPTY`／`LOCKED`／`RESET`；取值按协议枚举
+  校验，写错的值假车载端启动即退出。给所有合成对端；`OnboardPeers` 某一项自己带 `SlotStates` 时那一台用自己的。
+  与 `Onboard = 'Real'` 同给直接报错（真装置读自己的 IO）。**只支持握手种子**：服务端只从会话的两份快照读可用仓，
+  而假车载端没有运行中改逐仓状态的入口，要换状态就得换种子重起对端，同一次运行里做不到。
+- `Stations` —— 覆盖假 RIoT 在本场景地图上的整张站点表，`@{ '210' = '关卡'; '12' = 'N1-3_N2-5' }` 这样的站点号到站点名。
+  在服务端启动之前经假 RIoT 控制面 `PUT /control/v1/maps/{mapId}/stations` **整张替换**（命令行种子只能往默认表里加），
+  所以表里要自己留着关卡 `210 关卡` 与场景要用的取货点（`Context.PickupStationRiotId` 仍是 12）。默认分区归属表按替换后的
+  站点名推 AREA。开了路网引擎的场景另需站点所在节点，这个键不管。
 
 写成边车文件而不是命令行开关，是因为忘了传开关的那一次，场景会安安静静地证明另一回事。装置选错
 更是如此：把 `real-onboard-*` 跑在合成对端上，它会绿，而绿的是完全另一件事。
@@ -270,9 +473,34 @@ $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外�
 车的端口正好压在模拟器的两个端口上。两套装置今天互斥，所以那是一处潜在冲突而不是现行冲突
 ——正是哪天有人放宽这条互斥时才会炸的那种。
 
-### 同一时刻只能有一个 L2 占着这组端口
+### 端口槽位（control-server#130）
 
-所有装置、所有场景用的都是上表**同一组固定端口**，所以两个 L2 同时跑不是「偶尔撞一下」，而是必然
+上表是**槽位 0**，也是 `Invoke-L2Scenario.ps1` 不带 `-PortSlot` 时用的那一组。`-PortSlot N`（1～4）把整组端口
+下移 `1000 × N`，锁名加后缀 `-slotN`：
+
+| 槽位 | 端口 | 锁 |
+| --- | --- | --- |
+| 0 | 48405–48414，假车载端 48420 起 | `Global\W2G-L2PortBlock` |
+| 1 | 47405–47414，假车载端 47420 起 | `Global\W2G-L2PortBlock-slot1` |
+| 2 | 46405–46414，假车载端 46420 起 | `Global\W2G-L2PortBlock-slot2` |
+| 3 | 45405–45414，假车载端 45420 起 | `Global\W2G-L2PortBlock-slot3` |
+| 4 | 44405–44414，假车载端 44420 起 | `Global\W2G-L2PortBlock-slot4` |
+
+**槽位 0 的端口与锁名和加槽位之前逐字相同**，真装置场景、`run-journey-g3.ps1` 和比槽位更早的检出都不知道槽位的
+存在，照旧拿槽位 0，彼此照旧排队。CI 的分路只用槽位 1～4，所以不会和它们抢。
+
+为什么往下移：槽位 0 已经紧贴在 Windows 动态端口范围（49152 起）下面，往上就进了动态范围，那正是 2026-09-08
+搬家要躲的东西（见上一节）。往下这一段里唯一被系统保留的是 47001（WinRM 的 HTTP 监听，控制端笔记本
+`netsh int ipv4 show excludedportrange protocol=tcp` 里有，win11-01 上只保留了 5357），各槽位都躲开了。
+`Test-L2PortLockQueueing.ps1` 断言槽位 0 的端口和锁名是上表的字面值、编排器参数默认值就是槽位 0、五个槽位两两
+不重叠且都在 49152 以下、不碰保留端口，并且槽位 0 被占着时槽位 1 照样拿得到锁。
+
+**几个槽位同时跑时共用一份构建输出。**同一个检出里并行跑，要先构建一次，每一趟都带 `-SkipBuild`；否则一趟的构建
+会覆盖另一趟正在运行的 exe。`-SkipBuild` 时构建输出不存在会直接失败。
+
+### 同一个槽位同一时刻只能有一个 L2
+
+同一个槽位里，所有装置、所有场景用的都是**同一组固定端口**，所以两个 L2 同时跑不是「偶尔撞一下」，而是必然
 互相串台（2026-09-14 真出过，见文末第 13 条）。`Invoke-L2Scenario.ps1` 因此在**构建之前**先拿一把
 机器级命名 mutex `Global\W2G-L2PortBlock`（`L2PortLock.psm1`），一直拿到收尾把所有组件停掉之后才放。
 拿不到就排队，最长等一小时，排队时会打印：
@@ -390,3 +618,26 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     修法是上面「同一时刻只能有一个 L2 占着这组端口」那一节的端口锁，加上启动等待的端口归属检查。
     两份红证据在仓库之外：`C:\g3dbg\resume-002`、
     `C:\g3dbg\20260914-l2query-slot-configuration-activation-replay-001`。
+14. **读到一个状态就顺手读另一个，而两者落在不同的写入里，就会间歇性假红或漏记。**这一条是从 MVP 线
+    （`ControlServer_MVP` 的 `scripts/l2/README.md` 第 14 条）搬过来的：那边前后六例，有等到仓位操作
+    `Committed` 就直读旅程、读到还没轮到的旧阶段的；有基线取在动作之后、基线里已经含着要等的那一次开锁、
+    于是永远等不到的——同一份脚本一绿一红，这就是这类竞态的样子。2026-09-13 普查
+    （control-server#26）之后收口成两样东西：上面「加一个场景」一节的两条读取纪律，与 `Wait-L2Change`。
+    **修一例的时候，要把同一形状的其他地方一起找出来**：那边第五例和第三例是同一个模板抄出来的，第三例只修了
+    出事的那一条。
+
+    判法只有一条：直读的东西要么与被等的条件落在**同一次提交**，要么在因果上**必然先于**它落库，否则就是这种
+    形状。v2 服务端的写入边界，核对过的记在这里，下次不必再读一遍服务端（行号会漂，按名字查）：
+    - **站点期限到期结束本站**（`JourneyRuntimeEngine.TryEndStopAtStationDeadlineAsync` →
+      `PickupStopTermination.StageAsync`）一次提交：需求 `Cancelled`、调度租约 `ReleasedAt`、取货单的
+      `VehicleOccupancyReleasedAt`、录入请求在发件箱里结算、旅程 `Completed` / `CANCELLED_BY_STATION_TIMEOUT`。
+      等到旅程 `Completed` 再读这几样是安全的。
+    - **到站那一轮**：车辆业务状态、工作清单、计划、录入请求四条出站报文各自在发布时落库
+      （`WireToGateStore.QueueOutboundEnvelopeAsync` 每条一次保存），之后引擎才保存 `AwaitingSublot`；期限起点随工作清单那次
+      保存一起落库。等到 `AwaitingSublot` 再读这几样是安全的，反过来不是。
+    - **装货结果**由消息处理器收下时写 `StationOperations.Status = Committed`（`ApplyOperationResultAsync`），旅程转
+      `AwaitingStationDeparture` 是引擎下一轮的另一次写入。卸货结果那一次提交里有需求 `Succeeded`、租约释放与
+      `TransportDemandCompletions`，旅程 `Completed` 与车辆占用释放仍是引擎之后的另一次写入。
+    - **重连**：`BeginSessionRecoveryAsync` 把会话退回 `HANDSHAKE_INCOMPLETE` 的同一次保存里作废本车旅程的期限起点；
+      重新计满是会话回到 Ready 之后引擎某一轮的另一次写入。所以「重连之后期限起点变了」要等，不能在
+      重连命令返回时直读。

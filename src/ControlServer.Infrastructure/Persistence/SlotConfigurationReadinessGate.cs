@@ -26,8 +26,6 @@ public sealed class SlotConfigurationReadinessGate(
     ControlServerDbContext context,
     IGovernanceAuditWriter auditWriter)
 {
-    private const string PublishedStatus = "PUBLISHED";
-
     private readonly ControlServerDbContext _context =
         context ?? throw new ArgumentNullException(nameof(context));
     private readonly IGovernanceAuditWriter _auditWriter =
@@ -171,14 +169,9 @@ public sealed class SlotConfigurationReadinessGate(
 
         int[] modelSlots = await ModelSlotNumbersAsync(slotModelVersionId, cancellationToken);
 
-        SlotIoBindingRow[] bindings = await _context.Set<SlotIoBindingRow>().AsNoTracking()
-            .Where(row => row.AgvId == agvId
-                && row.SlotModelVersionId == slotModelVersionId
-                && row.Status == PublishedStatus)
-            .ToArrayAsync(cancellationToken);
-        long latestBindingVersion = bindings.Length == 0 ? 0 : bindings.Max(row => row.Version);
-        HashSet<int> boundSlots =
-            [.. bindings.Where(row => row.Version == latestBindingVersion).Select(row => row.PhysicalSlotNumber)];
+        SlotIoBindingRow[] bindings = await VehicleSlotModelResolver.ReadLatestPublishedBindingsAsync(
+            _context, agvId, slotModelVersionId, cancellationToken);
+        HashSet<int> boundSlots = [.. bindings.Select(row => row.PhysicalSlotNumber)];
 
         SlotConfigurationVerificationRow[] verifications = await _context.Set<SlotConfigurationVerificationRow>()
             .AsNoTracking()

@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
@@ -6,6 +6,8 @@ using ControlServer.Domain;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
@@ -26,6 +28,8 @@ public sealed class JourneyRuntimeEngine(
     MovementDispatchService movementDispatch,
     WireToGateStore store,
     OnboardJourneyPublisher publisher,
+    ISublotBoxCountReader boxCountReader,
+    IPackageCapacityStore packageCapacityStore,
     DispatchAdmissionChain admissionChain,
     IDispatchCandidateRanker candidateRanker,
     CatalogAvailabilityAccess catalogAvailability,
@@ -36,6 +40,9 @@ public sealed class JourneyRuntimeEngine(
     IVehicleMotionFacts motionFacts,
     CheckpointWaitLedger checkpointWaits,
     VehicleFaultCoordinator faults,
+    IAreaAssignmentStore areaAssignments,
+    IVehicleSlotPositionReader slotPositions,
+    IDispatchRoundOutcomeSink roundOutcomes,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -49,6 +56,11 @@ public sealed class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2102, nameof(LogBoxCountFailed)),
         "SUBLOT_BOX_COUNT failed closed for demand {DemandId}.");
+    private static readonly Action<ILogger, string, string, Exception?> LogSublotRejected =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Information,
+            new EventId(2108, nameof(LogSublotRejected)),
+            "The sublot entered for demand {DemandId} was refused: {ReasonCode}.");
     private static readonly Action<ILogger, Exception?> LogMapStationCatalogFailed = LoggerMessage.Define(
         LogLevel.Warning,
         new EventId(2103, nameof(LogMapStationCatalogFailed)),
@@ -77,14 +89,45 @@ public sealed class JourneyRuntimeEngine(
             new EventId(2107, nameof(LogOrderFailedSymptom)),
             "RIoT reports order {UpperId} FAILED on vehicle {AgvId}; journey {DemandId} recorded the " +
             "symptom with the fault model and stopped advancing on its own.");
+    private static readonly Action<ILogger, string, string, DateTimeOffset, Exception?> LogStationDeadlineEndedStop =
+        LoggerMessage.Define<string, string, DateTimeOffset>(
+            LogLevel.Warning,
+            new EventId(2108, nameof(LogStationDeadlineEndedStop)),
+            "Nobody entered a sublot at vehicle {AgvId}'s pickup before the station departure deadline " +
+            "{Deadline}; demand {DemandId} ended as CANCELLED_BY_STATION_TIMEOUT and the vehicle was released.");
+    private static readonly Action<ILogger, string, string, string, DateTimeOffset, Exception?> LogStationTimeoutDoorNotClosed =
+        LoggerMessage.Define<string, string, string, DateTimeOffset>(
+            LogLevel.Warning,
+            new EventId(2109, nameof(LogStationTimeoutDoorNotClosed)),
+            "Vehicle {AgvId} is still loading demand {DemandId} at station {StationId} past its station " +
+            "departure deadline {Deadline} with a slot door not closed; the stop keeps waiting under " +
+            "STATION_TIMEOUT_DOOR_NOT_CLOSED.");
+    private static readonly Action<ILogger, string, string, string, Exception?> LogDeterminateLoadFailureSettled =
+        LoggerMessage.Define<string, string, string>(
+            LogLevel.Warning,
+            new EventId(2110, nameof(LogDeterminateLoadFailureSettled)),
+            "Vehicle {AgvId} reported a determinate load failure after the station departure deadline; " +
+            "demand {DemandId} ended as {TerminalReason} and the vehicle was released.");
     private static readonly Action<ILogger, long, int, string, string, Exception?> LogAdmissionPolicyDrift =
         LoggerMessage.Define<long, int, string, string>(
             LogLevel.Warning,
-            new EventId(2108, nameof(LogAdmissionPolicyDrift)),
+            new EventId(2116, nameof(LogAdmissionPolicyDrift)),
             "Admission policy version {AdmissionPolicyVersion} is bound to other area-named stations than " +
             "map {MapId} now carries (added: {AddedStations}; removed: {RemovedStations}). Journeys already " +
             "under way continue on the bound policy; no further demand is taken on until " +
             "admissionPolicyVersion is raised.");
+
+    /// <summary>
+    /// The terminal reason of a demand whose pickup stop ran out its station departure deadline
+    /// (ADR-cross-0055).
+    /// </summary>
+    public const string StationTimeoutCancellationReason = "CANCELLED_BY_STATION_TIMEOUT";
+
+    /// <summary>
+    /// The load stop has run out its station departure deadline with a slot door still not closed
+    /// (ADR-cross-0058 decision 4). The stop does not end; the duty moves to someone shutting the door.
+    /// </summary>
+    public const string StationTimeoutDoorNotClosedReason = "STATION_TIMEOUT_DOOR_NOT_CLOSED";
 
     /// <summary>The journey is not arriving because the vehicle is holding at a traffic checkpoint.</summary>
     public const string CheckpointWaitReason = "VEHICLE_WAITING_AT_CHECKPOINT";
@@ -260,6 +303,7 @@ public sealed class JourneyRuntimeEngine(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
             .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
             .ConfigureAwait(false);
+        await MarkBacklogLeftCatalogAsync(backlogByDemandId, snapshot, cancellationToken).ConfigureAwait(false);
         // The MesIngest catalog is MES's own list of open transport demands, and a journey of ours
         // reaching Completed does not take the demand out of it. Discovery is only reached once no
         // unresolved journey remains, so the demand that just finished was scored as a fresh
@@ -280,8 +324,14 @@ public sealed class JourneyRuntimeEngine(
 
         VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken)
             .ConfigureAwait(false);
+        // Read once with the policy and for the same reason: every candidate in the round is judged against
+        // one version of the table, and that is the version a demand freezes.
+        AreaAssignmentTableVersion? areaAssignmentTable = await areaAssignments
+            .ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
         DispatchRoundFacts round = new(
-            snapshot, currentMap, gate, acceptedDemandIds, now, policy, admissionPolicyDrifted);
+            snapshot, currentMap, gate, acceptedDemandIds, now, policy, areaAssignmentTable,
+            admissionPolicyDrifted);
+        List<DispatchVehicleOutcome> completedVehicles = [];
 
         // One worker, vehicles in series -- not one worker per vehicle. Serial iteration is what
         // keeps a round's snapshot fresh: two workers would each decide against their own read of
@@ -298,11 +348,15 @@ public sealed class JourneyRuntimeEngine(
             using CancellationTokenSource expiry = new(budget, timeProvider);
             using CancellationTokenSource linked =
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
+            List<DispatchCandidateVerdict> verdicts = [];
             try
             {
                 await DispatchForVehicleAsync(
-                    round, vehicle, acceptedDemandIds, backlogByDemandId, now, linked.Token)
+                    round, vehicle, acceptedDemandIds, backlogByDemandId, verdicts, now, linked.Token)
                     .ConfigureAwait(false);
+                // Only once the segment has run to its end. A vehicle its budget cuts off below has not
+                // finished deciding, so what it judged so far says nothing about that vehicle.
+                completedVehicles.Add(new DispatchVehicleOutcome(vehicle.AgvId, vehicle.VehicleKey, verdicts));
             }
             catch (OperationCanceledException) when (expiry.IsCancellationRequested &&
                                                      !cancellationToken.IsCancellationRequested)
@@ -322,6 +376,11 @@ public sealed class JourneyRuntimeEngine(
                 }
             }
         }
+
+        // After every vehicle, a budget-exhausted one included. Whether any vehicle at all could take a demand
+        // is only answerable across the fleet; JourneyBacklog, overwritten vehicle by vehicle, cannot say.
+        await roundOutcomes.RecordAsync(new DispatchRoundOutcome(round, completedVehicles), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -349,10 +408,15 @@ public sealed class JourneyRuntimeEngine(
         FleetVehicle fleetVehicle,
         HashSet<string> claimedDemandIds,
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
+        List<DispatchCandidateVerdict> verdicts,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         string vehicleKey = fleetVehicle.VehicleKey;
+        // The server's own record of which slot is in which group, once per vehicle per round. Not the
+        // vehicle's report (program#70 decision 4), which is why the onboard slot facts below stay as they are.
+        VehicleSlotPositions? vehicleSlotPositions = await slotPositions
+            .ReadAsync(fleetVehicle.AgvId, cancellationToken).ConfigureAwait(false);
         // Onboard facts are read for this vehicle's own agvId. Reading them off the single
         // configured one, as this did while there was one vehicle, would have judged every
         // vehicle in the fleet against the first vehicle's session -- the exact cross-talk the
@@ -362,7 +426,7 @@ public sealed class JourneyRuntimeEngine(
         RiotVehicleObservation vehicle = await vehicleFacts
             .ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
         DispatchVehicleFacts vehicleForRound = new(
-            vehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow());
+            vehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow(), vehicleSlotPositions);
 
         List<EligibleDispatchCandidate> eligible = [];
         foreach (AcceptedDemandSnapshot candidate in round.Catalog.Items)
@@ -371,6 +435,7 @@ public sealed class JourneyRuntimeEngine(
             string reason = await admissionChain
                 .EvaluateAsync(evaluation, cancellationToken).ConfigureAwait(false);
 
+            verdicts.Add(new DispatchCandidateVerdict(evaluation, reason));
             JourneyBacklogRow backlog = UpsertBacklog(backlogByDemandId, candidate, reason, now);
             if (string.Equals(reason, DispatchAdmissionChain.Eligible, StringComparison.Ordinal) &&
                 evaluation.Route is not null)
@@ -382,7 +447,9 @@ public sealed class JourneyRuntimeEngine(
                     evaluation.TargetSlots,
                     backlog.FirstSeenAt,
                     evaluation.GraphTraversalCostMm,
-                    evaluation.CatalogRevision));
+                    evaluation.CatalogRevision,
+                    evaluation.AreaAssignmentVersion,
+                    evaluation.RequiredSlotPosition));
             }
         }
 
@@ -507,7 +574,8 @@ public sealed class JourneyRuntimeEngine(
             JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
                 .SingleAsync(row => row.DemandId == selected.Snapshot.DemandId, cancellationToken)
                 .ConfigureAwait(false);
-            runtime.BlockReasonCode = result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED";
+            runtime.SetBlockReason(
+                result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED", now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -523,6 +591,15 @@ public sealed class JourneyRuntimeEngine(
             .ConfigureAwait(false);
         if (session is null)
         {
+            // ADR-cross-0055: the station departure wait is about this session's chance to scan, and a
+            // journey behind a closed readiness gate has none -- the runtime advances no stop there, so
+            // an entry would not be acted on either. Left running, the clock would end the stop on the
+            // first iteration after readiness returned. Voided here and refilled behind the gate, the
+            // same way a reconnect's is. A disconnect that leaves the session Ready is caught instead by
+            // the liveness check in TryEndStopAtStationDeadlineAsync.
+            bool waitVoided = runtime.StationDepartureWaitStartedAt is not null;
+            runtime.StationDepartureWaitStartedAt = null;
+
             // A result that is already durable names the recovery this journey waits on, and it
             // names it from StationOperations alone -- reading it involves no session. Deciding
             // that here, ahead of the readiness gate, is what keeps the gate from closing on
@@ -546,7 +623,12 @@ public sealed class JourneyRuntimeEngine(
             // readiness carries its own row and its own reason code.
             if (runtime.Stage != JourneyRuntimeStage.Blocked)
             {
-                runtime.BlockReasonCode = "ONBOARD_SESSION_NOT_READY";
+                runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
+                runtime.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else if (waitVoided)
+            {
                 runtime.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -586,15 +668,60 @@ public sealed class JourneyRuntimeEngine(
                 SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
                 break;
             case JourneyRuntimeStage.AwaitingSublot:
+                // Refills the station departure wait a disconnect voided (ADR-cross-0055). A reconnect
+                // does not re-enter this stage, so the arrival's seed cannot be what refills it; and
+                // this line runs behind the readiness gate, which is "after the recovery handshake and
+                // the projection reconciliation".
+                bool waitRefilled = runtime.StationDepartureWaitStartedAt is null;
+                runtime.StationDepartureWaitStartedAt ??= now;
                 ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, session, cancellationToken)
                     .ConfigureAwait(false);
-                if (sublot is null)
+                // An operator cancelling before any entry (ADR-cross-0046; control-server#83) holds the stop
+                // until the vehicle reports: no load starts and the deadline does not end it. Read after the
+                // inbox, so an entry seen here cannot have been persisted before the cancellation it loses to.
+                if (await LoadCancellationBeforeSublot.HasOpenCancellationAsync(
+                        dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false))
                 {
-                    if (runtime.BlockReasonCode is not null)
+                    // What the entry read concluded does not stand while the cancellation decides the stop, so this
+                    // iteration's unsaved change to the block is undone -- code and start time both, back to what the
+                    // row holds in the store. This is only for undoing an unsaved change: every new block is written
+                    // through SetBlockReason, and writing the old code back through it here would restart a block
+                    // that never ended.
+                    EntityEntry<JourneyRuntimeRow> tracked = dbContext.Entry(runtime);
+                    tracked.Property(row => row.BlockReasonCode).CurrentValue =
+                        tracked.Property(row => row.BlockReasonCode).OriginalValue;
+                    tracked.Property(row => row.BlockReasonSince).CurrentValue =
+                        tracked.Property(row => row.BlockReasonSince).OriginalValue;
+                    if (waitRefilled)
                     {
                         runtime.UpdatedAt = now;
                         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     }
+                    return;
+                }
+                if (sublot is null)
+                {
+                    if (await TryEndStopAtStationDeadlineAsync(runtime, session, now, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                    // The one quiet exit of this stage. A wait refilled above and not saved here would be
+                    // refilled again on every later iteration, which is the same as never running out.
+                    if (runtime.BlockReasonCode is not null || waitRefilled)
+                    {
+                        runtime.UpdatedAt = now;
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    return;
+                }
+                // The entry answers the request open at this stop. Whether it may load is judged now,
+                // after the cancellation has had its chance to decide the stop: an entry that loses to
+                // one is neither loaded nor answered. A refusal is answered here, which is the point of
+                // BR-013's "give the operator the real reason", and leaves the stop exactly where it was.
+                if (!await RevalidateEnteredSublotAsync(runtime, session, sublot, now, cancellationToken)
+                        .ConfigureAwait(false))
+                {
                     return;
                 }
                 await PublishLoadAsync(runtime, session, sublot.MessageId, cancellationToken).ConfigureAwait(false);
@@ -614,6 +741,12 @@ public sealed class JourneyRuntimeEngine(
                 {
                     Block(runtime, "LOAD_RESULT_REQUIRES_RECOVERY", now);
                 }
+                else if (load?.Status == StationOperationStatus.Failed)
+                {
+                    await TrySettleDeterminateLoadFailureAsync(runtime, load, session, now, cancellationToken)
+                        .ConfigureAwait(false);
+                    return;
+                }
                 else if (load?.Status == StationOperationStatus.Committed)
                 {
                     await store.SettleAnsweredCommandAsync(
@@ -629,6 +762,17 @@ public sealed class JourneyRuntimeEngine(
                 }
                 else
                 {
+                    // No result yet. Refills the station departure wait a disconnect voided (ADR-cross-0055),
+                    // the way AwaitingSublot does: this stage is not re-entered on a reconnect either, and
+                    // without it a stop loading across a reconnect would have no deadline to raise its
+                    // alarm by.
+                    bool loadWaitRefilled = runtime.StationDepartureWaitStartedAt is null;
+                    runtime.StationDepartureWaitStartedAt ??= now;
+                    if (ReconcileStationTimeoutDoorNotClosed(runtime, session, now) || loadWaitRefilled)
+                    {
+                        runtime.UpdatedAt = now;
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
                     return;
                 }
                 break;
@@ -674,7 +818,7 @@ public sealed class JourneyRuntimeEngine(
                     }
                     if (reissuedDepartureCheck && runtime.BlockReasonCode is null)
                     {
-                        runtime.BlockReasonCode = "PREDEPARTURE_CHECK_EXPIRED";
+                        runtime.SetBlockReason("PREDEPARTURE_CHECK_EXPIRED", now);
                     }
                     if (runtime.BlockReasonCode is not null)
                     {
@@ -692,7 +836,7 @@ public sealed class JourneyRuntimeEngine(
                     .ConfigureAwait(false);
                 if (!gateLeg.IsAllowed)
                 {
-                    runtime.BlockReasonCode = gateLeg.BlockReason;
+                    runtime.SetBlockReason(gateLeg.BlockReason, timeProvider.GetUtcNow());
                     runtime.UpdatedAt = timeProvider.GetUtcNow();
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
@@ -708,9 +852,9 @@ public sealed class JourneyRuntimeEngine(
                 await store.SettleAnsweredCommandAsync(
                     runtime.PreDepartureSafetyCheckMessageId, now, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingGateArrival, now);
-                runtime.BlockReasonCode = dispatch.Outcome == MovementDispatchOutcome.Confirmed
-                    ? null
-                    : dispatch.Outcome.ToString();
+                runtime.SetBlockReason(
+                    dispatch.Outcome == MovementDispatchOutcome.Confirmed ? null : dispatch.Outcome.ToString(),
+                    now);
                 break;
             case JourneyRuntimeStage.AwaitingGateArrival:
                 if (!await EnsureMovementConfirmedAsync(
@@ -936,7 +1080,7 @@ public sealed class JourneyRuntimeEngine(
         checkpointWaits.Clear(runtime.VehicleKey);
         if (!string.Equals(runtime.BlockReasonCode, VehicleFaultEvidence.OrderFailed, StringComparison.Ordinal))
         {
-            runtime.BlockReasonCode = VehicleFaultEvidence.OrderFailed;
+            runtime.SetBlockReason(VehicleFaultEvidence.OrderFailed, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -983,7 +1127,7 @@ public sealed class JourneyRuntimeEngine(
             checkpointWaits.Clear(runtime.VehicleKey);
             if (IsCheckpointReason(runtime.BlockReasonCode))
             {
-                runtime.BlockReasonCode = null;
+                runtime.SetBlockReason(null, timeProvider.GetUtcNow());
                 runtime.UpdatedAt = timeProvider.GetUtcNow();
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -1002,7 +1146,7 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        runtime.BlockReasonCode = reason;
+        runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
         runtime.UpdatedAt = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -1028,12 +1172,12 @@ public sealed class JourneyRuntimeEngine(
             upperId, cancellationToken).ConfigureAwait(false);
         if (result.Outcome == MovementDispatchOutcome.Confirmed)
         {
-            runtime.BlockReasonCode = null;
+            runtime.SetBlockReason(null, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return true;
         }
-        runtime.BlockReasonCode = $"{legName}_{result.Outcome}";
+        runtime.SetBlockReason($"{legName}_{result.Outcome}", timeProvider.GetUtcNow());
         runtime.UpdatedAt = timeProvider.GetUtcNow();
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return false;
@@ -1050,13 +1194,23 @@ public sealed class JourneyRuntimeEngine(
             runtime.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision, "READY", TransportPurpose, false, "SUFFICIENT", []),
+            TransportBusinessState(runtime.VehicleBusinessRevision, LoadingPhase(runtime.Stage, loadBatchClosed: false)),
             cancellationToken).ConfigureAwait(false);
+        // ADR-cross-0055: the station departure wait starts at the arrival. Seeded ahead of the
+        // worklist, whose save carries it, because the worklist is where the vehicle is told the
+        // deadline -- a first snapshot sent before the seed would tell it there is none.
+        runtime.StationDepartureWaitStartedAt ??= timeProvider.GetUtcNow();
         await publisher.PublishCurrentStopWorklistAsync(
             runtime.WorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.PickupStationId, "PICKUP", runtime.WorklistRevision),
+            Worklist(
+                runtime,
+                demand,
+                runtime.PickupStationId,
+                "PICKUP",
+                runtime.WorklistRevision,
+                StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout)),
             cancellationToken).ConfigureAwait(false);
         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
             .ConfigureAwait(false);
@@ -1066,16 +1220,16 @@ public sealed class JourneyRuntimeEngine(
             session.SessionGeneration,
             PickupPlan(runtime),
             cancellationToken).ConfigureAwait(false);
+        // One demand per journey, so the dispatch scope is this demand's sublot (protocol 2.0.0 item 2).
         await publisher.PublishSublotEntryRequestAsync(
             runtime.SublotRequestMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new SublotEntryRequest(
-                runtime.DemandId,
                 runtime.OperationSessionId,
                 runtime.PickupStationId,
                 runtime.WorklistRevision,
-                demand.Sublot),
+                [demand.Sublot]),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1191,13 +1345,20 @@ public sealed class JourneyRuntimeEngine(
             runtime.GateVehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            new VehicleBusinessProjection(runtime.VehicleBusinessRevision + 1, "READY", TransportPurpose, false, "SUFFICIENT", []),
+            TransportBusinessState(runtime.VehicleBusinessRevision + 1, LoadingPhase(runtime.Stage, loadBatchClosed: true)),
             cancellationToken).ConfigureAwait(false);
+        // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
         await publisher.PublishCurrentStopWorklistAsync(
             runtime.GateWorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            Worklist(runtime, demand, runtime.GateStationId, "DROPOFF", runtime.WorklistRevision + 1),
+            Worklist(
+                runtime,
+                demand,
+                runtime.GateStationId,
+                "DROPOFF",
+                runtime.WorklistRevision + 1,
+                stationDepartureDeadlineAt: null),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
             runtime.GatePlanMessageId,
@@ -1223,42 +1384,260 @@ public sealed class JourneyRuntimeEngine(
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The submission answering the entry request this stop has open, or null when none does.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A submission answers one entry request, and its address says which.</b> The vehicle, the
+    /// session generation, the operation session, the station and the worklist revision are the address.
+    /// A submission whose address is not this stop's cannot be an answer to this request, so it is
+    /// skipped rather than judged. Judging the whole inbox is what this method used to do, and it raised
+    /// <c>SUBLOT_SUBMISSION_MISMATCH</c> within one poll of every arrival with nobody having scanned
+    /// anything: the row that raised it was a finished journey's, another vehicle's, or this journey's
+    /// own earlier round. Nothing here writes a block reason.
+    /// </para>
+    /// <para>
+    /// <b>The read is narrowed in the store as well as here.</b> The operation session is written into
+    /// the submission's own JSON, so a substring is a filter the database can apply and the inbox's
+    /// history is not read back and parsed on every poll. It is a pre-filter only: the parsed comparison
+    /// below is what decides, and a pre-filter that decided anything would be a bug rather than a
+    /// shortcut.
+    /// </para>
+    /// <para>
+    /// <b>A submission already refused is not read again.</b> The stored <c>SublotRejected</c> is the
+    /// record that this entry was judged (<see cref="LoadCancellationBeforeSublot.RefusedSubmissionIdsAsync"/>);
+    /// without skipping it every poll would re-run the remote reads and re-send the same refusal. Only
+    /// the rows that answer this stop are asked about, so that lookup is bounded by this stop's entries
+    /// rather than by every refusal the server has ever written.
+    /// </para>
+    /// <para>
+    /// <b>Nothing here decides about the load.</b> Which demand the sublot belongs to, whether the station
+    /// admits that demand's work type, and whether BR-013 still holds are judged by
+    /// <see cref="RevalidateEnteredSublotAsync"/>, which the caller reaches only after it has read the
+    /// open cancellation — so an entry that loses to a cancellation is neither loaded nor answered.
+    /// </para>
+    /// </remarks>
     private async Task<ProtocolInboxRow?> FindMatchingSublotAsync(
         JourneyRuntimeRow runtime,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        string operationSessionId = runtime.OperationSessionId;
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SublotSubmitted")
+            .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        rows = rows.OrderBy(row => row.ReceivedAt).ToArray();
-        foreach (ProtocolInboxRow row in rows)
+        List<ProtocolInboxRow> answers = [];
+        foreach (ProtocolInboxRow row in rows.OrderBy(row => row.ReceivedAt))
         {
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
-            JsonElement payload = root.GetProperty("payload");
-            bool matches = RequiredString(root, "agvId") == runtime.AgvId &&
-                           root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                           RequiredString(payload, "demandId") == runtime.DemandId &&
-                           RequiredString(payload, "operationSessionId") == runtime.OperationSessionId &&
-                           RequiredString(payload, "stationId") == runtime.PickupStationId &&
-                           payload.GetProperty("worklistRevision").GetInt64() == runtime.WorklistRevision &&
-                           RequiredString(payload, "sublot") == demand.Sublot;
-            if (matches)
+            // The same address the cancellation before a sublot reads, plus the generation: the runtime
+            // acts only on an answer of the session it is serving, while the cancellation refuses on an
+            // entry of any generation (control-server#116 review).
+            bool answersThisStop = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
+                                   LoadCancellationBeforeSublot.AnswersTheStop(root, runtime);
+            if (answersThisStop)
             {
-                if (!await store.IsTaskTypeAllowedAsync(
-                        runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
-                {
-                    runtime.BlockReasonCode = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
-                    return null;
-                }
-                return row;
+                answers.Add(row);
             }
-            runtime.BlockReasonCode = "SUBLOT_SUBMISSION_MISMATCH";
         }
-        return null;
+
+        // Asked only about the submissions that answer this stop: the refusal lookup is then bounded by
+        // this stop's entries, not by every refusal the server has ever written.
+        HashSet<string> refused = await LoadCancellationBeforeSublot
+            .RefusedSubmissionIdsAsync(dbContext, [.. answers.Select(row => row.MessageId)], cancellationToken)
+            .ConfigureAwait(false);
+        return answers.Find(row => !refused.Contains(row.MessageId));
+    }
+
+    /// <summary>
+    /// Judges the submission that answers this stop's open entry request, answering it when it may not
+    /// load. Returns whether the load may proceed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The demand is resolved here, from the sublot, inside the dispatch scope.</b> Protocol 2.0.0 took
+    /// the demand off <c>SublotSubmitted</c>: which demand a sublot belongs to is the server's to work
+    /// out, and the scope it works it out in is the demands this journey was dispatched for — not the
+    /// catalogue, which holds demands this vehicle was never given. One demand per journey makes that
+    /// scope one demand's sublot; it is written as the set it becomes once a journey carries a stop
+    /// sequence, because FR-001 AC-3 scopes entry to the whole range.
+    /// </para>
+    /// <para>
+    /// <b>BR-013 section 2 makes the recomputed count authoritative after the entry.</b> The count was
+    /// computed once at acceptance against the capacity table and the MES box count as they stood then;
+    /// both move while the vehicle drives, and the slots were reserved against the number frozen on the
+    /// journey row. A count that cannot be established, or that comes out different, stops the load: no
+    /// slot is allocated and nothing is unlocked.
+    /// </para>
+    /// <para>
+    /// <b>The one refusal that is not a message.</b> A station whose task-type admission does not allow
+    /// the demand's work type is a fact about the station, not about the entry: the journey blocks under
+    /// <c>TASK_TYPE_NOT_ALLOWED_AT_STATION</c> and nothing is sent, which is the carve-out
+    /// <see cref="LoadCancellationBeforeSublot"/> still carries on the cancellation side.
+    /// </para>
+    /// <para>
+    /// A refusal is saved with the journey left where it was. The stop stays the operator's: the entry is
+    /// not recorded as consumed, so a rescan is judged afresh, the station deadline of
+    /// <c>control-server#79</c> still runs, and a cancellation before any sublot is still available.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> RevalidateEnteredSublotAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        ProtocolInboxRow submission,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        using JsonDocument document = JsonDocument.Parse(submission.RequestJson);
+        string enteredSublot = RequiredString(document.RootElement.GetProperty("payload"), "sublot");
+        // The dispatch scope: the demands this journey was sent for.
+        AcceptedDemandRow[] scope = await dbContext.AcceptedDemands.AsNoTracking()
+            .Where(row => row.DemandId == runtime.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        AcceptedDemandRow? demand = scope.SingleOrDefault(
+            row => string.Equals(row.Sublot, enteredSublot, StringComparison.Ordinal));
+        if (demand is null)
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demandId: null,
+                enteredSublot,
+                ServerReasonCodes.SublotNotInDispatchScope,
+                $"子批 {enteredSublot} 不属于本次派车范围，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!await store.IsTaskTypeAllowedAsync(
+                runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
+        {
+            runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", now);
+            runtime.UpdatedAt = now;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        LiveMesFieldSet? fields = JsonSerializer.Deserialize<LiveMesFieldSet>(
+            demand.LiveMesFieldsJson, SerializerOptions);
+        if (string.IsNullOrWhiteSpace(fields?.Package))
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demand.DemandId,
+                enteredSublot,
+                ServerReasonCodes.PackageCapacityUnresolved,
+                $"子批 {enteredSublot} 没有 PACKAGE 型号，算不出花篮数量，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        int? capacity = await packageCapacityStore.ResolveAndTrackAsync(fields.Package, now, cancellationToken)
+            .ConfigureAwait(false);
+        if (!AuthoritativeBasketCount.PackageCapacityIsUsable(capacity))
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demand.DemandId,
+                enteredSublot,
+                ServerReasonCodes.PackageCapacityUnresolved,
+                $"PACKAGE {fields.Package} 没有已批准的花篮容量对照，算不出花篮数量，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        int? maxBoxCount;
+        try
+        {
+            maxBoxCount = await boxCountReader.ReadMaxBoxCountAsync(demand.Sublot, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is HttpRequestException or InvalidDataException or JsonException)
+        {
+            LogBoxCountFailed(logger, runtime.DemandId, error);
+            maxBoxCount = null;
+        }
+
+        if (!AuthoritativeBasketCount.BoxCountIsUsable(maxBoxCount))
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demand.DemandId,
+                enteredSublot,
+                ServerReasonCodes.SublotBoxCountUnavailable,
+                $"查不到子批 {enteredSublot} 的箱数，算不出花篮数量，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        // Both inputs were checked usable just above, so a count is computable.
+        int recomputed = AuthoritativeBasketCount.Compute(maxBoxCount, capacity)
+            ?? throw new InvalidOperationException("Both inputs are usable, so a count is computable.");
+        if (recomputed != runtime.ExpectedBasketCount)
+        {
+            return await RefuseAsync(
+                runtime,
+                session,
+                submission,
+                demand.DemandId,
+                enteredSublot,
+                ServerReasonCodes.ExpectedBasketCountMismatch,
+                $"子批 {enteredSublot} 的花篮数量由 {runtime.ExpectedBasketCount} 变为 {recomputed}，"
+                + "与本次派车预留的仓位不符，不予开仓。",
+                now,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Answers one entry with a <c>SublotRejected</c> carrying the reason, and leaves the journey waiting
+    /// for the next one. Always returns <see langword="false"/> — the caller's "do not load".
+    /// </summary>
+    /// <remarks>
+    /// The refusal is keyed on the submission it answers, which is the only correlation the operator's
+    /// screen can attach the reason to, and its own id is derived from that submission rather than
+    /// counted, so two refusals of two submissions are two messages instead of one rewritten identity.
+    /// The submission is deliberately not recorded as consumed: the stop is still the operator's to
+    /// rescan, to cancel, or to run out at its deadline.
+    /// </remarks>
+    private async Task<bool> RefuseAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        ProtocolInboxRow submission,
+        string? demandId,
+        string enteredSublot,
+        string reasonCode,
+        string displayMessage,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await publisher.PublishSublotRejectedAsync(
+            StableGuid(submission.MessageId, "sublot-rejected"),
+            submission.MessageId,
+            runtime.AgvId,
+            session.SessionGeneration,
+            new SublotRejection(
+                demandId,
+                runtime.OperationSessionId,
+                new WireProblem(reasonCode, "payload.sublot", displayMessage),
+                runtime.WorklistRevision,
+                enteredSublot),
+            cancellationToken).ConfigureAwait(false);
+        runtime.UpdatedAt = now;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        LogSublotRejected(logger, runtime.DemandId, reasonCode, null);
+        return false;
     }
 
     /// <summary>
@@ -1284,18 +1663,22 @@ public sealed class JourneyRuntimeEngine(
         int attempts = Math.Max(1, (int)(runtimeOptions.DepartureSafetyResultWait / step));
         for (int attempt = 0; ; attempt++)
         {
-            runtime.BlockReasonCode = null;
-            SafetyCheckObservation? safety = await FindSafeDepartureResultAsync(
-                runtime, session, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
-            if (safety is not null || runtime.BlockReasonCode is not null || attempt >= attempts)
+            DateTimeOffset now = timeProvider.GetUtcNow();
+            (SafetyCheckObservation? safety, bool invalid) = await FindSafeDepartureResultAsync(
+                runtime, session, now, cancellationToken).ConfigureAwait(false);
+            if (safety is not null || invalid || attempt >= attempts)
             {
+                // Written once, as the wait ends. Clearing the code before every attempt and writing it
+                // back, as this did before control-server#80, would restart BlockReasonSince on every
+                // poll of a journey that stays PRE_DEPARTURE_SAFETY_NOT_VALID.
+                runtime.SetBlockReason(invalid ? "PRE_DEPARTURE_SAFETY_NOT_VALID" : null, now);
                 return safety;
             }
             await Task.Delay(step, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task<SafetyCheckObservation?> FindSafeDepartureResultAsync(
+    private async Task<(SafetyCheckObservation? Safety, bool Invalid)> FindSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
         SessionRecoveryRow session,
         DateTimeOffset now,
@@ -1338,21 +1721,20 @@ public sealed class JourneyRuntimeEngine(
                          now - observedAt <= runtimeOptions.MaximumEvidenceAge;
             if (!valid)
             {
-                runtime.BlockReasonCode = "PRE_DEPARTURE_SAFETY_NOT_VALID";
-                return null;
+                return (null, true);
             }
             if (session.SafetyRevision is not long safetyRevision)
             {
-                return null;
+                return (null, false);
             }
-            return new SafetyCheckObservation(
+            return (new SafetyCheckObservation(
                 runtime.PreDepartureSafetyCheckId,
                 safetyRevision,
                 true,
                 observedAt,
-                validUntil);
+                validUntil), false);
         }
-        return null;
+        return (null, false);
     }
 
     /// <summary>
@@ -1558,10 +1940,65 @@ public sealed class JourneyRuntimeEngine(
         return latest;
     }
 
+    /// <summary>
+    /// The vehicle's session row as the database holds it right now.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>AsNoTracking is the point of this method, not a performance note.</b> The engine only
+    /// ever reads this row -- Onboard's transport owns every write to it, on its own scope and its
+    /// own <see cref="ControlServerDbContext"/>. A tracking query returns the instance the change
+    /// tracker already holds and leaves its values alone, so the first read in an iteration pinned
+    /// the row for the whole iteration: a SafetyStateChanged that landed while the iteration was
+    /// running was invisible to every later read of it, however long the iteration then ran
+    /// against RIoT.
+    /// </para>
+    /// <para>
+    /// That is not merely stale, it is unsafe, because
+    /// <see cref="ReadOnboardFactsAsync"/> pins the safety summary to
+    /// <c>SafetyRevision</c>: a stale revision does not fail to match, it matches the *previous*
+    /// message, which is still in the inbox and still says whatever was true before. The arrival
+    /// check then read a vehicle Onboard had already reported moving as stopped, and trusted an
+    /// arrival that had not happened. See
+    /// docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md.
+    /// </para>
+    /// </remarks>
     private Task<SessionRecoveryRow?> CurrentReadySessionAsync(string agvId, CancellationToken cancellationToken) =>
-        dbContext.SessionRecoveries.SingleOrDefaultAsync(
+        dbContext.SessionRecoveries.AsNoTracking().SingleOrDefaultAsync(
             row => row.AgvId == agvId && row.Readiness == SessionReadiness.Ready,
             cancellationToken);
+
+    /// <summary>
+    /// Marks every unaccepted backlog row whose demand the catalog no longer lists, so it stops reading as waiting.
+    /// </summary>
+    /// <remarks>
+    /// Rows are only ever written for demands in the catalog, so without this a demand MES closed before this
+    /// server took it kept its last reason forever. Saved here, ahead of the vehicle loop, because a vehicle that
+    /// runs out its budget clears the change tracker. <c>LastSeenAt</c> is left alone: it stays the last time the
+    /// demand was in the catalog. See <see cref="DispatchReasonCodes.DemandLeftCatalog"/>.
+    /// </remarks>
+    private async Task MarkBacklogLeftCatalogAsync(
+        Dictionary<string, JourneyBacklogRow> backlogByDemandId,
+        DemandCatalogSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        HashSet<string> listed = snapshot.Items.Select(item => item.DemandId).ToHashSet(StringComparer.Ordinal);
+        bool marked = false;
+        foreach (JourneyBacklogRow row in backlogByDemandId.Values)
+        {
+            if (row.AcceptedAt is null &&
+                !listed.Contains(row.DemandId) &&
+                !string.Equals(row.ReasonCode, DispatchReasonCodes.DemandLeftCatalog, StringComparison.Ordinal))
+            {
+                row.ReasonCode = DispatchReasonCodes.DemandLeftCatalog;
+                marked = true;
+            }
+        }
+        if (marked)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     private JourneyBacklogRow UpsertBacklog(
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
@@ -1658,7 +2095,9 @@ public sealed class JourneyRuntimeEngine(
             StableGuid(demandId, "gate-leg"),
             $"W2G-{demandId}-GATE-{runtimeOptions.DispatchGeneration}",
             runtimeOptions.DispatchGeneration,
-            now);
+            now,
+            candidate.AreaAssignmentVersion,
+            candidate.RequiredSlotPosition);
     }
 
     /// <summary>
@@ -1749,10 +2188,12 @@ public sealed class JourneyRuntimeEngine(
         AcceptedDemandRow demand,
         string station,
         string role,
-        long revision) => new(
+        long revision,
+        DateTimeOffset? stationDepartureDeadlineAt) => new(
             station,
             revision,
             runtime.OperationSessionId,
+            stationDepartureDeadlineAt,
             [new CurrentStopWorklistItem(
                 demand.DemandId,
                 demand.TransportDemandKey,
@@ -1769,7 +2210,58 @@ public sealed class JourneyRuntimeEngine(
 
     // Likewise the only activePurpose this runtime can be in. CHARGING is batch 8, IDLE_RETURN is
     // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.
-    private const string TransportPurpose = "TRANSPORT";
+    private const string TransportPurpose = VehicleActivePurposes.Transport;
+
+    // 8005-agv-program#94's semantic table: v2 has no automatic charging today (scope specification
+    // 5.5), so this server holds no charger reservation, no charging order and no charging cycle.
+    // "Not in a charging cycle" is a fact it knows, not a guess; UNKNOWN would report a missing
+    // feature as a lost observation. Nor is MANDATORY_CHARGE sent before batch 9.
+    private const string NotInAChargingCycle = "NOT_CHARGING";
+
+    private static VehicleBusinessProjection TransportBusinessState(long revision, LoadingPhaseProjection loadingPhase) =>
+        new(revision, "READY", TransportPurpose, false, "SUFFICIENT", NotInAChargingCycle, loadingPhase, []);
+
+    /// <summary>
+    /// The loading phase a transport journey reports at a given stage -- the one place that mapping is
+    /// made, never null for a journey that exists.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The semantics are <c>8005-agv-program</c> commit <c>db5a1d14</c> (<c>8005-agv-program#94</c>):
+    /// <c>LOADING</c> until the pickup's load batch closes safely, then <c>CLOSED</c> with
+    /// <c>PLANNED_LOADING_COMPLETE</c> until the journey ends. With one demand per journey there is no
+    /// cargo holding wait, so the holding deadline is always null.
+    /// </para>
+    /// <para>
+    /// The stage alone decides it everywhere but <see cref="JourneyRuntimeStage.Blocked"/> and
+    /// <see cref="JourneyRuntimeStage.Completed"/>, which a journey reaches from either side of the
+    /// load; there <paramref name="loadBatchClosed"/> decides. <see cref="JourneyRuntimeStage.AwaitingStationDeparture"/>
+    /// is already closed: the load has committed, and a correction there handles what was already
+    /// loaded rather than admitting another demand.
+    /// </para>
+    /// <para>
+    /// <b>Sent at the two points this runtime already publishes the snapshot</b>: the pickup arrival
+    /// (<c>LOADING</c>) and the drop-off arrival (<c>CLOSED</c>). #94 left open whether to publish once
+    /// more when the vehicle leaves the pickup, and this server does not: an extra snapshot shifts the
+    /// revision stream the synthetic peer and the G3 runners assert against, for a value nothing acts on
+    /// before batch 7 gives the phase its display.
+    /// </para>
+    /// </remarks>
+    public static LoadingPhaseProjection LoadingPhase(JourneyRuntimeStage stage, bool loadBatchClosed) => stage switch
+    {
+        JourneyRuntimeStage.AwaitingPickupArrival or
+        JourneyRuntimeStage.AwaitingSublot or
+        JourneyRuntimeStage.AwaitingLoadResult => LoadingPhaseProjection.Loading,
+        JourneyRuntimeStage.AwaitingStationDeparture or
+        JourneyRuntimeStage.AwaitingDepartureSafety or
+        JourneyRuntimeStage.AwaitingGateArrival or
+        JourneyRuntimeStage.AwaitingUnloadResult => LoadingPhaseProjection.PlannedLoadingComplete,
+        JourneyRuntimeStage.Blocked or
+        JourneyRuntimeStage.Completed => loadBatchClosed
+            ? LoadingPhaseProjection.PlannedLoadingComplete
+            : LoadingPhaseProjection.Loading,
+        _ => throw new ArgumentOutOfRangeException(nameof(stage), stage, "Journey stage has no loading phase mapping.")
+    };
 
     // The plan stream advances three times per journey: before the pickup arrival at the stored
     // revision, at the pickup one above it, at the gate two above it. WireToGateStore seeds the next
@@ -1853,7 +2345,7 @@ public sealed class JourneyRuntimeEngine(
     private static void SetStage(JourneyRuntimeRow runtime, JourneyRuntimeStage stage, DateTimeOffset now)
     {
         runtime.Stage = stage;
-        runtime.BlockReasonCode = null;
+        runtime.SetBlockReason(null, now);
         runtime.UpdatedAt = now;
     }
 
@@ -1898,7 +2390,7 @@ public sealed class JourneyRuntimeEngine(
     private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)
     {
         runtime.Stage = JourneyRuntimeStage.Blocked;
-        runtime.BlockReasonCode = reason;
+        runtime.SetBlockReason(reason, now);
         runtime.UpdatedAt = now;
     }
 
@@ -1938,7 +2430,7 @@ public sealed class JourneyRuntimeEngine(
         {
             if (runtime.BlockReasonCode != "LOAD_CORRECTION_IN_PROGRESS")
             {
-                runtime.BlockReasonCode = "LOAD_CORRECTION_IN_PROGRESS";
+                runtime.SetBlockReason("LOAD_CORRECTION_IN_PROGRESS", now);
                 runtime.UpdatedAt = now;
             }
             return false;
@@ -1952,10 +2444,304 @@ public sealed class JourneyRuntimeEngine(
         if (runtime.StationDepartureWaitStartedAt != startedAt || runtime.BlockReasonCode is not null)
         {
             runtime.StationDepartureWaitStartedAt = startedAt;
-            runtime.BlockReasonCode = null;
+            runtime.SetBlockReason(null, now);
             runtime.UpdatedAt = now;
         }
-        return now - startedAt >= runtimeOptions.StationDepartureWaitTimeout;
+        // No deadline here means the wait is off: the vehicle leaves in the iteration its load commits.
+        return StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is not { } deadline ||
+               now >= deadline;
+    }
+
+    /// <summary>
+    /// When this journey's station departure wait (ADR-cross-0055) runs out, or null when there is no
+    /// such wait to express: the timeout is off, or the wait has not started.
+    /// </summary>
+    /// <remarks>
+    /// The single source of the deadline. The runtime judges the pickup timeout and the departure from
+    /// it, and the worklist sends it to the vehicle as <c>stationDepartureDeadlineAt</c>
+    /// (control-server#84), so the two can never disagree about when the stop ends. A null is not a
+    /// deadline of "now": publishing one the runtime never acts on would be a countdown that expires
+    /// into silence.
+    /// </remarks>
+    public static DateTimeOffset? StationDepartureDeadline(
+        JourneyRuntimeRow runtime,
+        TimeSpan stationDepartureWaitTimeout) =>
+        stationDepartureWaitTimeout <= TimeSpan.Zero || runtime.StationDepartureWaitStartedAt is not { } startedAt
+            ? null
+            : startedAt + stationDepartureWaitTimeout;
+
+    /// <summary>
+    /// Ends the pickup stop once its station departure deadline has passed with no sublot entered
+    /// (ADR-cross-0055; ADR-cross-0058 decision 7 redone for the one-demand journey). Called only from
+    /// <see cref="JourneyRuntimeStage.AwaitingSublot"/> in an iteration that found no matching entry.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Until batch 5 that stage had no deadline and no exit: an unscanned stop was asked again on
+    /// every poll and held the pickup until someone edited the database. The runtime may end it alone
+    /// because no slot operation has been commanded in this stage -- a load command moves the journey
+    /// to AwaitingLoadResult in the iteration that sends it -- so there is no physical state that only
+    /// the peer could settle.
+    /// </para>
+    /// <para>
+    /// <b>Exclusive with starting the load.</b> Both are decided by this one iteration for this one
+    /// journey: an entry already durable when the iteration reads the inbox starts the load and this
+    /// is never reached; once this has committed the journey is Completed and a later entry is never
+    /// read. Whichever is persisted first wins (ADR-cross-0055).
+    /// </para>
+    /// <para>
+    /// The demand stays out of dispatch because its DemandId is already accepted
+    /// (AlreadyAcceptedCriterion). Suppressing the business key permanently, so that a new DemandId
+    /// for the same sublot is not dispatched either, is REQ-0155/0156/0211 in batch 7.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> TryEndStopAtStationDeadlineAsync(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is not { } deadline ||
+            now < deadline)
+        {
+            return false;
+        }
+        // ADR-cross-0058 decision 4: ending the stop lets the vehicle be sent on, and it must not move
+        // with a door open (ADR-cross-0011/0012). So the stop keeps waiting past its deadline until the
+        // door is shut, then ends on that iteration's evidence. The alarm is raised only in
+        // AwaitingLoadResult (ReconcileStationTimeoutDoorNotClosed): here no slot has been commanded, so an
+        // open door is nothing our command explains and the session leaves Ready first
+        // (ADR-cross-0058 Verification, decision 4).
+        if (SlotDoorsNotProvenClosed(session))
+        {
+            return false;
+        }
+        // ADR-cross-0055 voids the countdown for a disconnect, and FR-031 AC-9 forbids cancelling or
+        // departing while the vehicle is off air. A dropped link does not move the session off Ready by
+        // itself -- nothing calls RecordConnectionLossAsync -- so readiness alone would let the stop end
+        // against evidence the vehicle sent before it vanished, cancelling a demand nobody could have
+        // scanned. Liveness is the measure the dispatch facts already use: the last inbound of this
+        // generation, within MaximumEvidenceAge. Coming back on the same generation is not a reconnect,
+        // so a deadline that passed meanwhile still stands; a real reconnect voids it at the handshake.
+        DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
+            runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        if (lastInboundAt is null || now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
+        {
+            return false;
+        }
+
+        // Decided again under the write lock (control-server#83). The operator's cancellation before a sublot
+        // is authorized on another connection's scope, and everything this iteration read about the stop was
+        // read without a lock: a cancellation authorized -- or authorized and already settled -- since then
+        // would otherwise lose its stop to this one, and its result would find a demand ended for a reason
+        // that is not the operator's. BeginTransaction on this store is BEGIN IMMEDIATE, so the reads below
+        // see every write committed before it, and the authorization, running inside the inbox's own write
+        // transaction, sees this one once it commits.
+        await using IDbContextTransaction? transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        JourneyRuntimeStage? stageNow = await dbContext.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.DemandId == runtime.DemandId)
+            .Select(row => (JourneyRuntimeStage?)row.Stage)
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (stageNow != JourneyRuntimeStage.AwaitingSublot ||
+            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+        await new PickupStopTermination(dbContext)
+            .StageAsync(runtime, StationTimeoutCancellationReason, now, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        checkpointWaits.Clear(runtime.VehicleKey);
+        LogStationDeadlineEndedStop(logger, runtime.AgvId, runtime.DemandId, deadline, null);
+        return true;
+    }
+
+    /// <summary>
+    /// Raises <see cref="StationTimeoutDoorNotClosedReason"/> while a load stop is past its station departure
+    /// deadline with no result and a slot door not proven closed, and withdraws it once that stops being
+    /// true (ADR-cross-0058 decision 4). Returns whether the block reason changed; the caller saves.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The stage stays <see cref="JourneyRuntimeStage.AwaitingLoadResult"/> and the journey is not Blocked:
+    /// nothing is wrong with the operation, and ending the stop would let the vehicle be sent away with a
+    /// door open (ADR-cross-0011/0012). The door is someone's to shut, so the alarm moves the duty to a
+    /// person rather than ending anything (8005-agv-program#55). Once the door is shut the alarm is
+    /// withdrawn, and the result that then arrives settles the stop as the vehicle reports it.
+    /// </para>
+    /// <para>
+    /// The door evidence is <see cref="SlotDoorsNotProvenClosed"/>, the reading that holds the AwaitingSublot
+    /// deadline back, and never RIoT's stop proof. Written on the edge only, since this runs every poll; the
+    /// withdrawal clears only this code, so a reason written by anything else survives. Its start time is
+    /// the block reason's own (control-server#80).
+    /// </para>
+    /// </remarks>
+    private bool ReconcileStationTimeoutDoorNotClosed(
+        JourneyRuntimeRow runtime,
+        SessionRecoveryRow session,
+        DateTimeOffset now)
+    {
+        if (StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout) is { } deadline &&
+            now >= deadline &&
+            SlotDoorsNotProvenClosed(session))
+        {
+            if (runtime.BlockReasonCode == StationTimeoutDoorNotClosedReason)
+            {
+                return false;
+            }
+            runtime.SetBlockReason(StationTimeoutDoorNotClosedReason, now);
+            LogStationTimeoutDoorNotClosed(
+                logger, runtime.AgvId, runtime.DemandId, runtime.PickupStationId, deadline, null);
+            return true;
+        }
+        if (runtime.BlockReasonCode != StationTimeoutDoorNotClosedReason)
+        {
+            return false;
+        }
+        runtime.SetBlockReason(null, now);
+        return true;
+    }
+
+    /// <summary>
+    /// Ends the demand of a load the store judged <see cref="StationOperationStatus.Failed"/>: a determinate
+    /// failure received after the stop's station departure deadline (ADR-cross-0058 decision 5).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Defensive path: the v2 onboard never produces it; the protocol allows another onboard version to
+    /// send it.</b> After its deadline the v2 onboard reopens a closed, empty slot rather than failing it
+    /// (8005-agv-program#55), so this runs only for a peer that does report <c>FAILED</c> with
+    /// <c>OPERATOR_TIMEOUT</c>. L1 and the synthetic peer are its whole proof.
+    /// </para>
+    /// <para>
+    /// The server may close the stop alone because such a failure only follows the deadline, so the
+    /// condition for closing it already holds when it arrives; one that arrived earlier never became
+    /// Failed (<see cref="DeterminateLoadFailure"/>). The demand ends under the terminal reason its failure
+    /// reason names -- <c>OPERATOR_TIMEOUT</c> ends it <c>CANCELLED_BY_STATION_TIMEOUT</c> -- the unanswered
+    /// load command is settled, and the vehicle is released through the same tail as the sublot deadline
+    /// (<see cref="PickupStopTermination"/>). The operation stays Failed, as the record of the load.
+    /// </para>
+    /// <para>
+    /// <b>Re-checked under the write lock.</b> The inbound processor handles every vehicle message inside a
+    /// write transaction, the cancellation of an in-flight load included, and a Failed load whose demand is
+    /// still Accepted is one that cancellation authorizes. So the decision is taken again inside one here:
+    /// the stage, the operation, the demand and the absence of an open load cancellation are read afresh,
+    /// and whichever writer commits first decides the demand. The one that loses changes nothing, rather
+    /// than rewriting a terminal reason already recorded.
+    /// </para>
+    /// <para>
+    /// Liveness is the station deadline's measure (FR-031 AC-9): nothing is ended against evidence from a
+    /// vehicle that has since gone off air.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> TrySettleDeterminateLoadFailureAsync(
+        JourneyRuntimeRow runtime,
+        StationOperationRow load,
+        SessionRecoveryRow session,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
+            runtime.AgvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
+        if (lastInboundAt is null || now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
+        {
+            return false;
+        }
+        // The store makes a load Failed only for a result whose reason has a terminal state, and records
+        // that result in the same transaction; a null here would be a store defect, left standing rather
+        // than guessed at.
+        if (await DeterminateLoadFailureTerminalReasonAsync(runtime, cancellationToken).ConfigureAwait(false)
+            is not { } terminalReason)
+        {
+            return false;
+        }
+
+        await using (IDbContextTransaction transaction = await dbContext.Database
+                         .BeginTransactionAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await dbContext.Entry(runtime).ReloadAsync(cancellationToken).ConfigureAwait(false);
+            await dbContext.Entry(load).ReloadAsync(cancellationToken).ConfigureAwait(false);
+            AcceptedDemandRow demand = await dbContext.AcceptedDemands
+                .SingleAsync(row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+            await dbContext.Entry(demand).ReloadAsync(cancellationToken).ConfigureAwait(false);
+            // The one definition the sublot deadline and the cancellation's authorization use too. A cancellation
+            // that did not reconcile is not "open", but it has already put the demand in RecoveryRequired and
+            // the journey in Blocked, which the checks below refuse on their own.
+            bool cancellationOpen = await LoadCancellationBeforeSublot
+                .HasOpenCancellationAsync(dbContext, runtime.DemandId, cancellationToken).ConfigureAwait(false);
+            if (runtime.Stage != JourneyRuntimeStage.AwaitingLoadResult ||
+                load.Status != StationOperationStatus.Failed ||
+                demand.Status != DemandExecutionStatus.Accepted ||
+                cancellationOpen)
+            {
+                return false;
+            }
+
+            // The failure is the load command's answer. Left unsettled it would be replayed into every later
+            // session, where the peer refuses it as a business id whose content changed.
+            ProtocolOutboxRow? loadCommand = await dbContext.ProtocolOutbox
+                .SingleOrDefaultAsync(row => row.MessageId == runtime.LoadCommandMessageId, cancellationToken)
+                .ConfigureAwait(false);
+            if (loadCommand is not null)
+            {
+                loadCommand.AcknowledgedAt ??= now;
+            }
+            await new PickupStopTermination(dbContext)
+                .StageAsync(runtime, terminalReason, now, cancellationToken).ConfigureAwait(false);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        checkpointWaits.Clear(runtime.VehicleKey);
+        LogDeterminateLoadFailureSettled(logger, runtime.AgvId, runtime.DemandId, terminalReason, null);
+        return true;
+    }
+
+    /// <summary>
+    /// The terminal reason the live result of this journey's load names, read from the result as the vehicle
+    /// sent it.
+    /// </summary>
+    private async Task<string?> DeterminateLoadFailureTerminalReasonAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        string? resultId = await dbContext.OperationResults.AsNoTracking()
+            .Where(row => row.SlotOperationAttemptId == runtime.LoadSlotOperationAttemptId &&
+                          row.SupersededByResultId == null &&
+                          !row.HistoricalOnly)
+            .Select(row => row.ResultId)
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        ProtocolInboxRow? result = resultId is null
+            ? null
+            : await dbContext.ProtocolInbox.AsNoTracking()
+                .SingleOrDefaultAsync(row => row.MessageId == resultId, cancellationToken).ConfigureAwait(false);
+        if (result is null)
+        {
+            return null;
+        }
+        using JsonDocument document = JsonDocument.Parse(result.RequestJson);
+        return DeterminateLoadFailure.TerminalReason(SlotOutcomeReport.FromSlotResults(
+            document.RootElement.GetProperty("payload").GetProperty("slotResults")));
+    }
+
+    /// <summary>
+    /// Whether the vehicle's current safety evidence fails to show every slot door shut: it reports a
+    /// door not closed (<c>LOCK_NOT_CLOSED</c>), or something unknown, or the server holds no reading
+    /// at all. The server must not end a stop against evidence it cannot read.
+    /// </summary>
+    private static bool SlotDoorsNotProvenClosed(SessionRecoveryRow session)
+    {
+        if (session.SafetyUnknownPresent != false || session.SafetyReasonCodesJson is null)
+        {
+            return true;
+        }
+        string[] reasonCodes = JsonSerializer.Deserialize<string[]>(session.SafetyReasonCodesJson) ?? [];
+        return reasonCodes.Contains("LOCK_NOT_CLOSED", StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -2045,7 +2831,7 @@ public sealed class JourneyRuntimeEngine(
                 currentRevision,
                 runtime.GateStationId),
             cancellationToken).ConfigureAwait(false);
-        runtime.BlockReasonCode = "PREDEPARTURE_CHECK_EXPIRED";
+        runtime.SetBlockReason("PREDEPARTURE_CHECK_EXPIRED", now);
         runtime.UpdatedAt = now;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return true;

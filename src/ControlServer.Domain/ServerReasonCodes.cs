@@ -30,11 +30,24 @@ namespace ControlServer.Domain;
 /// its pinned-deviation set is empty, so a code outside the registry fails rather than being
 /// filed under the divider.
 /// </para>
+/// <para>
+/// **Four were registered here before anything sent them.** The protocol <c>2.0.0</c> candidate added
+/// the three sublot rejection reasons, which <c>SublotRejected</c> starts carrying in
+/// <c>8005-agv-control-server#82</c>, and <c>OPERATOR_TIMEOUT</c>, which the v2 onboard never
+/// produces and this server only has to settle defensively when it arrives
+/// (<c>8005-agv-control-server#81</c>). Naming them first is what put them under the registry guard
+/// before their first use rather than after; <c>EXPECTED_BASKET_COUNT_MISMATCH</c> joined the
+/// <c>SublotRejected</c> surface in the same ticket, having until then only ever been a dispatch
+/// reason code the peer never saw.
+/// </para>
 /// </remarks>
 public static class ServerReasonCodes
 {
     public const string ActionNotAllowedInState = "ACTION_NOT_ALLOWED_IN_STATE";
+    public const string ExpectedBasketCountMismatch = "EXPECTED_BASKET_COUNT_MISMATCH";
     public const string ForcedRecoveryGenerationStale = "FORCED_RECOVERY_GENERATION_STALE";
+    public const string OperatorTimeout = "OPERATOR_TIMEOUT";
+    public const string PackageCapacityUnresolved = "PACKAGE_CAPACITY_UNRESOLVED";
     public const string ProtocolReleaseIdentityMismatch = "PROTOCOL_RELEASE_IDENTITY_MISMATCH";
     public const string ProtocolSchemaInvalid = "PROTOCOL_SCHEMA_INVALID";
     public const string ProvenRecoveryCheckpointRequired = "PROVEN_RECOVERY_CHECKPOINT_REQUIRED";
@@ -50,4 +63,6 @@ public static class ServerReasonCodes
     public const string RecoveryScopeMismatch = "RECOVERY_SCOPE_MISMATCH";
     public const string RecoverySessionNotOpen = "RECOVERY_SESSION_NOT_OPEN";
     public const string SessionRecoveryRequired = "SESSION_RECOVERY_REQUIRED";
+    public const string SublotBoxCountUnavailable = "SUBLOT_BOX_COUNT_UNAVAILABLE";
+    public const string SublotNotInDispatchScope = "SUBLOT_NOT_IN_DISPATCH_SCOPE";
 }

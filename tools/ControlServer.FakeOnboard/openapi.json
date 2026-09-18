@@ -79,6 +79,30 @@
         }
       }
     },
+    "/control/v1/determinate-load-failures/{key}": {
+      "put": {
+        "summary": "Answers a held load command with a determinate failure (ADR-cross-0058 decision 5).",
+        "description": "The first target slot FAILED under reasonCode, the rest NOT_STARTED, every slot EMPTY, LOCKED and RESET. The v2 onboard does not send this; the server settles it defensively, and only after the station departure deadline. Remembered verbatim like /answer, so a replayed command gets the same result back. This peer has no deadline of its own: the scenario decides when to send it.",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "\"operation:{slotOperationAttemptId}\" of a held LOAD command. Read the exact key from /control/v1/snapshot."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DeterminateLoadFailureCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "The result was sent." },
+          "400": { "description": "INVALID_ARGUMENT when the request under that key is not a LOAD SlotOperationCommand." },
+          "409": { "description": "NOT_FOUND when no request is open under that key, NOT_ALLOWED_IN_STATE when no session is connected." }
+        }
+      }
+    },
     "/control/v1/connection": {
       "put": {
         "summary": "Drops the session to ControlServer (connected: false) or opens a new one with a full handshake (connected: true).",
@@ -107,6 +131,33 @@
           "409": { "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or NOT_ALLOWED_IN_STATE." }
         }
       }
+    },
+    "/control/v1/load-cancellations": {
+      "get": {
+        "summary": "Every load cancellation this peer raised: the request, the server's decision and authorized slots, and the result it reported and whether the server acknowledged it.",
+        "description": "Kept outside the command engine; reading it does not move the revision.",
+        "responses": {
+          "200": { "description": "cancellations, oldest first." }
+        }
+      }
+    },
+    "/control/v1/load-cancellations/{cancellationId}": {
+      "put": {
+        "summary": "Raises LoadCancellationStartRequested under cancellationId, the way the operator's load cancellation does.",
+        "description": "slotOperationAttemptId null is the cancellation before any sublot entry. On AUTHORIZED with no slots the peer reports LoadCancellationResult ALL_EMPTY with no slot results at once; an authorization naming slots is recorded and left unanswered, because this peer has no slot IO to prove them empty. Not routed through the command engine.",
+        "parameters": [
+          { "name": "cancellationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoadCancellationCommand" } } }
+        },
+        "responses": {
+          "200": { "description": "cancellationId and the requestMessageId it went out under." },
+          "400": { "description": "INVALID_ARGUMENT: an id is not a UUID." },
+          "409": { "description": "NOT_ALLOWED_IN_STATE: no session to ControlServer is open." }
+        }
+      }
     }
   },
   "components": {
@@ -125,6 +176,20 @@
         "allOf": [
           { "$ref": "#/components/schemas/CommandEnvelope" },
           { "type": "object", "required": ["connected"], "properties": { "connected": { "type": "boolean" } } }
+        ]
+      },
+      "LoadCancellationCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "required": ["demandId"],
+            "properties": {
+              "demandId": { "type": "string", "format": "uuid" },
+              "slotOperationAttemptId": { "type": "string", "format": "uuid", "nullable": true },
+              "reason": { "type": "string" }
+            }
+          }
         ]
       },
       "AlarmsCommand": {
@@ -199,6 +264,21 @@
                 "type": "boolean",
                 "default": true,
                 "description": "Activations only. false concludes the activation on the peer but holds its result back until ControlServer replays the command after a reconnect."
+              }
+            }
+          }
+        ]
+      },
+      "DeterminateLoadFailureCommand": {
+        "allOf": [
+          { "$ref": "#/components/schemas/CommandEnvelope" },
+          {
+            "type": "object",
+            "properties": {
+              "reasonCode": {
+                "type": "string",
+                "default": "OPERATOR_TIMEOUT",
+                "description": "The failed slot's reason code. OPERATOR_TIMEOUT is the only one protocol 2.0.0 allows on an OperationResult; any other goes to recovery on the server."
               }
             }
           }

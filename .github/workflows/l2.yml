@@ -27,8 +27,24 @@ name: l2
 on:
   push:
     branches: [ControlServer_MVP, main]
+  # A draft pull request runs nothing; marking it ready runs the one round a ticket is meant to need.
+  # No `edited`: changing the body -- including its L2-Consecutive line -- must not start another round.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  # The on-demand consecutive run: any branch, any time the runner is free. There is deliberately no
+  # schedule -- a ticket that needs three in a row mid-development should not wait for the night.
+  #   gh workflow run l2.yml --ref <branch> -f mode=consecutive [-f scenarios=a,b]
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'consecutive = each scenario its registered Runs; consecutive-all = every scenario at least three; default = what a pull request runs'
+        type: choice
+        options: [consecutive, consecutive-all, default]
+        default: consecutive
+      scenarios:
+        description: 'Comma-separated scenario names to run; empty runs the whole list'
+        type: string
+        default: ''
 
 # Never cancel a running job here. Cancelling one on a self-hosted runner also cancels the runner's
 # broker long-poll; the backoff retries exhaust and the session wedges without self-healing.
@@ -40,10 +56,34 @@ concurrency:
 
 jobs:
   scenarios:
+    # Skipped, not cancelled: GitHub decides this before any runner is involved.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     # `headless` matters: win11-01 also hosts an interactive runner, and a job that only asked for
     # [self-hosted] could be taken by either. This one must NOT land on the golden-renderer runner.
     runs-on: [self-hosted, headless]
-    timeout-minutes: 60
+    # A timeout ends the job by cancelling it, which may well take the path that wedged this runner,
+    # so it must never be what ends a run. The consecutive modes, and a pull request's L2-Consecutive
+    # line, run scenarios up to three times over; give them room.
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 180 || 120 }}
+    env:
+      # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
+      # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
+      # runs 34807639494 and 35118544313. Off in CI only; release.yml keeps it.
+      NuGetAudit: 'false'
+      L2_MODE: ${{ inputs.mode || 'default' }}
+      # How many port slots the scenarios run in side by side (scripts/l2/L2Lanes.psm1, control-server#130).
+      # Four is the most slots there are besides slot 0. It needs win11-01's 4 GB page file (set on
+      # 2026-09-18): a lane commits about 0.7 GB, an onboard-hmi CI round about 2.9 GB, and with the old
+      # 512 MB page file the two together passed the 8.7 GB commit limit, where an allocation fails
+      # outright rather than slowing down. The limit is 12.0 GB now. 1 is the old serial run, in slot 1.
+      L2_LANES: '4'
+      L2_ONLY: ${{ inputs.scenarios || '' }}
+      L2_PR_NUMBER: ${{ github.event.pull_request.number }}
+      L2_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      # The body as it was when this round was triggered, read through the environment rather than
+      # pasted into the script so nothing in it is ever executed.
+      L2_PR_BODY: ${{ github.event.pull_request.body }}
+      GITHUB_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v7
@@ -51,12 +91,34 @@ jobs:
       # Every scenario runs even when an earlier one fails: one red scenario must not hide the
       # state of the others, which is the whole reason to have more than one.
       #
-      # `runs` is the batch-2 track-B exit discipline (specification 8.3): the batch's new
-      # scenarios must pass THREE CONSECUTIVE times, and each run keeps its own evidence directory.
-      # The reason is the same one the golden renderer gives: L2 spans processes, so one pass
-      # cannot tell "correct" from "the scheduler happened to line up this time". A scenario that
-      # predates this batch keeps its single run -- three-in-a-row is an exit criterion for the
-      # work being handed over, not a permanent tax on every scenario.
+      # Two modes, one list. `Runs` is each scenario's CONSECUTIVE count (specification 8.3): L2
+      # spans processes, so one pass cannot tell "correct" from "the scheduler happened to line up
+      # this time", and a batch's scenarios must pass three in a row, each run with its own evidence
+      # directory. Since 2026-09-17 that count is paid on demand, not on every push -- it was 46% of
+      # an L2 job (618 of 1354 seconds in run 35171499974) on a single runner that four parallel
+      # tickets queue behind:
+      #
+      #   default (push, pull_request)  each scenario `DefaultRuns` times, 1 when absent
+      #   consecutive (dispatch)        each scenario `Runs` times
+      #   consecutive-all (dispatch)    each scenario at least three times -- a batch exit
+      #
+      # `DefaultRuns = 3` is for a scenario that guards a race already seen red in CI, where one pass
+      # on a pull request would not catch it coming back. What the default mode gives up: a
+      # low-rate race in the other scenarios is now caught only by a consecutive run, so a ticket
+      # touching timing (engine advance, connection session, recovery, emergency stop, or any
+      # `Runs = 3` scenario) runs one before it merges.
+      #
+      # Since 2026-09-17 a ticket is meant to need one round, so that consecutive run goes inside it:
+      # a line `L2-Consecutive: a, b` in the pull request body runs those scenarios three times each in
+      # this round, the rest as default. A name not in the list fails the round -- a typo must not
+      # quietly turn three runs into one.
+      #
+      # A pull request run whose head has moved on skips its remaining scenarios and ends green:
+      # the newer push has its own run, and cancelling -- by hand or by `cancel-in-progress` -- wedges
+      # this runner (see above). The check never skips a dispatched run.
+      #
+      # Adding a scenario: one line, `@{ Name = '...'; Runs = 1 }`, `Runs = 3` when it needs three in
+      # a row. Add `DefaultRuns = 3` only for the reason above.
       #
       # Exit code is the contract -- the guest is zh-CN and the runner prints 已通过! not Passed!,
       # so nothing here may match on English console text. Invoke-L2Scenario.ps1 exits 1 on FAIL.
@@ -65,7 +127,13 @@ jobs:
         run: |
           $scenarios = @(
               @{ Name = 'normal-load';                 Runs = 1 }
-              @{ Name = 'session-established-while-moving'; Runs = 1 }
+              # Three consecutive runs since 2026-09-16, not because the scenario is new but
+              # because it turned out to be racing the server: it went red once in twelve runs
+              # (run 35055524167 attempt 1) on a real defect, and one pass could not have told
+              # that apart from luck. See
+              # docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md.
+              # Three on every pull request too: that defect (control-server#104) is the race this guards.
+              @{ Name = 'session-established-while-moving'; Runs = 3; DefaultRuns = 3 }
               @{ Name = 'load-result-requires-recovery';    Runs = 1 }
               @{ Name = 'load-command-never-answered';      Runs = 1 }
               @{ Name = 'route-graph-engine';          Runs = 1 }
@@ -80,45 +148,214 @@ jobs:
               # Batch 2 ticket 19's prerequisite: the emergency stop goes out exactly once. Three
               # consecutive runs, because what it guards against is a timing race with RIoT's latch.
               @{ Name = 'emergency-stop-single-trigger'; Runs = 3 }
+              # control-server#63 (REQ-0356): the release on a person's confirmation, three consecutive
+              # runs for the same reason -- what it guards against is RIoT clearing the latch after the
+              # read-back, a timing that one pass cannot tell from luck.
+              @{ Name = 'emergency-stop-operator-release'; Runs = 3 }
               # The batch-3 exit (FP-IS-14 and FP-IS-15), three consecutive runs each.
               @{ Name = 'slot-configuration-activation-replay'; Runs = 3; BatchId = 'batch-3' }
               @{ Name = 'onboard-alarm-snapshot-dashboard';     Runs = 3; BatchId = 'batch-3' }
+              # Batch 5 (control-server#79): the station departure deadline. In CI from its own ticket so
+              # a batch-4 PR catches a regression before it merges; the batch-5 exit makes it three runs.
+              @{ Name = 'station-deadline-sublot-timeout'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 5 (control-server#83): the cancellation before a sublot entry, waiting for the ALL_EMPTY
+              # result before ending the stop. Same reason as the line above; the batch-5 exit makes it three runs.
+              @{ Name = 'load-cancelled-before-sublot'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 5 (control-server#82): the entry revalidated after the operator made it, refused with the
+              # reason on the wire when it no longer holds. Same reason as the line above; the batch-5 exit
+              # (control-server#90) makes it three runs.
+              @{ Name = 'sublot-rejected-after-entry'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 5 (control-server#80): blocked journeys with their start time on the dashboard. In CI from its own
+              # ticket for the same reason; the batch-5 exit (control-server#90) makes it three runs.
+              @{ Name = 'blocked-journey-dashboard-projection'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 5 (control-server#81): the load stop past its deadline -- a determinate failure settled
+              # defensively, and a door left open raising STATION_TIMEOUT_DOOR_NOT_CLOSED. Same reason; the
+              # batch-5 exit (control-server#90) makes it three runs.
+              @{ Name = 'load-determinate-failure-and-door-open-timeout'; Runs = 1; BatchId = 'batch-5' }
+              # Batch 4 (control-server#68), specification 8.3 scenario 4: the five kinds of bad area
+              # assignment table each rejected whole. Same reason as the line above -- batches 4 and 5 both
+              # merge into fp/v2-impl, so the scenario earns its place in CI from its own ticket; the
+              # batch-4 exit (control-server#76) made it three runs.
+              @{ Name = 'area-assignment-import-rejects'; Runs = 3; BatchId = 'batch-4' }
+              @{ Name = 'area-assignment-unmapped-silent'; Runs = 3; BatchId = 'batch-4' }
+              # Batch 4 (control-server#73), specification 8.3 scenarios 1 and 2: target slots chosen inside the
+              # demand's slot group, and a demand waiting while its group is full. In CI from their own ticket for
+              # the same reason as the line above; the batch-4 exit (control-server#76) made them three runs.
+              @{ Name = 'slot-group-selection';           Runs = 3; BatchId = 'batch-4' }
+              @{ Name = 'slot-group-temporarily-full';    Runs = 3; BatchId = 'batch-4' }
+              # Batch 4 (control-server#74), specification 8.3 scenario 3: an oversized demand raised at once as a
+              # structural dispatch block, and disabled slots that stay ordinary backlog. In CI from their own ticket for
+              # the same reason as the line above; the batch-4 exit (control-server#76) made them three runs.
+              @{ Name = 'structural-block-oversized-demand'; Runs = 3; BatchId = 'batch-4' }
+              @{ Name = 'slot-group-disabled-no-alert';      Runs = 3; BatchId = 'batch-4' }
+              # Batch 4 (control-server#75), specification 8.3 scenarios 5 and 7: the assignment version frozen at
+              # dispatch, and a mixed-side station served by two trips. The batch-4 exit (control-server#76) made them
+              # three runs.
+              @{ Name = 'area-assignment-version-freeze';    Runs = 3; BatchId = 'batch-4' }
+              @{ Name = 'mixed-side-station-two-trips';      Runs = 3; BatchId = 'batch-4' }
           )
+          # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
+          # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
+          # to pay for as the first scenario. A scenario not listed counts 30. Only the balance of the lanes
+          # depends on these, never what runs.
+          $estimates = @{
+              'mixed-side-station-two-trips' = 96; 'station-deadline-sublot-timeout' = 78
+              'load-determinate-failure-and-door-open-timeout' = 70; 'area-assignment-version-freeze' = 67
+              'command-surface-order-hold' = 65; 'three-vehicle-exit' = 60; 'slot-group-selection' = 56
+              'normal-load' = 50; 'emergency-stop-single-trigger' = 46; 'route-graph-staleness' = 42
+              'load-result-requires-recovery' = 35; 'blocked-journey-dashboard-projection' = 32
+              'emergency-stop-operator-release' = 32; 'area-assignment-import-rejects' = 32
+              'load-cancelled-before-sublot' = 28; 'sublot-rejected-after-entry' = 28
+              'load-command-never-answered' = 24; 'onboard-alarm-snapshot-dashboard' = 24
+              'session-established-while-moving' = 24; 'area-assignment-unmapped-silent' = 23
+              'create-gate-unapproved' = 22; 'slot-group-temporarily-full' = 21
+              'structural-block-oversized-demand' = 21; 'slot-group-disabled-no-alert' = 20
+              'slot-configuration-activation-replay' = 19; 'three-synthetic-peers' = 18; 'create-gate' = 18
+              'route-graph-engine' = 17
+          }
+
+          # Registered before anything can fail, so the upload step below always has a path: without it
+          # a setup error also shows "Input required and not supplied: path" beside the real reason.
           $evidenceRoot = Join-Path $env:RUNNER_TEMP "l2-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
-          $failed = @()
-          foreach ($scenario in $scenarios) {
-              for ($run = 1; $run -le $scenario.Runs; $run++) {
-                  $label = if ($scenario.Runs -eq 1) { $scenario.Name } else { "$($scenario.Name) ($run/$($scenario.Runs))" }
-                  # -EvidenceRoot must not exist; the run id, the attempt and the run number keep a
-                  # re-run from colliding with the directory its predecessor wrote, and keep the
-                  # three consecutive runs' evidence separate from each other.
-                  $evidence = Join-Path $evidenceRoot "$($scenario.Name)-$('{0:d2}' -f $run)"
-                  Write-Host "::group::$label"
-                  & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 `
-                      -Scenario $scenario.Name -EvidenceRoot $evidence -BatchId ($scenario.BatchId ?? 'batch-2')
-                  $code = $LASTEXITCODE
-                  Write-Host '::endgroup::'
-                  if ($code -ne 0) {
-                      $failed += $label
-                      Write-Host "::error title=L2 scenario failed::$label exited with $code"
-                      # Stop this scenario's remaining runs but not the other scenarios': three
-                      # consecutive passes is the criterion, so once one run is red the rest of
-                      # that scenario's runs cannot establish it and only cost minutes.
-                      break
+          "L2_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # A setup error fails the round before any scenario runs; the annotation puts the reason on the
+          # pull request's checks page instead of only in the log.
+          function Stop-L2Setup([string]$Message) {
+              Write-Host "::error title=L2 setup::$Message"
+              throw $Message
+          }
+
+          $only = @($env:L2_ONLY -split ',' | ForEach-Object Trim | Where-Object { $_ })
+          $unknown = @($only | Where-Object { $_ -notin $scenarios.Name })
+          if ($unknown.Count -gt 0) {
+              Stop-L2Setup "Not in this workflow's scenario list: $($unknown -join ', ')"
+          }
+          Write-Host "L2 mode: $env:L2_MODE$(if ($only.Count -gt 0) { "; only $($only -join ', ')" }); $env:L2_LANES lanes"
+
+          # A pull request body line `L2-Consecutive: a, b` (any case, any spacing, commas or spaces,
+          # backticks allowed) runs those scenarios three times each in this round.
+          $bodyConsecutive = @()
+          if ($env:GITHUB_EVENT_NAME -eq 'pull_request') {
+              $lines = [regex]::Matches($env:L2_PR_BODY ?? '', '(?im)^[ \t>*-]*L2-Consecutive[ \t]*:(.*)$')
+              foreach ($line in $lines) {
+                  $names = @($line.Groups[1].Value -replace '`', '' -split '[,\s]+' | Where-Object { $_ })
+                  if ($names.Count -eq 0) {
+                      Stop-L2Setup "The pull request body has an L2-Consecutive line that names no scenario."
                   }
+                  $bodyConsecutive += $names
+              }
+              $bodyConsecutive = @($bodyConsecutive | Select-Object -Unique)
+              $unknown = @($bodyConsecutive | Where-Object { $_ -notin $scenarios.Name })
+              if ($unknown.Count -gt 0) {
+                  Stop-L2Setup "L2-Consecutive in the pull request body names scenarios not in this workflow's list: $($unknown -join ', ')"
+              }
+              if ($bodyConsecutive.Count -gt 0) {
+                  Write-Host "L2-Consecutive from the pull request body, three runs each: $($bodyConsecutive -join ', ')"
               }
           }
-          "L2_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # What runs and how often: the same rules as before the lanes, one entry per scenario.
+          $items = @(foreach ($scenario in $scenarios) {
+              if ($only.Count -gt 0 -and $scenario.Name -notin $only) { continue }
+              $runs = switch ($env:L2_MODE) {
+                  'consecutive'     { $scenario.Runs }
+                  'consecutive-all' { [Math]::Max(3, $scenario.Runs) }
+                  default           { $scenario.DefaultRuns ?? 1 }
+              }
+              if ($scenario.Name -in $bodyConsecutive) { $runs = [Math]::Max(3, $runs) }
+              [pscustomobject]@{
+                  Name = $scenario.Name; Runs = $runs; BatchId = $scenario.BatchId ?? 'batch-2'
+                  EstimateSeconds = $estimates[$scenario.Name]
+              }
+          })
+
+          Import-Module ./scripts/l2/L2Lanes.psm1 -Force
+          $plan = @(Get-L2LanePlan -Items $items -LaneCount ([int]$env:L2_LANES))
+          foreach ($lane in $plan) {
+              Write-Host ("L2 lane $($lane.Lane) (slot $($lane.Slot), about $($lane.EstimateSeconds)s): " +
+                  (($lane.Items | ForEach-Object { if ($_.Runs -eq 1) { $_.Name } else { "$($_.Name) x$($_.Runs)" } }) -join ', '))
+          }
+
+          # Build once, here, for every lane: a build under a running lane would overwrite the executables
+          # it is running, so each scenario gets -SkipBuild. From the repository root so global.json picks
+          # the SDK.
+          Write-Host '::group::Build'
+          & dotnet build ./ControlServer.sln -c Release --nologo
+          $buildCode = $LASTEXITCODE
+          Write-Host '::endgroup::'
+          if ($buildCode -ne 0) { Stop-L2Setup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
+
+          # Each run's stage root (its SQLite database and friends, under %TEMP%) goes inside the evidence
+          # root: a passing run deletes its own, and a failing run's -- often the only place the cause is
+          # written down -- is uploaded with the evidence and cleared with the runner's temp directory,
+          # instead of piling up in NetworkService's profile (3607 of them by 2026-09-18).
+          $stageTemp = Join-Path $evidenceRoot '_stage'
+          $null = New-Item -ItemType Directory -Path $stageTemp -Force
+          $env:TEMP = $stageTemp
+          $env:TMP = $stageTemp
+
+          $state = [hashtable]::Synchronized(@{ CheckEnabled = $true; Superseded = $false })
+          $clock = [Diagnostics.Stopwatch]::StartNew()
+          $records = @(Invoke-L2LanePlan -Plan $plan -EvidenceRoot $evidenceRoot `
+              -Orchestrator (Resolve-Path ./scripts/l2/Invoke-L2Scenario.ps1).Path -State $state)
+          $wall = [Math]::Round($clock.Elapsed.TotalSeconds)
+
+          # Every run's own console output, lane by lane; while the lanes ran only their start and end lines
+          # were printed, because four interleaved logs read as one garbled one.
+          foreach ($record in $records) {
+              Write-Host "::group::$($record.Label) -- lane $($record.Lane), slot $($record.Slot), $(if ($record.ExitCode -eq 0) { 'PASS' } else { "FAIL ($($record.ExitCode))" }), $($record.Seconds)s"
+              if (Test-Path -LiteralPath $record.Log) { Get-Content -LiteralPath $record.Log | ForEach-Object { Write-Host $_ } }
+              Write-Host '::endgroup::'
+          }
+          $failed = @($records | Where-Object ExitCode -ne 0)
+          foreach ($record in $failed) {
+              Write-Host "::error title=L2 scenario failed::$($record.Label) exited with $($record.ExitCode) (lane $($record.Lane), slot $($record.Slot))"
+          }
+
+          # What actually ran, per scenario -- the record a consecutive run is cited by. Lane and slot say
+          # which scenarios ran beside which, which is the first thing to know about a red one.
+          $summary = @("### L2 ($env:L2_MODE, $($plan.Count) lanes, ${wall}s)$(if ($state.Superseded) { ' -- superseded, remaining scenarios skipped' })", '',
+                       '| Scenario | Lane | Slot | Consecutive | Last run | Result |', '| --- | --- | --- | --- | --- | --- |')
+          foreach ($item in $items) {
+              $last = @($records | Where-Object Scenario -eq $item.Name) | Select-Object -Last 1
+              if (-not $last) { continue }
+              $consecutive = if ($last.Scenario -in $bodyConsecutive) { 'L2-Consecutive' } elseif ($last.Runs -ge 3) { 'yes' } else { '' }
+              $result = if ($last.ExitCode -eq 0) { 'PASS' } else { "FAIL ($($last.ExitCode))" }
+              $summary += "| $($last.Scenario) | $($last.Lane) | $($last.Slot) | $consecutive | $($last.Run)/$($last.Runs) | $result |"
+          }
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $summary | ForEach-Object { Write-Host $_ }
+
           if ($failed.Count -gt 0) {
-              throw "L2 scenarios failed: $($failed -join ', ')"
+              throw "L2 scenarios failed: $(($failed | ForEach-Object Label) -join ', ')"
           }
 
       # Always: a failed run's evidence is the only account of why, and the runner's temp directory
       # is cleared before the next job.
+      #
+      # continue-on-error, because this uploads diagnostics, not a deliverable. The verdict is the
+      # step above -- Invoke-L2Scenario.ps1's exit code -- and it has already been reached by the
+      # time this runs. Without this, a transient ECONNRESET from the artifact service turns a run
+      # whose scenarios all passed into a red one: measured 2026-09-16 on run 35046150056 (PR #97),
+      # where all 15 synthetic scenarios passed and only the upload failed, and a manual job re-run
+      # of the identical commit went green. That is noise standing in for a verdict, in both
+      # directions -- it can invent a red, and it trains us to re-run reds without reading them.
+      # release.yml is deliberately NOT like this: that one uploads the release package itself, so
+      # a failed upload there IS a failed run.
       - name: Upload L2 evidence
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: l2-evidence
           path: ${{ env.L2_EVIDENCE_ROOT }}
           if-no-files-found: warn
+
+      # After the upload, not before: a failed run's stage root is part of what was uploaded. The runner
+      # clears its temp directory before the next job anyway; this makes it not depend on that.
+      - name: Remove L2 evidence and stage roots
+        if: always() && env.L2_EVIDENCE_ROOT != ''
+        continue-on-error: true
+        shell: pwsh
+        run: Remove-Item -LiteralPath $env:L2_EVIDENCE_ROOT -Recurse -Force -ErrorAction SilentlyContinue

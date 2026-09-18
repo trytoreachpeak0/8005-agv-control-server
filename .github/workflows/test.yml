@@ -8,7 +8,9 @@ name: test
 on:
   push:
     branches: [ControlServer_MVP, main]
+  # A draft pull request runs nothing; marking it ready runs the one round a ticket is meant to need.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 # Never cancel a running job here. Cancelling one on a self-hosted runner also
@@ -23,8 +25,15 @@ concurrency:
 
 jobs:
   test:
+    # Skipped, not cancelled: GitHub decides this before any runner is involved.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: [self-hosted, headless]
     timeout-minutes: 30
+    env:
+      # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
+      # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
+      # runs 34807639494 and 35118544313. Off in CI only; release.yml keeps it.
+      NuGetAudit: 'false'
 
     steps:
       - uses: actions/checkout@v7
@@ -39,10 +48,22 @@ jobs:
         shell: pwsh
         run: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
 
+      # continue-on-error, because the .trx is diagnostics, not a deliverable: the verdict is the
+      # `dotnet test` exit code in the step above, already reached by the time this runs. A
+      # transient ECONNRESET from the artifact service must not turn a green suite red. See the
+      # workspace root CLAUDE.md, "artifact 上传的重试留着"; release.yml is deliberately strict
+      # instead, because there the artifact IS the deliverable.
       - name: Upload test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results
-          path: tests/ControlServer.Tests/TestResults/test-results.trx
+          # schema-conformance/ holds the verdict's detail when the outbound schema check fails the
+          # run: the console only says "Test Assembly Cleanup Failure" (control-server#85). Next to
+          # the test assembly, because this workflow does not set WIRE_TO_GATE_SCHEMA_REPORT_DIR --
+          # test-wire-to-gate.ps1 does, and points it at the gate's evidence directory.
+          path: |
+            tests/ControlServer.Tests/TestResults/test-results.trx
+            tests/ControlServer.Tests/bin/Release/net8.0/win-x64/schema-conformance/
           if-no-files-found: warn

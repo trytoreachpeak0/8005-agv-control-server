@@ -498,6 +498,54 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.ToTable("CreateGateAudit");
                 });
 
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.DispatchZoneAreaAssignmentRow", b =>
+                {
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Area")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DispatchZone")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SlotPosition")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Version", "Area");
+
+                    b.ToTable("DispatchZoneAreaAssignments", (string)null);
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.DispatchZoneAreaAssignmentVersionRow", b =>
+                {
+                    b.Property<long>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContentSha256")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EntryCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("ImportedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SnapshotId")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Version");
+
+                    b.HasIndex("SnapshotId")
+                        .IsUnique();
+
+                    b.ToTable("DispatchZoneAreaAssignmentVersions", (string)null);
+                });
+
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.DispatchZoneVehicleRow", b =>
                 {
                     b.Property<string>("Zone")
@@ -855,6 +903,9 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("BlockReasonCode")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("BlockReasonSince")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ConsumedSafetyResultMessageId")
@@ -2614,6 +2665,40 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                     b.HasKey("DemandId");
 
                     b.ToTable("StopClosures");
+                });
+
+            modelBuilder.Entity("ControlServer.Infrastructure.Persistence.StructuralDispatchBlockRow", b =>
+                {
+                    b.Property<string>("DemandId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReasonCode")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ClearedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DetailJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("FirstRaisedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TransportDemandKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("DemandId", "ReasonCode");
+
+                    b.HasIndex("ClearedAt");
+
+                    b.HasIndex("TransportDemandKey");
+
+                    b.ToTable("StructuralDispatchBlocks", (string)null);
                 });
 
             modelBuilder.Entity("ControlServer.Infrastructure.Persistence.TransportDemandCompletionRow", b =>

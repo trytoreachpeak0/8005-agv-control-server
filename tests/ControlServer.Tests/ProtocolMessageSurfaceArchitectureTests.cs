@@ -44,18 +44,22 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Two kinds of entry, and they are not the same kind of debt.</b> Nine are the messages v2
-    /// added, and each belongs to a slice section 7.2 of the full-product scope specification
+    /// <b>Two kinds of entry, and they are not the same kind of debt.</b> Eight are the messages v2
+    /// added, and each belongs to a slice section 7.2 of the second edition of the scope specification
     /// schedules into a later batch; those empty as their batches land, exactly like
-    /// <see cref="ProtocolVectorTestBindingArchitectureTests.VectorsAwaitingTheirSlice"/>. Three
+    /// <see cref="ProtocolVectorTestBindingArchitectureTests.VectorsAwaitingTheirSlice"/>. Two
     /// predate v2 and are pinned to what the server does instead -- they are findings, not
     /// schedules, and the note on each is the thing to argue with.
     /// </para>
     /// <para>
-    /// Each of the three was checked rather than assumed on 2026-09-08.
-    /// <c>SublotRejected</c>: <c>OnboardMessageProcessor</c> answers <c>SublotSubmitted</c> with an
-    /// unconditional <c>DurableAck</c>, so no code path can reject a sublot and the response type
-    /// has no emitter. <c>CapabilitySnapshotRequested</c> and <c>SafetyStateSnapshotRequested</c>:
+    /// Each of the pinned ones was checked rather than assumed on 2026-09-08.
+    /// <c>SublotRejected</c> was the third of that kind: <c>OnboardMessageProcessor</c> answers
+    /// <c>SublotSubmitted</c> with an unconditional <c>DurableAck</c>, so no code path could reject
+    /// a sublot and the response type had no emitter — until BR-013 section 2 made the revalidation
+    /// after the entry the server's job and the runtime began refusing entries it cannot establish
+    /// a basket count for (<c>8005-agv-control-server#82</c>). Its line is gone from this set, and
+    /// the message is named in <c>src/</c> like any other.
+    /// <c>CapabilitySnapshotRequested</c> and <c>SafetyStateSnapshotRequested</c>:
     /// the server never asks for a snapshot again; it refuses readiness instead, via
     /// <c>WireToGateStore</c> raising <c>CAPABILITY_SNAPSHOT_REQUIRED</c> and
     /// <c>SAFETY_SNAPSHOT_REQUIRED</c>, which <c>ProtocolErrorCodes.ToSessionReadinessReasonCode</c>
@@ -73,16 +77,14 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
         {
             ["CapabilitySnapshotRequested"] =
                 "predates v2; the server refuses readiness with CAPABILITY_VERSION_GAP instead of asking again",
-            ["DemandSelectionRequested"] = "FP-IS-09, batch 7",
-            ["DemandSelectionResult"] = "FP-IS-09, batch 7",
-            ["ManualStationClearanceConfirmationRequested"] = "FP-IS-13, batch 8",
-            ["ManualStationClearanceConfirmationResult"] = "FP-IS-13, batch 8",
+            ["DemandSelectionRequested"] = "FP-IS-09, batch 11",
+            ["DemandSelectionResult"] = "FP-IS-09, batch 11",
+            ["ManualStationClearanceConfirmationRequested"] = "FP-IS-13, batch 9",
+            ["ManualStationClearanceConfirmationResult"] = "FP-IS-13, batch 9",
             ["SafetyStateSnapshotRequested"] =
                 "predates v2; the server refuses readiness with SAFETY_STATE_VERSION_GAP instead of asking again",
-            ["SublotRejected"] =
-                "predates v2; SublotSubmitted is answered with an unconditional DurableAck, so nothing emits it",
-            ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 8",
-            ["UnableToChargeFieldConfirmationResult"] = "FP-IS-13, batch 8"
+            ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 9",
+            ["UnableToChargeFieldConfirmationResult"] = "FP-IS-13, batch 9"
         };
 
     /// <summary>

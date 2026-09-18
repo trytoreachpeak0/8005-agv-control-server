@@ -1,3 +1,4 @@
+#Requires -Version 7
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -10,7 +11,12 @@ param(
     [string]$ResultPath,
     [switch]$RemoveDataRoot,
     [switch]$ConfirmUninstall,
-    [switch]$AllowProductionService
+    [switch]$AllowProductionService,
+    # control-server#80: what Install-ControlServerLocal.ps1 -DashboardPackagePath put in place. Named
+    # explicitly, never defaulted: a default would let uninstalling an isolated instance remove the
+    # production dashboard, so the production names fall under -AllowProductionService like the service.
+    [string]$DashboardTaskName,
+    [string]$DashboardInstallRoot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,6 +28,8 @@ function Resolve-FullPath([string]$Path) {
 $productionServiceName = '8005 AGV ControlServer'
 $productionInstallRoot = 'C:\Program Files\8005 AGV\ControlServer'
 $productionDataRoot = 'C:\ProgramData\8005\ControlServer'
+$productionDashboardTaskName = '8005 AGV ControlServer Dashboard'
+$productionDashboardInstallRoot = 'C:\Program Files\8005 AGV\ControlServer.Dashboard'
 $installPath = Resolve-FullPath $InstallRoot
 $dataPath = Resolve-FullPath $DataRoot
 $resolvedResult = Resolve-FullPath $ResultPath
@@ -38,9 +46,16 @@ Assert-Administrator
 if (-not $ConfirmUninstall) {
     throw 'Explicit -ConfirmUninstall authorization is required.'
 }
+$removeDashboard = -not [string]::IsNullOrWhiteSpace($DashboardTaskName)
+if ($removeDashboard -ne (-not [string]::IsNullOrWhiteSpace($DashboardInstallRoot))) {
+    throw 'Name both -DashboardTaskName and -DashboardInstallRoot, or neither.'
+}
+$dashboardInstallPath = if ($removeDashboard) { Resolve-FullPath $DashboardInstallRoot } else { $null }
 $targetsProduction = $ServiceName -eq $productionServiceName -or
     $installPath -eq (Resolve-FullPath $productionInstallRoot) -or
-    $dataPath -eq (Resolve-FullPath $productionDataRoot)
+    $dataPath -eq (Resolve-FullPath $productionDataRoot) -or
+    ($removeDashboard -and ($DashboardTaskName -eq $productionDashboardTaskName -or
+        $dashboardInstallPath -eq (Resolve-FullPath $productionDashboardInstallRoot)))
 if ($targetsProduction -and -not $AllowProductionService) {
     throw "Refusing to uninstall the production deployment without -AllowProductionService: $ServiceName"
 }
@@ -64,6 +79,27 @@ if ($service) {
     }
     $serviceRemoved = -not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)
     if (-not $serviceRemoved) { throw "The service was not removed within 30 seconds: $ServiceName" }
+}
+
+$dashboardTaskExisted = $removeDashboard -and [bool](Get-ScheduledTask -TaskName $DashboardTaskName -ErrorAction SilentlyContinue)
+$dashboardTaskRemoved = $false
+if ($dashboardTaskExisted) {
+    Stop-ScheduledTask -TaskName $DashboardTaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $DashboardTaskName -Confirm:$false
+    $dashboardTaskRemoved = -not (Get-ScheduledTask -TaskName $DashboardTaskName -ErrorAction SilentlyContinue)
+    if (-not $dashboardTaskRemoved) { throw "The dashboard scheduled task was not removed: $DashboardTaskName" }
+}
+if ($removeDashboard) {
+    $dashboardPrefix = $dashboardInstallPath.TrimEnd('\') + '\'
+    Get-Process -Name 'ControlServer.Dashboard' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and $_.Path.StartsWith($dashboardPrefix, [StringComparison]::OrdinalIgnoreCase) } |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+}
+$dashboardInstallRootRemoved = $false
+if ($removeDashboard -and (Test-Path -LiteralPath $dashboardInstallPath)) {
+    Remove-Item -LiteralPath $dashboardInstallPath -Recurse -Force
+    $dashboardInstallRootRemoved = -not (Test-Path -LiteralPath $dashboardInstallPath)
+    if (-not $dashboardInstallRootRemoved) { throw "The dashboard install root was not removed: $dashboardInstallPath" }
 }
 
 $installRootRemoved = $false
@@ -107,6 +143,11 @@ $result = [ordered]@{
     installRoot = $installPath
     installRootRemoved = $installRootRemoved
     installRootPresent = (Test-Path -LiteralPath $installPath)
+    dashboardTaskName = $DashboardTaskName
+    dashboardTaskExisted = $dashboardTaskExisted
+    dashboardTaskRemoved = $dashboardTaskRemoved
+    dashboardInstallRoot = $dashboardInstallPath
+    dashboardInstallRootRemoved = $dashboardInstallRootRemoved
     dataRoot = $dataPath
     dataRootRemoved = $dataRootRemoved
     dataRootRetained = $dataRootRetained

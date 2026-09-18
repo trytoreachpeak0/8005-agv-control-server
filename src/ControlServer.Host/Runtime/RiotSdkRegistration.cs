@@ -63,6 +63,9 @@ internal static class RiotSdkRegistration
         // sample needs -- getVehicleInfo and the vehicle card -- are both ones it already makes.
         services.AddScoped<IVehicleMotionFacts>(services =>
             services.GetRequiredService<HttpRiotMovementGateway>());
+        // Also the movement gateway's: the unfinished-order read is the one its safety read makes.
+        services.AddScoped<IRiotVehicleOrderFacts>(services =>
+            services.GetRequiredService<HttpRiotMovementGateway>());
         services.AddScoped<HttpRiotOrderCommandGateway>();
         services.AddScoped<IRiotOrderCommandGateway>(services =>
             services.GetRequiredService<HttpRiotOrderCommandGateway>());

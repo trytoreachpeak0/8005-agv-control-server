@@ -63,6 +63,18 @@ param(
     # rather than a live one -- the kind that surfaces the first time someone relaxes that.
     [int]$FakeOnboardPort = 48420,
 
+    # Which port slot this run binds, and whose lock it queues for (L2PortLock.psm1). 0 is the block
+    # above, under the lock every checkout has always taken; the real-onboard rig and run-journey-g3.ps1
+    # never pass this. Slots 1-4 exist so CI can run several synthetic scenarios at once, each in its
+    # own slot. A port given explicitly above wins over the slot's.
+    [ValidateRange(0, 4)]
+    [int]$PortSlot = 0,
+
+    # Run what is already built instead of building first. For a caller that runs several slots at
+    # once from one checkout: it builds once, and a build under a running slot would overwrite the
+    # executables that slot is running. The run still fails if the build output is missing.
+    [switch]$SkipBuild,
+
     # The two peer repositories are read-only for agents, so they are never built in place: each is
     # cloned to the cache below and published from the clone. Siblings of this repository by
     # default, which is how the workspace lays them out.
@@ -87,6 +99,17 @@ Import-Module (Join-Path $PSScriptRoot 'L2PortLock.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
+
+# The slot's ports, for every port parameter the caller left at its default. Slot 0 changes nothing:
+# its block is these parameters' own defaults, which Test-L2PortLockQueueing.ps1 holds together.
+if ($PortSlot -ne 0) {
+    $slotPorts = Get-L2PortBlock -Slot $PortSlot
+    foreach ($name in $slotPorts.Keys) {
+        if (-not $PSBoundParameters.ContainsKey($name)) {
+            Set-Variable -Name $name -Value $slotPorts[$name]
+        }
+    }
+}
 
 $scenarioPath = Join-Path $PSScriptRoot "scenarios/$Scenario.ps1"
 if (-not (Test-Path -LiteralPath $scenarioPath -PathType Leaf)) {
@@ -138,9 +161,106 @@ $slotConfigurationActivation = ($setup.ContainsKey('SlotConfigurationActivation'
 $governanceCredentialVariable = 'CONTROL_SERVER_GOVERNANCE_CREDENTIAL'
 # Not a secret either, for the same reason as the recovery proof above.
 $governanceCredential = 'l2-governance-credential-not-a-production-secret'
+# REQ-0356's release-on-confirmation entry point. Off in the product, because it takes an emergency stop
+# off a vehicle; a scenario that proves the release turns it on here, the same switch a site turns on.
+$emergencyStopRelease = ($setup.ContainsKey('EmergencyStopRelease') -and $setup.EmergencyStopRelease)
+$emergencyReleaseCredentialVariable = 'CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL'
+# Not a secret either.
+$emergencyReleaseCredential = 'l2-emergency-release-credential-not-a-production-secret'
 # The dashboard process. It reads only the server's read-only /api/dashboard/ endpoints over HTTP, so
 # starting it changes nothing about the server under test.
 $dashboard = ($setup.ContainsKey('Dashboard') -and $setup.Dashboard)
+
+# Batch 4's slot groups (control-server#71). Once dispatch requires the demand's AREA to be in the area
+# assignment table and the vehicle to have a server-side slot model, a rig that has neither dispatches
+# nothing -- so every rig whose journey runtime is on gets both by default, after the server is up (see the
+# preseed step below). These four keys are how a scenario says otherwise, and they are checked here, before
+# anything starts, because a typo in one would otherwise surface minutes later as "no vehicle was dispatched".
+$slotModelPreseed = $true
+if ($setup.ContainsKey('SlotModelPreseed')) {
+    if ($setup.SlotModelPreseed -isnot [bool]) {
+        throw "SlotModelPreseed in $Scenario.setup.psd1 must be `$true or `$false, not '$($setup.SlotModelPreseed)'."
+    }
+    $slotModelPreseed = $setup.SlotModelPreseed
+}
+# $null means the default table, $false means no import, anything else is the table to import instead.
+$areaAssignmentsSetting = $null
+if ($setup.ContainsKey('AreaAssignments')) {
+    if ($setup.AreaAssignments -is [bool]) {
+        if ($setup.AreaAssignments) {
+            throw "AreaAssignments = `$true in $Scenario.setup.psd1 means nothing: leave the key out for the default table, give `$false for none, or list the rows."
+        }
+        $areaAssignmentsSetting = $false
+    } else {
+        $areaAssignmentsSetting = @($setup.AreaAssignments)
+        if ($areaAssignmentsSetting.Count -eq 0) {
+            throw "AreaAssignments in $Scenario.setup.psd1 is empty; give `$false for no import."
+        }
+        foreach ($row in $areaAssignmentsSetting) {
+            if ($row -isnot [hashtable] -or
+                @('Area', 'DispatchZone', 'SlotPosition' | Where-Object { [string]::IsNullOrWhiteSpace($row[$_]) }).Count -gt 0) {
+                throw "Every AreaAssignments entry in $Scenario.setup.psd1 needs Area, DispatchZone and SlotPosition."
+            }
+        }
+    }
+}
+# The table import validates its SlotPosition values against the published slot model, so without the preseed
+# there is nothing to validate against and the import would fail halfway through startup. A scenario that
+# seeds its own model imports its own table too, and has to say so.
+if (-not $slotModelPreseed -and $areaAssignmentsSetting -isnot [bool]) {
+    throw "SlotModelPreseed = `$false in $Scenario.setup.psd1 needs AreaAssignments = `$false as well: the table import is validated against the slot model this scenario says it seeds itself."
+}
+# The synthetic peer's handshake slot states. Only the fields a vehicle's own state decides; lockState and
+# unlockOutputState stay what an idle vehicle reports, and slotNo is how an entry names its slot.
+$slotStateFields = @('physicalState', 'administrativeAvailability', 'operability')
+function ConvertTo-SlotStateArguments {
+    param([Parameter(Mandatory)][object[]]$Entries, [Parameter(Mandatory)][string]$Where)
+    $arguments = @()
+    $seen = @{}
+    for ($index = 0; $index -lt $Entries.Count; $index++) {
+        $entry = $Entries[$index]
+        if ($entry -isnot [hashtable] -or -not $entry.ContainsKey('SlotNo') -or
+            [int]$entry.SlotNo -lt 1 -or [int]$entry.SlotNo -gt 8) {
+            throw "Every SlotStates entry in $Where needs SlotNo between 1 and 8."
+        }
+        if ($seen.ContainsKey([int]$entry.SlotNo)) { throw "SlotStates in $Where names slot $($entry.SlotNo) twice." }
+        $seen[[int]$entry.SlotNo] = $true
+        $unknown = @($entry.Keys | Where-Object { $_ -ne 'SlotNo' -and $_ -cnotin $slotStateFields })
+        if ($unknown.Count -gt 0) {
+            throw "SlotStates in $Where cannot set $($unknown -join ', '); only $($slotStateFields -join ', ')."
+        }
+        $arguments += "--FakeOnboard:Seed:slotStates:${index}:slotNo=$([int]$entry.SlotNo)"
+        foreach ($field in ($entry.Keys | Where-Object { $_ -ne 'SlotNo' } | Sort-Object)) {
+            $arguments += "--FakeOnboard:Seed:slotStates:${index}:$field=$($entry[$field])"
+        }
+    }
+    return , $arguments
+}
+if ($realOnboard -and ($setup.ContainsKey('SlotStates') -or
+        @($setup.OnboardPeers | Where-Object { $_ -is [hashtable] -and $_.ContainsKey('SlotStates') }).Count -gt 0)) {
+    throw "SlotStates only applies to the synthetic peer; the real onboard reads its own IO."
+}
+if ($setup.ContainsKey('SlotStates')) {
+    $null = ConvertTo-SlotStateArguments -Entries @($setup.SlotStates) -Where "$Scenario.setup.psd1"
+}
+# The per-peer ones too, so a bad entry fails here rather than when that peer is started. What this checks is
+# the shape -- slot numbers, field names, no slot twice; the values themselves are checked against the protocol's
+# enums by the fake onboard as it starts (SlotStateSeed), which fails that peer's startup.
+foreach ($peer in @($setup.OnboardPeers | Where-Object { $_ -is [hashtable] -and $_.ContainsKey('SlotStates') })) {
+    $null = ConvertTo-SlotStateArguments -Entries @($peer.SlotStates) -Where "$Scenario.setup.psd1 (OnboardPeers)"
+}
+# The fake RIoT's station table for the run's map, replacing the default one whole.
+if ($setup.ContainsKey('Stations')) {
+    if ($setup.Stations -isnot [hashtable] -or $setup.Stations.Count -eq 0) {
+        throw "Stations in $Scenario.setup.psd1 must be a table of station id to station name."
+    }
+    foreach ($key in $setup.Stations.Keys) {
+        if ([string]$key -notmatch '^[0-9]+$' -or [string]::IsNullOrWhiteSpace([string]$setup.Stations[$key])) {
+            throw "Stations in $Scenario.setup.psd1 maps a numeric station id to a name; '$key' does not."
+        }
+    }
+}
+
 if (-not $OnboardRepository) {
     $OnboardRepository = Join-Path (Split-Path -Parent $Repository) '8005-agv-onboard-hmi'
 }
@@ -163,7 +283,8 @@ $snapshotRoot = Join-Path $EvidenceRoot 'snapshots'
 $null = New-Item -ItemType Directory -Path $logRoot -Force
 $null = New-Item -ItemType Directory -Path $snapshotRoot -Force
 
-$stageRoot = Join-Path ([IO.Path]::GetTempPath()) "l2-$runId"
+# The slot in the name keeps two slots that start in the same millisecond out of each other's stage.
+$stageRoot = Join-Path ([IO.Path]::GetTempPath()) $(if ($PortSlot -eq 0) { "l2-$runId" } else { "l2-$runId-slot$PortSlot" })
 $null = New-Item -ItemType Directory -Path $stageRoot -Force
 $databasePath = Join-Path $stageRoot 'controlserver.db'
 
@@ -206,24 +327,28 @@ try {
     # run-journey-g3.ps1, and a wrapper would leave the bare invocation unprotected. It is the first
     # of the two locks; the desktop lock a real-onboard run takes below always comes second
     # (L2PortLock.psm1 explains why that order cannot deadlock).
-    $portLock = Enter-L2PortLock -Reason "L2 scenario '$Scenario' (evidence $EvidenceRoot)"
-    $journal.Note('L2 port block lock acquired.')
+    $portLock = Enter-L2PortLock -Reason "L2 scenario '$Scenario' (evidence $EvidenceRoot)" -Slot $PortSlot
+    $journal.Note("L2 port block lock acquired (slot $PortSlot, $($portLock.Name)).")
 
     # Build once, run the built output. `dotnet run` would rebuild under the scenario and put a
     # compiler on the critical path of a timing test.
-    $journal.Note('Building ControlServer and the test doubles.')
-    $buildLog = Join-Path $logRoot 'build.log'
-    # From inside the repository, so its global.json picks the SDK. Launched from anywhere else the
-    # newest installed SDK builds it, and with AnalysisLevel=latest-recommended plus warnings as
-    # errors a newer analyzer fails a commit that builds clean in CI (CA1859 under SDK 10, 2026-09-13).
-    Push-Location -LiteralPath $Repository
-    try {
-        & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
-            Tee-Object -FilePath $buildLog | Out-Null
-    } finally {
-        Pop-Location
+    if ($SkipBuild) {
+        $journal.Note('Build skipped (-SkipBuild); running the output already built.')
+    } else {
+        $journal.Note('Building ControlServer and the test doubles.')
+        $buildLog = Join-Path $logRoot 'build.log'
+        # From inside the repository, so its global.json picks the SDK. Launched from anywhere else the
+        # newest installed SDK builds it, and with AnalysisLevel=latest-recommended plus warnings as
+        # errors a newer analyzer fails a commit that builds clean in CI (CA1859 under SDK 10, 2026-09-13).
+        Push-Location -LiteralPath $Repository
+        try {
+            & dotnet build (Join-Path $Repository 'ControlServer.sln') -c Release --nologo *>&1 |
+                Tee-Object -FilePath $buildLog | Out-Null
+        } finally {
+            Pop-Location
+        }
+        if ($LASTEXITCODE -ne 0) { throw "Build failed; see $buildLog" }
     }
-    if ($LASTEXITCODE -ne 0) { throw "Build failed; see $buildLog" }
 
     # The two peers come from repositories this workspace may not write to, so they are published
     # out of throwaway clones and cached by commit. First run of a given commit pays for a build;
@@ -262,6 +387,17 @@ try {
     $skewProxyDirectory = Join-Path $Repository "tools/ControlServer.ClockSkewProxy/bin/$configuration/$framework"
     $fieldOpsDirectory = Join-Path $Repository "tools/ControlServer.FieldOps/bin/$configuration/$framework"
     $dashboardDirectory = Join-Path $Repository "src/ControlServer.Dashboard/bin/$configuration/$framework"
+    if ($SkipBuild) {
+        foreach ($executable in @((Join-Path $hostDirectory 'ControlServer.Host.exe'),
+                                  (Join-Path $riotDirectory 'ControlServer.FakeRiot.exe'),
+                                  (Join-Path $mesDirectory 'ControlServer.FakeMesIngest.exe'),
+                                  (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe'),
+                                  (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe'))) {
+            if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+                throw "-SkipBuild, but nothing is built at $executable; build ControlServer.sln -c Release first."
+            }
+        }
+    }
 
     $credential = [guid]::NewGuid().ToString('N')
     $agvId = 'AGV-L2-001'
@@ -341,6 +477,17 @@ try {
         -Component $mesHandle -Port $FakeMesIngestPort `
         -Probe { $mes.Health().body.status } -Until { param($v) $v -eq 'live' }
 
+    # 1a. The station table, when the scenario replaces it. Through the double's own control plane and before
+    #     the server starts, so its first Map/Station catalog read already sees the table the scenario asked
+    #     for; seeding it on the command line instead would merge into the default stations, not replace them.
+    if ($setup.ContainsKey('Stations')) {
+        $stationTable = @{}
+        foreach ($key in $setup.Stations.Keys) { $stationTable[[string]$key] = [string]$setup.Stations[$key] }
+        $null = $riot.Command('Put', "maps/$mapId/stations", @{ stations = $stationTable })
+        $journal.Note("Fake RIoT stations on map ${mapId}: " +
+            (($stationTable.Keys | Sort-Object { [int]$_ } | ForEach-Object { "$_=$($stationTable[$_])" }) -join ', '))
+    }
+
     # 1b. The slots simulator, when the scenario asked for the real onboard. It has to be listening
     #     on Modbus before the onboard starts, or the onboard's first snapshot is all UNKNOWN and
     #     the session takes an extra reconnect to recover from a state that never had to happen.
@@ -402,9 +549,11 @@ try {
         'RiotCreateDispatch__enabled'                     = 'true'
         'JourneyRuntime__enabled'                         = 'true'
         'JourneyRuntime__pollInterval'                    = '00:00:01'
-        # ADR-cross-0055's wait at the pickup after the load commits. Five seconds keeps a scenario
-        # that is not about it near its old timing; one about load correction asks for longer.
-        'JourneyRuntime__stationDepartureWaitTimeout'     = $(if ($setup.ContainsKey('StationDepartureWaitTimeout')) { [string]$setup.StationDepartureWaitTimeout } else { '00:00:05' })
+        # ADR-cross-0055's wait at the pickup after the load commits -- and, since control-server#79, the
+        # deadline for the operator's sublot entry counted from arrival. Thirty seconds rather than the five it
+        # was: arrival to a real onboard's submitted entry measures 4.7-5.4 s (scripts/l2/README.md), so five
+        # was a coin toss for every rig that enters a sublot. A scenario about the deadline asks for its own.
+        'JourneyRuntime__stationDepartureWaitTimeout'     = $(if ($setup.ContainsKey('StationDepartureWaitTimeout')) { [string]$setup.StationDepartureWaitTimeout } else { '00:00:30' })
         'JourneyRuntime__agvId'                           = $agvId
         'JourneyRuntime__vehicleKey'                      = $vehicleKey
         'JourneyRuntime__mapId'                           = [string]$mapId
@@ -452,6 +601,11 @@ try {
         $serverEnvironment['SlotConfigurationActivation__enabled'] = 'true'
         $serverEnvironment['SlotConfigurationActivation__credentialEnvironmentVariable'] = $governanceCredentialVariable
         $serverEnvironment[$governanceCredentialVariable] = $governanceCredential
+    }
+    if ($emergencyStopRelease) {
+        $serverEnvironment['EmergencyStopRelease__enabled'] = 'true'
+        $serverEnvironment['EmergencyStopRelease__credentialEnvironmentVariable'] = $emergencyReleaseCredentialVariable
+        $serverEnvironment[$emergencyReleaseCredentialVariable] = $emergencyReleaseCredential
     }
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
@@ -529,7 +683,7 @@ try {
         approvalStatus     = $version.approvalStatus
     }
     $journal.Note("Protocol release identity: $($version.protocolTag) " +
-        "(protocolVersion $($version.protocolVersion), $($version.approvalStatus)).")
+        "(profileId $($version.profileId), protocolVersion $($version.protocolVersion), $($version.approvalStatus)).")
 
     # 4b. The skew proxy, when a scenario asked for one. After the server (it forwards to it) and
     #     before the onboard (which must find it listening on its first poll).
@@ -659,6 +813,15 @@ try {
                     (($peerSeed.GetEnumerator() | Sort-Object Key |
                         ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
             }
+            # Per-slot states for the handshake snapshots: the peer's own entry wins, else the scenario's, so
+            # a fleet scenario can short one vehicle without shorting all of them.
+            $peerSlotStates = if ($spec.ContainsKey('SlotStates')) { @($spec.SlotStates) } elseif ($setup.ContainsKey('SlotStates')) { @($setup.SlotStates) } else { $null }
+            if ($null -ne $peerSlotStates) {
+                $slotStateArguments = ConvertTo-SlotStateArguments -Entries $peerSlotStates -Where "$Scenario.setup.psd1 ($peerName)"
+                $onboardArguments += $slotStateArguments
+                $journal.Note("Onboard slot states for ${peerName}: " +
+                    (($slotStateArguments | ForEach-Object { $_ -replace '^--FakeOnboard:Seed:slotStates:', '' }) -join ', '))
+            }
             $onboardHandle = Start-L2Process -Name $peerName `
                 -FilePath (Join-Path $onboardDirectory 'ControlServer.FakeOnboard.exe') `
                 -ArgumentList $onboardArguments `
@@ -722,6 +885,115 @@ try {
 
     $connection = Open-L2Database -HostDirectory $hostDirectory -DatabasePath $databasePath
 
+    # ControlServer.FieldOps, the same executable a site's W1 window runs, against the SQLite file the server is
+    # using. Returns the one JSON object the tool prints; a non-zero exit is a thrown error carrying its stderr,
+    # because a governance act that silently did nothing would leave the rest of the scenario proving something
+    # else. Defined out here rather than on Context alone because the preseed below runs it before the scenario.
+    $invokeFieldOps = {
+        param([Parameter(Mandatory)][string[]]$Arguments)
+        $all = @($Arguments[0], '--database', $databasePath) + @($Arguments | Select-Object -Skip 1)
+        $journal.Note("FieldOps: $($all -join ' ')")
+        $lines = @(& (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe') @all 2>&1)
+        $exit = $LASTEXITCODE
+        $text = ($lines | ForEach-Object { [string]$_ }) -join "`n"
+        if ($exit -ne 0) { throw "ControlServer.FieldOps $($Arguments[0]) exited with $exit`: $text" }
+        $json = $lines | Where-Object { $_ -is [string] -and $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
+        if (-not $json) { throw "ControlServer.FieldOps $($Arguments[0]) printed no JSON: $text" }
+        return ($json | ConvertFrom-Json)
+    }
+
+    # 7. The slot model preseed (control-server#71): what a commissioned site has before its first dispatch,
+    #    through the same FieldOps verbs the site uses, in the order it uses them.
+    #      a. seed-approved-facts -- the approved eight-slot model, slots 1-4 FRONT and 5-8 REAR, published;
+    #      b. bind-io for every vehicle the server drives -- which is also what gives each one a slot model:
+    #         with no active slot configuration the server resolves a vehicle's groups from its latest
+    #         published IO binding (control-server#66), so no activation handshake is needed;
+    #      c. import-area-assignments -- every AREA the fake RIoT's stations carry, in the server's dispatch
+    #         zone, group FRONT; or the scenario's own table; or nothing.
+    #    Every scenario, unconditionally: this orchestrator starts every server with JourneyRuntime__enabled
+    #    = 'true' and no setup key turns that off, so every scenario it runs can dispatch. A scenario that must
+    #    not have the preseed says so with SlotModelPreseed / AreaAssignments. After readiness, because the
+    #    import checks the zone against the dispatch policy the server stores once it is running. Every step's
+    #    JSON goes into the timeline and any failure fails the run: a rig that silently skipped this would
+    #    dispatch nothing, and that would look like a server defect.
+    #
+    #    None of it waits on a station deadline. The preseed ends before the scenario publishes its first
+    #    demand, and StationDepartureWaitTimeout is counted from a vehicle's arrival at a pickup station, so
+    #    no deadline is running yet while these three steps do.
+    $dispatchZone = (Get-Content -LiteralPath (Join-Path $hostDirectory 'appsettings.json') -Raw |
+        ConvertFrom-Json).JourneyRuntime.dispatchZone
+    $preseededSlotModelVersionId = $null
+    if ($slotModelPreseed) {
+        $seedResult = & $invokeFieldOps -Arguments @('seed-approved-facts')
+        $journal.Observe('slot-model-preseed:seed-approved-facts', $seedResult.outcome, @{ output = $seedResult })
+        if ($seedResult.outcome -ne 'OK' -or [int]$seedResult.slotCount -ne 8) {
+            throw "Slot model preseed: seed-approved-facts answered $($seedResult.outcome) with $($seedResult.slotCount) slots."
+        }
+        $preseededSlotModelVersionId = [string]$seedResult.slotModelVersionId
+        foreach ($vehicle in $fleet) {
+            $bindResult = & $invokeFieldOps -Arguments @('bind-io', '--agv', $vehicle.AgvId)
+            $journal.Observe("slot-model-preseed:bind-io:$($vehicle.AgvId)", $bindResult.outcome, @{ output = $bindResult })
+            if ($bindResult.outcome -ne 'OK' -or [int]$bindResult.boundSlots -ne 8) {
+                throw "Slot model preseed: bind-io for $($vehicle.AgvId) answered $($bindResult.outcome) with $($bindResult.boundSlots) slots."
+            }
+        }
+    } else {
+        $journal.Note('Slot model preseed skipped: SlotModelPreseed = $false.')
+    }
+
+    if ($areaAssignmentsSetting -is [bool]) {
+        $journal.Note('Area assignment import skipped: AreaAssignments = $false.')
+    } else {
+        $assignmentRows = if ($null -ne $areaAssignmentsSetting) {
+            @($areaAssignmentsSetting | ForEach-Object {
+                    [pscustomobject]@{ Area = $_.Area; DispatchZone = $_.DispatchZone; SlotPosition = $_.SlotPosition } })
+        } else {
+            # Read back off the double rather than restated here, so a scenario that replaces the stations
+            # gets a default table for its own stations. Parsed the way MapStationResolver parses a machine
+            # station's name: one to three distinct '_'-separated area codes, each like N1-3.
+            $stationNames = @(@($riot.Snapshot().body.maps | Where-Object { [int]$_.mapId -eq $mapId }) |
+                ForEach-Object { $_.stations } | ForEach-Object { [string]$_.name })
+            $areas = @($stationNames | ForEach-Object {
+                    $tokens = @($_ -split '_')
+                    if ($tokens.Count -le 3 -and
+                        @($tokens | Sort-Object -Unique -CaseSensitive).Count -eq $tokens.Count -and
+                        @($tokens | Where-Object { $_ -cnotmatch '^[A-Z][A-Z0-9]*-[0-9]+$' }).Count -eq 0) {
+                        $tokens
+                    }
+                } | Sort-Object -Unique -CaseSensitive)
+            if ($areas.Count -eq 0) {
+                throw "Area assignment import: no station on map $mapId carries an area code, so the default table would be empty."
+            }
+            @($areas | ForEach-Object { [pscustomobject]@{ Area = $_; DispatchZone = $dispatchZone; SlotPosition = 'FRONT' } })
+        }
+        # Into the evidence: what was imported is part of what the run proves.
+        $assignmentCsv = Join-Path $snapshotRoot 'preseed-area-assignments.csv'
+        $csvLines = @('area,dispatch_zone,slot_position') +
+            @($assignmentRows | ForEach-Object { "$($_.Area),$($_.DispatchZone),$($_.SlotPosition)" })
+        [IO.File]::WriteAllText($assignmentCsv, (($csvLines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+
+        # The import judges a zone by the vehicles serving it in the server's stored dispatch policy, which the
+        # runtime writes on its own schedule; waiting for it keeps the import from racing the server.
+        $wantedZones = @($assignmentRows | ForEach-Object { [string]$_.DispatchZone } | Sort-Object -Unique)
+        $null = Wait-L2Condition -Description 'the server stored the dispatch zones the area assignment table names' `
+            -Journal $journal -Criterion 'slot-model-preseed:dispatch-zones' -TimeoutSeconds 60 -Component $serverHandle `
+            -Probe {
+                $stored = Invoke-L2Query -Connection $connection -Sql 'SELECT DISTINCT Zone FROM DispatchZoneVehicles'
+                $storedZones = @($stored | ForEach-Object { [string]$_.Zone })
+                @($wantedZones | Where-Object { $_ -cnotin $storedZones }).Count
+            } -Until { param($v) $v -eq 0 }
+        try {
+            $importResult = & $invokeFieldOps -Arguments @('import-area-assignments', '--input', $assignmentCsv)
+        } catch {
+            $journal.Observe('slot-model-preseed:import-area-assignments', 'FAILED', @{ error = $_.Exception.Message })
+            throw
+        }
+        $journal.Observe('slot-model-preseed:import-area-assignments', $importResult.outcome, @{ output = $importResult })
+        if ($importResult.outcome -ne 'OK' -or [int]$importResult.entryCount -ne $assignmentRows.Count) {
+            throw "Area assignment import answered $($importResult.outcome) with $($importResult.entryCount) of $($assignmentRows.Count) rows."
+        }
+    }
+
     $context = [pscustomobject]@{
         Journal             = $journal
         Assertions          = $assertions
@@ -754,24 +1026,37 @@ try {
         SnapshotRoot        = $snapshotRoot
         # Null unless the setup file turned the activation entry point on.
         GovernanceCredential = if ($slotConfigurationActivation) { $governanceCredential } else { $null }
+        # Null unless the setup file turned the release-on-confirmation entry point on.
+        EmergencyReleaseCredential = if ($emergencyStopRelease) { $emergencyReleaseCredential } else { $null }
         # Null unless the setup file asked for the dashboard.
         DashboardUrl        = $dashboardUrl
-        # ControlServer.FieldOps, the same executable a site's W1 window runs, against the SQLite file the
-        # server is using. Returns the one JSON object the tool prints; a non-zero exit is a thrown error
-        # carrying its stderr, because a governance act that silently did nothing would leave the rest of
-        # the scenario proving something else.
-        InvokeFieldOps      = {
-            param([Parameter(Mandatory)][string[]]$Arguments)
-            $all = @($Arguments[0], '--database', $databasePath) + @($Arguments | Select-Object -Skip 1)
-            $journal.Note("FieldOps: $($all -join ' ')")
-            $lines = @(& (Join-Path $fieldOpsDirectory 'ControlServer.FieldOps.exe') @all 2>&1)
-            $exit = $LASTEXITCODE
-            $text = ($lines | ForEach-Object { [string]$_ }) -join "`n"
-            if ($exit -ne 0) { throw "ControlServer.FieldOps $($Arguments[0]) exited with $exit`: $text" }
-            $json = $lines | Where-Object { $_ -is [string] -and $_.TrimStart().StartsWith('{') } | Select-Object -Last 1
-            if (-not $json) { throw "ControlServer.FieldOps $($Arguments[0]) printed no JSON: $text" }
-            return ($json | ConvertFrom-Json)
+        # ControlServer.FieldOps against the SQLite file the server is using; see $invokeFieldOps above.
+        InvokeFieldOps      = $invokeFieldOps
+        # A new version of the package capacity table while the server runs, through the same import
+        # command step 2 used before it started (control-server#87: capacity changed after dispatch). The
+        # command exits before the host binds anything, so it can run beside the live server. Rows are
+        # @{ Pattern; Capacity }; the version must exceed every earlier one (the rig itself imports 1).
+        ImportPackageCapacity = {
+            param([Parameter(Mandatory)][object[]]$Rows, [Parameter(Mandatory)][int]$Version)
+            $csv = Join-Path $stageRoot "package-capacity-v$Version.csv"
+            @('pattern,match_type,max_boxes_per_basket,source,status,note') +
+                @($Rows | ForEach-Object { "$($_.Pattern),exact,$($_.Capacity),l2-scenario,active,L2 scenario fixture v$Version" }) |
+                Set-Content -LiteralPath $csv -Encoding utf8NoBOM
+            $journal.Note("Importing package capacity version ${Version}: " +
+                (($Rows | ForEach-Object { "$($_.Pattern)=$($_.Capacity)" }) -join ', '))
+            $reimport = Start-L2Process -Name "package-capacity-import-v$Version" `
+                -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
+                -ArgumentList @('--import-package-capacity', '--input', $csv, '--version', [string]$Version) `
+                -WorkingDirectory $hostDirectory -Environment $importEnvironment -LogRoot $logRoot
+            if (-not $reimport.Process.WaitForExit(120000)) { throw "Package capacity import v$Version did not exit within 120s." }
+            if ($reimport.Process.ExitCode -ne 0) {
+                throw "Package capacity import v$Version failed with exit code $($reimport.Process.ExitCode)."
+            }
         }
+        # The dispatch zone the server runs under, read from its own appsettings.json, and the slot model the
+        # preseed published -- null when the setup file said SlotModelPreseed = $false.
+        DispatchZone        = $dispatchZone
+        SlotModelVersionId  = $preseededSlotModelVersionId
         # Order is the start position, and Stop-L2Process tears down in reverse: fake RIoT 1, fake
         # MesIngest 2, simulator 3, ControlServer 4, clock skew proxy 5, onboard 6 (synthetic or
         # real -- they are mutually exclusive, so they share the position). Two components on the
@@ -879,7 +1164,10 @@ try {
                              'RouteGraphSnapshots', 'MapStationCatalogStates',
                              'FrozenDemandStations', 'CreateGateAudit',
                              'SlotConfigurationActivations', 'ActiveSlotConfigurations',
-                             'OnboardAlarmSnapshots', 'BusinessAuditRecords')) {
+                             'OnboardAlarmSnapshots', 'BusinessAuditRecords',
+                             # What the slot model preseed wrote, and what batch 4's dispatch reads off it.
+                             'SlotModelVersions', 'SlotIoBindings', 'DispatchZoneAreaAssignmentVersions',
+                             'DispatchZoneAreaAssignments', 'StructuralDispatchBlocks')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(
@@ -918,9 +1206,14 @@ try {
         -Rig $identity.rig -Identity $identity
 
     # The stage root is left behind on failure: its controlserver.db is usually the only place the
-    # cause is written down.
+    # cause is written down. On a pass it goes, and a pass that could not remove it says so: until
+    # control-server#130 the read-only connection's pool held controlserver.db open past Close(), the
+    # removal failed without a word, and win11-01 had collected 3607 of these.
     if ($outcome -eq 'PASS') {
         Remove-Item -LiteralPath $stageRoot -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $stageRoot) {
+            Write-Warning "Could not remove the stage root of a passing run: $stageRoot"
+        }
     } else {
         Write-Warning "Stage root kept for diagnosis: $stageRoot"
     }

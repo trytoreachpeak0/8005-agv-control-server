@@ -3,20 +3,27 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Transport;
 
 public sealed partial class OnboardMessageProcessor(
+    ControlServerDbContext dbContext,
     WireToGateStore store,
     OnboardRecoveryCoordinator recoveryCoordinator,
     OnboardAlarmProjectionStore alarmStore,
     SlotConfigurationActivationDispatcher activationDispatcher,
     TimeProvider timeProvider,
     IConfiguration configuration,
+    IOptions<JourneyRuntimeOptions> runtimeOptions,
     ILogger<OnboardMessageProcessor> logger)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    // The envelope's own settings, not a second copy of them: this instance also hashes the business
+    // content the peer hashes, and the two only agree while both use the same serializer settings.
+    private static readonly JsonSerializerOptions SerializerOptions = ProtocolEnvelope.SerializerOptions;
     private readonly string _serverInstanceId = Guid.NewGuid().ToString("D");
 
     public async Task<string> ProcessAsync(
@@ -24,6 +31,16 @@ public sealed partial class OnboardMessageProcessor(
         OnboardConnectionState state,
         CancellationToken cancellationToken)
     {
+        // Every message starts from the database. OnboardTcpServer opens one scope, and so one
+        // DbContext, for as long as a TCP connection lives, while the runtime worker writes the same
+        // journeys, operations and demands from a context of its own on every pass. Whatever an earlier
+        // message tracked here, a later query would hand back as it stood then: a load correction asked
+        // for once while the load was still running was refused inside the one window REQ-0237 allows
+        // it in, because the journey and the operation were still the copies that connection first saw
+        // (8005-agv-control-server#28, fixed on the MVP line as #40). Clearing here rather than before
+        // FlushDeferredOutboundAsync keeps this message's own state for its deferred send. It also stops
+        // the tracked set growing for the life of the connection.
+        dbContext.ChangeTracker.Clear();
         using JsonDocument document = JsonDocument.Parse(line);
         JsonElement root = document.RootElement;
         string messageType = RequiredString(root, "messageType");
@@ -66,7 +83,7 @@ public sealed partial class OnboardMessageProcessor(
                                 sessionGeneration = generation,
                                 serverInstanceId = _serverInstanceId,
                                 serverBuildCommit = configuration["ControlServerBuild:commit"] ?? "WORKTREE_BUILD",
-                                acceptedProtocolReleaseIdentity = ProtocolReleaseIdentity(),
+                                acceptedProtocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity(),
                                 acceptedAt = timeProvider.GetUtcNow()
                             });
                     },
@@ -89,7 +106,7 @@ public sealed partial class OnboardMessageProcessor(
                             displayMessage = error.Message
                         },
                         expectedProtocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-                        expectedProtocolReleaseIdentity = ProtocolReleaseIdentity()
+                        expectedProtocolReleaseIdentity = ProtocolEnvelope.ReleaseIdentity()
                     });
             }
 
@@ -104,6 +121,15 @@ public sealed partial class OnboardMessageProcessor(
         string persistedRequest = messageType == "ExceptionRecoverySessionRequested"
             ? RedactRecoveryAuthenticationProof(line)
             : line;
+        // A durable message resent into a later session differs from its first line in sessionGeneration
+        // alone: ADR-cross-0030 has a resend keep its messageId, and the onboard rebinds a message whose
+        // DurableAck it never got to the new session (8005-agv-control-server#30). One equivalence test
+        // decides that for every message type -- GenerationRebindReplayHash, the only one there is.
+        // What differs per type is what the equivalent resend is answered with. A RecoveryStateReport is
+        // applied again in the new session, and an OperationResult is processed again so the session's
+        // pending-result list is reconciled (CV-OPERATION-RESULT-UNKNOWN-RECONCILE); every other durable
+        // message is answered from its first acceptance without touching business state a second time.
+        bool reprocessedInTheNewSession = messageType is "RecoveryStateReport" or "OperationResult";
         string capturedResponse = await store.CaptureFirstResponseAsync(
             messageId,
             messageType,
@@ -113,10 +139,15 @@ public sealed partial class OnboardMessageProcessor(
                 root, state, messageType, messageId, contentHash, cancellationToken),
             timeProvider.GetUtcNow(),
             cancellationToken,
-            messageType is "RecoveryStateReport" or "OperationResult" ? GenerationRebindReplayHash : null,
+            GenerationRebindReplayHash,
             messageType == "RecoveryStateReport"
                 ? response => RestoreAcceptedSnapshotVersions(response, state)
-                : null).ConfigureAwait(false);
+                : null,
+            reprocessedInTheNewSession
+                ? null
+                : firstResponse => RebindDurableAckAsync(
+                    firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
+            .ConfigureAwait(false);
         bool hasDeferredRecoveryOutbound = OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
                                            OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
                                            messageType == "OperationResult" ||
@@ -324,6 +355,8 @@ public sealed partial class OnboardMessageProcessor(
                     }
                     long forcedGeneration = await store.GetOperationForcedRecoveryGenerationAsync(
                         attemptId, cancellationToken).ConfigureAwait(false);
+                    OperationResultReceipt receipt = await ReceiptAsync(demandId, cancellationToken)
+                        .ConfigureAwait(false);
                     OperationResultDisposition disposition = await store.ApplyOperationResultAsync(
                         new StationOperationResult(
                             messageId,
@@ -335,10 +368,29 @@ public sealed partial class OnboardMessageProcessor(
                             slotResults.All(item => RequiredString(item, "outcome") == "COMPLETED"),
                             payload.GetProperty("observedAt").GetDateTimeOffset(),
                             resultContentSha256,
-                            contentHash),
+                            contentHash,
+                            SlotOutcomeReport.FromSlotResults(payload.GetProperty("slotResults"))),
                         agvId,
                         forcedGeneration,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken,
+                        receipt).ConfigureAwait(false);
+                    if (disposition is OperationResultDisposition.FailedBeforeStationDeadline
+                        or OperationResultDisposition.FailureReasonWithoutTerminalState)
+                    {
+                        // Not accepted silently (ADR-cross-0058 Verification, decision 5): a failure the server
+                        // may only settle after the stop's deadline, or only for a reason with a terminal
+                        // state, went to recovery instead, and the operator is told why.
+                        LogUnsettleableDeterminateFailure(
+                            logger,
+                            agvId,
+                            demandId,
+                            attemptId,
+                            disposition == OperationResultDisposition.FailedBeforeStationDeadline
+                                ? DeterminateLoadFailure.FailedBeforeStationDeadline
+                                : DeterminateLoadFailure.ReasonWithoutTerminalState,
+                            receipt.ReceivedAt,
+                            receipt.StationDepartureDeadline);
+                    }
                     await recoveryCoordinator.ObserveOperationResultAsync(
                         attemptId, disposition, cancellationToken).ConfigureAwait(false);
                     // A result this session's RecoveryStateReport named as pending has now been seen,
@@ -548,7 +600,8 @@ public sealed partial class OnboardMessageProcessor(
         string acceptedMessageId,
         string agvId,
         long generation,
-        string contentHash) =>
+        string contentHash,
+        DateTimeOffset? durablyAcceptedAt = null) =>
         SerializeEnvelope(
             "DurableAck",
             acceptedMessageId,
@@ -559,8 +612,62 @@ public sealed partial class OnboardMessageProcessor(
                 acceptedMessageId,
                 acceptedMessageType,
                 acceptedContentSha256 = contentHash,
-                durablyAcceptedAt = timeProvider.GetUtcNow()
+                durablyAcceptedAt = durablyAcceptedAt ?? timeProvider.GetUtcNow()
             });
+
+    /// <summary>
+    /// Answers a durable message resent into a later session from its first acceptance, or returns null
+    /// when that first response was not a DurableAck for this message -- a snapshot ack or a recovery
+    /// authorization stays a content conflict, as it did before. Nothing is processed again: the first
+    /// processing committed, and what it wrote is bound to the first line's hash, so a second pass would
+    /// throw on its own. The ack is rebuilt for this session and names the line just received, which is
+    /// what the onboard compares it with; durablyAcceptedAt stays the moment the server took it.
+    /// Readiness is recomputed rather than replayed, because the first response's belonged to a session
+    /// that is gone -- and announced only when it changed, the way every other site here does it.
+    /// </summary>
+    private async Task<string?> RebindDurableAckAsync(
+        string firstResponse,
+        string messageType,
+        string messageId,
+        string agvId,
+        string contentHash,
+        OnboardConnectionState state,
+        CancellationToken cancellationToken)
+    {
+        string? firstLine = firstResponse.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (firstLine is null)
+        {
+            return null;
+        }
+        using JsonDocument first = JsonDocument.Parse(firstLine);
+        JsonElement firstRoot = first.RootElement;
+        if (RequiredString(firstRoot, "messageType") != "DurableAck")
+        {
+            return null;
+        }
+        JsonElement firstAck = firstRoot.GetProperty("payload");
+        if (RequiredString(firstAck, "acceptedMessageId") != messageId)
+        {
+            return null;
+        }
+
+        long generation = state.SessionGeneration!.Value;
+        string ack = DurableAck(
+            messageType,
+            messageId,
+            agvId,
+            generation,
+            contentHash,
+            firstAck.GetProperty("durablyAcceptedAt").GetDateTimeOffset());
+        SessionReadinessDecision decision = await store.DecideReadinessAsync(
+            agvId, generation, cancellationToken).ConfigureAwait(false);
+        if (decision.Readiness == state.Readiness)
+        {
+            return ack;
+        }
+        state.Readiness = decision.Readiness;
+        return $"{ack}\n{SessionReadinessLine(decision, agvId, generation, state)}";
+    }
 
     private string SerializeReadiness(
         string agvId,
@@ -677,33 +784,16 @@ public sealed partial class OnboardMessageProcessor(
         string agvId,
         long? sessionGeneration,
         object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        // The id and the clock are read here, not in the choke point: where they happen relative to
+        // building the payload is observable on the wire, so it stays with the caller.
+        ProtocolEnvelope.Serialize(
             messageType,
-            messageId = Guid.NewGuid().ToString("D"),
+            Guid.NewGuid().ToString("D"),
             correlationId,
             agvId,
             sessionGeneration,
-            sentAt = timeProvider.GetUtcNow(),
-            payload
-        }, SerializerOptions);
-
-    private static object ProtocolReleaseIdentity() => new
-    {
-        repository = "8005-agv-protocol",
-        releaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-        tag = ProtocolCandidateIdentity.Tag,
-        commit = ProtocolCandidateIdentity.RepositoryCommit,
-        protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-        profileId = ProtocolCandidateIdentity.ProfileId,
-        manifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-        schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256,
-        vectorsSha256 = ProtocolCandidateIdentity.VectorsSha256
-    };
+            timeProvider.GetUtcNow(),
+            payload);
 
     /// <summary>
     /// Why the peer says the vehicle is unsafe to depart. Both this and unknownPresent used to be
@@ -731,6 +821,35 @@ public sealed partial class OnboardMessageProcessor(
             ? throw new InvalidDataException($"Protocol field '{propertyName}' is required.")
             : value;
     }
+
+    /// <summary>
+    /// When this result is received and the station departure deadline its journey stands under now, read
+    /// from the one function the runtime and the worklist take it from.
+    /// </summary>
+    private async Task<OperationResultReceipt> ReceiptAsync(string demandId, CancellationToken cancellationToken)
+    {
+        JourneyRuntimeRow? journey = await dbContext.JourneyRuntimes.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        return new OperationResultReceipt(
+            timeProvider.GetUtcNow(),
+            journey is null
+                ? null
+                : JourneyRuntimeEngine.StationDepartureDeadline(
+                    journey, runtimeOptions.Value.StationDepartureWaitTimeout));
+    }
+
+    [LoggerMessage(EventId = 1102, Level = LogLevel.Warning,
+        Message = "Vehicle {AgvId} reported load {SlotOperationAttemptId} of demand {DemandId} FAILED with every " +
+                  "slot determinate, but it cannot be settled ({ReasonCode}: received {ReceivedAt}, station " +
+                  "deadline {StationDepartureDeadline}); the operation went to recovery.")]
+    private static partial void LogUnsettleableDeterminateFailure(
+        ILogger logger,
+        string agvId,
+        string demandId,
+        string slotOperationAttemptId,
+        string reasonCode,
+        DateTimeOffset receivedAt,
+        DateTimeOffset? stationDepartureDeadline);
 
     [LoggerMessage(EventId = 1101, Level = LogLevel.Warning,
         Message = "Onboard rejected {RejectedMessageType} {RejectedMessageId}: {ReasonCode} at {FieldPath} -- {DisplayMessage}")]

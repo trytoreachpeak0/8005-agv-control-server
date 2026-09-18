@@ -7,6 +7,7 @@ using ControlServer.Infrastructure.Persistence;
 using ControlServer.Host.Transport;
 using ControlServer.Host.Composition;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.Dispatch;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -28,7 +29,10 @@ builder.WebHost.UseUrls(builder.Configuration["Health:url"] ?? "http://127.0.0.1
 
 string configuredConnection = builder.Configuration.GetConnectionString("ControlServer")
     ?? "Data Source=%ProgramData%\\8005\\ControlServer\\data\\controlserver.db";
-string connectionString = ExpandDataSource(configuredConnection);
+// 这个库有两个进程在写（另一个是 ControlServer.FieldOps），连接串因此只在一处拼：路径展开与等写锁的
+// 上限都由 ControlServerSqlite 说了算。
+string connectionString = ControlServerSqlite.FromConfigured(configuredConnection);
+ControlServerSqlite.EnsureDataSourceDirectory(connectionString);
 builder.Services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(connectionString));
 builder.Services.AddScoped<WireToGateStore>();
 builder.Services.AddScoped<IDemandAcceptanceStore>(services => services.GetRequiredService<WireToGateStore>());
@@ -127,6 +131,10 @@ builder.Services.AddOptions<SlotConfigurationActivationOptions>()
     .Bind(builder.Configuration.GetSection(SlotConfigurationActivationOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<SlotConfigurationActivationOptions>, SlotConfigurationActivationOptionsValidator>();
+builder.Services.AddOptions<EmergencyStopReleaseOptions>()
+    .Bind(builder.Configuration.GetSection(EmergencyStopReleaseOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<EmergencyStopReleaseOptions>, EmergencyStopReleaseOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
 builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>((services, client) =>
 {
@@ -153,6 +161,9 @@ if (PackageCapacityImportCommand.IsRequested(args))
         args, app.Services, CancellationToken.None);
     return;
 }
+
+// control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。
+await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>
@@ -222,26 +233,14 @@ if (app.Configuration.GetValue<bool>("SlotConfigurationActivation:enabled"))
 {
     app.MapSlotConfigurationActivation();
 }
+// 默认不挂。REQ-0356 的人工确认解除：这个入口会把一台车的急停解开，要现场明确打开才提供。
+if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
+{
+    app.MapEmergencyStopRelease();
+}
 app.MapDashboardQueries();
 
 await app.RunAsync();
-
-static string ExpandDataSource(string connectionString)
-{
-    const string prefix = "Data Source=";
-    if (!connectionString.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-    {
-        return connectionString;
-    }
-    string path = Environment.ExpandEnvironmentVariables(connectionString[prefix.Length..])
-        .Replace('/', Path.DirectorySeparatorChar);
-    string? directory = Path.GetDirectoryName(path);
-    if (!string.IsNullOrWhiteSpace(directory))
-    {
-        Directory.CreateDirectory(directory);
-    }
-    return $"{prefix}{path}";
-}
 
 static async Task EnsureDatabaseAsync(IServiceProvider services)
 {

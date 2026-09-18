@@ -22,8 +22,8 @@
 | --- | --- |
 | 来源仓库 | `8005-agv-program` |
 | 来源路径 | `docs/riot-call-allowlist.md` |
-| 来源提交 | `3bc055c450c8a1d8d395d7d036042d1c890e383f`（分支 `fp/batch-2`） |
-| 取用日期 | 2026-09-08 |
+| 来源提交 | `70bf4d449477436b1ccfeb5f12091f484f5e772f`（分支 `docs/allowlist-1-5-req-0356`，1.5「解除」随需求基线 v1.3.0 跟改，control-server#63） |
+| 取用日期 | 2026-09-15 |
 
 ## 上游改了以后怎么刷新
 

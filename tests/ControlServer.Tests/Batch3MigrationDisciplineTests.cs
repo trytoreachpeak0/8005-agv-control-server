@@ -39,7 +39,13 @@ public sealed class Batch3MigrationDisciplineTests
         "20260910063725_ReportedSlotConfigurationFingerprint",
         // 批次 2 收尾：取货点离站等待（REQ-0237 / ADR-cross-0055）要记本轮等待从何时算起，
         // JourneyRuntimes 加一列。docs/defects/20260913-no-pre-departure-correction-window.md。
-        "20260913131725_StationDepartureWait"
+        "20260913131725_StationDepartureWait",
+        // 批次 4 唯一建表票 control-server#66：分区归属表（含开门侧列）、结构性派车阻断表，
+        // SlotModelSlots 的 LEFT／RIGHT 改名 FRONT／REAR。批次 4 自己的断言在 Batch4MigrationDisciplineTests。
+        "20260915135043_Batch4AreaAssignmentAndStructuralDispatchBlock",
+        // 批次 5 唯一建表票 control-server#80：JourneyRuntimes 加 BlockReasonSince，阻断码从何时起挂上。
+        // 在 #66 合入之后的 fp/v2-impl 上生成，排在它后面。批次 5 自己的断言在 Batch5MigrationDisciplineTests。
+        "20260917015519_Batch5JourneyBlockReasonSince"
     ];
 
     private static readonly string[] Batch3Tables =

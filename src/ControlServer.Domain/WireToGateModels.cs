@@ -46,13 +46,21 @@ public sealed record StationOperationResult(
     bool AllSlotsCompleted,
     DateTimeOffset ObservedAt,
     string ResultContentSha256,
-    string WireContentSha256);
+    string WireContentSha256,
+    IReadOnlyList<SlotOutcomeReport>? SlotOutcomes = null);
 
 public enum StationOperationStatus
 {
     Prepared,
     Committed,
     Cancelled,
+    /// <summary>
+    /// A load that missed its target and said so completely, after its station deadline: every slot's
+    /// state known, door locked, unlock output reset, and a reason with a terminal state
+    /// (<see cref="DeterminateLoadFailure"/>). Nothing is uncertain, so nobody is asked to recover it; the
+    /// runtime ends the demand. Unload never reaches it.
+    /// </summary>
+    Failed,
     RecoveryRequired
 }
 
@@ -86,13 +94,56 @@ public sealed record VehicleBusinessBlockingFact(
 /// stage, so its wire payload has to be reproducible for that revision. The publisher stamps
 /// observedAt from the envelope's frozen sentAt instead.
 /// </summary>
+/// <remarks>
+/// <see cref="ChargingCycleState"/> and <see cref="LoadingPhase"/> are the protocol <c>2.0.0</c>
+/// candidate's items 5 and 6, and their values follow the semantic tables in
+/// <c>8005-agv-program</c> commit <c>db5a1d14</c> (<c>8005-agv-program#94</c>). The publisher refuses
+/// a transport projection without a loading phase and a non-transport one with one, because the
+/// schema accepts both and the outbound schema gate could not tell.
+/// </remarks>
 public sealed record VehicleBusinessProjection(
     long Revision,
     string Readiness,
     string? ActivePurpose,
     bool ManualChargingHold,
     string BatteryState,
+    string ChargingCycleState,
+    LoadingPhaseProjection? LoadingPhase,
     IReadOnlyList<VehicleBusinessBlockingFact> BlockingFacts);
+
+/// <summary>
+/// The <c>activePurpose</c> values this server uses by name.
+/// </summary>
+public static class VehicleActivePurposes
+{
+    /// <summary>The vehicle is carrying a demand; the only purpose the v2 journey runtime can be in.</summary>
+    public const string Transport = "TRANSPORT";
+}
+
+/// <summary>
+/// <c>VehicleBusinessStateSnapshot.loadingPhase</c>: where the loading phase of a transport journey
+/// stands.
+/// </summary>
+/// <remarks>
+/// While v2 carries one demand per journey only the two values below occur. Holding cargo to wait
+/// for more demands (<c>CARGO_HOLDING_WAIT</c>, <c>VEHICLE_FULL</c>, a holding deadline and the other
+/// three closed reasons) is batch 7.
+/// </remarks>
+public sealed record LoadingPhaseProjection(
+    string State,
+    DateTimeOffset? CargoHoldingDeadlineAt,
+    string? ClosedReason)
+{
+    /// <summary>The pickup's planned loading has not ended.</summary>
+    public static LoadingPhaseProjection Loading { get; } = new("LOADING", null, null);
+
+    /// <summary>
+    /// The pickup's load batch has closed safely; the journey no longer takes new demands and carries
+    /// on to unload.
+    /// </summary>
+    public static LoadingPhaseProjection PlannedLoadingComplete { get; } =
+        new("CLOSED", null, "PLANNED_LOADING_COMPLETE");
+}
 
 public sealed record CurrentStopWorklistItem(
     string DemandId,
@@ -102,10 +153,16 @@ public sealed record CurrentStopWorklistItem(
     string StopRole,
     int ExpectedBasketCount);
 
+/// <remarks>
+/// <see cref="StationDepartureDeadlineAt"/> is when the station departure wait (ADR-cross-0055) runs
+/// out, taken from <c>JourneyRuntimeEngine.StationDepartureDeadline</c> and nowhere else; null where
+/// no such wait applies -- the drop-off stop, or the timeout switched off.
+/// </remarks>
 public sealed record CurrentStopWorklistProjection(
     string StationId,
     long Revision,
     string? OperationSessionId,
+    DateTimeOffset? StationDepartureDeadlineAt,
     IReadOnlyList<CurrentStopWorklistItem> Items);
 
 /// <summary>
@@ -143,12 +200,43 @@ public sealed record UpcomingStopPlanProjection(
     long Revision,
     IReadOnlyList<UpcomingMovementLeg> Legs);
 
+/// <remarks>
+/// Protocol <c>2.0.0</c> item 2: the vehicle is given the sublots of the dispatch scope rather than
+/// one demand's, and names no demand back. With one demand per journey the scope is that demand's
+/// sublot. Within one <c>(OperationSessionId, WorklistRevision)</c> the set must not change -- that
+/// pair is the message's business deduplication key.
+/// </remarks>
 public sealed record SublotEntryRequest(
-    string DemandId,
     string OperationSessionId,
     string StationId,
     long WorklistRevision,
-    string ExpectedSublot);
+    IReadOnlyList<string> ExpectedSublots);
+
+/// <summary>
+/// <c>$defs/Problem</c>: why a request was refused. <see cref="ReasonCode"/> is an <c>ErrorCode</c>, so
+/// it comes from <c>ServerReasonCodes</c>.
+/// </summary>
+public sealed record WireProblem(
+    string ReasonCode,
+    string? FieldPath,
+    string? DisplayMessage);
+
+/// <summary>
+/// The payload of <c>SublotRejected</c>: the server refusing one <c>SublotSubmitted</c>.
+/// </summary>
+/// <remarks>
+/// Protocol <c>2.0.0</c> item 2. <see cref="DemandId"/> is null when the sublot resolves to no demand
+/// in the dispatch scope (<c>SUBLOT_NOT_IN_DISPATCH_SCOPE</c>), and names the resolved demand when the
+/// sublot is in scope but fails its re-check. <see cref="RejectedSublot"/> is the value the operator
+/// entered. Only the type exists here; sending it, answering the submission with its messageId as
+/// <c>correlationId</c>, is <c>8005-agv-control-server#82</c>.
+/// </remarks>
+public sealed record SublotRejection(
+    string? DemandId,
+    string OperationSessionId,
+    WireProblem Problem,
+    long CurrentWorklistRevision,
+    string RejectedSublot);
 
 public enum SlotOperationType
 {
@@ -220,7 +308,9 @@ public sealed record JourneyExecutionPlan(
     string GateMovementLegId,
     string GateUpperId,
     long DispatchGeneration,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    long? AreaAssignmentVersion = null,
+    string? RequiredSlotPosition = null);
 
 public enum ConnectionRecoveryStatus
 {
@@ -233,7 +323,19 @@ public enum ConnectionRecoveryStatus
 public enum OperationResultDisposition
 {
     Accepted,
+    /// <summary>Judged <see cref="StationOperationStatus.Failed"/>: no recovery is asked for.</summary>
+    DeterminateFailure,
     RecoveryRequired,
+    /// <summary>
+    /// Judged <see cref="StationOperationStatus.RecoveryRequired"/> although it looked determinate:
+    /// received before the station deadline (<see cref="DeterminateLoadFailure.FailedBeforeStationDeadline"/>).
+    /// </summary>
+    FailedBeforeStationDeadline,
+    /// <summary>
+    /// Judged <see cref="StationOperationStatus.RecoveryRequired"/> although it looked determinate: its
+    /// reason has no terminal state (<see cref="DeterminateLoadFailure.ReasonWithoutTerminalState"/>).
+    /// </summary>
+    FailureReasonWithoutTerminalState,
     HistoricalOnly,
     Replay
 }

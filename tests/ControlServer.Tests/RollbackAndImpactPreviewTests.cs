@@ -62,6 +62,36 @@ public sealed class RollbackAndImpactPreviewTests
     }
 
     [Fact]
+    public async Task ABindingPublishedAfterARollbackTakesTheNextVersionInsteadOfTheRollbacks()
+    {
+        // 回滚与绑定发布冻结在同一条版本线上：v1、v2 是两次发布，回滚到 v1 得到 v3。之后再发布一次绑定，
+        // 它若只按绑定行数版本号会拿到 3，冻结时撞上回滚那一版，拿回的是一份装着回滚内容的快照。
+        await using ActivationFixture fixture = await ActivationFixture.CreateAsync();
+        string model = await fixture.PublishApprovedModelAsync();
+        await fixture.PublishBindingsAsync("AGV-01", model, pulseResetMilliseconds: 500);
+        await fixture.PublishBindingsAsync("AGV-01", model, pulseResetMilliseconds: 800);
+        RollbackOutcome rollback = await fixture.Store.RollbackAsync(
+            "AGV-01", model, toVersion: 1, Now.AddHours(1), TestContext.Current.CancellationToken);
+
+        IReadOnlyList<SlotIoBindingRow> republished = await fixture.Authority.PublishIoBindingsAsync(
+            "AGV-01",
+            model,
+            [.. ApprovedSlotHardwareFacts.IoBindings.Select(binding => binding with { PulseResetMilliseconds = 900 })],
+            Now.AddHours(2),
+            TestContext.Current.CancellationToken);
+
+        long version = Assert.Single(republished.Select(row => row.Version).Distinct());
+        Assert.Equal(4, version);
+        string snapshotId = Assert.Single(republished.Select(row => row.SnapshotId).Distinct())!;
+        Assert.NotEqual(rollback.SnapshotId, snapshotId);
+        GovernedConfigurationSnapshot frozen = await fixture.RequireSnapshotAsync($"AGV-01:{model}", version);
+        Assert.Equal(snapshotId, frozen.SnapshotId);
+        Assert.All(
+            JsonSerializer.Deserialize<SlotIoBindingSpecification[]>(frozen.ContentJson)!,
+            binding => Assert.Equal(900, binding.PulseResetMilliseconds));
+    }
+
+    [Fact]
     public async Task ARollbackReachesOnlyTheConsumersWhoseFreezePointIsLaterThanIt()
     {
         await using ActivationFixture fixture = await ActivationFixture.CreateAsync();

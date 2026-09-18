@@ -2,8 +2,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ControlServer.Host.Transport;
 
@@ -13,9 +16,16 @@ public sealed class OnboardRecoveryCoordinator(
     OnboardJourneyPublisher publisher,
     SlotConfigurationActivationDispatcher activationDispatcher,
     TimeProvider timeProvider,
-    IConfiguration configuration)
+    IConfiguration configuration,
+    ILogger<OnboardRecoveryCoordinator>? logger = null)
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Action<ILogger, string, string, string, string?, Exception?> LogCancellationFoundStopDecided =
+        LoggerMessage.Define<string, string, string, string?>(
+            LogLevel.Warning,
+            new EventId(2120, nameof(LogCancellationFoundStopDecided)),
+            "Load cancellation {CancellationId} for demand {DemandId} reported ALL_EMPTY after its stop had " +
+            "already moved on (stage {Stage}, reason {BlockReasonCode}); the result is recorded and the stop is " +
+            "left as it was decided.");
     private static readonly string[] RecoveryRequestTypes =
     [
         "ExceptionRecoverySessionRequested",
@@ -83,15 +93,28 @@ public sealed class OnboardRecoveryCoordinator(
             cancellationToken).ConfigureAwait(false);
         ValidateResultIdentity(messageType, payload, workflow);
 
+        // DEFENSIVE RESIDUE, not a live path. Since 8005-agv-control-server#77 every inbound line reaches
+        // this method through OnboardMessageProcessor, and the inbox there answers a second arrival of the
+        // same messageId before this method is called at all: byte-identical replays return the first
+        // response, resends that differ only in sessionGeneration are answered by RebindDurableAckAsync,
+        // and anything else is already a content conflict. So no production caller can get here with a
+        // row on file. It stays because this method is public and its contract -- one durable result per
+        // messageId -- must hold for any caller, and because a future entry point that skips the inbox
+        // would otherwise write a second evidence row in silence.
+        //
+        // What it must NOT do is judge equivalence a second time. That is decided once, by the inbox,
+        // which ignores the sessionGeneration a resend rebinds and nothing else (#30). This compared the
+        // whole line's hash, which a resend changes by definition, so whichever path reached it second
+        // turned an accepted resend into a dropped connection. Identity is what is left: the same
+        // messageId must still name the same workflow and the same kind of record.
         RecoveryResultEvidenceRow? existing = await dbContext.RecoveryResultEvidence
             .SingleOrDefaultAsync(row => row.MessageId == messageId, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
-            if (existing.ContentHash != contentHash || existing.WorkflowId != workflowId ||
-                existing.MessageType != messageType)
+            if (existing.WorkflowId != workflowId || existing.MessageType != messageType)
             {
                 throw new ProtocolContentConflictException(
-                    "Recovery result MessageId was replayed with different identity or content.");
+                    "Recovery result MessageId was replayed with a different identity.");
             }
             return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
         }
@@ -137,6 +160,7 @@ public sealed class OnboardRecoveryCoordinator(
                 sessionGeneration,
                 cancellationToken).ConfigureAwait(false);
         }
+        await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return DurableAck(messageType, messageId, agvId, sessionGeneration, contentHash);
     }
@@ -155,7 +179,12 @@ public sealed class OnboardRecoveryCoordinator(
         if (workflow is null || disposition is OperationResultDisposition.Replay or OperationResultDisposition.HistoricalOnly)
             return;
 
-        workflow.State = disposition == OperationResultDisposition.Accepted
+        // A determinate failure closes the recovery too: what the administrator was asked for is a trustworthy
+        // account of the slots, and one that says nobody handed the cargo over is exactly that
+        // (ADR-cross-0058 decision 2). The runtime then ends the demand from AwaitingLoadResult.
+        bool reconciled = disposition is OperationResultDisposition.Accepted
+            or OperationResultDisposition.DeterminateFailure;
+        workflow.State = reconciled
             ? RecoveryWorkflowState.Reconciled
             : RecoveryWorkflowState.RecoveryRequired;
         workflow.UpdatedAt = timeProvider.GetUtcNow();
@@ -163,7 +192,7 @@ public sealed class OnboardRecoveryCoordinator(
             ? null
             : await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
                 row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
-        if (runtime is not null && disposition == OperationResultDisposition.Accepted)
+        if (runtime is not null && reconciled)
         {
             StationOperationRow operation = await dbContext.StationOperations.SingleAsync(
                 row => row.SlotOperationAttemptId == slotOperationAttemptId,
@@ -171,7 +200,7 @@ public sealed class OnboardRecoveryCoordinator(
             runtime.Stage = operation.OperationType == SlotOperationType.Load
                 ? JourneyRuntimeStage.AwaitingLoadResult
                 : JourneyRuntimeStage.AwaitingUnloadResult;
-            runtime.BlockReasonCode = null;
+            runtime.SetBlockReason(null, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
         }
         if (workflow.ExceptionRecoverySessionId is not null)
@@ -179,13 +208,14 @@ public sealed class OnboardRecoveryCoordinator(
             ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
                 row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
                 cancellationToken).ConfigureAwait(false);
-            session.State = disposition == OperationResultDisposition.Accepted ? "CLOSED" : "EXECUTING";
+            session.State = reconciled ? "CLOSED" : "EXECUTING";
             session.Revision++;
             session.UpdatedAt = timeProvider.GetUtcNow();
             long sessionGeneration = await dbContext.SessionRecoveries.Where(row => row.AgvId == workflow.AgvId)
                 .Select(row => row.SessionGeneration).SingleAsync(cancellationToken).ConfigureAwait(false);
             await QueueSessionSnapshotAsync(session, sessionGeneration, cancellationToken).ConfigureAwait(false);
         }
+        await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -271,7 +301,9 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (replay.RequestContentHash != businessHash || replay.AgvId != agvId)
                 throw new ProtocolContentConflictException("Recovery requestId was replayed with different content.");
-            return OpenedResponse(root, replay);
+            StationOperationRow? replayOperation = await SessionOperationAsync(replay, cancellationToken)
+                .ConfigureAwait(false);
+            return OpenedResponse(root, replay, replayOperation?.SlotOperationAttemptId);
         }
         ExceptionRecoverySessionRow? active = await dbContext.ExceptionRecoverySessions
             .SingleOrDefaultAsync(row => row.AgvId == agvId && row.State != "CLOSED", cancellationToken)
@@ -322,7 +354,8 @@ public sealed class OnboardRecoveryCoordinator(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _ = contentHash;
         _ = messageId;
-        return OpenedResponse(root, row);
+        StationOperationRow? operation = await SessionOperationAsync(row, cancellationToken).ConfigureAwait(false);
+        return OpenedResponse(root, row, operation?.SlotOperationAttemptId);
     }
 
     private async Task<string> SubmitActionAsync(
@@ -348,10 +381,26 @@ public sealed class OnboardRecoveryCoordinator(
         {
             if (replay.RequestContentHash != businessHash || replay.WorkflowType != action)
                 throw new ProtocolContentConflictException("RecoveryActionId was replayed with different content.");
-            return AcceptedAction(root, session, actionId, action);
+            // What the workflow recorded, not a fresh lookup (8005-agv-program#95).
+            return AcceptedAction(root, session, actionId, action, replay.SlotOperationAttemptId);
         }
 
-        StationOperationRow? operation = await FindScopedOperationAsync(session, cancellationToken).ConfigureAwait(false);
+        // The workflow's attempt is what RecoveryActionAccepted names and what compensation is later
+        // authorized against, and the session already named one in ExceptionRecoverySessionOpened and
+        // every snapshot. Those must be one value (8005-agv-program#95), so the action is judged on the
+        // same operation those messages name, from the one lookup that names it.
+        StationOperationRow? operation = await SessionOperationAsync(session, cancellationToken).ConfigureAwait(false);
+        // A session is a verdict on the demand as it stood when the session opened. Should the demand
+        // have gained a slot operation since, that verdict is stale, and an action is refused whole
+        // rather than accepted against a load the world has moved past -- FORCED_MECHANICAL_RECOVERY
+        // and FAULT_CARGO_HANDOFF look at no operation state of their own to catch it. Defensive: slot
+        // operations are created only by the runtime's load and unload stages, a session opens only on a
+        // Blocked journey, and the runtime does nothing for a Blocked one (8005-agv-control-server#78).
+        if (session.DemandId is not null &&
+            (await FindLatestOperationAsync(session.DemandId, cancellationToken).ConfigureAwait(false))
+                ?.SlotOperationAttemptId != operation?.SlotOperationAttemptId)
+            return RejectedAction(
+                root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.RecoveryScopeMismatch);
         SessionRecoveryRow connection = await dbContext.SessionRecoveries.SingleAsync(
             row => row.AgvId == session.AgvId, cancellationToken).ConfigureAwait(false);
         string? actionProblem = ValidateActionPreconditions(action, session, connection, operation);
@@ -396,7 +445,7 @@ public sealed class OnboardRecoveryCoordinator(
             session, root.GetProperty("sessionGeneration").GetInt64(), cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         _ = contentHash;
-        return AcceptedAction(root, session, actionId, action);
+        return AcceptedAction(root, session, actionId, action, workflow.SlotOperationAttemptId);
     }
 
     private async Task<string> RecordHardwareRecoveryAsync(
@@ -471,12 +520,19 @@ public sealed class OnboardRecoveryCoordinator(
         string cancellationId = RequiredUuid(payload, "cancellationId");
         string demandId = RequiredUuid(payload, "demandId");
         string? attemptId = OptionalUuid(payload, "slotOperationAttemptId");
+        if (attemptId is null)
+        {
+            return await AuthorizeLoadCancellationBeforeSublotAsync(
+                root, contentHash, cancellationId, demandId, cancellationToken).ConfigureAwait(false);
+        }
         AcceptedDemandRow? demand = await dbContext.AcceptedDemands.SingleOrDefaultAsync(
             row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        bool sameVehicle = await DemandIsOnVehicleAsync(demandId, RequiredString(root, "agvId"), cancellationToken)
+            .ConfigureAwait(false);
         StationOperationRow? operation = attemptId is null ? null : await dbContext.StationOperations
             .SingleOrDefaultAsync(row => row.SlotOperationAttemptId == attemptId, cancellationToken)
             .ConfigureAwait(false);
-        bool authorized = demand is not null && demand.Status == DemandExecutionStatus.Accepted &&
+        bool authorized = demand is not null && demand.Status == DemandExecutionStatus.Accepted && sameVehicle &&
                           (operation is null || operation.DemandId == demandId &&
                            operation.OperationType == SlotOperationType.Load &&
                            operation.Status != StationOperationStatus.RecoveryRequired);
@@ -499,6 +555,142 @@ public sealed class OnboardRecoveryCoordinator(
                 "Load cancellation is not safe in the current state.")
         });
     }
+
+    /// <summary>
+    /// ADR-cross-0046, first case: the operator cancels at the pickup before any sublot is entered, so no
+    /// slot operation was commanded and there is no slot to prove empty. Authorized with an empty slot set,
+    /// and the demand is ended only by the vehicle's ALL_EMPTY result that follows -- never by the
+    /// authorization itself, which is how MVP did it (ADR-cross-0057 Consequences).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Only while the journey waits in <see cref="JourneyRuntimeStage.AwaitingSublot"/>, before any load
+    /// command, with no entry for the stop durable and no cancellation already open. Once an entry is
+    /// durable the runtime acts on it, and the cancellation, persisted second, loses
+    /// (<see cref="LoadCancellationBeforeSublot"/>). Until control-server#83 this path authorized at any
+    /// stage and then waited for a result that protocol 1.0.0 could not carry, so the stop stayed held.
+    /// </para>
+    /// <para>
+    /// A request naming a cancellation already on file, from the vehicle that raised it, is answered from
+    /// the record rather than judged afresh: judged afresh, the open cancellation it created -- or the stop
+    /// it has since ended -- would refuse it. <see cref="UpsertSimpleWorkflowAsync"/> compares the payload
+    /// hash, so a resend has to repeat the first request's content exactly, as the onboard does.
+    /// </para>
+    /// <para>
+    /// <b>Decided and recorded under one write lock.</b> This runs inside the inbox's write transaction,
+    /// which on this store is BEGIN IMMEDIATE: every fact read here is current, and the station deadline,
+    /// which re-reads the stop under its own write transaction before ending it, cannot end the same stop in
+    /// between. Whichever commits first stands.
+    /// </para>
+    /// </remarks>
+    private async Task<string> AuthorizeLoadCancellationBeforeSublotAsync(
+        JsonElement root,
+        string contentHash,
+        string cancellationId,
+        string demandId,
+        CancellationToken cancellationToken)
+    {
+        string agvId = RequiredString(root, "agvId");
+        RecoveryWorkflowRow? recorded = await dbContext.RecoveryWorkflows.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.WorkflowId == cancellationId, cancellationToken).ConfigureAwait(false);
+        bool authorized = recorded is not null
+            ? recorded.AgvId == agvId
+            : await CancellationBeforeSublotAllowedAsync(demandId, agvId, cancellationToken).ConfigureAwait(false);
+        if (authorized)
+        {
+            await UpsertSimpleWorkflowAsync(
+                cancellationId, LoadCancellationBeforeSublot.WorkflowType, root, contentHash, demandId,
+                attemptId: null, slots: [], cancellationToken).ConfigureAwait(false);
+        }
+        return Response(root, "LoadCancellationAuthorization", new
+        {
+            cancellationId,
+            decision = authorized ? "AUTHORIZED" : "REJECTED",
+            demandId,
+            slotOperationAttemptId = (string?)null,
+            slots = Array.Empty<int>(),
+            problem = authorized ? null : Problem(
+                ServerReasonCodes.ActionNotAllowedInState, "payload.slotOperationAttemptId",
+                "Load cancellation before a sublot entry is not allowed in the current state.")
+        });
+    }
+
+    private async Task<bool> CancellationBeforeSublotAllowedAsync(
+        string demandId,
+        string agvId,
+        CancellationToken cancellationToken)
+    {
+        AcceptedDemandRow? demand = await dbContext.AcceptedDemands.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        if (demand?.Status != DemandExecutionStatus.Accepted ||
+            runtime?.Stage != JourneyRuntimeStage.AwaitingSublot ||
+            runtime.AgvId != agvId ||
+            runtime.ConsumedSublotMessageId is not null)
+        {
+            return false;
+        }
+        if (await LoadCommandedAsync(runtime, cancellationToken).ConfigureAwait(false) ||
+            await LoadCancellationBeforeSublot.HasOpenCancellationAsync(dbContext, demandId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return false;
+        }
+        // Narrowed in the store the way the runtime's own read is, and for the same reason: this runs on
+        // every cancellation request and the inbox keeps every submission ever made. The operation
+        // session is written into the submission's own JSON, so the substring is a filter the database
+        // can apply; which entries are the stop's is still decided by the parse below.
+        string operationSessionId = runtime.OperationSessionId;
+        ProtocolInboxRow[] entries = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        List<ProtocolInboxRow> forThisStop = [];
+        foreach (ProtocolInboxRow entry in entries)
+        {
+            using JsonDocument document = JsonDocument.Parse(entry.RequestJson);
+            if (LoadCancellationBeforeSublot.IsEntryForStop(document.RootElement, runtime, demand.Sublot))
+            {
+                forThisStop.Add(entry);
+            }
+        }
+
+        // An entry the server already refused is not an entry for this stop (control-server#82): the
+        // operator has been shown why their scan did not stand, and cancelling the stop before any sublot
+        // is what they are most likely to want next. Read from the store, so a refusal that is not
+        // durable yet has not been decided and this stays refused -- the conservative side of the race.
+        HashSet<string> refused = await LoadCancellationBeforeSublot
+            .RefusedSubmissionIdsAsync(dbContext, [.. forThisStop.Select(entry => entry.MessageId)], cancellationToken)
+            .ConfigureAwait(false);
+        foreach (ProtocolInboxRow entry in forThisStop.Where(entry => !refused.Contains(entry.MessageId)))
+        {
+            // An entry the runtime refuses for the station's task types starts no load, so it does not hold
+            // the stop against the operator either. That carve-out is kept as it was: it names a station
+            // that cannot do the work at all, and it is not a SublotRejected.
+            return !await store.IsTaskTypeAllowedAsync(
+                    runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Whether the journey's load was commanded: its SlotOperationCommand is queued, or a slot operation
+    /// exists for the demand. The command's id is assigned when the journey is created, so the id alone
+    /// says nothing.
+    /// </summary>
+    private async Task<bool> LoadCommandedAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
+        await dbContext.ProtocolOutbox.AsNoTracking()
+            .AnyAsync(row => row.MessageId == runtime.LoadCommandMessageId, cancellationToken).ConfigureAwait(false) ||
+        await dbContext.StationOperations.AsNoTracking()
+            .AnyAsync(row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// Whether the demand's journey runs on the vehicle a request came from. A demand with no journey is
+    /// on no vehicle.
+    /// </summary>
+    private Task<bool> DemandIsOnVehicleAsync(string demandId, string agvId, CancellationToken cancellationToken) =>
+        dbContext.JourneyRuntimes.AsNoTracking()
+            .AnyAsync(row => row.DemandId == demandId && row.AgvId == agvId, cancellationToken);
 
     private async Task<string> AuthorizeLoadCompensationAsync(
         JsonElement root,
@@ -705,9 +897,7 @@ public sealed class OnboardRecoveryCoordinator(
                 session.ExceptionRecoverySessionId)
                 row.FencedAt = timeProvider.GetUtcNow();
         }
-        StationOperationRow? operation = session.DemandId is null
-            ? null
-            : await FindLatestOperationAsync(session.DemandId, cancellationToken).ConfigureAwait(false);
+        StationOperationRow? operation = await SessionOperationAsync(session, cancellationToken).ConfigureAwait(false);
         string[] allowedActions = session.State == "OPEN"
             ? AllowedActions(session, operation)
             : [];
@@ -734,6 +924,7 @@ public sealed class OnboardRecoveryCoordinator(
                 session.AdministratorRole,
                 session.EventId,
                 session.DemandId,
+                operation?.SlotOperationAttemptId,
                 ParseSlots(session.SlotsJson),
                 session.SelectedAction,
                 allowedActions,
@@ -825,6 +1016,39 @@ public sealed class OnboardRecoveryCoordinator(
         workflow.State = RecoveryWorkflowState.Reconciled;
         if (messageType == "LoadCorrectionResult") return;
         if (workflow.DemandId is null) return;
+        if (messageType == "LoadCancellationResult" && workflow.SlotOperationAttemptId is null)
+        {
+            // Cancelled before any sublot entry: nothing was commanded, so the stop ends the way the station
+            // deadline ends it -- demand, lease, vehicle occupancy, the unanswered entry request and the
+            // journey in one staged change -- and differs only in why (control-server#83). Stamped with the
+            // server's receipt time, like the deadline: every fact it writes is the server's own.
+            JourneyRuntimeRow stop = await dbContext.JourneyRuntimes.SingleAsync(
+                row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
+            // Checked again here, inside the inbox's write transaction, because authorization and settlement
+            // are two messages and the stop may have moved on between them. A stop already ended -- by its
+            // station deadline, say -- keeps the reason it ended with: the vehicle has only proved what that
+            // ending already assumed. A load commanded since is a stop this result cannot end at all, so it
+            // is held for recovery like any result that does not reconcile.
+            if (stop.Stage == JourneyRuntimeStage.Completed)
+            {
+                LogCancellationFoundStopDecided(
+                    logger ?? (ILogger)NullLogger.Instance,
+                    workflow.WorkflowId, stop.DemandId, stop.Stage.ToString(), stop.BlockReasonCode, null);
+                return;
+            }
+            if (stop.Stage != JourneyRuntimeStage.AwaitingSublot ||
+                await LoadCommandedAsync(stop, cancellationToken).ConfigureAwait(false))
+            {
+                workflow.State = RecoveryWorkflowState.RecoveryRequired;
+                await KeepDemandAndJourneyBlockedAsync(
+                    workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            await new PickupStopTermination(dbContext)
+                .StageAsync(stop, "CANCELLED_BY_OPERATOR", timeProvider.GetUtcNow(), cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
         AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
             row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
         if (demand.Status == DemandExecutionStatus.Succeeded)
@@ -845,11 +1069,13 @@ public sealed class OnboardRecoveryCoordinator(
         if (runtime is not null)
         {
             runtime.Stage = JourneyRuntimeStage.Completed;
-            runtime.BlockReasonCode = messageType == "FaultCargoRecoveryResult"
-                ? "TERMINATED_BY_FAULT_CARGO_HANDOFF"
-                : messageType == "LoadCompensationResult"
-                    ? "CANCELLED_BY_LOAD_COMPENSATION"
-                    : "CANCELLED_BY_OPERATOR";
+            runtime.SetBlockReason(
+                messageType == "FaultCargoRecoveryResult"
+                    ? "TERMINATED_BY_FAULT_CARGO_HANDOFF"
+                    : messageType == "LoadCompensationResult"
+                        ? "CANCELLED_BY_LOAD_COMPENSATION"
+                        : "CANCELLED_BY_OPERATOR",
+                observedAt);
             runtime.UpdatedAt = observedAt;
         }
     }
@@ -870,7 +1096,7 @@ public sealed class OnboardRecoveryCoordinator(
         if (runtime is not null)
         {
             runtime.Stage = JourneyRuntimeStage.Blocked;
-            runtime.BlockReasonCode = reason;
+            runtime.SetBlockReason(reason, timeProvider.GetUtcNow());
             runtime.UpdatedAt = timeProvider.GetUtcNow();
         }
     }
@@ -980,11 +1206,50 @@ public sealed class OnboardRecoveryCoordinator(
         };
     }
 
-    private async Task<StationOperationRow?> FindScopedOperationAsync(
+    /// <summary>
+    /// The slot operation a recovery session is about: the one whose attempt the three recovery messages
+    /// to the vehicle name -- <c>ExceptionRecoverySessionOpened</c>, every
+    /// <c>ExceptionRecoverySessionSnapshot</c> and <c>RecoveryActionAccepted</c> -- and the one an action
+    /// on the session is judged on and its workflow recorded against.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Protocol <c>2.0.0</c> item 7 (<c>8005-agv-program#95</c>, rules in commit <c>6ed3564c</c>). A
+    /// session on a demand for which a slot operation had been commanded names that demand's latest
+    /// attempt; a session with no demand, or opened before any slot operation -- before loading began
+    /// -- names null. Never an attempt invented to be non-null, never one of another demand. This is
+    /// the gap MVP <c>8005-agv-control-server#5</c> closed: compensation demands the attempt, and
+    /// without this the vehicle, whose own record is cleared by then, has nowhere to read it from.
+    /// </para>
+    /// <para>
+    /// <b>Fixed at the session's first value.</b> Only operations created no later than the session
+    /// opened are considered, and an operation row is only ever created together with its command, so
+    /// every later call answers what the first one did -- a replayed request, each snapshot revision,
+    /// the accepted action. No column stores the value; it is derived from those persisted facts.
+    /// </para>
+    /// <para>
+    /// <b>The only lookup of an existing session's operation.</b> The action and the snapshot's allowed
+    /// actions once read the demand's latest operation, with no cut-off at the opening, while the
+    /// messages read this; one source is what keeps the attempt a workflow records equal to the attempt
+    /// the vehicle was told (8005-agv-control-server#78). <see cref="FindLatestOperationAsync"/> answers
+    /// a different question -- what the demand's latest operation is now -- and is asked in two places:
+    /// validating a session's scope before the session exists, where the two coincide, and refusing an
+    /// action once the demand has moved past its session.
+    /// </para>
+    /// </remarks>
+    private async Task<StationOperationRow?> SessionOperationAsync(
         ExceptionRecoverySessionRow session,
-        CancellationToken cancellationToken) =>
-        session.DemandId is null ? null : await FindLatestOperationAsync(session.DemandId, cancellationToken)
-            .ConfigureAwait(false);
+        CancellationToken cancellationToken)
+    {
+        if (session.DemandId is null) return null;
+        StationOperationRow[] operations = await dbContext.StationOperations.AsNoTracking()
+            .Where(row => row.DemandId == session.DemandId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        return operations
+            .Where(row => row.CreatedAt <= session.OpenedAt)
+            .OrderByDescending(row => row.CreatedAt)
+            .FirstOrDefault();
+    }
 
     private async Task<StationOperationRow?> FindLatestOperationAsync(
         string demandId,
@@ -1049,7 +1314,10 @@ public sealed class OnboardRecoveryCoordinator(
             .Select(row => (long?)row.ForcedRecoveryGeneration)
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? 0;
 
-    private string OpenedResponse(JsonElement request, ExceptionRecoverySessionRow session) =>
+    private string OpenedResponse(
+        JsonElement request,
+        ExceptionRecoverySessionRow session,
+        string? slotOperationAttemptId) =>
         Response(request, "ExceptionRecoverySessionOpened", new
         {
             requestId = session.RequestId,
@@ -1057,6 +1325,7 @@ public sealed class OnboardRecoveryCoordinator(
             openedAt = session.OpenedAt,
             eventId = session.EventId,
             demandId = session.DemandId,
+            slotOperationAttemptId,
             slots = ParseSlots(session.SlotsJson),
             recoverySessionRevision = session.Revision
         });
@@ -1065,11 +1334,13 @@ public sealed class OnboardRecoveryCoordinator(
         JsonElement request,
         ExceptionRecoverySessionRow session,
         string actionId,
-        string action) =>
+        string action,
+        string? slotOperationAttemptId) =>
         Response(request, "RecoveryActionAccepted", new
         {
             recoveryActionId = actionId,
             exceptionRecoverySessionId = session.ExceptionRecoverySessionId,
+            slotOperationAttemptId,
             acceptedAction = action,
             recoverySessionRevision = session.Revision,
             acceptedAt = session.UpdatedAt
@@ -1090,20 +1361,14 @@ public sealed class OnboardRecoveryCoordinator(
         });
 
     private string Response(JsonElement request, string messageType, object payload) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        ProtocolEnvelope.Serialize(
             messageType,
-            messageId = Guid.NewGuid().ToString("D"),
-            correlationId = RequiredString(request, "messageId"),
-            agvId = RequiredString(request, "agvId"),
-            sessionGeneration = request.GetProperty("sessionGeneration").GetInt64(),
-            sentAt = timeProvider.GetUtcNow(),
-            payload
-        }, SerializerOptions);
+            Guid.NewGuid().ToString("D"),
+            RequiredString(request, "messageId"),
+            RequiredString(request, "agvId"),
+            request.GetProperty("sessionGeneration").GetInt64(),
+            timeProvider.GetUtcNow(),
+            payload);
 
     private string DurableAck(
         string acceptedMessageType,
@@ -1111,26 +1376,22 @@ public sealed class OnboardRecoveryCoordinator(
         string agvId,
         long generation,
         string contentHash) =>
-        JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-            messageType = "DurableAck",
-            messageId = Guid.NewGuid().ToString("D"),
-            correlationId = acceptedMessageId,
+        // Two clock reads, and the order they happen in is observable on the wire: sentAt first, the
+        // payload's durablyAcceptedAt second. Argument evaluation is left to right, so it still is.
+        ProtocolEnvelope.Serialize(
+            "DurableAck",
+            Guid.NewGuid().ToString("D"),
+            acceptedMessageId,
             agvId,
-            sessionGeneration = generation,
-            sentAt = timeProvider.GetUtcNow(),
-            payload = new
+            generation,
+            timeProvider.GetUtcNow(),
+            new
             {
                 acceptedMessageId,
                 acceptedMessageType,
                 acceptedContentSha256 = contentHash,
                 durablyAcceptedAt = timeProvider.GetUtcNow()
-            }
-        }, SerializerOptions);
+            });
 
     private static object Problem(string reasonCode, string fieldPath, string displayMessage) => new
     {
@@ -1150,6 +1411,27 @@ public sealed class OnboardRecoveryCoordinator(
         workflow.CommandContentHash = contentHash;
         workflow.State = RecoveryWorkflowState.AwaitingResult;
         workflow.UpdatedAt = timeProvider.GetUtcNow();
+    }
+
+    /// <summary>
+    /// Settles the command a workflow's first result answers, whatever that result concluded.
+    /// </summary>
+    /// <remarks>
+    /// A recovery command has no ack of its own (<c>LoadCompensationCommandAck</c> is on the profile
+    /// denylist); its answer is the result -- one of the five recovery results, or for a resume the
+    /// replacement OperationResult. A workflow holding its first result takes no other, so a command
+    /// left pending could only be replayed into a later session to draw a duplicate. Until
+    /// 8005-agv-control-server#78 nothing settled it: a failed workflow, still in RecoveryRequired,
+    /// had its command replayed into every session that followed, and a reconciled one sat unsettled
+    /// in the outbox for the life of the database (8005-agv-program#61, MVP <c>219b033f</c>).
+    /// </remarks>
+    private async Task SettleAnsweredCommandAsync(
+        RecoveryWorkflowRow workflow,
+        CancellationToken cancellationToken)
+    {
+        if (workflow.CommandMessageId is null) return;
+        await store.SettleAnsweredCommandAsync(
+            workflow.CommandMessageId, timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
     }
 
     private static string ResultOutcome(string messageType, JsonElement payload) =>
