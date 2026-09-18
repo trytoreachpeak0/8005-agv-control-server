@@ -256,6 +256,114 @@ function Wait-L2Iterations {
         -Until { param($v) $v -ge $target }
 }
 
+<#
+Reports a safety change from a synthetic peer and returns only once the server has committed it.
+
+PUT /control/v1/safety returns as soon as the peer has *sent* its SafetyStateChanged; the server has
+not necessarily read it, let alone stored it. A scenario that moves the fake RIoT on the next line is
+then racing the server's transport: control-server#141, where CI under four lanes took 183 ms to
+process the "moving" report and the journey runtime trusted a RIoT arrival in between. The server
+cannot be conservative about a report it has not received, so the fix belongs here, not in the
+product.
+
+What this waits for is the durable point itself, not the DurableAck line: the server advances
+SessionRecoveries.SafetyRevision in the same transaction that stores the envelope, and sends the
+DurableAck only after that commits. The arrival check reads exactly that row (ReadOnboardFactsAsync
+matches the inbox on SafetyRevision), and reads it after RIoT, so once the revision is visible here
+any decision that can see a RIoT change made afterwards sees this safety state too.
+
+Returns the published safetyStateVersion.
+
+Two environment variables exist for Test-L2SafetyDurableWait.ps1 and nothing else; neither is set in
+CI or by any scenario:
+
+  W2G_L2_SELFCHECK_HOLD_SERVER_WRITES_MS  Take the database's write lock before the report and hold it
+                                          that long, so the server cannot commit the report until then.
+                                          The deterministic stand-in for a slow server.
+  W2G_L2_SELFCHECK_SKIP_DURABLE_WAIT      Return right after the PUT, which is what every scenario did
+                                          before control-server#141. With the hold above it reproduces
+                                          the CI failure on every run.
+#>
+function Set-L2OnboardSafety {
+    param(
+        [Parameter(Mandatory)][object]$Onboard,
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$AgvId,
+        [Parameter(Mandatory)][hashtable]$Safety,
+        [int]$TimeoutSeconds = 60,
+        [L2Journal]$Journal
+    )
+
+    $holdMs = [int]($env:W2G_L2_SELFCHECK_HOLD_SERVER_WRITES_MS ?? '0')
+    if ($holdMs -gt 0) { Start-L2ServerWriteHold -Connection $Connection -Milliseconds $holdMs -Journal $Journal }
+
+    $null = $Onboard.Command('Put', 'safety', $Safety)
+    # The control plane moves its state before it sends, so this is the version just published (or the
+    # current one, when the command changed nothing and there is nothing new to wait for).
+    $published = $Onboard.Snapshot().body
+    $version = [long]$published.safetyStateVersion
+    $generation = [long]$published.sessionGeneration
+
+    if ($env:W2G_L2_SELFCHECK_SKIP_DURABLE_WAIT -eq '1') {
+        if ($Journal) { $Journal.Note("Self-check: not waiting for safetyStateVersion $version to be committed.") }
+        return $version
+    }
+
+    $null = Wait-L2Condition -Description "the server committed safetyStateVersion $version (generation $generation)" `
+        -Journal $Journal -Criterion 'server-safety-revision' -TimeoutSeconds $TimeoutSeconds `
+        -Probe {
+            $rows = Invoke-L2Query -Connection $Connection `
+                -Sql "SELECT SessionGeneration, SafetyRevision FROM SessionRecoveries WHERE AgvId = '$AgvId'"
+            if ($rows.Count -eq 0) { return $null }
+            return "$([long]$rows[0].SessionGeneration)/$([long]$rows[0].SafetyRevision)"
+        } `
+        -Until {
+            param($v)
+            $parts = $v.Split('/')
+            [long]$parts[0] -eq $generation -and [long]$parts[1] -ge $version
+        }
+    return $version
+}
+
+<#
+Self-check only (see Set-L2OnboardSafety): takes the server database's write lock and releases it
+$Milliseconds later on a thread job. BEGIN IMMEDIATE takes RESERVED, which blocks every writer -- the
+server's transport cannot commit an inbound report -- but not readers, so the journey runtime still
+reads RIoT and the session row and decides as it would on a slow machine. Returns once the lock is held.
+#>
+function Start-L2ServerWriteHold {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][int]$Milliseconds,
+        [L2Journal]$Journal
+    )
+
+    # One hold at a time: a second BEGIN IMMEDIATE would queue behind the first on the busy timeout.
+    if ($script:L2ServerWriteHold) {
+        $null = $script:L2ServerWriteHold | Wait-Job
+        $script:L2ServerWriteHold | Remove-Job
+        $script:L2ServerWriteHold = $null
+    }
+    $writer = [Microsoft.Data.Sqlite.SqliteConnection]::new(
+        "Data Source=$($Connection.DataSource);Mode=ReadWrite;Cache=Private;Pooling=False;Default Timeout=30")
+    $writer.Open()
+    $begin = $writer.CreateCommand()
+    $begin.CommandText = 'BEGIN IMMEDIATE'
+    $null = $begin.ExecuteNonQuery()
+    $begin.Dispose()
+    if ($Journal) { $Journal.Note("Self-check: holding the server database's write lock for $Milliseconds ms.") }
+    $script:L2ServerWriteHold = Start-ThreadJob -ArgumentList $writer, $Milliseconds -ScriptBlock {
+        param($writer, $milliseconds)
+        # The injected delay itself, not a wait for something: this is what a slow server looks like.
+        Start-Sleep -Milliseconds $milliseconds
+        $commit = $writer.CreateCommand()
+        $commit.CommandText = 'COMMIT'
+        $null = $commit.ExecuteNonQuery()
+        $commit.Dispose()
+        $writer.Dispose()
+    }
+}
+
 # --- control-plane client -----------------------------------------------------------------------
 
 <#
@@ -963,6 +1071,6 @@ function Write-L2Evidence {
 }
 
 Export-ModuleMember -Function New-L2Journal, Wait-L2Condition, Assert-L2ComponentAlive,
-    Assert-L2PortOwner, Get-L2ListeningProcess, Wait-L2Iterations, New-L2Double,
+    Assert-L2PortOwner, Get-L2ListeningProcess, Wait-L2Iterations, Set-L2OnboardSafety, New-L2Double,
     Start-L2Process, Stop-L2Process, Open-L2Database, Invoke-L2Query, New-L2Assertions,
     Write-L2Evidence, Format-L2IdentityRows, Get-L2PeerPublish, New-L2PeerStage, New-L2OnboardDriver
