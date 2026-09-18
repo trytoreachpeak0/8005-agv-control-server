@@ -2516,17 +2516,37 @@ try {
     $droppedReportId = if ($dropped.Count -eq 1) { $dropped[0].acceptedMessageId } else { $null }
     $replayedReports = @($reports | Where-Object messageId -EQ $droppedReportId)
     $forwardedReplayAcks = @($forwarded | Where-Object acceptedMessageId -EQ $droppedReportId)
+    # protocol-v2.0.0 (CV-SESSION-RECONNECT-DURING-RECOVERY; control-server#33 / program#56, landed on the
+    # onboard end by onboard-hmi#69): after the reconnect the vehicle hands over a NEW RecoveryStateReport
+    # in a full handshake on the new session generation, and the unacknowledged one is superseded, never
+    # sent again. So what is observed is the report that superseded it, the handshake it came in, and
+    # the readiness the server answered with on that connection.
+    $droppedConnectionId = if ($dropped.Count -eq 1) { [long]$dropped[0].connectionId } else { $null }
+    $droppedGeneration = if ($replayedReports.Count -ge 1) { [long]$replayedReports[0].sessionGeneration } else { $null }
+    $supersedingReports = @($reports | Where-Object {
+        $null -ne $droppedConnectionId -and [long]$_.connectionId -gt $droppedConnectionId -and
+        $_.messageId -ne $droppedReportId
+    })
+    $supersedingConnectionId = if ($supersedingReports.Count -ge 1) { [long]$supersedingReports[0].connectionId } else { $null }
+    $supersedingConnectionTypes = @($events | Where-Object {
+        $_.event -eq 'message' -and $null -ne $supersedingConnectionId -and [long]$_.connectionId -eq $supersedingConnectionId
+    } | ForEach-Object { "$($_.direction):$($_.messageType)" })
+    $supersedingAcks = @($forwarded | Where-Object {
+        $supersedingReports.Count -ge 1 -and $_.acceptedMessageId -eq $supersedingReports[0].messageId
+    })
     $runtimeObservation = [ordered]@{
         droppedAckCount = $dropped.Count
         droppedReportMessageId = $droppedReportId
-        forwardedReplayAckCount = $forwardedReplayAcks.Count
-        recoveryReportSendCount = $replayedReports.Count
+        droppedReportConnectionId = $droppedConnectionId
+        droppedReportSessionGeneration = $droppedGeneration
+        droppedReportSendCount = $replayedReports.Count
+        droppedReportAckForwardedCount = $forwardedReplayAcks.Count
         allRecoveryReportSendCount = $reports.Count
-        messageIds = @($replayedReports.messageId | Sort-Object -Unique)
-        payloadSha256 = @($replayedReports.payloadSha256 | Sort-Object -Unique)
-        wireSha256 = @($replayedReports.wireSha256 | Sort-Object -Unique)
-        connectionIds = @($replayedReports.connectionId | Sort-Object -Unique)
-        sessionGenerations = @($replayedReports.sessionGeneration | Sort-Object -Unique)
+        supersedingReportMessageIds = @($supersedingReports.messageId | Sort-Object -Unique)
+        supersedingReportConnectionId = $supersedingConnectionId
+        supersedingReportSessionGeneration = if ($supersedingReports.Count -ge 1) { [long]$supersedingReports[0].sessionGeneration } else { $null }
+        supersedingReportAckForwardedCount = $supersedingAcks.Count
+        supersedingConnectionMessages = $supersedingConnectionTypes
         sessionAfterFault = $sessionEvidence
     }
 
@@ -3102,8 +3122,14 @@ $alarmSnapshotsWithoutAlarmsDigest = @($alarmSnapshotSequenceOnWire | Where-Obje
 $alarmRepublishedSnapshots = @($alarmSnapshotSequenceOnWire | Where-Object { -not $_.fullHandshakeOwn -and $_.sameAlarmsAsPrevious })
 $alarmHandshakesWithoutSnapshot = @($alarmFullHandshakeConnectionIds |
     Where-Object { $alarmObservation.snapshotConnectionIds -notcontains $_ })
-$alarmResumePass = $alarmClientConnectionIds.Count -gt $alarmFullHandshakeConnectionIds.Count -and
-    $alarmFullHandshakeConnectionIds.Count -ge 1 -and
+# protocol-v2.0.0 (control-server#87): there is no resumed connection any more. Since onboard-hmi#69 every
+# reconnect is a full handshake (control-server#33 / program#56), and every full handshake publishes the
+# complete alarm set (PUBLISH_COMPLETE_ALARM_SET), changed or not. What still has to hold is the content
+# half of the rule above: outside a handshake a snapshot is only sent when the alarms changed
+# (NEVER_PUBLISH_STALE_ALARM_STATE). So the run must have reconnected -- at least two connections, each
+# of them a full handshake carrying its own snapshot -- instead of having resumed once.
+$alarmHandshakePass = $alarmClientConnectionIds.Count -ge 2 -and
+    $alarmFullHandshakeConnectionIds.Count -eq $alarmClientConnectionIds.Count -and
     $alarmHandshakesWithoutSnapshot.Count -eq 0 -and
     $alarmSnapshotsWithoutAlarmsDigest.Count -eq 0 -and
     $alarmRepublishedSnapshots.Count -eq 0
@@ -3126,15 +3152,31 @@ $alarmGenerationPass = $alarmSingletonPass -and
     $alarmObservation.projectionSessionGeneration -eq ($alarmSnapshotGenerations | Measure-Object -Maximum).Maximum -and
     $alarmObservation.projectionSnapshotSequence -ge 1
 
-$replayPass = $null -ne $runtimeObservation -and
+# CV-SESSION-RECONNECT-DURING-RECOVERY under protocol-v2.0.0 (control-server#87, the control-server#60
+# review): the vehicle whose report went unacknowledged reconnects, handshakes in full on a new session
+# generation (SessionHello, SessionAccepted, both snapshots) and resubmits its recovery state as a NEW
+# report (RESUBMIT_RECOVERY_STATE_AFTER_RECONNECT, NEVER_ASSUME_PREVIOUS_SESSION_SURVIVED); the server
+# acknowledges that one and answers SessionReadiness on the same connection. The unacknowledged report
+# is superseded and never sent again (control-server#33 / program#56, onboard-hmi#69). Until batch 5 this
+# asserted the opposite -- the same messageId replayed on the new connection -- which the v2 onboard end
+# deliberately no longer does; that form went red on 2026-09-18 and is recorded in
+# docs/defects/20260918-journey-g3-scenarios-assume-empty-close-fails-the-load.md.
+$supersedingMessages = if ($null -ne $runtimeObservation) { @($runtimeObservation.supersedingConnectionMessages) } else { @() }
+$supersedingReportIndex = [array]::IndexOf($supersedingMessages, 'client-to-server:RecoveryStateReport')
+$recoveryResubmitPass = $null -ne $runtimeObservation -and
     $runtimeObservation.droppedAckCount -eq 1 -and
-    $runtimeObservation.forwardedReplayAckCount -ge 1 -and
-    $runtimeObservation.recoveryReportSendCount -ge 2 -and
-    $runtimeObservation.messageIds.Count -eq 1 -and
-    $runtimeObservation.payloadSha256.Count -eq 1 -and
-    $runtimeObservation.wireSha256.Count -ge 2 -and
-    $runtimeObservation.connectionIds.Count -ge 2 -and
-    $runtimeObservation.sessionGenerations.Count -ge 2 -and
+    $runtimeObservation.droppedReportSendCount -eq 1 -and
+    $runtimeObservation.droppedReportAckForwardedCount -eq 0 -and
+    $runtimeObservation.supersedingReportMessageIds.Count -ge 1 -and
+    $runtimeObservation.supersedingReportAckForwardedCount -ge 1 -and
+    $null -ne $runtimeObservation.droppedReportSessionGeneration -and
+    $runtimeObservation.supersedingReportSessionGeneration -gt $runtimeObservation.droppedReportSessionGeneration -and
+    $supersedingMessages.Count -ge 1 -and $supersedingMessages[0] -eq 'client-to-server:SessionHello' -and
+    [array]::IndexOf($supersedingMessages, 'server-to-client:SessionAccepted') -ge 1 -and
+    [array]::IndexOf($supersedingMessages, 'client-to-server:CapabilitySnapshot') -ge 1 -and
+    [array]::IndexOf($supersedingMessages, 'client-to-server:SafetyStateSnapshot') -ge 1 -and
+    $supersedingReportIndex -gt [array]::IndexOf($supersedingMessages, 'server-to-client:SessionAccepted') -and
+    [array]::LastIndexOf($supersedingMessages, 'server-to-client:SessionReadiness') -gt $supersedingReportIndex -and
     $null -ne $runtimeObservation.sessionAfterFault -and
     $runtimeObservation.sessionAfterFault.readiness -eq 'RecoveryRequired' -and
     $runtimeObservation.sessionAfterFault.reasonCode -in @(
@@ -3264,7 +3306,7 @@ $recoveryPass = $recoveryProbePass -and $recoveryAuthorisationPass -and $recover
 
 $status = if ($null -ne $runError) {
     'INCONCLUSIVE_RUNNER_ERROR'
-} elseif ($probePass -and $replayPass -and $noMovementPass -and $businessPass -and $recoveryPass) {
+} elseif ($probePass -and $recoveryResubmitPass -and $noMovementPass -and $businessPass -and $recoveryPass) {
     'STAGED_G3_RECOVERY_REPLAY_PASS'
 } else {
     'STAGED_SLICE_FAIL'
@@ -3277,7 +3319,7 @@ $configuration = [ordered]@{
         certificatesGenerated = $false
         temporaryTrustRootInstalled = $false
         realOnboardAckDropTransport = 'PLAINTEXT_LOOPBACK'
-        realOnboardAckDropCombination = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+        realOnboardAckDropCombination = if ($recoveryResubmitPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     }
     ports = [ordered]@{
         controlOnboard = $controlPort
@@ -3347,9 +3389,9 @@ $assertionReport = [ordered]@{
     identityRejections = if ($identityRejectionsPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     sameConnectionSameMessageIdSameContent = if ($null -ne $probeResult -and $probeResult.duplicate.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     sameMessageIdDifferentContentStableConflict = if ($null -ne $probeResult -and $probeResult.conflict.status -eq 'PASS') { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    # One check, one name: recoveryStateReportFirstAckDropReplayOverPlaintext was the same boolean and
-    # was merged into this one by the control-server#60 review (2026-09-18).
-    recoveryStateReportFirstAckDropReplay = if ($replayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    # Was recoveryStateReportFirstAckDropReplay (plus an ...OverPlaintext twin on the same boolean) until
+    # control-server#87: renamed with its v2 judgment, see $recoveryResubmitPass.
+    recoveryStateResubmittedAsANewReportAfterAckDrop = if ($recoveryResubmitPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     businessMessageSameMessageIdSameContentReplay = if ($businessDuplicatePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     businessMessageSameMessageIdDifferentContentStableConflict = if ($businessConflictPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     businessMessageAckDropInSessionReplay = if ($businessAckDropPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
@@ -3369,7 +3411,8 @@ $assertionReport = [ordered]@{
     bothEndsComputedTheSameSlotConfigurationFingerprint = if ($fingerprintAgreementPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     onboardAlarmSnapshotPublishedOnTheFullHandshake = if ($alarmSentPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     onboardAlarmSnapshotAppliedAckOnEverySnapshot = if ($alarmAckPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    onboardAlarmSnapshotNotRepublishedOnRecoveryResume = if ($alarmResumePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    # Was onboardAlarmSnapshotNotRepublishedOnRecoveryResume until control-server#87; see $alarmHandshakePass.
+    onboardAlarmSnapshotRepublishedOnlyOnHandshakeOrChange = if ($alarmHandshakePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     onboardAlarmProjectionKeptOnlyTheLatestOfSeveralSnapshots = if ($alarmSupersedePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     onboardAlarmProjectionIsASingletonPerVehicle = if ($alarmSingletonPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     onboardAlarmProjectionCarriesTheGenerationItArrivedIn = if ($alarmGenerationPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }

@@ -39,6 +39,12 @@
 #   - 1, 13 (runner code): staged identityRejections reads the identity rejection cases only; restart
 #     noMovementOrExternalSideEffects loses its readiness half to a new FP-IS-00 assertion,
 #     readinessWithheldWhileRecoveryIsUnreconciled.
+#   - Not a review item, found by the self-check that followed it: two staged judgments still asserted
+#     the onboard reconnect of before batch 5 (the unacknowledged RecoveryStateReport replayed under its
+#     own messageId; a resumed connection that republishes no alarm snapshot). protocol-v2.0.0's
+#     CV-SESSION-RECONNECT-DURING-RECOVERY and onboard-hmi#69 make every reconnect a full handshake with a
+#     new report, so both were rewritten and renamed: recoveryStateResubmittedAsANewReportAfterAckDrop
+#     (FP-IS-00) and onboardAlarmSnapshotRepublishedOnlyOnHandshakeOrChange (FP-IS-15).
 #   - Everything else is kept, with the note the document gives it next to the entry below.
 # G3 evidence already committed under the old attribution is not rewritten; control-server#90 re-runs
 # the gates under this one.
@@ -122,10 +128,12 @@ function Get-G3RunnerClaim {
                 'noMovementOrExternalSideEffects',
                 'secretScan')
             slices = [ordered]@{
-                # CV-SESSION-RECONNECT-DURING-RECOVERY, which FP-IS-05 lists too (review item 2). The
-                # ...OverPlaintext twin was the same boolean and was merged into this name (item 3).
+                # CV-SESSION-RECONNECT-DURING-RECOVERY, which FP-IS-05 lists too (review item 2). Its
+                # ...OverPlaintext twin was the same boolean and was merged away (item 3); the name and the
+                # judgment then moved to the v2 behaviour -- a new report after a full handshake, not the
+                # old messageId replayed -- in control-server#87.
                 'FP-IS-00' = @(
-                    'recoveryStateReportFirstAckDropReplay')
+                    'recoveryStateResubmittedAsANewReportAfterAckDrop')
                 # Moved from FP-IS-00 by the 2026-09-18 review (items 4-10): exception recovery
                 # sessions and forced mechanical recovery, which no FP-IS-00 vector covers.
                 # hardwareRecoveryRecordScopeEnforced has no vector of its own (item 6).
@@ -180,7 +188,7 @@ function Get-G3RunnerClaim {
                 'FP-IS-15' = @(
                     'onboardAlarmSnapshotPublishedOnTheFullHandshake',
                     'onboardAlarmSnapshotAppliedAckOnEverySnapshot',
-                    'onboardAlarmSnapshotNotRepublishedOnRecoveryResume',
+                    'onboardAlarmSnapshotRepublishedOnlyOnHandshakeOrChange',
                     'onboardAlarmProjectionKeptOnlyTheLatestOfSeveralSnapshots',
                     'onboardAlarmProjectionIsASingletonPerVehicle',
                     'onboardAlarmProjectionCarriesTheGenerationItArrivedIn')

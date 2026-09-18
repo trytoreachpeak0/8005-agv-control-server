@@ -45,11 +45,13 @@ control-server#87 在 E 组改动之后跑 `run-staged-g3.ps1` 自检（2026-09-
 - `recoveryStateReportFirstAckDropReplay`（`FP-IS-00`）：判据要求丢掉第一份 `RecoveryStateReport` 的确认后，车载端在新连接上**以同一 `messageId`、同一载荷**补发。实测（`fault-proxy-events.ndjson`）车载端重连后先走完整握手，再发一条**新 `messageId`** 的 `RecoveryStateReport`（`recoveryReportSendCount 1`、`forwardedReplayAckCount 0`）。
 - `onboardAlarmSnapshotNotRepublishedOnRecoveryResume`（`FP-IS-15`）：判据要求恢复续连时不重发告警快照；实测重连后走了完整握手，快照照发。
 
-两者都对得上批次 5 车载端已合入的改动：onboard-hmi#69（批次5-14，补发后照常握手）与 onboard-hmi#71（批次5-19，每次发送用新 `messageId`、逻辑 id 不变）。所以这是 runner 判据落后于 v2 车载端的已定行为，与上面的六条场景同一类，一并交 control-server#128 核对后改判据（或在确认是缺陷时另开单）。同一轮 `run-staged-g3-restart.ps1` 26/26、`run-demand-bearing-g3-vectors.ps1` 16/16 全部通过。
+对照 `protocol-v2.0.0`：`CV-SESSION-RECONNECT-DURING-RECOVERY` 的顺序是重连后 `SessionHello` → `SessionAccepted` → `RecoveryStateReport` → `SessionReadiness`，车载端产品断言 `RESUBMIT_RECOVERY_STATE_AFTER_RECONNECT`、`NEVER_ASSUME_PREVIOUS_SESSION_SURVIVED`，没有要求沿用旧 `messageId`；program#56 对 control-server#33 的已定结论（onboard-hmi#69 落地）是「补发之后照常发两份快照和新的 `RecoveryStateReport`，未确认的旧报告由新报告取代、不再补发」；`CV-ONBOARD-ALARM-SNAPSHOT` 要求 `PUBLISH_COMPLETE_ALARM_SET`。车载端现在的做法正是 v2 要求的，所以是判据落后，不是车载端缺陷。
+
+**这两条在 control-server#87 内处理**（`run-staged-g3.ps1` 在批次 5 由该票独占，control-server#128 不改 G3 runner）：判据按向量改写并改名为 `recoveryStateResubmittedAsANewReportAfterAckDrop`（`FP-IS-00`）与 `onboardAlarmSnapshotRepublishedOnlyOnHandshakeOrChange`（`FP-IS-15`），归属不变。同一轮 `run-staged-g3-restart.ps1` 26/26、`run-demand-bearing-g3-vectors.ps1` 16/16 全部通过。
 
 ## 怎么收口
 
-已开票 control-server#128（批次5-37）承接下面两项；它被 control-server#87 与 onboard-hmi#78 阻塞，同时阻塞 control-server#90。
+已开票 control-server#128（批次5-37）承接下面两项（只含 journey 的六条场景；staged 两条见上一节，在 control-server#87 内处理）；它被 control-server#87 与 onboard-hmi#78 阻塞，同时阻塞 control-server#90。
 
 1. 恢复类五条：由 control-server#128 改写 `G3RecoveryCommon.ps1` 的前置，不再依赖车载端报确定失败。要在 control-server#90 按新归属出 G3 证据之前完成，否则 `FP-IS-03`、`FP-IS-07` 的 journey 面整片是红的。
 2. `g3-load-cancellation`：由 control-server#128 在 onboard-hmi#78 合入后、在新的车载端提交上复跑；复跑仍红再按车载端缺陷单独开单。
