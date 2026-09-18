@@ -1,0 +1,26 @@
+{"at":"2026-09-18T15:25:59.7654087+00:00","note":"L2 run 20260918T152559725Z starting for scenario 'create-gate'."}
+{"at":"2026-09-18T15:25:59.8043617+00:00","note":"L2 port block lock acquired (slot 3, Global\\W2G-L2PortBlock-slot3)."}
+{"at":"2026-09-18T15:25:59.8071324+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-18T15:26:00.7386731+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T15:26:01.0133032+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T15:26:01.0797630+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-18T15:26:04.1452787+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T15:26:06.3144675+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T15:26:06.4502312+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T15:26:07.1379370+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:26:07.4046103+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:26:07.5112255+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T15:26:07.5817690+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152559725Z-slot3\\controlserver.db"}
+{"at":"2026-09-18T15:26:09.2411544+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"18cd8686ef1c44649a0d6dbbf48ecb8e","version":1,"slotCount":8}}}
+{"at":"2026-09-18T15:26:09.2513025+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152559725Z-slot3\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T15:26:10.8833323+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"18cd8686ef1c44649a0d6dbbf48ecb8e","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T15:26:10.9953582+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T15:26:10.9979018+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152559725Z-slot3\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\create-gate-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T15:26:12.7572218+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\create-gate-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"141891d56b344f668fcfdba435c285e6","importedAt":"2026-09-18T23:26:11.2574746+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T15:26:12.7692349+00:00","note":"Environment is up; entering scenario 'create-gate'."}
+{"at":"2026-09-18T15:26:12.8913560+00:00","criterion":"catalog-confirmation","value":"2026-09-18 15:26:12.8529863+00:00"}
+{"at":"2026-09-18T15:26:12.9187970+00:00","note":"Publishing demand d4bd10c21bf746018ece1ff9c503fc61 (sublot L2-CG-20260918T152559725Z) with the create gate in the chain."}
+{"at":"2026-09-18T15:26:12.9884316+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-18T15:26:14.7643998+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-18T15:26:14.8759183+00:00","note":"建单前置门禁在真链路里工作：目录被完整确认、端点被冻结、两个证据源分别落进审计。"}
+{"at":"2026-09-18T15:26:15.2845388+00:00","note":"L2 port block lock released."}

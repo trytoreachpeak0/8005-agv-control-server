@@ -1,0 +1,29 @@
+{"at":"2026-09-18T15:25:33.5015768+00:00","note":"L2 run 20260918T152533461Z starting for scenario 'slot-group-disabled-no-alert'."}
+{"at":"2026-09-18T15:25:33.5729718+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-09-18T15:25:33.5760005+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-18T15:25:34.4310182+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T15:25:34.6824966+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T15:25:37.8310966+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T15:25:40.0105759+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T15:25:40.1277598+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T15:25:40.1481077+00:00","note":"Onboard slot states for fake-onboard: 0:slotNo=1, 0:administrativeAvailability=DISABLED, 1:slotNo=2, 1:administrativeAvailability=DISABLED"}
+{"at":"2026-09-18T15:25:40.8475152+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:25:41.1125007+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:25:41.2010709+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T15:25:41.2562827+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152533461Z-slot1\\controlserver.db"}
+{"at":"2026-09-18T15:25:42.9247941+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"075e94ae0adb4f40a5c2ea1c956c4ba0","version":1,"slotCount":8}}}
+{"at":"2026-09-18T15:25:42.9332927+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152533461Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T15:25:44.5685168+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"075e94ae0adb4f40a5c2ea1c956c4ba0","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T15:25:44.6240311+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T15:25:44.6266932+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T152533461Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\slot-group-disabled-no-alert-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T15:25:46.3587544+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\slot-group-disabled-no-alert-02\\snapshots\\preseed-area-assignments.csv","entryCount":1,"version":1,"contentSha256":"8ab62504edb88283c1f89062bdec82316bfea9ff44c986b884a1ec00d5a5b50f","snapshotId":"7e29af2e29d64d129022d07613cce82c","importedAt":"2026-09-18T23:25:44.8718083+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T15:25:46.3700249+00:00","note":"Environment is up; entering scenario 'slot-group-disabled-no-alert'."}
+{"at":"2026-09-18T15:25:46.4923044+00:00","note":"Publishing demand 4fb94fa8550549f4891e2d233a18f118 (area N1-3, 12 boxes = 3 baskets)."}
+{"at":"2026-09-18T15:25:46.5543513+00:00","criterion":"backlog-reason","value":"(null)"}
+{"at":"2026-09-18T15:25:47.8261933+00:00","criterion":"backlog-reason","value":"SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE"}
+{"at":"2026-09-18T15:25:47.8934157+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-18T15:25:48.6640500+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-18T15:25:49.6775631+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-18T15:25:50.6900448+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-18T15:25:50.7517452+00:00","note":"仓位临时禁用造成的不足只进正常积压，不受理、不形成结构性派车阻断、不告警。"}
+{"at":"2026-09-18T15:25:51.1616589+00:00","note":"L2 port block lock released."}

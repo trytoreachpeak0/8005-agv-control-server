@@ -1,0 +1,129 @@
+{
+  "schemaVersion": "1",
+  "instanceId": "l2-riot",
+  "runId": "run-caef6892",
+  "revision": 13,
+  "observedAt": "2026-09-18T23:22:53.865689+08:00",
+  "body": {
+    "faultMode": "Normal",
+    "delayMs": 0,
+    "mapStationReads": 22,
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-L2-0001",
+        "enable": true,
+        "status": 1,
+        "procState": "IDLE",
+        "currentMap": "MAP-L2",
+        "currentPosition": 0,
+        "battery": 80,
+        "batteryState": "NO_CHARGE",
+        "speed": 0.5,
+        "lockStatus": 0,
+        "orderTaskId": null,
+        "movementState": "MT_RUNNING",
+        "controlState": "CONTROL_STATE_OK",
+        "emergencyState": "OK",
+        "breakSwitchState": "MOVABLE",
+        "locationState": "LOCATION_STATE_RUNNING",
+        "processingOrder": false,
+        "integrationLevel": "ON_LINE"
+      }
+    ],
+    "orders": [
+      {
+        "id": 488001,
+        "orderId": "ORDER-000001",
+        "upperId": "W2G-8229644a-bfc1-409f-9274-8f5f3c397330-PICKUP-1",
+        "orderState": 4,
+        "appointVehicleKey": "BROKERX-L2-0001",
+        "executeVehicleKey": "--",
+        "endStationNo": 12,
+        "missions": [
+          {
+            "type": "move",
+            "mapId": 25,
+            "destination": 12
+          }
+        ]
+      }
+    ],
+    "maps": [
+      {
+        "mapId": 25,
+        "stations": [
+          {
+            "id": 11,
+            "name": "C15-13",
+            "edgeId": 6,
+            "posX": 0,
+            "posY": 0,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 12,
+            "name": "N1-3_N1-7",
+            "edgeId": 2,
+            "posX": 0,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          },
+          {
+            "id": 210,
+            "name": "关卡",
+            "edgeId": 4,
+            "posX": 20000,
+            "posY": 20000,
+            "posYaw": 0,
+            "stationOffset": 0,
+            "type": 1
+          }
+        ]
+      }
+    ],
+    "commandInvocations": [
+      {
+        "commandType": "CMD_ORDER_HELD",
+        "target": "ORDER-000001",
+        "argumentsJson": "{\"commandType\":\"CMD_ORDER_HELD\",\"disableVehicle\":false,\"reason\":\"VEHICLE_ORDER_FAILED\"}",
+        "at": "2026-09-18T23:22:41.0309698+08:00"
+      },
+      {
+        "commandType": "triggerEmergency",
+        "target": "BROKERX-L2-0001",
+        "argumentsJson": "{\"messageId\":\"261437\",\"mqCallback\":{\"tag\":\"string\",\"topic\":\"string\"},\"thingsProperties\":{}}",
+        "at": "2026-09-18T23:22:41.1520869+08:00"
+      },
+      {
+        "commandType": "cancelEmergency",
+        "target": "BROKERX-L2-0001",
+        "argumentsJson": "{\"messageId\":\"521264\",\"mqCallback\":{\"tag\":\"string\",\"topic\":\"string\"},\"thingsProperties\":{}}",
+        "at": "2026-09-18T23:22:46.0623193+08:00"
+      },
+      {
+        "commandType": "triggerEmergency",
+        "target": "BROKERX-L2-0001",
+        "argumentsJson": "{\"messageId\":\"301876\",\"mqCallback\":{\"tag\":\"string\",\"topic\":\"string\"},\"thingsProperties\":{}}",
+        "at": "2026-09-18T23:22:53.8108574+08:00"
+      }
+    ],
+    "edgeGroups": [],
+    "dynamicRouteCosts": {},
+    "removedEdges": [
+      {
+        "mapId": 25,
+        "edgeIds": []
+      }
+    ],
+    "removedStations": [
+      {
+        "mapId": 25,
+        "stationIds": []
+      }
+    ]
+  }
+}

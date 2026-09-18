@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "scenario": "command-surface-order-hold",
+  "runId": "20260918T151821235Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151821235Z-slot4",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "06b656880ce6a32c8250b4ad62ad8ad3ce11b936",
+    "rig": "SyntheticOnboard",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002",
+      "AGV-L2-003/BROKERX-L2-0003"
+    ],
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-2"
+  },
+  "assertions": [
+    {
+      "id": "L2-CS-01",
+      "description": "在途单还正常时，命令面一次都没被调用过",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CS-02",
+      "description": "假 RIoT 侧也没收到过任何命令请求",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CS-03",
+      "description": "该调用时调用了：单被报成 FAILED 之后，命令面发出了一条命令",
+      "outcome": "PASS",
+      "expected": ">= 1",
+      "actual": 1
+    },
+    {
+      "id": "L2-CS-04",
+      "description": "参数正确：命令是 OrderHold（REQ-0234 明令不得用 Cancel）",
+      "outcome": "PASS",
+      "expected": "OrderHold",
+      "actual": "OrderHold"
+    },
+    {
+      "id": "L2-CS-05",
+      "description": "参数正确：命令记在 AGV-L2-002 名下",
+      "outcome": "PASS",
+      "expected": "AGV-L2-002",
+      "actual": "AGV-L2-002"
+    },
+    {
+      "id": "L2-CS-06",
+      "description": "参数正确：目标是这一趟自己的 upperId（审计的键）",
+      "outcome": "PASS",
+      "expected": "W2G-cc31d19f-917d-4940-9d73-3c9ba7f9ecc0-PICKUP-1",
+      "actual": "W2G-cc31d19f-917d-4940-9d73-3c9ba7f9ecc0-PICKUP-1"
+    },
+    {
+      "id": "L2-CS-07",
+      "description": "参数正确：目标带着 RIoT 自己的 orderId（端点的地址），两个身份都在",
+      "outcome": "PASS",
+      "expected": "ORDER-000002",
+      "actual": "ORDER-000002"
+    },
+    {
+      "id": "L2-CS-08",
+      "description": "参数正确：线上收到的是 CMD_ORDER_HELD，打在这一张 orderId 上",
+      "outcome": "PASS",
+      "expected": "CMD_ORDER_HELD @ ORDER-000002",
+      "actual": "1 条，首条打在 ORDER-000002"
+    },
+    {
+      "id": "L2-CS-09",
+      "description": "只调一次：又过了 8 轮评估，审计表仍然只有一行 attempt",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-CS-10",
+      "description": "只调一次：那一行的 AttemptNumber 是 1（重试会是新的一行，不是覆盖）",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-CS-11",
+      "description": "只调一次：RIoT 侧也只收到过一条 CMD_ORDER_HELD，两边计数一致",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    },
+    {
+      "id": "L2-CS-12",
+      "description": "停在站上的车没有被升级成急停（REQ-0246 的第三个条件不成立）",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-CS-13",
+      "description": "只有 AGV-L2-002 有故障事实，另外两台一条都没有",
+      "outcome": "PASS",
+      "expected": "1 行 / AGV-L2-002",
+      "actual": "1 行 / AGV-L2-002"
+    },
+    {
+      "id": "L2-CS-14",
+      "description": "故障停在第一级 SuspectedBlocked：一个症状不越级成隔离（REQ-0232）",
+      "outcome": "PASS",
+      "expected": "SuspectedBlocked",
+      "actual": "SuspectedBlocked"
+    },
+    {
+      "id": "L2-CS-15",
+      "description": "证据码是 VEHICLE_ORDER_FAILED，能追到具体是哪个症状",
+      "outcome": "PASS",
+      "expected": "VEHICLE_ORDER_FAILED",
+      "actual": "VEHICLE_ORDER_FAILED"
+    },
+    {
+      "id": "L2-CS-16",
+      "description": "AGV-L2-002 的 journey 把停住的原因写成 VEHICLE_ORDER_FAILED，而不是留空",
+      "outcome": "PASS",
+      "expected": "VEHICLE_ORDER_FAILED",
+      "actual": "VEHICLE_ORDER_FAILED"
+    },
+    {
+      "id": "L2-CS-17-AGV-L2-001",
+      "description": "AGV-L2-001 不受牵连：仍在自己的到站阶段，没有阻断原因",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / (无阻断原因)",
+      "actual": "AwaitingPickupArrival / (无)"
+    },
+    {
+      "id": "L2-CS-17-AGV-L2-003",
+      "description": "AGV-L2-003 不受牵连：仍在自己的到站阶段，没有阻断原因",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / (无阻断原因)",
+      "actual": "AwaitingPickupArrival / (无)"
+    },
+    {
+      "id": "L2-CS-18",
+      "description": "AGV-L2-001 在另一台车带着故障事实的同时照常取货装载",
+      "outcome": "PASS",
+      "expected": "AwaitingGateArrival",
+      "actual": "AwaitingGateArrival"
+    },
+    {
+      "id": "L2-CS-19",
+      "description": "全程命令面只有一行 attempt，旁观车的推进没有带出任何额外命令",
+      "outcome": "PASS",
+      "expected": 1,
+      "actual": 1
+    }
+  ]
+}

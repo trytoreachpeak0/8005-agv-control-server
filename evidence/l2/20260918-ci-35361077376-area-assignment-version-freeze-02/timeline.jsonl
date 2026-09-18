@@ -1,0 +1,58 @@
+{"at":"2026-09-18T15:15:11.3097309+00:00","note":"L2 run 20260918T151511259Z starting for scenario 'area-assignment-version-freeze'."}
+{"at":"2026-09-18T15:15:11.3471330+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-18T15:15:11.3497807+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-18T15:15:12.2478665+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-18T15:15:12.4763858+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-18T15:15:15.6522885+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-18T15:15:17.8315762+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-18T15:15:17.9211541+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-18T15:15:18.6234364+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-18T15:15:18.8958790+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-18T15:15:18.9727352+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-18T15:15:19.0473197+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151511259Z-slot4\\controlserver.db"}
+{"at":"2026-09-18T15:15:20.6894334+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"773b990ce9f04335a9d13c48b3488ff4","version":1,"slotCount":8}}}
+{"at":"2026-09-18T15:15:20.6996721+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151511259Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-18T15:15:22.3346370+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"773b990ce9f04335a9d13c48b3488ff4","boundSlots":8,"version":1}}}
+{"at":"2026-09-18T15:15:22.4084649+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-18T15:15:22.4110121+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151511259Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\area-assignment-version-freeze-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-18T15:15:24.1496592+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\area-assignment-version-freeze-02\\snapshots\\preseed-area-assignments.csv","entryCount":1,"version":1,"contentSha256":"8ab62504edb88283c1f89062bdec82316bfea9ff44c986b884a1ec00d5a5b50f","snapshotId":"e41c2b84e28941dbb2f485edce457b7a","importedAt":"2026-09-18T23:15:22.6855642+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-18T15:15:24.1617264+00:00","note":"Environment is up; entering scenario 'area-assignment-version-freeze'."}
+{"at":"2026-09-18T15:15:24.2630974+00:00","note":"FieldOps: area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151511259Z-slot4\\controlserver.db"}
+{"at":"2026-09-18T15:15:25.7282905+00:00","note":"Vehicle AGV-L2-001 slot model 773b990ce9f04335a9d13c48b3488ff4 via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-09-18T15:15:25.7320921+00:00","note":"Publishing demand dc19679403554eed98817738e27adc78 (sublot L2-AVF-A-20260918T151511259Z, area N1-3, 8 boxes)."}
+{"at":"2026-09-18T15:15:25.8276320+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-18T15:15:27.0852699+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-18T15:15:27.0966049+00:00","criterion":"freeze-row","value":"1"}
+{"at":"2026-09-18T15:15:27.1966775+00:00","criterion":"to_pickup-intent","value":"@{UpperId=W2G-dc196794-0355-4eed-9881-7738e27adc78-PICKUP-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-18T15:15:27.4452498+00:00","criterion":"to_pickup-intent","value":"@{UpperId=W2G-dc196794-0355-4eed-9881-7738e27adc78-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-18T15:15:27.4467268+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-18T15:15:28.8539518+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-18T15:15:29.6110322+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-18T15:15:30.6344554+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-09-18T15:16:00.5361449+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-18T15:16:00.5412080+00:00","criterion":"to_gate-intent","value":"@{UpperId=W2G-dc196794-0355-4eed-9881-7738e27adc78-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-18T15:16:00.5605658+00:00","note":"Vehicle sets off for the gate; the new table is imported while it is on the way."}
+{"at":"2026-09-18T15:16:00.6008220+00:00","criterion":"runtime-iterations","value":"44"}
+{"at":"2026-09-18T15:16:01.3625361+00:00","criterion":"runtime-iterations","value":"45"}
+{"at":"2026-09-18T15:16:02.3928850+00:00","criterion":"runtime-iterations","value":"46"}
+{"at":"2026-09-18T15:16:02.4502972+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151511259Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\area-assignment-version-freeze-02\\snapshots\\area-assignments-v2-n1-3-rear.csv"}
+{"at":"2026-09-18T15:16:04.1632452+00:00","criterion":"area-assignment-import:area-assignments-v2-n1-3-rear","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\area-assignment-version-freeze-02\\snapshots\\area-assignments-v2-n1-3-rear.csv","entryCount":1,"version":2,"contentSha256":"2f76961c580c29588b3839fabe70d8606c5953812ccc228a69579a83d625b622","snapshotId":"c105218a195b48c783f4e7fe07eb85e6","importedAt":"2026-09-18T23:16:02.7010458+08:00","errorCount":0,"errors":[],"preview":[{"demandId":"dc196794-0355-4eed-9881-7738e27adc78","area":"N1-3","frozenVersion":1,"frozenSlotPosition":"FRONT","newSlotPosition":"REAR"}]}}}
+{"at":"2026-09-18T15:16:04.2032833+00:00","criterion":"runtime-iterations","value":"47"}
+{"at":"2026-09-18T15:16:04.4593414+00:00","criterion":"runtime-iterations","value":"48"}
+{"at":"2026-09-18T15:16:05.4762454+00:00","criterion":"runtime-iterations","value":"49"}
+{"at":"2026-09-18T15:16:06.5127477+00:00","criterion":"runtime-iterations","value":"50"}
+{"at":"2026-09-18T15:16:06.5681218+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-18T15:16:06.5851061+00:00","criterion":"unload-command","value":"0"}
+{"at":"2026-09-18T15:16:08.1070653+00:00","criterion":"unload-command","value":"1"}
+{"at":"2026-09-18T15:16:08.1135985+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-18T15:16:08.6328778+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-18T15:16:08.6481558+00:00","note":"Publishing demand eafa0fc25e594d19b3fc39fe23208a91 (sublot L2-AVF-B-20260918T151511259Z, area N1-3, 8 boxes)."}
+{"at":"2026-09-18T15:16:08.6671761+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-18T15:16:09.6981770+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-18T15:16:09.7046860+00:00","criterion":"freeze-row","value":"2"}
+{"at":"2026-09-18T15:16:09.7399129+00:00","note":"FieldOps: area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151511259Z-slot4\\controlserver.db --version 1"}
+{"at":"2026-09-18T15:16:11.0798982+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151511259Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\area-assignment-version-freeze-02\\snapshots\\area-assignments-v3-rollback-to-v1.csv"}
+{"at":"2026-09-18T15:16:12.8329377+00:00","criterion":"area-assignment-import:area-assignments-v3-rollback-to-v1","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\area-assignment-version-freeze-02\\snapshots\\area-assignments-v3-rollback-to-v1.csv","entryCount":1,"version":3,"contentSha256":"8ab62504edb88283c1f89062bdec82316bfea9ff44c986b884a1ec00d5a5b50f","snapshotId":"1d303840ff844bcbb2108cdaee44a4cb","importedAt":"2026-09-18T23:16:11.3480657+08:00","errorCount":0,"errors":[],"preview":[{"demandId":"eafa0fc2-5e59-4d19-b3fc-39fe23208a91","area":"N1-3","frozenVersion":2,"frozenSlotPosition":"REAR","newSlotPosition":"FRONT"}]}}}
+{"at":"2026-09-18T15:16:12.8367030+00:00","note":"FieldOps: area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35361077376-1\\_stage\\l2-20260918T151511259Z-slot4\\controlserver.db --version 3"}
+{"at":"2026-09-18T15:16:14.2240086+00:00","note":"需求甲冻结版本 1 并按它卸货，途中导入的版本 2 不停车生效、只管需求乙，回滚形成版本 3。"}
+{"at":"2026-09-18T15:16:14.6344886+00:00","note":"L2 port block lock released."}
