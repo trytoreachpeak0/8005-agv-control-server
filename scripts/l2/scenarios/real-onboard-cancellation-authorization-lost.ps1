@@ -17,8 +17,16 @@ messageId、payload 不变，两道都放行。MVP 线参照：`ControlServer_MV
 1. 出厂配置，不开恢复入口（MVP 版要开，那时取消是恢复入口）。
 2. 按取消时仓门开着，不先把空门关上：v2 执行器读到「门关了、货没放」会自动重开（onboard-hmi#72），操作员放弃装货的
    唯一出口就是按取消（program#55）。授权到达后原执行器被中止，取消执行器接手开着的那扇门，操作员把空门带上即证空。
-   这里只判结果（授权、对账、需求取消、仓位最终空着锁着），不判开锁次数与顺序：对关着且有货的仓取消执行器仍逐个开锁，
-   批量开锁由 onboard-hmi#104 跟进。
+   这里只判结果（授权、对账、需求取消、仓位最终空着锁着）与「一次只开一扇」（下一段），不判开锁次数。
+
+**两仓，第一仓装好锁上、第二仓开着时按取消；全程至多一仓未锁闭（`L2-CAL-10`）。**program#111 定了业务仓位操作一次只开
+一扇门（`REQ-0357`，ADR-cross-0061），核查出的车载端缺陷正走这条路：取消授权后清空循环按升序先给已装货的小号仓发开锁，
+被中止的装货留下的那扇开门（号码最大的一仓）还没闭环，两扇同开。onboard-hmi#106（`b65969ba`）改为先收尾接管的开门、
+开锁前整车一门校验，它的 L1 只证到执行器层，真装置复验按 program#111 的评论并入本场景。只装一仓就取消走不到这条路，
+所以本场景发 8 箱的需求（两仓，与 `g3-load-cancellation` 同），把货放进第一仓、关门，等车载端开第二仓再按取消。取消
+之后操作员先把第二仓空门带上，车载端再开第一仓，操作员取出货、关门。判据来自后台线程对模拟器快照的连续采样：从第一仓
+开着起到取消收尾，任一样本里「门开着、锁反馈不是锁闭、或开锁输出没复位」的仓至多一个。采样有间隔，证不了两次采样之间
+的瞬间；但同开若发生，会从给第一仓发脉冲一直持续到操作员关上第二仓的门，采样看得见。
 
 **丢应答靠 `tools/ControlServer.ProtocolFaultProxy` 的 `drop-message`**：代理不转发服务端写回的那一条
 `LoadCancellationAuthorization`，链路不断。车载端等满 `messageTimeoutMs`（出厂 3 秒）判超时——与应答途中丢失、服务端
@@ -44,7 +52,7 @@ $proxy = $Context.ProtocolProxy
 if ($null -eq $proxy) { throw 'This scenario needs ProtocolFaultProxy = $true in its setup file.' }
 $button = '取消装货'
 $failure = '取消装货失败'
-$laterIds = @('L2-CAL-02', 'L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08', 'L2-CAL-09')
+$laterIds = @('L2-CAL-02', 'L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08', 'L2-CAL-09', 'L2-CAL-10')
 
 # Assign the result, never wrap the call in @(): it hands back the whole result set as one array, and @() would keep
 # that as a single element (cancellation-authorization-lost-001 joined both decisions into one string that way).
@@ -54,6 +62,44 @@ function Get-Requests([string]$demandId) {
 
 function Get-WorkflowState([string]$cancellationId) {
     return Get-L2RealScalar $connection "SELECT State AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$cancellationId'"
+}
+
+<#
+Samples the simulator snapshot every 100 ms on its own thread and emits a record each time the set of slots that are not
+closed-and-locked changes: door open, lock feedback other than locked, or the unlock output still on. The scenario's own
+thread spends seconds inside single waits, so it cannot do the sampling itself. The job stops itself after ten minutes in
+case the scenario never reaches Stop-DoorSampler.
+#>
+function Start-DoorSampler {
+    $uri = "$($simulator.BaseUrl)/$($simulator.Prefix)/snapshot"
+    return Start-ThreadJob -ArgumentList $uri -ScriptBlock {
+        param($uri)
+        $deadline = [DateTimeOffset]::UtcNow.AddMinutes(10)
+        $last = $null
+        while ([DateTimeOffset]::UtcNow -lt $deadline) {
+            try {
+                $snapshot = Invoke-RestMethod -Uri $uri -TimeoutSec 5
+                $notLocked = @($snapshot.slots | Where-Object {
+                        $_.doorState -ne 'CLOSED' -or [int]$_.lockFeedbackRaw -ne 1 -or [int]$_.unlockOutputRaw -ne 0
+                    } | ForEach-Object { [int]$_.slotNo } | Sort-Object)
+                $key = $notLocked -join ','
+                if ($key -ne $last) {
+                    [pscustomobject]@{ At = [DateTimeOffset]::UtcNow.ToString('o'); Slots = $notLocked }
+                    $last = $key
+                }
+            } catch {
+                [pscustomobject]@{ At = [DateTimeOffset]::UtcNow.ToString('o'); Error = $_.Exception.Message }
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    }
+}
+
+function Stop-DoorSampler([object]$job) {
+    Stop-Job $job
+    $changes = @(Receive-Job $job)
+    Remove-Job $job -Force
+    return , $changes
 }
 
 # --- 0. 车载端确实走代理 -------------------------------------------------------------------------------------------
@@ -66,17 +112,36 @@ $assertions.Add(
     'L2-CAL-00', '车载端的会话经协议故障代理建立（否则丢应答注入不到这条链路上）',
     ($hellos -ge 1), '>= 1 SessionHello through the proxy', $hellos)
 
-# --- 1. 车在等操作员放货；出厂配置下「取消装货」在 ----------------------------------------------------------------
+# --- 1. 第一仓装好锁上，车在第二仓等操作员放货；出厂配置下「取消装货」在 --------------------------------------------
 
-$load = Start-L2RealLoad $Context 'L2-CAL'
+$load = Start-L2RealLoad $Context 'L2-CAL' 8
 $demandId = $load.DemandId
 $attemptId = $load.AttemptId
+if ($load.TargetSlots.Count -ne 2) {
+    throw "An 8-box demand was expected to target two slots; the load targets $($load.TargetSlots -join ', ')."
+}
+$loadedSlot = $load.Slot
+$sampler = Start-DoorSampler
+
+$journal.Note("Operator puts a basket into slot $loadedSlot and closes the door.")
+$null = $simulator.Command('Put', "slots/$loadedSlot/cargo", @{ state = 'OCCUPIED' })
+$null = $simulator.Command('Post', "slots/$loadedSlot/close-door", @{})
+$openSlot = Wait-L2Condition -Description 'the onboard opened the second slot and waits for the operator' `
+    -Journal $journal -Criterion 'load-waiting-operator-2' -TimeoutSeconds 60 `
+    -Probe {
+        $second = @((Get-L2RealProgress $connection $attemptId) | Where-Object {
+                $_.Phase -eq 'WAITING_OPERATOR' -and $_.Active.Count -eq 1 -and $_.Active[0] -ne $loadedSlot })
+        if ($second.Count -ge 1) { $second[0].Active[0] } else { $null }
+    } `
+    -Until { param($v) $null -ne $v }
+$journal.Note("Slot $loadedSlot is loaded and locked ($(Get-L2RealSlotReading $simulator $loadedSlot)); slot $openSlot is open.")
 
 $offered = Wait-L2RealButtonOffered $onboard $journal $button 'onboard-cancellation-entry' 60
 $assertions.Add(
     'L2-CAL-01', '出厂配置（recoveryResumeEnabled=false）下装货进行中，车载端给出可用的「取消装货」入口（onboard-hmi#78）',
     $offered, $true, $offered)
 if (-not $offered) {
+    $null = Stop-DoorSampler $sampler
     Add-L2RealNotReached $assertions $laterIds '车载端没有给出「取消装货」入口'
     return
 }
@@ -104,19 +169,30 @@ $assertions.Add(
     '1 条请求 / AUTHORIZED / AwaitingResult / 丢 1 条 / 车载端报失败',
     "$($first.Count) 条请求 / $firstDecision / $workflowAfterFirst / 丢 $dropped 条 / 车载端报失败=$noticeShown")
 if ($first.Count -ne 1) {
-    Add-L2RealNotReached $assertions @('L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08', 'L2-CAL-09') '第一次按下没有发出取消请求'
+    $null = Stop-DoorSampler $sampler
+    Add-L2RealNotReached $assertions @('L2-CAL-03', 'L2-CAL-04', 'L2-CAL-05', 'L2-CAL-06', 'L2-CAL-07', 'L2-CAL-08', 'L2-CAL-09', 'L2-CAL-10') '第一次按下没有发出取消请求'
     return
 }
 
-# --- 3. 操作员再按一次：拿到同一个授权，原执行器中止，取消执行器接手开着的门 ------------------------------------
+# --- 3. 操作员再按一次：拿到同一个授权，原执行器中止，取消执行器先收尾接手的开门，再开已装货的仓 ------------------
 
 $null = Invoke-L2RealConfirmedButton $onboard $journal $button $button
 $second = Wait-L2RealOrLast -Description 'the second cancellation request was answered' -Journal $journal `
     -Criterion 'second-request' -TimeoutSeconds 30 `
     -Probe { $all = Get-Requests $demandId; if ($all.Count -ge 2) { $all[1] } else { $null } } `
     -Until { param($v) $null -ne $v -and $v.Response -ne '' }
-$journal.Note("Operator takes nothing out and closes the open slot $($load.Slot).")
-$null = $simulator.Command('Post', "slots/$($load.Slot)/close-door", @{})
+$journal.Note("Operator takes nothing out and closes the open slot $openSlot.")
+$null = $simulator.Command('Post', "slots/$openSlot/close-door", @{})
+
+# onboard-hmi#106：接手的那扇门闭环之后，取消执行器才给已装货的仓开锁。门开了，操作员把货取出、关门。
+$reopened = Wait-L2RealOrLast -Description "the cancellation opened the loaded slot $loadedSlot" -Journal $journal `
+    -Criterion 'loaded-slot-opened' -TimeoutSeconds 60 `
+    -Probe { Get-L2RealSlotReading $simulator $loadedSlot } -Until { param($v) $v -like 'OPEN/*' }
+if ($reopened -like 'OPEN/*') {
+    $journal.Note("Operator takes the basket out of slot $loadedSlot and closes the door.")
+    $null = $simulator.Command('Put', "slots/$loadedSlot/cargo", @{ state = 'EMPTY' })
+    $null = $simulator.Command('Post', "slots/$loadedSlot/close-door", @{})
+}
 
 $result = Wait-L2RealOrLast -Description 'the server received the LoadCancellationResult, or the onboard gave up' -Journal $journal `
     -Criterion 'cancellation-result' -TimeoutSeconds 90 `
@@ -174,10 +250,11 @@ $assertions.Add(
     ($connections.Count -eq $connectionsBefore -and $open.Count -eq 1),
     "$connectionsBefore connection(s), 1 open", "$($connections.Count) connection(s), $($open.Count) open ($(Format-L2RealConnections $traffic))")
 
-$reading = Get-L2RealSlotReading $simulator $load.Slot
+$reading = (@($load.TargetSlots | Sort-Object) | ForEach-Object { "$_=$(Get-L2RealSlotReading $simulator $_)" }) -join ' '
+$expectedReading = (@($load.TargetSlots | Sort-Object) | ForEach-Object { "$_=CLOSED/EMPTY/1/0" }) -join ' '
 $assertions.Add(
-    'L2-CAL-07', '现场收在安全状态：门关、仓空、已锁、开锁输出复位',
-    ($reading -eq 'CLOSED/EMPTY/1/0'), 'CLOSED/EMPTY/1/0', $reading)
+    'L2-CAL-07', '现场收在安全状态：两仓都门关、仓空、已锁、开锁输出复位',
+    ($reading -eq $expectedReading), $expectedReading, $reading)
 
 # --- 6. 取消期间车没有替原命令编结果，会话一次都没被判需要恢复 ----------------------------------------------------
 
@@ -219,5 +296,20 @@ $assertions.Add(
     'L2-CAL-09', '取消完成也把车还回去：这一单 TO_PICKUP 的车辆占用已释放（VehicleOccupancyReleasedAt 有值），同一台车能再派单',
     ($null -ne $releasedAt), 'VehicleOccupancyReleasedAt 有值',
     $(if ($null -ne $releasedAt) { "VehicleOccupancyReleasedAt $releasedAt" } else { 'VehicleOccupancyReleasedAt 为空（30 s 内）' }))
+
+# --- 8. 一次只开一扇 ---------------------------------------------------------------------------------------------
+
+$changes = Stop-DoorSampler $sampler
+$samplerErrors = @($changes | Where-Object { $_.PSObject.Properties['Error'] })
+$transitions = @($changes | Where-Object { $_.PSObject.Properties['Slots'] })
+foreach ($change in $transitions) { $journal.Note("Not locked at $($change.At): [$(@($change.Slots) -join ',')]") }
+$widest = @($transitions | Where-Object { @($_.Slots).Count -gt 1 })
+$maxOpen = if ($transitions.Count -gt 0) { (@($transitions | ForEach-Object { @($_.Slots).Count }) | Measure-Object -Maximum).Maximum } else { 0 }
+$sequence = @($transitions | ForEach-Object { "[$(@($_.Slots) -join ',')]" }) -join ' → '
+$assertions.Add(
+    'L2-CAL-10', "一次只开一扇（REQ-0357，onboard-hmi#106）：从第 $loadedSlot 仓开着起到取消收尾，模拟器每 100 ms 的采样里任一时刻至多一仓未锁闭",
+    ($transitions.Count -gt 0 -and $widest.Count -eq 0 -and $samplerErrors.Count -eq 0),
+    '至多 1 仓 / 采样错误 0 次',
+    "至多 $maxOpen 仓$(if ($widest) { "（$(@($widest | ForEach-Object { "$($_.At) [$(@($_.Slots) -join ',')]" }) -join '; ')）" }) / 采样错误 $($samplerErrors.Count) 次 / $sequence")
 
 $journal.Note('Scenario finished.')

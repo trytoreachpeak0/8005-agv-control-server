@@ -40,7 +40,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-durable-ack-lost` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ①：cs#77＋onboard-hmi#69）**：丢一次装货结果的 `DurableAck` → 车重连以原 `messageId` 补发、服务端按首次受理重签不掐连接 → 同一连接照常走完握手（两份快照、新 `messageId` 的 `RecoveryStateReport`、`SessionReadiness`），旧报告不补发 → 会话回 `Ready`、旅程走完、只重连一次 | 调试证据不入库，正式证据在 control-server#90 |
 | `real-onboard-compensate-then-reconnect` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ②：cs#78＋onboard-hmi#70）**：等人时杀车载端、门被空着关上 → 重启后中断结算报 `UNKNOWN` → 补偿清空对账 → 经代理断一次链路 → CLOSED 的恢复会话快照已被确认、补偿命令已结算，一条都不重放进新会话，车还接得了下一单（`L2-CR-07`，control-server#131 修复前红） | 同上 |
 | `real-onboard-restart-while-waiting-operator` | **真的** | **批次 5（control-server#88，program#61 ②：onboard-hmi#70，ADR-cross-0058 决策 2）**：等人时杀车载端、它不在时货放好门关上 → 重启后按实时 IO 补交 `COMPLETED` → 装货提交、会话回 `Ready`、不进恢复，旅程走完；出厂配置 | 同上 |
-| `real-onboard-cancellation-authorization-lost` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ③：onboard-hmi#71＋onboard-hmi#78）**：出厂配置下在途装货按取消 → 丢掉授权应答、车载端报失败 → 再按一次，新 `messageId`、payload 与首发相同 → 取消 `ALL_EMPTY`、需求 `Cancelled`，全程不重连、不替原 attempt 报结果，取货单的车辆占用释放（`L2-CAL-09`，control-server#131 修复前红）；只判结果不判开锁顺序 | 同上 |
+| `real-onboard-cancellation-authorization-lost` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ③：onboard-hmi#71＋onboard-hmi#78）**：出厂配置下两仓装货、第一仓装好锁上、第二仓开着时按取消 → 丢掉授权应答、车载端报失败 → 再按一次，新 `messageId`、payload 与首发相同 → 取消 `ALL_EMPTY`、需求 `Cancelled`，全程不重连、不替原 attempt 报结果，取货单的车辆占用释放（`L2-CAL-09`，control-server#131 修复前红）；取消先收尾接手的开门再开已装货的仓，模拟器采样里任一时刻至多一仓未锁闭（`L2-CAL-10`，REQ-0357，onboard-hmi#106） | 同上 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
