@@ -376,7 +376,7 @@ public sealed class ExpectedActionOverdueTests
         // 集成用例：真起一个 Kestrel，经 DashboardQueryModule 挂上全部看板端点，用 HTTP GET 读这一个，再交给卡片渲染——
         // 与看板进程每 2 秒做的是同一件事。
         // 端点经默认构造挂上，用的是真时钟；车的消息也按真时钟收，否则这台车在端点眼里早已失联。
-        await using Fixture fixture = await Fixture.CreateAsync(migrate: true, startAt: DateTimeOffset.UtcNow);
+        await using Fixture fixture = await Fixture.CreateAsync(migrate: true, liveClock: true);
         await fixture.ReachReadyAsync();
         await fixture.AddJourneyAsync(
             JourneyRuntimeStage.AwaitingLoadResult, JourneyRuntimeEngine.StationTimeoutDoorNotClosedReason);
@@ -393,6 +393,8 @@ public sealed class ExpectedActionOverdueTests
         string address = app.Services.GetRequiredService<IServer>()
             .Features.Get<IServerAddressesFeature>()!.Addresses.Single();
         using HttpClient client = new() { BaseAddress = new Uri(address) };
+        // 存活窗口只有 6 秒，起 Kestrel 之后先让车说一句话，免得在慢机器上被判失联。
+        await fixture.HeartbeatAsync();
 
         using HttpResponseMessage response = await client.GetAsync(
             new ExpectedActionOverdueCard().SourcePath, TestContext.Current.CancellationToken);
@@ -582,11 +584,16 @@ public sealed class ExpectedActionOverdueTests
 
     private sealed class MovableClock : TimeProvider
     {
+        private readonly bool _live;
         private DateTimeOffset _now;
 
-        public MovableClock(DateTimeOffset startAt) => _now = startAt;
+        public MovableClock(DateTimeOffset startAt, bool live)
+        {
+            _now = startAt;
+            _live = live;
+        }
 
-        public override DateTimeOffset GetUtcNow() => _now;
+        public override DateTimeOffset GetUtcNow() => _live ? DateTimeOffset.UtcNow : _now;
 
         public void Advance(TimeSpan by) => _now += by;
     }
@@ -596,11 +603,11 @@ public sealed class ExpectedActionOverdueTests
     /// </summary>
     private sealed class Fixture : IAsyncDisposable
     {
-        private Fixture(SqliteConnection connection, ControlServerDbContext context, DateTimeOffset startAt)
+        private Fixture(SqliteConnection connection, ControlServerDbContext context, bool liveClock)
         {
             Connection = connection;
             Context = context;
-            Clock = new MovableClock(startAt);
+            Clock = new MovableClock(Now, liveClock);
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
@@ -620,7 +627,7 @@ public sealed class ExpectedActionOverdueTests
 
         public OnboardConnectionState State { get; } = new();
 
-        public static async Task<Fixture> CreateAsync(bool migrate = false, DateTimeOffset? startAt = null)
+        public static async Task<Fixture> CreateAsync(bool migrate = false, bool liveClock = false)
         {
             Environment.SetEnvironmentVariable(CredentialVariable, Credential);
             SqliteConnection connection = new("Data Source=:memory:");
@@ -635,7 +642,7 @@ public sealed class ExpectedActionOverdueTests
             {
                 await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
             }
-            return new Fixture(connection, context, startAt ?? Now);
+            return new Fixture(connection, context, liveClock);
         }
 
         public async Task ReachReadyAsync()
@@ -651,6 +658,8 @@ public sealed class ExpectedActionOverdueTests
             "SessionHello",
             null,
             new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = Credential });
+
+        public Task<string> HeartbeatAsync() => Send("Heartbeat", State.SessionGeneration, new { });
 
         public Task<string> CapabilityAsync() => Send(
             "CapabilitySnapshot",
