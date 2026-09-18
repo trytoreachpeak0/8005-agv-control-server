@@ -1,0 +1,168 @@
+#Requires -Version 7
+
+<#
+车载端在「开了锁、等操作员」时进程没了，它不在的时候操作员照常把货放好、把门关上；重启之后车载端要按实时 IO 补交
+这一次装货的结果，服务端照常提交、会话回到 `Ready`、不进恢复，旅程照常走完。
+
+**来源与成对的两端票。**`trytoreachpeak0/8005-agv-program#61` 审计第 4 节 ②：车载端 `6846e98`（v2 上是
+onboard-hmi#70，批次5-15，中断结算）与服务端结算恢复命令的半边 control-server#78（批次5-09）「快照确认与恢复命令
+结算两半一起验」。这一条验的是 ADR-cross-0058 决策 2 的正面：重启后按实时 IO 结算，开过的仓全到最终态（已知、锁闭、
+占用符合、开锁输出复位）报 `COMPLETED`，否则 `UNKNOWN`。它的反面（门关了但没放货 → `UNKNOWN` → 补偿）在
+`real-onboard-compensate-then-reconnect` 的前半段。
+
+**MVP 线参照**：`ControlServer_MVP` 同名场景。那边 2026-09-11 现场窗口一实测过两端互相等（车载端握手上报了没了结的
+attempt 却不补交结果，服务端不判 Ready、不 Block，恢复入口要求 Blocked 而被拒），修复后 cs#40 回归 `-010` 绿。MVP 版
+走的是「空关 → UNKNOWN → 补偿」；v2 版按票面改走正面，反面挪进 `real-onboard-compensate-then-reconnect`。
+
+**为什么是杀进程，不是断网**：执行器挂在车载端服务的生命周期上，不跟连接走，断网重连时操作还在跑。只有进程真的没了，
+那次 attempt 才成了没人认领的孤儿。`StopComponent` 用的是 `Kill`，与断电同形。
+
+判据只读服务端库与模拟器快照，不读车载端界面文字。
+#>
+[CmdletBinding()]
+param([Parameter(Mandatory)][object]$Context)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
+
+$journal = $Context.Journal
+$assertions = $Context.Assertions
+$simulator = $Context.Simulator
+$connection = $Context.Connection
+
+# The load command queued for this attempt: the SlotOperationCommand whose payload names it.
+function Get-LoadCommand([string]$attemptId) {
+    return @((Get-L2RealOutbound $connection 'SlotOperationCommand') | Where-Object {
+            [string]$_.Payload.slotOperationAttemptId -eq $attemptId }) | Select-Object -First 1
+}
+
+# --- 1. 起点：车载端开了锁、在等操作员 ---------------------------------------------------------------------------
+
+$load = Start-L2RealLoad $Context 'L2-RW'
+$demandId = $load.DemandId
+$attemptId = $load.AttemptId
+$slot = $load.Slot
+
+$doorAtWait = (Get-L2RealSlotReading $simulator $slot) -split '/' | Select-Object -First 1
+$statusAtWait = Get-L2RealScalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
+$commandAtWait = Get-LoadCommand $attemptId
+$assertions.Add(
+    'L2-RW-01', '起点到位：车载端开了锁、在等操作员，门开着，装货操作 Prepared，装货命令还没被结算',
+    ($doorAtWait -eq 'OPEN' -and $statusAtWait -eq 'Prepared' -and $null -ne $commandAtWait -and -not $commandAtWait.Acknowledged),
+    'OPEN / Prepared / 命令未结算',
+    "$doorAtWait / $statusAtWait / $(if ($null -eq $commandAtWait) { '(no command)' } elseif ($commandAtWait.Acknowledged) { '命令已结算' } else { '命令未结算' })")
+
+# --- 2. 进程没了；操作员照常放货、关门 ---------------------------------------------------------------------------
+
+$sessionBefore = Get-L2RealSession $connection $Context.AgvId
+& $Context.StopComponent 'onboard-hmi'
+
+# 进程没了之后服务端一个字都没收到：结果只可能在重启之后才来，否则下面的判据证的就不是重启。
+$resultsWhileDown = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'"
+$statusWhileDown = Get-L2RealScalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
+$assertions.Add(
+    'L2-RW-02', '车载端退出时没有留下结果：OperationResults 0 行，装货操作仍是 Prepared',
+    ($resultsWhileDown -eq 0 -and $statusWhileDown -eq 'Prepared'), '0 行 / Prepared', "$resultsWhileDown 行 / $statusWhileDown")
+
+$journal.Note("While the onboard is down the operator loads slot $slot and closes it.")
+$null = $simulator.Command('Put', "slots/$slot/cargo", @{ state = 'OCCUPIED' })
+$null = $simulator.Command('Post', "slots/$slot/close-door", @{})
+$closed = Wait-L2Condition -Description 'the slot reads closed, occupied, locked and reset' `
+    -Journal $journal -Criterion 'slot-closed-occupied' -TimeoutSeconds 30 `
+    -Probe { Get-L2RealSlotReading $simulator $slot } -Until { param($v) $v -eq 'CLOSED/OCCUPIED/1/0' }
+$journal.Note("Slot $slot now reads $closed.")
+
+# --- 3. 重启：车载端从自己的 journal 恢复，按实时 IO 结算 --------------------------------------------------------
+
+$reportsBefore = @(Get-L2RealInbound $connection 'RecoveryStateReport').Count
+$null = & $Context.RestartOnboard
+
+$report = Wait-L2Condition -Description 'the restarted onboard sent its RecoveryStateReport' `
+    -Journal $journal -Criterion 'restart-report' -TimeoutSeconds 120 `
+    -Probe { $all = Get-L2RealInbound $connection 'RecoveryStateReport'; if ($all.Count -gt $reportsBefore) { $all[-1] } else { $null } } `
+    -Until { param($v) $null -ne $v }
+$assertions.Add(
+    'L2-RW-03', '重启后车载端握手如实上报那一次没了结的 attempt',
+    ([string]$report.Payload.unsettledSlotOperationAttemptId -eq $attemptId),
+    $attemptId, [string]$report.Payload.unsettledSlotOperationAttemptId)
+
+$result = Wait-L2RealOrLast -Description 'the restarted onboard settled the interrupted load and the server acknowledged it' `
+    -Journal $journal -Criterion 'interrupted-result' -TimeoutSeconds 120 `
+    -Probe { @((Get-L2RealInbound $connection 'OperationResult') | Where-Object { [string]$_.Payload.slotOperationAttemptId -eq $attemptId })[0] } `
+    -Until { param($v) $null -ne $v -and $v.Response -eq 'DurableAck' }
+$slotResult = if ($null -ne $result) { @($result.Payload.slotResults | Where-Object { [int]$_.slotNo -eq $slot })[0] } else { $null }
+$resultShape = if ($null -ne $slotResult) {
+    "$($result.Payload.overallOutcome) / $($slotResult.outcome) / $($slotResult.finalPhysicalState) / $($slotResult.lockState) / $($slotResult.unlockOutputState) → $($result.Response)"
+} else { '(no result)' }
+$assertions.Add(
+    'L2-RW-04', '重启后车载端按实时 IO 补交结果：仓位全到最终态，报 COMPLETED，物理字段是重启后读到的 OCCUPIED / LOCKED / RESET，服务端 DurableAck 收下（ADR-cross-0058 决策 2）',
+    ($resultShape -eq 'COMPLETED / COMPLETED / OCCUPIED / LOCKED / RESET → DurableAck'),
+    'COMPLETED / COMPLETED / OCCUPIED / LOCKED / RESET → DurableAck', $resultShape)
+
+# --- 4. 不进恢复：会话回到 Ready，装货提交，旅程往关卡走 ---------------------------------------------------------
+
+$sessionAfter = Wait-L2RealOrLast -Description 'the session was Ready again in a newer generation' `
+    -Journal $journal -Criterion 'session-ready-after-restart' -TimeoutSeconds 60 `
+    -Probe { Get-L2RealSession $connection $Context.AgvId } `
+    -Until { param($v)
+        $null -ne $v -and [long]$v.SessionGeneration -gt [long]$sessionBefore.SessionGeneration -and
+            [string]$v.Readiness -eq 'Ready' -and [string]$v.ReasonCode -eq 'READY' }
+$stage = Wait-L2RealOrLast -Description 'the load committed and the journey reached the gate leg' `
+    -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 120 `
+    -Probe { Get-L2RealStage $connection $demandId } -Until { param($v) $v -eq 'AwaitingGateArrival' }
+$loadStatus = Get-L2RealScalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
+$recoverySessions = Get-L2RealCount $connection 'SELECT COUNT(*) AS Total FROM ExceptionRecoverySessions'
+$workflows = Get-L2RealCount $connection 'SELECT COUNT(*) AS Total FROM RecoveryWorkflows'
+$blockReason = Get-L2RealScalar $connection "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'"
+$assertions.Add(
+    'L2-RW-05', '不进恢复：服务端在新世代判会话 Ready，装货 Committed，旅程直接往关卡走、从未停摆，没有恢复会话也没有恢复工作流',
+    ($null -ne $sessionAfter -and [string]$sessionAfter.Readiness -eq 'Ready' -and
+        [long]$sessionAfter.SessionGeneration -gt [long]$sessionBefore.SessionGeneration -and
+        $loadStatus -eq 'Committed' -and $stage -eq 'AwaitingGateArrival' -and $null -eq $blockReason -and
+        $recoverySessions -eq 0 -and $workflows -eq 0),
+    "gen > $($sessionBefore.SessionGeneration) Ready / Committed / AwaitingGateArrival / 无停摆 / 恢复会话 0 / 工作流 0",
+    "$(Format-L2RealSession $sessionAfter) / $loadStatus / $stage / 停摆 $(if ($blockReason) { $blockReason } else { '无' }) / 恢复会话 $recoverySessions / 工作流 $workflows")
+
+# 重启前挂着的那条装货命令被这份结果结算掉，不会被重放进之后的会话。结算是引擎某一轮里的写入
+# （JourneyRuntimeEngine → SettleAnsweredCommandAsync），不与阶段推进必然同一次提交，所以要等，不直读。
+$commandAfter = Wait-L2RealOrLast -Description 'the load command was settled by the result' `
+    -Journal $journal -Criterion 'load-command-settled' -TimeoutSeconds 30 `
+    -Probe { Get-LoadCommand $attemptId } -Until { param($v) $null -ne $v -and $v.Acknowledged }
+$assertions.Add(
+    'L2-RW-06', '重启前挂着的装货命令被补交的结果结算掉',
+    ($null -ne $commandAfter -and $commandAfter.Acknowledged), '已结算',
+    $(if ($null -eq $commandAfter) { '(no command)' } elseif ($commandAfter.Acknowledged) { '已结算' } else { '仍挂着' }))
+
+if ($stage -ne 'AwaitingGateArrival') {
+    Add-L2RealNotReached $assertions @('L2-RW-07') "旅程没走到关卡（stage $stage）"
+    return
+}
+
+# --- 5. 旅程照常走完 ------------------------------------------------------------------------------------------
+
+$gateIntent = Wait-L2RealIntent $Context $demandId 'TO_GATE' 60
+Move-L2RealVehicleTo $Context $gateIntent $Context.GateStationRiotId 'the gate'
+$unloadAttempt = Wait-L2Condition -Description 'the server issued the unload command' `
+    -Journal $journal -Criterion 'unload-attempt' -TimeoutSeconds 180 `
+    -Probe { Get-L2RealScalar $connection "SELECT SlotOperationAttemptId AS Value FROM StationOperations WHERE DemandId = '$demandId' AND OperationType = 'Unload'" } `
+    -Until { param($v) $v }
+$unloadWaiting = Wait-L2Condition -Description 'the onboard is waiting for the operator at the gate' `
+    -Journal $journal -Criterion 'unload-waiting-operator' -TimeoutSeconds 120 `
+    -Probe { @((Get-L2RealProgress $connection $unloadAttempt) | Where-Object { $_.Phase -eq 'WAITING_OPERATOR' })[0] } `
+    -Until { param($v) $null -ne $v }
+$unloadSlot = [int]$unloadWaiting.Active[0]
+$null = $simulator.Command('Put', "slots/$unloadSlot/cargo", @{ state = 'EMPTY' })
+$null = $simulator.Command('Post', "slots/$unloadSlot/close-door", @{})
+
+$final = Wait-L2RealOrLast -Description 'the journey completed at the gate' `
+    -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 180 `
+    -Probe { Get-L2RealStage $connection $demandId } -Until { param($v) $v -eq 'Completed' }
+$demandStatus = Get-L2RealScalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
+$loadResults = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'"
+$assertions.Add(
+    'L2-RW-07', '旅程照常走完：卸的是装货那一仓，需求 Succeeded，装货结果只记了一次',
+    ($final -eq 'Completed' -and $demandStatus -eq 'Succeeded' -and $unloadSlot -eq $slot -and $loadResults -eq 1),
+    "Completed / Succeeded / 仓 $slot / 1", "$final / $demandStatus / 仓 $unloadSlot / $loadResults")
+
+$journal.Note('Scenario finished: an onboard killed while waiting for the operator settled the interrupted load from live IO and the journey went on without recovery.')
