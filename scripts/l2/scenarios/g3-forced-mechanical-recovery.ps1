@@ -9,7 +9,9 @@ G3 `FP-IS-07`：装载失败后由维护人员在车上发起强制机械恢复�
 服务端每接受一次就把这台车的强制恢复代数加一，命令与结果都带这个代数，此前签发的一切都被这道栅栏挡在外面。
 装载以 UNKNOWN 结束的办法见 `G3RecoveryCommon.ps1`：车载端在等人时断电、空仓门被关上、重启后中断结算报 UNKNOWN
 （control-server#128 起，此前是「空关后等车载端超时」，v2 上不可达）。车载端「强制机械恢复」按钮是 2026-09-14 补的入口（车载端仓
-`docs/W2G_FP_IS_07_OPERATOR_ENTRIES.md`）。
+`docs/W2G_FP_IS_07_OPERATOR_ENTRIES.md`）。onboard-hmi#107 起车载端收到命令后不发开锁、也不上报，等现场人员按「已隔离并完成机械取出」
+并在「确认强制机械取出」答是之后才报结果；场景自 control-server#156 起按这一步。场景不按「提交硬件恢复记录」，所以 `G3-07-44` 读到的是
+记录到达之前的就绪。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -51,16 +53,31 @@ $requestedAt = [DateTimeOffset]::UtcNow
 $journal.Note('Maintenance presses 强制机械恢复 and confirms.')
 $null = Invoke-G3ConfirmedButton $onboard $journal '强制机械恢复' '强制机械恢复'
 
+# The second step (onboard-hmi#107): once the ForcedMechanicalRecoveryCommand has arrived, the onboard sends no
+# unlock and reports nothing until the person at the vehicle says the slots were isolated and the cargo taken out
+# by hand -- 「已隔离并完成机械取出」, then Yes on 「确认强制机械取出」. Until control-server#156 this scenario never
+# pressed it, so the result never came and the run aborted with the workflow AwaitingResult.
+$confirmOffered = Wait-G3ButtonOffered $onboard $journal '已隔离并完成机械取出' 'onboard-forced-recovery-confirm-entry' 60
+if (-not $confirmOffered) {
+    $why = if (@($onboard.WindowTitles()) -contains '强制机械恢复失败') { '强制机械恢复未被接受（车载端弹出「强制机械恢复失败」）' }
+           else { '车载端没有给出「已隔离并完成机械取出」入口' }
+    Add-G3NotReached $assertions $ids $why
+    return
+}
+$journal.Note('Maintenance has taken the cargo out by hand; presses 已隔离并完成机械取出 and confirms.')
+$null = Invoke-G3ConfirmedButton $onboard $journal '已隔离并完成机械取出' '确认强制机械取出'
+
 $result = Wait-L2Condition -Description 'the server received ForcedMechanicalRecoveryResult, or the onboard reported a refusal' `
     -Journal $journal -Criterion 'forced-recovery-result' -TimeoutSeconds 120 `
     -Probe {
         $received = Get-G3Inbound $connection 'ForcedMechanicalRecoveryResult'
+        $titles = @($onboard.WindowTitles())
         if ($received.Count -ge 1) { $received[0] }
-        elseif (@($onboard.WindowTitles()) -contains '强制机械恢复失败') { 'REFUSED' }
+        elseif ($titles -contains '强制机械恢复失败' -or $titles -contains '确认失败') { 'REFUSED' }
         else { $null }
     } -Until { param($v) $null -ne $v }
 if ($result -is [string]) {
-    Add-G3NotReached $assertions $ids '强制机械恢复未被接受（车载端弹出「强制机械恢复失败」）'
+    Add-G3NotReached $assertions $ids '强制机械恢复未被接受（车载端弹出「强制机械恢复失败」或「确认失败」）'
     return
 }
 $actionId = [string]$result.Payload.recoveryActionId
@@ -114,7 +131,8 @@ $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WH
 # (workflow RecoveryRequired, journey Blocked/FORCED_MECHANICAL_RECOVERY_REQUIRES_FRESH_RECONCILIATION).
 # Reading Readiness here does not race the record: the onboard never submits it by itself -- an administrator
 # presses for it, and the entry appears only after the result's DurableAck (onboard-hmi#107) -- and this
-# scenario presses nothing after the forced recovery.
+# scenario presses nothing after 「已隔离并完成机械取出」: that press is what sends the result, the record entry
+# (「提交硬件恢复记录」) is a separate button it never touches.
 $assertions.Add(
     'G3-07-44',
     '强制恢复只结算货物业务：工作流 Reconciled，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话 CLOSED，没有去关卡；车辆会话仍 RecoveryRequired，等硬件恢复记录（REQ-0242 / forbidden ready-before-reconciliation、unknown-as-success）',
