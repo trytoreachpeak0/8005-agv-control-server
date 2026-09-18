@@ -18,12 +18,16 @@ namespace ControlServer.Host.Runtime;
 /// it reuses this rather than release the vehicle a third slightly different way.
 /// </para>
 /// <para>
-/// <b>It is not the only such code today.</b> <c>OnboardRecoveryCoordinator.ApplyCurrentResultAsync</c>
-/// still terminates a demand whose slot operation was commanded -- a cancellation in flight, a
-/// compensation, a fault cargo handoff -- by writing nearly the same facts by hand, minus the vehicle
-/// occupancy. That path settles a commanded slot operation, which this one deliberately knows nothing
-/// about; control-server#83 moved only the uncommanded cancellation over, and converging the rest
-/// belongs to control-server#81.
+/// <b>The endings of a commanded slot operation use it too.</b> Since control-server#131,
+/// <c>OnboardRecoveryCoordinator.ApplyCurrentResultAsync</c> ends a demand whose slot operation was
+/// commanded -- a cancellation in flight (<c>CANCELLED_BY_OPERATOR</c>), a compensation
+/// (<c>CANCELLED_BY_LOAD_COMPENSATION</c>), a fault cargo handoff (<c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c>)
+/// -- through here as well. Until then it wrote nearly the same facts by hand, minus the vehicle occupancy,
+/// and the pickup order held the vehicle against every later claim. What this still deliberately knows
+/// nothing about is the commanded operation itself: the coordinator cancels it, and settles the recovery
+/// command it answered, in the same unsaved change. A fault cargo handoff can happen at the gate as well as
+/// at the pickup; the tail is the same there, because the occupancy was claimed on the pickup order for the
+/// whole journey. It is now the only code that sets a demand <c>Cancelled</c>.
 /// </para>
 /// <para>
 /// <b>It stages the changes and does not save.</b> Every fact here has to commit together with the
