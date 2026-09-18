@@ -3,8 +3,9 @@ using System.Text.Json;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore;
+using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
 
@@ -30,11 +31,10 @@ namespace ControlServer.Tests;
 /// the data is fixed is judged afresh, and the station deadline of <c>control-server#79</c> still runs.
 /// </para>
 /// </remarks>
-public sealed partial class JourneyRuntimeWorkerTests
+public sealed class JourneyRuntimeWorkerSublotRejectedAfterEntryTests
 {
     private const string RejectedEntryDemandId = "10000000-0000-4000-8000-000000000001";
     private const string RejectedEntrySublot = "SUBLOT-001";
-    private const string RejectedEntryPackage = "PDFN5×6-8L(12R)";
 
     /// <summary>
     /// The message about every dispatch of a stop that nothing has entered yet raised one for: the

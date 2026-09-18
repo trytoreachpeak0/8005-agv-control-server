@@ -5,6 +5,7 @@ using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
 
@@ -18,7 +19,7 @@ namespace ControlServer.Tests;
 /// way the host runs them: the connection's scope authorizes and settles, the runtime's scope starts loads
 /// and ends stops.
 /// </remarks>
-public sealed partial class JourneyRuntimeWorkerTests
+public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
 {
     private const string BeforeSublotDemandId = "10000000-0000-4000-8000-000000000001";
     private const string BeforeSublotCancellationId = "c1000000-0000-4000-8000-000000000001";
@@ -865,34 +866,6 @@ public sealed partial class JourneyRuntimeWorkerTests
             entryMethod = "SCANNER",
             @operator = BeforeSublotOperator(fixture)
         });
-
-    private static object BeforeSublotOperator(RuntimeFixture fixture) => new
-    {
-        operatorId = "OP-001",
-        verificationMethod = "BADGE",
-        verifiedAt = fixture.Clock.GetUtcNow()
-    };
-
-    private static string BeforeSublotEnvelope(
-        RuntimeFixture fixture,
-        string messageId,
-        string messageType,
-        long generation,
-        object payload) => JsonSerializer.Serialize(new
-        {
-            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
-            profileId = ProtocolCandidateIdentity.ProfileId,
-            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
-            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
-            messageType,
-            messageId,
-            correlationId = (string?)null,
-            agvId = fixture.Options.AgvId,
-            sessionGeneration = generation,
-            // Fixed for the same reason as observedAt: sentAt is part of the line a resend repeats.
-            sentAt = Now,
-            payload
-        }, SerializerOptions);
 
     private static JsonElement FirstLinePayload(string wire, out string messageType)
     {

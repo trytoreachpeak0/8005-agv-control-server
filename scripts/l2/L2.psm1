@@ -316,8 +316,13 @@ class L2Double {
             try {
                 return Invoke-RestMethod -Uri $uri -Method $method -ContentType 'application/json' `
                     -Body ($payload | ConvertTo-Json -Depth 8) -TimeoutSec 30
-            } catch [Microsoft.PowerShell.Commands.HttpResponseException] {
-                if ($attempt -ge $attempts -or $_.Exception.Response.StatusCode -ne 409) { throw }
+            } catch {
+                # Matched by name at run time, not as `catch [Microsoft.PowerShell.Commands.HttpResponseException]`:
+                # a class is compiled when the module is parsed, that type lives in an assembly pwsh loads
+                # lazily, and several pwsh processes starting at once (control-server#130's lanes) sometimes
+                # parse this before it is loaded -- ParserError, and the run dies before its scenario starts.
+                if ($_.Exception.GetType().FullName -ne 'Microsoft.PowerShell.Commands.HttpResponseException' -or
+                    $attempt -ge $attempts -or $_.Exception.Response.StatusCode -ne 409) { throw }
             }
         }
         # Unreachable: the loop either returns or throws.
@@ -772,7 +777,8 @@ public static extern bool PostMessage(System.IntPtr hWnd, uint msg, System.IntPt
 <#
 Opens the server's own SQLite store read-only, borrowing Microsoft.Data.Sqlite and SQLitePCLRaw
 from the ControlServer build under test rather than adding a dependency of its own. Read-only and
-shared-cache so reading can never block or alter the server that owns the file.
+shared-cache so reading can never block or alter the server that owns the file. Unpooled, because a
+pooled connection keeps the file open after Close(), and the run can then never delete its stage root.
 #>
 function Open-L2Database {
     param(
@@ -789,7 +795,7 @@ function Open-L2Database {
     # is deliberately swallowed rather than allowed to fail the run before it starts.
     try { [SQLitePCL.Batteries_V2]::Init() } catch { }
     $connection = [Microsoft.Data.Sqlite.SqliteConnection]::new(
-        "Data Source=$DatabasePath;Mode=ReadOnly;Cache=Shared")
+        "Data Source=$DatabasePath;Mode=ReadOnly;Cache=Shared;Pooling=False")
     $connection.Open()
     return $connection
 }
