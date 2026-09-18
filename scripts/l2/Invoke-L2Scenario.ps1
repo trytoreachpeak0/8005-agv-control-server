@@ -56,6 +56,10 @@ param(
     [int]$ClockSkewProxyPort = 48413,
     # Only started when a scenario sets Dashboard = $true; see scenarios/*.setup.psd1.
     [int]$DashboardPort = 48414,
+    # Only started when a scenario sets ProtocolFaultProxy = $true: the control plane, and the TCP port the
+    # real onboard connects to instead of ControlPort. Below the synthetic peers' block, which starts at 48420.
+    [int]$ProtocolFaultProxyPort = 48415,
+    [int]$ProtocolFaultProxyListenPort = 48416,
     # One port per synthetic peer, counting up from here, so a fleet of N takes 48420..48420+N-1.
     # Its own block rather than a neighbour of the others: the peers are the only component whose
     # count is not fixed, and the old layout put peer 1 and peer 2 straight onto the simulator's
@@ -144,6 +148,13 @@ $emergencyStopRelease = ($setup.ContainsKey('EmergencyStopRelease') -and $setup.
 $emergencyReleaseCredentialVariable = 'CONTROL_SERVER_EMERGENCY_RELEASE_CREDENTIAL'
 # Not a secret either.
 $emergencyReleaseCredential = 'l2-emergency-release-credential-not-a-production-secret'
+# The onboard's protocol connection through tools/ControlServer.ProtocolFaultProxy (control-server#88), which
+# can lose a DurableAck, lose one answer, or drop the link on request. Real onboard only: what those faults
+# exercise is the onboard's journal replay and request retry, and the synthetic peer keeps neither.
+$protocolFaultProxy = ($setup.ContainsKey('ProtocolFaultProxy') -and $setup.ProtocolFaultProxy)
+if ($protocolFaultProxy -and -not $realOnboard) {
+    throw "ProtocolFaultProxy needs Onboard = 'Real': the synthetic peer keeps no journal to replay from."
+}
 # The dashboard process. It reads only the server's read-only /api/dashboard/ endpoints over HTTP, so
 # starting it changes nothing about the server under test.
 $dashboard = ($setup.ContainsKey('Dashboard') -and $setup.Dashboard)
@@ -357,6 +368,7 @@ try {
     $mesDirectory = Join-Path $Repository "tools/ControlServer.FakeMesIngest/bin/$configuration/$framework"
     $onboardDirectory = Join-Path $Repository "tools/ControlServer.FakeOnboard/bin/$configuration/$framework"
     $skewProxyDirectory = Join-Path $Repository "tools/ControlServer.ClockSkewProxy/bin/$configuration/$framework"
+    $faultProxyDirectory = Join-Path $Repository "tools/ControlServer.ProtocolFaultProxy/bin/$configuration/$framework"
     $fieldOpsDirectory = Join-Path $Repository "tools/ControlServer.FieldOps/bin/$configuration/$framework"
     $dashboardDirectory = Join-Path $Repository "src/ControlServer.Dashboard/bin/$configuration/$framework"
 
@@ -668,6 +680,32 @@ try {
         $journal.Note("Clock skew proxy forwarding vehicle-safety with observedAt +${clockSkewMs}ms.")
     }
 
+    # 4c. The protocol fault proxy, when a scenario asked for one. After the server (it connects to it for
+    #     every onboard connection) and before the onboard (whose wireToGate port is pointed at it below).
+    #     It drops nothing until a scenario arms a plan through Context.ProtocolProxy.
+    $protocolProxy = $null
+    if ($protocolFaultProxy) {
+        $faultProxyHandle = Start-L2Process -Name 'protocol-fault-proxy' `
+            -FilePath (Join-Path $faultProxyDirectory 'ControlServer.ProtocolFaultProxy.exe') `
+            -ArgumentList @(
+                "--ProtocolFaultProxy:port=$ProtocolFaultProxyPort",
+                "--ProtocolFaultProxy:listenPort=$ProtocolFaultProxyListenPort",
+                "--ProtocolFaultProxy:instanceId=l2-protocol-fault-proxy",
+                "--ProtocolFaultProxy:target=127.0.0.1:$ControlPort") `
+            -WorkingDirectory $faultProxyDirectory -LogRoot $logRoot |
+            # Between the skew proxy (5) and the onboard (6): teardown stops the onboard before the relay it
+            # talks through, and the relay before the server it forwards to.
+            ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 5.5 -PassThru }
+        $handles += $faultProxyHandle
+
+        $protocolProxy = New-L2Double -Name 'protocol-fault-proxy' -BaseUrl "http://127.0.0.1:$ProtocolFaultProxyPort"
+        $null = Wait-L2Condition -Description 'the protocol fault proxy is live' -Journal $journal `
+            -Criterion 'protocol-proxy-live' -TimeoutSeconds 60 -Component $faultProxyHandle `
+            -Port @($ProtocolFaultProxyPort, $ProtocolFaultProxyListenPort) `
+            -Probe { $protocolProxy.Health().body.status } -Until { param($v) $v -eq 'live' }
+        $journal.Note("Protocol fault proxy relaying 127.0.0.1:$ProtocolFaultProxyListenPort -> 127.0.0.1:$ControlPort.")
+    }
+
     # 5. The onboard last, either way: it connects out to the server, so the server has to be
     #    listening first.
     # Empty on a real-onboard rig, which has no synthetic peers; the scenario Context carries it
@@ -686,7 +724,8 @@ try {
                 $settings.onboardInstanceId = 'OBU-L2-001'
                 $settings.wireToGate.enabled = $true
                 $settings.wireToGate.host = '127.0.0.1'
-                $settings.wireToGate.port = $ControlPort
+                # Through the fault proxy when the scenario asked for one; this is the only line that says so.
+                $settings.wireToGate.port = $protocolFaultProxy ? $ProtocolFaultProxyListenPort : $ControlPort
                 $settings.wireToGate.onboardInstanceId = '9f2c7f10-3a4d-4a2e-9a26-6f0d5a1c8b77'
                 # Validate() insists this is a real 40-hex commit, and it is the identity the
                 # server records for the peer, so it must be the commit actually published.
@@ -970,6 +1009,8 @@ try {
         OnboardPeers        = $onboardDoubles
         Simulator           = $simulator
         SkewProxy           = $skewProxy
+        # Null unless the setup file asked for the protocol fault proxy; an L2Double over its control plane.
+        ProtocolProxy       = $protocolProxy
         Connection          = $connection
         RunId               = $runId
         # The shipped onboard's own SQLite journal, real-onboard rig only. What the vehicle adopted is
@@ -998,7 +1039,7 @@ try {
         DispatchZone        = $dispatchZone
         SlotModelVersionId  = $preseededSlotModelVersionId
         # Order is the start position, and Stop-L2Process tears down in reverse: fake RIoT 1, fake
-        # MesIngest 2, simulator 3, ControlServer 4, clock skew proxy 5, onboard 6 (synthetic or
+        # MesIngest 2, simulator 3, ControlServer 4, clock skew proxy 5, protocol fault proxy 5.5, onboard 6 (synthetic or
         # real -- they are mutually exclusive, so they share the position). Two components on the
         # same number would make that order undefined.
         # Powering a component down is part of several scenarios -- the vehicle is normally switched
@@ -1086,6 +1127,14 @@ try {
             Url  = "http://127.0.0.1:$ClockSkewProxyPort/control/v1/snapshot"
         }
     }
+    # The relay's traffic log: every connection and every line's envelope identity, never a payload. What
+    # crossed the wire and in which order is most of what a fault-proxy scenario's verdict rests on.
+    if ($protocolFaultProxy) {
+        $snapshotSources += @{
+            Name = 'protocol-fault-proxy'
+            Url  = "http://127.0.0.1:$ProtocolFaultProxyPort/control/v1/snapshot"
+        }
+    }
     foreach ($double in $snapshotSources) {
         try {
             $body = Invoke-RestMethod -Uri $double.Url -TimeoutSec 5
@@ -1139,6 +1188,7 @@ try {
         $identity['fleet'] = $fleet | ForEach-Object { "$($_.AgvId)/$($_.VehicleKey)" }
     }
     if ($null -ne $clockSkewMs) { $identity['clockSkewMs'] = $clockSkewMs }
+    if ($protocolFaultProxy) { $identity['protocolFaultProxy'] = $true }
     if ($onboardPublish) { $identity['onboardHmiCommit'] = $onboardPublish.Commit }
     if ($simulatorPublish) { $identity['slotsSimulatorCommit'] = $simulatorPublish.Commit }
     Write-L2Evidence -EvidenceRoot $EvidenceRoot -Scenario $Scenario -RunId $runId `

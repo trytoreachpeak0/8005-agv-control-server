@@ -314,6 +314,11 @@ Map 站点目录——**包括 journey 已经 Blocked、它什么都不做的那
 - `ClockSkewMs` —— 只对真装置有效。车辆安全投影改经 `tools/ControlServer.ClockSkewProxy` 转发，
   `observedAt` 往后推这么多毫秒，等价于车载端时钟慢了这么多。合成对端没有新鲜度判定，给它设这个
   键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。
+- `ProtocolFaultProxy = $true` —— 只对真装置有效（control-server#88）。车载端的 `wireToGate` 连接改经
+  `tools/ControlServer.ProtocolFaultProxy`（控制面 48415，数据面 48416）转发，场景经 `Context.ProtocolProxy` 布计划：
+  `drop-durable-ack`（丢一次某类报文的 `DurableAck` 并断链）、`drop-message`（丢一条服务端应答、链路不断）、
+  `disconnect`（不丢任何行、断一次）。代理默认什么都不丢；它的 `/snapshot` 记下每条连接、每一行的信封身份，收尾时存成
+  `snapshots/protocol-fault-proxy.json`。合成对端没有 journal 也不重试，给它设这个键会直接报错。
 
 - `Fleet` —— 主车**之外**的车，每项一对 `AgvId` / `VehicleKey`。编排器把主对放在第一位再逐车
   注入 `JourneyRuntime:Fleet`（`JourneyRuntimeOptions` 的校验器要求名册包含主对，让每个 setup
@@ -419,6 +424,7 @@ $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外�
 | 模拟器 Modbus TCP（真装置） | 48412 |
 | 时钟偏差代理（`ClockSkewMs` 场景） | 48413 |
 | 看板（`Dashboard` 场景） | 48414 |
+| 协议故障代理控制面／数据面（`ProtocolFaultProxy` 场景） | 48415 ／ 48416 |
 
 刻意避开现场运行（58105/58107）、staged G3（58205/58207）与 demand-bearing G3（58305/58307）：
 撞上了要的是绑不上端口直接失败，而不是悄悄连到另一台服务器上去。模拟器同理不用它自己的默认

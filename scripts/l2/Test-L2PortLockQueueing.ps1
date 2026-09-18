@@ -395,7 +395,7 @@ try {
 
     # 8. Two real orchestrators.
     if (-not $SkipOrchestrators) {
-        $blockPorts = @(48405, 48407, 48408, 48409, 48411, 48412, 48413, 48414, 48420, 48421, 48422)
+        $blockPorts = @(48405, 48407, 48408, 48409, 48411, 48412, 48413, 48414, 48415, 48416, 48420, 48421, 48422)
         $busy = @($blockPorts | Where-Object { @(Get-L2ListeningProcess -Port $_).Count -gt 0 })
         if ($busy.Count -gt 0) {
             throw ("L2_PORT_LOCK_SELFTEST_BLOCKED: something already listens on the L2 port block " +
