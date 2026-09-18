@@ -72,6 +72,21 @@ Pressing 补偿清空 (attempt 1).
   - 真装置七条重跑；
   - 服务端 `CONTROL_SERVER_G2` 与 CI 三连只用合成车载端，不碰车载端代码，证据保留。
 
+## 修复
+
+修在 onboard-hmi PR [#114](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/pull/114)（onboard-hmi#112）：`MainViewModel.SetRecoveryEntry` 转交调用方属性名。
+根因：`SetRecoveryEntry` 调用 `SetProperty` 时 `[CallerMemberName]` 取成了 `"SetRecoveryEntry"`，四个 `CanRequest*` 的值是对的，
+但 WPF 绑定收不到以它们命名的变更通知，按钮停在启动时的 `Collapsed`。
+
+**更正上文「读代码能确定的与没能确定的」第一条的推断。**那里写「现象等价于视图模型里四个 `CanRequest*` 都是 `false`」，这是错的：
+值一直是 `true`，错的是变更通知的属性名。这也是读代码时在「值为什么是 `false`」这条线上找不到原因的缘故。上文保留原样，以本节为准。
+
+PR #114 的新测试 `RecoveryEntryNotificationViewModelTests.AfterARestartSettledAsUnknownTheFourAdministratorEntriesAreAnnouncedToTheWindow`
+同时断言属性值与以属性名发出的 `PropertyChanged`：在 `9748c418` 上红（`Not found: "CanRequestWireToGateRecovery"`，收集到的通知名是
+`["SetRecoveryEntry", "HasRecoveryReasonInput", ...]`），在 `8f308bb1` 与修复提交上绿。只断言值抓不到这个缺陷：`9748c418` 上四个值断言都过。
+
+本单状态在 PR #114 合入、control-server#90 在修复后的车载端提交上重跑真装置七条与四个 G3 runner 全绿后改为 fixed。
+
 ## 为什么合入前没发现
 
 PR #111 在车载端 CI（`ONBOARD_HMI_G2` 与布局检查）上是绿的，这两道都不启动真 WPF 窗口去驱动恢复入口。恢复入口的端到端覆盖只在真装置 L2 与 journey G3 里，

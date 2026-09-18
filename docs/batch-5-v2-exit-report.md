@@ -200,7 +200,7 @@ control-server#90（批次5-36）。本报告逐项对照规格 `8005-agv-progra
 
 | 单 | 红在哪里 | 性质 | 修复去向 |
 | --- | --- | --- | --- |
-| A [`20260919-onboard-recovery-entries-missing-after-hmi109.md`](defects/20260919-onboard-recovery-entries-missing-after-hmi109.md) | journey `FP-IS-07` 四条恢复场景；真装置 `real-onboard-compensate-then-reconnect` | **车载端回归**，onboard-hmi PR #111（`9748c418`）引入：重启进 `RecoveryRequired` 后四个管理员入口不出现。车载端退到 `8f308bb1` 对照，入口出现、补偿收敛 | [onboard-hmi#112](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/112) |
+| A [`20260919-onboard-recovery-entries-missing-after-hmi109.md`](defects/20260919-onboard-recovery-entries-missing-after-hmi109.md) | journey `FP-IS-07` 四条恢复场景；真装置 `real-onboard-compensate-then-reconnect` | **车载端回归**，onboard-hmi PR #111（`9748c418`）引入：重启进 `RecoveryRequired` 后四个管理员入口不出现。车载端退到 `8f308bb1` 对照，入口出现、补偿收敛。根因：`MainViewModel.SetRecoveryEntry` 没把属性名转交给 `SetProperty`，变更通知名成了 `"SetRecoveryEntry"`，绑定收不到；修复在 onboard-hmi PR #114 | [onboard-hmi#112](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/112) |
 | B [`20260919-staged-g3-forced-recovery-criteria-predate-cs137.md`](defects/20260919-staged-g3-forced-recovery-criteria-predate-cs137.md) | staged `FP-IS-07` 三条强制取出判据 | **G3 判据落后**：仍断言 control-server#137 移除的断头行为；产品行为与 #137 设计一致 | [control-server#151](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/151)（改 `run-staged-g3.ps1`） |
 
 **修好之后从头重跑什么**（不拼接）：
