@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-restart-while-waiting-operator",
+  "runId": "20260918T161920009Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "onboardHmiCommit": "9748c4187e74aeb46cf95557e8f2430e8fe2abf3",
+    "controlServerCommit": "06b656880ce6a32c8250b4ad62ad8ad3ce11b936",
+    "agvId": "AGV-L2-001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-2",
+    "rig": "RealOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260918T161920009Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-RW-01",
+      "description": "起点到位：车载端开了锁、在等操作员，门开着，装货操作 Prepared，装货命令还没被结算",
+      "outcome": "PASS",
+      "expected": "OPEN / Prepared / 命令未结算",
+      "actual": "OPEN / Prepared / 命令未结算"
+    },
+    {
+      "id": "L2-RW-02",
+      "description": "车载端退出时没有留下结果：OperationResults 0 行，装货操作仍是 Prepared",
+      "outcome": "PASS",
+      "expected": "0 行 / Prepared",
+      "actual": "0 行 / Prepared"
+    },
+    {
+      "id": "L2-RW-03",
+      "description": "重启后车载端握手如实上报那一次没了结的 attempt",
+      "outcome": "PASS",
+      "expected": "0c98da1a-18b7-6352-bc71-38688bee0373",
+      "actual": "0c98da1a-18b7-6352-bc71-38688bee0373"
+    },
+    {
+      "id": "L2-RW-04",
+      "description": "重启后车载端按实时 IO 补交结果：仓位全到最终态，报 COMPLETED，物理字段是重启后读到的 OCCUPIED / LOCKED / RESET，服务端 DurableAck 收下（ADR-cross-0058 决策 2）",
+      "outcome": "PASS",
+      "expected": "COMPLETED / COMPLETED / OCCUPIED / LOCKED / RESET → DurableAck",
+      "actual": "COMPLETED / COMPLETED / OCCUPIED / LOCKED / RESET → DurableAck"
+    },
+    {
+      "id": "L2-RW-05",
+      "description": "不进恢复：服务端在新世代判会话 Ready，装货 Committed，旅程直接往关卡走、从未停摆，没有恢复会话也没有恢复工作流",
+      "outcome": "PASS",
+      "expected": "gen > 1 Ready / Committed / AwaitingGateArrival / 无停摆 / 恢复会话 0 / 工作流 0",
+      "actual": "gen 2 / Ready / READY / Committed / AwaitingGateArrival / 停摆 无 / 恢复会话 0 / 工作流 0"
+    },
+    {
+      "id": "L2-RW-06",
+      "description": "重启前挂着的装货命令被补交的结果结算掉",
+      "outcome": "PASS",
+      "expected": "已结算",
+      "actual": "已结算"
+    },
+    {
+      "id": "L2-RW-07",
+      "description": "旅程照常走完：卸的是装货那一仓，需求 Succeeded，装货结果只记了一次",
+      "outcome": "PASS",
+      "expected": "Completed / Succeeded / 仓 1 / 1",
+      "actual": "Completed / Succeeded / 仓 1 / 1"
+    }
+  ]
+}
