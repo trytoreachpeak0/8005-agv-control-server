@@ -1,0 +1,151 @@
+executed_at 2026-09-18T21:17:58+08:00
+== QC
+PRAGMA quick_check;
+quick_check
+ok
+
+== Q0
+SELECT name, sql FROM sqlite_master WHERE type='table' AND name IN ('JourneyDemands','AcceptedDemands');
+name	sql
+AcceptedDemands	CREATE TABLE "AcceptedDemands" (
+    "DemandId" TEXT NOT NULL CONSTRAINT "PK_AcceptedDemands" PRIMARY KEY,
+    "TransportDemandKey" TEXT NOT NULL,
+    "DemandRevision" INTEGER NOT NULL,
+    "HistoryEpoch" TEXT NOT NULL,
+    "CatalogRevision" INTEGER NOT NULL,
+    "AcceptedAt" TEXT NOT NULL,
+    "Status" TEXT NOT NULL
+, "CreatedAt" TEXT NOT NULL DEFAULT '0001-01-01 00:00:00+00:00', "Generation" INTEGER NOT NULL DEFAULT 0, "LiveMesFieldsJson" TEXT NOT NULL DEFAULT '', "SeriesId" TEXT NOT NULL DEFAULT '', "Sublot" TEXT NOT NULL DEFAULT '', "ValueObservedAt" TEXT NOT NULL DEFAULT '0001-01-01 00:00:00+00:00', "ValuePollTraceId" TEXT NOT NULL DEFAULT '', "ValueProjectionCommitId" TEXT NOT NULL DEFAULT '', "WorkType" TEXT NOT NULL DEFAULT '')
+JourneyDemands	CREATE TABLE "JourneyDemands" (
+    "JourneyId" TEXT NOT NULL,
+    "DemandId" TEXT NOT NULL,
+    "StopSequence" INTEGER NOT NULL,
+    "ExpectedBasketCount" INTEGER NOT NULL,
+    "TargetSlotsJson" TEXT NOT NULL,
+    "LoadCommandMessageId" TEXT NOT NULL,
+    "LoadSlotOperationAttemptId" TEXT NOT NULL,
+    "UnloadCommandMessageId" TEXT NOT NULL,
+    "UnloadSlotOperationAttemptId" TEXT NOT NULL,
+    "ConsumedSublotMessageId" TEXT NULL,
+    "LoadCommandedAt" TEXT NULL,
+    "UnloadCommandedAt" TEXT NULL,
+    "State" TEXT NOT NULL,
+    "CreatedAt" TEXT NOT NULL,
+    "LoadedAt" TEXT NULL,
+    CONSTRAINT "PK_JourneyDemands" PRIMARY KEY ("JourneyId", "DemandId")
+)
+
+== QD
+SELECT COUNT(*) AS rows_, COUNT(DISTINCT DemandId) AS distinct_demands FROM JourneyDemands;
+rows_	distinct_demands
+188	188
+
+== QD2
+SELECT COUNT(*) AS demands_with_differing_counts FROM (SELECT DemandId FROM JourneyDemands GROUP BY DemandId HAVING COUNT(DISTINCT ExpectedBasketCount) > 1);
+demands_with_differing_counts
+0
+
+== Q1
+SELECT COUNT(*) AS journeyed_demands, MIN(a.AcceptedAt) AS window_start, MAX(a.AcceptedAt) AS window_end
+FROM (SELECT DemandId, MAX(ExpectedBasketCount) AS ExpectedBasketCount FROM JourneyDemands GROUP BY DemandId) AS j
+JOIN AcceptedDemands AS a ON a.DemandId = j.DemandId;
+journeyed_demands	window_start	window_end
+188	2026-09-08 02:42:46.3127888+00:00	2026-09-18 13:05:54.7975718+00:00
+
+== Q2
+SELECT json_extract(a.LiveMesFieldsJson, '$.Area') AS area, COUNT(*) AS total,
+       SUM(CASE WHEN j.ExpectedBasketCount BETWEEN 5 AND 8 THEN 1 ELSE 0 END) AS basket_5_to_8,
+       ROUND(100.0 * SUM(CASE WHEN j.ExpectedBasketCount BETWEEN 5 AND 8 THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_5_to_8
+FROM (SELECT DemandId, MAX(ExpectedBasketCount) AS ExpectedBasketCount FROM JourneyDemands GROUP BY DemandId) AS j
+JOIN AcceptedDemands AS a ON a.DemandId = j.DemandId
+GROUP BY area ORDER BY area;
+area	total	basket_5_to_8	pct_5_to_8
+N1-12	1	0	0.0
+N1-15	6	0	0.0
+N1-16	1	0	0.0
+N1-5	2	0	0.0
+N1-7	1	0	0.0
+N11-7	5	0	0.0
+N11-8	2	0	0.0
+N12-1	1	0	0.0
+N12-4	6	0	0.0
+N12-5	1	0	0.0
+N12-7	6	0	0.0
+N12-8	2	0	0.0
+N12-9	5	0	0.0
+N13-4	2	0	0.0
+N13-8	11	0	0.0
+N14-8	4	0	0.0
+N15-1	2	0	0.0
+N15-3	15	0	0.0
+N15-4	1	0	0.0
+N15-5	2	0	0.0
+N15-8	1	0	0.0
+N16-1	2	0	0.0
+N16-3	7	0	0.0
+N17-1	2	0	0.0
+N17-5	1	0	0.0
+N17-6	3	0	0.0
+N18-1	4	0	0.0
+N18-3	2	0	0.0
+N18-4	4	0	0.0
+N18-5	3	0	0.0
+N18-6	4	0	0.0
+N18-8	7	0	0.0
+N2-11	2	0	0.0
+N2-13	1	0	0.0
+N2-8	2	0	0.0
+N20-1	4	0	0.0
+N21-1	3	0	0.0
+N21-2	2	0	0.0
+N21-5	3	0	0.0
+N21-6	1	0	0.0
+N3-1	1	0	0.0
+N3-12	2	0	0.0
+N3-8	2	0	0.0
+N4-1	3	0	0.0
+N4-10	2	0	0.0
+N4-11	4	0	0.0
+N4-14	1	0	0.0
+N4-2	1	0	0.0
+N5-10	2	0	0.0
+N5-12	3	0	0.0
+N5-14	2	0	0.0
+N5-3	4	0	0.0
+N5-4	1	0	0.0
+N5-5	5	0	0.0
+N5-6	4	0	0.0
+N5-7	2	0	0.0
+N5-8	3	0	0.0
+N5-9	4	0	0.0
+N6-2	1	0	0.0
+N6-4	1	0	0.0
+N7-10	3	0	0.0
+N7-8	3	0	0.0
+
+== Q2T
+SELECT COUNT(*) AS total,
+       SUM(CASE WHEN j.ExpectedBasketCount BETWEEN 5 AND 8 THEN 1 ELSE 0 END) AS basket_5_to_8,
+       ROUND(100.0 * SUM(CASE WHEN j.ExpectedBasketCount BETWEEN 5 AND 8 THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_5_to_8
+FROM (SELECT DemandId, MAX(ExpectedBasketCount) AS ExpectedBasketCount FROM JourneyDemands GROUP BY DemandId) AS j
+JOIN AcceptedDemands AS a ON a.DemandId = j.DemandId;
+total	basket_5_to_8	pct_5_to_8
+188	0	0.0
+
+== Q3
+SELECT ExpectedBasketCount AS baskets, COUNT(*) AS demands
+FROM (SELECT DemandId, MAX(ExpectedBasketCount) AS ExpectedBasketCount FROM JourneyDemands GROUP BY DemandId)
+GROUP BY ExpectedBasketCount ORDER BY ExpectedBasketCount;
+baskets	demands
+1	47
+2	131
+3	10
+
+== Q4
+SELECT ReasonCode, COUNT(*) AS demands, MIN(FirstSeenAt) AS first_seen, MAX(LastSeenAt) AS last_seen
+FROM JourneyBacklog
+WHERE ReasonCode IN ('EXPECTED_BASKET_COUNT_OUT_OF_RANGE','SUBLOT_BOX_COUNT_UNAVAILABLE','SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE')
+GROUP BY ReasonCode;
+ReasonCode	demands	first_seen	last_seen
+SLOT_CAPACITY_TEMPORARILY_UNAVAILABLE	33	2026-09-10 04:47:25.171492+00:00	2026-09-18 12:37:12.5455258+00:00
+

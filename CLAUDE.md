@@ -162,7 +162,7 @@ inside one process. `-EvidenceRoot` must be a new directory. See `scripts/l2/REA
 there proves nothing about real hardware.
 
 **Every L2 run, on every rig, takes a machine-wide port lock and queues behind any other L2 run.**
-All rigs bind the same fixed port block (48405–48414, synthetic peers from 48420), so two runs at
+All rigs bind the same fixed port block (48405–48416, synthetic peers from 48420), so two runs at
 once talk to each other's processes — on 2026-09-14 that sent a G3 run into its scenario with two
 dead doubles. `Invoke-L2Scenario.ps1` takes the named mutex `Global\W2G-L2PortBlock`
 (`scripts/l2/L2PortLock.psm1`) before its build and holds it through teardown; a queued run prints

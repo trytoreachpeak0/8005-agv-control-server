@@ -498,9 +498,24 @@ public sealed partial class OnboardMessageProcessor(
                     state.Readiness = resultDecision.Readiness;
                     return $"{resultAck}\n{SessionReadinessLine(resultDecision, agvId, generation, state)}";
                 }
+            case "HardwareRecoveryRecordSubmitted":
+                {
+                    string recordResult = await recoveryCoordinator.ProcessRequestAsync(root, contentHash, cancellationToken)
+                        .ConfigureAwait(false);
+                    // The record is what a forced mechanical recovery's readiness hold waits for
+                    // (control-server#137), so readiness is judged again here and announced only on a
+                    // change, as after a recovery result. The record resumes nothing by itself.
+                    SessionReadinessDecision recordDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    if (recordDecision.Readiness == state.Readiness)
+                    {
+                        return recordResult;
+                    }
+                    state.Readiness = recordDecision.Readiness;
+                    return $"{recordResult}\n{SessionReadinessLine(recordDecision, agvId, generation, state)}";
+                }
             case "ExceptionRecoverySessionRequested":
             case "RecoveryActionSubmitted":
-            case "HardwareRecoveryRecordSubmitted":
             case "LoadCancellationStartRequested":
             case "LoadCompensationRequested":
             case "LoadCorrectionRequested":

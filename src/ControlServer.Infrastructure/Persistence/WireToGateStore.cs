@@ -12,6 +12,15 @@ namespace ControlServer.Infrastructure.Persistence;
 
 public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourneyAcceptanceStore, IMovementIntentStore
 {
+    private const string ForcedMechanicalRecoveryWorkflowType = "FORCED_MECHANICAL_RECOVERY";
+
+    /// <summary>
+    /// The readiness reason while a forced mechanical recovery waits for its HardwareRecoveryRecord
+    /// (control-server#137). On the wire it is SESSION_RECOVERY_REQUIRED, which is what keeps the
+    /// onboard's recovery entry open for the administrator to submit that record.
+    /// </summary>
+    public const string ForcedRecoveryHardwareRecoveryRequired = "FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED";
+
     /// <summary>
     /// A journey publishes its stored revision at the pickup stop and that value plus one at the
     /// gate stop (JourneyRuntimeEngine publishes both stops), so the next journey on the same
@@ -300,6 +309,23 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 pair => pair.runtime.AgvId == agvId &&
                         pair.operation.Status == StationOperationStatus.RecoveryRequired,
                 cancellationToken).ConfigureAwait(false);
+        // REQ-0241/0242 and ADR-cross-0036 (control-server#137). A forced mechanical recovery settles the
+        // cargo's business and the operation it was about, and with that every input above can say "fine" --
+        // yet what the result pinned false is still unproven: empty slots, safe doors, a recovered vehicle.
+        // The affected slots are physically unknown, and with no per-slot operability in v2 (REQ-0230 is
+        // deferred with FP-C12) the whole vehicle is held. What lifts it is a HardwareRecoveryRecord taken
+        // against that forced workflow -- only accepted once its result is on file (OnboardRecoveryCoordinator
+        // .RecordHardwareRecoveryAsync) -- and only together with every other judgement here: a record is an
+        // audit fact, not a substitute for live signals, and it resumes nothing. A workflow a later forced
+        // generation made history of is covered by the later one.
+        bool forcedRecoveryAwaitsHardwareRecord = await dbContext.RecoveryWorkflows
+            .AnyAsync(
+                workflow => workflow.AgvId == agvId &&
+                            workflow.WorkflowType == ForcedMechanicalRecoveryWorkflowType &&
+                            workflow.State != RecoveryWorkflowState.HistoricalOnly &&
+                            !dbContext.HardwareRecoveryRecords.Any(
+                                record => record.RecoveryActionId == workflow.WorkflowId),
+                cancellationToken).ConfigureAwait(false);
         // REQ-0316. The vehicle reported which slot configuration it is carrying; this server knows
         // which one it activated. Disagreement means nobody can say what the eight slots on that
         // vehicle will actually do, so it must not be given work -- but it stays connected, because
@@ -328,12 +354,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                      row.CapabilityRevision is not null && row.SafetyRevision is not null &&
                      row.RecoveryReportId is not null && departureUsable && noPendingFacts &&
                      !operationNeedsRecovery &&
+                     !forcedRecoveryAwaitsHardwareRecord &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
         row.ReasonCode = ready
             ? "READY"
             : slotConfigurationAgrees
-                ? GetRecoveryReason(row, noPendingFacts, departureUsable, operationNeedsRecovery)
+                ? GetRecoveryReason(
+                    row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord)
                 // Named first when it applies: every other reason here is about this session's own
                 // progress, and an operator who reads one of those would go looking in the wrong
                 // place for a vehicle whose configuration is simply not the approved one.
@@ -2501,7 +2529,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         SessionRecoveryRow row,
         bool noPendingFacts,
         bool departureUsable,
-        bool operationNeedsRecovery)
+        bool operationNeedsRecovery,
+        bool forcedRecoveryAwaitsHardwareRecord)
     {
         if (row.CapabilityRevision is null) return "CAPABILITY_SNAPSHOT_REQUIRED";
         if (row.SafetyRevision is null) return "SAFETY_SNAPSHOT_REQUIRED";
@@ -2514,6 +2543,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // is still missing, and saying "an operation needs recovery" while the handshake is not even
         // complete would point the operator at the wrong thing.
         if (operationNeedsRecovery) return "OPERATION_RECOVERY_REQUIRED";
+        if (forcedRecoveryAwaitsHardwareRecord) return ForcedRecoveryHardwareRecoveryRequired;
         return "RECOVERY_REQUIRED";
     }
 

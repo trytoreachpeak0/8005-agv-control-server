@@ -105,15 +105,23 @@ $assertions.Add(
 $workflowState = Get-G3Scalar $connection "SELECT State AS Value FROM RecoveryWorkflows WHERE WorkflowId = '$actionId'"
 $journey = "$(Get-G3Scalar $connection "SELECT Stage AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")/$(Get-G3Scalar $connection "SELECT BlockReasonCode AS Value FROM JourneyRuntimes WHERE DemandId = '$demandId'")"
 $session = Get-G3Session $connection
+$recoverySession = Get-G3Scalar $connection "SELECT State AS Value FROM ExceptionRecoverySessions WHERE ExceptionRecoverySessionId = '$([string]$result.Payload.exceptionRecoverySessionId)'"
 $demandStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $toGate = Get-G3Count $connection "SELECT COUNT(*) AS Total FROM OrderIntents WHERE DemandId = '$demandId' AND Purpose = 'TO_GATE'"
+# control-server#137 (REQ-0242): the forced result closes the cargo's business as a named handoff -- demand
+# terminated, journey completed, recovery session closed -- and only that. The vehicle stays out of Ready
+# until a HardwareRecoveryRecord for this workflow; before #137 this asserted the dead end the ticket removed
+# (workflow RecoveryRequired, journey Blocked/FORCED_MECHANICAL_RECOVERY_REQUIRES_FRESH_RECONCILIATION).
+# Reading Readiness here does not race the record: the onboard never submits it by itself -- an administrator
+# presses for it, and the entry appears only after the result's DurableAck (onboard-hmi#107) -- and this
+# scenario presses nothing after the forced recovery.
 $assertions.Add(
     'G3-07-44',
-    '强制恢复不当作已对账：工作流仍 RecoveryRequired，旅程停在 Blocked 且原因要求重新核对，会话 RecoveryRequired，需求未成功，没有去关卡（finalState readiness RECOVERY_REQUIRED_OR_UNIQUELY_RECONCILED / forbidden ready-before-reconciliation、unknown-as-success）',
-    ($workflowState -eq 'RecoveryRequired' -and $journey -eq 'Blocked/FORCED_MECHANICAL_RECOVERY_REQUIRES_FRESH_RECONCILIATION' -and
-        [string]$session.Readiness -eq 'RecoveryRequired' -and $demandStatus -ne 'Succeeded' -and $toGate -eq 0),
-    'RecoveryRequired / Blocked/FORCED_MECHANICAL_RECOVERY_REQUIRES_FRESH_RECONCILIATION / RecoveryRequired / 未成功 / TO_GATE 0',
-    "$workflowState / $journey / $($session.Readiness) ($($session.ReasonCode)) / $demandStatus / TO_GATE $toGate")
+    '强制恢复只结算货物业务：工作流 Reconciled，需求 Cancelled，旅程 Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF，恢复会话 CLOSED，没有去关卡；车辆会话仍 RecoveryRequired，等硬件恢复记录（REQ-0242 / forbidden ready-before-reconciliation、unknown-as-success）',
+    ($workflowState -eq 'Reconciled' -and $journey -eq 'Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF' -and $recoverySession -eq 'CLOSED' -and
+        [string]$session.Readiness -eq 'RecoveryRequired' -and $demandStatus -eq 'Cancelled' -and $toGate -eq 0),
+    'Reconciled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / 会话 CLOSED / RecoveryRequired / Cancelled / TO_GATE 0',
+    "$workflowState / $journey / 会话 $recoverySession / $($session.Readiness) ($($session.ReasonCode)) / $demandStatus / TO_GATE $toGate")
 
 $unlocksAfterRequest = @((Get-G3Progress $connection $attemptId) | Where-Object { $_.Phase -eq 'UNLOCKING' -and $_.At -gt $requestedAt })
 $physical = ($load.TargetSlots | Sort-Object | ForEach-Object { "$_=$(Get-G3SlotState $simulator $_)" }) -join ' '
@@ -126,4 +134,4 @@ $assertions.Add(
     "开锁 0 / $expectedPhysical / RIoT 单 1",
     "开锁 $($unlocksAfterRequest.Count) / $physical / RIoT 单 $orders")
 
-$journal.Note('FP-IS-07: a forced mechanical recovery was accepted under a new generation, reported without claiming any proof, and left the vehicle to be reconciled.')
+$journal.Note('FP-IS-07: a forced mechanical recovery was accepted under a new generation, reported without claiming any proof, settled the cargo as a named handoff and closed the session, and left the vehicle RecoveryRequired until an administrator submits a HardwareRecoveryRecord.')
