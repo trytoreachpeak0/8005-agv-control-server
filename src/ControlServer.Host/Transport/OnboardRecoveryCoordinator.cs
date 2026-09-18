@@ -466,7 +466,14 @@ public sealed class OnboardRecoveryCoordinator(
         int[] slots = RequiredSlots(payload, "slots");
         object? problem = null;
         string outcome = "RECORDED";
+        // A record lifts the forced recovery's hardware hold (WireToGateStore.DecideReadinessAsync), so for a
+        // forced workflow it must attest to the hardware after the forcing: taken while the command is still
+        // pending it proves nothing, yet the result arriving later would let it lift the hold unexamined. Any
+        // result on file will do, FAILED included -- the doors were forced either way. It must also be this
+        // vehicle's workflow: a record sent over one vehicle's connection says nothing about another's slots.
         if (session is null || workflow is null ||
+            workflow.AgvId != RequiredString(root, "agvId") ||
+            (workflow.WorkflowType == "FORCED_MECHANICAL_RECOVERY" && workflow.ResultMessageId is null) ||
             role is not ("MAINTENANCE_ADMINISTRATOR" or "SYSTEM_ADMINISTRATOR") ||
             !slots.SequenceEqual(ParseSlots(session?.SlotsJson ?? "[]")))
         {
@@ -1004,14 +1011,15 @@ public sealed class OnboardRecoveryCoordinator(
                 .ConfigureAwait(false);
             return;
         }
-        if (messageType == "ForcedMechanicalRecoveryResult")
-        {
-            workflow.State = RecoveryWorkflowState.RecoveryRequired;
-            await KeepDemandAndJourneyBlockedAsync(
-                workflow.DemandId, "FORCED_MECHANICAL_RECOVERY_REQUIRES_FRESH_RECONCILIATION", cancellationToken)
-                .ConfigureAwait(false);
-            return;
-        }
+        // A forced mechanical recovery closes the cargo's business, and only that (REQ-0242,
+        // control-server#137). The session named the demand, so the product's identity is the demand's own
+        // bound cargo, and the result's verified operator is the named person who took it: that is the
+        // ForcedCargoHandoffRecord, and it ends the demand exactly as a fault cargo handoff does (CONTEXT.md,
+        // FaultCargoRecoveryRecord). Protocol 2.0.0 carries no field for an unknown identity, so the "pending
+        // inventory" branch of REQ-0242 cannot be reached from here. What the result does not prove -- empty
+        // slots, safe doors, a recovered vehicle -- stays unproven: readiness is held separately until a
+        // HardwareRecoveryRecord for this workflow arrives (WireToGateStore.DecideReadinessAsync). Until #137
+        // this kept the demand blocked and the session EXECUTING for good, and nothing ever settled either.
         workflow.State = RecoveryWorkflowState.Reconciled;
         if (messageType == "LoadCorrectionResult") return;
         if (workflow.DemandId is null) return;
@@ -1049,8 +1057,9 @@ public sealed class OnboardRecoveryCoordinator(
             return;
         }
         // A commanded slot operation proven empty -- an in-flight cancellation, a compensation, a fault cargo
-        // handoff. The settlement of the operation itself is this coordinator's: PickupStopTermination knows
-        // nothing about commanded operations, so the operation is cancelled here. Everything else -- demand,
+        // handoff -- or, for a forced mechanical recovery, its cargo handed off by hand. The settlement of the
+        // operation itself is this coordinator's: PickupStopTermination knows nothing about commanded
+        // operations, so the operation is cancelled here. Everything else -- demand,
         // lease, vehicle occupancy, journey -- is the same tail the uncommanded endings use, staged into the
         // same unsaved change so ProcessResultAsync commits it with the result in one save. Until
         // control-server#131 this wrote those facts by hand minus the vehicle occupancy, and the pickup
@@ -1070,7 +1079,7 @@ public sealed class OnboardRecoveryCoordinator(
                 runtime,
                 messageType switch
                 {
-                    "FaultCargoRecoveryResult" => "TERMINATED_BY_FAULT_CARGO_HANDOFF",
+                    "FaultCargoRecoveryResult" or "ForcedMechanicalRecoveryResult" => "TERMINATED_BY_FAULT_CARGO_HANDOFF",
                     "LoadCompensationResult" => "CANCELLED_BY_LOAD_COMPENSATION",
                     _ => "CANCELLED_BY_OPERATOR"
                 },

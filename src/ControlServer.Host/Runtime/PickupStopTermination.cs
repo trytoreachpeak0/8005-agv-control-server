@@ -22,7 +22,8 @@ namespace ControlServer.Host.Runtime;
 /// <c>OnboardRecoveryCoordinator.ApplyCurrentResultAsync</c> ends a demand whose slot operation was
 /// commanded -- a cancellation in flight (<c>CANCELLED_BY_OPERATOR</c>), a compensation
 /// (<c>CANCELLED_BY_LOAD_COMPENSATION</c>), a fault cargo handoff (<c>TERMINATED_BY_FAULT_CARGO_HANDOFF</c>)
-/// -- through here as well. Until then it wrote nearly the same facts by hand, minus the vehicle occupancy,
+/// -- through here as well, and since control-server#137 a forced mechanical recovery, whose named handoff
+/// ends the demand under that same reason. Until then it wrote nearly the same facts by hand, minus the vehicle occupancy,
 /// and the pickup order held the vehicle against every later claim. What this still deliberately knows
 /// nothing about is the commanded operation itself: the coordinator cancels it, and settles the recovery
 /// command it answered, in the same unsaved change. A fault cargo handoff can happen at the gate as well as
