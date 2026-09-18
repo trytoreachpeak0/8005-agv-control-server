@@ -5,8 +5,12 @@ G3 `FP-IS-07`：装载失败后由维护人员在车上发起补偿清空。协�
 `ExceptionRecoverySessionRequested` → `ExceptionRecoverySessionOpened` → `RecoveryActionSubmitted` → `RecoveryActionAccepted` →
 `LoadCompensationRequested` → `LoadCompensationCommand` → `LoadCompensationResult`。
 
-装载以 UNKNOWN 结束的办法见 `G3RecoveryCommon.ps1`。门关着、仓是空的：补偿要证的是「全部授权仓位为空」，
-仓本来就空，车载端不必开门就能证。服务端授权补偿只看「装载是 Load 且 RecoveryRequired」，不要物理断点，所以不必重启。
+装载以 UNKNOWN 结束的办法见 `G3RecoveryCommon.ps1`：车载端在等人时断电、空仓门被关上、重启后中断结算报 UNKNOWN
+（control-server#128 起，此前是「空关后等车载端超时」，v2 上不可达）。门关着、仓是空的：补偿要证的是「全部授权仓位
+为空」，仓本来就空，车载端不必开门就能证。服务端授权补偿只看「装载是 Load 且 RecoveryRequired」，不要物理断点，
+所以那一次重启之外不必再重启。
+
+补偿收敛之后另判车辆已释放、同一台车能接下一单（`G3-07-26`，control-server#131 的缺口）。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -27,9 +31,10 @@ if ([string]::IsNullOrEmpty([string]$Context.OnboardJournalPath)) {
 }
 
 $load = Invoke-G3UnknownLoad $Context 'G3-07C'
+$onboard = $Context.Onboard
 $demandId = $load.DemandId
 $attemptId = $load.AttemptId
-$ids = @('G3-07-21', 'G3-07-22', 'G3-07-23', 'G3-07-24', 'G3-07-25')
+$ids = @('G3-07-21', 'G3-07-22', 'G3-07-23', 'G3-07-24', 'G3-07-25', 'G3-07-26')
 
 $offered = Wait-G3ButtonOffered $onboard $journal '补偿清空' 'onboard-compensation-entry' 90
 if (-not $offered) {
@@ -125,4 +130,8 @@ $assertions.Add(
     'Reconciled / CLOSED / Cancelled / Cancelled / 释放 / Completed/CANCELLED_BY_LOAD_COMPENSATION / TO_GATE 0 / RIoT 单 1',
     "$workflowState / $sessionState / $demandStatus / $loadStatus / 释放=$released / $journey / TO_GATE $toGate / RIoT 单 $orders")
 
-$journal.Note('FP-IS-07: a failed load was compensated on authorization against a recovery session, proven empty without unlocking.')
+Add-G3VehicleReleasedForNextDemand $Context 'G3-07-26' `
+    '补偿收敛之后车辆放出来了：这条需求的 TO_PICKUP 单车辆占用已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival，不是 Blocked/VEHICLE_OCCUPANCY_CONFLICT；control-server#131）' `
+    $demandId 'G3-07C'
+
+$journal.Note('FP-IS-07: an UNKNOWN load was compensated on authorization against a recovery session, proven empty without unlocking.')

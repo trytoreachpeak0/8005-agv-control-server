@@ -9,10 +9,14 @@ G3 `FP-IS-07` 的第一条场景，证两条向量：
 - `CV-EXCEPTION-RESUME`：`ExceptionRecoverySessionRequested` → `ExceptionRecoverySessionOpened` → `RecoveryActionSubmitted` →
   `RecoveryActionAccepted` → `SlotOperationResumeCommand` → `OperationResult`。
 
-**为什么恢复之前必须先重启。**服务端授权 `RESUME_AFTER_REPAIR` 要一个已证实的物理断点：会话行上的未结清尝试是这笔装载、
-检查点是 `PREPARED` / `ACTIVE_UNLOCK_SET` / `SAFE_FINISH_REACHED`（`ValidateActionPreconditions`）。这两项只在恢复状态报告里
-报上来；装载超时发生在会话中途，服务端手上的还是装载之前那次握手报的值。重启让车载端从日志里重报一份，恰好也是
-第一条向量要的那一步。
+**两次重启。**装载以 UNKNOWN 结束的办法见 `G3RecoveryCommon.ps1`（control-server#128 起）：车载端在等人时断电、空仓门
+被关上，第一次重启后中断结算报 UNKNOWN，检查点 `SAFE_FINISH_REACHED`。那份结果是在第一次重启之后的会话里第一次发出、
+被确认的；第一条向量要的是「已确认的结果 → 再一次重启 → 新会话的报告列出它 → 同号补发」，所以场景再重启一次。
+车载端只把已确认、仍未结清的结果列进 `pendingResults`（`SendRecoveryStateReportAsync`）。
+
+服务端授权 `RESUME_AFTER_REPAIR` 要一个已证实的物理断点：会话行上的未结清尝试是这笔装载、检查点是 `PREPARED` /
+`ACTIVE_UNLOCK_SET` / `SAFE_FINISH_REACHED`（`ValidateActionPreconditions`）。这两项只在恢复状态报告里报上来，第二次
+重启的报告带着它们。
 
 **恢复之后操作员这次放了货。**车载端按授权重开原仓，场景放货关门，车载端报 `COMPLETED`，服务端用它替换那份 UNKNOWN。
 #>
