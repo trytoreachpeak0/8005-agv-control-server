@@ -107,6 +107,8 @@ $scenarioAssertions = [ordered]@{
         'G3-02-25' = 'allSlotsProvenEmpty'
         'G3-02-26' = 'cancellationReconciledToEmptyFinalState'
         'G3-02-27' = 'finalStateSurvivesLateLoadResult'
+        # control-server#128: the vehicle occupancy the cancellation settles (control-server#131).
+        'G3-02-28' = 'cancellationReleasesVehicleForNextDemand'
     }
     # Batch 5 (control-server#87): the two vectors protocol-v2.0.0 added to FP-IS-02.
     'g3-load-cancellation-before-load' = [ordered]@{
@@ -161,6 +163,7 @@ $scenarioAssertions = [ordered]@{
         'G3-07-23' = 'compensationExecutedOnceWithoutUnlocking'
         'G3-07-24' = 'compensatedSlotStateReported'
         'G3-07-25' = 'compensationReconciledWithoutDuplicateCommit'
+        'G3-07-26' = 'compensationReleasesVehicleForNextDemand'
     }
     'g3-fault-cargo-handoff' = [ordered]@{
         'G3-07-31' = 'faultCargoHandoffSequenceMatchesVector'
@@ -168,6 +171,7 @@ $scenarioAssertions = [ordered]@{
         'G3-07-33' = 'handoffOnlyOnAuthorizedCommand'
         'G3-07-34' = 'handoffOutcomeReported'
         'G3-07-35' = 'handoffTerminatesWithoutDuplicateCommit'
+        'G3-07-36' = 'handoffReleasesVehicleForNextDemand'
     }
     'g3-forced-mechanical-recovery' = [ordered]@{
         'G3-07-41' = 'forcedMechanicalRecoverySequenceMatchesVector'

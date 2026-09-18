@@ -7,7 +7,8 @@ G3 `FP-IS-07`：装载失败后由维护人员在车上发起强制机械恢复�
 
 强制机械恢复是人手撬门：结果不证明仓位电子上为空、也不证明车辆可以恢复作业（两个 proof 字段 schema 钉死为 false）。
 服务端每接受一次就把这台车的强制恢复代数加一，命令与结果都带这个代数，此前签发的一切都被这道栅栏挡在外面。
-装载以 UNKNOWN 结束的办法见 `G3RecoveryCommon.ps1`。车载端「强制机械恢复」按钮是 2026-09-14 补的入口（车载端仓
+装载以 UNKNOWN 结束的办法见 `G3RecoveryCommon.ps1`：车载端在等人时断电、空仓门被关上、重启后中断结算报 UNKNOWN
+（control-server#128 起，此前是「空关后等车载端超时」，v2 上不可达）。车载端「强制机械恢复」按钮是 2026-09-14 补的入口（车载端仓
 `docs/W2G_FP_IS_07_OPERATOR_ENTRIES.md`）。
 #>
 [CmdletBinding()]
@@ -35,6 +36,7 @@ function Get-FleetGeneration {
 }
 
 $load = Invoke-G3UnknownLoad $Context 'G3-07M'
+$onboard = $Context.Onboard
 $demandId = $load.DemandId
 $attemptId = $load.AttemptId
 $ids = @('G3-07-41', 'G3-07-42', 'G3-07-43', 'G3-07-44', 'G3-07-45')

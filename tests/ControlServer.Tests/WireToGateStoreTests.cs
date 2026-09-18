@@ -286,6 +286,60 @@ public sealed class WireToGateStoreTests
         Assert.Equal("DEPARTURE_SAFETY_NOT_READY", decision.ReasonCode);
     }
 
+    /// <summary>
+    /// Pins behaviour that is BY DESIGN, not a defect: do not "fix" this test by exempting the vehicle's own
+    /// journey. A vehicle carrying this server's gate order cannot be shown to stand still -- the vehicle-safety
+    /// projection reads it UNKNOWN (RIOT_NONFINAL_ORDER_PRESENT) or MOVING -- so its onboard reports
+    /// departureSafe=false with VEHICLE_NOT_READY or ACTION_NOT_ALLOWED_IN_STATE, and the session is held at
+    /// RecoveryRequired / DEPARTURE_SAFETY_NOT_READY in the same generation until it reports safe again.
+    /// docs/RELEASE-CANDIDATE.md section 8 names this the expected behaviour of the safety gate, and
+    /// evidence/g3/20260830-issue14-field-closed-loop saw it on the real vehicle on both legs. Unlike the
+    /// slot-operation exemption above, nothing the vehicle may do next depends on this session while it moves,
+    /// and the vehicle-motion reasons are exactly the ones this gate exists to hold. control-server#138 found it
+    /// as a flaky L2 criterion that read the session a moment after departure.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-03")]
+    public async Task ByDesignAVehicleOnItsOwnGateLegHoldsTheSessionNotReadyUntilItStandsStill()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await ReachReadyAsync(fixture);
+        await fixture.AddJourneyAsync("D-138", "AGV-001");
+        JourneyRuntimeRow journey = await fixture.Context.JourneyRuntimes.SingleAsync(
+            row => row.DemandId == "D-138", fixture.CancellationToken);
+        journey.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        await fixture.Context.SaveChangesAsync(fixture.CancellationToken);
+
+        // Given the gate order but not yet moving: RIoT holds a non-final order, so standing still is unknown.
+        await fixture.Store.ApplySafetySnapshotAsync(
+            "AGV-001", 1, 10, false, "order-held-hash", fixture.CancellationToken,
+            ["VEHICLE_NOT_READY"], unknownPresent: true);
+        SessionReadinessDecision orderHeld = await fixture.Store.DecideReadinessAsync(
+            "AGV-001", 1, fixture.CancellationToken);
+        Assert.Equal(SessionReadiness.RecoveryRequired, orderHeld.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", orderHeld.ReasonCode);
+
+        // Moving.
+        await fixture.Store.ApplySafetySnapshotAsync(
+            "AGV-001", 1, 11, false, "moving-hash", fixture.CancellationToken,
+            ["ACTION_NOT_ALLOWED_IN_STATE"], unknownPresent: false);
+        SessionReadinessDecision moving = await fixture.Store.DecideReadinessAsync(
+            "AGV-001", 1, fixture.CancellationToken);
+        Assert.Equal(SessionReadiness.RecoveryRequired, moving.Readiness);
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", moving.ReasonCode);
+
+        // Standing still at the gate: Ready again, in the same session.
+        await fixture.Store.ApplySafetySnapshotAsync(
+            "AGV-001", 1, 12, true, "arrived-hash", fixture.CancellationToken, [], unknownPresent: false);
+        SessionReadinessDecision arrived = await fixture.Store.DecideReadinessAsync(
+            "AGV-001", 1, fixture.CancellationToken);
+        Assert.Equal(SessionReadiness.Ready, arrived.Readiness);
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(
+            row => row.AgvId == "AGV-001", fixture.CancellationToken);
+        Assert.Equal(1, session.SessionGeneration);
+    }
+
     private static async Task ReachReadyAsync(StoreFixture fixture)
     {
         SessionIdentity identity = new(

@@ -9,15 +9,25 @@ G3 `FP-IS-02` 的第二条场景：装载进行中由操作员取消，全部仓
   `HasRecoveryVectorOrLoadOperation`），装载一旦记下结果就没了；
 - 服务端只在需求仍 `Accepted`、装载不是 `RecoveryRequired` 时授权（`AuthorizeLoadCancellationAsync`）。装载失败
   之后再取消会被拒，L1 `FailedCompensationResultIsDurableReplayableAndNeverReleasesDemandOrVehicle` 证的就是这条。
-两道门同时开着的只有「装载命令已下、结果还没出」这一段，也就是操作员站在开着的仓门前的时候。车载端的确认框
-要操作员确认「目标仓门已锁好」，所以操作员先把空仓门带上，再点取消。
+两道门同时开着的只有「装载命令已下、结果还没出」这一段，也就是操作员站在开着的仓门前的时候。
+
+**先按取消、等授权，再关空门（control-server#128 改）。**2026-09-18 之前这里是先把空仓门带上再点取消。onboard-hmi#72
+之后 v2 车载端读到「门关了、货没放」会自己重开，先关门就会被当成又一次空关、门又弹开；onboard-hmi#78 第 5 项之后，
+取消授权到了车载端先中止原执行器（`AbortOperationAsync`），取消执行器接手开着的仓门、不再打脉冲。所以顺序反过来：
+门开着时按取消，服务端授权之后操作员再把空门带上，取消执行器据此证空。与 `real-onboard-load-door-closed-empty-reopens`
+（control-server#86）同一个顺序。
 
 **两仓。**车载端逐仓开锁，第一仓开着时操作员决定不装，第二仓始终没开过。取消要证「全部授权仓位为空」，两仓
 才证得出没开过的那一仓也被算进去了，而且没有为了证空再去开它。
 
-**取消收尾后场景不停。**原装载的执行器还在等第一仓放货，要等满车载端的操作超时（120s）才交出结果，那份结果
-在取消已经收敛之后才到服务端。收敛之后的状态经不经得起这份迟到的结果，正是向量 `finalState`
-（`NO_DUPLICATE_COMMIT` / `NO_UNPROVEN_STATE`）要的东西，所以等它到了、服务端再转几轮，才下终态判据。
+**取消收尾后场景不停。**批次 5 之前原装载的执行器要等满车载端操作超时才交一份迟到的结果；v2 车载端在授权后中止
+了它（onboard-hmi#78），理应什么都不再来。收敛之后的状态经不经得起原装载任何迟到的动静，正是向量 `finalState`
+（`NO_DUPLICATE_COMMIT` / `NO_UNPROVEN_STATE`）要的东西，所以留一段有界的观察窗、服务端再转几轮，才下终态判据。
+
+**车辆放出来了。**最后另判一条（`G3-02-28`）：取消结算后这条需求的 TO_PICKUP 单车辆占用已释放，同一台车能接下一单。
+在途取消原来不释放占用（control-server#131），这条在它合入前是红的。
+
+**一次只开一个仓门**（用户 2026-09-18，program#111）：判据不断言多门同开或批量开锁，只判开过哪个仓、开了几次。
 
 **断言只读服务端的库与模拟器快照。**UI 只驱动。
 #>
@@ -26,6 +36,8 @@ param([Parameter(Mandatory)][object]$Context)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Only for Add-G3VehicleReleasedForNextDemand; this scenario keeps its own readers.
+. (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -201,15 +213,11 @@ if ($waiting.Active.Count -ne 1) {
     throw "The onboard reported WAITING_OPERATOR on $($waiting.Active.Count) slots at once; the executor walks one slot at a time."
 }
 $openedSlot = [int]$waiting.Active[0]
-$journal.Note("Slot $openedSlot is open ($(Get-SlotState $openedSlot)); the operator decides not to load and closes it empty.")
-$null = $simulator.Command('Post', "slots/$openedSlot/close-door", @{})
-$null = Wait-L2Condition -Description "slot $openedSlot is closed, locked and empty" `
-    -Journal $journal -Criterion 'opened-slot-closed-empty' -TimeoutSeconds 30 `
-    -Probe { Get-SlotState $openedSlot } -Until { param($v) $v -eq 'CLOSED/EMPTY/1/0' }
+$journal.Note("Slot $openedSlot is open ($(Get-SlotState $openedSlot)); the operator decides not to load.")
 
-# --- 3. UIA 代替操作员点「取消装货」 ------------------------------------------------------------------
+# --- 3. UIA 代替操作员点「取消装货」，授权之后把空门带上 ---------------------------------------------
 
-$cancellationIds = @('G3-02-22', 'G3-02-23', 'G3-02-24', 'G3-02-25', 'G3-02-26', 'G3-02-27')
+$cancellationIds = @('G3-02-22', 'G3-02-23', 'G3-02-24', 'G3-02-25', 'G3-02-26', 'G3-02-27', 'G3-02-28')
 $offered = Wait-Offered '取消装货' 'onboard-cancellation-entry' 60
 $assertions.Add(
     'G3-02-21',
@@ -240,6 +248,14 @@ if ($request -is [string]) {
 }
 $cancellationId = [string]$request.Payload.cancellationId
 
+# 授权到了再关门：之前关，车载端会把它当成又一次空关、自己重开。
+$null = Wait-L2Condition -Description 'the server answered the cancellation request' `
+    -Journal $journal -Criterion 'cancellation-answered' -TimeoutSeconds 30 `
+    -Probe { @((Get-Inbound 'LoadCancellationStartRequested') | Where-Object { [string]$_.Payload.cancellationId -eq $cancellationId -and $_.Response })[0] } `
+    -Until { param($v) $null -ne $v }
+$journal.Note("The operator shuts the empty slot $openedSlot.")
+$null = $simulator.Command('Post', "slots/$openedSlot/close-door", @{})
+
 $cancellationResult = Wait-L2Condition -Description 'the server received the LoadCancellationResult, or the onboard gave up' `
     -Journal $journal -Criterion 'cancellation-result' -TimeoutSeconds 90 `
     -Probe {
@@ -259,7 +275,7 @@ if ($cancellationResult -is [string]) {
         'G3-02-22',
         '取消经服务端显式授权，范围就是这笔装载的全部授权仓位',
         $false, "LoadCancellationAuthorization AUTHORIZED $(Format-Slots $targetSlots)", $authorizationText)
-    Add-NotReached @('G3-02-23', 'G3-02-24', 'G3-02-25', 'G3-02-26', 'G3-02-27') '取消没有执行（车载端弹出「取消装货失败」）'
+    Add-NotReached @('G3-02-23', 'G3-02-24', 'G3-02-25', 'G3-02-26', 'G3-02-27', 'G3-02-28') '取消没有执行（车载端弹出「取消装货失败」）'
     return
 }
 
@@ -345,10 +361,10 @@ $assertions.Add(
 
 # --- 4. 原装载的迟到结果 -----------------------------------------------------------------------------
 
-# 不用 Wait-L2Condition：车载端若在取消时就收掉了原装载，结果根本不会来，那是更好的行为而不是故障。等满
-# 车载端操作超时再加余量，来了就记下，没来也记下。
-$journal.Note('Waiting for the original load executor to give up (onboard operation timeout, about 120s).')
-$lateDeadline = [DateTimeOffset]::UtcNow.AddSeconds(240)
+# 不用 Wait-L2Condition：v2 车载端在授权后中止了原装载（onboard-hmi#78），结果本就不该来，那是要的行为而不是故障。
+# 观察窗有界，来了就记下，没来也记下；终态判据不论哪种都要成立。
+$journal.Note('Watching for any late result of the original load (the onboard aborted it on authorization; 90s window).')
+$lateDeadline = [DateTimeOffset]::UtcNow.AddSeconds(90)
 $lateResults = @()
 while ([DateTimeOffset]::UtcNow -lt $lateDeadline) {
     $lateResults = @((Get-Inbound 'OperationResult') | Where-Object { [string]$_.Payload.slotOperationAttemptId -eq $attemptId })
@@ -358,7 +374,7 @@ while ([DateTimeOffset]::UtcNow -lt $lateDeadline) {
 }
 $lateText = if ($lateResults.Count -ge 1) {
     "迟到结果 $([string]$lateResults[0].Payload.overallOutcome)→$($lateResults[0].Response)"
-} else { '240s 内没有迟到结果' }
+} else { '90s 内没有迟到结果' }
 $journal.Note("Original load: $lateText.")
 
 # 让旅程运行时在这份结果之后再转几轮，再判「什么都没有被改回去」。
@@ -376,5 +392,9 @@ $assertions.Add(
         $finalPhysical -eq (($targetSlots | Sort-Object | ForEach-Object { "$_=CLOSED/EMPTY/1/0" }) -join ' ')),
     "$expectedSettlement / RecoveryRequired 0 / 完成记录 0 / RIoT 单 1 / $(($targetSlots | Sort-Object | ForEach-Object { "$_=CLOSED/EMPTY/1/0" }) -join ' ')",
     "$(Format-Settlement $final) / RecoveryRequired $recoveryRequired / 完成记录 $completions / RIoT 单 $($orders.Count) / $finalPhysical / $lateText")
+
+Add-G3VehicleReleasedForNextDemand $Context 'G3-02-28' `
+    '取消结算之后车辆放出来了：这条需求的 TO_PICKUP 单车辆占用已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival，不是 Blocked/VEHICLE_OCCUPANCY_CONFLICT；control-server#131）' `
+    $demandId 'G3-02C'
 
 $journal.Note('FP-IS-02: load cancelled mid-operation with explicit authorization, every slot proven empty, final state checked after the late load result.')

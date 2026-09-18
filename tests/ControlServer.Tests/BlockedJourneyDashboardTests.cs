@@ -120,6 +120,83 @@ public sealed class BlockedJourneyDashboardTests
             lines.Classify(TimeSpan.FromSeconds(600), carriesSessionSafety: true, safetyUnknownPresent: false));
     }
 
+    // --- 由自己的在途移动单解释的「未知」（control-server#139）-------------------------------------------------------
+
+    [Fact]
+    public void AnUnknownOnlyTheVehicleSideReportsWhileThisServersOwnMoveOrderIsInFlightIsExplained()
+    {
+        Assert.True(OwnMovementOrderExplanation.Explains(
+            "ONBOARD_SESSION_NOT_READY",
+            "DEPARTURE_SAFETY_NOT_READY",
+            """["ACTION_NOT_ALLOWED_IN_STATE","VEHICLE_NOT_READY"]""",
+            safetyUnknownPresent: true,
+            ownMovementOrderInFlight: true));
+        Assert.True(OwnMovementOrderExplanation.Explains(
+            "ONBOARD_SESSION_NOT_READY",
+            "DEPARTURE_SAFETY_NOT_READY",
+            """["VEHICLE_NOT_READY"]""",
+            safetyUnknownPresent: true,
+            ownMovementOrderInFlight: true));
+    }
+
+    [Theory]
+    // 阻断不是会话未就绪。
+    [InlineData("VEHICLE_WAITING_AT_CHECKPOINT", "DEPARTURE_SAFETY_NOT_READY", """["VEHICLE_NOT_READY"]""", true, true)]
+    // 会话降级的原因不是离站安全。
+    [InlineData("ONBOARD_SESSION_NOT_READY", "PENDING_FACT_RECONCILIATION_REQUIRED", """["VEHICLE_NOT_READY"]""", true, true)]
+    [InlineData("ONBOARD_SESSION_NOT_READY", null, """["VEHICLE_NOT_READY"]""", true, true)]
+    // 安全原因里有仓位侧的码：未知可能来自仓位，不只来自车。
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", """["SLOT_STATE_UNKNOWN","VEHICLE_NOT_READY"]""", true, true)]
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", """["IO_FACT_UNKNOWN","VEHICLE_NOT_READY"]""", true, true)]
+    // 没有车辆侧的码，未知就说不上来自车辆信号。
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", """["ACTION_NOT_ALLOWED_IN_STATE"]""", true, true)]
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", "[]", true, true)]
+    // 原因码没报或读不懂。
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", null, true, true)]
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", "not json", true, true)]
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", """{"code":"VEHICLE_NOT_READY"}""", true, true)]
+    // 没有未知项，就没有要解释的东西；没有会话行（null）不算「没有未知」。
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", """["VEHICLE_NOT_READY"]""", false, true)]
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", """["VEHICLE_NOT_READY"]""", null, true)]
+    // 服务端没有自己的在途移动单。
+    [InlineData("ONBOARD_SESSION_NOT_READY", "DEPARTURE_SAFETY_NOT_READY", """["VEHICLE_NOT_READY"]""", true, false)]
+    public void EveryOtherShapeOfIncompleteEvidenceIsNotExplained(
+        string blockReasonCode,
+        string? sessionReasonCode,
+        string? safetyReasonCodesJson,
+        bool? safetyUnknownPresent,
+        bool ownMovementOrderInFlight)
+    {
+        Assert.False(OwnMovementOrderExplanation.Explains(
+            blockReasonCode, sessionReasonCode, safetyReasonCodesJson, safetyUnknownPresent, ownMovementOrderInFlight));
+    }
+
+    [Theory]
+    [InlineData(0, "Operator")]
+    [InlineData(599, "Operator")]
+    [InlineData(600, "ShiftLeader")]
+    [InlineData(1799, "ShiftLeader")]
+    [InlineData(1800, "MaintenanceAdministrator")]
+    public void AnUnknownExplainedByTheOwnOrderClimbsTheLadderLikeAnyOtherBlock(int seconds, string expected)
+    {
+        Assert.Equal(
+            expected,
+            BlockedJourneyEscalationOptions.Default.Classify(
+                TimeSpan.FromSeconds(seconds),
+                carriesSessionSafety: true,
+                safetyUnknownPresent: true,
+                unknownExplainedByOwnOrder: true).ToString());
+    }
+
+    [Fact]
+    public void AnExplainedUnknownWhoseStartWasNeverRecordedStillGoesToTheTop()
+    {
+        Assert.Equal(
+            BlockedJourneyEscalationLevel.MaintenanceAdministrator,
+            BlockedJourneyEscalationOptions.Default.Classify(
+                null, carriesSessionSafety: true, safetyUnknownPresent: true, unknownExplainedByOwnOrder: true));
+    }
+
     [Fact]
     public void ABlockWhoseStartWasNeverRecordedIsNotShownAsYoung()
     {
@@ -251,6 +328,80 @@ public sealed class BlockedJourneyDashboardTests
     }
 
     [Fact]
+    public async Task AVehicleOnItsOwnMoveOrderIsNotSentToMaintenanceButEveryOtherUnknownStillIs()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        const string VehicleOnly = """["ACTION_NOT_ALLOWED_IN_STATE","VEHICLE_NOT_READY"]""";
+
+        // 去关卡途中，自己的单已在 RIoT 上建成：刚挂两分钟，归操作员。
+        JourneyRuntimeRow toGate = Runtime("D-TO-GATE", "AGV-01");
+        toGate.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        toGate.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-2));
+        // 去取货站途中挂了 12 分钟：照阶梯归班组长。
+        JourneyRuntimeRow toPickup = Runtime("D-TO-PICKUP", "AGV-02");
+        toPickup.Stage = JourneyRuntimeStage.AwaitingPickupArrival;
+        toPickup.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-12));
+        // 还在等离站安全，去关卡的单还没建：没有在途单可以解释。
+        JourneyRuntimeRow departing = Runtime("D-DEPARTING", "AGV-03");
+        departing.Stage = JourneyRuntimeStage.AwaitingDepartureSafety;
+        departing.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-1));
+        // 单还在对账，没确认建成。
+        JourneyRuntimeRow unconfirmed = Runtime("D-UNCONFIRMED", "AGV-04");
+        unconfirmed.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        unconfirmed.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-1));
+        // 单派给的不是这辆车。
+        JourneyRuntimeRow otherVehicle = Runtime("D-OTHER-VEHICLE", "AGV-05");
+        otherVehicle.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        otherVehicle.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-1));
+        // 车挂着故障事实（例如这张单已被 RIoT 报 FAILED）。
+        JourneyRuntimeRow faulted = Runtime("D-FAULTED", "AGV-06");
+        faulted.Stage = JourneyRuntimeStage.AwaitingPickupArrival;
+        faulted.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-1));
+        // 在途单都在，但安全原因里有仓位侧的码。
+        JourneyRuntimeRow slotSide = Runtime("D-SLOT-SIDE", "AGV-07");
+        slotSide.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        slotSide.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-1));
+        database.Context.JourneyRuntimes.AddRange(toGate, toPickup, departing, unconfirmed, otherVehicle, faulted, slotSide);
+
+        database.Context.OrderIntents.AddRange(
+            ConfirmedIntent(toGate, "TO_GATE"),
+            ConfirmedIntent(toPickup, "TO_PICKUP"),
+            GateIntent(unconfirmed),
+            ConfirmedIntent(otherVehicle, "TO_GATE", vehicleKey: "KEY-SOMEONE-ELSE"),
+            ConfirmedIntent(faulted, "TO_PICKUP"),
+            ConfirmedIntent(slotSide, "TO_GATE"));
+        database.Context.VehicleFaultStates.Add(new VehicleFaultStateRow
+        {
+            AgvId = "AGV-06",
+            Level = VehicleFaultLevel.SuspectedBlocked,
+            FaultGeneration = 1,
+            EvidenceCode = "ORDER_FAILED",
+            EnteredAt = Now.AddMinutes(-1)
+        });
+        foreach (string agvId in new[] { "AGV-01", "AGV-02", "AGV-03", "AGV-04", "AGV-05", "AGV-06" })
+        {
+            database.Context.SessionRecoveries.Add(Session(agvId, "DEPARTURE_SAFETY_NOT_READY", VehicleOnly, safetyUnknownPresent: true));
+        }
+        database.Context.SessionRecoveries.Add(Session(
+            "AGV-07", "DEPARTURE_SAFETY_NOT_READY", """["SLOT_STATE_UNKNOWN","VEHICLE_NOT_READY"]""", safetyUnknownPresent: true));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+        Dictionary<string, JsonElement> byDemand = fact.RootElement.GetProperty("journeys").EnumerateArray()
+            .ToDictionary(journey => journey.GetProperty("demandId").GetString()!, StringComparer.Ordinal);
+
+        Assert.Equal("Operator", byDemand["D-TO-GATE"].GetProperty("escalationLevel").GetString());
+        Assert.Equal("OWN_MOVEMENT_ORDER_IN_FLIGHT", byDemand["D-TO-GATE"].GetProperty("unknownExplainedBy").GetString());
+        Assert.Equal("ShiftLeader", byDemand["D-TO-PICKUP"].GetProperty("escalationLevel").GetString());
+        Assert.Equal("OWN_MOVEMENT_ORDER_IN_FLIGHT", byDemand["D-TO-PICKUP"].GetProperty("unknownExplainedBy").GetString());
+        foreach (string demandId in new[] { "D-DEPARTING", "D-UNCONFIRMED", "D-OTHER-VEHICLE", "D-FAULTED", "D-SLOT-SIDE" })
+        {
+            Assert.Equal("MaintenanceAdministrator", byDemand[demandId].GetProperty("escalationLevel").GetString());
+            Assert.Equal(JsonValueKind.Null, byDemand[demandId].GetProperty("unknownExplainedBy").ValueKind);
+        }
+    }
+
+    [Fact]
     public async Task ABlockAlreadyHeldWhenTheColumnWasAddedSaysItsStartIsUnknown()
     {
         await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
@@ -349,6 +500,32 @@ public sealed class BlockedJourneyDashboardTests
     }
 
     [Fact]
+    public async Task TheCardSaysWhyAnUnknownOnTheVehiclesOwnOrderWasNotSentToMaintenance()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow moving = Runtime("D-MOVING", "AGV-01");
+        moving.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        moving.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-3));
+        JourneyRuntimeRow unexplained = Runtime("D-UNEXPLAINED", "AGV-02");
+        unexplained.Stage = JourneyRuntimeStage.AwaitingDepartureSafety;
+        unexplained.SetBlockReason("ONBOARD_SESSION_NOT_READY", Now.AddMinutes(-3));
+        database.Context.JourneyRuntimes.AddRange(moving, unexplained);
+        database.Context.OrderIntents.Add(ConfirmedIntent(moving, "TO_GATE"));
+        database.Context.SessionRecoveries.AddRange(
+            Session("AGV-01", "DEPARTURE_SAFETY_NOT_READY", """["VEHICLE_NOT_READY"]""", safetyUnknownPresent: true),
+            Session("AGV-02", "DEPARTURE_SAFETY_NOT_READY", """["VEHICLE_NOT_READY"]""", safetyUnknownPresent: true));
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+        string html = new BlockedJourneyCard().RenderFact(fact.RootElement);
+
+        AssertRowContains(html, "AGV-01", ["escalation-operator", "操作员", "行驶中（由在途运单解释）", "安全证据有未知项：是"]);
+        AssertRowContains(html, "AGV-02", ["escalation-maintenance-administrator", "维护管理员"]);
+        int row = html.IndexOf("<td>AGV-02</td>", StringComparison.Ordinal);
+        Assert.DoesNotContain("由在途运单解释", html[row..html.IndexOf("</tr>", row, StringComparison.Ordinal)], StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WithNothingBlockedTheCardSaysSo()
     {
         using JsonDocument fact = JsonDocument.Parse(
@@ -427,6 +604,21 @@ public sealed class BlockedJourneyDashboardTests
         Purpose = "TO_GATE",
         TargetStationId = runtime.GateStationId,
         CreatedAt = Now
+    };
+
+    /// <summary>A move order this server created for the journey and RIoT accepted, bound to <paramref name="vehicleKey"/>.</summary>
+    private static OrderIntentRow ConfirmedIntent(JourneyRuntimeRow runtime, string purpose, string? vehicleKey = null) => new()
+    {
+        MovementLegId = purpose == "TO_GATE" ? runtime.GateMovementLegId : runtime.PickupMovementLegId,
+        DemandId = runtime.DemandId,
+        UpperId = purpose == "TO_GATE" ? runtime.GateUpperId : runtime.PickupUpperId,
+        Purpose = purpose,
+        TargetStationId = purpose == "TO_GATE" ? runtime.GateStationId : runtime.PickupStationId,
+        VehicleKey = vehicleKey ?? runtime.VehicleKey,
+        MapId = runtime.MapId,
+        CreatedAt = Now.AddMinutes(-20),
+        Status = "CONFIRMED",
+        OrderId = "ORDER-" + purpose + "-" + runtime.DemandId
     };
 
     private static JourneyRuntimeRow Runtime(string demandId, string agvId) => new()

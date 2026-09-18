@@ -348,6 +348,9 @@ function Get-G3RunnerClaim {
                     'allSlotsProvenEmpty',
                     'cancellationReconciledToEmptyFinalState',
                     'finalStateSurvivesLateLoadResult',
+                    # Not a vector step (control-server#128): the settled cancellation also releases the
+                    # vehicle occupancy and the same vehicle takes the next demand (control-server#131).
+                    'cancellationReleasesVehicleForNextDemand',
                     # CV-LOAD-CANCELLATION-BEFORE-LOAD (protocol-v2.0.0, control-server#87): the four
                     # steps with an empty slot set and an ALL_EMPTY result carrying no slot entries.
                     'onboardOffersLoadCancellationBeforeSublot',
@@ -407,11 +410,16 @@ function Get-G3RunnerClaim {
                     'compensationExecutedOnceWithoutUnlocking',
                     'compensatedSlotStateReported',
                     'compensationReconciledWithoutDuplicateCommit',
+                    # The two *ReleasesVehicleForNextDemand entries are not vector steps (control-server#128):
+                    # the settlement releases the vehicle occupancy and the same vehicle takes the next
+                    # demand (control-server#131).
+                    'compensationReleasesVehicleForNextDemand',
                     'faultCargoHandoffSequenceMatchesVector',
                     'faultCargoHandoffRecorded',
                     'handoffOnlyOnAuthorizedCommand',
                     'handoffOutcomeReported',
                     'handoffTerminatesWithoutDuplicateCommit',
+                    'handoffReleasesVehicleForNextDemand',
                     'forcedMechanicalRecoverySequenceMatchesVector',
                     'forcedRecoveryFencedByGeneration',
                     'forcedRecoveryOutcomeReportedWithoutProof',

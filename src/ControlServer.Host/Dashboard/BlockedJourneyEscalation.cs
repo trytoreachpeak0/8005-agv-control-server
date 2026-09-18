@@ -85,17 +85,27 @@ internal sealed record BlockedJourneyEscalationOptions(TimeSpan ShiftLeaderAfter
     /// <param name="blockedFor">挂了多久；开始时间没有记录时为 null。</param>
     /// <param name="carriesSessionSafety">这一行是否带会话的安全字段（只有 <c>ONBOARD_SESSION_NOT_READY</c> 带）。</param>
     /// <param name="safetyUnknownPresent">会话的 <c>SafetyUnknownPresent</c>；没有会话行时为 null。</param>
+    /// <param name="unknownExplainedByOwnOrder">
+    /// 这份「未知」是否完全由服务端自己为这段旅程下的在途移动单解释（<see cref="OwnMovementOrderExplanation"/>，control-server#139）。
+    /// </param>
     /// <remarks>
+    /// <para>
     /// 两条直接进最高档、不等时长的情形，都是「看不出只是操作员走开了」：安全证据不全（<c>SafetyUnknownPresent</c> 不为
     /// <c>false</c>，包括根本没有会话行），以及挂上的时刻没有记录（这一列加上之前就挂着的阻断）——说不出挂了多久，就不能说它
     /// 还不到 10 分钟。边界取「满」：正好 10 分钟已归班组长。
+    /// </para>
+    /// <para>
+    /// 第一条有一个例外：车带着服务端自己的在途单时，RIoT 读数必然是「运动状态未知」，车载端据此报未知，会话降级——这是离站安全
+    /// 闸门的正常表现，车在排队、避让或正常行驶，不是维护事件。这种「未知」按普通时长阶梯走；第二条（开始时间没有记录）不受影响。
+    /// </para>
     /// </remarks>
     internal BlockedJourneyEscalationLevel Classify(
         TimeSpan? blockedFor,
         bool carriesSessionSafety,
-        bool? safetyUnknownPresent)
+        bool? safetyUnknownPresent,
+        bool unknownExplainedByOwnOrder = false)
     {
-        if (carriesSessionSafety && safetyUnknownPresent != false)
+        if (carriesSessionSafety && safetyUnknownPresent != false && !unknownExplainedByOwnOrder)
         {
             return BlockedJourneyEscalationLevel.MaintenanceAdministrator;
         }

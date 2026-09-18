@@ -27,6 +27,7 @@ param([Parameter(Mandatory)][object]$Context)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2SessionContinuity.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -107,7 +108,8 @@ function Get-Progress([string]$attemptId) {
 }
 
 function Get-Session {
-    $rows = Invoke-L2Query -Connection $connection -Sql 'SELECT SessionGeneration, SafetyRevision, DepartureSafe, Readiness FROM SessionRecoveries'
+    $rows = Invoke-L2Query -Connection $connection -Sql (
+        'SELECT SessionGeneration, SafetyRevision, DepartureSafe, Readiness, ReasonCode, SafetyReasonCodesJson FROM SessionRecoveries')
     return $rows[0]
 }
 
@@ -268,13 +270,34 @@ $assertions.Add(
     'SAFE / 意图 1 / 关卡单 1',
     "$(if ($reissuedResult) { 'SAFE' } else { '(no SAFE for the reissued check)' }) / 意图 $($gateIntents.Count) / 关卡单 $($gateOrders.Count)")
 
+# G3-03-06 is read after the vehicle departed, and departing is what takes this session out of Ready by design:
+# once the gate order exists the vehicle-safety projection says UNKNOWN (RIOT_NONFINAL_ORDER_PRESENT) or MOVING,
+# the onboard reports VEHICLE_NOT_READY / ACTION_NOT_ALLOWED_IN_STATE, and the server holds the session at
+# RecoveryRequired / DEPARTURE_SAFETY_NOT_READY until the vehicle stands still (docs/RELEASE-CANDIDATE.md
+# section 8). The onboard polls that projection about once a second, so a bare "is it Ready" here raced it and
+# went red in control-server#128's journey self-check (control-server#138). Test-L2SessionKeptThroughDeparture
+# still asks what the rejection could have broken -- the generation, and a usable session after the rejection --
+# and accepts a non-Ready reading only when the departure explains all of it. Session first, then the safety
+# changes and RIoT, so the revision the session holds is among the changes read.
 $sessionAfter = Get-Session
+$safetyChanges = @((Get-Inbound 'SafetyStateChanged') | ForEach-Object {
+    [pscustomobject]@{ At = $_.At; Version = [long]$_.Payload.safetyStateVersion; DepartureSafe = [bool]$_.Payload.safety.departureSafe }
+})
+$gateOrderAfter = @($riot.Snapshot().body.orders | Where-Object { [string]$_.upperId -like '*GATE*' })[0]
+$continuity = Test-L2SessionKeptThroughDeparture -GenerationBefore ([long]$sessionBefore.SessionGeneration) -Session $sessionAfter `
+    -ProblemAt $(if ($problems.Count -ge 1) { $problems[0].At } else { $null }) -GateIntentCreatedAt $gateCreatedAt `
+    -SafetyChanges $safetyChanges -GateOrderState $(if ($null -ne $gateOrderAfter) { [int]$gateOrderAfter.orderState } else { $null })
+$continuityPath = switch ($continuity.Path) {
+    'Ready' { 'Ready' }
+    'DepartureExplainedDemotion' { "出发解释的降级（$([string]$sessionAfter.ReasonCode) $([string]$sessionAfter.SafetyReasonCodesJson)，安全版本 $($sessionAfter.SafetyRevision)，关卡单状态 $($gateOrderAfter.orderState)）" }
+    default { "FAIL：$($continuity.Reason)（$([string]$sessionAfter.Readiness) / $([string]$sessionAfter.ReasonCode) $([string]$sessionAfter.SafetyReasonCodesJson)）" }
+}
 $assertions.Add(
     'G3-03-06',
-    '拒收过期检查不断会话：会话代次在整个过程中不变，结束时仍 Ready',
-    ([long]$sessionAfter.SessionGeneration -eq [long]$sessionBefore.SessionGeneration -and [string]$sessionAfter.Readiness -eq 'Ready'),
-    "代次 $($sessionBefore.SessionGeneration) / Ready",
-    "代次 $($sessionAfter.SessionGeneration) / $([string]$sessionAfter.Readiness)")
+    '拒收过期检查不断会话：会话代次在整个过程中不变；拒收之后车凭安全状态出发；结束时 Ready，或者未就绪完全由这次出发解释（DEPARTURE_SAFETY_NOT_READY、只含车辆运动原因、那版安全状态晚于建单、关卡单未结束，control-server#138）',
+    $continuity.Passed,
+    "代次 $($sessionBefore.SessionGeneration) / Ready 或出发解释的降级",
+    "代次 $($sessionAfter.SessionGeneration) / $continuityPath")
 
 $loads = Invoke-L2Query -Connection $connection -Sql "SELECT Status FROM StationOperations WHERE DemandId = '$demandId'"
 $assertions.Add(
