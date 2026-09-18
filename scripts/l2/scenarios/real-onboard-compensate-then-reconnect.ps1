@@ -41,8 +41,15 @@ $laterIds = @('L2-CR-02', 'L2-CR-03', 'L2-CR-04', 'L2-CR-05', 'L2-CR-06', 'L2-CR
 
 # 补偿会话留下的出站报文：恢复会话快照与补偿命令，按创建先后。
 function Get-RecoveryOutbox {
-    return , @(@(Get-L2RealOutbound $connection 'ExceptionRecoverySessionSnapshot') + @(Get-L2RealOutbound $connection 'LoadCompensationCommand') |
-            Sort-Object At)
+    # Assigned before they are joined: Get-L2RealOutbound hands its rows back as one array, and @() around the call
+    # keeps that array as a single element -- compensate-then-reconnect-002 counted four snapshots and a command as
+    # "2 rows" that way (README "不要把返回查询结果的函数直接送进管道").
+    $snapshots = Get-L2RealOutbound $connection 'ExceptionRecoverySessionSnapshot'
+    $commands = Get-L2RealOutbound $connection 'LoadCompensationCommand'
+    $all = [System.Collections.Generic.List[object]]::new()
+    foreach ($row in $snapshots) { $all.Add($row) }
+    foreach ($row in $commands) { $all.Add($row) }
+    return , @($all | Sort-Object At)
 }
 
 # Only the recovery session snapshot carries a state; the compensation command has none, and StrictMode throws on

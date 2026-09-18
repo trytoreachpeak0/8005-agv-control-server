@@ -75,7 +75,9 @@ $journal.Note("Slot $slot now reads $closed.")
 
 # --- 3. 重启：车载端从自己的 journal 恢复，按实时 IO 结算 --------------------------------------------------------
 
-$reportsBefore = @(Get-L2RealInbound $connection 'RecoveryStateReport').Count
+# Assigned first: @() around the call would keep the returned array as one element and always count 1.
+$reportsBeforeRows = Get-L2RealInbound $connection 'RecoveryStateReport'
+$reportsBefore = $reportsBeforeRows.Count
 $null = & $Context.RestartOnboard
 
 $report = Wait-L2Condition -Description 'the restarted onboard sent its RecoveryStateReport' `
