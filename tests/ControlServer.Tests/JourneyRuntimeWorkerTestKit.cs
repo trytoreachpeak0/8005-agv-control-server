@@ -644,6 +644,60 @@ internal static class JourneyRuntimeWorkerTestKit
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// Records the SafetyStateSnapshot Onboard sends mid-session when the server asks for readings
+        /// (control-server#142): the next safetyStateVersion, the live summary, and every slot as the IO
+        /// reads it now -- here all of them occupied and unlocked, the way a load in progress reads.
+        /// </summary>
+        /// <param name="receivedBeforeBaseline">
+        /// Stamps the answer a second before the baseline by the server's receive clock, as a clock stepped back
+        /// between the two would. Which snapshot is the baseline is a matter of safetyStateVersion, not of when the
+        /// server happened to write it down.
+        /// </param>
+        public async Task AddMidSessionSafetySnapshotAsync(long safetyStateVersion, bool receivedBeforeBaseline = false)
+        {
+            // By default the baseline arrived a moment earlier, so the two rows differ in receive time as well as
+            // version. The later one is received now, not after now: a receive time in the future does not count
+            // as liveness.
+            ProtocolInboxRow[] baseline = await Context.ProtocolInbox
+                .Where(row => row.MessageType == "SafetyStateSnapshot")
+                .ToArrayAsync(TestContext.Current.CancellationToken);
+            foreach (ProtocolInboxRow row in baseline)
+            {
+                row.ReceivedAt = receivedBeforeBaseline ? Now : Now.AddSeconds(-1);
+            }
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+            await AddRawInboxAsync("SafetyStateSnapshot", new
+            {
+                safetyStateVersion,
+                observedAt = Clock.GetUtcNow(),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                },
+                slotStates = Enumerable.Range(1, 8).Select(slot => new
+                {
+                    slotNo = slot,
+                    operability = "OPERABLE",
+                    administrativeAvailability = "ENABLED",
+                    physicalState = "OCCUPIED",
+                    lockState = "UNLOCKED",
+                    unlockOutputState = "RESET",
+                    reasonCodes = Array.Empty<string>()
+                })
+            }, 1, receivedBeforeBaseline ? Now.AddSeconds(-1) : Now);
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.SafetyRevision = safetyStateVersion;
+            session.DepartureSafe = true;
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
         public async Task SetOnboardUnknownAsync()
         {
             ProtocolInboxRow row = await Context.ProtocolInbox.SingleAsync(

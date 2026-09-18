@@ -59,11 +59,12 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
     /// after the entry the server's job and the runtime began refusing entries it cannot establish
     /// a basket count for (<c>8005-agv-control-server#82</c>). Its line is gone from this set, and
     /// the message is named in <c>src/</c> like any other.
-    /// <c>CapabilitySnapshotRequested</c> and <c>SafetyStateSnapshotRequested</c>:
-    /// the server never asks for a snapshot again; it refuses readiness instead, via
-    /// <c>WireToGateStore</c> raising <c>CAPABILITY_SNAPSHOT_REQUIRED</c> and
-    /// <c>SAFETY_SNAPSHOT_REQUIRED</c>, which <c>ProtocolErrorCodes.ToSessionReadinessReasonCode</c>
-    /// puts on the wire as <c>CAPABILITY_VERSION_GAP</c> and <c>SAFETY_STATE_VERSION_GAP</c>.
+    /// <c>CapabilitySnapshotRequested</c>: the server never asks for a capability snapshot again; it
+    /// refuses readiness instead, via <c>WireToGateStore</c> raising <c>CAPABILITY_SNAPSHOT_REQUIRED</c>,
+    /// which <c>ProtocolErrorCodes.ToSessionReadinessReasonCode</c> puts on the wire as
+    /// <c>CAPABILITY_VERSION_GAP</c>. <c>SafetyStateSnapshotRequested</c> was pinned the same way until
+    /// control-server#142, which asks for one when a slot reports its expected action overdue, so the
+    /// dashboard can show that slot's readings (REQ-0358).
     /// </para>
     /// <para>
     /// <b>Pinning is not waiving.</b> The comparison is exact in both directions: implementing a
@@ -81,8 +82,6 @@ public sealed class ProtocolMessageSurfaceArchitectureTests
             ["DemandSelectionResult"] = "FP-IS-09, batch 11",
             ["ManualStationClearanceConfirmationRequested"] = "FP-IS-13, batch 9",
             ["ManualStationClearanceConfirmationResult"] = "FP-IS-13, batch 9",
-            ["SafetyStateSnapshotRequested"] =
-                "predates v2; the server refuses readiness with SAFETY_STATE_VERSION_GAP instead of asking again",
             ["UnableToChargeFieldConfirmationRequested"] = "FP-IS-13, batch 9",
             ["UnableToChargeFieldConfirmationResult"] = "FP-IS-13, batch 9"
         };

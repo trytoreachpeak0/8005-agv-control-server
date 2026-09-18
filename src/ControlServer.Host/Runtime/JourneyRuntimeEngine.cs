@@ -1763,8 +1763,12 @@ public sealed class JourneyRuntimeEngine(
         ProtocolInboxRow? capability = await LatestInboxForSessionAsync(
             "CapabilitySnapshot", agvId, session.SessionGeneration, cancellationToken)
             .ConfigureAwait(false);
-        ProtocolInboxRow? safetyRow = await LatestInboxForSessionAsync(
-            "SafetyStateSnapshot", agvId, session.SessionGeneration, cancellationToken)
+        // The session's baseline SafetyStateSnapshot, not its latest: slot availability is the session baseline
+        // (see below), and since control-server#142 a session can carry later snapshots -- the vehicle's answer
+        // when the dashboard asks for an overdue slot's readings, which reads a slot mid-operation as occupied
+        // or unlocked. Their safety summary still counts, through LatestSafetySummaryForSessionAsync.
+        ProtocolInboxRow? safetyRow = await BaselineSafetySnapshotForSessionAsync(
+            agvId, session.SessionGeneration, cancellationToken)
             .ConfigureAwait(false);
         // The snapshot is sent once per session; every later change arrives as SafetyStateChanged
         // (ADR-cross-0033), which carries the same safety summary and no slotStates. Reading the
@@ -1873,6 +1877,42 @@ public sealed class JourneyRuntimeEngine(
             return RequiredString(root, "agvId") == agvId &&
                    root.GetProperty("sessionGeneration").GetInt64() == generation;
         });
+    }
+
+    /// <summary>
+    /// The session's baseline SafetyStateSnapshot: the one with this generation's lowest
+    /// <c>safetyStateVersion</c>, which is the handshake's. Ordered by version rather than receive time
+    /// for the reason LatestSafetySummaryForSessionAsync is: Onboard allocates the version under one lock,
+    /// so it orders the vehicle's safety facts, while the server's receive clock can be stepped back
+    /// between the handshake snapshot and a later answer to SafetyStateSnapshotRequested (control-server#142).
+    /// </summary>
+    private async Task<ProtocolInboxRow?> BaselineSafetySnapshotForSessionAsync(
+        string agvId,
+        long generation,
+        CancellationToken cancellationToken)
+    {
+        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "SafetyStateSnapshot")
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        ProtocolInboxRow? baseline = null;
+        long baselineVersion = long.MaxValue;
+        foreach (ProtocolInboxRow row in rows)
+        {
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+            JsonElement root = document.RootElement;
+            if (RequiredString(root, "agvId") != agvId ||
+                root.GetProperty("sessionGeneration").GetInt64() != generation)
+            {
+                continue;
+            }
+            long version = root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64();
+            if (version < baselineVersion)
+            {
+                baseline = row;
+                baselineVersion = version;
+            }
+        }
+        return baseline;
     }
 
     /// <summary>

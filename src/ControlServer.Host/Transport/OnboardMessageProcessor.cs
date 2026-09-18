@@ -113,6 +113,8 @@ public sealed partial class OnboardMessageProcessor(
             using JsonDocument accepted = JsonDocument.Parse(response);
             state.AgvId = agvId;
             state.SessionGeneration = accepted.RootElement.GetProperty("sessionGeneration").GetInt64();
+            state.HandshakeCompleted = false;
+            state.SafetySnapshotRequestDue = false;
             return response;
         }
 
@@ -169,7 +171,51 @@ public sealed partial class OnboardMessageProcessor(
                 state.SessionGeneration!.Value,
                 cancellationToken).ConfigureAwait(false);
         }
-        return capturedResponse;
+        return AppendSafetySnapshotRequest(capturedResponse, state);
+    }
+
+    /// <summary>
+    /// Asks the vehicle for a fresh SafetyStateSnapshot when this message made one due (REQ-0358,
+    /// control-server#142): an expected-action-overdue alarm newly appeared, or a safety change named a
+    /// slot that is overdue. The dashboard shows that slot's lock, light curtain and unlock output, and
+    /// only a snapshot carries them -- SafetyStateChanged names the slots that changed, not their state.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Never inside the handshake. There the vehicle sends capability, safety, alarms and its recovery
+    /// report one at a time and reads one answer after each, so a request slipped in between would be read
+    /// as the next answer and break the handshake; and the safety snapshot it just sent is fresh anyway.
+    /// The request is appended after this message's own answer, outside the first-response capture, so a
+    /// resent message never asks twice.
+    /// </para>
+    /// <para>
+    /// <c>VERSION_GAP</c> with no requested version: the slot states this server holds are those of the
+    /// session's first snapshot, behind the session's current safetyStateVersion, which is the gap the
+    /// protocol names. The vehicle answers with the next safetyStateVersion (hmi#109).
+    /// </para>
+    /// </remarks>
+    private string AppendSafetySnapshotRequest(string response, OnboardConnectionState state)
+    {
+        if (!state.SafetySnapshotRequestDue)
+        {
+            return response;
+        }
+        state.SafetySnapshotRequestDue = false;
+        if (!state.HandshakeCompleted)
+        {
+            return response;
+        }
+        string request = SerializeEnvelope(
+            "SafetyStateSnapshotRequested",
+            correlationId: null,
+            state.AgvId!,
+            state.SessionGeneration,
+            new
+            {
+                requestedSafetyStateVersion = (long?)null,
+                reason = "VERSION_GAP"
+            });
+        return string.IsNullOrWhiteSpace(response) ? request : $"{response}\n{request}";
     }
 
     public async Task FlushDeferredOutboundAsync(
@@ -257,11 +303,20 @@ public sealed partial class OnboardMessageProcessor(
             case "OnboardAlarmSnapshot":
                 {
                     long revision = OnboardAlarmSnapshotWire.Revision(payload);
+                    HashSet<string> overdueBefore = OverdueIdentities(
+                        await alarmStore.ReadExpectedActionOverdueAsync(agvId, cancellationToken).ConfigureAwait(false));
                     await alarmStore.RecordSnapshotAsync(
                         OnboardAlarmSnapshotWire.Read(agvId, payload),
                         generation,
                         timeProvider.GetUtcNow(),
                         cancellationToken).ConfigureAwait(false);
+                    // A snapshot that was not adopted leaves the stored one as it was, so nothing is new.
+                    HashSet<string> overdueAfter = OverdueIdentities(
+                        await alarmStore.ReadExpectedActionOverdueAsync(agvId, cancellationToken).ConfigureAwait(false));
+                    if (!overdueAfter.IsSubsetOf(overdueBefore))
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                    }
                     return SnapshotAck(messageId, agvId, generation, "ONBOARD_ALARM", revision, contentHash);
                 }
             case "SafetyStateSnapshot":
@@ -269,11 +324,34 @@ public sealed partial class OnboardMessageProcessor(
                     long revision = payload.GetProperty("safetyStateVersion").GetInt64();
                     JsonElement safety = payload.GetProperty("safety");
                     bool departureSafe = safety.GetProperty("departureSafe").GetBoolean();
+                    // The handshake's snapshot is the session's safety baseline. One after it is the vehicle
+                    // answering SafetyStateSnapshotRequested (control-server#142) at the next safetyStateVersion:
+                    // a safety change like SafetyStateChanged, carried by the one message that also holds slot
+                    // states. It takes the same path -- the revision rules are not relaxed, a revision with
+                    // different content or a revision going backwards is still a content conflict -- and, like
+                    // SafetyStateChanged, has readiness decided again rather than left at HANDSHAKE_INCOMPLETE,
+                    // which ApplySafetySnapshotAsync writes and only the handshake's recovery report clears.
+                    //
+                    // Mid-session also needs this connection's handshake to be done -- the same test that decides
+                    // whether the server may send a request. Inside the handshake the vehicle reads one answer per
+                    // message it sends, so a SessionReadiness line added here would be read as the next answer, and a
+                    // baseline already on file does not by itself mean the handshake is over.
+                    bool midSession = state.HandshakeCompleted &&
+                                      await store.HasSafetyBaselineAsync(agvId, generation, cancellationToken)
+                                          .ConfigureAwait(false);
                     await store.ApplySafetySnapshotAsync(
                         agvId, generation, revision, departureSafe, contentHash, cancellationToken,
                         SafetyReasonCodes(safety), SafetyUnknownPresent(safety)).ConfigureAwait(false);
                     state.SafetyRevision = revision;
-                    return SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
+                    string snapshotAck = SnapshotAck(messageId, agvId, generation, "SAFETY_STATE", revision, contentHash);
+                    if (!midSession)
+                    {
+                        return snapshotAck;
+                    }
+                    SessionReadinessDecision snapshotDecision = await store.DecideReadinessAsync(
+                        agvId, generation, cancellationToken).ConfigureAwait(false);
+                    state.Readiness = snapshotDecision.Readiness;
+                    return $"{snapshotAck}\n{SerializeReadiness(agvId, generation, state, snapshotDecision)}";
                 }
             case "RecoveryStateReport":
                 {
@@ -304,6 +382,9 @@ public sealed partial class OnboardMessageProcessor(
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
                     state.Readiness = decision.Readiness;
+                    // The recovery report is the last thing the vehicle sends in its handshake; from its answer
+                    // on, the vehicle reads the connection in its receive loop and may be asked for things.
+                    state.HandshakeCompleted = true;
                     string ack = SerializeEnvelope(
                         "DurableAck", messageId, agvId, generation,
                         new
@@ -519,6 +600,10 @@ public sealed partial class OnboardMessageProcessor(
                     SessionReadinessDecision decision = await store.DecideReadinessAsync(
                         agvId, generation, cancellationToken).ConfigureAwait(false);
                     state.Readiness = decision.Readiness;
+                    if (await AffectsAnOverdueSlotAsync(agvId, payload, cancellationToken).ConfigureAwait(false))
+                    {
+                        state.SafetySnapshotRequestDue = true;
+                    }
                     string ack = DurableAck(messageType, messageId, agvId, generation, contentHash);
                     string readiness = SerializeReadiness(agvId, generation, state, decision);
                     return $"{ack}\n{readiness}";
@@ -811,6 +896,35 @@ public sealed partial class OnboardMessageProcessor(
             payload);
 
     /// <summary>
+    /// What identifies one overdue episode across snapshots: the alarm's own id, which the vehicle keeps for
+    /// the life of that episode (hmi#109), else the slot and the moment it went overdue.
+    /// </summary>
+    private static HashSet<string> OverdueIdentities(IReadOnlyList<OnboardAlarmEntry> overdue) =>
+        new(overdue.Select(alarm => alarm.AlarmId
+                                    ?? $"{alarm.PhysicalSlotNumber}@{alarm.RaisedAt.ToUnixTimeMilliseconds()}"),
+            StringComparer.Ordinal);
+
+    private async Task<bool> AffectsAnOverdueSlotAsync(
+        string agvId, JsonElement payload, CancellationToken cancellationToken)
+    {
+        if (!payload.TryGetProperty("affectedSlots", out JsonElement affected) ||
+            affected.ValueKind != JsonValueKind.Array ||
+            affected.GetArrayLength() == 0)
+        {
+            return false;
+        }
+        IReadOnlyList<OnboardAlarmEntry> overdue =
+            await alarmStore.ReadExpectedActionOverdueAsync(agvId, cancellationToken).ConfigureAwait(false);
+        if (overdue.Count == 0)
+        {
+            return false;
+        }
+        HashSet<int> overdueSlots = [.. overdue.Select(alarm => alarm.PhysicalSlotNumber!.Value)];
+        return affected.EnumerateArray()
+            .Any(slot => slot.ValueKind == JsonValueKind.Number && overdueSlots.Contains(slot.GetInt32()));
+    }
+
+    /// <summary>
     /// Why the peer says the vehicle is unsafe to depart. Both this and unknownPresent used to be
     /// dropped, which left the session unable to tell unsafety caused by a slot operation this
     /// server itself commanded from unsafety that must fail the session closed.
@@ -994,6 +1108,16 @@ public sealed class OnboardConnectionState
     public long? CapabilityRevision { get; set; }
     public long? SafetyRevision { get; set; }
     public SessionReadiness Readiness { get; set; } = SessionReadiness.RecoveryRequired;
+
+    /// <summary>
+    /// The vehicle has sent its recovery report on this session, so it has left the handshake's
+    /// one-question-one-answer exchange and reads the connection in its receive loop.
+    /// </summary>
+    public bool HandshakeCompleted { get; set; }
+
+    /// <summary>The message being processed made a SafetyStateSnapshotRequested due (control-server#142).</summary>
+    public bool SafetySnapshotRequestDue { get; set; }
+
     public bool DeferOutboundUntilResponseWritten { get; set; }
     public string? DeferredRecoveryLine { get; set; }
 }

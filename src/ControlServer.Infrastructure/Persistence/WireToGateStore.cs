@@ -127,6 +127,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Whether the current session already holds its safety baseline -- the SafetyStateSnapshot of its
+    /// handshake. A later one is the vehicle answering SafetyStateSnapshotRequested mid-session
+    /// (control-server#142), which is a safety change like any other and must not drop the session back
+    /// into the handshake.
+    /// </summary>
+    public async Task<bool> HasSafetyBaselineAsync(
+        string agvId, long sessionGeneration, CancellationToken cancellationToken)
+    {
+        SessionRecoveryRow row = await GetCurrentSessionAsync(agvId, sessionGeneration, cancellationToken)
+            .ConfigureAwait(false);
+        return row.SafetyRevision is not null;
+    }
+
     public async Task ApplySafetySnapshotAsync(
         string agvId, long sessionGeneration, long revision, bool departureSafe, string contentHash,
         CancellationToken cancellationToken,
