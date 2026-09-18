@@ -329,6 +329,31 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-01")]
+    [Trait("IntegrationSlice", "FP-IS-15")]
+    public async Task AMidSessionReadingSnapshotDoesNotChangeWhichSlotsDispatchCountsAsAvailable()
+    {
+        // control-server#142: the dashboard asks Onboard for a SafetyStateSnapshot mid-session to show an overdue
+        // slot's readings. That snapshot reads slots as the IO sees them now -- occupied, unlocked -- and slot
+        // availability is a session baseline the reservation ledger is built against, not live IO. Taking it
+        // from the newest snapshot would strand every slot a journey touched for the rest of the session.
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.AddMidSessionSafetySnapshotAsync(8);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "ACCEPTED",
+            (await fixture.BacklogAsync("10000000-0000-4000-8000-000000000001")).ReasonCode);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+    }
+
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task ArrivalIsNotTrustedWhileTheLatestSafetyStateSaysTheVehicleIsMoving()
     {
         // The same staleness in the other direction, and the dangerous one: the session-start

@@ -644,6 +644,44 @@ internal static class JourneyRuntimeWorkerTestKit
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
+        /// <summary>
+        /// Records the SafetyStateSnapshot Onboard sends mid-session when the server asks for readings
+        /// (control-server#142): the next safetyStateVersion, the live summary, and every slot as the IO
+        /// reads it now -- here all of them occupied and unlocked, the way a load in progress reads.
+        /// </summary>
+        public async Task AddMidSessionSafetySnapshotAsync(long safetyStateVersion)
+        {
+            await AddRawInboxAsync("SafetyStateSnapshot", new
+            {
+                safetyStateVersion,
+                observedAt = Clock.GetUtcNow(),
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                },
+                slotStates = Enumerable.Range(1, 8).Select(slot => new
+                {
+                    slotNo = slot,
+                    operability = "OPERABLE",
+                    administrativeAvailability = "ENABLED",
+                    physicalState = "OCCUPIED",
+                    lockState = "UNLOCKED",
+                    unlockOutputState = "RESET",
+                    reasonCodes = Array.Empty<string>()
+                })
+            }, 1, Now.AddSeconds(1));
+            SessionRecoveryRow session = await Context.SessionRecoveries.SingleAsync(
+                TestContext.Current.CancellationToken);
+            session.SafetyRevision = safetyStateVersion;
+            session.DepartureSafe = true;
+            await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
         public async Task SetOnboardUnknownAsync()
         {
             ProtocolInboxRow row = await Context.ProtocolInbox.SingleAsync(
