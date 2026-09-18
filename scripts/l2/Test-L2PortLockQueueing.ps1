@@ -298,7 +298,8 @@ try {
     $slotZeroLiteral = [ordered]@{
         ControlPort = 48405; HealthPort = 48407; FakeRiotPort = 48408; FakeMesIngestPort = 48409
         SimulatorHttpPort = 48411; SimulatorModbusPort = 48412; ClockSkewProxyPort = 48413
-        DashboardPort = 48414; FakeOnboardPort = 48420
+        DashboardPort = 48414; ProtocolFaultProxyPort = 48415; ProtocolFaultProxyListenPort = 48416
+        FakeOnboardPort = 48420
     }
     $slotZero = Get-L2PortBlock -Slot 0
     $slotZeroDiff = @($slotZeroLiteral.Keys | Where-Object { $slotZero[$_] -ne $slotZeroLiteral[$_] }) +

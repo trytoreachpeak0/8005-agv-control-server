@@ -490,11 +490,11 @@ $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外�
 
 | 槽位 | 端口 | 锁 |
 | --- | --- | --- |
-| 0 | 48405–48414，假车载端 48420 起 | `Global\W2G-L2PortBlock` |
-| 1 | 47405–47414，假车载端 47420 起 | `Global\W2G-L2PortBlock-slot1` |
-| 2 | 46405–46414，假车载端 46420 起 | `Global\W2G-L2PortBlock-slot2` |
-| 3 | 45405–45414，假车载端 45420 起 | `Global\W2G-L2PortBlock-slot3` |
-| 4 | 44405–44414，假车载端 44420 起 | `Global\W2G-L2PortBlock-slot4` |
+| 0 | 48405–48416，假车载端 48420 起 | `Global\W2G-L2PortBlock` |
+| 1 | 47405–47416，假车载端 47420 起 | `Global\W2G-L2PortBlock-slot1` |
+| 2 | 46405–46416，假车载端 46420 起 | `Global\W2G-L2PortBlock-slot2` |
+| 3 | 45405–45416，假车载端 45420 起 | `Global\W2G-L2PortBlock-slot3` |
+| 4 | 44405–44416，假车载端 44420 起 | `Global\W2G-L2PortBlock-slot4` |
 
 **槽位 0 的端口与锁名和加槽位之前逐字相同**，真装置场景、`run-journey-g3.ps1` 和比槽位更早的检出都不知道槽位的
 存在，照旧拿槽位 0，彼此照旧排队。CI 的分路只用槽位 1～4，所以不会和它们抢。
