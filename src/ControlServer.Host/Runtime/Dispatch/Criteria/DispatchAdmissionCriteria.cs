@@ -58,6 +58,9 @@ public static class DispatchAdmissionCriteria
             new StationResolutionCriterion(stationResolver, options),
             new DispatchZoneVehicleCriterion(),
             new PackageCapacityCriterion(packageCapacityStore),
+            // Required, like the fault block: it is the only thing between a shared-map edit and
+            // new work taken on under a policy nobody imported.
+            new AdmissionPolicyDriftCriterion(),
             new VehicleDynamicFactsCriterion(options),
             new StationTaskTypeAdmissionCriterion(store),
             new SlotCapacityCriterion(boxCountReader, slotCapacityLogger),
@@ -104,6 +107,7 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, CatalogAvailabilityCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, StationResolutionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, PackageCapacityCriterion>();
+        services.AddScoped<IDispatchAdmissionCriterion, AdmissionPolicyDriftCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, VehicleDynamicFactsCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, StationTaskTypeAdmissionCriterion>();
         services.AddScoped<IDispatchAdmissionCriterion, RouteGraphReachabilityCriterion>();
