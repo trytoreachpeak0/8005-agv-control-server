@@ -298,7 +298,8 @@ try {
     $slotZeroLiteral = [ordered]@{
         ControlPort = 48405; HealthPort = 48407; FakeRiotPort = 48408; FakeMesIngestPort = 48409
         SimulatorHttpPort = 48411; SimulatorModbusPort = 48412; ClockSkewProxyPort = 48413
-        DashboardPort = 48414; FakeOnboardPort = 48420
+        DashboardPort = 48414; ProtocolFaultProxyPort = 48415; ProtocolFaultProxyListenPort = 48416
+        FakeOnboardPort = 48420
     }
     $slotZero = Get-L2PortBlock -Slot 0
     $slotZeroDiff = @($slotZeroLiteral.Keys | Where-Object { $slotZero[$_] -ne $slotZeroLiteral[$_] }) +
@@ -459,7 +460,7 @@ try {
 
     # 8. Two real orchestrators.
     if (-not $SkipOrchestrators) {
-        $blockPorts = @(48405, 48407, 48408, 48409, 48411, 48412, 48413, 48414, 48420, 48421, 48422)
+        $blockPorts = @(48405, 48407, 48408, 48409, 48411, 48412, 48413, 48414, 48415, 48416, 48420, 48421, 48422)
         $busy = @($blockPorts | Where-Object { @(Get-L2ListeningProcess -Port $_).Count -gt 0 })
         if ($busy.Count -gt 0) {
             throw ("L2_PORT_LOCK_SELFTEST_BLOCKED: something already listens on the L2 port block " +

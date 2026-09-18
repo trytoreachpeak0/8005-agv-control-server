@@ -29,6 +29,7 @@
     <!-- FakeOnboardSlotStateSeedTests reads the synthetic peer's slot state seed (control-server#71). -->
     <ProjectReference Include="..\..\tools\ControlServer.FakeOnboard\ControlServer.FakeOnboard.csproj" />
     <ProjectReference Include="..\..\tools\ControlServer.ClockSkewProxy\ControlServer.ClockSkewProxy.csproj" />
+    <ProjectReference Include="..\..\tools\ControlServer.ProtocolFaultProxy\ControlServer.ProtocolFaultProxy.csproj" />
     <!-- Build order only: SchemaConformanceToolTests runs this validator as its own process. Never let
          its assembly in here: its System.Text.Json 10 would replace the product's 8.0 one, and the
          gate would then be checking lines produced by a serializer production never runs. -->

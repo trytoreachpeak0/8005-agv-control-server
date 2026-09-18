@@ -37,6 +37,10 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `load-cancelled-before-sublot` | 合成 | **批次 5（control-server#83，ADR-cross-0046 第一种情形）**：到站没人扫码，操作员取消——授权 `slots` 为空，车报 `ALL_EMPTY` 空结果被确认之后服务端才终结（需求 `Cancelled`、`CANCELLED_BY_OPERATOR`、租约与占用释放、录入请求结算、没有仓位命令）；再加到站前断联重连、到站后在新连接上取消（control-server#40 那一格），之后再重连一次录入请求不被重放 | 本地 PASS（证据未入库），三连在批次 5 出口 |
 | `load-determinate-failure-and-door-open-timeout` | 合成 | **批次 5（control-server#81，ADR-cross-0058 决策 4、5）**：装货中期限。期限后报确定失败（`FAILED`＋首仓 `OPERATOR_TIMEOUT`、其余 `NOT_STARTED`，全部 `EMPTY`／`LOCKED`／`RESET`）→ 操作 `Failed`、需求 `Cancelled`／`CANCELLED_BY_STATION_TIMEOUT`、租约与占用释放、装货命令结算、无恢复，同一台车接下一单——**防御路径，v2 车载端不产出**；期限后不报结果、仓门未闭 → 挂 `STATION_TIMEOUT_DOOR_NOT_CLOSED`、stage 仍 `AwaitingLoadResult`、开始时间不动，关门撤销，再报 `COMPLETED` 提交 | 本地 PASS（证据未入库），三连在批次 5 出口 |
 | `blocked-journey-dashboard-projection` | 合成 | **批次 5（control-server#80，program#55）**：旅程阻断带开始时间上看板——读只读端点 `/api/dashboard/blocked-journeys`：检查点等待挂上即列出、清掉即消失；会话未就绪带会话的三个安全字段、安全证据不全直接最高档，引擎每轮重写这一行而开始时间不动，看板按档上色；装货结果需要恢复停摆后开始时间不变；装货中期限过了门还开着（`STATION_TIMEOUT_DOOR_NOT_CLOSED`，control-server#81 补）列出 `AwaitingLoadResult`、门关上即消失 | 本地 PASS（证据未入库），三连在批次 5 出口 |
+| `real-onboard-durable-ack-lost` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ①：cs#77＋onboard-hmi#69）**：丢一次装货结果的 `DurableAck` → 车重连以原 `messageId` 补发、服务端按首次受理重签不掐连接 → 同一连接照常走完握手（两份快照、新 `messageId` 的 `RecoveryStateReport`、`SessionReadiness`），旧报告不补发 → 会话回 `Ready`、旅程走完、只重连一次 | 调试证据不入库，正式证据在 control-server#90 |
+| `real-onboard-compensate-then-reconnect` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ②：cs#78＋onboard-hmi#70）**：等人时杀车载端、门被空着关上 → 重启后中断结算报 `UNKNOWN` → 补偿清空对账 → 经代理断一次链路 → CLOSED 的恢复会话快照已被确认、补偿命令已结算，一条都不重放进新会话，车还接得了下一单（`L2-CR-07`，control-server#131 修复前红） | 同上 |
+| `real-onboard-restart-while-waiting-operator` | **真的** | **批次 5（control-server#88，program#61 ②：onboard-hmi#70，ADR-cross-0058 决策 2）**：等人时杀车载端、它不在时货放好门关上 → 重启后按实时 IO 补交 `COMPLETED` → 装货提交、会话回 `Ready`、不进恢复，旅程走完；出厂配置 | 同上 |
+| `real-onboard-cancellation-authorization-lost` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ③：onboard-hmi#71＋onboard-hmi#78）**：出厂配置下两仓装货、第一仓装好锁上、第二仓开着时按取消 → 丢掉授权应答、车载端报失败 → 再按一次，新 `messageId`、payload 与首发相同 → 取消 `ALL_EMPTY`、需求 `Cancelled`，全程不重连、不替原 attempt 报结果，取货单的车辆占用释放（`L2-CAL-09`，control-server#131 修复前红）；取消先收尾接手的开门再开已装货的仓，模拟器采样里任一时刻至多一仓未锁闭（`L2-CAL-10`，REQ-0357，onboard-hmi#106） | 同上 |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -380,6 +384,11 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
 - `ClockSkewMs` —— 只对真装置有效。车辆安全投影改经 `tools/ControlServer.ClockSkewProxy` 转发，
   `observedAt` 往后推这么多毫秒，等价于车载端时钟慢了这么多。合成对端没有新鲜度判定，给它设这个
   键会直接报错。运行时还能通过代理的 `PUT /control/v1/skew` 改。
+- `ProtocolFaultProxy = $true` —— 只对真装置有效（control-server#88）。车载端的 `wireToGate` 连接改经
+  `tools/ControlServer.ProtocolFaultProxy`（控制面 48415，数据面 48416）转发，场景经 `Context.ProtocolProxy` 布计划：
+  `drop-durable-ack`（丢一次某类报文的 `DurableAck` 并断链）、`drop-message`（丢一条服务端应答、链路不断）、
+  `disconnect`（不丢任何行、断一次）。代理默认什么都不丢；它的 `/snapshot` 记下每条连接、每一行的信封身份，收尾时存成
+  `snapshots/protocol-fault-proxy.json`。合成对端没有 journal 也不重试，给它设这个键会直接报错。
 
 - `Fleet` —— 主车**之外**的车，每项一对 `AgvId` / `VehicleKey`。编排器把主对放在第一位再逐车
   注入 `JourneyRuntime:Fleet`（`JourneyRuntimeOptions` 的校验器要求名册包含主对，让每个 setup
@@ -485,6 +494,7 @@ $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外�
 | 模拟器 Modbus TCP（真装置） | 48412 |
 | 时钟偏差代理（`ClockSkewMs` 场景） | 48413 |
 | 看板（`Dashboard` 场景） | 48414 |
+| 协议故障代理控制面／数据面（`ProtocolFaultProxy` 场景） | 48415 ／ 48416 |
 
 刻意避开现场运行（58105/58107）、staged G3（58205/58207）与 demand-bearing G3（58305/58307）：
 撞上了要的是绑不上端口直接失败，而不是悄悄连到另一台服务器上去。模拟器同理不用它自己的默认
@@ -507,11 +517,11 @@ $rows = Get-Journeys; $rows | Where-Object { ... }  # 对：赋值展开了外�
 
 | 槽位 | 端口 | 锁 |
 | --- | --- | --- |
-| 0 | 48405–48414，假车载端 48420 起 | `Global\W2G-L2PortBlock` |
-| 1 | 47405–47414，假车载端 47420 起 | `Global\W2G-L2PortBlock-slot1` |
-| 2 | 46405–46414，假车载端 46420 起 | `Global\W2G-L2PortBlock-slot2` |
-| 3 | 45405–45414，假车载端 45420 起 | `Global\W2G-L2PortBlock-slot3` |
-| 4 | 44405–44414，假车载端 44420 起 | `Global\W2G-L2PortBlock-slot4` |
+| 0 | 48405–48416，假车载端 48420 起 | `Global\W2G-L2PortBlock` |
+| 1 | 47405–47416，假车载端 47420 起 | `Global\W2G-L2PortBlock-slot1` |
+| 2 | 46405–46416，假车载端 46420 起 | `Global\W2G-L2PortBlock-slot2` |
+| 3 | 45405–45416，假车载端 45420 起 | `Global\W2G-L2PortBlock-slot3` |
+| 4 | 44405–44416，假车载端 44420 起 | `Global\W2G-L2PortBlock-slot4` |
 
 **槽位 0 的端口与锁名和加槽位之前逐字相同**，真装置场景、`run-journey-g3.ps1` 和比槽位更早的检出都不知道槽位的
 存在，照旧拿槽位 0，彼此照旧排队。CI 的分路只用槽位 1～4，所以不会和它们抢。

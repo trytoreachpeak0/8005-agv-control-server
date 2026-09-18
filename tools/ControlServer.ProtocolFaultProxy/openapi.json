@@ -1,0 +1,181 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ControlServer.ProtocolFaultProxy",
+    "version": "1.0.0",
+    "description": "A line-level relay in front of ControlServer's onboard NDJSON listener that can lose a chosen kind of DurableAck after the server has committed the message, and close that connection, so an L2 scenario can exercise the onboard's journal replay against the real server (8005-agv-control-server#30); or take the link down on request without dropping a chosen line, so a scenario can watch what each end does with the next session (8005-agv-control-server#31). Or lose one chosen server-to-onboard answer while the link stays up, so a scenario can watch the onboard retry against an authorization it never saw (8005-agv-onboard-hmi#39). Every other line is forwarded byte for byte. The relay itself is plain TCP on listenPort; this document covers the HTTP control plane. Loopback only."
+  },
+  "paths": {
+    "/control/v1/health": {
+      "get": {
+        "summary": "Liveness, the endpoint the relay actually listens on (the operating system's pick when listenPort is 0) and the forward target",
+        "responses": {
+          "200": {
+            "description": "Envelope"
+          }
+        }
+      }
+    },
+    "/control/v1/snapshot": {
+      "get": {
+        "summary": "Current drop plan plus the traffic log: connections (opened, closed, by whom), drops, and one record per line (connection, direction, envelope identity -- never a payload)",
+        "responses": {
+          "200": {
+            "description": "Envelope"
+          }
+        }
+      }
+    },
+    "/control/v1/drop-durable-ack": {
+      "put": {
+        "summary": "Arm a plan: drop the next count DurableAcks whose payload.acceptedMessageType matches, closing the connection each time",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DropDurableAckCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Applied or replayed"
+          },
+          "400": {
+            "description": "INVALID_ARGUMENT"
+          },
+          "409": {
+            "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT"
+          }
+        }
+      }
+    },
+    "/control/v1/drop-message": {
+      "put": {
+        "summary": "Arm a plan: drop the next count server-to-onboard lines whose messageType matches, keeping the connection open. DurableAck is refused here; losing one takes the link down, which is drop-durable-ack",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DropMessageCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Applied or replayed"
+          },
+          "400": {
+            "description": "INVALID_ARGUMENT"
+          },
+          "409": {
+            "description": "RUN_ID_MISMATCH, COMMAND_ID_CONFLICT or REVISION_CONFLICT"
+          }
+        }
+      }
+    },
+    "/control/v1/disconnect": {
+      "post": {
+        "summary": "Close every relay connection open right now at both ends without singling out a line to lose (lines already in flight go with the connection); the onboard reconnects on its own. Once per commandId: a retry reports the same connections and closes nothing. Moves no revision; the traffic log records closedBy = relay disconnected on request",
+        "responses": {
+          "200": {
+            "description": "Envelope whose body lists the connections closed"
+          },
+          "400": {
+            "description": "INVALID_ARGUMENT"
+          }
+        }
+      }
+    },
+    "/control/v1/reset": {
+      "post": {
+        "summary": "Start a new round at revision 1 and disarm; the traffic log is kept",
+        "responses": {
+          "200": {
+            "description": "Applied or replayed"
+          }
+        }
+      }
+    },
+    "/control/v1/openapi.json": {
+      "get": {
+        "summary": "This document",
+        "responses": {
+          "200": {
+            "description": "OpenAPI"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DropDurableAckCommand": {
+        "type": "object",
+        "required": [
+          "runId",
+          "commandId",
+          "count"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "commandId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional optimistic concurrency check, skipped on a replay."
+          },
+          "acceptedMessageType": {
+            "type": "string",
+            "description": "Required when count > 0, e.g. OperationResult."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "description": "0 disarms. Each arming is a new plan with its own count."
+          }
+        }
+      },
+      "DropMessageCommand": {
+        "type": "object",
+        "required": [
+          "runId",
+          "commandId",
+          "count"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "commandId": {
+            "type": "string"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional optimistic concurrency check, skipped on a replay."
+          },
+          "messageType": {
+            "type": "string",
+            "description": "Required when count > 0, e.g. LoadCancellationAuthorization. Never DurableAck."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "description": "0 disarms. Each arming is a new plan with its own count."
+          }
+        }
+      }
+    }
+  }
+}

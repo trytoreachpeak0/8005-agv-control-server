@@ -4,9 +4,9 @@
 The machine-wide lock on the L2 port block.
 
 Invoke-L2Scenario.ps1 binds one fixed block of loopback ports -- ControlServer 48405/48407, fake
-RIoT 48408, fake MesIngest 48409, simulator 48411/48412, clock-skew proxy 48413, dashboard 48414 and
-one synthetic peer per vehicle from 48420 up -- and every run binds the same block. Two runs at once
-do not fail cleanly. On 2026-09-14 a real-onboard run and two synthetic runs started within seconds
+RIoT 48408, fake MesIngest 48409, simulator 48411/48412, clock-skew proxy 48413, dashboard 48414,
+protocol fault proxy 48415/48416 and one synthetic peer per vehicle from 48420 up -- and every run
+binds the same block. Two runs at once do not fail cleanly. On 2026-09-14 a real-onboard run and two synthetic runs started within seconds
 of each other; each bound some of the ports first, and each went on talking to the other's
 processes. The G3 run's fake RIoT died on SocketException 10048 while its health probe was answered
 by the synthetic run's fake RIoT; the synthetic run's ControlServer died on 48405 while its fake
@@ -82,6 +82,11 @@ $script:SlotZeroPorts = [ordered]@{
     SimulatorModbusPort = 48412
     ClockSkewProxyPort  = 48413
     DashboardPort       = 48414
+    # Real-onboard rig only, when a scenario sets ProtocolFaultProxy (control-server#88): its control plane,
+    # and the port the onboard connects to instead of ControlPort. Slotted like the rest, so a slot never
+    # leaves these two at slot 0's numbers.
+    ProtocolFaultProxyPort       = 48415
+    ProtocolFaultProxyListenPort = 48416
     # The first synthetic peer; peer N binds this plus N.
     FakeOnboardPort     = 48420
 }
