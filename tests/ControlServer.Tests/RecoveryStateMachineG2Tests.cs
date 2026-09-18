@@ -811,13 +811,77 @@ public sealed class RecoveryStateMachineG2Tests
             RecoveryWorkflowRow workflow = await context.RecoveryWorkflows.SingleAsync(
                 TestContext.Current.CancellationToken);
             Assert.Equal(1, workflow.ForcedRecoveryGeneration);
-            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, workflow.State);
-            Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.SingleAsync(
+            // The late OperationResult of the fenced generation changed nothing; the current-generation
+            // forced result settles the cargo's business as a handoff (control-server#137) -- never as a
+            // completed transport. Until #137 it left the demand and the workflow in RecoveryRequired.
+            Assert.Equal(RecoveryWorkflowState.Reconciled, workflow.State);
+            Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(
                 TestContext.Current.CancellationToken)).Status);
-            Assert.Null((await context.VehicleDispatchLeases.SingleAsync(
-                TestContext.Current.CancellationToken)).ReleasedAt);
+            Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
             Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(
                 TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// REQ-0242, business half (control-server#137). A forced mechanical recovery on a demand-bearing
+    /// session is the named handoff of ForcedCargoHandoffRecord: the product is the demand's own bound
+    /// cargo, and the verified <c>operator</c> the result carries is the named person. Protocol 2.0.0 has no
+    /// field for an unknown identity, so the "pending inventory" branch is unreachable here. The demand ends
+    /// the way a fault cargo handoff ends it (CONTEXT.md, FaultCargoRecoveryRecord), the vehicle is released
+    /// from the journey, and the session closes -- so the same vehicle can open another one. Until #137 the
+    /// session stayed EXECUTING forever and every later session request was refused.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AForcedRecoveryWithANamedHandoffEndsTheDemandAndClosesTheSessionSoTheVehicleCanOpenAnother()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_SETTLEMENT";
+        const string proof = "forced-settlement-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
+            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
+            await context.SaveChangesAsync(token);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+
+            string ack = await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.SingleAsync(token)).State);
+            Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+            Assert.Equal(StationOperationStatus.Cancelled, (await context.StationOperations.SingleAsync(token)).Status);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
+            Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+            Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", runtime.BlockReasonCode);
+            Assert.NotNull((await context.OrderIntents.AsNoTracking()
+                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.SingleAsync(token)).State);
+            Assert.Equal("CLOSED", await LatestSessionSnapshotStateAsync(context));
+
+            JsonNode next = JsonNode.Parse(RecoverySessionRequest(
+                proof, demandId: null, messageId: "e0000000-0000-4000-8000-000000000031"))!;
+            next["payload"]!["requestId"] = "41000000-0000-4000-8000-000000000001";
+            next["payload"]!["eventId"] = "31000000-0000-4000-8000-000000000001";
+            string opened = await processor.ProcessAsync(next.ToJsonString(), state, token);
+
+            Assert.Equal("ExceptionRecoverySessionOpened", MessageType(opened));
         }
         finally
         {
@@ -2384,6 +2448,44 @@ public sealed class RecoveryStateMachineG2Tests
             @operator = Operator(),
             reason
         });
+
+    /// <summary>
+    /// The vehicle's report of a forced mechanical recovery of the seeded session and action: isolated by
+    /// hand, and -- as the schema pins them -- neither electronic emptiness nor vehicle readiness claimed.
+    /// </summary>
+    private static async Task<string?> LatestSessionSnapshotStateAsync(ControlServerDbContext context)
+    {
+        // By revision, not CreatedAt: the fixed clock stamps every snapshot with the same instant.
+        (long Revision, string? State)[] snapshots = (await context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "ExceptionRecoverySessionSnapshot")
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .Select(row =>
+            {
+                using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
+                JsonElement payload = document.RootElement.GetProperty("payload");
+                return (payload.GetProperty("recoverySessionRevision").GetInt64(),
+                    payload.GetProperty("state").GetString());
+            })
+            .ToArray();
+        return snapshots.MaxBy(snapshot => snapshot.Revision).State;
+    }
+
+    private static string MechanicallyIsolatedResult(long generation, string messageId = "80000000-0000-4000-8000-000000000001") =>
+        Envelope(
+            messageId,
+            "ForcedMechanicalRecoveryResult",
+            new
+            {
+                exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
+                recoveryActionId = ActionId,
+                forcedRecoveryGeneration = generation,
+                outcome = "MECHANICALLY_ISOLATED",
+                slots = RecoverySlots,
+                @operator = Operator(),
+                observedAt = Now.AddSeconds(2),
+                electronicEmptyProven = false,
+                vehicleReadyProven = false
+            });
 
     private static object Operator() => new
     {
