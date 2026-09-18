@@ -198,10 +198,22 @@ function Add-G3NotReached([object]$Assertions, [string[]]$Ids, [string]$Why) {
 }
 
 <#
-需求受理 → 车到取货点 → UIA 录入 → 装载开到「在等操作员」→ 关上空门 → 车载端等满操作超时（120 秒）报 UNKNOWN →
-服务端判 RecoveryRequired、旅程停在 Blocked。与 `real-onboard-recovery-entry-missing` 同一个办法，理由见那条场景。
+需求受理 → 车到取货点 → UIA 录入 → 装载开到「在等操作员」→ 车载端断电 → 断电期间空仓门被关上 → 车载端重启，
+中断结算报 UNKNOWN → 服务端判 RecoveryRequired、旅程停在 Blocked。
 
-返回这笔装载的身份、第一份结果（收件箱在补发之前的那一份）与仓位。
+**为什么不再是「关上空门、等车载端超时」。**2026-09-18 之前这里关上空门后等车载端操作超时（120 秒）交一份结果。
+onboard-hmi#72（批次5-20）之后 v2 车载端读到「门关了、货没放」会自己重新开锁，按规格第 19.4 节决策 3 与 program#55
+不再产出 `FAILED`／`OPERATOR_TIMEOUT`，那份结果永远等不到（control-server#87 自检，缺陷记录
+`docs/defects/20260918-journey-g3-scenarios-assume-empty-close-fails-the-load.md`，由 control-server#128 改写）。
+
+**v2 上真实可达的办法**是 ADR-cross-0058 决策 2 的反面，与 control-server#88 的 `real-onboard-compensate-then-reconnect`
+同一个：车在等操作员时进程没了，它不在的时候门被空着关上。重启后车载端的中断结算（`SettleInterruptedAsync`，
+onboard-hmi#70）只读实时 IO、不打任何脉冲：门关了、锁上了、输出复位了，唯独仓里没有货，不是装货的最终态，于是报
+`UNKNOWN`，检查点 `SAFE_FINISH_REACHED`。仓空着、关着、锁着，所以补偿、交接不开门就能证空，恢复原操作也有已证实
+的物理断点。**车载端不会在门被关上的那一刻重开**——它那时不在。
+
+返回这笔装载的身份、第一份结果（重启之后的新会话里交的那一份）与仓位。调用之后车载端已经重启过一次，
+`Context.Onboard` 是新进程的驱动，调用方要重新取。
 #>
 function Invoke-G3UnknownLoad([object]$Context, [string]$SublotPrefix) {
     $journal = $Context.Journal
@@ -261,11 +273,17 @@ function Invoke-G3UnknownLoad([object]$Context, [string]$SublotPrefix) {
         -Probe { @((Get-G3Progress $connection $attemptId) | Where-Object { $_.Phase -eq 'WAITING_OPERATOR' })[0] } `
         -Until { param($v) $null -ne $v }
     $slot = [int]$waiting.Active[0]
-    $journal.Note("Operator closes slot $slot without the basket; waiting out the onboard operation timeout (about 120s).")
-    $null = $simulator.Command('Post', "slots/$slot/close-door", @{})
 
-    $first = Wait-L2Condition -Description 'the onboard reported the load result and the server acknowledged it' `
-        -Journal $journal -Criterion 'unknown-result' -TimeoutSeconds 240 `
+    & $Context.StopComponent 'onboard-hmi'
+    $journal.Note("While the onboard is down the operator closes slot $slot without the basket.")
+    $null = $simulator.Command('Post', "slots/$slot/close-door", @{})
+    $null = Wait-L2Condition -Description "slot $slot reads closed, empty, locked and reset" `
+        -Journal $journal -Criterion 'slot-closed-empty' -TimeoutSeconds 30 `
+        -Probe { Get-G3SlotState $simulator $slot } -Until { param($v) $v -eq 'CLOSED/EMPTY/1/0' }
+    $null = & $Context.RestartOnboard
+
+    $first = Wait-L2Condition -Description 'the restarted onboard settled the interrupted load and the server acknowledged it' `
+        -Journal $journal -Criterion 'unknown-result' -TimeoutSeconds 120 `
         -Probe { @((Get-G3Inbound $connection 'OperationResult') | Where-Object { [string]$_.Payload.slotOperationAttemptId -eq $attemptId })[0] } `
         -Until { param($v) $null -ne $v -and $null -ne $v.ResponseLine }
     $null = Wait-L2Condition -Description 'the journey blocked on the unknown load result' `
@@ -281,4 +299,42 @@ function Invoke-G3UnknownLoad([object]$Context, [string]$SublotPrefix) {
         TargetSlots = $targetSlots
         First       = $first
     }
+}
+
+<#
+结算之后车辆真的放出来了（control-server#128，按调度会话 2026-09-18 的要求补；缺口本身是 control-server#131）：
+这条需求的 TO_PICKUP 单 `VehicleOccupancyReleasedAt` 有值，而且同一台车在 60 秒内接了下一单——下一单的旅程到
+`AwaitingPickupArrival`，不是建了旅程却 `Blocked / VEHICLE_OCCUPANCY_CONFLICT`。写法同 `real-onboard-load-door-closed-empty-reopens`
+的 `L2-DC-10`、`L2-DC-12`，两层合成一条判据。
+
+发下一单会在假 RIoT 上多出一张单，所以调用方把它放在所有数 RIoT 单的判据之后。不用 Wait-L2Condition：派不出去
+时它会抛超时，而这里要把「派不出去」连同原因记成一条判据。
+#>
+function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [string]$Description, [string]$DemandId, [string]$SublotPrefix) {
+    $connection = $Context.Connection
+    $journal = $Context.Journal
+    $occupancy = Get-G3Scalar $connection "SELECT VehicleOccupancyReleasedAt AS Value FROM OrderIntents WHERE DemandId = '$DemandId' AND Purpose = 'TO_PICKUP'"
+
+    $nextGuid = [guid]::NewGuid()
+    $nextDemandId = $nextGuid.ToString('D')
+    $journal.Note("Publishing the next demand $($nextGuid.ToString('N')) to see whether the vehicle takes it.")
+    $null = $Context.MesIngest.Command('Put', "demands/$($nextGuid.ToString('N'))", @{
+        sublot = "$SublotPrefix-$($Context.RunId)-NEXT"; area = 'N1-3'; eqp = 'EQP-L2-01'; package = 'L2-PACKAGE'; maxBoxCount = 4
+    })
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
+    $next = $null
+    while ([DateTimeOffset]::UtcNow -lt $deadline) {
+        $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage, BlockReasonCode, AgvId FROM JourneyRuntimes WHERE DemandId = '$nextDemandId'"
+        $next = if ($rows.Count -ge 1) { $rows[0] } else { $null }
+        $journal.Observe("$Id-next-demand", $(if ($next) { "$($next.Stage)/$($next.BlockReasonCode)" } else { $null }), $null)
+        if ($next -and [string]$next.Stage -eq 'AwaitingPickupArrival') { break }
+        Start-Sleep -Milliseconds 500
+    }
+    $nextText = if ($next) { "下一单 $($next.Stage)/$($next.BlockReasonCode) on $($next.AgvId)" } else { '60 s 内下一单没有建旅程' }
+    $Context.Assertions.Add(
+        $Id, $Description,
+        ((Test-G3Present $occupancy) -and $null -ne $next -and [string]$next.Stage -eq 'AwaitingPickupArrival' -and
+            [string]$next.AgvId -eq [string]$Context.AgvId),
+        "TO_PICKUP 占用已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)",
+        "VehicleOccupancyReleasedAt='$occupancy' / $nextText")
 }

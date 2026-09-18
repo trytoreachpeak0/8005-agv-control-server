@@ -5,7 +5,9 @@ G3 `FP-IS-07`：装载失败后由维护人员在车上发起故障货物交接�
 `RecoveryActionSubmitted` → `RecoveryActionAccepted` → `FaultCargoRecoveryCommand` → `FaultCargoRecoveryResult`
 （向量从动作开始；打开恢复会话那一步在它之前，也在线上）。
 
-装载以 UNKNOWN 结束的办法见 `G3RecoveryCommon.ps1`。交接号 `handoffId` 两端各自由恢复动作号派生、互不告知，
+装载以 UNKNOWN 结束的办法见 `G3RecoveryCommon.ps1`：车载端在等人时断电、空仓门被关上、重启后中断结算报 UNKNOWN
+（control-server#128 起，此前是「空关后等车载端超时」，v2 上不可达）。交接收敛之后另判车辆已释放、同一台车能接
+下一单（`G3-07-36`，control-server#131 的缺口）。交接号 `handoffId` 两端各自由恢复动作号派生、互不告知，
 车载端拿它当作用域判据；这里核对命令、结果与服务端工作流三处是同一个。
 #>
 [CmdletBinding()]
@@ -27,9 +29,10 @@ if ([string]::IsNullOrEmpty([string]$Context.OnboardJournalPath)) {
 }
 
 $load = Invoke-G3UnknownLoad $Context 'G3-07F'
+$onboard = $Context.Onboard
 $demandId = $load.DemandId
 $attemptId = $load.AttemptId
-$ids = @('G3-07-31', 'G3-07-32', 'G3-07-33', 'G3-07-34', 'G3-07-35')
+$ids = @('G3-07-31', 'G3-07-32', 'G3-07-33', 'G3-07-34', 'G3-07-35', 'G3-07-36')
 
 $offered = Wait-G3ButtonOffered $onboard $journal '故障交接' 'onboard-fault-cargo-entry' 90
 if (-not $offered) {
@@ -116,4 +119,8 @@ $assertions.Add(
     "Cancelled / Cancelled / Completed/TERMINATED_BY_FAULT_CARGO_HANDOFF / TO_GATE 0 / RIoT 单 1 / $expectedPhysical",
     "$demandStatus / $loadStatus / $journey / TO_GATE $toGate / RIoT 单 $orders / $physical")
 
-$journal.Note('FP-IS-07: a failed load was handed off as fault cargo on an authorized command, one handoff id end to end.')
+Add-G3VehicleReleasedForNextDemand $Context 'G3-07-36' `
+    '交接收敛之后车辆放出来了：这条需求的 TO_PICKUP 单车辆占用已释放，同一台车在 60 秒内接了下一单（旅程到 AwaitingPickupArrival，不是 Blocked/VEHICLE_OCCUPANCY_CONFLICT；control-server#131）' `
+    $demandId 'G3-07F'
+
+$journal.Note('FP-IS-07: an UNKNOWN load was handed off as fault cargo on an authorized command, one handoff id end to end.')

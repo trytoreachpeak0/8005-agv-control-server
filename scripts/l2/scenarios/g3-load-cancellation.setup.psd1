@@ -1,7 +1,8 @@
 ### G3 FP-IS-02：装载进行中由操作员取消，全部仓位证空。真车载端 WPF + 真 slots-simulator。
 #
-# 「取消装货」要从车载端界面发起，而车载端的全部恢复入口都受 recoveryResumeEnabled 管
-# （CanUseRecoveryOperator），所以两端的恢复开关一起打开。
+# 「取消装货」要从车载端界面发起。批次 5 之前车载端的全部恢复入口都受 recoveryResumeEnabled 管
+# （CanUseRecoveryOperator），所以两端的恢复开关一起打开；onboard-hmi#78 之后在途装货取消已与这个开关解绑，
+# 开着不影响本场景，保留以免改变其余入口的出场状态。
 #
 # 到站期限 30 秒：批次 5（control-server#79）起，同一个值也是「车到站后多久没人录入子批号，服务端就结束
 # 本站、取消需求」。真装置上「服务端采信到站 → UIA 录入并提交」实测 4.7–5.4 秒
