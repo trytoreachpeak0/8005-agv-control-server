@@ -153,7 +153,7 @@ public sealed class OnboardRecoveryCoordinator(
         }
         else
         {
-            await ApplyCurrentResultAsync(messageType, payload, workflow, observedAt, cancellationToken)
+            await ApplyCurrentResultAsync(messageType, payload, workflow, cancellationToken)
                 .ConfigureAwait(false);
             await AdvanceSessionAfterResultAsync(
                 workflow,
@@ -977,7 +977,6 @@ public sealed class OnboardRecoveryCoordinator(
         string messageType,
         JsonElement payload,
         RecoveryWorkflowRow workflow,
-        DateTimeOffset observedAt,
         CancellationToken cancellationToken)
     {
         bool safeEmpty = messageType is "LoadCancellationResult" or "LoadCompensationResult" or "FaultCargoRecoveryResult"
@@ -1049,14 +1048,16 @@ public sealed class OnboardRecoveryCoordinator(
                 .ConfigureAwait(false);
             return;
         }
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
+        // A commanded slot operation proven empty -- an in-flight cancellation, a compensation, a fault cargo
+        // handoff. The settlement of the operation itself is this coordinator's: PickupStopTermination knows
+        // nothing about commanded operations, so the operation is cancelled here. Everything else -- demand,
+        // lease, vehicle occupancy, journey -- is the same tail the uncommanded endings use, staged into the
+        // same unsaved change so ProcessResultAsync commits it with the result in one save. Until
+        // control-server#131 this wrote those facts by hand minus the vehicle occupancy, and the pickup
+        // order held the vehicle against every later claim. Stamped with the server's receipt time like the
+        // other endings, not the vehicle's observedAt: the release has to sort after the server's own claim.
+        JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes.SingleAsync(
             row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
-        if (demand.Status == DemandExecutionStatus.Succeeded)
-            throw new BusinessIdentityConflictException("A completed demand cannot be replaced by recovery termination.");
-        demand.Status = DemandExecutionStatus.Cancelled;
-        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases.SingleAsync(
-            row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
-        lease.ReleasedAt ??= observedAt;
         if (workflow.SlotOperationAttemptId is not null)
         {
             StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
@@ -1064,20 +1065,18 @@ public sealed class OnboardRecoveryCoordinator(
                 cancellationToken).ConfigureAwait(false);
             if (operation is not null) operation.Status = StationOperationStatus.Cancelled;
         }
-        JourneyRuntimeRow? runtime = await dbContext.JourneyRuntimes.SingleOrDefaultAsync(
-            row => row.DemandId == workflow.DemandId, cancellationToken).ConfigureAwait(false);
-        if (runtime is not null)
-        {
-            runtime.Stage = JourneyRuntimeStage.Completed;
-            runtime.SetBlockReason(
-                messageType == "FaultCargoRecoveryResult"
-                    ? "TERMINATED_BY_FAULT_CARGO_HANDOFF"
-                    : messageType == "LoadCompensationResult"
-                        ? "CANCELLED_BY_LOAD_COMPENSATION"
-                        : "CANCELLED_BY_OPERATOR",
-                observedAt);
-            runtime.UpdatedAt = observedAt;
-        }
+        await new PickupStopTermination(dbContext)
+            .StageAsync(
+                runtime,
+                messageType switch
+                {
+                    "FaultCargoRecoveryResult" => "TERMINATED_BY_FAULT_CARGO_HANDOFF",
+                    "LoadCompensationResult" => "CANCELLED_BY_LOAD_COMPENSATION",
+                    _ => "CANCELLED_BY_OPERATOR"
+                },
+                timeProvider.GetUtcNow(),
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task KeepDemandAndJourneyBlockedAsync(
