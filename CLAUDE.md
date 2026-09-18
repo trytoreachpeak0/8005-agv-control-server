@@ -137,7 +137,10 @@ with exit code 1; the detail is in the TRX and in `schema-conformance/` next to 
 Never "fix" such a failure by adding to `tests/ControlServer.Tests/schema-known-violations.json`
 without an issue that owns the violation -- that list is for defects already filed, and every entry
 names one. It adds about 40 to 50 seconds of Roslyn schema compilation per run (measured 38.6 s and
-47.9 s on the two runs that landed control-server#85).
+47.9 s on the two runs that landed control-server#85); since control-server#130 the message types are
+split over four copies of the tool (`--processes`, default 4), because Corvus compiles serially inside
+one process. The merged report is the serial one, timings aside -- `SchemaConformanceToolTests` compares
+the two byte for byte.
 
 Test authorization is scoped to the current task. A request to inspect, tidy,
 commit, or push an already-dirty worktree does **not** authorize a test run. Run
