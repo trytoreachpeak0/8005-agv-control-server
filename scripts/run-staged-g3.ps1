@@ -1579,7 +1579,8 @@ public static class StagedG3TlsHarness
                 ["operator"] = OperatorContext(operatorId),
                 ["observedAt"] = observedAt,
                 // A forced mechanical recovery is an isolation, never a proof that the vehicle is
-                // empty or ready; the server must keep the workflow unreconciled on exactly this.
+                // empty or ready; since control-server#137 the server settles the workflow but keeps
+                // the vehicle unready until a HardwareRecoveryRecord names it, on exactly this.
                 ["electronicEmptyProven"] = false,
                 ["vehicleReadyProven"] = false
             });
@@ -2929,6 +2930,20 @@ if (Test-Path -LiteralPath $databasePath) {
             }
         }
         finally { $reader.Dispose(); $command.Dispose() }
+        $hardwareRecoveryRecordRows = @()
+        $command = $connection.CreateCommand()
+        $command.CommandText = "SELECT RecordId, ExceptionRecoverySessionId, RecoveryActionId FROM HardwareRecoveryRecords ORDER BY RecordId"
+        $reader = $command.ExecuteReader()
+        try {
+            while ($reader.Read()) {
+                $hardwareRecoveryRecordRows += [ordered]@{
+                    recordId = $reader.GetString(0)
+                    exceptionRecoverySessionId = $reader.GetString(1)
+                    recoveryActionId = $reader.GetString(2)
+                }
+            }
+        }
+        finally { $reader.Dispose(); $command.Dispose() }
         $databaseObservation = [ordered]@{
             recoveryStateReportInboxRows = $recoveryRows
             businessMessageInboxRows = $businessRows
@@ -2946,6 +2961,9 @@ if (Test-Path -LiteralPath $databasePath) {
             exceptionRecoverySessionRows = $recoverySessionRows
             forcedMechanicalRecoveryCommandOutboxRows = $recoveryCommandOutboxRows
             hardwareRecoveryRecordCount = [long](Invoke-Scalar 'SELECT COUNT(*) FROM HardwareRecoveryRecords')
+            hardwareRecoveryRecordRows = $hardwareRecoveryRecordRows
+            recoveryVehicleReadiness = [string](Invoke-Scalar "SELECT Readiness FROM SessionRecoveries WHERE AgvId = '$recoveryAgvId'")
+            recoveryVehicleReasonCode = [string](Invoke-Scalar "SELECT ReasonCode FROM SessionRecoveries WHERE AgvId = '$recoveryAgvId'")
             vehicleForcedRecoveryGeneration = [long](Invoke-Scalar "SELECT COALESCE((SELECT ForcedRecoveryGeneration FROM VehicleRecoveryGenerations WHERE AgvId = '$recoveryAgvId'), -1)")
             closedExceptionRecoverySessionCount = [long](Invoke-Scalar "SELECT COUNT(*) FROM ExceptionRecoverySessions WHERE State = 'CLOSED'")
             reconciledRecoveryWorkflowCount = [long](Invoke-Scalar "SELECT COUNT(*) FROM RecoveryWorkflows WHERE State = 'Reconciled'")
@@ -3268,36 +3286,70 @@ $staleEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Objec
 $currentEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Object { $_.workflowId -eq $secondRecoveryActionId })
 
 # Monotonic advance, and a result that names the superseded generation may only become historical
-# evidence: it must not reconcile the workflow, close the session, or move the vehicle generation.
+# evidence: it must not settle the workflow, close the session, or move the vehicle generation.
 # Two judgments, split by the control-server#60 review (2026-09-18); they used to share one boolean
 # under two names, so either half going red failed both.
+#
+# Since control-server#137 (PR #140) a MECHANICALLY_ISOLATED result for the CURRENT generation settles
+# its workflow: Reconciled, with the result on file. Before it the workflow stayed RecoveryRequired
+# forever, which is what these judgments asserted until control-server#151 -- see
+# docs/defects/20260919-staged-g3-forced-recovery-criteria-predate-cs137.md.
 $recoveryGenerationAdvancePass = $null -ne $recoveryProbeResult -and
     $recoveryProbeResult.forcedRecoveryGenerationBranches.status -eq 'PASS' -and
     $null -ne $databaseObservation -and
     $databaseObservation.vehicleForcedRecoveryGeneration -eq 2 -and
-    $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'RecoveryRequired' -and
+    $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'Reconciled' -and
     $currentWorkflow[0].forcedRecoveryGeneration -eq 2 -and
+    -not [string]::IsNullOrEmpty($currentWorkflow[0].resultMessageId) -and
     $currentEvidence.Count -eq 1 -and -not $currentEvidence[0].historicalOnly -and
-    $currentEvidence[0].forcedRecoveryGeneration -eq 2
+    $currentEvidence[0].forcedRecoveryGeneration -eq 2 -and
+    $currentEvidence[0].messageId -eq $currentWorkflow[0].resultMessageId
+# The stale result arrived first, so had it been allowed to settle anything, the session would carry
+# generation 1 and the first workflow would be Reconciled rather than HistoricalOnly.
 $recoverySupersededResultHistoricalPass = $null -ne $databaseObservation -and
     $staleWorkflow.Count -eq 1 -and $staleWorkflow[0].state -eq 'HistoricalOnly' -and
     $staleWorkflow[0].forcedRecoveryGeneration -eq 1 -and
     $staleEvidence.Count -eq 1 -and $staleEvidence[0].historicalOnly -and
     $staleEvidence[0].forcedRecoveryGeneration -eq 1 -and
-    $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'RecoveryRequired'
+    $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'Reconciled' -and
+    @($databaseObservation.exceptionRecoverySessionRows).Count -eq 1 -and
+    $databaseObservation.exceptionRecoverySessionRows[0].forcedRecoveryGeneration -eq 2 -and
+    @($databaseObservation.hardwareRecoveryRecordRows | Where-Object { $_.recoveryActionId -eq $firstRecoveryActionId }).Count -eq 0
 
-# A forced mechanical recovery is an isolation, not a completion: nothing in this plane may close the
-# session, reconcile a workflow, create an order or a demand, or touch a station operation.
+# A forced mechanical recovery is an isolation, not a completion. Since control-server#137 it does end
+# the recovery session (CLOSED, so the vehicle can open another) and settles its workflow, but it proves
+# neither an empty vehicle nor a recovered one, so:
+#   - nothing in this plane creates an order, a demand or a station operation, and neither the session
+#     nor either workflow names a demand or a slot operation;
+#   - the vehicle stays unready. What held it after the result is FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED
+#     (WireToGateStore.DecideReadinessAsync): a settled, non-historical forced workflow with no
+#     HardwareRecoveryRecord naming it. The probe submits exactly one such record, after the result, so
+#     the only record on file must name the current workflow and its session -- a record against anything
+#     else, or a second one, would mean the hold was lifted by something other than the record for it.
+# Coverage limit: the recovery probe's vehicle never sends a capability or safety snapshot, so its
+# readiness reason is an earlier one (CAPABILITY_SNAPSHOT_REQUIRED) and this plane cannot watch the
+# forced hold alone flip readiness. RecoveryRequired below is therefore a floor, not that proof; the proof
+# is RecoveryStateMachineG2Tests.AfterAForcedRecoveryTheVehicleStaysUnreadyUntilAHardwareRecoveryRecordForItArrives
+# and G3-07-44 of the real-onboard scenario g3-forced-mechanical-recovery.
 $recoveryNoFalseClosurePass = $null -ne $databaseObservation -and
     @($databaseObservation.exceptionRecoverySessionRows).Count -eq 1 -and
     $databaseObservation.exceptionRecoverySessionRows[0].agvId -eq $recoveryAgvId -and
-    $databaseObservation.exceptionRecoverySessionRows[0].state -eq 'EXECUTING' -and
+    $databaseObservation.exceptionRecoverySessionRows[0].state -eq 'CLOSED' -and
+    $databaseObservation.exceptionRecoverySessionRows[0].selectedAction -eq 'FORCED_MECHANICAL_RECOVERY' -and
     $null -eq $databaseObservation.exceptionRecoverySessionRows[0].demandId -and
-    $databaseObservation.closedExceptionRecoverySessionCount -eq 0 -and
-    $databaseObservation.reconciledRecoveryWorkflowCount -eq 0 -and
+    $databaseObservation.closedExceptionRecoverySessionCount -eq 1 -and
+    $databaseObservation.reconciledRecoveryWorkflowCount -eq 1 -and
     @($databaseObservation.recoveryWorkflowRows).Count -eq 2 -and
     @($databaseObservation.recoveryWorkflowRows | Where-Object { $null -ne $_.demandId }).Count -eq 0 -and
-    @($databaseObservation.recoveryWorkflowRows | Where-Object { $null -ne $_.slotOperationAttemptId }).Count -eq 0
+    @($databaseObservation.recoveryWorkflowRows | Where-Object { $null -ne $_.slotOperationAttemptId }).Count -eq 0 -and
+    $databaseObservation.orderIntentCount -eq 0 -and
+    $databaseObservation.acceptedDemandCount -eq 0 -and
+    $databaseObservation.stationOperationCount -eq 0 -and
+    @($databaseObservation.hardwareRecoveryRecordRows).Count -eq 1 -and
+    $databaseObservation.hardwareRecoveryRecordRows[0].recoveryActionId -eq $secondRecoveryActionId -and
+    $databaseObservation.hardwareRecoveryRecordRows[0].exceptionRecoverySessionId -eq
+        $databaseObservation.exceptionRecoverySessionRows[0].exceptionRecoverySessionId -and
+    $databaseObservation.recoveryVehicleReadiness -eq 'RecoveryRequired'
 
 $recoveryPass = $recoveryProbePass -and $recoveryAuthorisationPass -and $recoveryActionBoundaryPass -and
     $recoveryHardwareRecordPass -and $recoveryDisconnectPass -and $recoveryGenerationAdvancePass -and
