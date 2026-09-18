@@ -240,15 +240,16 @@ $nextRuntime = $null
 while ([DateTimeOffset]::UtcNow -lt $nextDeadline) {
     $nextRuntime = Get-L2Runtime -Connection $connection -DemandId $next.Id
     $journal.Observe('next-demand-dispatched', $(if ($nextRuntime) { [string]$nextRuntime.Stage } else { $null }), $null)
-    if ($nextRuntime) { break }
+    # 派出去是 AwaitingPickupArrival。建了旅程却 Blocked（例如 VEHICLE_OCCUPANCY_CONFLICT）不算，继续等到超时。
+    if ($nextRuntime -and [string]$nextRuntime.Stage -eq 'AwaitingPickupArrival') { break }
     Start-Sleep -Milliseconds 500
 }
 $backlog = @(Invoke-L2Query -Connection $connection -Sql "SELECT * FROM JourneyBacklog WHERE DemandId = '$($next.Id)'")
 $backlogText = if ($backlog.Count -ge 1) { ($backlog[0].PSObject.Properties | Where-Object { $_.Name -match 'Status|Reason' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ' ' } else { '(no backlog row)' }
 $assertions.Add(
     'L2-DC-12', '取消收尾之后，同一台车在 60 秒内接了下一单（车辆真的被释放了）',
-    ($null -ne $nextRuntime -and [string]$nextRuntime.AgvId -eq [string]$Context.AgvId),
-    "下一单派给 $($Context.AgvId)",
-    $(if ($nextRuntime) { "下一单 $($nextRuntime.Stage) on $($nextRuntime.AgvId)" } else { "60 s 内没有派出 / 积压：$backlogText" }))
+    ($null -ne $nextRuntime -and [string]$nextRuntime.Stage -eq 'AwaitingPickupArrival' -and [string]$nextRuntime.AgvId -eq [string]$Context.AgvId),
+    "下一单 AwaitingPickupArrival on $($Context.AgvId)",
+    $(if ($nextRuntime) { "下一单 $($nextRuntime.Stage) $($nextRuntime.BlockReasonCode) on $($nextRuntime.AgvId)" } else { "60 s 内没有派出 / 积压：$backlogText" }))
 
 $journal.Note('Scenario finished.')
