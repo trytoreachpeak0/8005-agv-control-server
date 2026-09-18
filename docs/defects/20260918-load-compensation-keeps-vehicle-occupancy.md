@@ -48,7 +48,21 @@ L2-CR-07 FAIL | 未走到：Timed out after 120s waiting for: the next journey w
 三次的服务端产品代码相同，`L2-CR-07` 都红在同一个 `VEHICLE_OCCUPANCY_CONFLICT`。同目录的 `*-stage\controlserver.db` 是当时的服务端库。
 `-001`（`297bde97`）死在场景脚本读了补偿命令上不存在的 `state` 字段，没走到 `L2-CR-07`，只留在会话临时目录。
 
+## 同一缺陷也挂在 `real-onboard-cancellation-authorization-lost` 上
+
+在途取消那条路径是 cs#86 发现的，原记录在 cs#86 那份里，这里不重写，只记本票场景上的这一格。本票给这条场景补了
+`L2-CAL-09`：取消完成后，取货单的车辆占用要释放。补上之后第一次运行就红在它上面：
+
+```
+L2-CAL-09 FAIL | VehicleOccupancyReleasedAt 为空（30 s 内）
+```
+
+- 证据：`C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs88-l2\cancellation-authorization-lost-003\`，同级的 `-003-stage\controlserver.db` 是当时的服务端库。
+- 身份：服务端 `9050b534`，车载端 `8153946b`，模拟器 `fb5f7c59`，协议 `protocol-v2.0.0@86575456`。
+- 其余 9 条都通过：丢了授权应答之后再按一次，发出的请求 `messageId` 不同、payload 相同，取消以 `ALL_EMPTY` 对账完成，全程没有重连。
+- 同一条场景在加这条判据之前的运行 `-002`（`09d0bd60`）是 9/9 PASS，它的收尾快照里这一格同样是空的。
+
 ## 原因与修复
 
 原因见 #131：`OnboardRecoveryCoordinator.ApplyCurrentResultAsync` 对在途取消、补偿清空、故障货物交接三种结果的手写终结不释放车辆占用。
-场景判据不改，产品代码不在本票修。#131 合入后重跑本场景，`L2-CR-07` 应转绿。
+场景判据不改，产品代码不在本票修。#131 合入后重跑这两条场景，`L2-CR-07` 与 `L2-CAL-09` 应转绿。
