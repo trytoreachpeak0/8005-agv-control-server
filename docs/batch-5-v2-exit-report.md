@@ -9,24 +9,44 @@ control-server#90（批次5-36）。本报告逐项对照规格 `8005-agv-progra
 
 ## 结论
 
-**批次 5 出口尚未达成。**G1、两端 G2、CI 三连、FP-IS-00～06／14／15 的 G3 面都已在 `protocol-v2.0.0` 发布身份上成立；
-**`FP-IS-07` 的 G3 面与一条真装置场景是红的**，两处都已读证据、写缺陷单，修复票为 onboard-hmi#112（A）与 control-server#151（B），见第四节。修复合入后，受影响的门禁从头重跑，不拼接。
+**批次 5 出口尚未达成，只差一条 journey G3 场景。**第一轮（2026-09-18）红了两处（缺陷单 A 车载端回归、B staged 判据落后），修复合入后在新身份上从头重跑（2026-09-19，见「重跑」一节）：
+G1、两端 G2、CI 三连、真装置七条、staged／restart／需求承载三个 G3 runner 全部成立；**journey G3 只剩 `g3-forced-mechanical-recovery` 一条中止**（缺陷单 C，场景没按 onboard-hmi#107 加的确认按钮），
+它让运行级断言失败，连带 `FP-IS-01`／`02`／`03`／`07` 的 journey 面判 `FAIL`。C 修复合入后重跑四个 G3 runner，不拼接。
 
 | 出口（规格 8.2／8.3 批次 5 行、19.5 节、本票验收） | 状态 | 依据 |
 | --- | --- | --- |
 | `protocol-v2.0.0` 发布：G1 在发布态通过、attestation 一名批准 | **成立** | `evidence/g1/20260916-protocol-v2.0.0-release-8657545/`（program#97）；本轮两端 G2 每片都在发布态重跑了协议 G1 |
 | L1：两端测试套件全绿；新能力逐项有新增覆盖 | **成立** | 服务端 1255/1255、车载端 536/536（`evidence/l1/20260919-protocol-v2.0.0-e0f26b37-9748c418/`）；逐项对照表见第一节 |
 | `CONTROL_SERVER_G2` × 10 片 PASS，绑定发布身份，`schemaConformance` 零未登记违约 | **成立** | `evidence/g2/20260918-protocol-v2.0.0-06b65688/` |
-| `ONBOARD_HMI_G2` × 10 片 PASS，出站校验零违约 | **成立** | 车载端仓 `evidence/g2/20260918-protocol-v2.0.0-9748c418/`（小 PR 进 `w2g/fp-v2-impl`）；九片零违约，`FP-IS-04` 无出站报文可验（见第三节） |
-| G3：十片的 G3 面 PASS；`FP-IS-02` 含 control-server#87 两条新场景 | **未成立** | restart、demand-bearing PASS；staged 与 journey 的 `FP-IS-07` 红（缺陷单 A、B）；`FP-IS-02` 两条新场景 PASS |
+| `ONBOARD_HMI_G2` × 10 片 PASS，出站校验零违约 | **成立** | 现行：车载端仓 `evidence/g2/20260919-protocol-v2.0.0-29fbf65e/`（缺陷 A 修复后重跑）；第一轮 `…-9748c418/` 保留。九片零违约，`FP-IS-04` 无出站报文可验（见第三节） |
+| G3：十片的 G3 面 PASS；`FP-IS-02` 含 control-server#87 两条新场景 | **未成立** | 重跑：staged、restart、需求承载 PASS；journey 12 条场景 11 条 PASS（含 #87 两条），`g3-forced-mechanical-recovery` 中止（缺陷单 C） |
 | CI 上全部合成 L2 在 `v2.0.0` 上连续三次通过，证据独立，`identity` 为发布身份、`batchId` 与 `l2.yml` 一致 | **成立** | CI run `35361077376`，`mode=consecutive-all`，28 场景 × 3 = 84 次全 PASS；`evidence/l2/20260918-ci-35361077376-*` |
-| ADR-cross-0058、到站无货出口、录入后拒收各有 L2 证据（合成与真装置分列） | **成立（合成）／部分（真装置）** | 见第二节表格 |
-| control-server#86 三条、#88 四条真装置场景在发布身份上各一次 PASS | **未成立** | 7 条中 6 条 PASS；`real-onboard-compensate-then-reconnect` 红（缺陷单 A） |
+| ADR-cross-0058、到站无货出口、录入后拒收各有 L2 证据（合成与真装置分列） | **成立** | 见第二节表格 |
+| control-server#86 三条、#88 四条真装置场景在发布身份上各一次 PASS | **成立** | 重跑 7/7 PASS（`evidence/l2/20260919-real-onboard-*-002/`）；第一轮 `compensate-then-reconnect` 的红（缺陷单 A）保留在 `-001` |
 | 两端 `VectorsAwaitingTheirSlice` 没有批次 5 的暂钉 | **成立** | 第一节末 |
 | 急停场景按第 19.6 节处理 | **成立** | control-server#63 已合入（PR #92，`ee74ac82`），急停三场景随三连用新判据跑，全绿 |
 | 红证据全部保留，失败原因在 `docs/defects/` 有记录 | **成立** | 第四节 |
 | 十一点如实写明、无第 8.8 节禁用表述 | **成立** | 第五节 |
 | 未切换 `C:\Users\szy\Desktop\8005-workspace\repos\` 下任何克隆 | **成立** | 全部操作在 `8005-workspace-v2`；v2 的 `repos/` 克隆跑完均切回基线分支、快进、干净 |
+
+## 重跑（2026-09-19，修复 A、B 之后）
+
+前置：control-server#151（PR #153，`c3c81eaf`）、control-server#154（PR #155，`c12f0498`）、onboard-hmi#112（PR #114，`29fbf65e`）都已合入。出口分支 merge 了两条主线（`bbe6ae32`；车载端证据分支 `7c6a0ae`），
+G3 共享绑定移到 `ControlServerCommit c12f0498`、`OnboardCommit 29fbf65e`（提交 `69894550`），模拟器与协议不变。真装置时段由调度会话放行，重负载都经 `Invoke-HeavyLocal.ps1 -Ticket cs#90`。
+
+| 重跑 | 结果 | 证据 |
+| --- | --- | --- |
+| `ONBOARD_HMI_G2` × 10（`29fbf65e`） | 全 PASS，九片出站 2595 行零违约 | 车载端仓 `evidence/g2/20260919-protocol-v2.0.0-29fbf65e/` |
+| 车载端全量 L1（`29fbf65e`） | 538/538（`SQCD.Agv.UnitTests` 354、`SQCD.Agv.WireToGateG2Tests` 184，含 PR #114 的两个新测试） | `evidence/l1/20260919-onboard-hmi-29fbf65e/` |
+| `run-staged-g3.ps1` | `STAGED_G3_RECOVERY_REPLAY_PASS`（缺陷 B 已修） | `evidence/g3/20260919-protocol-v2.0.0-staged-c12f0498/` |
+| `run-staged-g3-restart.ps1` | `STAGED_G3_PROCESS_RESTART_PASS` | `evidence/g3/20260919-protocol-v2.0.0-restart-c12f0498/` |
+| `run-demand-bearing-g3-vectors.ps1` | `DEMAND_BEARING_G3_VECTORS_PASS` | `evidence/g3/20260919-protocol-v2.0.0-demand-bearing-c12f0498/` |
+| `run-journey-g3.ps1` | **`JOURNEY_G3_SLICE_FAIL`**：11/12 场景退出码 0（`g3-exception-resume`／`-compensate`／`g3-fault-cargo-handoff` 已转绿，缺陷 A 已修）；`g3-forced-mechanical-recovery` 中止（缺陷单 C） | `evidence/g3/20260919-protocol-v2.0.0-journey-c12f0498/` |
+| 真装置七条 | 7/7 PASS（`compensate-then-reconnect` 已转绿） | `evidence/l2/20260919-real-onboard-*-002/` |
+
+**沿用、不重跑的两项，理由：**`e0f26b37..c12f0498` 在服务端 `src/`、`tests/` 下零差异（#153、#155 只改 `scripts/`），所以服务端 `CONTROL_SERVER_G2`（绑 `06b65688`）
+与服务端全量 L1 的产品代码与重跑身份相同。CI 三连的 28 个合成场景只用合成车载端，不经过车载端代码；#155 改的 `Get-L2RealInbound` 只在真装置装置里调用，
+#153 改的是 staged runner，都不在合成场景的路径上。
 
 ## 身份
 
@@ -156,7 +176,7 @@ control-server#90（批次5-36）。本报告逐项对照规格 `8005-agv-progra
 | `real-onboard-station-timeout-door-open` | #86 | PASS | `evidence/l2/20260919-real-onboard-station-timeout-door-open-001/` |
 | `real-onboard-unload-not-emptied` | #86 | PASS | `evidence/l2/20260919-real-onboard-unload-not-emptied-001/` |
 | `real-onboard-durable-ack-lost` | #88 | PASS | `evidence/l2/20260919-real-onboard-durable-ack-lost-001/` |
-| `real-onboard-compensate-then-reconnect` | #88 | **FAIL**（缺陷单 A） | `evidence/l2/20260919-real-onboard-compensate-then-reconnect-001/`；对照 `…-onboard-8f308bb1-001/` |
+| `real-onboard-compensate-then-reconnect` | #88 | 第一轮 **FAIL**（缺陷单 A）；重跑 `-002` **PASS** | `evidence/l2/20260919-real-onboard-compensate-then-reconnect-001/`；对照 `…-onboard-8f308bb1-001/` |
 | `real-onboard-restart-while-waiting-operator` | #88 | PASS | `evidence/l2/20260919-real-onboard-restart-while-waiting-operator-001/` |
 | `real-onboard-cancellation-authorization-lost` | #88 | PASS，含 `L2-CAL-10`（REQ-0357）：`至多 1 仓 / 采样错误 0 次` | `evidence/l2/20260919-real-onboard-cancellation-authorization-lost-001/` |
 
@@ -196,18 +216,22 @@ control-server#90（批次5-36）。本报告逐项对照规格 `8005-agv-progra
 
 ## 四、红证据与缺陷单
 
-本轮的红全部保留，没有重跑、没有被绿覆盖：
+两轮的红全部保留，没有被绿覆盖；每处红都先读证据再定性，没有「重跑一次看看」：
 
 | 单 | 红在哪里 | 性质 | 修复去向 |
 | --- | --- | --- | --- |
 | A [`20260919-onboard-recovery-entries-missing-after-hmi109.md`](defects/20260919-onboard-recovery-entries-missing-after-hmi109.md) | journey `FP-IS-07` 四条恢复场景；真装置 `real-onboard-compensate-then-reconnect` | **车载端回归**，onboard-hmi PR #111（`9748c418`）引入：重启进 `RecoveryRequired` 后四个管理员入口不出现。车载端退到 `8f308bb1` 对照，入口出现、补偿收敛。根因：`MainViewModel.SetRecoveryEntry` 没把属性名转交给 `SetProperty`，变更通知名成了 `"SetRecoveryEntry"`，绑定收不到；修复在 onboard-hmi PR #114 | [onboard-hmi#112](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/112) |
 | B [`20260919-staged-g3-forced-recovery-criteria-predate-cs137.md`](defects/20260919-staged-g3-forced-recovery-criteria-predate-cs137.md) | staged `FP-IS-07` 三条强制取出判据 | **G3 判据落后**：仍断言 control-server#137 移除的断头行为；产品行为与 #137 设计一致 | [control-server#151](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/151)（改 `run-staged-g3.ps1`） |
+| C [`20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md`](defects/20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md) | 重跑的 journey `g3-forced-mechanical-recovery` 中止，连带 `FP-IS-01`／`02`／`03`／`07` | **场景脚本缺陷**：只按「强制机械恢复」入口，不按 onboard-hmi#107 加的「已隔离并完成机械取出」，车载端按设计不上报结果，服务端工作流停在 `AwaitingResult` | 待调度会话开票（改 `scripts/l2/scenarios/g3-forced-mechanical-recovery.ps1`） |
 
-**修好之后从头重跑什么**（不拼接）：
+另有一处第一轮就在的服务端 L2 脚本缺陷由 onboard-hmi#112 的会话发现并修复：`Get-L2RealInbound` 在单条回应时读 `.Count` 抛异常（control-server#154，PR #155），
+它让第一轮车载端退到 `8f308bb1` 的对照运行误判超时，记在缺陷单 A 里。
 
-- A 改车载端产品代码：车载端 `ONBOARD_HMI_G2` 十片在新提交上重跑；G3 共享绑定的 `OnboardCommit` 移到新提交、四个 G3 runner 全部重跑；真装置七条重跑。
-- B 只改 staged runner：随 A 之后的整轮 G3 一起重跑。
-- 服务端 `CONTROL_SERVER_G2` 与 CI 三连只用合成车载端、不碰这两处，证据保留；若 A 或 B 的修复碰到服务端产品代码或 L2 共享模块，再按范围重跑，写进本报告。
+**状态：**A、B 已修复，重跑复验 PASS（两份缺陷单均改为 fixed，附复验证据）。C 待修。
+
+**修好之后从头重跑了什么**（不拼接）：A 改了车载端产品代码，所以车载端 `ONBOARD_HMI_G2` 十片、车载端全量 L1、四个 G3 runner、真装置七条都在新身份上重跑（见「重跑」一节）；
+B 随这一整轮 G3 重跑。服务端 G2、服务端全量 L1 与 CI 三连沿用，理由同「重跑」一节。
+C 修复合入后：G3 共享绑定的 `ControlServerCommit` 移到新提交，四个 G3 runner 重跑；其余证据不经过那个场景文件，保留。
 
 这两处与 control-server#90 评论里调度会话留档的那一类（「读到的事实比它被采信的时刻旧」，D-1 与 `20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md`）
 不是同一类：本轮 `session-established-while-moving` 三连全绿，没有再现。那一类在这套代码里出现过两次，仍值得在后续引擎改动里当作固定检查项。

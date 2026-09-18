@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "1.3.0",
+  "gate": "G3",
+  "runKind": "STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT",
+  "runId": "20260918T174009438Z",
+  "integrationSliceId": "FP-IS-06",
+  "status": "PASS",
+  "assuranceLevel": "STAGED_REBUILD",
+  "formalSlicePass": true,
+  "startedAt": "2026-09-18T17:40:09.4381526+00:00",
+  "finishedAt": "2026-09-18T17:41:45.5039591+00:00",
+  "implementationRepository": "8005-agv-control-server",
+  "commits": {
+    "controlServer": "c12f0498281a39e4fa94a51bd4506c3d3af97a1c",
+    "onboardEvidenceBinding": "29fbf65e0b4d58c80849d5e6d0e44f40903c411e",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "86575456c847041515b7b75e8851a00e0d939804",
+    "harness": "69894550f9994206bb3813424766d4e4162652ba",
+    "harnessWorktreeCleanAtStart": true
+  },
+  "protocolReleaseVersion": "2.0.0",
+  "protocolTag": "protocol-v2.0.0",
+  "protocolProfileId": "AGV_FULL_PRODUCT",
+  "protocolVersion": 3,
+  "protocolApprovalStatus": "APPROVED_RELEASE",
+  "protocolRepositoryCommit": "86575456c847041515b7b75e8851a00e0d939804",
+  "protocolManifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+  "protocolSchemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+  "protocolVectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+  "integrationSliceIndexSha256": "268ce62be4e0ec8fe6d26e2048a59cf1732f02713415a0c5f41b6b009951b6fc",
+  "integrationSliceIndexSource": "vendor/8005-agv-protocol/integration-slices/index.json",
+  "vectorIds": [
+    "CV-RELIABLE-RETRY-SAME-CONTENT",
+    "CV-RELIABLE-RETRY-DIFFERENT-CONTENT",
+    "CV-REQUEST-FIRST-RESULT-REPLAY"
+  ],
+  "assertionIds": {
+    "sameConnectionSameMessageIdSameContent": "PASS",
+    "sameMessageIdDifferentContentStableConflict": "PASS",
+    "businessMessageSameMessageIdSameContentReplay": "PASS",
+    "businessMessageSameMessageIdDifferentContentStableConflict": "PASS",
+    "businessMessageAckDropInSessionReplay": "PASS",
+    "businessMessageDelayedDeliveryAccepted": "PASS",
+    "businessMessageReorderedDeliveryAccepted": "PASS",
+    "identityRejections": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "secretScan": "PASS"
+  }
+}

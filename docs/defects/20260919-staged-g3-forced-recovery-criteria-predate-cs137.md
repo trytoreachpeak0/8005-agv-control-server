@@ -1,6 +1,6 @@
 # 缺陷：staged G3 的三条强制机械取出判据仍断言 control-server#137 之前的「断头」行为
 
-Status: open（G3 装置判据，不是产品缺陷），修复票 [control-server#151](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/151)
+Status: fixed，由 [control-server#151](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/151) 修复（PR [#153](https://github.com/trytoreachpeak0/8005-agv-control-server/pull/153)，合并提交 `c3c81eaf`），control-server#90 重跑 PASS
 Owner repository: `8005-agv-control-server`（`scripts/run-staged-g3.ps1` 第 3282～3308 行附近的 `$recoveryGenerationAdvancePass`、`$recoverySupersededResultHistoricalPass`、`$recoveryNoFalseClosurePass`）
 Found by: control-server#90（批次 5 出口）第 4 步，`run-staged-g3.ps1`，2026-09-18 23:45:42～23:47:45（本地时间），
 [`evidence/g3/20260918-protocol-v2.0.0-staged-06b65688/run-result.json`](../../evidence/g3/20260918-protocol-v2.0.0-staged-06b65688/run-result.json)
@@ -63,6 +63,23 @@ control-server#137（PR #140，合并提交 `3dcde12b`）**有意**改了这里�
 - **影响的出口证据**：只影响 staged runner。按「修好后从头重跑受影响的门禁、不拼接」的规矩，control-server#90 在修复合入后重跑整个 `run-staged-g3.ps1`。
   G2 两端与 CI 三连不碰这个脚本，证据保留。
 
+## 修复
+
+control-server#151（PR #153）按 cs#137 之后的行为改写了三条判据：第 2 代强制工作流 `Reconciled`、会话 `CLOSED`（代次 2）为期望值；第 1 代仍 `HistoricalOnly`，且没有硬件记录指向它；「没有虚假完成」改为断言没有建单、需求、站点作业，工作流与会话不带需求或站点作业，唯一的硬件恢复记录指向第 2 代工作流及其会话，恢复车辆就绪为 `RecoveryRequired`。判据名与 `FP-IS-07` 归属不变。
+
+同一绑定上：新判据 `STAGED_G3_RECOVERY_REPLAY_PASS`（`evidence/g3/20260919-b5-151-staged-new-criteria-06b65688`）；判据退回旧版本仍 `STAGED_SLICE_FAIL`、红的正是这三条（`evidence/g3/20260919-b5-151-staged-old-criteria-06b65688`）。
+
+覆盖边界：staged 探针的恢复车辆不完成握手（就绪原因 `HANDSHAKE_INCOMPLETE`），看不到强制取出单独挡住就绪；直接证明在 L1 `RecoveryStateMachineG2Tests.AfterAForcedRecoveryTheVehicleStaysUnreadyUntilAHardwareRecoveryRecordForItArrives` 与真装置场景 `g3-forced-mechanical-recovery` 的 `G3-07-44`。
+
+证据：
+- 新判据 PASS：`evidence/g3/20260919-b5-151-staged-new-criteria-06b65688`（harness `166acd80`）
+- 旧判据仍 FAIL：`evidence/g3/20260919-b5-151-staged-old-criteria-06b65688`（harness `93b09ebb`）
+
+**control-server#90 的复验**（2026-09-19，修复合入后在出口身份上从头重跑）：`run-staged-g3.ps1` 在 control-server `c12f0498`（harness `69894550`）、
+onboard-hmi `29fbf65e`、slots-simulator `fb5f7c59`、`protocol-v2.0.0@86575456` 上 `STAGED_G3_RECOVERY_REPLAY_PASS`，
+`FP-IS-00`、`06`、`07`、`14`、`15` 全部 `PASS`：[`evidence/g3/20260919-protocol-v2.0.0-staged-c12f0498/`](../../evidence/g3/20260919-protocol-v2.0.0-staged-c12f0498/)。
+上面覆盖边界里提到的 `G3-07-44` 那一半，本轮 journey 里的 `g3-forced-mechanical-recovery` 没走到判据（另一处场景缺陷，见
+[`20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md`](20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md)），L1 那一半在全量测试里通过。
 ## 为什么没有早点发现
 
 control-server#137 的 PR 写明「没跑真装置场景 `g3-forced-mechanical-recovery`」，staged runner 也没有跑：它们都要本机真装置时段，而当时时段被 control-server#88 占用。

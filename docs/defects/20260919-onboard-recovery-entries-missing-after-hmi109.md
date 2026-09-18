@@ -1,6 +1,6 @@
 # 缺陷：onboard-hmi#109 合入后，车载端重启进入 `RecoveryRequired` 时四个管理员恢复入口都不出现
 
-Status: open（车载端回归），修复票 [onboard-hmi#112](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/112)
+Status: fixed，由 [onboard-hmi#112](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/112) 修复（PR [#114](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/pull/114)，合并提交 `29fbf65e`），连同 [control-server#154](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/154)（`c12f0498`）复验 PASS，见文末「复验」
 Owner repository: `8005-agv-onboard-hmi`（`w2g/fp-v2-impl`，onboard-hmi PR #111 的合并提交 `9748c418` 引入；`8f308bb1` 上没有）
 Found by: control-server#90（批次 5 出口）第 4 步 `run-journey-g3.ps1` 与第 6 步真装置 L2，2026-09-19：
 - [`evidence/g3/20260918-protocol-v2.0.0-journey-06b65688/`](../../evidence/g3/20260918-protocol-v2.0.0-journey-06b65688/)：`JOURNEY_G3_SLICE_FAIL`，`FP-IS-07` 四条恢复场景红
@@ -90,7 +90,19 @@ PR #114 的新测试 `RecoveryEntryNotificationViewModelTests.AfterARestartSettl
 场景的等待条件因此一直观察不到「服务端收到补偿结果」。由 onboard-hmi#112 的会话发现，修复票 [control-server#154](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/154)。
 所以 `real-onboard-compensate-then-reconnect` 要在 PR #114 与 control-server#154 都合入后才能转绿；本票的重跑以两者都合入为前置。
 
-本单状态在 PR #114 与 control-server#154 合入、control-server#90 在修复后的车载端提交上重跑真装置七条与四个 G3 runner 全绿后改为 fixed。
+## 复验（2026-09-19，control-server#90 修复后的重跑）
+
+绑定：control-server `c12f0498`（harness `69894550`）、onboard-hmi `29fbf65e`、slots-simulator `fb5f7c59`、协议 `protocol-v2.0.0@86575456`。
+
+| 本单的红 | 复验 | 证据 |
+| --- | --- | --- |
+| 真装置 `real-onboard-compensate-then-reconnect` | **PASS**，`L2-CR-00`～`08` 全过 | [`evidence/l2/20260919-real-onboard-compensate-then-reconnect-002/`](../../evidence/l2/20260919-real-onboard-compensate-then-reconnect-002/) |
+| journey `g3-exception-resume`、`g3-exception-compensate`、`g3-fault-cargo-handoff` | **三条退出码 0** | [`evidence/g3/20260919-protocol-v2.0.0-journey-c12f0498/`](../../evidence/g3/20260919-protocol-v2.0.0-journey-c12f0498/) |
+| journey `g3-forced-mechanical-recovery` 的入口 | 入口出现（`onboard-forced-recovery-entry = True`） | 同上 |
+
+同一轮真装置其余六条、车载端 `ONBOARD_HMI_G2` 十片也在 `29fbf65e` 上全 PASS。
+`g3-forced-mechanical-recovery` 过了入口之后仍红，那是另一处场景缺陷，记在
+[`20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md`](20260919-g3-forced-recovery-scenario-skips-isolation-confirm.md)，不属于本单。
 
 ## 为什么合入前没发现
 

@@ -1,0 +1,19 @@
+2026-09-19T01:49:58.5770354+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+29fbf65e0b4d58c80849d5e6d0e44f40903c411e。
+2026-09-19T01:49:59.3537770+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T01:49:59.3800283+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T01:49:59.3826614+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T01:50:00.0347905+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-19T01:50:06.9324550+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-03E-20260918T174941521Z。 
+2026-09-19T01:50:07.7882063+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-03E-20260918T174941521Z。 
+2026-09-19T01:50:08.0421694+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-19T01:50:08.0734594+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-19T01:50:08.1964684+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-19T01:50:08.6483713+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-19T01:50:08.7872632+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c5b80179-45b3-695c-8e0f-0204bc6bbd14。
+2026-09-19T01:50:09.4138378+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 1->0。
+2026-09-19T01:50:09.5229599+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 0->0。
+2026-09-19T01:50:09.7883760+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=c5b80179-45b3-695c-8e0f-0204bc6bbd14。
+2026-09-19T01:50:10.7985719+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=c5b80179-45b3-695c-8e0f-0204bc6bbd14，保留原OperationResult重放。
+2026-09-19T01:50:52.1788874+08:00	Information	ModbusTcpIoModuleClient	8号仓IO变化：DO 0->0，锁DI 1->0，光幕DI 1->1。
+2026-09-19T01:50:52.5175480+08:00	Information	ModbusTcpIoModuleClient	8号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
+2026-09-19T01:50:52.7898691+08:00	Warning	WireToGateBusinessService	出发前安全检查已过期：check=753a6b74-ae49-b856-8eae-d1ec2de5f985，询问的安全版本=7，本端已被接受的版本=9。回PREDEPARTURE_CHECK_EXPIRED，不作答。
