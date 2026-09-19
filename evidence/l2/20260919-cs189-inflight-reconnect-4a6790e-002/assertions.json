@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-inflight-load-reconnect",
+  "runId": "20260919T102201692Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "batch-2",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "protocolFaultProxy": true,
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T102201692Z",
+    "controlServerCommit": "169dfa428fa1f8c9bb81a33fb60777c776776f52",
+    "rig": "RealOnboard",
+    "onboardHmiCommit": "4a6790e5753b8a350049494569f8ec4a82fdf1f1"
+  },
+  "assertions": [
+    {
+      "id": "L2-IR-00",
+      "description": "车载端的会话经协议故障代理建立（否则断开注入不到这条链路上）",
+      "outcome": "PASS",
+      "expected": ">= 1 SessionHello through the proxy",
+      "actual": 1
+    },
+    {
+      "id": "L2-IR-01",
+      "description": "重连后服务端在等这次装货的结果：新代次、RecoveryRequired、PENDING_FACT_RECONCILIATION_REQUIRED，待对账 attempt 含本次装货（CV-CONNECTION-LOSS-SAFE-FINISH 的 NEVER_READY_BEFORE_RECONCILIATION）",
+      "outcome": "PASS",
+      "expected": "gen > 1 / RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED / pending 含 1d1c97b5-03da-2850-bf83-b9c29e1f643b",
+      "actual": "断 1 条 / gen 2 / RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED / pendingAttempts [\"1d1c97b5-03da-2850-bf83-b9c29e1f643b\"] / pendingResults [] / unsettled 1d1c97b5-03da-2850-bf83-b9c29e1f643b / checkpoint ACTIVE_UNLOCK_SET / activeUnlock [1]"
+    },
+    {
+      "id": "L2-IR-02",
+      "description": "装货在车上结束后，这次装货的 OperationResult 送达服务端并被受理，会话回到 Ready、装货 Committed（ADR-cross-0028／0029：未就绪期间允许结果补报）",
+      "outcome": "FAIL",
+      "expected": "CLOSED/OCCUPIED/1/0 / 结果 >= 1 / Ready / Committed",
+      "actual": "CLOSED/OCCUPIED/1/0 / 结果 1 / gen 2 / RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED / pendingAttempts [\"1d1c97b5-03da-2850-bf83-b9c29e1f643b\"] / pendingResults [] / unsettled 1d1c97b5-03da-2850-bf83-b9c29e1f643b / checkpoint ACTIVE_UNLOCK_SET / activeUnlock [1] / Prepared"
+    },
+    {
+      "id": "L2-IR-03",
+      "description": "（观察）断线重连后这次装货的 OperationProgress 仍送达服务端",
+      "outcome": "FAIL",
+      "expected": ">= 1 progress after the drop",
+      "actual": "0 ()"
+    },
+    {
+      "id": "L2-IR-04",
+      "description": "（探针）第二次断线重连后，结果经车载端的中断结算送达，会话回 Ready、装货 Committed、旅程走到关卡段",
+      "outcome": "FAIL",
+      "expected": "结果 >= 1 / Ready / Committed / AwaitingGateArrival",
+      "actual": "断 1 条 / 结果 1 / gen 3 / Ready / READY / pendingAttempts [] / pendingResults [] / unsettled  / checkpoint SAFE_FINISH_REACHED / activeUnlock [] / Committed / AwaitingLoadResult"
+    },
+    {
+      "id": "L2-IR-05",
+      "description": "同一 attempt 至多一条 OperationResult（服务端收件箱按 messageId 一行），不重复结算",
+      "outcome": "PASS",
+      "expected": "<= 1",
+      "actual": "1 (1d1c97b5-03da-2850-bf83-b9c29e1f643b gen 3 outcome COMPLETED -> DurableAck,SessionReadiness)"
+    },
+    {
+      "id": "L2-IR-06",
+      "description": "（观察，hmi#124 线索）全程没有 ProtocolProblem；重连后的连接上服务端发过的行程快照条数照实记录",
+      "outcome": "PASS",
+      "expected": "0 ProtocolProblem",
+      "actual": "0 ProtocolProblem () / 重连后行程快照 0 条 ()"
+    }
+  ]
+}
