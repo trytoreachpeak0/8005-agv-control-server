@@ -508,6 +508,9 @@ jobs:
               @{ Name = 'real-onboard-expected-action-overdue';               Runs = 3 }
               # control-server#222 bisect only; the line and the comment above are settled before this branch merges.
               @{ Name = 'real-onboard-restart-with-open-recovery-session';    Runs = 1 }
+              # control-server#222 fault injection, temporary: removed in the next commit.
+              @{ Name = 'cs222-inject-session-answer-not-dropped';            Runs = 1 }
+              @{ Name = 'cs222-inject-replay-dropped';                        Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
