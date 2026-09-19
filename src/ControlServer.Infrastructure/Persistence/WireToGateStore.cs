@@ -1102,6 +1102,67 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             row => row.StationId == stationId && row.TaskType == taskType,
             cancellationToken);
 
+    /// <summary>
+    /// Which slot operation a demand's journey performs at its AREA machine station: the one that carries
+    /// and freezes the station task type admission (scope specification 21.2 item 2).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The direction is not stored with the journey. It is the task type's rule under the rule version the
+    /// demand froze at acceptance (REQ-0344): a fixed station at the destination (WIRE_TO_GATE) puts the
+    /// AREA machine at the pickup, so the load; at the origin (STAGING_TO_WIRE), at the drop-off, so the
+    /// unload. A later rule version does not move a demand already accepted.
+    /// </para>
+    /// <para>
+    /// A demand with no freeze was accepted before control-server#160 wrote one, when only WIRE_TO_GATE
+    /// could be; it is judged as that. Anything else without a rule to read is <c>null</c>, and every
+    /// caller treats that as not admitted.
+    /// </para>
+    /// </remarks>
+    public async Task<SlotOperationType?> AreaEndOperationAsync(
+        string demandId,
+        string taskType,
+        CancellationToken cancellationToken)
+    {
+        DemandTaskTypeStationFreeze? freeze = await new DemandTaskTypeStationFreezeStore(dbContext)
+            .ReadAsync(demandId, cancellationToken).ConfigureAwait(false);
+        string? fixedEnd = freeze is null
+            ? string.Equals(taskType, TransportTaskTypes.WireToGate, StringComparison.Ordinal)
+                ? TaskTypeFixedEnd.Destination
+                : null
+            : await dbContext.Set<TaskTypeStationRuleRow>().AsNoTracking()
+                .Where(row => row.Version == freeze.RuleVersion && row.TaskType == taskType)
+                .Select(row => row.FixedEnd)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        return fixedEnd switch
+        {
+            TaskTypeFixedEnd.Destination => SlotOperationType.Load,
+            TaskTypeFixedEnd.Origin => SlotOperationType.Unload,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Whether the task type is admitted at the journey's AREA machine station: its pickup when the machine is where
+    /// it loads, its drop-off when the machine is where it unloads (<see cref="AreaEndOperationAsync"/>). A journey
+    /// whose direction cannot be read is not admitted.
+    /// </summary>
+    public async Task<bool> IsTaskTypeAllowedAtAreaEndAsync(
+        JourneyRuntimeRow runtime,
+        string taskType,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        return await AreaEndOperationAsync(runtime.DemandId, taskType, cancellationToken).ConfigureAwait(false) switch
+        {
+            SlotOperationType.Load => await IsTaskTypeAllowedAsync(runtime.PickupStationId, taskType, cancellationToken)
+                .ConfigureAwait(false),
+            SlotOperationType.Unload => await IsTaskTypeAllowedAsync(runtime.GateStationId, taskType, cancellationToken)
+                .ConfigureAwait(false),
+            _ => false,
+        };
+    }
+
     public async Task<ProtocolOutboxRow> PrepareSlotOperationAsync(
         StationOperationPlan plan, string messageId, string commandJson, CancellationToken cancellationToken)
     {
@@ -1111,11 +1172,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             throw new BusinessIdentityConflictException("Target slots must be a unique non-empty subset of 1..8.");
         }
         bool hasAdmissionIdentity = plan.AdmissionStationId is not null || plan.AdmissionTaskType is not null;
-        if ((plan.AdmissionStationId is null) != (plan.AdmissionTaskType is null) ||
-            hasAdmissionIdentity && plan.OperationType != SlotOperationType.Load)
+        if ((plan.AdmissionStationId is null) != (plan.AdmissionTaskType is null))
         {
             throw new BusinessIdentityConflictException(
-                "Only LOAD may carry a complete station/task admission identity.");
+                "A station/task admission identity must name both the station and the task type.");
+        }
+        // I6 overturned (scope specification 21.2 item 2): the admission is carried and frozen on the
+        // operation at the AREA machine station, which is the load for WIRE_TO_GATE and the unload for
+        // STAGING_TO_WIRE. Decided here from the demand's frozen rule, not from the caller's say-so.
+        if (hasAdmissionIdentity &&
+            await AreaEndOperationAsync(plan.DemandId, plan.AdmissionTaskType!, cancellationToken)
+                .ConfigureAwait(false) != plan.OperationType)
+        {
+            throw new BusinessIdentityConflictException(
+                "Only the operation at the AREA machine station may carry a station/task admission identity.");
         }
 
         StationOperationRow? existing = await dbContext.StationOperations
@@ -1143,7 +1213,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                     decision.TaskType != plan.AdmissionTaskType)
                 {
                     throw new BusinessIdentityConflictException(
-                        "Frozen admission decision does not match the replayed LOAD operation.");
+                        "Frozen admission decision does not match the replayed slot operation.");
                 }
             }
 

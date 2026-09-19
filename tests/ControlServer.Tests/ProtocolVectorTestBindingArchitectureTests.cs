@@ -94,6 +94,7 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
     [
         .. Enumerable.Range(0, 8).Select(sequence => FormattableString.Invariant($"FP-IS-{sequence:D2}")),
         "FP-IS-10",
+        "FP-IS-11",
         "FP-IS-14",
         "FP-IS-15"
     ];
@@ -151,7 +152,6 @@ public sealed class ProtocolVectorTestBindingArchitectureTests
             ["CV-AUTOMATIC-CHARGING-CYCLE"] = "FP-IS-13, batch 9",
             ["CV-MANUAL-STATION-CLEARANCE"] = "FP-IS-13, batch 9",
             ["CV-MULTI-STOP-PLAN-NINE-LEGS"] = "FP-IS-08, batch 7",
-            ["CV-REVERSED-DIRECTION-JOURNEY"] = "FP-IS-11, batch 6",
             ["CV-UNABLE-TO-CHARGE-FIELD-CONFIRMATION"] = "FP-IS-13, batch 9",
             ["CV-WAITING-POINT-IDLE-RETURN"] = "FP-IS-12, batch 8",
             ["CV-WORKLIST-SELECTION-ACCEPTED"] = "FP-IS-09, batch 11",

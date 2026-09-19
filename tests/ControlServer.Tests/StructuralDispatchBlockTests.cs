@@ -60,7 +60,6 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("AREA_STATION_NOT_UNIQUE", DispatchReasonClass.Structural)]
     [InlineData("DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING", DispatchReasonClass.Structural)]
     [InlineData("ROUTE_EVIDENCE_MISSING", DispatchReasonClass.Backlog)]
-    [InlineData("FIXED_STATION_AS_ORIGIN_NOT_SUPPORTED", DispatchReasonClass.Backlog)]
     [InlineData("DISPATCH_ZONE_HAS_NO_VEHICLES", DispatchReasonClass.Structural)]
     [InlineData("VEHICLE_NOT_ADMITTED_IN_ZONE", DispatchReasonClass.Backlog)]
     [InlineData("PACKAGE_CAPACITY_NOT_UNIQUE", DispatchReasonClass.Backlog)]
