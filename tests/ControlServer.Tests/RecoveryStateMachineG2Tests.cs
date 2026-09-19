@@ -1777,6 +1777,81 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#180. An attempt admits one replacement result per resume authorization, so it can have only
+    /// one resume waiting for that result. A second RESUME_AFTER_REPAIR on the same attempt while the first still
+    /// waits -- here the administrator pressing it twice in one session -- is refused before any workflow exists,
+    /// and the replacement result that follows settles the first resume as if the second had never been asked.
+    /// Before the fix both were accepted, and the replacement result then matched two waiting resumes and threw.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ASecondResumeWhileTheFirstStillAwaitsItsResultIsRefusedAndTheFirstStillSettles()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME_TWICE";
+        const string proof = "resume-twice-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string sessionId = StableGuid(RequestId, "exception-recovery-session");
+            ExceptionRecoverySessionRow before = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            BusinessPicture pictureBefore = await BusinessPictureAsync(context);
+            int outboxBefore = await context.ProtocolOutbox.CountAsync(token);
+
+            const string secondResumeId = "51000000-0000-4000-8000-000000000180";
+            string refused = await processor.ProcessAsync(
+                RecoveryAction(
+                    "RESUME_AFTER_REPAIR", messageId: "e0000000-0000-4000-8000-000000001800", actionId: secondResumeId),
+                state,
+                token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("RecoveryActionRejected", MessageType(refused));
+            JsonElement problem = FirstPayload(refused);
+            Assert.Equal(secondResumeId, problem.GetProperty("recoveryActionId").GetString());
+            Assert.Equal(before.Revision, problem.GetProperty("recoverySessionRevision").GetInt64());
+            Assert.Equal(ServerReasonCodes.ActionNotAllowedInState,
+                problem.GetProperty("problem").GetProperty("reasonCode").GetString());
+            RecoveryWorkflowRow first = Assert.Single(await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+            Assert.Equal(ActionId, first.WorkflowId);
+            Assert.Equal(RecoveryWorkflowState.AwaitingResult, first.State);
+            ExceptionRecoverySessionRow after = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal(("EXECUTING", before.Revision, before.UpdatedAt), (after.State, after.Revision, after.UpdatedAt));
+            Assert.Equal(pictureBefore, await BusinessPictureAsync(context));
+            Assert.Equal(outboxBefore, await context.ProtocolOutbox.CountAsync(token));
+
+            string ack = await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001801",
+                    "OperationResult",
+                    OperationResultPayload(journalCheckpoint: "RESUME_RESULT_RECORDED")),
+                state,
+                token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(RecoveryWorkflowState.Reconciled,
+                (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == sessionId, token)).State);
+            Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.SingleAsync(token)).Status);
+            Assert.Equal("RECONCILED", (await ClosingReasonsAsync(context))[sessionId].Reason);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#175. Session A took the same action twice; the first result did not reconcile and closed A,
     /// and the administrator is now working the demand in session B. The second result of A then arrives. Whether
     /// it concludes success or not, it is the record of A's own attempt and nothing more: it is acknowledged and
