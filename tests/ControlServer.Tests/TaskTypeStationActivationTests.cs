@@ -1269,6 +1269,38 @@ public sealed class TaskTypeStationActivationTests
     }
 
     /// <summary>
+    /// cs#191 第 2 条（第二轮复审 N3 的另一支）：第二步已提交、读回也对，写 <c>Activated</c> 审计时数据库等锁超时。不崩溃，
+    /// 按结果未知处理——写一条超时的结果未知审计、该图重新暂停着，从不留下一条「已生效」审计；对账读到目标版本。
+    /// </summary>
+    [Fact]
+    public async Task AnActivatedAuditThatTheDatabaseRefusesIsConcludedAsUnknownAndNeverRecordedAsActivated()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        AuditInsertFault fault = new(
+            TaskTypeStationActivationAuditActions.Activated,
+            new Microsoft.Data.Sqlite.SqliteException("database is locked", 5));
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(harness.NewContext(fault));
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(1, fault.Thrown);
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
+        Assert.Equal("25|2|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
+        Assert.Equal(2, (await harness.HoldsAsync()).Count(hold => hold.ReleasedAt is null));
+        IReadOnlyList<BusinessAuditRecordRow> audit = await harness.AuditAsync();
+        Assert.DoesNotContain(audit, row => row.Action == TaskTypeStationActivationAuditActions.Activated);
+        Assert.Equal(
+            (TaskTypeStationActivationAuditActions.ResultUnknown, GovernanceActionOutcome.TimedOut),
+            (audit[^1].Action, audit[^1].Outcome));
+        Assert.Equal([audit[^1].AuditRecordId], result.AuditRecordIds);
+        Assert.Contains(result.AttemptId, audit[^1].DetailJson, StringComparison.Ordinal);
+        Assert.Equal(
+            TaskTypeStationReconciliationConclusion.TargetActive,
+            (await harness.Default().Service.ReconcileAsync(25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token)).Conclusion);
+    }
+
+    /// <summary>
     /// 同一台重新起的服务端：在 <paramref name="harness"/> 的库文件上，带一份把 <c>WIRE_TO_GATE</c> 绑到 210 的预置，跑一遍启动装载。
     /// 返回启动写的每一行日志。
     /// </summary>
@@ -1534,5 +1566,29 @@ internal sealed class LineCapturingLoggerProvider(List<string> lines) : ILoggerP
                 lines.Add(formatter(state, exception));
             }
         }
+    }
+}
+
+/// <summary>
+/// The database refuses the insert of one audit action, once, from inside SaveChanges -- after the row was added to the
+/// context, as a lock timeout or a full disk would.
+/// </summary>
+internal sealed class AuditInsertFault(string action, Exception toThrow)
+    : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+{
+    public int Thrown { get; private set; }
+
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+        Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+        Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (Thrown == 0 && eventData.Context!.ChangeTracker.Entries<BusinessAuditRecordRow>().Any(entry =>
+                entry.State == EntityState.Added && entry.Entity.Action == action))
+        {
+            Thrown++;
+            throw toThrow;
+        }
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 }
