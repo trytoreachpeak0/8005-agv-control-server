@@ -133,8 +133,8 @@ public sealed class BoundFixedTaskStationResolverTests
             [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
             [GateBinding, StagingBinding]);
         RiotMapStationCatalogSnapshot map = Map with { Stations = [.. Map.Stations, new RiotMapStation(305, "派工待送取货")] };
-        TaskTypeStationHold released = await fixture.Holds.RaiseAsync(
-            25, TransportTaskTypes.StagingToWire, source, "TEST_HOLD", "{}", "test", Now, Token);
+        TaskTypeStationHold released = (await fixture.Holds.RaiseAsync(
+            25, TransportTaskTypes.StagingToWire, source, "TEST_HOLD", "{}", "test", Now, Token)).Hold;
         await fixture.Holds.ReleaseAsync(released.HoldId, "test", Now, Token);
         await fixture.Holds.RaiseAsync(25, TransportTaskTypes.WireToGate, source, "TEST_HOLD", "{}", "test", Now, Token);
         fixture.Context.ChangeTracker.Clear();
