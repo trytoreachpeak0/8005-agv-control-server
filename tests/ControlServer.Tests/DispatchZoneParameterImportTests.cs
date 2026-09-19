@@ -40,6 +40,8 @@ public sealed class DispatchZoneParameterImportTests
         { Csv($"{ZoneA},20m,600"), DispatchZoneParameterImportReasonCodes.ValueInvalid, 2, "a unit written into the value" },
         { Csv($"{ZoneA},20000,10min"), DispatchZoneParameterImportReasonCodes.ValueInvalid, 2, "a unit written into the threshold" },
         { Csv($"{ZoneA},+20000,600"), DispatchZoneParameterImportReasonCodes.ValueInvalid, 2, "a sign" },
+        { Csv($"{ZoneA},020000,600"), DispatchZoneParameterImportReasonCodes.ValueInvalid, 2, "a leading zero" },
+        { Csv($"{ZoneA},00,600"), DispatchZoneParameterImportReasonCodes.ValueInvalid, 2, "zero written as 00" },
         { Csv($"{ZoneA},1000001,600"), DispatchZoneParameterImportReasonCodes.ValueInvalid, 2, "increase above 1 km" },
         { Csv($"{ZoneA},20000,86401"), DispatchZoneParameterImportReasonCodes.ValueInvalid, 2, "threshold above 24 h" },
         { Csv($"{ZoneA},20000,0"), DispatchZoneParameterImportReasonCodes.ValueInvalid, 2, "threshold zero has no meaning (REQ-0203)" },
@@ -136,6 +138,21 @@ public sealed class DispatchZoneParameterImportTests
         Assert.Equal(2, cleared.Version?.Version);
         Assert.Empty(Describe(await harness.ReadCurrentAsync()));
         Assert.Equal([$"{ZoneA} 20000 600"], Describe(await harness.ReadVersionAsync(1)));
+    }
+
+    [Fact]
+    public async Task AnEmptyTableOnADatabaseWithNoVersionIsUnchangedBecauseNoVersionAlreadyMeansEveryZoneUnconfigured()
+    {
+        await using DispatchZoneParameterImportHarness harness = await CreateAsync();
+
+        DispatchZoneParameterImportResult headerOnly = await harness.ImportAsync(Csv());
+        DispatchZoneParameterImportResult allBlank = await harness.ImportAsync(Csv($"{ZoneA},,", $"{ZoneB},,"));
+
+        Assert.Equal(
+            (DispatchZoneParameterImportOutcome.Unchanged, (long?)null, (long?)null),
+            (headerOnly.Outcome, headerOnly.PreviousVersion, headerOnly.Version?.Version));
+        Assert.Equal((DispatchZoneParameterImportOutcome.Unchanged, (long?)null), (allBlank.Outcome, allBlank.Version?.Version));
+        Assert.Equal((0L, 0L, 0L, 0L), await harness.FootprintAsync());
     }
 
     // ---- versions: the same content twice, a change, a rollback, immutability -----------------
@@ -285,7 +302,9 @@ public sealed class DispatchZoneParameterImportTests
 
         await using (ControlServerDbContext loser = harness.Open(interleave))
         {
-            await Assert.ThrowsAnyAsync<Exception>(() => Service(loser).ImportAsync(
+            // Different content under the same number: the governed snapshot of that number is already frozen, so the freeze
+            // refuses before the version row is reached. FieldOps reports exactly this exception as CONFLICT.
+            await Assert.ThrowsAsync<GovernedSnapshotVersionConflictException>(() => Service(loser).ImportAsync(
                 Csv($"{ZoneA},0,", $"{ZoneB},30000,900", $"{ZoneC},,300"), dryRun: false, Imported, Token));
         }
 

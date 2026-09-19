@@ -126,6 +126,31 @@ public sealed class DispatchZoneParameterFieldOpsTests
         Assert.Equal(8, refused.SqliteErrorCode); // SQLITE_READONLY
     }
 
+    /// <summary>
+    /// Two FieldOps processes import the same new table at once. Deciding "unchanged" and writing the version have to be one
+    /// transaction, or both read the old version, both see a change, and the second writes a version that changes nothing but
+    /// its number.
+    /// </summary>
+    [Fact]
+    public async Task TwoProcessesImportingTheSameNewTableAtOnceWriteOneVersionAndTheOtherReportsUnchanged()
+    {
+        await using DispatchZoneParameterImportHarness harness = await CreateAsync();
+        await harness.ImportAsync(Csv($"{ZoneA},20000,600"));
+        string table = WriteCsv(harness, "same.csv", Csv($"{ZoneA},0,600", $"{ZoneB},15000,300"));
+
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            (int, JsonElement)[] results = await Task.WhenAll(
+                RunAsync(Import, "--database", harness.DatabasePath, "--input", table),
+                RunAsync(Import, "--database", harness.DatabasePath, "--input", table));
+
+            Assert.All(results, result => Assert.Equal(0, result.Item1));
+            string[] outcomes = [.. results.Select(result => result.Item2.GetProperty("outcome").GetString()!).Order(StringComparer.Ordinal)];
+            Assert.Equal(attempt == 0 ? ["OK", "UNCHANGED"] : ["UNCHANGED", "UNCHANGED"], outcomes);
+        }
+        Assert.Equal(["v1 snapshot=1 audit=1", "v2 snapshot=1 audit=1"], await harness.GovernanceTrailAsync());
+    }
+
     [Fact]
     public async Task AnImportWithoutAnInputIsAUsageError()
     {
