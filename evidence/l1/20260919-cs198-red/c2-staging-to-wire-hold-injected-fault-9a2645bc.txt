@@ -1,0 +1,70 @@
+commit: 9a2645bc tmp: cs#198 注入故障——GateLegAsync 查暂停写死 WIRE_TO_GATE（不入 PR）
+worktree dirty: 0 file(s)
+filter: FullyQualifiedName~ReversedDirectionJourneyRuntimeTests.AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased|FullyQualifiedName~ReversedDirectionJourneyRuntimeTests.HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg|FullyQualifiedName~TaskTypeHoldGateLegTests
+---
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.94]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:03.13]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:03.71]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:14.39]     ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg [FAIL]
+[xUnit.net 00:00:14.39]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:14.39]       Expected: AwaitingGateArrival
+[xUnit.net 00:00:14.39]       Actual:   AwaitingDepartureSafety
+[xUnit.net 00:00:14.39]       Stack Trace:
+[xUnit.net 00:00:14.39]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs(252,0): at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg()
+[xUnit.net 00:00:14.39]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs(254,0): at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg()
+[xUnit.net 00:00:14.39]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg [10 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: AwaitingGateArrival
+Actual:   AwaitingDepartureSafety
+  Stack Trace:
+     at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs:line 252
+   at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs:line 254
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.TaskTypeHoldGateLegTests.AHeldTaskTypeGetsNoGateLegUntilTheHoldIsReleased(frozen: False) [10 s]
+[xUnit.net 00:00:17.18]     ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased [FAIL]
+[xUnit.net 00:00:17.18]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:17.18]       Expected: Tuple (AwaitingDepartureSafety, "TASK_TYPE_HELD")
+[xUnit.net 00:00:17.18]       Actual:   Tuple (AwaitingGateArrival, null)
+[xUnit.net 00:00:17.18]       Stack Trace:
+[xUnit.net 00:00:17.18]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs(218,0): at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased()
+[xUnit.net 00:00:17.18]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs(233,0): at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased()
+[xUnit.net 00:00:17.18]         --- End of stack trace from previous location ---
+  Passed ControlServer.Tests.TaskTypeHoldGateLegTests.AHeldTaskTypeGetsNoGateLegUntilTheHoldIsReleased(frozen: True) [2 s]
+  Failed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (AwaitingDepartureSafety, "TASK_TYPE_HELD")
+Actual:   Tuple (AwaitingGateArrival, null)
+  Stack Trace:
+     at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs:line 218
+   at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs:line 233
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.TaskTypeHoldGateLegTests.AHoldRaisedAfterTheGateLegWasCreatedLeavesThatOrderAlone [2 s]
+[xUnit.net 00:01:02.25]   Finished:    ControlServer.Tests (ID = '7fe1d27820c58fa88990765005f51436f5418fd1c28f465e44b0b77937c5f8c4')
+Test Run Failed.
+Total tests: 5
+     Passed: 3
+     Failed: 2
+ Total time: 1.0587 Minutes

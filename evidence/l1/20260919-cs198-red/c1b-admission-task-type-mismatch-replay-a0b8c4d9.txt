@@ -1,0 +1,61 @@
+commit: a0b8c4d9 test: 重放已有操作行时同样拒绝准入任务类型与需求 WorkType 不等（cs#198 c-1）
+worktree dirty: 0 file(s)
+filter: FullyQualifiedName~AreaEndAdmissionStoreTests
+---
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.56]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:01.60]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:01.86]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.AreaEndAdmissionStoreTests.AStagingToWireUnloadCarriesAndFreezesTheAreaMachineAdmission [2 s]
+  Passed ControlServer.Tests.AreaEndAdmissionStoreTests.AnAdmissionIdentityOnTheLegAwayFromTheAreaMachineIsRefused [690 ms]
+[xUnit.net 00:00:05.72]     ControlServer.Tests.AreaEndAdmissionStoreTests.AnAdmissionIdentityNamingAnotherTaskTypeThanTheDemandsIsRefused [FAIL]
+[xUnit.net 00:00:05.72]       exception: none; operations: 1; admission snapshots: 1; outbox rows: 1
+[xUnit.net 00:00:05.72]       Stack Trace:
+[xUnit.net 00:00:05.73]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\AreaEndAdmissionStoreTests.cs(100,0): at ControlServer.Tests.AreaEndAdmissionStoreTests.AnAdmissionIdentityNamingAnotherTaskTypeThanTheDemandsIsRefused()
+[xUnit.net 00:00:05.73]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\AreaEndAdmissionStoreTests.cs(103,0): at ControlServer.Tests.AreaEndAdmissionStoreTests.AnAdmissionIdentityNamingAnotherTaskTypeThanTheDemandsIsRefused()
+[xUnit.net 00:00:05.73]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:06.31]     ControlServer.Tests.AreaEndAdmissionStoreTests.AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused [FAIL]
+[xUnit.net 00:00:06.31]       exception: none
+[xUnit.net 00:00:06.31]       Stack Trace:
+[xUnit.net 00:00:06.31]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\AreaEndAdmissionStoreTests.cs(132,0): at ControlServer.Tests.AreaEndAdmissionStoreTests.AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused()
+[xUnit.net 00:00:06.31]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\AreaEndAdmissionStoreTests.cs(133,0): at ControlServer.Tests.AreaEndAdmissionStoreTests.AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused()
+[xUnit.net 00:00:06.31]         --- End of stack trace from previous location ---
+[xUnit.net 00:00:06.59]   Finished:    ControlServer.Tests (ID = '7fe1d27820c58fa88990765005f51436f5418fd1c28f465e44b0b77937c5f8c4')
+  Failed ControlServer.Tests.AreaEndAdmissionStoreTests.AnAdmissionIdentityNamingAnotherTaskTypeThanTheDemandsIsRefused [814 ms]
+  Error Message:
+   exception: none; operations: 1; admission snapshots: 1; outbox rows: 1
+  Stack Trace:
+     at ControlServer.Tests.AreaEndAdmissionStoreTests.AnAdmissionIdentityNamingAnotherTaskTypeThanTheDemandsIsRefused() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\AreaEndAdmissionStoreTests.cs:line 100
+   at ControlServer.Tests.AreaEndAdmissionStoreTests.AnAdmissionIdentityNamingAnotherTaskTypeThanTheDemandsIsRefused() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\AreaEndAdmissionStoreTests.cs:line 103
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.AreaEndAdmissionStoreTests.AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused [591 ms]
+  Error Message:
+   exception: none
+  Stack Trace:
+     at ControlServer.Tests.AreaEndAdmissionStoreTests.AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\AreaEndAdmissionStoreTests.cs:line 132
+   at ControlServer.Tests.AreaEndAdmissionStoreTests.AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\AreaEndAdmissionStoreTests.cs:line 133
+--- End of stack trace from previous location ---
+Test Run Failed.
+Total tests: 4
+     Passed: 2
+     Failed: 2
+ Total time: 7.0540 Seconds

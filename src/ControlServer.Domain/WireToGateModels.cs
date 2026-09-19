@@ -386,3 +386,9 @@ public sealed class UnsafePhysicalEvidenceException(string message) : InvalidOpe
 public sealed class UnsafeMovementAuthorizationException(string message) : InvalidOperationException(message);
 public sealed class ActiveUnlockSetExpansionException(string message) : InvalidOperationException(message);
 public sealed class BusinessIdentityConflictException(string message) : InvalidOperationException(message);
+
+/// <summary>
+/// A journey plan carries the task type station rule and binding set versions but not the station catalog revision its
+/// endpoints were taken from, so accepting it would freeze the versions and not the endpoints (control-server#198).
+/// </summary>
+public sealed class JourneyPlanFreezeIncompleteException(string message) : InvalidOperationException(message);

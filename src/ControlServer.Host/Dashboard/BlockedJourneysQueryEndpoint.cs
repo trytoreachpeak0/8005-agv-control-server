@@ -25,6 +25,9 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
 {
     internal const string SessionNotReadyReason = "ONBOARD_SESSION_NOT_READY";
 
+    /// <summary>The code a stop held at its AREA machine for the station's admission carries (control-server#198).</summary>
+    internal const string AreaEndAdmissionHeldReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
+
     /// <summary>
     /// The attribution a row carries when its unknown safety evidence is explained by this server's own in-flight move order
     /// (control-server#139), so the card can say why the row was not sent to maintenance.
@@ -99,7 +102,8 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
         TimeSpan? blockedFor = row.BlockReasonSince is DateTimeOffset since
             ? (now > since ? now - since : TimeSpan.Zero)
             : null;
-        bool carriesSession = string.Equals(row.BlockReasonCode, SessionNotReadyReason, StringComparison.Ordinal);
+        bool carriesSession = string.Equals(row.BlockReasonCode, SessionNotReadyReason, StringComparison.Ordinal) ||
+                              HeldForAdmissionWithTheSessionDown(row, session);
         bool explained = carriesSession && OwnMovementOrderExplanation.Explains(
             row.BlockReasonCode,
             session?.ReasonCode,
@@ -132,6 +136,18 @@ internal sealed class BlockedJourneysQueryEndpoint : IDashboardQueryEndpoint
                 : null
         };
     }
+
+    /// <summary>
+    /// A loaded stop held at its AREA machine for the station's admission while the vehicle's session is not Ready (or has
+    /// no row). The runtime keeps <see cref="AreaEndAdmissionHeldReason"/> on it through the session loss, because the
+    /// escalation to manual recovery is counted from that code (control-server#198); the dashboard still judges it the way
+    /// it judges <see cref="SessionNotReadyReason"/> -- session facts shown, unknown safety evidence straight to the top --
+    /// and leaves the code and its start as they are.
+    /// </summary>
+    private static bool HeldForAdmissionWithTheSessionDown(JourneyRuntimeRow row, SessionRecoveryRow? session) =>
+        row.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
+        string.Equals(row.BlockReasonCode, AreaEndAdmissionHeldReason, StringComparison.Ordinal) &&
+        session?.Readiness != SessionReadiness.Ready;
 
     /// <summary>
     /// The journeys (by demand id) for which this server itself has a move order in flight on RIoT, by its own records.
