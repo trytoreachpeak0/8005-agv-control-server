@@ -2129,7 +2129,8 @@ public sealed class JourneyRuntimeEngine(
     /// <para>
     /// REQ-0305 asks for exactly three things before a move order that does not exist yet:
     /// the catalog must be usable, the frozen <c>mapId + stationId</c> must still be in it, and
-    /// RouteCost must pass. When any of them fails the new action is blocked and the reason
+    /// RouteCost must pass. REQ-0345 adds a fourth, asked before RIoT is: the demand's frozen
+    /// <c>Map + TASK_TYPE</c> must not be held. When any of them fails the new action is blocked and the reason
     /// recorded precisely — never resolved to another station, another Map, or a similar name.
     /// </para>
     /// <para>
@@ -2150,6 +2151,26 @@ public sealed class JourneyRuntimeEngine(
         {
             return new CreateGateOutcome(
                 CreateGateVerdict.BlockedCatalogNotFresh, availability.BlockReason, null);
+        }
+
+        // REQ-0344's last sentence and REQ-0345: a move order that does not exist yet waits while the demand's frozen
+        // Map + TASK_TYPE is held, whatever raised the hold. An order already created is not touched -- this is only
+        // ever asked before the gate leg is created. A journey accepted before control-server#160 froze no versions;
+        // it is judged as the WIRE_TO_GATE on the runtime's Map it was, the way the dropoff below falls back.
+        DemandTaskTypeStationFreeze? frozenVersions = await _taskTypeStations.Freezes
+            .ReadAsync(runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        string taskType = frozenVersions is null
+            ? TransportTaskTypes.WireToGate
+            : await dbContext.AcceptedDemands
+                .Where(row => row.DemandId == runtime.DemandId)
+                .Select(row => row.WorkType)
+                .SingleAsync(cancellationToken)
+                .ConfigureAwait(false);
+        TaskTypeHolds holds = await _taskTypeStations
+            .ReadHoldsAsync(frozenVersions?.MapId ?? runtime.MapId, cancellationToken).ConfigureAwait(false);
+        if (holds.Holds(taskType))
+        {
+            return new CreateGateOutcome(CreateGateVerdict.BlockedTaskTypeHeld, DispatchReasonCodes.TaskTypeHeld, null);
         }
 
         IReadOnlyList<FrozenStationFact> frozen = await catalogStore
