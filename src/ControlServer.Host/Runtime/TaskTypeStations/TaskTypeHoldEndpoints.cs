@@ -35,9 +35,11 @@ public sealed record TaskTypeHoldResponse(
 /// </para>
 /// <para>
 /// <b>No credential and no switch, always mapped</b>: a fail-safe action gets no threshold (REQ-0340, "without waiting
-/// for a second authentication or approval"). What narrows access is the source address alone -- a request whose remote
-/// address is not loopback is refused, decided here rather than by the listening address, because the production
-/// deployment binds the HTTP surface to the plant-facing interface.
+/// for a second authentication or approval"). What narrows access is the source address alone: a request is taken only
+/// from this machine -- loopback, or the address the connection arrived on. That is decided here rather than by the
+/// listening address, because the production deployment binds the HTTP surface to the plant-facing interface and points
+/// the loopback-only dashboard at that same address, so the dashboard's forwarded request arrives from it. A refused
+/// request is audited by its addresses alone; the reason and the claimed role are length-limited.
 /// </para>
 /// <para>
 /// <b>Immediate, and no further than that</b>: the hold is read by the next admission round and by the pre-create check
@@ -110,24 +112,24 @@ public static class TaskTypeHoldEndpoints
         string? reason = string.IsNullOrWhiteSpace(request?.Reason) ? null : request.Reason.Trim();
         string? claimedRole = string.IsNullOrWhiteSpace(request?.ClaimedRole) ? null : request.ClaimedRole.Trim();
 
-        if (!IsLoopback(context.Connection.RemoteIpAddress))
+        if (!IsFromThisMachine(context.Connection.RemoteIpAddress, context.Connection.LocalIpAddress))
         {
+            // Nothing the caller typed is kept: a server bound to the plant interface is reachable from the whole plant
+            // network, and the audit table is not to be filled with a refused stranger's text.
             await WriteAuditAsync(
-                audit, mapId, version: null, GovernanceActionOutcome.Failed, claimedRole, now,
+                audit, mapId, version: null, GovernanceActionOutcome.Failed, claimedRole: null, now,
                 new
                 {
                     mapId,
-                    taskType,
-                    reason,
-                    claimedRole,
                     remoteAddress = context.Connection.RemoteIpAddress?.ToString(),
-                    result = "FORBIDDEN_NOT_LOOPBACK"
+                    localAddress = context.Connection.LocalIpAddress?.ToString(),
+                    result = "FORBIDDEN_NOT_LOCAL"
                 },
                 cancellationToken).ConfigureAwait(false);
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Hold requests are taken from this machine only",
-                detail: "The task type hold entry answers loopback requests only; use the dashboard on the control host.");
+                detail: "The task type hold entry answers requests from this machine only; use the dashboard on the control host.");
         }
 
         // A Map this server serves is one with an activation pointer, whatever its state. After a manual close
@@ -140,31 +142,57 @@ public static class TaskTypeHoldEndpoints
             ? null
             : await bindings.ReadActiveAsync(mapId, cancellationToken).ConfigureAwait(false);
         TaskTypeStationRuleVersion? ruleVersion = await rules.ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
-        List<string> problems = [];
+        bool knownTaskType = !string.IsNullOrWhiteSpace(taskType)
+            && ruleVersion?.Rules.Any(rule => string.Equals(rule.TaskType, taskType, StringComparison.Ordinal)) == true;
+        List<(string Code, string Message)> problems = [];
         if (pointer is null)
         {
-            problems.Add($"Map {mapId} has no binding set activation; it is not a Map this server serves.");
+            problems.Add(("MAP_NOT_SERVED", $"Map {mapId} has no binding set activation; it is not a Map this server serves."));
         }
-        if (string.IsNullOrWhiteSpace(taskType)
-            || ruleVersion?.Rules.Any(rule => string.Equals(rule.TaskType, taskType, StringComparison.Ordinal)) != true)
+        if (!knownTaskType)
         {
-            problems.Add($"'{taskType}' is not a task type in the current rule table.");
+            problems.Add(("TASK_TYPE_UNKNOWN", "The task type is not in the current rule table."));
         }
         if (reason is null)
         {
-            problems.Add("A reason for the hold is required.");
+            problems.Add(("REASON_REQUIRED", "A reason for the hold is required."));
+        }
+        else if (reason.Length > MaxReasonLength)
+        {
+            problems.Add(("REASON_TOO_LONG", $"The reason is {reason.Length} characters; at most {MaxReasonLength} are taken."));
+        }
+        if (claimedRole?.Length > MaxClaimedRoleLength)
+        {
+            problems.Add((
+                "CLAIMED_ROLE_TOO_LONG",
+                $"The claimed role is {claimedRole.Length} characters; at most {MaxClaimedRoleLength} are taken."));
         }
         if (problems.Count > 0)
         {
+            // Only what fits the limits is kept; anything longer is recorded by its length.
+            bool reasonFits = reason is null || reason.Length <= MaxReasonLength;
+            bool roleFits = claimedRole is null || claimedRole.Length <= MaxClaimedRoleLength;
+            string[] codes = problems.Select(problem => problem.Code).ToArray();
+            string[] messages = problems.Select(problem => problem.Message).ToArray();
             await WriteAuditAsync(
-                audit, mapId, active?.Version, GovernanceActionOutcome.Failed, claimedRole, now,
-                new { mapId, taskType, reason, claimedRole, problems, result = "REJECTED" },
+                audit, mapId, active?.Version, GovernanceActionOutcome.Failed, roleFits ? claimedRole : null, now,
+                new
+                {
+                    mapId,
+                    taskType = knownTaskType ? taskType : null,
+                    reason = reasonFits ? reason : null,
+                    reasonLength = reason?.Length,
+                    claimedRole = roleFits ? claimedRole : null,
+                    claimedRoleLength = claimedRole?.Length,
+                    codes,
+                    result = "REJECTED"
+                },
                 cancellationToken).ConfigureAwait(false);
             return TypedResults.Problem(
                 statusCode: StatusCodes.Status422UnprocessableEntity,
                 title: "Hold request refused",
-                detail: string.Join(' ', problems),
-                extensions: new Dictionary<string, object?> { ["problems"] = problems });
+                detail: string.Join(' ', messages),
+                extensions: new Dictionary<string, object?> { ["codes"] = codes, ["problems"] = messages });
         }
 
         TaskTypeStationBinding? binding = active?.Bindings
@@ -229,10 +257,24 @@ public static class TaskTypeHoldEndpoints
         return raised.Created ? TypedResults.Created((string?)null, body) : TypedResults.Ok(body);
     }
 
-    /// <summary>Loopback, including an IPv4 loopback address carried as IPv6. No address at all is not loopback.</summary>
-    internal static bool IsLoopback(IPAddress? remote) =>
-        remote is not null
-        && IPAddress.IsLoopback(remote.IsIPv4MappedToIPv6 ? remote.MapToIPv4() : remote);
+    /// <summary>
+    /// A request from this machine: loopback, or the very address the connection arrived on -- which is what the
+    /// dashboard's forwarded request looks like when the server is bound to the plant interface and the dashboard's
+    /// <c>controlServerBaseUrl</c> names that address. IPv4 carried as IPv6 is compared as IPv4. No address at all is not
+    /// this machine.
+    /// </summary>
+    internal static bool IsFromThisMachine(IPAddress? remote, IPAddress? local)
+    {
+        if (remote is null)
+        {
+            return false;
+        }
+        IPAddress caller = Normalize(remote);
+        return IPAddress.IsLoopback(caller) || (local is not null && caller.Equals(Normalize(local)));
+    }
+
+    private static IPAddress Normalize(IPAddress address) =>
+        address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
 
     private static Task<string> WriteAuditAsync(
         IGovernanceAuditWriter audit,

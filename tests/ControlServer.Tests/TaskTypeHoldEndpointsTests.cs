@@ -19,7 +19,7 @@ using static ControlServer.Tests.TaskTypeStationTestData;
 namespace ControlServer.Tests;
 
 /// <summary>
-/// 看板人工收紧的服务端入口（REQ-0340 收紧半边、REQ-0348，control-server#162）：只收回环来源、不设凭据、只能收紧。
+/// 看板人工收紧的服务端入口（REQ-0340 收紧半边、REQ-0348，control-server#162）：只收本机来源（回环或本机连接地址）、不设凭据、只能收紧。
 /// </summary>
 public sealed class TaskTypeHoldEndpointsTests
 {
