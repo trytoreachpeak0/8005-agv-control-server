@@ -206,9 +206,10 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
   vm01 `agvops` 的 `%LOCALAPPDATA%\8005-l2-peers`，同一对提交第二次起不再构建。
 - **清单与遍数。** `real-rig` 作业里有自己的手写清单，`Runs` 的含义与合成清单相同（三连次数）；模式 `default` 每个一遍、
   `consecutive` 按 `Runs`、`consecutive-all` 至少三遍。`consecutive` 配上批次 6 出口那 8 个场景，就是批次 6 出口的真装置清单。
-  两个场景不在清单里：`real-onboard-recovery-entry-missing` 按设计是红的；`real-onboard-restart-with-open-recovery-session`
-  在车载端 `4d716340` 上等不到「申请恢复」入口（`L2-ROS-02`～`08` 未到达），空闲的 vm01 上单独跑也红，上一次绿是 09-14，
-  批次 6 出口没跑它，见 `evidence/l2/20260919-ci-real-rig-runs/`。
+  `real-onboard-recovery-entry-missing` 不在清单里，它按设计是红的。`real-onboard-restart-with-open-recovery-session`
+  09-19 一度移出（`evidence/l2/20260919-ci-real-rig-runs/`），control-server#222 查明是场景自己的毛病、与车载端无关：公共前置
+  `Invoke-G3UnknownLoad` 自 control-server#128 起会重启车载端，场景没有重取 `$Context.Onboard`，一直在已关掉的窗口里找按钮。
+  修好后放回清单，证据 `evidence/l2/20260920-cs222/`。自检 `Test-L2OnboardHandleAfterRestart.ps1` 防同类再犯。
 - **桌面。** 这个桌面同时是黄金渲染机，也跑 `8005-mes-ingest` 的桌面测试。跨仓库互斥靠机器级互斥体
   `Global\W2G-InteractiveDesktop`：本仓每个真装置场景拿一次、排队最多 30 分钟；mes-ingest 那边同日改成排队
   （`8005-mes-ingest#8`）。撞上夜里的黄金渲染 verify（北京时间 03:00 触发，实际多在 05:30 前后开跑）只是多等，

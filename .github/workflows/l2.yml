@@ -488,13 +488,6 @@ jobs:
           # real-onboard-recovery-entry-missing is absent on purpose: it is red by design until the
           # recovery entry it asserts exists (scripts/l2/README.md), and a round that is always red
           # reads as noise and trains nobody to look.
-          #
-          # real-onboard-restart-with-open-recovery-session is absent for now for the same reason: on
-          # onboard 4d716340 the "request recovery" entry never appears after the UNKNOWN load result
-          # (L2-ROS-02..08 not reached), red alone on an idle vm01 as well as under load (runs
-          # 35450443032 and 35451359668). Its last green is 2026-09-14, and batch 6's exit did not
-          # run it. Back in the list when its own ticket settles whether the scenario or the onboard
-          # moved.
           $scenarios = @(
               @{ Name = 'real-onboard-normal-load';                           Runs = 1 }
               @{ Name = 'real-onboard-clock-skew';                            Runs = 1 }
@@ -506,11 +499,7 @@ jobs:
               @{ Name = 'real-onboard-cancellation-authorization-lost';       Runs = 1 }
               @{ Name = 'real-onboard-durable-ack-lost';                      Runs = 3 }
               @{ Name = 'real-onboard-expected-action-overdue';               Runs = 3 }
-              # control-server#222 bisect only; the line and the comment above are settled before this branch merges.
               @{ Name = 'real-onboard-restart-with-open-recovery-session';    Runs = 1 }
-              # control-server#222 fault injection, temporary: removed in the next commit.
-              @{ Name = 'cs222-inject-session-answer-not-dropped';            Runs = 1 }
-              @{ Name = 'cs222-inject-replay-dropped';                        Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
