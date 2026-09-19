@@ -14,6 +14,8 @@ builder.Configuration.Sources.Insert(
     });
 builder.WebHost.UseUrls(builder.Configuration["Dashboard:url"] ?? "http://127.0.0.1:58009");
 builder.Services.AddSingleton(DashboardCardCatalog.Discovered);
+// 看板写操作的约定（control-server#162）：动作自注册，这里只注册一次、挂一次，不认识任何一个具体动作。
+builder.Services.AddDashboardActions(builder.Configuration);
 builder.Services.AddHttpClient<DashboardDataFetcher>(client =>
 {
     client.BaseAddress = new Uri(
@@ -35,5 +37,7 @@ app.MapGet("/", async (
         await fetcher.FetchAsync(catalog, cancellationToken);
     return Results.Content(DashboardPageRenderer.RenderPage(catalog, data), "text/html; charset=utf-8");
 });
+
+app.MapDashboardActions();
 
 await app.RunAsync();

@@ -91,6 +91,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
     /// <summary>
     /// 绑定齐全、但本构建还不会执行的任务类型是「尚未可执行」；同一任务类型缺绑定时报的是缺绑定——两者可区分，
     /// 缺绑定在前，所以一条未绑定的 <c>STAGING_TO_WIRE</c> 需求今天就报缺绑定，而不是笼统挡成范围外。
+    /// 「尚未可执行」的例子自 control-server#163 起是同向的 <c>DIE_TO_OVEN</c>（批次 10）：<c>STAGING_TO_WIRE</c> 已可执行。
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-10")]
@@ -100,7 +101,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
 
         Assert.Equal(
             DispatchReasonCodes.TaskTypeNotYetExecutable,
-            await chain.EvaluateAsync(Evaluation(Round(Bound), TransportTaskTypes.StagingToWire), Token));
+            await chain.EvaluateAsync(Evaluation(Round(Bound), TransportTaskTypes.DieToOven), Token));
         Assert.Equal(
             DispatchReasonCodes.TaskTypeBindingMissing,
             await chain.EvaluateAsync(

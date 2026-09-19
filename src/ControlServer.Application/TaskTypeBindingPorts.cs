@@ -178,6 +178,12 @@ public static class TaskTypeStationActivationState
 {
     public const string Active = "ACTIVE";
     public const string ActivationUnknown = "ACTIVATION_UNKNOWN";
+
+    /// <summary>
+    /// 墓碑：人工收尾放弃了一次读回矛盾的激活，该图没有生效版本（<c>ActiveVersion</c> 为空），直到下一次 FieldOps 激活或回滚。
+    /// 不是「从未激活」——重启不按第一版装预置（control-server#161 第二轮复审 N1）。
+    /// </summary>
+    public const string ClosedManually = "CLOSED_MANUALLY";
 }
 
 /// <summary>一张图当前生效的绑定集版本指针。</summary>
@@ -222,7 +228,8 @@ public interface ITaskTypeStationBindingStore
     /// <summary>
     /// 写入该图的新版本。内容（需求集、绑定与所依赖的规则版本）与该图最新一版相同时不产生新版本；目录修订、来源与时间
     /// 不算内容。不动生效指针。<paramref name="ruleVersion"/> 不存在时抛 <see cref="InvalidOperationException"/>。
-    /// 不做业务校验：写入前调用方须先过 <see cref="TaskTypeStationConfigurationValidator.ValidateStatic"/>。
+    /// 写入前按 <paramref name="ruleVersion"/> 那一版规则过 <see cref="TaskTypeStationConfigurationValidator.ValidateStatic"/>，
+    /// 有违规抛 <see cref="TaskTypeStationConfigurationException"/>、什么都不写（control-server#161 审查 S6：库里没有 CHECK 约束，存储自己把关）。
     /// </summary>
     Task<TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion>> WriteVersionAsync(
         int mapId,
@@ -249,6 +256,12 @@ public static class TaskTypeStationHoldSource
 {
     public const string Manual = "MANUAL";
     public const string CatalogChange = "CATALOG_CHANGE";
+
+    /// <summary>
+    /// 激活第一步置、第二步或对账撤的暂停（REQ-0347，control-server#161）。只由激活流程写，
+    /// <see cref="ITaskTypeStationHoldStore.RaiseAsync"/> 不收它；解除暂停动词也不碰它。
+    /// </summary>
+    public const string ActivationResultUnknown = "ACTIVATION_RESULT_UNKNOWN";
 }
 
 /// <summary>一条暂停。<see cref="ReleasedAt"/> 为空表示仍成立。</summary>
@@ -264,12 +277,20 @@ public sealed record TaskTypeStationHold(
     DateTimeOffset? ReleasedAt,
     string? ReleasedBy);
 
+/// <summary>写一条暂停的结果：<see cref="Created"/> 为假表示同一条暂停已经成立，返回的是已有那条。</summary>
+public sealed record TaskTypeStationHoldRaise(TaskTypeStationHold Hold, bool Created);
+
 /// <summary>
-/// 按 <c>Map + TASK_TYPE</c> 的暂停（REQ-0340）。同一 <c>(MapId, TaskType)</c> 可同时有多条未解除暂停，不自动到期，解除不删行。
+/// 按 <c>Map + TASK_TYPE</c> 的暂停（REQ-0340）。同一 <c>(MapId, TaskType)</c> 可同时有多条来源或原因不同的未解除暂停，
+/// 不自动到期，解除不删行。
 /// </summary>
 public interface ITaskTypeStationHoldStore
 {
-    Task<TaskTypeStationHold> RaiseAsync(
+    /// <summary>
+    /// 置一条暂停。同一 <c>(MapId, TaskType, Source, ReasonCode)</c> 已有未解除暂停时不建新行，返回已有那条
+    /// （<see cref="TaskTypeStationHoldRaise.Created"/> 为假）：超时重试与目录变化逐轮重判都只形成一条暂停。
+    /// </summary>
+    Task<TaskTypeStationHoldRaise> RaiseAsync(
         int mapId,
         string taskType,
         string source,
@@ -279,7 +300,10 @@ public interface ITaskTypeStationHoldStore
         DateTimeOffset raisedAt,
         CancellationToken cancellationToken);
 
-    /// <summary>解除一条仍成立的暂停；没有这条或已解除时返回 <c>false</c>。</summary>
+    /// <summary>
+    /// 解除一条仍成立的暂停；没有这条或已解除时返回 <c>false</c>。两人同时解除时只有先写入的一方返回 <c>true</c>，
+    /// 它记下的 <c>ReleasedBy</c> 不被后到的一方覆盖。
+    /// </summary>
     Task<bool> ReleaseAsync(
         string holdId,
         string releasedBy,

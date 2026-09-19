@@ -76,6 +76,16 @@ public sealed class TaskTypeStationRuleStore(
             ArgumentException.ThrowIfNullOrWhiteSpace(rule.FixedEnd, nameof(rules));
         }
 
+        // The store refuses what the validator refuses, whoever the caller is (control-server#161 review S6): no CHECK
+        // constraint guards FixedEnd, so this is the line. A rule table alone is checked against an empty map.
+        IReadOnlyList<TaskTypeStationViolation> violations = TaskTypeStationConfigurationValidator.ValidateStatic(
+            new TaskTypeStationConfiguration(rules, new TaskTypeStationMapConfiguration(RulesOnlyMapId, [], [])),
+            RulesOnlyMapId);
+        if (violations.Count > 0)
+        {
+            throw new TaskTypeStationConfigurationException(violations);
+        }
+
         // Ordered so that the same table always freezes to the same content and the same SHA-256.
         TaskTypeStationRule[] ordered = [.. rules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal)];
         string contentJson = TaskTypeStationContent.RulesJson(ordered);
@@ -130,6 +140,9 @@ public sealed class TaskTypeStationRuleStore(
                 version, snapshot.ContentSha256, snapshot.SnapshotId, loadedAt, source, ordered),
             Created: true);
     }
+
+    /// <summary>A placeholder map for checking a rule table on its own; no binding is ever written against it.</summary>
+    private const int RulesOnlyMapId = 1;
 }
 
 /// <summary>
@@ -241,6 +254,23 @@ public sealed class TaskTypeStationBindingStore(
                 $"Task type rule version {ruleVersion} does not exist, so Map {mapId} cannot have a binding set version built on it."));
         }
 
+        // The store refuses what the validator refuses, whoever the caller is (control-server#161 review S6): the startup
+        // load and FieldOps activation both validate first, but this is a public port and the database has no CHECK
+        // constraints, so an unvalidated caller must not be able to write a station reused by two task types, a blank site
+        // verification or an area-named station. Checked against the rule version the set names.
+        TaskTypeStationRule[] namedRules = await _context.Set<TaskTypeStationRuleRow>()
+            .AsNoTracking()
+            .Where(row => row.Version == ruleVersion)
+            .Select(row => new TaskTypeStationRule(row.TaskType, row.FixedEnd))
+            .ToArrayAsync(cancellationToken);
+        IReadOnlyList<TaskTypeStationViolation> violations = TaskTypeStationConfigurationValidator.ValidateStatic(
+            new TaskTypeStationConfiguration(namedRules, new TaskTypeStationMapConfiguration(mapId, requiredTaskTypes, bindings)),
+            mapId);
+        if (violations.Count > 0)
+        {
+            throw new TaskTypeStationConfigurationException(violations);
+        }
+
         TaskTypeStationBindingSetVersionRow? latest = await _context.Set<TaskTypeStationBindingSetVersionRow>()
             .AsNoTracking()
             .Where(row => row.MapId == mapId)
@@ -350,7 +380,7 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
 {
     private readonly ControlServerDbContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
-    public async Task<TaskTypeStationHold> RaiseAsync(
+    public async Task<TaskTypeStationHoldRaise> RaiseAsync(
         int mapId,
         string taskType,
         string source,
@@ -371,6 +401,28 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
                 nameof(source));
         }
 
+        // The check and the insert share one transaction. On SQLite that transaction begins IMMEDIATE, so a second
+        // writer -- another scope in this server, or FieldOps in its own process -- waits for this one to commit and
+        // then finds the hold already standing, instead of both finding none and inserting two.
+        await using IDbContextTransaction? transaction = _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        TaskTypeStationHoldRow? standing = await _context.Set<TaskTypeStationHoldRow>()
+            .AsNoTracking()
+            .Where(candidate => candidate.MapId == mapId
+                && candidate.TaskType == taskType
+                && candidate.Source == source
+                && candidate.ReasonCode == reasonCode
+                && candidate.ReleasedAt == null)
+            .OrderBy(candidate => candidate.HoldId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (standing is not null)
+        {
+            // A retry, or the same catalog change judged again next round: the hold that stands is the answer.
+            return new(Project(standing), Created: false);
+        }
+
         TaskTypeStationHoldRow row = new()
         {
             HoldId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
@@ -384,7 +436,11 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
         };
         _context.Set<TaskTypeStationHoldRow>().Add(row);
         await _context.SaveChangesAsync(cancellationToken);
-        return Project(row);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+        return new(Project(row), Created: true);
     }
 
     public async Task<bool> ReleaseAsync(
@@ -396,17 +452,17 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
         ArgumentException.ThrowIfNullOrWhiteSpace(holdId);
         ArgumentException.ThrowIfNullOrWhiteSpace(releasedBy);
 
-        TaskTypeStationHoldRow? row = await _context.Set<TaskTypeStationHoldRow>()
-            .SingleOrDefaultAsync(candidate => candidate.HoldId == holdId && candidate.ReleasedAt == null, cancellationToken);
-        if (row is null)
-        {
-            return false;
-        }
-        // Released, never deleted: the row is the record that the task type was held, by whom and why.
-        row.ReleasedAt = releasedAt;
-        row.ReleasedBy = releasedBy;
-        await _context.SaveChangesAsync(cancellationToken);
-        return true;
+        // One conditional statement rather than read-then-save: when two releases race, the second one's update
+        // matches no row, so the first one's ReleasedBy stands. Released, never deleted: the row is the record that
+        // the task type was held, by whom and why.
+        int released = await _context.Set<TaskTypeStationHoldRow>()
+            .Where(candidate => candidate.HoldId == holdId && candidate.ReleasedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(candidate => candidate.ReleasedAt, releasedAt)
+                    .SetProperty(candidate => candidate.ReleasedBy, releasedBy),
+                cancellationToken);
+        return released == 1;
     }
 
     public async Task<IReadOnlyList<TaskTypeStationHold>> ListUnreleasedAsync(

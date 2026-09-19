@@ -7,6 +7,10 @@
     <ProjectReference Include="..\..\src\ControlServer.Infrastructure\ControlServer.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- TaskTypeStationFieldOpsTests asks Program.OpensReadOnly which commands open the database read-only. -->
+    <InternalsVisibleTo Include="ControlServer.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- Deliberately no appsettings.json: this tool takes the database path on the command line so
          that the operator sees which database is being written, on the machine, at the time. A
          settings file would also land in the output of anything referencing this project and shadow

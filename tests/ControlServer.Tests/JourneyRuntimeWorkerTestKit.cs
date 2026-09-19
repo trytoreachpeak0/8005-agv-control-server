@@ -914,6 +914,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 new MapStationResolver(),
                 new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
                 TaskTypeStationRuntimeSeed.Access(Context),
+                TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
                 intake,
                 new MovementDispatchService(store, Riot),
                 store,

@@ -52,6 +52,14 @@ public sealed class OnboardRecoveryCoordinator(
     /// </summary>
     internal const string SessionClosedResultNotReconciled = "RECOVERY_ACTION_RESULT_NOT_RECONCILED";
 
+    /// <summary>
+    /// The outcome a resume is judged on when the vehicle refused its command (control-server#187). A resume's
+    /// outcome is otherwise empty -- its account is the replacement OperationResult -- so this marks, in the store,
+    /// that its session closed because the command was refused rather than because a result did not reconcile. The
+    /// refusal itself, the vehicle's reason code included, is the inbound message the workflow's ResultMessageId names.
+    /// </summary>
+    internal const string ResumeCommandRejectedOutcome = "COMMAND_REJECTED";
+
     private static readonly string[] RecoveryRequestTypes =
     [
         "ExceptionRecoverySessionRequested",
@@ -238,6 +246,49 @@ public sealed class OnboardRecoveryCoordinator(
                 .Select(row => row.SessionGeneration).SingleAsync(cancellationToken).ConfigureAwait(false);
             await AdvanceSessionAfterResultAsync(workflow, sessionGeneration, cancellationToken).ConfigureAwait(false);
         }
+        await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The vehicle refused a command with <c>SlotOperationCommandRejected</c>. When the refused command is a resume
+    /// still waiting for its replacement result, no result will come: the resume is judged RecoveryRequired and its
+    /// session closes, the way a result that does not reconcile closes it (control-server#169, #187). The demand, the
+    /// journey, the lease and the vehicle are not touched -- they stay where the failed load left them, for the next
+    /// session. Any other refusal -- of the original SlotOperationCommand, or matching no waiting resume -- is only
+    /// acknowledged, as before.
+    /// </summary>
+    /// <remarks>
+    /// The refused command is known by the envelope's correlationId, which the protocol requires to be the refused
+    /// command's messageId (REQUIRED_ORIGINAL_MESSAGE_ID) and the onboard fills so: the attempt alone cannot tell,
+    /// because a refusal of the original SlotOperationCommand names the same attempt. The attempt must agree as well.
+    /// A resend is answered by the inbox before this is called; a second refusal of the same command under a new
+    /// messageId finds the resume already judged and changes nothing.
+    /// </remarks>
+    public async Task ObserveCommandRejectedAsync(JsonElement root, CancellationToken cancellationToken)
+    {
+        if (!root.TryGetProperty("correlationId", out JsonElement correlation) ||
+            correlation.ValueKind != JsonValueKind.String)
+            return;
+        string refusedCommandId = correlation.GetString()!;
+        string agvId = RequiredString(root, "agvId");
+        string attemptId = RequiredString(root.GetProperty("payload"), "slotOperationAttemptId");
+        RecoveryWorkflowRow? workflow = await dbContext.RecoveryWorkflows.SingleOrDefaultAsync(
+            row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
+                   row.AgvId == agvId &&
+                   row.CommandMessageId == refusedCommandId &&
+                   row.SlotOperationAttemptId == attemptId &&
+                   (row.State == RecoveryWorkflowState.CommandPending ||
+                    row.State == RecoveryWorkflowState.AwaitingResult),
+            cancellationToken).ConfigureAwait(false);
+        if (workflow is null) return;
+
+        workflow.State = RecoveryWorkflowState.RecoveryRequired;
+        workflow.Outcome = ResumeCommandRejectedOutcome;
+        workflow.ResultMessageId = RequiredString(root, "messageId");
+        workflow.UpdatedAt = timeProvider.GetUtcNow();
+        await AdvanceSessionAfterResultAsync(
+            workflow, root.GetProperty("sessionGeneration").GetInt64(), cancellationToken).ConfigureAwait(false);
         await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -429,18 +480,29 @@ public sealed class OnboardRecoveryCoordinator(
         string? actionProblem = ValidateActionPreconditions(action, session, connection, operation);
         if (actionProblem is not null)
             return RejectedAction(root, actionId, recoverySessionId, session.Revision, actionProblem);
-        // One resume authorization admits one replacement result, and the result finds its resume by attempt
-        // alone (WireToGateStore.RequireResumeAuthorizationAsync, ObserveOperationResultAsync). A second resume
-        // waiting on the same attempt, in this session or any other, would leave that result two to settle and
-        // it would never be acknowledged (control-server#180). So it is refused here, before it exists; its
-        // preconditions alone cannot tell, because the first resume leaves them true until its result arrives.
-        // A resend of an accepted resume never reaches this point: the replay above answers it.
-        if (action == "RESUME_AFTER_REPAIR" &&
-            await dbContext.RecoveryWorkflows.AnyAsync(
-                row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
-                       row.SlotOperationAttemptId == operation!.SlotOperationAttemptId &&
+        // The one check against taking an action again while the same action still awaits its outcome, for all four
+        // actions. Their preconditions alone cannot tell: the first submission leaves them true until its outcome
+        // arrives. A resend of an accepted action never reaches this point: the replay above answers it.
+        //
+        // A resume is judged by attempt, in this session or any other (control-server#180): one resume
+        // authorization admits one replacement result, and the result finds its resume by attempt alone
+        // (WireToGateStore.RequireResumeAuthorizationAsync, ObserveOperationResultAsync), so a second one waiting
+        // would leave that result two to settle and it would never be acknowledged.
+        //
+        // The other three are judged within the session (control-server#187, decided by the user on 2026-09-19):
+        // each would send the vehicle a second command for the same physical action, and it would carry it out
+        // twice. A second forced recovery would also advance the forced generation, which fences only a first
+        // command not yet delivered and makes its result historical while the vehicle may be executing it. A
+        // compensation awaiting authorization has sent nothing yet and is not counted: refusing past it would
+        // leave a session whose compensation is never authorized with no action left to take.
+        bool byAttempt = action == "RESUME_AFTER_REPAIR";
+        string? attemptId = operation?.SlotOperationAttemptId;
+        if (await dbContext.RecoveryWorkflows.AnyAsync(
+                row => row.WorkflowType == action &&
                        (row.State == RecoveryWorkflowState.CommandPending ||
-                        row.State == RecoveryWorkflowState.AwaitingResult),
+                        row.State == RecoveryWorkflowState.AwaitingResult) &&
+                       ((byAttempt && row.SlotOperationAttemptId == attemptId) ||
+                        (!byAttempt && row.ExceptionRecoverySessionId == recoverySessionId)),
                 cancellationToken).ConfigureAwait(false))
             return RejectedAction(
                 root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.ActionNotAllowedInState);
@@ -712,8 +774,10 @@ public sealed class OnboardRecoveryCoordinator(
             // An entry the runtime refuses for the station's task types starts no load, so it does not hold
             // the stop against the operator either. That carve-out is kept as it was: it names a station
             // that cannot do the work at all, and it is not a SublotRejected.
-            return !await store.IsTaskTypeAllowedAsync(
-                    runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false);
+            // Judged at the AREA machine station the way the runtime judges the entry (control-server#163): for
+            // STAGING_TO_WIRE that is the drop-off, not the staging station the entry was made at.
+            return !await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, demand.WorkType, cancellationToken)
+                .ConfigureAwait(false);
         }
         return true;
     }
@@ -774,6 +838,26 @@ public sealed class OnboardRecoveryCoordinator(
                     recoveryActionId = actionId,
                     problem = Problem(ServerReasonCodes.RecoverySessionNotOpen, "payload",
                         "The recovery session this compensation belongs to has already closed.")
+                });
+            }
+            // Only one compensation of a session goes to the vehicle at a time (control-server#187). A second one may
+            // be submitted while the first still awaits its authorization -- refusing that at submission could leave a
+            // session whose one compensation is never authorized with no action left -- so the line is drawn here,
+            // where the command is sent: while another compensation of the session has its command out and awaits the
+            // outcome, this one is not authorized, and the vehicle does not compensate twice.
+            if (await dbContext.RecoveryWorkflows.AnyAsync(
+                    row => row.WorkflowType == "COMPENSATE_LOAD_ALL_EMPTY" &&
+                           row.WorkflowId != actionId &&
+                           row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId &&
+                           (row.State == RecoveryWorkflowState.CommandPending ||
+                            row.State == RecoveryWorkflowState.AwaitingResult),
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return Response(root, "LoadCompensationRejected", new
+                {
+                    recoveryActionId = actionId,
+                    problem = Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
+                        "Another compensation of this recovery session is already awaiting its outcome.")
                 });
             }
             string commandId = StableGuid(actionId, "load-compensation-command");

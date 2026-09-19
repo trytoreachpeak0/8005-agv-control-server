@@ -1,0 +1,32 @@
+commit: 0cce707e4c14e3d5d3c9b9779f36dcb111be7bed
+dotnet format ControlServer.sln --verify-no-changes --include <本票相对 origin/fp/v2-impl 改动的 29 个 .cs>
+exit 0（无输出，即无格式差异）
+src/ControlServer.Application/TaskTypeBindingPorts.cs
+src/ControlServer.Dashboard/DashboardAction.cs
+src/ControlServer.Dashboard/DashboardActionRoutes.cs
+src/ControlServer.Dashboard/Program.cs
+src/ControlServer.Dashboard/TaskTypeBindingCard.cs
+src/ControlServer.Dashboard/TaskTypeHoldAction.cs
+src/ControlServer.Host/Composition/TaskTypeStationModule.cs
+src/ControlServer.Host/Dashboard/TaskTypeBindingsQueryEndpoint.cs
+src/ControlServer.Host/Program.cs
+src/ControlServer.Host/Runtime/JourneyRuntimeEngine.cs
+src/ControlServer.Host/Runtime/TaskTypeStations/CatalogBindingChangeClassifier.cs
+src/ControlServer.Host/Runtime/TaskTypeStations/CatalogBindingHoldConvergence.cs
+src/ControlServer.Host/Runtime/TaskTypeStations/TaskTypeHoldEndpoints.cs
+src/ControlServer.Infrastructure/Persistence/TaskTypeStationStores.cs
+tests/ControlServer.Tests/BoundFixedTaskStationResolverTests.cs
+tests/ControlServer.Tests/CatalogBindingChangeClassifierTests.cs
+tests/ControlServer.Tests/CatalogBindingHoldConvergenceTests.cs
+tests/ControlServer.Tests/CatalogBindingHoldEngineHookTests.cs
+tests/ControlServer.Tests/DashboardActionTests.cs
+tests/ControlServer.Tests/DashboardSkeletonTests.cs
+tests/ControlServer.Tests/IntegrationSliceTraitArchitectureTests.cs
+tests/ControlServer.Tests/JourneyRuntimeWorkerTestKit.cs
+tests/ControlServer.Tests/MultiVehicleExecutionTests.cs
+tests/ControlServer.Tests/TaskTypeBindingDashboardTests.cs
+tests/ControlServer.Tests/TaskTypeHoldEndpointsTests.cs
+tests/ControlServer.Tests/TaskTypeHoldGateLegTests.cs
+tests/ControlServer.Tests/TaskTypeStationHoldAndCatalogChangeStoreTests.cs
+tests/ControlServer.Tests/TaskTypeStationHoldWriteConcurrencyTests.cs
+tests/ControlServer.Tests/TaskTypeStationRuntimeSeed.cs

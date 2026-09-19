@@ -1,0 +1,33 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:09.63]     ControlServer.Tests.RecoveryStateMachineG2Tests.ARejectionThatIsNotOfTheWaitingResumesCommandIsOnlyAcknowledged(refusal: "other-attempt") [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ARejectionThatIsNotOfTheWaitingResumesCommandIsOnlyAcknowledged(refusal: "other-attempt") [307 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: BusinessPicture { Demand = RecoveryRequired, Stage = Blocked, BlockReasonCode = LOAD_RESULT_REQUIRES_RECOVERY, BlockReasonSince = 8/26/2026 10:00:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:00:00 AM +00:00, LeaseReleasedAt = , OccupancyReleasedAt = , Operation = RecoveryRequired, Sessions = dad21c24-9c1a-8259-997a-044223141685:EXECUTING:2:RESUME_AFTER_REPAIR, Snapshots = 2, Completions = 0 }
+Actual:   BusinessPicture { Demand = RecoveryRequired, Stage = Blocked, BlockReasonCode = LOAD_RESULT_REQUIRES_RECOVERY, BlockReasonSince = 8/26/2026 10:00:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:00:00 AM +00:00, LeaseReleasedAt = , OccupancyReleasedAt = , Operation = RecoveryRequired, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:3:RESUME_AFTER_REPAIR, Snapshots = 3, Completions = 0 }
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ARejectionThatIsNotOfTheWaitingResumesCommandIsOnlyAcknowledged(String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2413
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ARejectionThatIsNotOfTheWaitingResumesCommandIsOnlyAcknowledged(String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2417
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ARejectionThatIsNotOfTheWaitingResumesCommandIsOnlyAcknowledged(String refusal) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs187-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2417
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:     2, Skipped:     0, Total:     3, Duration: 5 s - ControlServer.Tests.dll (net8.0)

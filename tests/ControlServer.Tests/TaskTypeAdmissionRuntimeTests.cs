@@ -187,21 +187,28 @@ public sealed class TaskTypeAdmissionRuntimeTests
 
     /// <summary>
     /// 准入种子与解析器读同一版规则：生效绑定集所依据的那版，不是最新一版。规则表前进了一版而生效绑定集没换时，种子
-    /// 内容不变，不被判成准入策略漂移（#188 审查顺手改）。这里的新规则把 <c>WIRE_TO_GATE</c> 的固定端改成起点，
-    /// 读最新规则的话种子会变空。
+    /// 内容不变，不被判成准入策略漂移（#188 审查顺手改）。这里的新规则去掉了 <c>STAGING_TO_WIRE</c>，读最新规则的话
+    /// 种子会少掉它、哈希随之不同。
     /// </summary>
+    /// <remarks>
+    /// control-server#163 起种子不再看固定端，#160 时的构造（新规则把 <c>WIRE_TO_GATE</c> 的固定端改成起点）读哪版
+    /// 都得出同一个种子，区分不出来，所以改成去掉一个可执行的任务类型；比对对象是同一夹具不写新规则时的种子哈希。
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task TheAdmissionSeedReadsTheRulesTheActiveBindingSetWasBuiltOnNotTheLatest()
     {
+        string baseline;
+        await using (RuntimeFixture unchanged = await RuntimeFixture.CreateAsync())
+        {
+            await unchanged.Engine.ExecuteOnceAsync(Token);
+            baseline = (await unchanged.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token)).ContentHash;
+        }
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         await using (ControlServerDbContext writer = new(fixture.DbOptionsForTests))
         {
             await TaskTypeStationRuntimeSeed.Access(writer).Rules.WriteVersionAsync(
-                [
-                    .. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToGate),
-                    new TaskTypeStationRule(TransportTaskTypes.WireToGate, TaskTypeFixedEnd.Origin),
-                ],
+                [.. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.StagingToWire)],
                 "preset:test-newer",
                 Now,
                 Token);
@@ -210,7 +217,7 @@ public sealed class TaskTypeAdmissionRuntimeTests
         await fixture.Engine.ExecuteOnceAsync(Token);
 
         AdmissionPolicyStateRow state = await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token);
-        Assert.Equal(SeedHashBeforeThisTicket, state.ContentHash);
+        Assert.Equal(baseline, state.ContentHash);
     }
 
     private static async Task<TaskTypeStationBindingSetVersion?> ActiveBindingsAsync(RuntimeFixture fixture) =>
@@ -224,17 +231,35 @@ public sealed class TaskTypeAdmissionRuntimeTests
     }
 
     /// <summary>
-    /// 只有 <c>WIRE_TO_GATE</c> 可执行时，由规则导出的种子与改动前逐项相同：内容哈希不变，既有部署升级后不触发准入策略漂移。
+    /// 种子把每个 AREA 命名的机台站配给本构建可执行的每个任务类型，不论固定端（control-server#163）：机台站在
+    /// <c>WIRE_TO_GATE</c> 里是取货端，在 <c>STAGING_TO_WIRE</c> 里是卸货端，两种都在那里判准入。
     /// </summary>
+    /// <remarks>
+    /// control-server#160 时这里钉的是「只有 <c>WIRE_TO_GATE</c> 可执行时哈希与改动前相同」。#163 让
+    /// <c>STAGING_TO_WIRE</c> 可执行，前提不再成立：内容变了，哈希也不再是 <see cref="SeedHashBeforeThisTicket"/>。所以出厂的
+    /// <c>admissionPolicyVersion</c> 升过绑定旧哈希的版本 1（<see cref="ReversedDirectionJourneyRuntimeTests"/> 里有一条钉它），
+    /// 已部署的实例升级后按新版本导入，不判漂移。
+    /// </remarks>
     [Fact]
-    [Trait("IntegrationSlice", "FP-IS-10")]
-    public async Task TheAdmissionSeedDerivedFromTheRulesHashesExactlyAsBeforeWhileOnlyWireToGateIsExecutable()
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task TheAdmissionSeedPairsEveryAreaStationWithEveryExecutableTaskType()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
 
         await fixture.Engine.ExecuteOnceAsync(Token);
 
+        Assert.Equal(
+            [
+                ("N1-1", TransportTaskTypes.StagingToWire),
+                ("N1-1", TransportTaskTypes.WireToGate),
+                ("N1-2_N1-3", TransportTaskTypes.StagingToWire),
+                ("N1-2_N1-3", TransportTaskTypes.WireToGate),
+            ],
+            (await fixture.Context.StationTaskTypeAdmissions.AsNoTracking().ToArrayAsync(Token))
+                .Select(row => (row.StationId, row.TaskType))
+                .OrderBy(pair => pair.StationId, StringComparer.Ordinal)
+                .ThenBy(pair => pair.TaskType, StringComparer.Ordinal));
         AdmissionPolicyStateRow state = await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token);
-        Assert.Equal(SeedHashBeforeThisTicket, state.ContentHash);
+        Assert.NotEqual(SeedHashBeforeThisTicket, state.ContentHash);
     }
 }

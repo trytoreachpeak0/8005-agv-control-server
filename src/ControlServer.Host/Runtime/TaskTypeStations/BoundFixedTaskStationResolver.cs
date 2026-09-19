@@ -6,12 +6,13 @@ namespace ControlServer.Host.Runtime.TaskTypeStations;
 
 /// <summary>
 /// The task types this build can execute end to end. Everything else that clears its binding is refused as
-/// <see cref="DispatchReasonCodes.TaskTypeNotYetExecutable"/> (control-server#160).
+/// <see cref="DispatchReasonCodes.TaskTypeNotYetExecutable"/> (control-server#160). STAGING_TO_WIRE since control-server#163;
+/// the four same-direction task types wait for batch 10.
 /// </summary>
 public static class ExecutableTaskTypes
 {
     public static IReadOnlySet<string> All { get; } =
-        new HashSet<string>(StringComparer.Ordinal) { TransportTaskTypes.WireToGate };
+        new HashSet<string>(StringComparer.Ordinal) { TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire };
 
     public static bool Contains(string taskType) => All.Contains(taskType);
 }
