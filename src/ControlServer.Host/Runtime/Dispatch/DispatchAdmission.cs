@@ -51,7 +51,8 @@ public sealed record DispatchRoundFacts(
     DateTimeOffset Now,
     VehicleDispatchPolicy Policy,
     AreaAssignmentTableVersion? AreaAssignments = null,
-    bool AdmissionPolicyDrifted = false);
+    bool AdmissionPolicyDrifted = false,
+    IFixedTaskStationView? FixedStations = null);
 
 /// <summary>
 /// One vehicle's facts for this round, plus the configuration slice that applies to it.
@@ -145,6 +146,12 @@ public sealed class DispatchCandidateEvaluation(
     /// a plan's target slots are always in the group it carries.
     /// </remarks>
     public string? RequiredSlotPosition => AreaAssignment?.SlotPosition;
+
+    /// <summary>
+    /// This candidate's task type resolved against the round's fixed stations, set by the
+    /// station-resolution criterion whether it resolved or was refused.
+    /// </summary>
+    public FixedTaskStationResolution? FixedStation { get; set; }
 
     /// <summary>Set by the station-resolution criterion; every later criterion may rely on it.</summary>
     public ResolvedJourneyRoute? Route { get; set; }
