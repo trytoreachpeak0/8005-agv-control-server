@@ -148,6 +148,11 @@ public sealed class StructuralDispatchBlockTests
         string[] catalogCodes = CatalogCheckReasonCodes();
         Assert.Subset(BoundFixedTaskStationResolver.RefusalReasonCodes.ToHashSet(StringComparer.Ordinal), catalogCodes.ToHashSet(StringComparer.Ordinal));
         written.UnionWith(catalogCodes);
+        // control-server#198: the five shapes above only find the codes of branches someone wrote a shape for. What the
+        // check's source refers to finds a sixth branch too, whether it writes a constant or a literal.
+        string[] referencedCatalogCodes = CatalogCheckReferencedReasonCodes(root);
+        Assert.Subset(BoundFixedTaskStationResolver.RefusalReasonCodes.ToHashSet(StringComparer.Ordinal), referencedCatalogCodes.ToHashSet(StringComparer.Ordinal));
+        written.UnionWith(referencedCatalogCodes);
         written.UnionWith(Regex.Matches(
                 File.ReadAllText(Path.Combine(runtime, "JourneyRuntimeEngine.cs")),
                 "\"((?:FINAL|DEMAND)_[A-Z_]+)\"")
@@ -200,6 +205,51 @@ public sealed class StructuralDispatchBlockTests
                 .Distinct(StringComparer.Ordinal)
                 .Order(StringComparer.Ordinal)
         ];
+    }
+
+    /// <summary>
+    /// Every reason code the catalog check's source refers to: the body of
+    /// <see cref="TaskTypeStationConfigurationValidator.EvaluateCatalog"/> and the freshness judgment in
+    /// <c>TaskTypeStationCatalogEvidence.cs</c>, each <c>*ReasonCodes.Name</c> resolved to its value and each code
+    /// literal taken as it is (control-server#198).
+    /// </summary>
+    /// <remarks>
+    /// Read from the source rather than probed, because a probe only reaches the branches someone wrote a shape for:
+    /// a sixth branch returning a new code went through <see cref="CatalogCheckReasonCodes"/> unseen.
+    /// </remarks>
+    private static string[] CatalogCheckReferencedReasonCodes(string root)
+    {
+        string application = Path.Combine(root, "src", "ControlServer.Application");
+        string validator = File.ReadAllText(Path.Combine(application, "TaskTypeStationConfigurationValidator.cs"));
+        const string signature = "public static IReadOnlyList<TaskTypeStationViolation> EvaluateCatalog(";
+        int start = validator.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(start >= 0, "EvaluateCatalog's signature was not found; the guard would read nothing.");
+        int open = validator.IndexOf('{', start);
+        int depth = 0;
+        int end = open;
+        do
+        {
+            depth += validator[end] switch { '{' => 1, '}' => -1, _ => 0 };
+            end++;
+        }
+        while (depth > 0);
+        string source = validator[open..end] +
+            File.ReadAllText(Path.Combine(application, "TaskTypeStationCatalogEvidence.cs"));
+
+        Dictionary<string, Type> constantTypes = typeof(TaskTypeStationReasonCodes).Assembly.GetTypes()
+            .Where(type => type.IsAbstract && type.IsSealed && type.Name.EndsWith("ReasonCodes", StringComparison.Ordinal))
+            .ToDictionary(type => type.Name, StringComparer.Ordinal);
+        HashSet<string> codes = new(StringComparer.Ordinal);
+        foreach (Match reference in Regex.Matches(source, @"\b(\w+ReasonCodes)\.(\w+)\b"))
+        {
+            Type type = Assert.Contains(reference.Groups[1].Value, constantTypes);
+            FieldInfo? field = type.GetField(reference.Groups[2].Value, BindingFlags.Public | BindingFlags.Static);
+            Assert.True(field is { IsLiteral: true }, $"{reference.Value} is not a reason code constant.");
+            codes.Add((string)field!.GetRawConstantValue()!);
+        }
+        codes.UnionWith(Regex.Matches(source, "\"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\"").Select(match => match.Groups[1].Value));
+        Assert.Contains(TaskTypeStationReasonCodes.BindingCatalogNotFresh, codes);
+        return [.. codes.Order(StringComparer.Ordinal)];
     }
 
     /// <summary>
