@@ -207,7 +207,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 
 ### 行为与现场
 
-- **反向旅程到机台时准入被撤，带货无限等待**（control-server#163／PR #178 审查）：停在 `AwaitingGateArrival`／`TASK_TYPE_NOT_ALLOWED_AT_STATION`，没有超时也不升级。
+- **反向旅程到机台时准入被撤，带货无限等待**（control-server#163／PR #178 审查）：停在 `AwaitingGateArrival`／`TASK_TYPE_NOT_ALLOWED_AT_STATION`，没有超时也不升级。**已定修法：加超时后升级，批次 7 control-server#198。**
   在现场只有 `STAGING_TO_WIRE` 投运后才可能出现（本批不投运，第五节第 1 点）。
 - **目录新鲜度过期停整图所有任务类型**（`REQ-0302`，按设计）；「只停该类」只对绑定站改名或消失成立（同上）。
 - **出厂 `allowedWorkTypes` 由一类改为列全六类**（control-server#160，偏离票面）：现场一旦出现同向四类或 `STAGING_TO_WIRE` 需求，
@@ -264,7 +264,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 
 | 新票 | 来源与内容 |
 | --- | --- |
-| control-server#198 | control-server#160（PR #188 审查 ①～④）：目录码守卫只探得到已知五种形状；计划 `StationCatalogRevision` 为空时静默跳过落点冻结；`TASK_TYPE_BINDING_CATALOG_NOT_FRESH` 缺中文说明；「受理被拒 → 改绑」测试缺同轮其它任务类型不受影响的断言。`Invoke-L2Scenario.ps1` 仍传两个无人读的关卡旧环境变量。control-server#163（c）前两条：存储层不校验准入任务类型等于需求 `WorkType`；缺「`STAGING_TO_WIRE` 暂停时第二腿不建」的测试。**反向旅程到机台时准入被撤的无限等待（第六节）要不要加超时或升级，记在该票的待定节，等用户定** |
+| control-server#198 | control-server#160（PR #188 审查 ①～④）：目录码守卫只探得到已知五种形状；计划 `StationCatalogRevision` 为空时静默跳过落点冻结；`TASK_TYPE_BINDING_CATALOG_NOT_FRESH` 缺中文说明；「受理被拒 → 改绑」测试缺同轮其它任务类型不受影响的断言。`Invoke-L2Scenario.ps1` 仍传两个无人读的关卡旧环境变量。control-server#163（c）前两条：存储层不校验准入任务类型等于需求 `WorkType`；缺「`STAGING_TO_WIRE` 暂停时第二腿不建」的测试。**反向旅程到机台时准入被撤的无限等待（第六节）：用户已定加超时后升级** |
 | control-server#199 | control-server#159：迁移 `Down()` 没有「迁下去再迁回」的测试；control-server#161（PR #183 审查 O1）：审计表加 `BEFORE UPDATE/DELETE` 触发器 |
 | control-server#200 | control-server#191（PR #192 审查 a～d）：对账审计记写入后的指针状态；看板 `CLOSED_MANUALLY` 措辞；补「结果未知、有生效版本、unattributed 回 ACTIVE」测试；核对 `GovernanceStore` 四个调用方；control-server#162 解除路径的 `ReleasedBy` 对齐 |
 | control-server#201 | control-server#162（PR #182 审查 C、D、F、G 与补测）：目录变化记录按（站点, 修订）幂等在共享地图上会重复记行；`ApplyAsync` 抛异常中断整轮；`L2-CC-07` 判据偏弱；本地证据 `batchId` 为默认值；本机地址为 null、来源非回环时应 403 的测试；请求体在来源判定之前解析；部署文档写明同机判定不能与端口转发共存（本报告第六节已写运维说明） |
@@ -273,8 +273,8 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 | control-server#204 | control-server#167：`L2-EAO-13` 加「端点读数版本号前进」判据、门槛重复写两处、red-05 两条缺席；control-server#196（a～d）：单元素读名失败仍计数、UIA 持续抛异常拖成等待超时可能假红、journal「Not reached」措辞、README 状态列 |
 | onboard-hmi#128 | 假服务端替身在车非 Ready 时仍发快照 |
 | onboard-hmi#129 | onboard-hmi#123 审查 B、C 与复审 |
+| onboard-hmi#130 | onboard-hmi#115：`docs/LOCAL_G2_EVIDENCE.md:42` 的已实现切片清单未更新（用户定车载端 `docs/` 按我方文档维护） |
 
-不开票的两条：
+不开票的一条：
 
 - control-server#162 审查里「403 结果码 `FORBIDDEN_NOT_LOOPBACK` 改名为 `FORBIDDEN_NOT_LOCAL` 需知会外部脚本」：旧码从未进主线，没有外部依赖，不开票（调度决定）。
-- onboard-hmi#115：`docs/LOCAL_G2_EVIDENCE.md:42` 的已实现切片清单未更新——**待定**，等用户定车载端 `docs/` 的归属。
