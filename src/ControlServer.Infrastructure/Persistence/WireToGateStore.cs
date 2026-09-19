@@ -1190,6 +1190,23 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             throw new BusinessIdentityConflictException(
                 "A station/task admission identity must name both the station and the task type.");
         }
+        // control-server#198: the admission is the demand's own task type at its AREA machine station. The AREA-end check
+        // below reads the rule of whatever task type the caller names, so a demand's operation naming another task type
+        // whose rule happens to put its AREA end on this operation would pass it and be frozen as admitted. Checked
+        // ahead of the replay branch too, so an operation stored that way is not replayed either. A demand this store
+        // has not accepted has no task type to compare with, and is refused the same way.
+        if (hasAdmissionIdentity)
+        {
+            string? workType = await dbContext.AcceptedDemands.AsNoTracking()
+                .Where(row => row.DemandId == plan.DemandId)
+                .Select(row => row.WorkType)
+                .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(workType, plan.AdmissionTaskType, StringComparison.Ordinal))
+            {
+                throw new BusinessIdentityConflictException(FormattableString.Invariant(
+                    $"The admission identity names task type {plan.AdmissionTaskType}, but demand {plan.DemandId} is {workType ?? "not accepted"}."));
+            }
+        }
         // I6 overturned (scope specification 21.2 item 2): the admission is carried and frozen on the
         // operation at the AREA machine station, which is the load for WIRE_TO_GATE and the unload for
         // STAGING_TO_WIRE. Decided here from the demand's frozen rule, not from the caller's say-so.

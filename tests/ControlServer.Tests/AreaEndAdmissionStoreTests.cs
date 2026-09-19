@@ -29,6 +29,7 @@ public sealed class AreaEndAdmissionStoreTests
     public async Task AStagingToWireUnloadCarriesAndFreezesTheAreaMachineAdmission()
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        await AcceptAsync(fixture, ReverseDemand, TransportTaskTypes.StagingToWire);
         WireToGateStore store = new(fixture.Context);
         StationOperationPlan unload = Plan(
             "ATTEMPT-UNLOAD", ReverseDemand, SlotOperationType.Unload, "N1-1", TransportTaskTypes.StagingToWire);
@@ -54,6 +55,10 @@ public sealed class AreaEndAdmissionStoreTests
     public async Task AnAdmissionIdentityOnTheLegAwayFromTheAreaMachineIsRefused()
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        // Each demand accepted as its own task type, so what refuses below is the AREA-end check and not
+        // control-server#198's task type check.
+        await AcceptAsync(fixture, ReverseDemand, TransportTaskTypes.StagingToWire);
+        await AcceptAsync(fixture, ForwardDemand, TransportTaskTypes.WireToGate);
         WireToGateStore store = new(fixture.Context);
 
         await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => store.PrepareSlotOperationAsync(
@@ -167,25 +172,7 @@ public sealed class AreaEndAdmissionStoreTests
     /// <summary>An accepted demand row of <paramref name="workType"/>, the one fact the admission identity is checked against.</summary>
     private static async Task AcceptAsync(TaskTypeStationPersistenceFixture fixture, string demandId, string workType)
     {
-        fixture.Context.AcceptedDemands.Add(new AcceptedDemandRow
-        {
-            DemandId = demandId,
-            SeriesId = "SERIES-" + demandId,
-            TransportDemandKey = $"SUBLOT-1|{workType}|{demandId}",
-            WorkType = workType,
-            Sublot = "SUBLOT-1",
-            Generation = 1,
-            DemandRevision = 1,
-            HistoryEpoch = "11111111-1111-4111-8111-111111111111",
-            CatalogRevision = 1,
-            CreatedAt = Now,
-            ValueObservedAt = Now,
-            ValuePollTraceId = "TRACE-" + demandId,
-            ValueProjectionCommitId = "COMMIT-" + demandId,
-            LiveMesFieldsJson = "{}",
-            AcceptedAt = Now,
-            Status = DemandExecutionStatus.Accepted,
-        });
+        fixture.Context.AcceptedDemands.Add(AcceptedDemand(demandId, workType));
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Context.ChangeTracker.Clear();
     }
