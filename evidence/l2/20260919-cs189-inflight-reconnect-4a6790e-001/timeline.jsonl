@@ -1,0 +1,56 @@
+{"at":"2026-09-19T10:19:37.4051848+00:00","note":"L2 run 20260919T101937296Z starting for scenario 'real-onboard-inflight-load-reconnect'."}
+{"at":"2026-09-19T10:19:37.5298928+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-19T10:19:37.5356029+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T10:20:04.0966519+00:00","note":"Reusing cached onboard-hmi publish for 4a6790e5753b8a350049494569f8ec4a82fdf1f1."}
+{"at":"2026-09-19T10:20:04.3300395+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-19T10:20:04.3436824+00:00","note":"Peers: onboard-hmi@4a6790e5753b8a350049494569f8ec4a82fdf1f1, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-19T10:20:04.3839890+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-19T10:20:06.3751421+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T10:20:06.9300584+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T10:20:09.4994613+00:00","criterion":"simulator-ready","value":"(null)"}
+{"at":"2026-09-19T10:20:11.1589811+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-19T10:20:11.5581779+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T10:20:19.7653627+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T10:20:21.8448401+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T10:20:24.5878296+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T10:20:24.8560543+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T10:20:25.7041448+00:00","criterion":"protocol-proxy-live","value":"live"}
+{"at":"2026-09-19T10:20:25.9717710+00:00","note":"Protocol fault proxy relaying 127.0.0.1:48416 -> 127.0.0.1:48405."}
+{"at":"2026-09-19T10:20:31.8524345+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-19T10:20:31.9727986+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-19T10:20:32.1749311+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-19T10:20:32.7190589+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T10:20:32.9000833+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T101937296Z\\controlserver.db"}
+{"at":"2026-09-19T10:20:37.8952998+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"74fe26bd5190492ba4b0fba067853d3d","version":1,"slotCount":8}}}
+{"at":"2026-09-19T10:20:37.9405627+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T101937296Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T10:20:41.3464635+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"74fe26bd5190492ba4b0fba067853d3d","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T10:20:41.5755851+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T10:20:41.5797400+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T101937296Z\\controlserver.db --input C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\652eff80-5a31-4a5c-9968-a97d5fc43a26\\scratchpad\\ev\\cs189-inflight-reconnect-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T10:20:45.2161775+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\652eff80-5a31-4a5c-9968-a97d5fc43a26\\scratchpad\\ev\\cs189-inflight-reconnect-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"8e186fd421d44f2db49a7bb9359212e1","importedAt":"2026-09-19T18:20:42.0614748+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T10:20:45.2281557+00:00","note":"Environment is up; entering scenario 'real-onboard-inflight-load-reconnect'."}
+{"at":"2026-09-19T10:20:45.7622994+00:00","criterion":"proxy-session","value":"1"}
+{"at":"2026-09-19T10:20:45.8793581+00:00","note":"Publishing demand 25040641fb7340f1bc54316cd988b898 (sublot L2-CS189-20260919T101937296Z, 4 boxes)."}
+{"at":"2026-09-19T10:20:46.0593197+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-19T10:20:47.3796197+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-19T10:20:47.3977359+00:00","criterion":"to_pickup-intent","value":"(null)"}
+{"at":"2026-09-19T10:20:47.6606271+00:00","criterion":"to_pickup-intent","value":"@{UpperId=W2G-25040641-fb73-40f1-bc54-316cd988b898-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-19T10:20:47.6732890+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-19T10:20:47.7368194+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-19T10:20:47.7888844+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-19T10:20:49.5467571+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-19T10:20:49.5487579+00:00","note":"Typing sublot L2-CS189-20260919T101937296Z into ScanTextBox through UI Automation."}
+{"at":"2026-09-19T10:20:49.6826486+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-19T10:20:49.7326488+00:00","note":"Manual submit invoked."}
+{"at":"2026-09-19T10:20:49.7597921+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-19T10:20:50.5548026+00:00","criterion":"load-attempt","value":"0c0f9850-9cab-4b5a-aab0-23925c02d184"}
+{"at":"2026-09-19T10:20:50.6464871+00:00","criterion":"load-waiting-operator","value":"(null)"}
+{"at":"2026-09-19T10:20:51.7120360+00:00","criterion":"load-waiting-operator","value":"@{At=09/19/2026 10:20:51 +00:00; Phase=WAITING_OPERATOR; Active=System.Object[]}"}
+{"at":"2026-09-19T10:20:51.7184108+00:00","note":"Load 0c0f9850-9cab-4b5a-aab0-23925c02d184 targets slots 1; slot 1 is open and the onboard waits for the operator."}
+{"at":"2026-09-19T10:20:51.7543854+00:00","note":"Before the drop: gen 1 / Ready / READY / pendingAttempts [] / pendingResults [] / unsettled  / checkpoint NONE / activeUnlock []."}
+{"at":"2026-09-19T10:20:51.7575257+00:00","note":"Dropping the onboard link through the protocol fault proxy: load in flight, onboard waiting for the operator"}
+{"at":"2026-09-19T10:20:51.8815773+00:00","criterion":"reconnected","value":"@{SessionGeneration=1; Readiness=Ready; ReasonCode=READY; PendingAttemptIdsJson=[]; PendingResultIdsJson=[]; UnsettledSlotOperationAttemptId=; ProvenRecoveryCheckpoint=NONE; ActiveUnlockSlotsJson=[]}"}
+{"at":"2026-09-19T10:20:55.0844598+00:00","criterion":"reconnected","value":"@{SessionGeneration=2; Readiness=RecoveryRequired; ReasonCode=PENDING_FACT_RECONCILIATION_REQUIRED; PendingAttemptIdsJson=[\"0c0f9850-9cab-4b5a-aab0-23925c02d184\"]; PendingResultIdsJson=[]; UnsettledSlotOperationAttemptId=0c0f9850-9cab-4b5a-aab0-23925c02d184; ProvenRecoveryCheckpoint=ACTIVE_UNLOCK_SET; ActiveUnlockSlotsJson=[1]}"}
+{"at":"2026-09-19T10:20:58.1041475+00:00","note":"After the first reconnect: gen 2 / RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED / pendingAttempts [\"0c0f9850-9cab-4b5a-aab0-23925c02d184\"] / pendingResults [] / unsettled 0c0f9850-9cab-4b5a-aab0-23925c02d184 / checkpoint ACTIVE_UNLOCK_SET / activeUnlock [1]."}
+{"at":"2026-09-19T10:20:58.1216506+00:00","note":"Run failed: The property 'Count' cannot be found on this object. Verify that the property exists."}
+{"at":"2026-09-19T10:20:58.1424373+00:00","note":"Failure at: at <ScriptBlock>, C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\652eff80-5a31-4a5c-9968-a97d5fc43a26\\scratchpad\\rig\\scripts\\l2\\scenarios\\real-onboard-inflight-load-reconnect.ps1: line 110\r\nat <ScriptBlock>, C:\\Users\\szy\\AppData\\Local\\Temp\\claude\\C--Users-szy-Desktop-8005-workspace-v2\\652eff80-5a31-4a5c-9968-a97d5fc43a26\\scratchpad\\rig\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1218"}
+{"at":"2026-09-19T10:20:59.9505612+00:00","note":"L2 port block lock released."}
