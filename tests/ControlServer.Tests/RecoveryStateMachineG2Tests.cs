@@ -2254,6 +2254,91 @@ public sealed class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// control-server#175, review of PR #177. A compensation is authorized in a second message, and that message can
+    /// arrive after its session closed: A's second compensation was submitted, the first reported FAILED and closed
+    /// A, and the administrator is working the demand in B when the second one's authorization comes in. It is
+    /// refused: A stays CLOSED at its revision, no compensation command goes out, no snapshot is queued. Before this,
+    /// the authorization set A back to EXECUTING and sent the command, so the compensation's ALL_EMPTY then found an
+    /// open session and settled the demand under B's feet.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ACompensationAuthorizedAfterItsSessionClosedIsRefusedAndDoesNotReopenIt()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_AUTHORIZED_AFTER_CLOSE";
+        const string proof = "authorized-after-close-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            string sessionId = StableGuid(RequestId, "exception-recovery-session");
+            string first = await ReachCompensationResultAsync(processor, state, proof);
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001758",
+                    actionId: SecondActionId), state, token)));
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            clock.Current = Now.AddMinutes(1);
+            await OpenNextSessionAndHandOffAsync(processor, state, proof);
+            BusinessPicture before = await BusinessPictureAsync(context);
+            int compensationCommands = await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token);
+            clock.Current = Now.AddMinutes(2);
+
+            string authorized = await processor.ProcessAsync(
+                Envelope(
+                    "90000000-0000-4000-8000-000000000177",
+                    "LoadCompensationRequested",
+                    new
+                    {
+                        recoveryActionId = SecondActionId,
+                        exceptionRecoverySessionId = sessionId,
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        @operator = Operator()
+                    }),
+                state,
+                token);
+
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == sessionId, token)).State);
+            Assert.Equal("LoadCompensationRejected", MessageType(authorized));
+            Assert.Equal("RECOVERY_SESSION_NOT_OPEN",
+                FirstPayload(authorized).GetProperty("problem").GetProperty("reasonCode").GetString());
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Equal(compensationCommands, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token));
+            RecoveryWorkflowRow second = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == SecondActionId, token);
+            Assert.Equal(RecoveryWorkflowState.AwaitingAuthorization, second.State);
+            Assert.Null(second.CommandMessageId);
+
+            // Should the vehicle report that compensation all the same, it is a late result of a closed session.
+            JsonNode late = JsonNode.Parse(AllEmptyCompensationResult(first))!;
+            late["messageId"] = "a0000000-0000-4000-8000-000000000177";
+            late["payload"]!["recoveryActionId"] = SecondActionId;
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(late.ToJsonString(), state, token)));
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            AssertSingleLateResultLog(log, sessionId, SecondActionId, "ALL_EMPTY");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("IntegrationSlice", "FP-IS-05")]
