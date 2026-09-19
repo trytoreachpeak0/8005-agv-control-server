@@ -659,7 +659,11 @@ public sealed class JourneyRuntimeEngine(
             // of which recovery is outstanding, and nothing rebuilds it: the field left a journey
             // reading "Blocked / ONBOARD_SESSION_NOT_READY", which names neither. Session
             // readiness carries its own row and its own reason code.
-            if (runtime.Stage != JourneyRuntimeStage.Blocked)
+            // A stop held at its AREA machine for the station's admission is still held for that while the session is
+            // down, and the reason is what control-server#198 counts the wait from: overwritten here, every reconnect
+            // started the count again, and a link dropping more often than the threshold kept the loaded vehicle waiting
+            // for ever.
+            if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
             {
                 runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
                 runtime.UpdatedAt = now;
@@ -923,8 +927,10 @@ public sealed class JourneyRuntimeEngine(
                     {
                         // control-server#198, decided by the user on 2026-09-19: the vehicle is loaded and nobody is told
                         // while it waits, so past the threshold it is handed to a person. Only the journey changes: the
-                        // order that brought the vehicle here is not touched, and no new one is created.
-                        Block(runtime, AreaEndAdmissionRevokedTimeoutReason, now);
+                        // order that brought the vehicle here is not touched, and no new one is created. The block keeps
+                        // the first hold's start, which the dashboard's escalation ladder is measured from.
+                        runtime.Stage = JourneyRuntimeStage.Blocked;
+                        runtime.EscalateBlockReason(AreaEndAdmissionRevokedTimeoutReason);
                         LogAreaEndAdmissionRevokedTimeout(
                             logger,
                             runtime.AgvId,
@@ -2443,6 +2449,10 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return true;
     }
+
+    private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
+        runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
+        string.Equals(runtime.BlockReasonCode, "TASK_TYPE_NOT_ALLOWED_AT_STATION", StringComparison.Ordinal);
 
     private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)
     {
