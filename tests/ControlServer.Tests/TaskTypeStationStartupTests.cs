@@ -269,6 +269,43 @@ public sealed class TaskTypeStationStartupTests
         Assert.Contains("stationRiotId", refused.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// control-server#160 删掉了关卡两个标量，终点只由绑定给出。一个从旧版升级、配置里还留着
+    /// <c>JourneyRuntime:gateStationId</c>／<c>gateStationRiotId</c> 的安装，不会报错，但也不该悄悄不认：启动时记一条
+    /// Warning，说明这两个键已无人读、关卡以绑定为准（#188 审查顺手改）。没有这两个键时不记。
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task LeftoverGateScalarsInTheConfigurationAreReportedAsIgnored(bool leftover)
+    {
+        await using Harness harness = await Harness.CreateAsync(
+            Runtime(),
+            extraSettings: leftover
+                ? new Dictionary<string, string?>
+                {
+                    ["JourneyRuntime:gateStationId"] = "关卡",
+                    ["JourneyRuntime:gateStationRiotId"] = "211",
+                }
+                : null);
+        harness.WritePreset(Preset());
+
+        Assert.NotNull(await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        string[] warned = [.. harness.Logs.Where(line => line.Contains("gateStationId", StringComparison.Ordinal))];
+        if (leftover)
+        {
+            string line = Assert.Single(warned);
+            Assert.Contains("211", line, StringComparison.Ordinal);
+            Assert.Contains("ignored", line, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Empty(warned);
+        }
+    }
+
     private sealed class CapturingLoggerProvider(List<string> lines) : ILoggerProvider
     {
         public ILogger CreateLogger(string categoryName) => new CapturingLogger(lines);
@@ -350,7 +387,8 @@ public sealed class TaskTypeStationStartupTests
         public static async Task<Harness> CreateAsync(
             JourneyRuntimeOptions runtime,
             Action<IServiceCollection>? tweak = null,
-            string? settingsFile = "")
+            string? settingsFile = "",
+            IReadOnlyDictionary<string, string?>? extraSettings = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -360,6 +398,10 @@ public sealed class TaskTypeStationStartupTests
             if (settingsFile is not null)
             {
                 settings[TaskTypeStationPreset.SettingsFileKey] = presetPath;
+            }
+            foreach ((string key, string? value) in extraSettings ?? new Dictionary<string, string?>())
+            {
+                settings[key] = value;
             }
             IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
