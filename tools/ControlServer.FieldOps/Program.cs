@@ -117,6 +117,8 @@ internal static partial class Program
             ReleaseTaskTypeStationHoldCommand => await ReleaseTaskTypeStationHoldAsync(context, governance, options, now),
             ReadTaskTypeStationsCommand => await ReadTaskTypeStationsAsync(context, governance, options),
             CloseTaskTypeStationActivationCommand => await CloseTaskTypeStationActivationAsync(context, governance, options, now),
+            ImportDispatchZoneParametersCommand => await ImportDispatchZoneParametersAsync(context, governance, options, now),
+            ReadDispatchZoneParametersCommand => await ReadDispatchZoneParametersAsync(context, governance, options),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
