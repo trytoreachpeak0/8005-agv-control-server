@@ -659,6 +659,51 @@ public sealed class ReversedDirectionJourneyRuntimeTests
     }
 
     /// <summary>
+    /// control-server#228, the crash point between admitting the stop and saving it: the admission returned, the unload
+    /// was prepared and frozen, and the save that moves the stage on and clears the wait's start was lost. Restarted past
+    /// the threshold, the row still says AwaitingGateArrival with the start of a wait that has in fact ended. The prepared
+    /// unload is the proof it ended: the journey goes on to await the unload's result, it is not handed to a person with
+    /// an unload command already out.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AfterARestartAPreparedUnloadIsNotEscalatedByAWaitThatHadAlreadyEnded()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await ArriveAtTheMachineAsync(fixture);
+        StationTaskTypeAdmissionRow[] revoked = await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+        fixture.Clock.Advance(TimeSpan.FromMinutes(9));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.StationTaskTypeAdmissions.AddRange(revoked);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow unloading = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, unloading.Stage);
+
+        // The stage save is lost to a restart: the row is back where it was before the admission returned.
+        unloading.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        unloading.AreaEndAdmissionRevokedSince = heldSince;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Clock.Advance(TimeSpan.FromMinutes(2));
+        await fixture.RecreateEngineAsync();
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        JourneyRuntimeRow resumed = await fixture.RuntimeAsync();
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingUnloadResult, (string?)null, (DateTimeOffset?)null),
+            (resumed.Stage, resumed.BlockReasonCode, resumed.AreaEndAdmissionRevokedSince));
+        Assert.Single(await fixture.Context.StationOperations.AsNoTracking()
+            .Where(row => row.OperationType == SlotOperationType.Unload).ToArrayAsync(Token));
+    }
+
+    /// <summary>
     /// Pairing every area-named station with STAGING_TO_WIRE as well changes the admission seed's content, and a
     /// deployment whose store holds version 1 -- the version the WIRE_TO_GATE-only seed was bound to -- would read
     /// the new content under the same version as drift and take on no further demand until someone raised it by
