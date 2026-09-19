@@ -336,17 +336,19 @@ public sealed class TaskTypeHoldEndpointsTests
     [Theory]
     [InlineData("malformed")]
     [InlineData("oversized")]
+    [InlineData("not-json")]
     public async Task ARequestFromAnotherMachineIsRefusedBeforeItsBodyIsReadAndAuditedByAddressAlone(string body)
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
         await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
         await using PipelineHost host = await PipelineHost.StartAsync(fixture, IPAddress.Parse("172.19.205.30"));
 
-        using HttpResponseMessage response = await host.PostAsync(body switch
+        using HttpResponseMessage response = body switch
         {
-            "malformed" => "{\"mapId\": 25, \"taskType\": ",
-            _ => JsonSerializer.Serialize(ValidRequest() with { Reason = new string('x', 256 * 1024) })
-        });
+            "malformed" => await host.PostAsync("{\"mapId\": 25, \"taskType\": "),
+            "not-json" => await host.PostAsync("reason=x", "text/plain"),
+            _ => await host.PostAsync(JsonSerializer.Serialize(ValidRequest() with { Reason = new string('x', 256 * 1024) }))
+        };
         await host.StopAsync();
         fixture.Context.ChangeTracker.Clear();
 
@@ -412,6 +414,62 @@ public sealed class TaskTypeHoldEndpointsTests
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Single(await fixture.Holds.ListUnreleasedAsync(25, Token));
+    }
+
+    /// <summary>
+    /// A body from this machine that binding used to refuse before the handler ran -- not JSON, or JSON that does not
+    /// parse -- is still refused with the status binding gave, and is now audited as a refused request (control-server#201).
+    /// </summary>
+    [Theory]
+    [InlineData("reason=x", "text/plain", HttpStatusCode.UnsupportedMediaType, "REQUEST_BODY_NOT_JSON")]
+    [InlineData("{\"mapId\": 25, \"taskType\": ", "application/json", HttpStatusCode.BadRequest, "REQUEST_BODY_MALFORMED")]
+    public async Task ABodyFromThisMachineThatIsNotAHoldRequestIsRefusedAsBindingDidAndIsAudited(
+        string body, string mediaType, HttpStatusCode status, string code)
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        await using PipelineHost host = await PipelineHost.StartAsync(fixture, remoteOverride: null);
+
+        using HttpResponseMessage response = await host.PostAsync(body, mediaType);
+        await host.StopAsync();
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(status, response.StatusCode);
+        Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+        Assert.Equal(TaskTypeHoldEndpoints.UnknownMapObjectId, audit.ObjectId);
+        using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
+        Assert.Equal("REJECTED", detail.RootElement.GetProperty("result").GetString());
+        Assert.Equal([code], detail.RootElement.GetProperty("codes").EnumerateArray().Select(item => item.GetString()));
+    }
+
+    [Fact]
+    public async Task AnEmptyBodyFromThisMachineIsNoRequestAndIsRefusedAsUnprocessableAndAudited()
+    {
+        // Binding made an empty body a null request, which the handler refused as unprocessable; reading the body here
+        // keeps that answer.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        await using PipelineHost host = await PipelineHost.StartAsync(fixture, remoteOverride: null);
+
+        using HttpResponseMessage response = await host.PostAsync(string.Empty);
+        string text = await response.Content.ReadAsStringAsync(Token);
+        await host.StopAsync();
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        using JsonDocument problem = JsonDocument.Parse(text);
+        Assert.Contains("REASON_REQUIRED", problem.RootElement.GetProperty("codes").EnumerateArray().Select(item => item.GetString()));
+        Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+        using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
+        Assert.Equal("REJECTED", detail.RootElement.GetProperty("result").GetString());
     }
 
     private static TaskTypeHoldRequest ValidRequest() =>
@@ -519,10 +577,10 @@ public sealed class TaskTypeHoldEndpointsTests
             return new PipelineHost(app, new HttpClient { BaseAddress = new Uri(address) }, bodies);
         }
 
-        public Task<HttpResponseMessage> PostAsync(string json) =>
+        public Task<HttpResponseMessage> PostAsync(string body, string mediaType = "application/json") =>
             _client.PostAsync(
                 TaskTypeHoldEndpoints.Route,
-                new StringContent(json, Encoding.UTF8, "application/json"),
+                new StringContent(body, Encoding.UTF8, mediaType),
                 Token);
 
         public Task StopAsync() => _app.StopAsync(Token);
