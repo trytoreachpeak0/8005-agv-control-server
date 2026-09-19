@@ -153,6 +153,7 @@ public sealed partial class OnboardMessageProcessor(
         bool hasDeferredRecoveryOutbound = OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
                                            OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
                                            messageType == "OperationResult" ||
+                                           messageType == "SlotOperationCommandRejected" ||
                                            messageType == "RecoveryStateReport";
         if (hasDeferredRecoveryOutbound && state.DeferOutboundUntilResponseWritten)
         {
@@ -160,7 +161,8 @@ public sealed partial class OnboardMessageProcessor(
         }
         else if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
                  OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
-                 messageType == "OperationResult")
+                 messageType == "OperationResult" ||
+                 messageType == "SlotOperationCommandRejected")
         {
             await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
         }
@@ -230,7 +232,8 @@ public sealed partial class OnboardMessageProcessor(
         string messageType = RequiredString(root, "messageType");
         if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
             OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
-            messageType == "OperationResult")
+            messageType == "OperationResult" ||
+            messageType == "SlotOperationCommandRejected")
         {
             await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
         }
@@ -398,8 +401,12 @@ public sealed partial class OnboardMessageProcessor(
                 }
             case "OperationProgress":
             case "PreDepartureSafetyCheckResult":
-            case "SlotOperationCommandRejected":
             case "SublotSubmitted":
+                return DurableAck(messageType, messageId, agvId, generation, contentHash);
+            case "SlotOperationCommandRejected":
+                // A refused resume command closes its recovery session (control-server#187); every other
+                // refusal is only acknowledged. The closing snapshot goes out with the triggered sends below.
+                await recoveryCoordinator.ObserveCommandRejectedAsync(root, cancellationToken).ConfigureAwait(false);
                 return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "OperationResult":
                 {
