@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-expected-action-overdue",
+  "runId": "20260919T090022042Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "8e638a44c89698e2b1f00971934d341320570b25",
+    "batchId": "batch-6",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "agvId": "AGV-L2-001",
+    "protocolFaultProxy": true,
+    "onboardHmiCommit": "8f308bb1b839bf214f488e406c5cc3ac1b74de4e",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T090022042Z",
+    "rig": "RealOnboard",
+    "expectedActionOverdueThreshold": "00:00:20"
+  },
+  "assertions": [
+    {
+      "id": "L2-EAO-01",
+      "description": "空关后车自己重开：这次装货的 UNLOCKING 进度 ≥ 2 条，1 号仓门又弹开、空着、开锁输出复位，重开早于门槛",
+      "outcome": "PASS",
+      "expected": "UNLOCKING ≥ 2 / OPEN/EMPTY/0/0 / 重开早于门槛",
+      "actual": "UNLOCKING 2 / OPEN/EMPTY/0/0 / 重开于第一次开锁后 8.7 s"
+    },
+    {
+      "id": "L2-EAO-02",
+      "description": "门槛之前没有超时告警：最新一份告警快照里没有这个码，端点 slots 为空，HMI 上 ExpectedActionOverdue 不在 UIA 树里，服务端没要过中途快照；读完仍在门槛之前",
+      "outcome": "PASS",
+      "expected": "告警 0 / 端点 0 行 / HMI 无 / 请求 0 / 读于门槛前",
+      "actual": "告警 0 / 端点 0 行 / HMI 无 / 请求 0 / 读于门槛前 9.7 s"
+    },
+    {
+      "id": "L2-EAO-03",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-04",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-05",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-06",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-07",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-08",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-09",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-10",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-13",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-11",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    },
+    {
+      "id": "L2-EAO-12",
+      "description": "未到达：越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 越过门槛 50 秒内车载端没有报 SLOT_EXPECTED_ACTION_OVERDUE"
+    }
+  ]
+}

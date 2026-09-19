@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-expected-action-overdue",
+  "runId": "20260919T090436097Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "protocolFaultProxy": true,
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "7ded1b703bd57a641aa8587b5433647b4fefaca4",
+    "controlServerCommit": "e5b58560df348260934afd46c950bd7313251a46",
+    "expectedActionOverdueThreshold": "00:00:20",
+    "rig": "RealOnboard",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T090436097Z",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "batch-6",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-EAO-01",
+      "description": "空关后车自己重开：这次装货的 UNLOCKING 进度 ≥ 2 条，1 号仓门又弹开、空着、开锁输出复位，重开早于门槛",
+      "outcome": "PASS",
+      "expected": "UNLOCKING ≥ 2 / OPEN/EMPTY/0/0 / 重开早于门槛",
+      "actual": "UNLOCKING 2 / OPEN/EMPTY/0/0 / 重开于第一次开锁后 8.9 s"
+    },
+    {
+      "id": "L2-EAO-02",
+      "description": "门槛之前没有超时告警：最新一份告警快照里没有这个码，端点 slots 为空，HMI 上 ExpectedActionOverdue 不在 UIA 树里，服务端没要过中途快照；读完仍在门槛之前",
+      "outcome": "PASS",
+      "expected": "告警 0 / 端点 0 行 / HMI 无 / 请求 0 / 读于门槛前",
+      "actual": "告警 0 / 端点 0 行 / HMI 无 / 请求 0 / 读于门槛前 8.9 s"
+    },
+    {
+      "id": "L2-EAO-03",
+      "description": "越过门槛后告警出现且字段正确：code、subjectType=SLOT、subjectId=1、displayMessage 是三种期待动作之一；raisedAt ≈ 第一次开锁 + 门槛（±2 s），不 ≈ 重开 + 门槛",
+      "outcome": "PASS",
+      "expected": "SLOT_EXPECTED_ACTION_OVERDUE / SLOT / 1 / 三种期待动作之一 / 距第一次开锁 + 门槛 ≤ 2 s / 距重开 + 门槛 > 2 s",
+      "actual": "SLOT_EXPECTED_ACTION_OVERDUE / SLOT / 1 / '放入货物并关好1号仓门' / 距第一次开锁 + 门槛 -0.04 s / 距重开 + 门槛 -8.99 s"
+    },
+    {
+      "id": "L2-EAO-04",
+      "description": "线上：这份告警快照之后，同一连接上出现 server->onboard:SafetyStateSnapshotRequested，随后 onboard->server:SafetyStateSnapshot；到此只有一条连接",
+      "outcome": "FAIL",
+      "expected": "告警、请求、快照同一连接 / 1 条连接",
+      "actual": "告警 #1 请求 # 快照 # / 1 条连接"
+    },
+    {
+      "id": "L2-EAO-05",
+      "description": "中途快照被采纳、不把会话打回握手：同一代次 1 有第二份 SafetyStateSnapshot，版本大于握手那份（1），回应 SnapshotAppliedAck + SessionReadiness；会话仍 Ready、不是 HANDSHAKE_INCOMPLETE；没有恢复痕迹",
+      "outcome": "FAIL",
+      "expected": "v > 1 / SnapshotAppliedAck,SessionReadiness / gen 1 Ready / 恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0",
+      "actual": "(no mid-session snapshot) / gen 1 / Ready / READY / 恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0"
+    },
+    {
+      "id": "L2-EAO-06",
+      "description": "端点一行、字段对得上：thresholdSeconds = 20；slots 恰好一行，车、仓、取货站、LOAD、期待动作与 raisedAt 同告警，waitedSeconds ≥ 门槛，站点期限未过",
+      "outcome": "FAIL",
+      "expected": "threshold 20 / 1 行 / AGV-L2-001 slot 1 N1-3_N1-7 LOAD '放入货物并关好1号仓门' raisedAt 2026-09-19T09:05:47.028713+00:00 waited ≥ 20 stationTimeout=False",
+      "actual": "端点答不上来 / 0 行 / (no row)"
+    },
+    {
+      "id": "L2-EAO-07",
+      "description": "读数来自中途快照且与模拟器一致：readings 非空，版本 = 中途那份（v，不是握手的 v1），锁／光幕／开锁输出 = 模拟器此刻（UNLOCKED/EMPTY/RESET），changedSinceObserved = false",
+      "outcome": "FAIL",
+      "expected": "v UNLOCKED/EMPTY/RESET changed=False（模拟器 UNLOCKED/EMPTY/RESET）",
+      "actual": "readings null"
+    },
+    {
+      "id": "L2-EAO-08",
+      "description": "看板页出卡片：「期待动作超时」卡片门槛前写「无期待动作超时的仓位」，越过门槛后有这台车、这个仓、装货与期待动作的一行",
+      "outcome": "FAIL",
+      "expected": "门槛前「无期待动作超时的仓位」/ 门槛后「AGV-L2-001 N1-3_N1-7 装货 1 放入货物并关好1号仓门」",
+      "actual": "门槛前 '' / 门槛后 ''"
+    },
+    {
+      "id": "L2-EAO-09",
+      "description": "HMI 提示「已上报」：ExpectedActionOverdue 在 UIA 树里，文字含告警的 displayMessage 与「已上报」，不是断开文案",
+      "outcome": "PASS",
+      "expected": "含 '放入货物并关好1号仓门' 与 '已上报'",
+      "actual": "'期待的操作（放入货物并关好1号仓门）很久没有完成，已上报，班组长或管理员会到现场查看'"
+    },
+    {
+      "id": "L2-EAO-10",
+      "description": "上报不改变行为（守护判据）：告警在时这次装货没有结果，最新进度仍是开锁或等操作员，旅程仍 AwaitingLoadResult，期限起点不变，没有恢复痕迹",
+      "outcome": "PASS",
+      "expected": "0 result / UNLOCKING 或 WAITING_OPERATOR / AwaitingLoadResult / 起点 2026-09-19 09:05:25.3862196+00:00 / 恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0",
+      "actual": "0 result / WAITING_OPERATOR / AwaitingLoadResult / 起点 2026-09-19 09:05:25.3862196+00:00 / 恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0"
+    },
+    {
+      "id": "L2-EAO-13",
+      "description": "同一超时再报不出第二行、不覆盖第一行：再空关、重开之后，每份告警快照里这一仓的超时都是同一个 alarmId、同一个 raisedAt；端点仍恰好一行，raisedAt 不变",
+      "outcome": "FAIL",
+      "expected": "重开 OPEN/EMPTY/0/0 / 1 个 alarmId / 1 个 raisedAt / 端点 1 行 raisedAt 2026-09-19T09:05:47.028713+00:00",
+      "actual": "重开 OPEN/EMPTY/0/0 / 1 份快照带它，1 个 alarmId、1 个 raisedAt / 端点 0 行 (no row)"
+    },
+    {
+      "id": "L2-EAO-11",
+      "description": "站点期限过后合成一行：期限过去、门仍开着（STATION_TIMEOUT_DOOR_NOT_CLOSED），端点 slots 仍恰好一行，stationTimeoutDoorNotClosed = true，raisedAt 不变",
+      "outcome": "FAIL",
+      "expected": "STATION_TIMEOUT_DOOR_NOT_CLOSED / 1 行 stationTimeout=True raisedAt 2026-09-19T09:05:47.028713+00:00 / 门开",
+      "actual": "STATION_TIMEOUT_DOOR_NOT_CLOSED / 0 行 (no row) / OPEN/EMPTY/0/0"
+    },
+    {
+      "id": "L2-EAO-12",
+      "description": "撤下（守护判据）：放货关门后装货 COMPLETED、Committed；随后最新一份告警快照里不再有这个码，端点 slots 为空，HMI 控件不在 UIA 树里",
+      "outcome": "PASS",
+      "expected": "Committed / COMPLETED / 告警 0 / 端点 0 行 / HMI 无",
+      "actual": "Committed / COMPLETED / 告警 0 / 端点 0 行 / HMI 无"
+    }
+  ]
+}
