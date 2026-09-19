@@ -185,6 +185,34 @@ public sealed class TaskTypeAdmissionRuntimeTests
         Assert.Equal(new DemandTaskTypeStationFreeze(demandId, ruleVersion, 25, bindingSetVersion, Now), await FreezeAsync(fixture));
     }
 
+    /// <summary>
+    /// 准入种子与解析器读同一版规则：生效绑定集所依据的那版，不是最新一版。规则表前进了一版而生效绑定集没换时，种子
+    /// 内容不变，不被判成准入策略漂移（#188 审查顺手改）。这里的新规则把 <c>WIRE_TO_GATE</c> 的固定端改成起点，
+    /// 读最新规则的话种子会变空。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task TheAdmissionSeedReadsTheRulesTheActiveBindingSetWasBuiltOnNotTheLatest()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await using (ControlServerDbContext writer = new(fixture.DbOptionsForTests))
+        {
+            await TaskTypeStationRuntimeSeed.Access(writer).Rules.WriteVersionAsync(
+                [
+                    .. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToGate),
+                    new TaskTypeStationRule(TransportTaskTypes.WireToGate, TaskTypeFixedEnd.Origin),
+                ],
+                "preset:test-newer",
+                Now,
+                Token);
+        }
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        AdmissionPolicyStateRow state = await fixture.Context.AdmissionPolicyState.AsNoTracking().SingleAsync(Token);
+        Assert.Equal(SeedHashBeforeThisTicket, state.ContentHash);
+    }
+
     private static async Task<TaskTypeStationBindingSetVersion?> ActiveBindingsAsync(RuntimeFixture fixture) =>
         await TaskTypeStationRuntimeSeed.Access(fixture.Context).Bindings.ReadActiveAsync(25, Token);
 
