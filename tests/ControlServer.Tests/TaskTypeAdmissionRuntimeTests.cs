@@ -103,6 +103,37 @@ public sealed class TaskTypeAdmissionRuntimeTests
                 row.ObjectKind != GovernedObjectKind.DispatchZoneAreaAssignment, Token));
     }
 
+    /// <summary>
+    /// 规则表前进了一版（预置里的规则改了），生效绑定集还停在它当初校验用的那版规则上：新需求照常受理，冻结的是
+    /// 生效绑定集自带的规则版本，不是最新规则版本——#159 的冻结端口要求两者成对（#161 审查交接）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task ANewerRuleVersionWithTheActiveBindingSetUnchangedStillFreezesTheBindingSetsOwnRuleVersion()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        TaskTypeStationBindingSetVersion active = (await ActiveBindingsAsync(fixture))!;
+        await using (ControlServerDbContext writer = new(fixture.DbOptionsForTests))
+        {
+            TaskTypeStationRuleVersion newer = (await TaskTypeStationRuntimeSeed.Access(writer).Rules.WriteVersionAsync(
+                [.. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)],
+                "preset:test-newer",
+                Now,
+                Token)).Version;
+            Assert.True(newer.Version > active.RuleVersion);
+        }
+        Assert.Equal(active.Version, (await ActiveBindingsAsync(fixture))!.Version);
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        Assert.Equal(
+            new DemandTaskTypeStationFreeze("10000000-0000-4000-8000-000000000001", active.RuleVersion, 25, active.Version, Now),
+            await FreezeAsync(fixture));
+    }
+
     private static async Task<TaskTypeStationBindingSetVersion?> ActiveBindingsAsync(RuntimeFixture fixture) =>
         await TaskTypeStationRuntimeSeed.Access(fixture.Context).Bindings.ReadActiveAsync(25, Token);
 
