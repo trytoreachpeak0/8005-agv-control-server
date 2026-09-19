@@ -64,6 +64,9 @@ function Get-ServerIdentity {
 
 `$Context.InvokeFieldOps` 把非零退出码变成异常，消息的形状是编排器写死的（`... exited with <code>: <stdout>`）。这条场景要的正是退出码 1，
 所以把异常拆回「退出码 + JSON」；场景不改编排器。
+
+工具崩了（没有打出 JSON）也不中断场景，记成 `outcome = CRASH`：崩溃落在它那一份表的判据上判红，后面几份照常判。第一次红证据
+（control-server#216，校验里去掉「同一分区重复」）正是这样——重复的表越过校验后在别处崩掉，场景在第三份就中断，后两份没有判。
 #>
 function Invoke-Import([string]$path) {
     try {
@@ -72,11 +75,19 @@ function Invoke-Import([string]$path) {
     }
     catch {
         $message = [string]$_.Exception.Message
-        $match = [regex]::Match($message, 'exited with (?<code>\d+): (?<json>\{.*\})', 'Singleline')
-        if (-not $match.Success) { throw "Unexpected FieldOps failure: $message" }
+        $match = [regex]::Match($message, 'exited with (?<code>-?\d+): (?<json>\{.*\})', 'Singleline')
+        if ($match.Success) {
+            return @{
+                ExitCode = [int]$match.Groups['code'].Value
+                Payload  = ($match.Groups['json'].Value | ConvertFrom-Json)
+            }
+        }
+        $code = [regex]::Match($message, 'exited with (?<code>-?\d+)')
+        if (-not $code.Success) { throw }
+        $journal.Note("FieldOps crashed instead of answering: $message")
         return @{
-            ExitCode = [int]$match.Groups['code'].Value
-            Payload  = ($match.Groups['json'].Value | ConvertFrom-Json)
+            ExitCode = [int]$code.Groups['code'].Value
+            Payload  = [pscustomobject]@{ outcome = 'CRASH'; version = $null; contentSha256 = $null; errors = @() }
         }
     }
 }
