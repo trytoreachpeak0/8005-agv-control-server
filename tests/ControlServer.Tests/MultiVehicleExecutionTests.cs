@@ -886,17 +886,23 @@ public sealed partial class MultiVehicleExecutionTests
         private readonly SqliteConnection _connection;
         private readonly Dictionary<string, List<string>> _safetyMessageIds = new(StringComparer.Ordinal);
 
+        /// <summary>A criterion put at the head of the chain, so a test can state what a vehicle concludes.</summary>
+        private readonly IDispatchAdmissionCriterion? _extraCriterion;
+
         private FleetFixture(
             SqliteConnection connection,
             ControlServerDbContext context,
             JourneyRuntimeOptions options,
-            MovableClock clock)
+            MovableClock clock,
+            IDispatchAdmissionCriterion? extraCriterion)
         {
             _connection = connection;
+            _extraCriterion = extraCriterion;
             Context = context;
             Options = options;
             Clock = clock;
             Riot = new FleetRiot(clock, options);
+            Acceptances = new RecordingAcceptances(new WireToGateStore(context), AcceptedPlans);
             GovernanceStore governance = new(
                 context,
                 new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
@@ -916,6 +922,7 @@ public sealed partial class MultiVehicleExecutionTests
         public CountingSlotPositions SlotPositions { get; } = new();
         public RecordingRoundOutcomes RoundOutcomes { get; } = new();
         public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
+        public RecordingAcceptances Acceptances { get; }
         public FleetBoxCounts BoxCounts { get; } = new();
         public RecordingInTransitQualification InTransit { get; } = new();
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
@@ -923,7 +930,8 @@ public sealed partial class MultiVehicleExecutionTests
 
         public static async Task<FleetFixture> CreateAsync(
             int budgetMilliseconds = 30_000,
-            Action<JourneyRuntimeOptions>? configure = null)
+            Action<JourneyRuntimeOptions>? configure = null,
+            IDispatchAdmissionCriterion? extraCriterion = null)
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
@@ -934,7 +942,7 @@ public sealed partial class MultiVehicleExecutionTests
             await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);
             JourneyRuntimeOptions options = FleetOptions(budgetMilliseconds);
             configure?.Invoke(options);
-            FleetFixture fixture = new(connection, context, options, new MovableClock(Now));
+            FleetFixture fixture = new(connection, context, options, new MovableClock(Now), extraCriterion);
             await fixture.SeedAsync();
             return fixture;
         }
@@ -1097,19 +1105,23 @@ public sealed partial class MultiVehicleExecutionTests
                 Catalog,
                 Riot,
                 new JourneyIntakeCoordinator(
-                    new DemandIntakeService(Catalog, new RecordingAcceptances(store, AcceptedPlans)),
+                    new DemandIntakeService(Catalog, Acceptances),
                     movement),
-                new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
-                    options,
-                    new MapStationResolver(),
-                    new PackageCapacityStore(Context),
-                    store,
-                    new VehicleFaultStore(Context),
-                    BoxCounts,
-                    NullLogger<SlotCapacityCriterion>.Instance,
-                    routeGraph: null,
-                    catalog: catalogAccess,
-                    createGate: gate)),
+                new DispatchAdmissionChain(
+                [
+                    .. DispatchAdmissionCriteria.Default(
+                        options,
+                        new MapStationResolver(),
+                        new PackageCapacityStore(Context),
+                        store,
+                        new VehicleFaultStore(Context),
+                        BoxCounts,
+                        NullLogger<SlotCapacityCriterion>.Instance,
+                        routeGraph: null,
+                        catalog: catalogAccess,
+                        createGate: gate),
+                    .. _extraCriterion is null ? Array.Empty<IDispatchAdmissionCriterion>() : [_extraCriterion],
+                ]),
                 DispatchCandidateOrdering.Ranker(),
                 dispatchPolicy,
                 AreaAssignments,
@@ -1499,12 +1511,20 @@ public sealed partial class MultiVehicleExecutionTests
 
         public bool? Answer { get; set; }
 
+        /// <summary>Whether the path fails the way a read of its own would; what control-server#211 puts here can throw.</summary>
+        public bool Throws { get; set; }
+
         public async Task<bool> QualifiesAsync(
             DispatchRoundFacts round,
             FleetVehicle vehicle,
             CancellationToken cancellationToken)
         {
             Asked.Add((round, vehicle));
+            if (Throws)
+            {
+                throw new HttpRequestException($"The in-transit path did not answer for {vehicle.AgvId}.");
+            }
+
             bool host = await _host.QualifiesAsync(round, vehicle, cancellationToken);
             return Answer ?? host;
         }
@@ -1514,11 +1534,19 @@ public sealed partial class MultiVehicleExecutionTests
     {
         public List<DispatchRoundOutcome> Outcomes { get; } = [];
 
-        public Task RecordAsync(DispatchRoundOutcome outcome, CancellationToken cancellationToken)
+        /// <summary>
+        /// The real hook this forwards to, for a test about what the round end concludes; null for none. Typed as the
+        /// structural block sink because that is the conclusion a round's own tests can be about.
+        /// </summary>
+        public StructuralDispatchBlockSink? Inner { get; set; }
+
+        public async Task RecordAsync(DispatchRoundOutcome outcome, CancellationToken cancellationToken)
         {
-            _ = cancellationToken;
             Outcomes.Add(outcome);
-            return Task.CompletedTask;
+            if (Inner is not null)
+            {
+                await Inner.RecordAsync(outcome, cancellationToken);
+            }
         }
     }
 
@@ -1526,6 +1554,12 @@ public sealed partial class MultiVehicleExecutionTests
     private sealed class RecordingAcceptances(WireToGateStore inner, List<JourneyExecutionPlan> plans)
         : IJourneyAcceptanceStore
     {
+        /// <summary>
+        /// Thrown instead of the first acceptance, and only that one, the way the real store refuses one it cannot
+        /// make good on. Nothing is written when it throws, so the round claimed a demand it never accepted.
+        /// </summary>
+        public Exception? ThrowOnFirstAccept { get; set; }
+
         public Task AcceptWithOrderIntentAsync(
             AcceptedDemandSnapshot snapshot,
             OrderIntent orderIntent,
@@ -1538,6 +1572,12 @@ public sealed partial class MultiVehicleExecutionTests
             JourneyExecutionPlan journey,
             CancellationToken cancellationToken)
         {
+            if (ThrowOnFirstAccept is Exception refusal)
+            {
+                ThrowOnFirstAccept = null;
+                throw refusal;
+            }
+
             plans.Add(journey);
             return inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, journey, cancellationToken);
         }
@@ -1572,6 +1612,15 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>The vehicle key whose reads fail the way an unreachable RIoT does, or null.</summary>
         public string? FailOn { get; set; }
 
+        /// <summary>Runs just before the failing read throws, so a test can stage what the segment leaves behind.</summary>
+        public Action? OnFail { get; set; }
+
+        /// <summary>
+        /// The vehicle key whose reads end in a cancellation that is not the host's, the way a store's own
+        /// write timeout does, or null.
+        /// </summary>
+        public string? CancelOn { get; set; }
+
         /// <summary>Every vehicle read, in the order it was asked, so a test can see the segments.</summary>
         public List<string> VehicleReads { get; } = [];
 
@@ -1590,7 +1639,15 @@ public sealed partial class MultiVehicleExecutionTests
 
             if (string.Equals(FailOn, vehicleKey, StringComparison.Ordinal))
             {
+                OnFail?.Invoke();
                 throw new HttpRequestException($"RIoT did not answer for {vehicleKey}.");
+            }
+
+            if (string.Equals(CancelOn, vehicleKey, StringComparison.Ordinal))
+            {
+                // A token of its own, already cancelled: neither the round's budget nor the host's shutdown.
+                throw new OperationCanceledException(
+                    $"A deadline of this vehicle's own fired for {vehicleKey}.", new CancellationToken(true));
             }
 
             return new RiotVehicleObservation(
