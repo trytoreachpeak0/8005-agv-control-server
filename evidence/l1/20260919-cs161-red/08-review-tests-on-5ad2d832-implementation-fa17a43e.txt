@@ -1,0 +1,169 @@
+# control-server#161 review (issuecomment-5739636280): the S1-S6/O2 tests of fa17a43e run against the implementation of 5ad2d832 (unchanged until e7b73d84).
+# --filter FullyQualifiedName~TaskTypeStation
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:07.41]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased [5 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 3
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 492
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 503
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:21.79]     ControlServer.Tests.TaskTypeStationStartupTests.APointerThatIsActiveButNamesNoVersionStillLetsThePresetLoadAsTheFirstVersion [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationStartupTests.APointerThatIsActiveButNamesNoVersionStillLetsThePresetLoadAsTheFirstVersion [654 ms]
+  Error Message:
+   System.InvalidOperationException : Map 25 has an active pointer but no binding set version to read back.
+  Stack Trace:
+     at ControlServer.Host.Runtime.TaskTypeStations.TaskTypeStationStartup.EnsureAsync(IServiceProvider services, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Host\Runtime\TaskTypeStations\TaskTypeStationStartup.cs:line 134
+   at ControlServer.Host.Runtime.TaskTypeStations.TaskTypeStationStartup.EnsureAsync(IServiceProvider services, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Host\Runtime\TaskTypeStations\TaskTypeStationStartup.cs:line 172
+   at ControlServer.Host.Runtime.TaskTypeStations.TaskTypeStationStartup.EnsureAsync(IServiceProvider services, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Host\Runtime\TaskTypeStations\TaskTypeStationStartup.cs:line 172
+   at ControlServer.Tests.TaskTypeStationStartupTests.APointerThatIsActiveButNamesNoVersionStillLetsThePresetLoadAsTheFirstVersion() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 218
+   at ControlServer.Tests.TaskTypeStationStartupTests.APointerThatIsActiveButNamesNoVersionStillLetsThePresetLoadAsTheFirstVersion() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 225
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:23.95]     ControlServer.Tests.TaskTypeStationActivationTests.AContradictionIsClosedOnlyByAnAuditedManualClose [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.AContradictionIsClosedOnlyByAnAuditedManualClose [594 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Application.TaskTypeStationActivationService.CloseManuallyAsync(Int32 mapId, TaskTypeStationChangeRequest request, DateTimeOffset now, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationActivationService.cs:line 197
+   at ControlServer.Tests.TaskTypeStationActivationTests.AContradictionIsClosedOnlyByAnAuditedManualClose() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 851
+   at ControlServer.Tests.TaskTypeStationActivationTests.AContradictionIsClosedOnlyByAnAuditedManualClose() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 881
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:25.49]     ControlServer.Tests.TaskTypeStationActivationTests.AFirstActivationThatNeverCompletedLeavesTheMapWithoutAnActiveVersion [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.AFirstActivationThatNeverCompletedLeavesTheMapWithoutAnActiveVersion [351 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+Expected: "25|1|ACTIVE|<null>"
+Actual:   "25|1|ACTIVE|<null>\n26|<null>|ACTIVE|<null>"
+                             ↑ (pos 18)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.AFirstActivationThatNeverCompletedLeavesTheMapWithoutAnActiveVersion() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 906
+   at ControlServer.Tests.TaskTypeStationActivationTests.AFirstActivationThatNeverCompletedLeavesTheMapWithoutAnActiveVersion() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 906
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:26.83]     ControlServer.Tests.TaskTypeStationActivationTests.ASecondStepThatArrivesAfterReconciliationDoesNotSwitchThePointer [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ASecondStepThatArrivesAfterReconciliationDoesNotSwitchThePointer [265 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: ResultUnknown
+Actual:   Activated
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ASecondStepThatArrivesAfterReconciliationDoesNotSwitchThePointer() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 752
+   at ControlServer.Tests.TaskTypeStationActivationTests.ASecondStepThatArrivesAfterReconciliationDoesNotSwitchThePointer() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 755
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:27.67]     ControlServer.Tests.TaskTypeStationActivationTests.AHoldReleaseWhoseAuditCannotBeWrittenReleasesNothing [FAIL]
+[xUnit.net 00:00:28.07]     ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationReleasesAnOrphanActivationHoldWhenItCanConclude [FAIL]
+[xUnit.net 00:00:28.17]     ControlServer.Tests.TaskTypeStationFieldOpsTests.ManualCloseOnAMapWithNothingOpenIsRefusedWithExitOne [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.AHoldReleaseWhoseAuditCannotBeWrittenReleasesNothing [429 ms]
+  Error Message:
+   System.IO.IOException : The audit record TASK_TYPE_STATION_HOLD_RELEASED could not be written.
+  Stack Trace:
+     at ControlServer.Tests.FailingAudit.WriteBusinessAsync(GovernanceAuditEntry entry, DateTimeOffset recordedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1130
+   at ControlServer.Application.TaskTypeStationActivationService.ReleaseHoldAsync(Int32 mapId, String taskType, String siteVerificationRef, RiotMapStationCatalogSnapshot catalog, TaskTypeStationChangeRequest request, DateTimeOffset now, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationActivationService.cs:line 289
+   at ControlServer.Tests.TaskTypeStationActivationTests.AHoldReleaseWhoseAuditCannotBeWrittenReleasesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1032
+   at ControlServer.Tests.TaskTypeStationActivationTests.AHoldReleaseWhoseAuditCannotBeWrittenReleasesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1039
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationReleasesAnOrphanActivationHoldWhenItCanConclude [398 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                  ↓ (pos 0)
+Expected: <>z__ReadOnlySingleElementList<string> ["orphan"]
+Actual:   string[]                               []
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationReleasesAnOrphanActivationHoldWhenItCanConclude() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 831
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationReleasesAnOrphanActivationHoldWhenItCanConclude() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 833
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeStationFieldOpsTests.ManualCloseOnAMapWithNothingOpenIsRefusedWithExitOne [658 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 1
+Actual:   2
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationFieldOpsTests.ManualCloseOnAMapWithNothingOpenIsRefusedWithExitOne() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 160
+   at ControlServer.Tests.TaskTypeStationFieldOpsTests.ManualCloseOnAMapWithNothingOpenIsRefusedWithExitOne() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 165
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:30.82]     ControlServer.Tests.TaskTypeStationActivationTests.ASecondStepThatArrivesAfterANewerAttemptBeganLeavesThatAttemptAlone [FAIL]
+[xUnit.net 00:00:31.23]     ControlServer.Tests.TaskTypeStationActivationTests.AFirstStepThatFailsToCommitIsAuditedAsTimedOutAndChangesNothing [FAIL]
+[xUnit.net 00:00:31.62]     ControlServer.Tests.TaskTypeStationActivationTests.TheOpenAttemptIsTakenFromItsHoldsNotFromTheLatestAuditTimestamp [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ASecondStepThatArrivesAfterANewerAttemptBeganLeavesThatAttemptAlone [333 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: ResultUnknown
+Actual:   Activated
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ASecondStepThatArrivesAfterANewerAttemptBeganLeavesThatAttemptAlone() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 779
+   at ControlServer.Tests.TaskTypeStationActivationTests.ASecondStepThatArrivesAfterANewerAttemptBeganLeavesThatAttemptAlone() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 781
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.AFirstStepThatFailsToCommitIsAuditedAsTimedOutAndChangesNothing [403 ms]
+  Error Message:
+   System.TimeoutException : SQLite BEGIN IMMEDIATE waited past the busy timeout.
+  Stack Trace:
+     at ControlServer.Tests.CommitFault.TransactionCommittingAsync(DbTransaction transaction, TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1175
+   at Microsoft.EntityFrameworkCore.Diagnostics.RelationalLoggerExtensions.TransactionCommittingAsync(IDiagnosticsLogger`1 diagnostics, IRelationalConnection connection, DbTransaction transaction, Guid transactionId, DateTimeOffset startTime, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalTransaction.CommitAsync(CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalTransaction.CommitAsync(CancellationToken cancellationToken)
+   at ControlServer.Infrastructure.Persistence.TaskTypeStationActivationStore.BeginAsync(TaskTypeStationActivationStart start, Func`2 startedAudit, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationActivationStore.cs:line 86
+   at ControlServer.Infrastructure.Persistence.TaskTypeStationActivationStore.BeginAsync(TaskTypeStationActivationStart start, Func`2 startedAudit, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationActivationStore.cs:line 87
+   at ControlServer.Tests.FaultOnBegin.BeginAsync(TaskTypeStationActivationStart start, Func`2 startedAudit, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1117
+   at ControlServer.Application.TaskTypeStationActivationService.RunActivationAsync(TaskTypeStationCandidate candidate, RiotMapStationCatalogSnapshot catalog, TaskTypeStationChangeRequest request, Boolean dryRun, DateTimeOffset now, String category, Nullable`1 rollbackOf, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationActivationService.cs:line 404
+   at ControlServer.Tests.TaskTypeStationActivationTests.AFirstStepThatFailsToCommitIsAuditedAsTimedOutAndChangesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 918
+   at ControlServer.Tests.TaskTypeStationActivationTests.AFirstStepThatFailsToCommitIsAuditedAsTimedOutAndChangesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 927
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.TheOpenAttemptIsTakenFromItsHoldsNotFromTheLatestAuditTimestamp [388 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "5dba8c0c79634b82aa7723b73c7dce88"
+Actual:   "ghost"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.TheOpenAttemptIsTakenFromItsHoldsNotFromTheLatestAuditTimestamp() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 809
+   at ControlServer.Tests.TaskTypeStationActivationTests.TheOpenAttemptIsTakenFromItsHoldsNotFromTheLatestAuditTimestamp() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 812
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:32.00]     ControlServer.Tests.TaskTypeStationActivationTests.AReconciliationThatFailsToCommitIsAuditedAndChangesNothing [FAIL]
+[xUnit.net 00:00:32.96]     ControlServer.Tests.TaskTypeStationActivationTests.StoresRefuseIllegalValuesEvenWhenCalledDirectly [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.AReconciliationThatFailsToCommitIsAuditedAndChangesNothing [376 ms]
+  Error Message:
+   System.TimeoutException : lock timeout
+  Stack Trace:
+     at ControlServer.Tests.CommitFault.TransactionCommittingAsync(DbTransaction transaction, TransactionEventData eventData, InterceptionResult result, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1175
+   at Microsoft.EntityFrameworkCore.Diagnostics.RelationalLoggerExtensions.TransactionCommittingAsync(IDiagnosticsLogger`1 diagnostics, IRelationalConnection connection, DbTransaction transaction, Guid transactionId, DateTimeOffset startTime, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalTransaction.CommitAsync(CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalTransaction.CommitAsync(CancellationToken cancellationToken)
+   at ControlServer.Infrastructure.Persistence.TaskTypeStationActivationStore.ResolveAsync(TaskTypeStationActivationAttempt attempt, DateTimeOffset at, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationActivationStore.cs:line 273
+   at ControlServer.Infrastructure.Persistence.TaskTypeStationActivationStore.ResolveAsync(TaskTypeStationActivationAttempt attempt, DateTimeOffset at, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationActivationStore.cs:line 274
+   at ControlServer.Application.TaskTypeStationActivationService.ReconcileAsync(Int32 mapId, TaskTypeStationChangeRequest request, DateTimeOffset now, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationActivationService.cs:line 149
+   at ControlServer.Tests.TaskTypeStationActivationTests.AReconciliationThatFailsToCommitIsAuditedAndChangesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 964
+   at ControlServer.Tests.TaskTypeStationActivationTests.AReconciliationThatFailsToCommitIsAuditedAndChangesNothing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 974
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.StoresRefuseIllegalValuesEvenWhenCalledDirectly [414 ms]
+  Error Message:
+   Assert.Throws() Failure: No exception was thrown
+Expected: typeof(ControlServer.Application.TaskTypeStationConfigurationException)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.StoresRefuseIllegalValuesEvenWhenCalledDirectly() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 988
+   at ControlServer.Tests.TaskTypeStationActivationTests.StoresRefuseIllegalValuesEvenWhenCalledDirectly() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1014
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:34.60]     ControlServer.Tests.TaskTypeStationActivationTests.AFirstStepThatCommitsButThrowsIsAuditedAsUnknownAndReconcilable [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.AFirstStepThatCommitsButThrowsIsAuditedAsUnknownAndReconcilable [385 ms]
+  Error Message:
+   System.InvalidOperationException : The connection dropped after COMMIT was sent.
+  Stack Trace:
+     at ControlServer.Tests.CommitFault.TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1160
+   at Microsoft.EntityFrameworkCore.Diagnostics.RelationalLoggerExtensions.TransactionCommittedAsync(IDiagnosticsLogger`1 diagnostics, IRelationalConnection connection, DbTransaction transaction, Guid transactionId, DateTimeOffset startTime, TimeSpan duration, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalTransaction.CommitAsync(CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalTransaction.CommitAsync(CancellationToken cancellationToken)
+   at ControlServer.Infrastructure.Persistence.TaskTypeStationActivationStore.BeginAsync(TaskTypeStationActivationStart start, Func`2 startedAudit, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationActivationStore.cs:line 86
+   at ControlServer.Infrastructure.Persistence.TaskTypeStationActivationStore.BeginAsync(TaskTypeStationActivationStart start, Func`2 startedAudit, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationActivationStore.cs:line 87
+   at ControlServer.Tests.FaultOnBegin.BeginAsync(TaskTypeStationActivationStart start, Func`2 startedAudit, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 1117
+   at ControlServer.Application.TaskTypeStationActivationService.RunActivationAsync(TaskTypeStationCandidate candidate, RiotMapStationCatalogSnapshot catalog, TaskTypeStationChangeRequest request, Boolean dryRun, DateTimeOffset now, String category, Nullable`1 rollbackOf, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationActivationService.cs:line 404
+   at ControlServer.Tests.TaskTypeStationActivationTests.AFirstStepThatCommitsButThrowsIsAuditedAsUnknownAndReconcilable() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 939
+   at ControlServer.Tests.TaskTypeStationActivationTests.AFirstStepThatCommitsButThrowsIsAuditedAsUnknownAndReconcilable() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 950
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:    14, Passed:   115, Skipped:     0, Total:   129, Duration: 32 s - ControlServer.Tests.dll (net8.0)

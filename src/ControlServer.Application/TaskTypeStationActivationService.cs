@@ -245,17 +245,22 @@ public sealed class TaskTypeStationActivationService(
         int mapId,
         TaskTypeStationActivationAttempt? attempt,
         TaskTypeStationActiveReadBack readBack,
-        TaskTypeStationReconciliationConclusion conclusion) => conclusion switch
+        TaskTypeStationReconciliationConclusion conclusion)
     {
-        TaskTypeStationReconciliationConclusion.NothingToReconcile =>
-            Invariant($"Map {mapId} has no open activation attempt; version {readBack.ActivePointer?.ActiveVersion} is active. {readBack.Detail}"),
-        TaskTypeStationReconciliationConclusion.TargetActive =>
-            Invariant($"The target version {attempt!.TargetVersion} is the one in force. {readBack.Detail}"),
-        TaskTypeStationReconciliationConclusion.PreviousActive => attempt!.PreviousVersion is null
-            ? Invariant($"No version was active before and none is now; the activation of version {attempt.TargetVersion} did not happen, and Map {mapId} is back to having no active version.")
-            : Invariant($"The previous version {attempt.PreviousVersion} is still in force; the activation of version {attempt.TargetVersion} did not happen. {readBack.Detail}"),
-        _ => Invariant($"Neither the target version {attempt!.TargetVersion} nor the previous version {attempt.PreviousVersion} reads back whole: {readBack.Detail} The holds stay; close-task-type-station-activation is the way out.")
-    };
+        switch (conclusion)
+        {
+            case TaskTypeStationReconciliationConclusion.NothingToReconcile:
+                return Invariant($"Map {mapId} has no open activation attempt; version {readBack.ActivePointer?.ActiveVersion} is active. {readBack.Detail}");
+            case TaskTypeStationReconciliationConclusion.TargetActive:
+                return Invariant($"The target version {attempt!.TargetVersion} is the one in force. {readBack.Detail}");
+            case TaskTypeStationReconciliationConclusion.PreviousActive when attempt!.PreviousVersion is null:
+                return Invariant($"No version was active before and none is now; the activation of version {attempt.TargetVersion} did not happen, and Map {mapId} is back to having no active version.");
+            case TaskTypeStationReconciliationConclusion.PreviousActive:
+                return Invariant($"The previous version {attempt!.PreviousVersion} is still in force; the activation of version {attempt.TargetVersion} did not happen. {readBack.Detail}");
+            default:
+                return Invariant($"Neither the target version {attempt!.TargetVersion} nor the previous version {attempt.PreviousVersion} reads back whole: {readBack.Detail} The holds stay; close-task-type-station-activation is the way out.");
+        }
+    }
 
     private static GovernanceActionOutcome OutcomeOf(TaskTypeStationReconciliationConclusion conclusion) =>
         conclusion == TaskTypeStationReconciliationConclusion.Contradictory
