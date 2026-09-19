@@ -23,15 +23,23 @@ run 35455541316：会话 CLOSED、动作 RESUME_AFTER_REPAIR、工作流 1），
 **重启之后按「补偿清空」。**门关着、仓是空的，补偿不开门就能证空，服务端授权补偿只看「装载是 Load 且
 RecoveryRequired」，与 `g3-exception-compensate` 同一条路，只是会话来自重启前、快照来自重放。
 
-**快照确认这一半与主线不同。**主线车载端 onboard-hmi#41/#42 让车只确认 CLOSED 快照；v2 车载端（w2g/b3-on-v2）
-没有这两个提交，对 `ExceptionRecoverySessionSnapshot` 一份都不回 `SnapshotAppliedAck`。所以这里判的是
-「非 CLOSED 的快照一份都没被确认、旧 revision 由新 revision fence」；CLOSED 那一份确认没确认只抄进判据实际值，
-不作判据——那是 control-server#31 在主线修掉、v2 还没带上的另一件事，不是本票要证的。
+**新写法盖不到的两格（control-server#222 审查）。**
+- 动作 id 复用：重启前车一条动作都没发，日志库里 `recoveryActionId` 为空，L2-ROS-06 里「同 id 下没有别的动作」
+  在本场景恒为真，不证明任何东西，只留作一致性检查。「被拒动作的 id 被下一个动作承接」由车载端 G2 覆盖
+  （`w2g/b3-on-v2@372186f` 移植的 MVP `ab346ed`，见 control-server#36 09-14 评论）。
+- 开会话**成功**后断电：开会话应答被丢、车放弃申请，车载端日志库里就没有会话 id，重启后只走得到「补偿清空直接挂在
+  重放来的快照上」这条路（快照重放断了时是「再申请被 ALREADY_OPEN 拒」）。cs#36 的另一条死路——日志库有会话 id、
+  内存没有快照，车载端本地抛 `RECOVERY_SESSION_STATE_PENDING`（车载端 `WireToGateBusinessService.RecoveryVectors.cs`）——
+  现在没有端到端覆盖，由另开的票补场景。
+
+**快照确认这一半。**车载端 `4d716340` 只确认 CLOSED 快照（`WireToGateSessionClient.cs` 对
+`ExceptionRecoverySessionSnapshot { State: "CLOSED" }` 回 `SnapshotAppliedAck`，control-server#31）。这里判的是
+「非 CLOSED 的快照一份都没被确认、旧 revision 由新 revision fence」；CLOSED 那一份确认没确认只抄进判据实际值，不作判据。
 
 **不属于任何 G3 片**，不进 `scripts/run-journey-g3.ps1` / `scripts/g3-slice-evidence.ps1`。
 
-断言只读服务端的库（收件箱、发件箱、会话与工作流表）与模拟器快照；车载端日志库只读、只抄进时间线作诊断。
-界面只用来驱动与等待入口出现。场景没走到的判据记为未到达（FAIL），不会被跳过。
+断言只读服务端的库（收件箱、发件箱、会话与工作流表）、模拟器快照与协议故障代理的流量记录；车载端日志库只读、只抄进
+时间线作诊断。界面只用来驱动与等待（入口出现、「恢复申请失败」提示框），等不到时记未到达，不进判据条件。场景没走到的判据记为未到达（FAIL），不会被跳过。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -188,9 +196,11 @@ if ($null -eq $sessionRequest) {
 $gaveUp = Wait-RosValue 'onboard-gave-up-session-request' 60 {
     if (@($onboard.WindowTitles()) -contains '恢复申请失败') { $true } else { $null }
 }
-if ($null -ne $gaveUp) {
-    try { $null = Confirm-G3Notice $onboard '恢复申请失败' $journal } catch { $journal.Note("Dismissing 恢复申请失败 failed: $($_.Exception.Message)") }
+if ($null -eq $gaveUp) {
+    Add-G3NotReached $assertions (Get-RosIds 2) '开会话应答被丢之后 60 秒内车载端没有放弃这次申请（没有「恢复申请失败」），「重启前没发过动作」无从判起'
+    return
 }
+try { $null = Confirm-G3Notice $onboard '恢复申请失败' $journal } catch { $journal.Note("Dismissing 恢复申请失败 failed: $($_.Exception.Message)") }
 
 $sessionId = if ($sessionRequest.Response -eq 'ExceptionRecoverySessionOpened') {
     [string](Get-RosField $sessionRequest.ResponsePayload 'exceptionRecoverySessionId')
@@ -203,13 +213,13 @@ $workflowsBefore = if (Test-G3Present $sessionId) {
 } else { -1 }
 $assertions.Add(
     'L2-ROS-02',
-    '重启前服务端有一个开着的恢复会话：SessionRequested → Opened，这条应答被代理丢掉、车等满超时放弃了这次申请；重启前没有为这笔需求提交过任何恢复动作；这辆车只有这一个会话行，OPEN、未选动作、revision 1、没有工作流',
-    ((Test-G3Present $sessionId) -and $null -ne $gaveUp -and $actionsBefore.Count -eq 0 -and
+    '重启前服务端有一个开着的恢复会话：SessionRequested → Opened，这条应答被代理丢掉（车放弃申请之后才判）；重启前没有为这笔需求提交过任何恢复动作；这辆车只有这一个会话行，OPEN、未选动作、revision 1、没有工作流',
+    ((Test-G3Present $sessionId) -and $actionsBefore.Count -eq 0 -and
         $sessionsBefore.Count -eq 1 -and $null -ne $sessionRow -and
         [string]$sessionRow.State -eq 'OPEN' -and -not (Test-G3Present $sessionRow.SelectedAction) -and [long]$sessionRow.Revision -eq 1 -and
         $workflowsBefore -eq 0),
-    'Opened（应答被丢）/ 车放弃申请 / 恢复动作 0 / 会话行 1：OPEN、无动作、r1 / 工作流 0',
-    "$($sessionRequest.Response)（应答被丢）/ 车放弃申请=$($null -ne $gaveUp) / 恢复动作 $($actionsBefore.Count)" +
+    'Opened（应答被丢）/ 恢复动作 0 / 会话行 1：OPEN、无动作、r1 / 工作流 0',
+    "$($sessionRequest.Response)（应答被丢）/ 恢复动作 $($actionsBefore.Count)" +
     "$(if ($actionsBefore.Count -ge 1) { "（$(@($actionsBefore | ForEach-Object { "$($_.Payload.action)→$($_.Response)" }) -join ',')）" }) / " +
     "会话行 $($sessionsBefore.Count)：$(if ($sessionRow) { "$($sessionRow.State)、动作='$($sessionRow.SelectedAction)'、r$($sessionRow.Revision)" } else { '(none)' }) / 工作流 $workflowsBefore")
 
@@ -351,7 +361,8 @@ $readySession = Wait-RosValue 'session-readiness-ready' 60 {
 }
 
 # 按 recoveryActionId 与动作一起选。车载端的动作 id 跨按下保留（服务端按它去重、被拒时不落任何行）；2026-09-14 的写法里
-# 重启前被拒的那次 RESUME_AFTER_REPAIR 与补偿带着同一个 id（ros-002）。现在重启前一条动作都没发，同 id 下只能有这次补偿。
+# 重启前被拒的那次 RESUME_AFTER_REPAIR 与补偿带着同一个 id（ros-002）。现在重启前一条动作都没发，「同 id 下没有别的动作」
+# 在本场景恒为真，只是一致性检查，不证明 id 不被复用（见头注释「新写法盖不到的两格」）。
 $sameIdActions = @((Get-G3Inbound $connection 'RecoveryActionSubmitted') | Where-Object { [string]$_.Payload.recoveryActionId -eq $actionId })
 $actions = @($sameIdActions | Where-Object { [string]$_.Payload.action -eq 'COMPENSATE_LOAD_ALL_EMPTY' })
 $otherSameIdActions = @($sameIdActions | Where-Object { [string]$_.Payload.action -ne 'COMPENSATE_LOAD_ALL_EMPTY' })
@@ -369,7 +380,7 @@ $orderOk = $actions.Count -eq 1 -and $compensationRequests.Count -eq 1 -and $com
     $otherSameIdActions.Count -eq 0
 $assertions.Add(
     'L2-ROS-06',
-    '补偿在重启后的新会话里按向量走完，各一次：ActionSubmitted(COMPENSATE_LOAD_ALL_EMPTY) → Accepted → LoadCompensationRequested → LoadCompensationCommand（指向重启前那个会话、这笔装载与装载仓）→ LoadCompensationResult(ALL_EMPTY) → DurableAck；同一 recoveryActionId 下没有别的动作（重启前没有发过动作，id 不承接任何旧动作）',
+    '补偿在重启后的新会话里按向量走完，各一次：ActionSubmitted(COMPENSATE_LOAD_ALL_EMPTY) → Accepted → LoadCompensationRequested → LoadCompensationCommand（指向重启前那个会话、这笔装载与装载仓）→ LoadCompensationResult(ALL_EMPTY) → DurableAck；同一 recoveryActionId 下没有别的动作（一致性检查：重启前没有发过动作，本场景恒为真，不证 id 复用）',
     $orderOk,
     "各 1，重启之后按序，代次 ≥ $($report.Generation)，命令会话 $sessionId / attempt $attemptId / 仓 $(Format-G3Slots $load.TargetSlots)，ALL_EMPTY；同 id 其它动作 无",
     "同 id 其它动作：$(if ($otherSameIdActions.Count -eq 0) { '无' } else { (@($otherSameIdActions | ForEach-Object { "$($_.Payload.action)→$($_.Response)(g$($_.Generation)，重启前=$($_.At -lt $restartAt))" }) -join '，') }) / " +
@@ -402,10 +413,10 @@ $nonClosed = @($finalSnapshots | Where-Object { $_.State -ne 'CLOSED' })
 $closed = @($finalSnapshots | Where-Object { $_.State -eq 'CLOSED' })
 $openFinal = $finalSnapshots | Where-Object { $_.MessageId -eq $openSnapshot.MessageId } | Select-Object -First 1
 $closedAcked = if ($closed.Count -ge 1) { [string]$closed[0].Acknowledged } else { '(no CLOSED snapshot)' }
-$journal.Note("Recovery snapshots of session ${sessionId}: $(Format-RosSnapshots $finalSnapshots). CLOSED acknowledged: $closedAcked (not judged: the v2 onboard carries no SnapshotAppliedAck for recovery sessions).")
+$journal.Note("Recovery snapshots of session ${sessionId}: $(Format-RosSnapshots $finalSnapshots). CLOSED acknowledged: $closedAcked (not judged: only the CLOSED revision is acknowledged, control-server#31).")
 $assertions.Add(
     'L2-ROS-08',
-    '开着的快照从没被确认：这个会话每一份非 CLOSED 快照（含重启前那份 OPEN r1）都未确认，并由下一 revision fence；最后恰有一份 CLOSED。CLOSED 是否被确认只抄在实际值里，不作判据（v2 车载端未带 onboard-hmi#41/#42）',
+    '开着的快照从没被确认：这个会话每一份非 CLOSED 快照（含重启前那份 OPEN r1）都未确认，并由下一 revision fence；最后恰有一份 CLOSED。CLOSED 是否被确认只抄在实际值里，不作判据（车载端只确认 CLOSED，control-server#31）',
     ($null -ne $openFinal -and $openFinal.State -eq 'OPEN' -and $openFinal.Revision -eq 1 -and
         $nonClosed.Count -ge 1 -and @($nonClosed | Where-Object { $_.Acknowledged -or -not $_.Fenced }).Count -eq 0 -and
         $closed.Count -eq 1 -and $finalSnapshots[-1].State -eq 'CLOSED'),

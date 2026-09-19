@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | `35454377282-onboard-579f19c` | `e42c1bd7`（= `fp/v2-impl` 675f9fd9 + 清单一行） | 二分左端：车载端换成 v2 一侧第一个合并 `579f19c` | 与 `4d716340` 完全相同地红在 L2-ROS-02（入口未出现）：v2 一侧没有拐点 |
 | `35455541316-handle-fixed-old-premise` | `e5ef8e44`（只补了重取句柄） | 入口出现并按下 | 服务端**接受**了 RESUME_AFTER_REPAIR（会话 CLOSED、r3、工作流 1），旧前提「重启前续行被拒、会话 OPEN」不成立，L2-ROS-02 红 |
-| `35456298574-inject` | `9044c361` | 两个临时注入变体 | `cs222-inject-session-answer-not-dropped`（不丢开会话应答）：L2-ROS-02 红。`cs222-inject-replay-dropped`（只丢一条重放）：全绿——服务端在新会话里重放了两次，丢一条不够，见下一行 |
+| `35456298574-inject` | `9044c361` | 两个临时注入变体 | `cs222-inject-session-answer-not-dropped`（不丢开会话应答）：**前提自检**，装置前提不成立，L2-ROS-02～08 全部未到达，不是产品缺陷红。`cs222-inject-replay-dropped`（只丢一条重放）：全绿——服务端在新会话里重放了两次，丢一条不够，见下一行 |
 | `35456567497-inject-replay-dropped` | `25acaf3b`（丢十条） | 重启后 OPEN 快照的重放全部到不了车 | L2-ROS-05 红：两次按「补偿清空」都另申请会话、被 `ExceptionRecoverySessionRejected`，正是 control-server#36 要防的断路 |
 
 ## green/
