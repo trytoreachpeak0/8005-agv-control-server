@@ -388,6 +388,14 @@ public sealed class ReversedDirectionJourneyRuntimeTests
             await StateAsync(fixture));
         Assert.False(await fixture.Context.StationOperations.AnyAsync(
             row => row.OperationType == SlotOperationType.Unload, Token));
+
+        // A later round, still silent: escalated once, the block and its start stay as they are.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
     }
 
     /// <summary>
@@ -428,6 +436,43 @@ public sealed class ReversedDirectionJourneyRuntimeTests
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(4));
         await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+
+        // The order fails again after the escalation: nothing writes its code over the escalated block.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(1));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.FailOrder(arrived.GateUpperId);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+    }
+
+    /// <summary>
+    /// control-server#228: the order failing in the very round the wait runs out does not win it. The escalation is judged
+    /// first in the round and returns, so the order failure check never runs in it and the block is the escalated hold.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AnOrderFailingInTheRoundTheWaitRunsOutIsEscalatedNotOverwritten()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow arrived = await ArriveAtTheMachineAsync(fixture);
+        await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(10));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.FailOrder(arrived.GateUpperId);
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
 

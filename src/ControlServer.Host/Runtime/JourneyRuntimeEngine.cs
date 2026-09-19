@@ -155,6 +155,9 @@ public sealed class JourneyRuntimeEngine(
     /// </summary>
     public const string AreaEndAdmissionRevokedTimeoutReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT";
 
+    /// <summary>The code a stop held at its AREA machine for the station's admission carries while it waits.</summary>
+    private const string AreaEndAdmissionHeldReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION";
+
     /// <summary>The journey is not arriving because the vehicle is holding at a traffic checkpoint.</summary>
     public const string CheckpointWaitReason = "VEHICLE_WAITING_AT_CHECKPOINT";
 
@@ -950,6 +953,17 @@ public sealed class JourneyRuntimeEngine(
                     now);
                 break;
             case JourneyRuntimeStage.AwaitingGateArrival:
+                // control-server#228: judged first, every round, before anything below can return. The arrival check
+                // below returns early whenever it cannot trust the arrival -- an onboard that stopped heartbeating on a
+                // session still Ready does that every round -- and ObserveOrderFailureAsync may write another code; neither
+                // is the admission returning, so neither stops or restarts this count. Escalating returns at once, so the
+                // order failure check never runs in the same round and cannot write its code over the escalation, and a
+                // Blocked journey is not observed for arrival again.
+                if (EscalateAreaEndAdmissionRevokedPastTimeout(runtime, now))
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
                 if (!await EnsureMovementConfirmedAsync(
                         runtime, runtime.GateUpperId, "GATE", cancellationToken).ConfigureAwait(false))
                 {
@@ -969,31 +983,18 @@ public sealed class JourneyRuntimeEngine(
                 }
                 if (!await UnloadAdmittedAsync(runtime, cancellationToken).ConfigureAwait(false))
                 {
-                    // Writing the code it already holds keeps BlockReasonSince, so the wait is counted from the first
-                    // round that held the stop here; admitted again, the stage moves on and SetStage clears both.
-                    runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", now);
+                    // The first hold stores when the wait began, in this same save as the hold itself, so a crash leaves
+                    // both or neither. The block is written from that start too: back from another code -- a failed
+                    // order -- the hold names the whole wait, not the part since the last code change.
+                    DateTimeOffset revokedSince = runtime.AreaEndAdmissionRevokedSince ??= now;
+                    runtime.SetBlockReason(AreaEndAdmissionHeldReason, revokedSince);
                     runtime.UpdatedAt = now;
-                    if (runtime.BlockReasonSince is DateTimeOffset heldSince &&
-                        now - heldSince >= runtimeOptions.AreaEndAdmissionRevokedTimeout)
-                    {
-                        // control-server#198, decided by the user on 2026-09-19: the vehicle is loaded and nobody is told
-                        // while it waits, so past the threshold it is handed to a person. Only the journey changes: the
-                        // order that brought the vehicle here is not touched, and no new one is created. The block keeps
-                        // the first hold's start, which the dashboard's escalation ladder is measured from.
-                        runtime.Stage = JourneyRuntimeStage.Blocked;
-                        runtime.EscalateBlockReason(AreaEndAdmissionRevokedTimeoutReason);
-                        LogAreaEndAdmissionRevokedTimeout(
-                            logger,
-                            runtime.AgvId,
-                            runtime.GateStationId,
-                            runtime.DemandId,
-                            runtimeOptions.AreaEndAdmissionRevokedTimeout,
-                            null);
-                    }
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
                 await PublishGateStateAndUnloadAsync(runtime, session, cancellationToken).ConfigureAwait(false);
+                // Admitted again: the one place the wait's start is cleared.
+                runtime.AreaEndAdmissionRevokedSince = null;
                 SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now);
                 break;
             case JourneyRuntimeStage.AwaitingUnloadResult:
@@ -2510,6 +2511,41 @@ public sealed class JourneyRuntimeEngine(
         runtime.Stage = JourneyRuntimeStage.Blocked;
         runtime.SetBlockReason(reason, now);
         runtime.UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Hands a stop held at its AREA machine to a person once the wait for the station's admission has run past
+    /// <see cref="JourneyRuntimeOptions.AreaEndAdmissionRevokedTimeout"/>, counted from
+    /// <see cref="JourneyRuntimeRow.AreaEndAdmissionRevokedSince"/> (control-server#228). Returns whether it did; the caller
+    /// saves.
+    /// </summary>
+    /// <remarks>
+    /// control-server#198, decided by the user on 2026-09-19: the vehicle is loaded and nobody is told while it waits, so
+    /// past the threshold the journey is Blocked under <see cref="AreaEndAdmissionRevokedTimeoutReason"/>. Only the journey
+    /// changes: the order that brought the vehicle here is not touched, and no new one is created. Whatever code the
+    /// journey carries this round -- the hold, a failed order, a checkpoint wait, none -- the block is the escalated hold,
+    /// and it starts where the wait started, which is what the dashboard's escalation ladder is measured from. The start
+    /// stays on the row: it is cleared only by the admission returning.
+    /// </remarks>
+    private bool EscalateAreaEndAdmissionRevokedPastTimeout(JourneyRuntimeRow runtime, DateTimeOffset now)
+    {
+        if (runtime.AreaEndAdmissionRevokedSince is not DateTimeOffset revokedSince ||
+            now - revokedSince < runtimeOptions.AreaEndAdmissionRevokedTimeout)
+        {
+            return false;
+        }
+        runtime.Stage = JourneyRuntimeStage.Blocked;
+        runtime.SetBlockReason(AreaEndAdmissionHeldReason, revokedSince);
+        runtime.EscalateBlockReason(AreaEndAdmissionRevokedTimeoutReason);
+        runtime.UpdatedAt = now;
+        LogAreaEndAdmissionRevokedTimeout(
+            logger,
+            runtime.AgvId,
+            runtime.GateStationId,
+            runtime.DemandId,
+            runtimeOptions.AreaEndAdmissionRevokedTimeout,
+            null);
+        return true;
     }
 
     private async Task<string?> FindSafetyResultMessageIdAsync(

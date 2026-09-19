@@ -641,6 +641,16 @@ public sealed class JourneyRuntimeRow
     /// nobody recorded.
     /// </summary>
     public DateTimeOffset? BlockReasonSince { get; private set; }
+
+    /// <summary>
+    /// When the stop at the AREA machine was first held because the station no longer admits the demand's task type, by
+    /// this server's clock (control-server#228). The escalation of control-server#198 is measured from it. Kept apart from
+    /// <see cref="BlockReasonSince"/> on purpose: that one restarts whenever another code is written -- a failed order, a
+    /// checkpoint wait -- and the wait for the admission has not restarted then. Written with the first hold, in the same
+    /// save; cleared only when the admission returns and the stop moves on to its unload. A restart or a reconnect leaves
+    /// it as it is.
+    /// </summary>
+    public DateTimeOffset? AreaEndAdmissionRevokedSince { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
