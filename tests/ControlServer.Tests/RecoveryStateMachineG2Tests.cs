@@ -1334,6 +1334,102 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#169, review of PR #173. A result that does not reconcile, arriving for a session that has
+    /// already closed, is a record of that attempt and nothing more. The demand and the journey may since have
+    /// been settled by the next session -- here a compensation proved every slot empty, ended the demand and
+    /// released the vehicle -- and a late FAILED must not put that journey back into Blocked under its own code.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-02")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    public async Task ALateUnreconciledResultForAClosedSessionDoesNotBlockAJourneyTheNextSessionSettled()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_UNRECONCILED";
+        const string proof = "late-unreconciled-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
+            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
+            await context.SaveChangesAsync(token);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            // Session A: the same handoff submitted twice; the first reports FAILED and closes A.
+            string first = await ReachUnreconciledResultAsync("FaultCargoRecoveryResult", "FAILED", processor, state, proof);
+            const string secondActionId = "51000000-0000-4000-8000-000000000173";
+            await processor.ProcessAsync(
+                RecoveryAction("FAULT_CARGO_HANDOFF", messageId: "e0000000-0000-4000-8000-000000001730",
+                    actionId: secondActionId), state, token);
+            JsonNode second = JsonNode.Parse(first)!;
+            second["messageId"] = "b3200000-0000-4000-8000-000000000173";
+            second["payload"]!["recoveryActionId"] = secondActionId;
+            second["payload"]!["handoffId"] = StableGuid(secondActionId, "fault-cargo-handoff");
+            await processor.ProcessAsync(first, state, token);
+
+            // Session B: a compensation proves every slot empty and ends the demand.
+            const string nextRequestId = "41000000-0000-4000-8000-000000000169";
+            const string compensationId = "51000000-0000-4000-8000-000000000174";
+            string nextSessionId = StableGuid(nextRequestId, "exception-recovery-session");
+            await processor.ProcessAsync(NextSessionRequest(proof), state, token);
+            JsonNode compensate = JsonNode.Parse(RecoveryAction(
+                "COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001731",
+                actionId: compensationId))!;
+            compensate["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
+            await processor.ProcessAsync(compensate.ToJsonString(), state, token);
+            await processor.ProcessAsync(
+                Envelope(
+                    "90000000-0000-4000-8000-000000000174",
+                    "LoadCompensationRequested",
+                    new
+                    {
+                        recoveryActionId = compensationId,
+                        exceptionRecoverySessionId = nextSessionId,
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        @operator = Operator()
+                    }),
+                state,
+                token);
+            await processor.ProcessAsync(AllEmptyCompensationResult(Envelope(
+                "a0000000-0000-4000-8000-000000000174",
+                "LoadCompensationResult",
+                new
+                {
+                    recoveryActionId = compensationId,
+                    demandId = DemandId,
+                    slotOperationAttemptId = AttemptId,
+                    overallOutcome = "FAILED",
+                    slotResults = Array.Empty<object>(),
+                    observedAt = Now.AddSeconds(6)
+                })), state, token);
+            Assert.Equal(JourneyRuntimeStage.Completed, (await context.JourneyRuntimes.SingleAsync(token)).Stage);
+
+            // Session A's second handoff reports, late, and FAILED.
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(second.ToJsonString(), state, token)));
+
+            RecoveryWorkflowRow late = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == secondActionId, token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, late.State);
+            Assert.Equal("FAILED", late.Outcome);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
+            Assert.Equal(JourneyRuntimeStage.Completed, runtime.Stage);
+            Assert.Equal("CANCELLED_BY_LOAD_COMPENSATION", runtime.BlockReasonCode);
+            Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#169. Why a session closed is not on the wire and has no column: it is read from the store,
     /// as a CLOSED session whose own workflow is RecoveryRequired with the vehicle's outcome on it. That reading
     /// only holds while nothing after the closing rewrites the workflow -- neither the vehicle resending the
