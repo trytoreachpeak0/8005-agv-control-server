@@ -37,7 +37,8 @@ public static class DispatchAdmissionCriteria
         ILogger<SlotCapacityCriterion> slotCapacityLogger,
         RouteGraphAccess? routeGraph = null,
         CatalogAvailabilityAccess? catalog = null,
-        PreCreateGate? createGate = null)
+        PreCreateGate? createGate = null,
+        IVehicleSlotLedger? slotLedger = null)
     {
         List<IDispatchAdmissionCriterion> criteria =
         [
@@ -63,7 +64,8 @@ public static class DispatchAdmissionCriteria
             new AdmissionPolicyDriftCriterion(),
             new VehicleDynamicFactsCriterion(options),
             new StationTaskTypeAdmissionCriterion(store),
-            new SlotCapacityCriterion(boxCountReader, slotCapacityLogger),
+            // Null is the idle vehicle's ledger, the session baseline -- what the host registers too.
+            new SlotCapacityCriterion(boxCountReader, slotCapacityLogger, slotLedger ?? new SessionBaselineSlotLedger()),
         ];
 
         // Omitted when no engine is supplied, which is the same admission set as before the engine
@@ -115,6 +117,9 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchAdmissionCriterion, SlotCapacityCriterion>();
 
         services.AddScoped<DispatchAdmissionChain>();
+        // Which slots on a side are free (control-server#209): the session baseline, until control-server#211 takes
+        // away what a vehicle under way has reserved or loaded.
+        services.AddScoped<IVehicleSlotLedger, SessionBaselineSlotLedger>();
         // Cost-ranked, falling back to first-seen when nothing was priced — which is what
         // REQ-0207 asks for when a cost is missing rather than a reachability. The layers are listed in
         // DispatchCandidateOrdering (control-server#209); a new layer is a line there, not here.

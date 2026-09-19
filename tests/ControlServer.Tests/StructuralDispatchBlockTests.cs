@@ -743,7 +743,9 @@ public sealed class StructuralDispatchBlockTests
             evaluation.AreaAssignment = new AreaAssignment("N1-3", Zone, group);
             evaluation.PackageCapacity = BoxesPerBasket;
             string reason = await new SlotCapacityCriterion(
-                    new FixedBoxCount(baskets * BoxesPerBasket), NullLogger<SlotCapacityCriterion>.Instance)
+                    new FixedBoxCount(baskets * BoxesPerBasket),
+                    NullLogger<SlotCapacityCriterion>.Instance,
+                    new SessionBaselineSlotLedger())
                 .EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
             return new DispatchCandidateVerdict(evaluation, reason);
         }

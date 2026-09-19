@@ -230,7 +230,10 @@ public sealed class SlotGroupSelectionTests
     // ---- helpers ---------------------------------------------------------------------------------
 
     private static Task<string> EvaluateAsync(DispatchCandidateEvaluation evaluation, int baskets) =>
-        new SlotCapacityCriterion(new FixedBoxCount(baskets * BoxesPerBasket), NullLogger<SlotCapacityCriterion>.Instance)
+        new SlotCapacityCriterion(
+                new FixedBoxCount(baskets * BoxesPerBasket),
+                NullLogger<SlotCapacityCriterion>.Instance,
+                new SessionBaselineSlotLedger())
             .EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
 
     private static async Task<int[]> ChooseAsync(AreaAssignmentPersistenceFixture fixture, string group, int baskets)
