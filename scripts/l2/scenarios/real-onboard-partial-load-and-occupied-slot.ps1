@@ -255,7 +255,22 @@ while ($true) {
 }
 
 # 第三仓：操作员一次次空关，车一次次重开（决策 1），直到本站期限过去、宽限的那一轮也用掉。
-$loadOnEmpty = [pscustomobject]@{ DemandId = $second.DemandId; AttemptId = $loadB.AttemptId; SlotNo = $emptySlot }
+# 车对一次空关的回答只有两种：重开（这一仓先 UNLOCKING、之后 WAITING_OPERATOR），或者装货结算。
+# 看的是先后，不是计数：提示节拍发的 WAITING_OPERATOR 可能先于重开到达（FieldOperator.psm1 的
+# Get-FieldReopenedSlot 记着那次教训）。
+function Get-CloseAnswer([int]$baseCount) {
+    $operation = Get-FieldOperation -Field $field -DemandId $second.DemandId
+    $events = @((Get-FieldPhaseCounts -Field $field -AttemptId $loadB.AttemptId).Events)
+    $reopened = $false
+    for ($i = $baseCount; $i -lt $events.Count -and -not $reopened; $i++) {
+        if ($events[$i].Phase -ne 'UNLOCKING' -or @($events[$i].Slots) -notcontains $emptySlot) { continue }
+        for ($j = $i + 1; $j -lt $events.Count; $j++) {
+            if ($events[$j].Phase -eq 'WAITING_OPERATOR' -and @($events[$j].Slots) -contains $emptySlot) { $reopened = $true; break }
+        }
+    }
+    return [pscustomobject]@{ Status = $operation ? [string]$operation.Status : '(no row)'; Reopened = $reopened }
+}
+
 $closes = 0
 $statusB = $null
 while ($null -eq $statusB) {
@@ -263,7 +278,11 @@ while ($null -eq $statusB) {
     $before = Get-FieldPhaseCounts -Field $field -AttemptId $loadB.AttemptId
     $null = Invoke-FieldCloseSlot -Field $field -SlotNo $emptySlot -NoSettle
     $closes++
-    $answer = Wait-FieldCloseAnswer -Field $field -Load $loadOnEmpty -Before $before -TimeoutSeconds 300
+    $baseCount = @($before.Events).Count
+    $answer = Wait-L2Condition -Description "the vehicle's answer to empty close $closes of slot $emptySlot" `
+        -Journal $journal -Criterion "empty-close-$closes" -TimeoutSeconds 300 `
+        -Probe { Get-CloseAnswer $baseCount } `
+        -Until { param($a) $a.Reopened -or $a.Status -in @('Committed', 'Failed', 'RecoveryRequired', 'Cancelled') }
     if ($answer.Status -in @('Committed', 'Failed', 'RecoveryRequired', 'Cancelled')) { $statusB = $answer.Status }
 }
 $journal.Note("Load B settled as $statusB after $closes empty close(s) of slot $emptySlot.")

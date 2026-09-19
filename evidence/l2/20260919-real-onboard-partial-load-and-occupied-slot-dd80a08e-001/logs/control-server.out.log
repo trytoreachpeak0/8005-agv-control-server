@@ -1,0 +1,48 @@
+[10:22:14 INF] Onboard NDJSON listener started on 127.0.0.1:58405; transport=plaintext
+[10:22:14 INF] Now listening on: http://127.0.0.1:58407
+[10:22:14 INF] Application started. Press Ctrl+C to shut down.
+[10:22:14 INF] Hosting environment: Production
+[10:22:14 INF] Content root path: C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[10:22:14 INF] HTTP GET /health/live responded 200 in 12.3810 ms
+[10:22:24 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 99.8363 ms
+[10:22:25 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 8.6729 ms
+[10:22:26 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 9.2896 ms
+[10:22:26 ERR] HTTP GET /health/ready responded 503 in 34.1192 ms
+[10:22:27 INF] HTTP GET /health/ready responded 200 in 2.5345 ms
+[10:22:27 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.9419 ms
+[10:22:28 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 3.3781 ms
+[10:22:29 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 8.6146 ms
+[10:22:30 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.6068 ms
+[10:22:31 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 2.8072 ms
+[10:22:32 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 5.2159 ms
+[10:22:33 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 7.2623 ms
+[10:22:34 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 15.2023 ms
+[10:22:35 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 13.8040 ms
+[10:22:36 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 79.7907 ms
+[10:22:37 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 9.2969 ms
+[10:22:38 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 7.9686 ms
+[10:22:39 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 5.0079 ms
+[10:22:40 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 6.7652 ms
+[10:22:41 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 12.7958 ms
+[10:22:42 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 6.3620 ms
+[10:22:43 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 5.9682 ms
+[10:22:45 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 6.7680 ms
+[10:22:46 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 7.2960 ms
+[10:22:47 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 10.0232 ms
+[10:22:48 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 6.6815 ms
+[10:22:49 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 6.9248 ms
+[10:22:50 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 15.2875 ms
+[10:22:51 INF] HTTP GET /api/onboard/v1/vehicle-safety responded 200 in 7.6092 ms
+[10:22:53 WRN] Onboard connection ended with a protocol or transport error.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 101
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 129
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 129
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 129
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 44
