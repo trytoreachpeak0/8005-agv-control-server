@@ -22,7 +22,7 @@
 - **`L2-EAO-09` 读 HMI 文字，这是本仓 L2 少数读 UI 文字的判据**：REQ-0358 的交付物本身就是这句提示（用户 2026-09-18 定的
   措辞），读的是它的内容而不是拿它推断业务事实；只比「告警的 displayMessage」与「已上报」两个片段，不逐字比整句。
 - 守护判据：`L2-EAO-10`（上报不改变行为）修正前也绿、`L2-EAO-12`（撤下）已有 G2 覆盖，二者不取红。
-- 不在本场景：在途装货时断链重连。control-server#167 调试时试过（`evidence/cs167/debug-001`），重连后服务端判
+- 不在本场景：在途装货时断链重连。control-server#167 调试时试过（`evidence/l2/20260919-cs167-debug-001`），重连后服务端判
   `RecoveryRequired`／`PENDING_FACT_RECONCILIATION_REQUIRED` 等这次装货的结果，车载端却因会话不是 Ready 不发进度与结果
   （`WIRE_TO_GATE_NOT_READY`），两端互相等、装货永远收不了尾——那是另一个缺陷，另案处理，放进本场景只会让后面的判据全部够不着。
   会话断开时的 HMI 文案（G2 `ExpectedActionOverdueViewModelTests` 覆盖）；卸货侧、锁反馈卡死两种变体；判故障

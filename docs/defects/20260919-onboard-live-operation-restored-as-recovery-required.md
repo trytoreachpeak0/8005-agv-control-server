@@ -3,8 +3,8 @@
 Status: fixed（修复票 [onboard-hmi#120](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/120)，合入 `w2g/fp-v2-impl@7ded1b70`；真装置复验见 control-server#167）
 Owner repository: `8005-agv-onboard-hmi`
 Found by: 真装置 L2 场景 `real-onboard-expected-action-overdue`（control-server#167）本机跑
-`C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs167\red-product-3547a97-001\SUMMARY.md`
-（工作区侧，不入库；同目录 `red-product-3547a97-001-stage\controlserver.db` 是当时的服务端库）
+[`evidence/l2/20260919-cs167-red-product-3547a97-001/SUMMARY.md`](../../evidence/l2/20260919-cs167-red-product-3547a97-001/SUMMARY.md)
+（当时的服务端库 `controlserver.db` 按 `.gitignore` 不入库，留在工作区 `C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs167\red-product-3547a97-001-stage\`）
 Product at discovery: 车载端 `w2g/fp-v2-impl@3547a97`（含 onboard-hmi#109、#112）；服务端 `fp/b6-167-expected-action-overdue-l2@7c8f905a`
 （即 `fp/v2-impl@75c3d39e` 加本票的场景与编排器改动，产品代码相同）；模拟器 `main@fb5f7c5`；`protocol-v2.0.0`（`AGV_FULL_PRODUCT`）
 
@@ -66,7 +66,7 @@ v2 上它之所以现在才显形，是 REQ-0358 的超时告警与计时器（o
 
 本地临时分支 `w2g/tmp-cs167-diag-skip-live-attempt`（`3034425`，只在本地、不推送）只在 `TrySettleInterruptedOperationAsync` 之前加一个判断：
 attempt 在 `_operationAttempts` 里就直接 `return`。同一场景同一服务端提交跑一次，13 条判据全部 PASS：
-`C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs167\diag-skip-live-attempt-001\SUMMARY.md`
+[`evidence/l2/20260919-cs167-diag-skip-live-attempt-001/SUMMARY.md`](../../evidence/l2/20260919-cs167-diag-skip-live-attempt-001/SUMMARY.md)
 （`L2-EAO-03` 距第一次开锁 + 门槛 −0.05 s；端点一行、读数取中途快照 v12 且与模拟器一致；HMI「……已上报，班组长或管理员会到现场查看」）。
 
 已验证的修法方向（`3034425` 的全部改动，`src/SQCD.Agv.Wpf/WireToGateBusinessService.cs`，临时分支不推送）：
@@ -96,7 +96,7 @@ onboard-hmi#109 与 #112 的 G2 都用替身互通，替身不会在每条安全
 
 ## 同一次调试里的另一个发现（不在本缺陷内）
 
-在途装货时经协议故障代理断一次链路（`evidence\cs167\debug-001`，库在 `debug-001-stage\controlserver.db`）：重连后服务端据
+在途装货时经协议故障代理断一次链路（`evidence/l2/20260919-cs167-debug-001`；服务端库不入库，留在工作区 `evidence\cs167\debug-001-stage\`）：重连后服务端据
 `RecoveryStateReport` 里的未了结 attempt 判 `RecoveryRequired / PENDING_FACT_RECONCILIATION_REQUIRED`，等这次装货的结果；车载端却因会话
 不是 `Ready`，进度和结果都不发，日志：
 
