@@ -506,6 +506,8 @@ jobs:
               @{ Name = 'real-onboard-cancellation-authorization-lost';       Runs = 1 }
               @{ Name = 'real-onboard-durable-ack-lost';                      Runs = 3 }
               @{ Name = 'real-onboard-expected-action-overdue';               Runs = 3 }
+              # control-server#222 bisect only; the line and the comment above are settled before this branch merges.
+              @{ Name = 'real-onboard-restart-with-open-recovery-session';    Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
