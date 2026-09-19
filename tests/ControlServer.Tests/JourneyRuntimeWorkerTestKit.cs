@@ -10,6 +10,7 @@ using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
@@ -908,7 +909,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 Riot,
                 Riot,
                 new MapStationResolver(),
-                new ConfiguredGateStationResolver(new MapStationResolver(), options),
+                new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
                 TaskTypeStationRuntimeSeed.Access(Context),
                 intake,
                 new MovementDispatchService(store, Riot),

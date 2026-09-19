@@ -40,7 +40,7 @@ public sealed class TaskTypeAdmissionRuntimeTests
             new RiotMapStation(12, "N1-1"),
             new RiotMapStation(13, "N1-2_N1-3"),
             new RiotMapStation(300, "等待点"));
-        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", accepted.PickupStationRiotId);
+        fixture.Riot.SetSuccessfulArrival("TO_PICKUP", accepted.PickupUpperId, accepted.PickupStationRiotId);
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = accepted.PickupStationRiotId };
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);

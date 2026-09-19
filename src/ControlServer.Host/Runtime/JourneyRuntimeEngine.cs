@@ -156,10 +156,10 @@ public sealed class JourneyRuntimeEngine(
         {
             currentMap = await mapStationCatalog.ReadMapStationsAsync(
                 runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);
-            // Once per round, so that every candidate is judged against the same bindings. A resolver
-            // that cannot use the Map at all throws StationResolutionException, recorded below as the
-            // catalog-level failure it always was; one task type it cannot resolve is a refusal on
-            // that task type's candidates only.
+            // Once per round, so that every candidate is judged against the same rules and bindings. A fixed
+            // station missing from the Map is not a catalog failure (control-server#160, REQ-0342): the view
+            // refuses the task type bound to it and nothing else, so journeys under way and every other task type
+            // go on. Only a resolver that cannot use the Map at all throws StationResolutionException.
             fixedStations = await fixedStationResolver.ReadForRoundAsync(currentMap, cancellationToken)
                 .ConfigureAwait(false);
             machineStations = stationResolver.ParseAreaNamedMachineStations(currentMap);
@@ -183,8 +183,9 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        // Read whole, fixed stations read, machine stations parsed: this is what a complete
-        // confirmation is, and the only thing freshness is measured from.
+        // Read whole and machine stations parsed: this is what a complete confirmation is, and the only thing
+        // freshness is measured from. Whether some task type's fixed station is in it does not enter into it
+        // (REQ-0302); that is the task type's own admission question.
         await catalogAvailability.RecordConfirmationAsync(currentMap, cancellationToken)
             .ConfigureAwait(false);
 
@@ -203,12 +204,18 @@ public sealed class JourneyRuntimeEngine(
         bool admissionPolicyDrifted = false;
         try
         {
+            // Each area-named station is paired with the task types whose AREA end is the pickup -- the rule's fixed
+            // end is the destination -- and that this build can execute (control-server#160). Today that is
+            // WIRE_TO_GATE alone, so the relations and their content hash are exactly what they were before the rules
+            // existed, and an upgraded deployment does not drift.
+            string[] seededTaskTypes = await AdmissionSeedTaskTypesAsync(cancellationToken).ConfigureAwait(false);
             await store.ApplyAdmissionPolicyAsync(
                 new AdmissionPolicyDefinition(
                     runtimeOptions.AdmissionPolicyVersion,
                     runtimeOptions.AdmissionPolicyDeploymentId,
                     liveStationNames
-                        .Select(stationName => new StationTaskTypeAdmission(stationName, "WIRE_TO_GATE"))
+                        .SelectMany(stationName => seededTaskTypes
+                            .Select(taskType => new StationTaskTypeAdmission(stationName, taskType)))
                         .ToArray(),
                     timeProvider.GetUtcNow()),
                 cancellationToken).ConfigureAwait(false);
@@ -288,6 +295,24 @@ public sealed class JourneyRuntimeEngine(
 
         await DiscoverAndAcceptAsync(currentMap, fixedStations, free, admissionPolicyDrifted, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The task types the station admission seed carries: fixed end at the destination, so the AREA station is the
+    /// pickup, and executable by this build.
+    /// </summary>
+    private async Task<string[]> AdmissionSeedTaskTypesAsync(CancellationToken cancellationToken)
+    {
+        TaskTypeStationRuleVersion? rules = await _taskTypeStations.Rules.ReadCurrentAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return
+        [
+            .. (rules?.Rules ?? [])
+                .Where(rule => string.Equals(rule.FixedEnd, TaskTypeFixedEnd.Destination, StringComparison.Ordinal)
+                    && ExecutableTaskTypes.Contains(rule.TaskType))
+                .Select(rule => rule.TaskType)
+                .Order(StringComparer.Ordinal)
+        ];
     }
 
     private async Task DiscoverAndAcceptAsync(
