@@ -560,6 +560,7 @@ public sealed class JourneyRuntimeEngine(
                     DemandIntakeOutcome.CandidateGone => "FINAL_CATALOG_CANDIDATE_GONE",
                     DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
                     DemandIntakeOutcome.FinalAdmissionRejected => "FINAL_DYNAMIC_FACTS_NOT_READY",
+                    DemandIntakeOutcome.JourneyPlanIncomplete => "FINAL_JOURNEY_PLAN_INCOMPLETE",
                     _ => throw new InvalidOperationException(
                         $"Unsupported intake outcome '{result.IntakeOutcome}'.")
                 },

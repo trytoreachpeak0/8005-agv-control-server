@@ -98,6 +98,13 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
                 // decision fact changing under intake like any other, and nothing was written.
                 return DemandIntakeOutcome.CandidateChanged;
             }
+            catch (JourneyPlanFreezeIncompleteException)
+            {
+                // control-server#198: refused before anything was written. Reported as this demand's outcome, not
+                // thrown: thrown, it left the engine's round at this vehicle, and the same demand was picked again
+                // every round.
+                return DemandIntakeOutcome.JourneyPlanIncomplete;
+            }
         }
         else
         {

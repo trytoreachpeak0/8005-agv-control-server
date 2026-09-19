@@ -97,6 +97,7 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("FINAL_DYNAMIC_FACTS_NOT_READY", DispatchReasonClass.Backlog)]
     [InlineData("FINAL_CATALOG_CANDIDATE_GONE", DispatchReasonClass.Backlog)]
     [InlineData("FINAL_CATALOG_DECISION_FACT_CHANGED", DispatchReasonClass.Backlog)]
+    [InlineData("FINAL_JOURNEY_PLAN_INCOMPLETE", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_DECISION_FACT_CHANGED", DispatchReasonClass.Backlog)]
     [InlineData("DEMAND_LEFT_CATALOG", DispatchReasonClass.Backlog)]
     public void EveryReasonCodeHasItsClassAndARationale(string reasonCode, DispatchReasonClass expected)
