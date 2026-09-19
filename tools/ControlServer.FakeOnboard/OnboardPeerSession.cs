@@ -353,7 +353,7 @@ public sealed class OnboardPeerSession(
     /// differ, so this hash is part of the contract rather than a checksum.
     /// </summary>
     public string OperationResult(
-        JsonElement commandPayload, long generation, bool completed, bool determinate = false)
+        JsonElement commandPayload, long generation, bool completed, bool determinate = false, int loadedSlotCount = 0)
     {
         string operationType = commandPayload.GetProperty("operationType").GetString() ?? "LOAD";
         string finalState = operationType == "LOAD" ? "OCCUPIED" : "EMPTY";
@@ -364,13 +364,17 @@ public sealed class OnboardPeerSession(
         // cannot say what happened" looks like on the wire, and that is what still needs a person.
         string failedState = determinate ? "EMPTY" : "UNKNOWN";
         SlotResult[] slotResults = commandPayload.GetProperty("slots").EnumerateArray()
-            .Select(slot => new SlotResult(
-                slot.GetInt32(),
-                completed ? "COMPLETED" : "FAILED",
-                completed ? finalState : failedState,
-                "LOCKED",
-                "RESET",
-                completed ? [] : FailedSlotReasonCodes))
+            .Select((slot, index) =>
+            {
+                bool slotCompleted = completed || index < loadedSlotCount;
+                return new SlotResult(
+                    slot.GetInt32(),
+                    slotCompleted ? "COMPLETED" : "FAILED",
+                    slotCompleted ? finalState : failedState,
+                    "LOCKED",
+                    "RESET",
+                    slotCompleted ? [] : FailedSlotReasonCodes);
+            })
             .ToArray();
         // One object serialized twice: once to hash, once onto the wire. Building the business
         // content a second time to hash it is how the two silently drift, and the server rejects

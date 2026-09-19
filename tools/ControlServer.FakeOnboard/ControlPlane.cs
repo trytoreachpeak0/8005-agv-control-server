@@ -55,6 +55,15 @@ public sealed record AnswerCommand : CommandEnvelope
     /// Set it true to exercise decision 5 deliberately.
     /// </summary>
     public bool Determinate { get; init; }
+
+    /// <summary>
+    /// Only read when <see cref="Completed"/> is false: how many of the commanded slots, in command
+    /// order, did take their cargo before the load failed. They report COMPLETED and OCCUPIED; the rest
+    /// report what <see cref="Determinate"/> says. The 2026-09-19 agv01 load [3,4,5] is two of three
+    /// (8005-agv-control-server#170): every reading known, and still not a determinate failure, because
+    /// cargo is aboard.
+    /// </summary>
+    public int LoadedSlotCount { get; init; }
 }
 
 /// <summary>
@@ -216,7 +225,8 @@ public static class ControlPlane
             string answer = request.MessageType switch
             {
                 "SublotEntryRequested" => peer.SublotSubmitted(payload.RootElement, generation),
-                "SlotOperationCommand" => peer.OperationResult(payload.RootElement, generation, command.Completed, command.Determinate),
+                "SlotOperationCommand" => peer.OperationResult(
+                    payload.RootElement, generation, command.Completed, command.Determinate, command.LoadedSlotCount),
                 "PreDepartureSafetyCheck" => peer.SafetyCheckResult(payload.RootElement, generation, command.Completed),
                 "LoadCancellationAuthorization" => peer.LoadCancellationResult(payload.RootElement, generation),
                 _ => throw new InvalidOperationException("Unanswerable request type: " + request.MessageType)

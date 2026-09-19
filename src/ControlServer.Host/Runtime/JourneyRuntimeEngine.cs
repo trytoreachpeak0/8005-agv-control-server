@@ -1623,9 +1623,12 @@ public sealed class JourneyRuntimeEngine(
         }
         Dictionary<int, JsonElement> safetySlots = safetyPayload.GetProperty("slotStates")
             .EnumerateArray().ToDictionary(item => item.GetProperty("slotNo").GetInt32());
+        int[] lastKnownOccupied = await LastKnownOccupiedSlotsAsync(
+            runtimeOptions.AgvId, safetyRow.ReceivedAtUtcTicks, cancellationToken).ConfigureAwait(false);
         int[] available = capabilityPayload.GetProperty("slotStates").EnumerateArray()
             .Where(item => SlotAvailable(item, safetySlots))
             .Select(item => item.GetProperty("slotNo").GetInt32())
+            .Except(lastKnownOccupied)
             .Order()
             .ToArray();
         // slotStates live only on the snapshot; SafetyStateChanged names the slots it affects but
@@ -1642,6 +1645,69 @@ public sealed class JourneyRuntimeEngine(
             safety.GetProperty("allTargetSlotsLocked").GetBoolean(),
             safety.GetProperty("allUnlockOutputsReset").GetBoolean(),
             safety.GetProperty("unknownPresent").GetBoolean());
+    }
+
+    /// <summary>
+    /// Message types whose payload carries <c>slotResults</c>: the vehicle's own reading of each slot it
+    /// touched, at the end of that operation.
+    /// </summary>
+    private static readonly string[] SlotResultMessageTypes =
+    [
+        "OperationResult",
+        "LoadCompensationResult",
+        "LoadCancellationResult",
+        "LoadCorrectionResult",
+        "FaultCargoRecoveryResult"
+    ];
+
+    /// <summary>
+    /// Slots whose most recent reading since the session baseline says OCCUPIED. The baseline alone
+    /// cannot say this: it is read once per session, so a slot that took cargo afterwards still looks
+    /// empty in it, and only the reservation ledger stood between that slot and the next load. A
+    /// demand that leaves the ledger -- a cancelled load, a journey closed by hand -- takes its slots
+    /// with it whether or not the cargo went too. That is how the 2026-09-19 agv01 journey was handed
+    /// slot 3 while slot 3 still held a basket from a cancelled demand (8005-agv-control-server#170).
+    /// </summary>
+    /// <remarks>
+    /// Ordered by the server's receive time, so neither peer clock can reorder two readings. UNKNOWN
+    /// readings say nothing about occupancy and are skipped: the last known one still stands. A later
+    /// reading of EMPTY -- an unload, a compensation that cleared the slot, a new session's baseline --
+    /// releases the slot again. Slots the current journey holds are occupied too, which changes
+    /// nothing: they are already in the reservation ledger.
+    /// </remarks>
+    private async Task<int[]> LastKnownOccupiedSlotsAsync(
+        string agvId,
+        long sinceUtcTicks,
+        CancellationToken cancellationToken)
+    {
+        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
+            .Where(row => SlotResultMessageTypes.Contains(row.MessageType) &&
+                          row.ReceivedAtUtcTicks >= sinceUtcTicks)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        Dictionary<int, bool> occupied = [];
+        foreach (ProtocolInboxRow row in rows.OrderBy(item => item.ReceivedAtUtcTicks))
+        {
+            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
+            JsonElement root = document.RootElement;
+            if (!root.TryGetProperty("agvId", out JsonElement agv) || agv.GetString() != agvId ||
+                !root.TryGetProperty("payload", out JsonElement payload) ||
+                !payload.TryGetProperty("slotResults", out JsonElement slotResults) ||
+                slotResults.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+            foreach (JsonElement slot in slotResults.EnumerateArray())
+            {
+                string? state = slot.TryGetProperty("finalPhysicalState", out JsonElement value)
+                    ? value.GetString()
+                    : null;
+                if (state is "OCCUPIED" or "EMPTY")
+                {
+                    occupied[slot.GetProperty("slotNo").GetInt32()] = state == "OCCUPIED";
+                }
+            }
+        }
+        return occupied.Where(pair => pair.Value).Select(pair => pair.Key).Order().ToArray();
     }
 
     private static bool SlotAvailable(JsonElement capability, Dictionary<int, JsonElement> safetySlots)
