@@ -1,5 +1,4 @@
 using ControlServer.Application;
-using Microsoft.Extensions.Options;
 
 namespace ControlServer.Host.Runtime;
 
@@ -106,40 +105,4 @@ public sealed record FixedTaskStationResolution
         ArgumentException.ThrowIfNullOrWhiteSpace(refusalReasonCode);
         return new(taskType, fixedEnd, null, refusalReasonCode, ruleVersion, bindingSetVersion);
     }
-}
-
-/// <summary>
-/// The one fixed station this server is configured with, for every task type, at the destination
-/// end, unversioned.
-/// </summary>
-/// <remarks>
-/// Resolving it for every task type is not a widening: <c>WorkTypeScopeCriterion</c> runs before
-/// station resolution and lets only WIRE_TO_GATE through, so this answers exactly what the engine
-/// resolved before the resolver existed.
-/// </remarks>
-public sealed class ConfiguredGateStationResolver(
-    MapStationResolver stationResolver,
-    IOptions<JourneyRuntimeOptions> options) : IFixedTaskStationResolver
-{
-    private readonly MapStationResolver _stationResolver = stationResolver;
-
-    private readonly JourneyRuntimeOptions _options = options.Value;
-
-    public Task<IFixedTaskStationView> ReadForRoundAsync(
-        RiotMapStationCatalogSnapshot map,
-        CancellationToken cancellationToken)
-    {
-        _ = cancellationToken;
-        return Task.FromResult<IFixedTaskStationView>(new ConfiguredGateStationView(
-            _stationResolver.RequireFixedStation(map, _options.GateStationRiotId, _options.GateStationId)));
-    }
-}
-
-/// <summary>A round's view in which every task type resolves to the one configured gate station.</summary>
-public sealed class ConfiguredGateStationView(RiotMapStation gate) : IFixedTaskStationView
-{
-    public RiotMapStation Gate { get; } = gate;
-
-    public FixedTaskStationResolution Resolve(string taskType) =>
-        FixedTaskStationResolution.Resolved(taskType, FixedStationEnd.Destination, Gate);
 }

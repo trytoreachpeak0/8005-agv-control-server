@@ -76,6 +76,31 @@ public static class DispatchReasonCodes
     public const string DemandLeftCatalog = "DEMAND_LEFT_CATALOG";
 
     /// <summary>
+    /// The rule table does not know the demand's task type, or the deployment's <c>AllowedWorkTypes</c> leaves it
+    /// out. Configuration, not a fault.
+    /// </summary>
+    public const string OutOfScopeWorkType = "OUT_OF_SCOPE_WORK_TYPE";
+
+    /// <summary>
+    /// This Map has no effective binding for the demand's task type: it is not in the Map's requirement set, or it
+    /// is and has no binding (REQ-0335). No default station is ever put in its place. Only this task type waits;
+    /// every other task type of the round is judged as usual.
+    /// </summary>
+    public const string TaskTypeBindingMissing = "TASK_TYPE_BINDING_MISSING";
+
+    /// <summary>
+    /// The task type is held on this Map (REQ-0340, REQ-0342, REQ-0347): by an operator, by a catalog change, or
+    /// because an activation's outcome is unknown. Only this task type waits.
+    /// </summary>
+    public const string TaskTypeHeld = "TASK_TYPE_HELD";
+
+    /// <summary>
+    /// The task type cleared its binding, but this build cannot execute it yet (scope specification 8.3: the four
+    /// same-direction task types wait for batch 10).
+    /// </summary>
+    public const string TaskTypeNotYetExecutable = "TASK_TYPE_NOT_YET_EXECUTABLE";
+
+    /// <summary>
     /// The reasons that are a configured outcome rather than a problem: they reach the backlog and nothing
     /// else — no structural dispatch block, no alarm, no log at Warning or above.
     /// </summary>

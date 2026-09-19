@@ -88,6 +88,72 @@ public sealed class JourneyRuntimeOptionsTests
         }
     }
 
+    /// <summary>
+    /// 终点改由绑定给出（control-server#160）：关卡两个标量从选项与出厂配置里删掉，「必须含 WIRE_TO_GATE」那条校验也删掉——
+    /// 部署只放行别的任务类型不再被拒；#159 为防两份真相分叉加的过渡校验随标量一起删。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public void TheGateScalarsAreGoneAndAnAllowListWithoutWireToGateIsNoLongerRefused()
+    {
+        Assert.Null(typeof(JourneyRuntimeOptions).GetProperty("GateStationId"));
+        Assert.Null(typeof(JourneyRuntimeOptions).GetProperty("GateStationRiotId"));
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+        options.AllowedWorkTypes = ["STAGING_TO_WIRE"];
+
+        Microsoft.Extensions.Options.ValidateOptionsResult result =
+            new JourneyRuntimeOptionsValidator(new ConfigurationBuilder().Build()).Validate(null, options);
+
+        Assert.DoesNotContain(result.Failures ?? [], failure => failure.Contains("WIRE_TO_GATE", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Failures ?? [], failure => failure.Contains("GateStation", StringComparison.Ordinal));
+
+        string settings = File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "ControlServer.Host", "appsettings.json"));
+        Assert.DoesNotContain("gateStationId", settings, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("gateStationRiotId", settings, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Null(typeof(ControlServer.Application.TaskTypeStationConfigurationValidator).Assembly
+            .GetType("ControlServer.Application.TransitionalGateStation"));
+        Assert.Null(typeof(ControlServer.Application.TaskTypeStationReasonCodes).GetField("BindingGateScalarMismatch"));
+        Assert.Equal(
+            2,
+            typeof(ControlServer.Application.TaskTypeStationConfigurationValidator)
+                .GetMethod("ValidateStatic")!.GetParameters().Length);
+    }
+
+    /// <summary>
+    /// 出厂配置的 <c>allowedWorkTypes</c> 列全六类：放不放行交给规则表与本图绑定（control-server#160）。只列
+    /// <c>WIRE_TO_GATE</c> 的话，一条未绑定的 <c>STAGING_TO_WIRE</c> 需求会被笼统挡成范围外，而不是报缺绑定。
+    /// 部署仍可以收窄它，收窄掉的任务类型报 <c>OUT_OF_SCOPE_WORK_TYPE</c>。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public void TheShippedAllowListNamesAllSixTaskTypesSoTheBindingsDecide()
+    {
+        using System.Text.Json.JsonDocument settings = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "ControlServer.Host", "appsettings.json")));
+
+        string[] allowed =
+        [
+            .. settings.RootElement.GetProperty("JourneyRuntime").GetProperty("allowedWorkTypes").EnumerateArray()
+                .Select(item => item.GetString()!)
+        ];
+
+        Assert.Equal(
+            ControlServer.Application.TransportTaskTypes.All.Order(StringComparer.Ordinal),
+            allowed.Order(StringComparer.Ordinal));
+    }
+
+    private static string RepositoryRoot()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "global.json")))
+        {
+            directory = directory.Parent;
+        }
+        return directory?.FullName ?? throw new InvalidOperationException("No repository root above the test output.");
+    }
+
     private static JourneyRuntimeOptions ValidEnabledOptions() => new()
     {
         Enabled = true,
@@ -98,8 +164,6 @@ public sealed class JourneyRuntimeOptionsTests
         AgvLifecycleGeneration = 1,
         MapId = 25,
         MapIdentity = "MAP-25",
-        GateStationId = "关卡",
-        GateStationRiotId = 210,
         DispatchZone = "MAP-25-WIRE_TO_GATE",
         DispatchGeneration = 1,
         MinimumBatteryPercent = 40,

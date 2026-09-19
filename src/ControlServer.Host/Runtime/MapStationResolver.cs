@@ -11,21 +11,6 @@ public sealed class MapStationResolver
         RiotMapStationCatalogSnapshot catalog) =>
         catalog.Stations.Where(station => ParseAreaCodes(station.StationName).Length > 0).ToArray();
 
-    public RiotMapStation RequireFixedStation(
-        RiotMapStationCatalogSnapshot catalog,
-        int stationId,
-        string stationName)
-    {
-        RiotMapStation[] matches = catalog.Stations.Where(station =>
-            station.StationId == stationId &&
-            string.Equals(station.StationName, stationName, StringComparison.Ordinal)).ToArray();
-        return matches.Length == 1
-            ? matches[0]
-            : throw new StationResolutionException(
-                "FIXED_STATION_BINDING_INVALID",
-                $"Map {catalog.MapId} does not contain exact fixed station {stationName}/{stationId}.");
-    }
-
     public RiotMapStation ResolveUniquePickup(
         RiotMapStationCatalogSnapshot catalog,
         string area)
