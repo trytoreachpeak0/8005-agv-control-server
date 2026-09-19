@@ -47,7 +47,7 @@ public sealed class TaskTypeBindingDashboardTests
             HoldId = "activation-1",
             MapId = 25,
             TaskType = TransportTaskTypes.DieToOven,
-            Source = "ACTIVATION_UNKNOWN",
+            Source = "ACTIVATION_RESULT_UNKNOWN",
             ReasonCode = "ACTIVATION_RESULT_UNKNOWN",
             DetailJson = "{}",
             RaisedAt = Now.AddMinutes(3),
@@ -94,7 +94,7 @@ public sealed class TaskTypeBindingDashboardTests
               {"taskType":"STAGING_TO_WIRE","required":true,"stationRiotId":230,"stationName":"派工待送取货","status":"HELD","holds":[
                 {"source":"MANUAL","sourceLabel":"看板人工","raisedAt":"2026-09-19T08:00:00+00:00","reason":"取货点被占用"},
                 {"source":"CATALOG_CHANGE","sourceLabel":"目录变化","raisedAt":"2026-09-19T08:01:00+00:00","reason":"站点改名"},
-                {"source":"ACTIVATION_UNKNOWN","sourceLabel":"激活结果未知","raisedAt":"2026-09-19T08:02:00+00:00","reason":null}]},
+                {"source":"ACTIVATION_RESULT_UNKNOWN","sourceLabel":"激活结果未知","raisedAt":"2026-09-19T08:02:00+00:00","reason":null}]},
               {"taskType":"WIRE_TO_NITROGEN","required":false,"stationRiotId":null,"stationName":null,"status":"NOT_REQUIRED","holds":[]}
             ]}]}
             """);
