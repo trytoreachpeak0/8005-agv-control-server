@@ -936,6 +936,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     new VehicleRoster(options),
                     StructuralBlockLog),
                 onboardFacts,
+                new InTransitAppendNotOpened(),
                 options,
                 Clock,
                 EngineLog);

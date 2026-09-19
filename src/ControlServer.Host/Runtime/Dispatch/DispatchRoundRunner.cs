@@ -37,6 +37,7 @@ public sealed class DispatchRoundRunner(
     IVehicleSlotPositionReader slotPositions,
     IDispatchRoundOutcomeSink roundOutcomes,
     OnboardDispatchFactsReader onboardFacts,
+    IInTransitDispatchQualification inTransitQualification,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
@@ -63,10 +64,21 @@ public sealed class DispatchRoundRunner(
 
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
+    /// <summary>Runs one round for the free vehicles, and asks the in-transit path about the ones under way.</summary>
+    /// <param name="currentMap">The Map this round was read against.</param>
+    /// <param name="fixedStations">This round's fixed stations.</param>
+    /// <param name="vehicles">The idle vehicles, in roster order: each goes down the admission chain.</param>
+    /// <param name="vehiclesUnderWay">
+    /// The vehicles already carrying a journey. They are never judged by the admission chain; each is asked of
+    /// <see cref="IInTransitDispatchQualification"/> once the idle vehicles are served, and for now always refused.
+    /// </param>
+    /// <param name="admissionPolicyDrifted">Whether this round's admission policy refused to rebind.</param>
+    /// <param name="cancellationToken">Ends the round on shutdown.</param>
     public async Task RunAsync(
         RiotMapStationCatalogSnapshot currentMap,
         IFixedTaskStationView fixedStations,
         IReadOnlyList<FleetVehicle> vehicles,
+        IReadOnlyList<FleetVehicle> vehiclesUnderWay,
         bool admissionPolicyDrifted,
         CancellationToken cancellationToken)
     {
@@ -156,6 +168,20 @@ public sealed class DispatchRoundRunner(
                 {
                     backlogByDemandId[row.DemandId] = row;
                 }
+            }
+        }
+
+        // The second path (control-server#209): a vehicle under way is asked whether it may take an appended demand,
+        // never judged by the chain above. Nothing opens it yet, and a refusal leaves no trace -- no backlog row, no
+        // verdict, nothing for the round-end hook below. Where these vehicles sit against the idle ones once they can
+        // qualify (REQ-0205 has them compete for the same demand) is control-server#211's to decide.
+        foreach (FleetVehicle vehicle in vehiclesUnderWay)
+        {
+            if (await inTransitQualification.QualifiesAsync(round, vehicle, cancellationToken).ConfigureAwait(false))
+            {
+                throw new NotSupportedException(
+                    $"Vehicle {vehicle.AgvId} qualified for an appended demand, which this round cannot yet dispatch " +
+                    "(control-server#211).");
             }
         }
 

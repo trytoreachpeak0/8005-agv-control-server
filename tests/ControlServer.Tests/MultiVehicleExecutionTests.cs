@@ -917,6 +917,7 @@ public sealed partial class MultiVehicleExecutionTests
         public RecordingRoundOutcomes RoundOutcomes { get; } = new();
         public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
         public FleetBoxCounts BoxCounts { get; } = new();
+        public RecordingInTransitQualification InTransit { get; } = new();
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
         public JourneyRuntimeEngine Engine { get; private set; }
 
@@ -1114,6 +1115,7 @@ public sealed partial class MultiVehicleExecutionTests
                 SlotPositions,
                 RoundOutcomes,
                 onboardFacts,
+                InTransit,
                 options,
                 Clock,
                 EngineLog);
@@ -1482,6 +1484,29 @@ public sealed partial class MultiVehicleExecutionTests
             IReadOnlyCollection<string> agvIds,
             string slotPosition,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// The host's in-transit path, with every vehicle it was asked about written down; <see cref="Answer"/> overrides
+    /// it for the one test about a yes.
+    /// </summary>
+    private sealed class RecordingInTransitQualification : IInTransitDispatchQualification
+    {
+        private readonly InTransitAppendNotOpened _host = new();
+
+        public List<(DispatchRoundFacts Round, FleetVehicle Vehicle)> Asked { get; } = [];
+
+        public bool? Answer { get; set; }
+
+        public async Task<bool> QualifiesAsync(
+            DispatchRoundFacts round,
+            FleetVehicle vehicle,
+            CancellationToken cancellationToken)
+        {
+            Asked.Add((round, vehicle));
+            bool host = await _host.QualifiesAsync(round, vehicle, cancellationToken);
+            return Answer ?? host;
+        }
     }
 
     private sealed class RecordingRoundOutcomes : IDispatchRoundOutcomeSink

@@ -346,7 +346,13 @@ public sealed class JourneyRuntimeEngine(
                 $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
         }
 
-        await dispatchRound.RunAsync(currentMap, fixedStations, free, admissionPolicyDrifted, cancellationToken)
+        // The vehicles under way reach the round too, on their own path (control-server#209); a round with no free
+        // vehicle still ends above, before the catalog and the orphan check.
+        FleetVehicle[] underWay = roster.Vehicles
+            .Where(vehicle => busy.Contains(vehicle.AgvId))
+            .ToArray();
+        await dispatchRound.RunAsync(
+                currentMap, fixedStations, free, underWay, admissionPolicyDrifted, cancellationToken)
             .ConfigureAwait(false);
     }
 

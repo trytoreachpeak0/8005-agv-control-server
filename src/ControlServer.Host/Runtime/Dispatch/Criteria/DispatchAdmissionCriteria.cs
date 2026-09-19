@@ -129,6 +129,8 @@ public static class DispatchAdmissionCriteria
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
         // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
         services.AddScoped<OnboardDispatchFactsReader>();
+        // A vehicle under way is refused until control-server#211 opens appending.
+        services.AddScoped<IInTransitDispatchQualification, InTransitAppendNotOpened>();
         services.AddScoped<DispatchRoundRunner>();
         return services;
     }

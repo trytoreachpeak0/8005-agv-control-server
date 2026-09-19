@@ -4,6 +4,7 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
+using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -292,12 +293,20 @@ public sealed partial class MultiVehicleExecutionTests
 
         Assert.Equal(catalogReads, fixture.Catalog.ReadCount);
         Assert.Empty(fixture.RoundOutcomes.Outcomes);
+        // Not even the in-transit path is asked: the round ended before there was a round to qualify for.
+        Assert.Empty(fixture.InTransit.Asked);
     }
 
     /// <summary>
-    /// A vehicle under way stays out of the round the idle vehicles are served in: no verdict, no slot group read,
-    /// nothing handed to the round-end hook.
+    /// A vehicle under way goes down the in-transit path, which refuses it with nothing to show for it: no verdict,
+    /// no slot group read, no backlog write, nothing handed to the round-end hook -- while the idle vehicles beside it
+    /// are served as before.
     /// </summary>
+    /// <remarks>
+    /// The path is asked once per vehicle under way, with the round's own facts, and says no; appending to a journey
+    /// under way is control-server#211's to open. The host's path is handed no database context at all, so its refusal
+    /// cannot write a backlog row; what this test watches is that the round adds nothing for that vehicle either.
+    /// </remarks>
     [Fact]
     public async Task AVehicleUnderWayIsLeftOutOfTheRoundItsIdleNeighboursAreServedIn()
     {
@@ -315,6 +324,24 @@ public sealed partial class MultiVehicleExecutionTests
             [FleetFixture.AgvIds[1], FleetFixture.AgvIds[2]],
             Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles.Select(vehicle => vehicle.AgvId).ToArray());
         Assert.DoesNotContain(FleetFixture.AgvIds[0], fixture.SlotPositions.Reads);
+        (DispatchRoundFacts round, FleetVehicle asked) = Assert.Single(fixture.InTransit.Asked);
+        Assert.Equal(FleetFixture.AgvIds[0], asked.AgvId);
+        Assert.Same(Assert.Single(fixture.RoundOutcomes.Outcomes).Round, round);
+    }
+
+    /// <summary>
+    /// The in-transit path saying yes is not something this round can act on yet: it fails loudly rather than
+    /// quietly ignoring a vehicle it was told may take work.
+    /// </summary>
+    [Fact]
+    public async Task AnInTransitVehicleTheRoundCannotYetServeIsNotSilentlyDropped()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
+        await fixture.RunRoundAsync();
+        fixture.InTransit.Answer = true;
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => fixture.RunRoundAsync(TimeSpan.FromSeconds(1)));
     }
 
     /// <summary>
