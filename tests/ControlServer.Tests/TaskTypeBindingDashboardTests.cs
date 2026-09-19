@@ -48,7 +48,7 @@ public sealed class TaskTypeBindingDashboardTests
             MapId = 25,
             TaskType = TransportTaskTypes.DieToOven,
             Source = "ACTIVATION_RESULT_UNKNOWN",
-            ReasonCode = "ACTIVATION_RESULT_UNKNOWN",
+            ReasonCode = "TASK_TYPE_ACTIVATION_RESULT_UNKNOWN",
             DetailJson = "{}",
             RaisedAt = Now.AddMinutes(3),
             RaisedBy = "deployment:fieldops"
