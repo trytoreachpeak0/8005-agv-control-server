@@ -89,6 +89,30 @@ public sealed class JourneyRuntimeOptionsTests
     }
 
     /// <summary>
+    /// control-server#198：反向旅程在机台等准入恢复的门槛默认 10 分钟，必须为正——没有「一直等」这个选项。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public void TheAreaEndAdmissionRevokedTimeoutDefaultsToTenMinutesAndMustBePositive()
+    {
+        const string failure = "AreaEndAdmissionRevokedTimeout must be positive.";
+        Assert.Equal(TimeSpan.FromMinutes(10), new JourneyRuntimeOptions().AreaEndAdmissionRevokedTimeout);
+        JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+
+        foreach (TimeSpan accepted in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(10) })
+        {
+            options.AreaEndAdmissionRevokedTimeout = accepted;
+            Assert.DoesNotContain(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
+        foreach (TimeSpan refused in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(-1) })
+        {
+            options.AreaEndAdmissionRevokedTimeout = refused;
+            Assert.Contains(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary>
     /// 终点改由绑定给出（control-server#160）：关卡两个标量从选项与出厂配置里删掉，「必须含 WIRE_TO_GATE」那条校验也删掉——
     /// 部署只放行别的任务类型不再被拒；#159 为防两份真相分叉加的过渡校验随标量一起删。
     /// </summary>

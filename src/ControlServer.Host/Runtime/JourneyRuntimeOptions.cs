@@ -75,6 +75,17 @@ public sealed class JourneyRuntimeOptions
     /// that waits a while.
     /// </remarks>
     public TimeSpan CheckpointWaitBudget { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How long a journey that has arrived at its AREA machine to unload may wait for the machine to admit its task type
+    /// again before it is blocked for manual recovery (control-server#198).
+    /// </summary>
+    /// <remarks>
+    /// Only a journey whose AREA machine is the drop-off (STAGING_TO_WIRE) is asked at arrival, and it arrives loaded:
+    /// the goods are on the vehicle and nobody is told. Ten minutes by default, the first line of the site escalation
+    /// procedure (T0 + 10 min). Must be positive; there is no switch to wait for ever.
+    /// </remarks>
+    public TimeSpan AreaEndAdmissionRevokedTimeout { get; set; } = TimeSpan.FromMinutes(10);
 }
 
 /// <summary>One vehicle's identity and the policy slice configured for it.</summary>
@@ -133,6 +144,10 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         if (options.CheckpointWaitBudget <= TimeSpan.Zero)
         {
             failures.Add("CheckpointWaitBudget must be positive.");
+        }
+        if (options.AreaEndAdmissionRevokedTimeout <= TimeSpan.Zero)
+        {
+            failures.Add("AreaEndAdmissionRevokedTimeout must be positive.");
         }
         if (options.DepartureSafetyResultWait <= TimeSpan.Zero ||
             options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))

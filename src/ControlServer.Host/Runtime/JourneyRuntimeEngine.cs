@@ -121,10 +121,17 @@ public sealed class JourneyRuntimeEngine(
             "under way continue on the bound policy; no further demand is taken on until " +
             "admissionPolicyVersion is raised.");
 
+    private static readonly Action<ILogger, string, string, string, TimeSpan, Exception?> LogAreaEndAdmissionRevokedTimeout =
+        LoggerMessage.Define<string, string, string, TimeSpan>(
+            LogLevel.Warning,
+            new EventId(2117, nameof(LogAreaEndAdmissionRevokedTimeout)),
+            "Vehicle {AgvId} has waited at AREA machine station {StationId} with demand {DemandId} on board for longer " +
+            "than {Timeout} for the station to admit its task type again; the journey is blocked for manual recovery.");
+
     private static readonly Action<ILogger, int, Exception?> LogCatalogBindingHoldConvergenceFailed =
         LoggerMessage.Define<int>(
             LogLevel.Warning,
-            new EventId(2117, nameof(LogCatalogBindingHoldConvergenceFailed)),
+            new EventId(2118, nameof(LogCatalogBindingHoldConvergenceFailed)),
             "The catalog change convergence for map {MapId} failed; this round goes on without it and the next " +
             "complete catalog confirmation converges again.");
 
@@ -139,6 +146,14 @@ public sealed class JourneyRuntimeEngine(
     /// (ADR-cross-0058 decision 4). The stop does not end; the duty moves to someone shutting the door.
     /// </summary>
     public const string StationTimeoutDoorNotClosedReason = "STATION_TIMEOUT_DOOR_NOT_CLOSED";
+
+    /// <summary>
+    /// A loaded journey at its AREA machine station waited longer than
+    /// <see cref="JourneyRuntimeOptions.AreaEndAdmissionRevokedTimeout"/> for the station to admit its task type again
+    /// (control-server#198). The journey is <see cref="JourneyRuntimeStage.Blocked"/>: the goods on the vehicle are an
+    /// administrator's to dispose of through a recovery session.
+    /// </summary>
+    public const string AreaEndAdmissionRevokedTimeoutReason = "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT";
 
     /// <summary>The journey is not arriving because the vehicle is holding at a traffic checkpoint.</summary>
     public const string CheckpointWaitReason = "VEHICLE_WAITING_AT_CHECKPOINT";
@@ -251,7 +266,12 @@ public sealed class JourneyRuntimeEngine(
         // unload until someone raised the version and restarted. ADR-cross-0050 and 0051 confine a
         // policy change to what is not yet committed: the bound policy stays in force for every
         // journey under way, and only taking on a further demand waits for the version, which
-        // AdmissionPolicyDriftCriterion enforces for every vehicle this round serves.
+        // AdmissionPolicyDriftCriterion enforces for every vehicle this round serves. One operation of
+        // a journey under way is not committed yet and is asked against the current admissions: the
+        // unload of a journey whose AREA machine is the drop-off (STAGING_TO_WIRE), until it is
+        // prepared. A machine that no longer admits it holds the loaded vehicle there, and past
+        // JourneyRuntimeOptions.AreaEndAdmissionRevokedTimeout the journey is blocked for manual
+        // recovery rather than left waiting unseen (control-server#198).
         string[] liveStationNames = machineStations.Select(station => station.StationName)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
@@ -611,6 +631,7 @@ public sealed class JourneyRuntimeEngine(
                     DemandIntakeOutcome.CandidateGone => "FINAL_CATALOG_CANDIDATE_GONE",
                     DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
                     DemandIntakeOutcome.FinalAdmissionRejected => "FINAL_DYNAMIC_FACTS_NOT_READY",
+                    DemandIntakeOutcome.JourneyPlanIncomplete => "FINAL_JOURNEY_PLAN_INCOMPLETE",
                     _ => throw new InvalidOperationException(
                         $"Unsupported intake outcome '{result.IntakeOutcome}'.")
                 },
@@ -689,7 +710,11 @@ public sealed class JourneyRuntimeEngine(
             // of which recovery is outstanding, and nothing rebuilds it: the field left a journey
             // reading "Blocked / ONBOARD_SESSION_NOT_READY", which names neither. Session
             // readiness carries its own row and its own reason code.
-            if (runtime.Stage != JourneyRuntimeStage.Blocked)
+            // A stop held at its AREA machine for the station's admission is still held for that while the session is
+            // down, and the reason is what control-server#198 counts the wait from: overwritten here, every reconnect
+            // started the count again, and a link dropping more often than the threshold kept the loaded vehicle waiting
+            // for ever.
+            if (runtime.Stage != JourneyRuntimeStage.Blocked && !IsHeldForAreaEndAdmission(runtime))
             {
                 runtime.SetBlockReason("ONBOARD_SESSION_NOT_READY", now);
                 runtime.UpdatedAt = now;
@@ -944,8 +969,27 @@ public sealed class JourneyRuntimeEngine(
                 }
                 if (!await UnloadAdmittedAsync(runtime, cancellationToken).ConfigureAwait(false))
                 {
+                    // Writing the code it already holds keeps BlockReasonSince, so the wait is counted from the first
+                    // round that held the stop here; admitted again, the stage moves on and SetStage clears both.
                     runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", now);
                     runtime.UpdatedAt = now;
+                    if (runtime.BlockReasonSince is DateTimeOffset heldSince &&
+                        now - heldSince >= runtimeOptions.AreaEndAdmissionRevokedTimeout)
+                    {
+                        // control-server#198, decided by the user on 2026-09-19: the vehicle is loaded and nobody is told
+                        // while it waits, so past the threshold it is handed to a person. Only the journey changes: the
+                        // order that brought the vehicle here is not touched, and no new one is created. The block keeps
+                        // the first hold's start, which the dashboard's escalation ladder is measured from.
+                        runtime.Stage = JourneyRuntimeStage.Blocked;
+                        runtime.EscalateBlockReason(AreaEndAdmissionRevokedTimeoutReason);
+                        LogAreaEndAdmissionRevokedTimeout(
+                            logger,
+                            runtime.AgvId,
+                            runtime.GateStationId,
+                            runtime.DemandId,
+                            runtimeOptions.AreaEndAdmissionRevokedTimeout,
+                            null);
+                    }
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
@@ -2456,6 +2500,10 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return true;
     }
+
+    private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
+        runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
+        string.Equals(runtime.BlockReasonCode, "TASK_TYPE_NOT_ALLOWED_AT_STATION", StringComparison.Ordinal);
 
     private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)
     {

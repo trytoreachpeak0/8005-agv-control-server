@@ -42,6 +42,8 @@ public sealed class AdmissionPolicyStoreTests
         await fixture.Store.ApplyAdmissionPolicyAsync(
             Policy(1, "DEPLOY-1", [new StationTaskTypeAdmission("PICKUP-01", "WIRE_TO_GATE")]),
             TestContext.Current.CancellationToken);
+        fixture.Context.AcceptedDemands.Add(TaskTypeStationTestData.AcceptedDemand("DEMAND-1", "WIRE_TO_GATE"));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         StationOperationPlan committed = Plan("ATTEMPT-1");
         string wire = Wire("MESSAGE-1", "ATTEMPT-1");
 
