@@ -1142,6 +1142,27 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         };
     }
 
+    /// <summary>
+    /// Whether the task type is admitted at the journey's AREA machine station: its pickup when the machine is where
+    /// it loads, its drop-off when the machine is where it unloads (<see cref="AreaEndOperationAsync"/>). A journey
+    /// whose direction cannot be read is not admitted.
+    /// </summary>
+    public async Task<bool> IsTaskTypeAllowedAtAreaEndAsync(
+        JourneyRuntimeRow runtime,
+        string taskType,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        return await AreaEndOperationAsync(runtime.DemandId, taskType, cancellationToken).ConfigureAwait(false) switch
+        {
+            SlotOperationType.Load => await IsTaskTypeAllowedAsync(runtime.PickupStationId, taskType, cancellationToken)
+                .ConfigureAwait(false),
+            SlotOperationType.Unload => await IsTaskTypeAllowedAsync(runtime.GateStationId, taskType, cancellationToken)
+                .ConfigureAwait(false),
+            _ => false,
+        };
+    }
+
     public async Task<ProtocolOutboxRow> PrepareSlotOperationAsync(
         StationOperationPlan plan, string messageId, string commandJson, CancellationToken cancellationToken)
     {

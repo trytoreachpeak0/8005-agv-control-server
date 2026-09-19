@@ -712,8 +712,10 @@ public sealed class OnboardRecoveryCoordinator(
             // An entry the runtime refuses for the station's task types starts no load, so it does not hold
             // the stop against the operator either. That carve-out is kept as it was: it names a station
             // that cannot do the work at all, and it is not a SublotRejected.
-            return !await store.IsTaskTypeAllowedAsync(
-                    runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false);
+            // Judged at the AREA machine station the way the runtime judges the entry (control-server#163): for
+            // STAGING_TO_WIRE that is the drop-off, not the staging station the entry was made at.
+            return !await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, demand.WorkType, cancellationToken)
+                .ConfigureAwait(false);
         }
         return true;
     }

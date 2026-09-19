@@ -204,10 +204,10 @@ public sealed class JourneyRuntimeEngine(
         bool admissionPolicyDrifted = false;
         try
         {
-            // Each area-named station is paired with the task types whose AREA end is the pickup -- the rule's fixed
-            // end is the destination -- and that this build can execute (control-server#160). Today that is
-            // WIRE_TO_GATE alone, so the relations and their content hash are exactly what they were before the rules
-            // existed, and an upgraded deployment does not drift.
+            // Each area-named station is paired with every task type this build can execute, whichever end of the
+            // route the station is (control-server#163): the admission follows the AREA machine end, which is the
+            // pickup for WIRE_TO_GATE and the drop-off for STAGING_TO_WIRE. Adding STAGING_TO_WIRE changed the
+            // relations and their hash, so the shipped admissionPolicyVersion moved past 1 with it.
             string[] seededTaskTypes = await AdmissionSeedTaskTypesAsync(cancellationToken).ConfigureAwait(false);
             await store.ApplyAdmissionPolicyAsync(
                 new AdmissionPolicyDefinition(
@@ -298,8 +298,10 @@ public sealed class JourneyRuntimeEngine(
     }
 
     /// <summary>
-    /// The task types the station admission seed carries: fixed end at the destination, so the AREA station is the
-    /// pickup, and executable by this build.
+    /// The task types the station admission seed carries: those this build can execute, at either fixed end. The seed
+    /// is per area-named machine station, and a task type is admitted at its AREA end whether that is the pickup
+    /// (fixed end at the destination) or the drop-off (fixed end at the origin); control-server#160 seeded only the
+    /// former, which was all it could execute.
     /// </summary>
     /// <remarks>
     /// Read from the rules the Map's active binding set was built on -- the same version the resolver judges the round
@@ -317,8 +319,7 @@ public sealed class JourneyRuntimeEngine(
         return
         [
             .. (rules?.Rules ?? [])
-                .Where(rule => string.Equals(rule.FixedEnd, TaskTypeFixedEnd.Destination, StringComparison.Ordinal)
-                    && ExecutableTaskTypes.Contains(rule.TaskType))
+                .Where(rule => ExecutableTaskTypes.Contains(rule.TaskType))
                 .Select(rule => rule.TaskType)
                 .Order(StringComparer.Ordinal)
         ];
@@ -887,6 +888,13 @@ public sealed class JourneyRuntimeEngine(
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
+                if (!await UnloadAdmittedAsync(runtime, cancellationToken).ConfigureAwait(false))
+                {
+                    runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", now);
+                    runtime.UpdatedAt = now;
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    return;
+                }
                 await PublishGateStateAndUnloadAsync(runtime, session, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now);
                 break;
@@ -1328,6 +1336,10 @@ public sealed class JourneyRuntimeEngine(
             row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
         int[] slots = JsonSerializer.Deserialize<int[]>(runtime.TargetSlotsJson) ?? [];
         string hash = BusinessHash(runtime.DemandId, demand.Sublot, "LOAD", slots);
+        // The load carries the admission only where the AREA machine is the pickup (WIRE_TO_GATE); STAGING_TO_WIRE's
+        // is carried by the unload at the machine (I6 overturned, scope specification 21.2 item 2).
+        bool admission = await store.AreaEndOperationAsync(runtime.DemandId, demand.WorkType, cancellationToken)
+            .ConfigureAwait(false) == SlotOperationType.Load;
         await publisher.PublishSlotOperationCommandAsync(
             runtime.LoadCommandMessageId,
             runtime.AgvId,
@@ -1343,8 +1355,8 @@ public sealed class JourneyRuntimeEngine(
                 session.ForcedRecoveryGeneration,
                 hash),
             cancellationToken,
-            runtime.PickupStationId,
-            demand.WorkType).ConfigureAwait(false);
+            admission ? runtime.PickupStationId : null,
+            admission ? demand.WorkType : null).ConfigureAwait(false);
     }
 
     private async Task PublishGateStateAndUnloadAsync(
@@ -1380,6 +1392,9 @@ public sealed class JourneyRuntimeEngine(
             JourneyPlanBuilder.GatePlan(runtime),
             cancellationToken).ConfigureAwait(false);
         int[] slots = JsonSerializer.Deserialize<int[]>(runtime.TargetSlotsJson) ?? [];
+        // The unload carries the admission where the AREA machine is the drop-off (STAGING_TO_WIRE).
+        bool admission = await store.AreaEndOperationAsync(runtime.DemandId, demand.WorkType, cancellationToken)
+            .ConfigureAwait(false) == SlotOperationType.Unload;
         await publisher.PublishSlotOperationCommandAsync(
             runtime.UnloadCommandMessageId,
             runtime.AgvId,
@@ -1394,7 +1409,32 @@ public sealed class JourneyRuntimeEngine(
                 slots,
                 session.ForcedRecoveryGeneration,
                 BusinessHash(runtime.DemandId, demand.Sublot, "UNLOAD", slots)),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            admission ? runtime.GateStationId : null,
+            admission ? demand.WorkType : null).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether the unload may be commanded as far as station admission goes. Only a journey whose AREA machine is the
+    /// drop-off (STAGING_TO_WIRE) is asked, and only until its unload is prepared: from then on the decision frozen with
+    /// the unload is what stands (ADR-cross-0050/0051), so a restart that re-enters the arrival with the unload already
+    /// prepared goes on to replay it rather than stopping here on the current policy.
+    /// </summary>
+    private async Task<bool> UnloadAdmittedAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        string workType = await dbContext.AcceptedDemands.AsNoTracking()
+            .Where(row => row.DemandId == runtime.DemandId)
+            .Select(row => row.WorkType)
+            .SingleAsync(cancellationToken).ConfigureAwait(false);
+        if (await store.AreaEndOperationAsync(runtime.DemandId, workType, cancellationToken).ConfigureAwait(false)
+                != SlotOperationType.Unload ||
+            await dbContext.StationOperations.AsNoTracking()
+                .AnyAsync(row => row.SlotOperationAttemptId == runtime.UnloadSlotOperationAttemptId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return true;
+        }
+        return await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, workType, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1525,8 +1565,11 @@ public sealed class JourneyRuntimeEngine(
                 cancellationToken).ConfigureAwait(false);
         }
 
-        if (!await store.IsTaskTypeAllowedAsync(
-                runtime.PickupStationId, demand.WorkType, cancellationToken).ConfigureAwait(false))
+        // At the AREA machine station, not necessarily this one: STAGING_TO_WIRE loads at a staging station and is
+        // admitted at the machine it unloads at (control-server#163). Asked here too, before anything is loaded for a
+        // machine that would refuse it.
+        if (!await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, demand.WorkType, cancellationToken)
+                .ConfigureAwait(false))
         {
             runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", now);
             runtime.UpdatedAt = now;
