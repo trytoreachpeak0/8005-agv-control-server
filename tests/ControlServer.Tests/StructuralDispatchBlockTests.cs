@@ -154,10 +154,16 @@ public sealed class StructuralDispatchBlockTests
         string[] referencedCatalogCodes = CatalogCheckReferencedReasonCodes(root);
         Assert.Subset(BoundFixedTaskStationResolver.RefusalReasonCodes.ToHashSet(StringComparer.Ordinal), referencedCatalogCodes.ToHashSet(StringComparer.Ordinal));
         written.UnionWith(referencedCatalogCodes);
-        written.UnionWith(Regex.Matches(
-                File.ReadAllText(Path.Combine(runtime, "JourneyRuntimeEngine.cs")),
-                "\"((?:FINAL|DEMAND)_[A-Z_]+)\"")
-            .Select(match => match.Groups[1].Value));
+        // The dispatch round writes these; it lived in the engine until control-server#209 moved it out whole.
+        foreach (string file in new[]
+                 {
+                     Path.Combine(runtime, "JourneyRuntimeEngine.cs"),
+                     Path.Combine(runtime, "Dispatch", "DispatchRoundRunner.cs"),
+                 })
+        {
+            written.UnionWith(Regex.Matches(File.ReadAllText(file), "\"((?:FINAL|DEMAND)_[A-Z_]+)\"")
+                .Select(match => match.Groups[1].Value));
+        }
         foreach (Type constants in new[]
                  {
                      typeof(DispatchReasonCodes), typeof(RouteGraphStaleReasons),
@@ -737,7 +743,9 @@ public sealed class StructuralDispatchBlockTests
             evaluation.AreaAssignment = new AreaAssignment("N1-3", Zone, group);
             evaluation.PackageCapacity = BoxesPerBasket;
             string reason = await new SlotCapacityCriterion(
-                    new FixedBoxCount(baskets * BoxesPerBasket), NullLogger<SlotCapacityCriterion>.Instance)
+                    new FixedBoxCount(baskets * BoxesPerBasket),
+                    NullLogger<SlotCapacityCriterion>.Instance,
+                    new SessionBaselineSlotLedger())
                 .EvaluateAsync(evaluation, TestContext.Current.CancellationToken);
             return new DispatchCandidateVerdict(evaluation, reason);
         }
