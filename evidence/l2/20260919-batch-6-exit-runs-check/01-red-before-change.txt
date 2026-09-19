@@ -1,0 +1,19 @@
+area-eqp-unique-across-task-types                Runs=1 DefaultRuns=- FAIL
+binding-hold-dashboard-not-cascading             Runs=1 DefaultRuns=- FAIL
+catalog-change-binding-hold                      Runs=1 DefaultRuns=- FAIL
+staging-to-wire-reversed-journey                 Runs=1 DefaultRuns=- FAIL
+staging-to-wire-slot-group                       Runs=1 DefaultRuns=- FAIL
+task-type-binding-admits-bound-station           Runs=1 DefaultRuns=- FAIL
+task-type-binding-missing-not-cascading          Runs=1 DefaultRuns=- FAIL
+task-type-binding-station-reused-refuses-start   Runs=1 DefaultRuns=- FAIL
+timeout-minutes: workflow_dispatch 180, otherwise 120
+batch-6 scenarios: 8; all scenarios: 36
+FAIL: area-eqp-unique-across-task-types: Runs = 1, expected 3
+FAIL: binding-hold-dashboard-not-cascading: Runs = 1, expected 3
+FAIL: catalog-change-binding-hold: Runs = 1, expected 3
+FAIL: staging-to-wire-reversed-journey: Runs = 1, expected 3
+FAIL: staging-to-wire-slot-group: Runs = 1, expected 3
+FAIL: task-type-binding-admits-bound-station: Runs = 1, expected 3
+FAIL: task-type-binding-missing-not-cascading: Runs = 1, expected 3
+FAIL: task-type-binding-station-reused-refuses-start: Runs = 1, expected 3
+exit=1
