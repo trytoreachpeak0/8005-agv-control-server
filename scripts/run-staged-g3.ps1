@@ -77,7 +77,10 @@ param(
     #     #123, #124 and #127 (the in-flight load result sent after a reconnect). 29fbf65e predated hmi#115, and
     #     New-ExactClone requires the tip of $OnboardRemoteRef.
     #   $SimulatorCommit and $ProtocolCommit unchanged: batch 6 changes no protocol.
-    [string]$ControlServerCommit = '905ffd1dc0b4de1f048163342b45e58f3a7261fc',
+    #   Same day, $ControlServerCommit -> 85381ea2: the staged recovery probe and three forced-recovery judgments
+    #     brought up to control-server#187 (one renamed, g3-slice-evidence.ps1 with it). Scripts only; src/ and
+    #     tests/ are those of 905ffd1d. All four runners re-run on it (the claim table is shared).
+    [string]$ControlServerCommit = '85381ea2a37e46b4c720ff5f1843161ad6deb69d',
     [string]$OnboardCommit = '44b3aa6e255f0820c3988d3f50f0b4dba1105006',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
