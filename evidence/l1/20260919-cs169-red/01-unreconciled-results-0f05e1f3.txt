@@ -1,0 +1,87 @@
+commit: 0f05e1f374f2aa96455fbc76b1b33b9ca2021dd9
+command: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter FullyQualifiedName~AnUnreconciledRecoveryResultClosesTheSession
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs169-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:20.89]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "ForcedMechanicalRecoveryResult", outcome: "FAILED") [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "ForcedMechanicalRecoveryResult", outcome: "FAILED") [7 s]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "CLOSED"
+Actual:   "EXECUTING"
+           ↑ (pos 0)
+  Stack Trace:
+[xUnit.net 00:00:21.50]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "UNKNOWN") [FAIL]
+[xUnit.net 00:00:22.01]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "LoadCompensationResult", outcome: "FAILED") [FAIL]
+[xUnit.net 00:00:22.37]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "ForcedMechanicalRecoveryResult", outcome: "UNKNOWN") [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "UNKNOWN") [582 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "CLOSED"
+Actual:   "EXECUTING"
+           ↑ (pos 0)
+  Stack Trace:
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "LoadCompensationResult", outcome: "FAILED") [505 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "CLOSED"
+Actual:   "EXECUTING"
+           ↑ (pos 0)
+  Stack Trace:
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "ForcedMechanicalRecoveryResult", outcome: "UNKNOWN") [347 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "CLOSED"
+Actual:   "EXECUTING"
+           ↑ (pos 0)
+  Stack Trace:
+[xUnit.net 00:00:22.73]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "LoadCompensationResult", outcome: "UNKNOWN") [FAIL]
+[xUnit.net 00:00:23.04]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "HANDED_OFF_OVER_AN_OCCUPIED_SLOT") [FAIL]
+[xUnit.net 00:00:23.47]     ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "FAILED") [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "LoadCompensationResult", outcome: "UNKNOWN") [356 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "CLOSED"
+Actual:   "EXECUTING"
+           ↑ (pos 0)
+  Stack Trace:
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "HANDED_OFF_OVER_AN_OCCUPIED_SLOT") [300 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "CLOSED"
+Actual:   "EXECUTING"
+           ↑ (pos 0)
+  Stack Trace:
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "FAILED") [429 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "CLOSED"
+Actual:   "EXECUTING"
+           ↑ (pos 0)
+  Stack Trace:
+
+Failed!  - Failed:     7, Passed:     0, Skipped:     0, Total:     7, Duration: 10 s - ControlServer.Tests.dll (net8.0)
