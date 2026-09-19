@@ -12,7 +12,7 @@
      改名、删除的绑定站由固定站视图按本轮目录先挡住，此时还轮不到暂停。
   5. 同一个变化连续多轮只一条暂停；目录变化记录 230 恰好一行 RENAMED、210 恰好一行 REMOVED——删 210 换了整张图的修订，
      230 那条改名不因此再记一行（L2-CC-08，control-server#201）；看板显示两条暂停及其来源。
-  6. 把 210 以原名称放回目录，目录完整确认过几轮之后，新的 WIRE_TO_GATE 需求仍不受理，原因码 TASK_TYPE_HELD，
+  6. 把 210 以原名称放回目录，目录完整确认过几轮之后，第 4 步那条还在等的需求与一条新需求都仍不受理，原因码 TASK_TYPE_HELD，
      WIRE_TO_GATE 那条暂停仍未解除（L2-CC-11）。这是暂停独有的作用：站点恢复不自动解暂停，要 FieldOps 解除。
 
 红证据取法（缺陷版本）：按旧票 #54 的读法把「只改名」判为无变化 → 第 1 步「出现站点改名暂停」变红。
@@ -175,22 +175,43 @@ $holdsBeforeReturn = Get-L2TaskTypeHolds -Context $Context
 $gateHold = @($holdsBeforeReturn | Where-Object { $_.TaskType -eq 'WIRE_TO_GATE' })
 Set-Stations @{ '210' = '关卡'; '12' = 'N1-3_N1-7'; '11' = 'C15-13'; '230' = '派工待送取货-临时堆放' }
 $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
+# Two demands are waiting now: the second, kept back since step 4, and a third raised after the gate came back. Both are
+# judged: the older one is first in line, so with the hold not consulted it is the one that gets taken.
 $third = New-L2WireToGateDemand -Context $Context -Label 'third'
-$null = Wait-L2ConditionOrLast -Description 'the third demand is kept back by the hold after the gate came back' `
-    -Journal $journal -Criterion 'backlog-third' -TimeoutSeconds 60 `
-    -Probe { Get-L2BacklogReason -Context $Context -Demand $third } `
-    -Until { param($v) $v -eq 'TASK_TYPE_HELD' }
-$null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
-$thirdStage = Get-L2JourneyStage -Context $Context -Demand $third
-$thirdReason = Get-L2BacklogReason -Context $Context -Demand $third
+function Get-WaitingDemands {
+    , @(foreach ($demand in @($second, $third)) {
+            [pscustomobject]@{
+                Stage  = Get-L2JourneyStage -Context $Context -Demand $demand
+                Reason = Get-L2BacklogReason -Context $Context -Demand $demand
+            }
+        })
+}
+function Test-HeldBack([object[]]$Waiting) {
+    @($Waiting | Where-Object { $null -eq $_.Stage -and $_.Reason -eq 'TASK_TYPE_HELD' }).Count -eq 2
+}
+function Format-Waiting([object[]]$Waiting) {
+    (@('second', 'third') | ForEach-Object -Begin { $i = 0 } -Process {
+            $w = $Waiting[$i++]
+            "${_}: $(if ($w.Stage) { $w.Stage } else { 'no journey' }) / $(if ($w.Reason) { $w.Reason } else { '(no reason)' })"
+        }) -join '; '
+}
+$waiting = Wait-L2ConditionOrLast -Description 'both waiting demands are kept back by the hold after the gate came back' `
+    -Journal $journal -Criterion 'backlog-after-return' -TimeoutSeconds 60 `
+    -Probe { Get-WaitingDemands } -Until { param($v) Test-HeldBack $v }
+if (Test-HeldBack $waiting) {
+    # Read again rounds later: the verdict is what the rounds settled on. Skipped once the answer is already no -- a
+    # taken demand sends the runtime off to RIoT, and nothing more needs to be seen for the verdict.
+    $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
+    $waiting = Get-WaitingDemands
+}
 $holdsAfterReturn = Get-L2TaskTypeHolds -Context $Context
 $gateHoldAfter = @($holdsAfterReturn | Where-Object { $_.TaskType -eq 'WIRE_TO_GATE' })
 $assertions.Add(
-    'L2-CC-11', '210 以原名称放回目录、确认过几轮之后，新的 WIRE_TO_GATE 需求仍不受理，原因码 TASK_TYPE_HELD，那条暂停仍未解除（站点恢复不自动解暂停）',
-    ($null -eq $thirdStage -and $thirdReason -eq 'TASK_TYPE_HELD' -and $gateHold.Count -eq 1 -and $gateHoldAfter.Count -eq 1 -and
+    'L2-CC-11', '210 以原名称放回目录、确认过几轮之后，等着的与新来的 WIRE_TO_GATE 需求都仍不受理，原因码 TASK_TYPE_HELD，那条暂停仍未解除（站点恢复不自动解暂停）',
+    ((Test-HeldBack $waiting) -and $gateHold.Count -eq 1 -and $gateHoldAfter.Count -eq 1 -and
         $gateHoldAfter[0].HoldId -eq $gateHold[0].HoldId),
-    "no journey / TASK_TYPE_HELD; hold $(if ($gateHold.Count -eq 1) { $gateHold[0].HoldId } else { '(none)' }) unreleased",
-    "$(if ($thirdStage) { $thirdStage } else { 'no journey' }) / $thirdReason; " +
-        "hold $(if ($gateHoldAfter.Count -eq 1) { $gateHoldAfter[0].HoldId } else { Format-Holds $gateHoldAfter })")
+    "second: no journey / TASK_TYPE_HELD; third: no journey / TASK_TYPE_HELD; hold " +
+        "$(if ($gateHold.Count -eq 1) { $gateHold[0].HoldId } else { '(none)' }) unreleased",
+    "$(Format-Waiting $waiting); hold $(if ($gateHoldAfter.Count -eq 1) { $gateHoldAfter[0].HoldId } else { Format-Holds $gateHoldAfter })")
 
 $journal.Note('Scenario finished.')
