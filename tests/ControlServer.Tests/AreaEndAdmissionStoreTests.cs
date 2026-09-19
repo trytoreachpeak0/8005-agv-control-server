@@ -19,6 +19,9 @@ public sealed class AreaEndAdmissionStoreTests
 
     private const string ForwardDemand = "D-WIRE-TO-GATE";
 
+    // A WIRE_TO_GATE demand that froze the factory rules, so STAGING_TO_WIRE's rule can be read under its version.
+    private const string FrozenForwardDemand = "D-WIRE-TO-GATE-FROZEN";
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -70,6 +73,37 @@ public sealed class AreaEndAdmissionStoreTests
     }
 
     /// <summary>
+    /// control-server#198 c-1: the admission identity names the demand's own task type. A WIRE_TO_GATE demand whose
+    /// unload carries STAGING_TO_WIRE passes the AREA-end check -- that task type's rule puts its AREA end at the
+    /// unload -- and the machine admits STAGING_TO_WIRE, so until now it was frozen as admitted. Refused before
+    /// anything is written: no operation, no admission snapshot, no outbox row.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AnAdmissionIdentityNamingAnotherTaskTypeThanTheDemandsIsRefused()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        await fixture.Freezes.FreezeAsync(FrozenForwardDemand, 1, 25, 1, Now, Token);
+        await AcceptAsync(fixture, FrozenForwardDemand, TransportTaskTypes.WireToGate);
+        WireToGateStore store = new(fixture.Context);
+
+        Exception? refused = await Record.ExceptionAsync(() => store.PrepareSlotOperationAsync(
+            Plan("ATTEMPT-MISMATCH", FrozenForwardDemand, SlotOperationType.Unload, "N1-1", TransportTaskTypes.StagingToWire),
+            "MESSAGE-MISMATCH",
+            Wire("MESSAGE-MISMATCH", "ATTEMPT-MISMATCH"),
+            Token));
+
+        fixture.Context.ChangeTracker.Clear();
+        int operations = await fixture.Context.StationOperations.CountAsync(Token);
+        int snapshots = await fixture.Context.AdmissionDecisionSnapshots.CountAsync(Token);
+        int outbox = await fixture.Context.ProtocolOutbox.CountAsync(Token);
+        Assert.True(
+            refused is BusinessIdentityConflictException,
+            $"exception: {refused?.GetType().Name ?? "none"}; operations: {operations}; admission snapshots: {snapshots}; outbox rows: {outbox}");
+        Assert.Equal((0, 0, 0), (operations, snapshots, outbox));
+    }
+
+    /// <summary>
     /// The factory rules, map 25 bound for WIRE_TO_GATE and STAGING_TO_WIRE, the reverse demand frozen against
     /// them, and an admission policy that admits both task types at the AREA machine station N1-1. The forward
     /// demand has no freeze, like every demand accepted before control-server#160 wrote one.
@@ -94,6 +128,32 @@ public sealed class AreaEndAdmissionStoreTests
             Token);
         fixture.Context.ChangeTracker.Clear();
         return fixture;
+    }
+
+    /// <summary>An accepted demand row of <paramref name="workType"/>, the one fact the admission identity is checked against.</summary>
+    private static async Task AcceptAsync(TaskTypeStationPersistenceFixture fixture, string demandId, string workType)
+    {
+        fixture.Context.AcceptedDemands.Add(new AcceptedDemandRow
+        {
+            DemandId = demandId,
+            SeriesId = "SERIES-" + demandId,
+            TransportDemandKey = $"SUBLOT-1|{workType}|{demandId}",
+            WorkType = workType,
+            Sublot = "SUBLOT-1",
+            Generation = 1,
+            DemandRevision = 1,
+            HistoryEpoch = "11111111-1111-4111-8111-111111111111",
+            CatalogRevision = 1,
+            CreatedAt = Now,
+            ValueObservedAt = Now,
+            ValuePollTraceId = "TRACE-" + demandId,
+            ValueProjectionCommitId = "COMMIT-" + demandId,
+            LiveMesFieldsJson = "{}",
+            AcceptedAt = Now,
+            Status = DemandExecutionStatus.Accepted,
+        });
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     private static StationOperationPlan Plan(
