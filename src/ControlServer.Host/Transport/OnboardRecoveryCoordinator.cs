@@ -922,6 +922,8 @@ public sealed class OnboardRecoveryCoordinator(
         session.UpdatedAt = timeProvider.GetUtcNow();
         if (workflow.State != RecoveryWorkflowState.Reconciled)
         {
+            // Written before the caller's save: should that transaction roll back, this line names a closing that
+            // did not happen. The store, not the log, is the record.
             LogSessionClosedNotReconciled(
                 logger ?? (ILogger)NullLogger.Instance,
                 session.ExceptionRecoverySessionId, SessionClosedResultNotReconciled, workflow.WorkflowType,
@@ -1049,8 +1051,20 @@ public sealed class OnboardRecoveryCoordinator(
         if (!success)
         {
             workflow.State = RecoveryWorkflowState.RecoveryRequired;
-            await KeepDemandAndJourneyBlockedAsync(workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken)
-                .ConfigureAwait(false);
+            // A session already CLOSED was closed by an earlier result, and the demand and journey have been in the
+            // hands of the next session since (control-server#169): that one may have settled them, and this late
+            // result is a record of its own attempt, not a verdict on theirs. Before #169 such a session was still
+            // EXECUTING and nothing else could have moved the journey.
+            bool sessionClosed = workflow.ExceptionRecoverySessionId is not null &&
+                                 await dbContext.ExceptionRecoverySessions.AnyAsync(
+                                     row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId &&
+                                            row.State == "CLOSED",
+                                     cancellationToken).ConfigureAwait(false);
+            if (!sessionClosed)
+            {
+                await KeepDemandAndJourneyBlockedAsync(
+                    workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
+            }
             return;
         }
         // A forced mechanical recovery closes the cargo's business, and only that (REQ-0242,
