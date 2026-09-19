@@ -21,15 +21,10 @@ public static class TaskTypeStationConfigurationValidator
 {
     /// <param name="configuration">预置配置的内容。</param>
     /// <param name="runtimeMapId"><c>JourneyRuntime:mapId</c>；预置文件的图必须与它同值。</param>
-    /// <param name="gateScalar">
-    /// 过渡期的 <c>JourneyRuntime:gateStationId／gateStationRiotId</c>；给了就要求 <c>WIRE_TO_GATE</c> 的绑定等于它。
-    /// 批次6-04 删掉标量时传 <c>null</c> 并删掉这条。
-    /// </param>
     /// <returns>全部违规项；为空表示通过。顺序按规则、再按绑定，同一类里按任务类型与站点。</returns>
     public static IReadOnlyList<TaskTypeStationViolation> ValidateStatic(
         TaskTypeStationConfiguration configuration,
-        int runtimeMapId,
-        TransitionalGateStation? gateScalar)
+        int runtimeMapId)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(configuration.Rules);
@@ -45,10 +40,6 @@ public static class TaskTypeStationConfigurationValidator
         ValidateMap(map.MapId, runtimeMapId, violations);
         ValidateBindings(bindings, violations);
         ValidateRequirementCoverage(required, bindings, violations);
-        if (gateScalar is not null)
-        {
-            ValidateGateScalar(bindings, gateScalar, violations);
-        }
         return violations;
     }
 
@@ -262,38 +253,6 @@ public static class TaskTypeStationConfigurationValidator
                 null,
                 Invariant($"{taskType} is in this map's requirement set but has no binding.")));
         }
-    }
-
-    private static void ValidateGateScalar(
-        IReadOnlyList<TaskTypeStationBinding> bindings,
-        TransitionalGateStation gateScalar,
-        List<TaskTypeStationViolation> violations)
-    {
-        TaskTypeStationBinding[] gate =
-        [
-            .. bindings.Where(binding =>
-                string.Equals(binding.TaskType, TransportTaskTypes.WireToGate, StringComparison.Ordinal))
-        ];
-        // More than one WIRE_TO_GATE binding is already BINDING_DUPLICATE; this check only speaks to the single case
-        // and to the missing one.
-        if (gate.Length > 1)
-        {
-            return;
-        }
-        if (gate.Length == 1
-            && gate[0].StationRiotId == gateScalar.StationRiotId
-            && string.Equals(gate[0].StationName, gateScalar.StationName, StringComparison.Ordinal))
-        {
-            return;
-        }
-        string presetSays = gate.Length == 0
-            ? "no WIRE_TO_GATE binding"
-            : Invariant($"WIRE_TO_GATE -> {gate[0].StationName}/{gate[0].StationRiotId}");
-        violations.Add(new(
-            TaskTypeStationReasonCodes.BindingGateScalarMismatch,
-            TransportTaskTypes.WireToGate,
-            gate.Length == 0 ? null : gate[0].StationRiotId,
-            Invariant($"The preset has {presetSays} but JourneyRuntime:gateStationId/gateStationRiotId is {gateScalar.StationName}/{gateScalar.StationRiotId}; the two may not diverge.")));
     }
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);

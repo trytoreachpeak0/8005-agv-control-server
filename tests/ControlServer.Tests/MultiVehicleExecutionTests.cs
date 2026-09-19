@@ -3,6 +3,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Dispatch;
@@ -833,7 +834,7 @@ public sealed class MultiVehicleExecutionTests
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot("epoch-1", 1, [candidate]),
                 new RiotMapStationCatalogSnapshot(25, Now, new string('a', 64), []),
-                new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
+                new SingleStationView(new RiotMapStation(210, "关卡")),
                 new HashSet<string>(StringComparer.Ordinal),
                 Now,
                 policy),
@@ -923,9 +924,11 @@ public sealed class MultiVehicleExecutionTests
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            ControlServerDbContext context = new(
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
+            DbContextOptions<ControlServerDbContext> dbOptions =
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
+            ControlServerDbContext context = new(dbOptions);
             await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);
             JourneyRuntimeOptions options = FleetOptions(budgetMilliseconds);
             configure?.Invoke(options);
             FleetFixture fixture = new(connection, context, options, new MovableClock(Now));
@@ -1063,7 +1066,8 @@ public sealed class MultiVehicleExecutionTests
                 Riot,
                 Riot,
                 new MapStationResolver(),
-                new ConfiguredGateStationResolver(new MapStationResolver(), options),
+                new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
+                TaskTypeStationRuntimeSeed.Access(Context),
                 new JourneyIntakeCoordinator(
                     new DemandIntakeService(Catalog, new RecordingAcceptances(store, AcceptedPlans)),
                     movement),
@@ -1274,8 +1278,6 @@ public sealed class MultiVehicleExecutionTests
             AgvLifecycleGeneration = 1,
             MapId = 25,
             MapIdentity = "MAP-25",
-            GateStationId = "关卡",
-            GateStationRiotId = 210,
             DispatchZone = "MAP-25-WIRE_TO_GATE",
             DispatchGeneration = 1,
             MinimumBatteryPercent = 40,

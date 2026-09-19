@@ -10,6 +10,7 @@ using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Adapters;
 using ControlServer.Infrastructure.Persistence;
@@ -90,6 +91,9 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         private DbContextOptions<ControlServerDbContext> DbOptions { get; }
 
+        /// <summary>The same options, for a test that writes configuration from a scope of its own.</summary>
+        public DbContextOptions<ControlServerDbContext> DbOptionsForTests => DbOptions;
+
         public ControlServerDbContext Context { get; }
         public RecordingCatalog Catalog { get; }
         public RecordingBoxCounts BoxCounts { get; }
@@ -163,6 +167,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 await fixture.BindApprovedSlotModelAsync();
             }
 
+            await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);
             await fixture.SeedRecoveredPeerAsync();
             await fixture.ImportAreaAssignmentsAsync(
                 [.. DefaultAssignedAreas.Select(area => new AreaAssignment(area, options.DispatchZone, "FRONT"))]);
@@ -426,8 +431,8 @@ internal static class JourneyRuntimeWorkerTestKit
         public async Task<JourneyRuntimeRow> RunToGateUnloadAsync()
         {
             await AdvanceToGateArrivalAsync();
-            Riot.SetSuccessfulArrival("TO_GATE", Options.GateStationRiotId);
-            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = Options.GateStationRiotId };
+            Riot.SetSuccessfulArrival("TO_GATE", TaskTypeStationRuntimeSeed.GateStationRiotId);
+            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             return await RuntimeAsync();
         }
@@ -907,7 +912,8 @@ internal static class JourneyRuntimeWorkerTestKit
                 Riot,
                 Riot,
                 new MapStationResolver(),
-                new ConfiguredGateStationResolver(new MapStationResolver(), options),
+                new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
+                TaskTypeStationRuntimeSeed.Access(Context),
                 intake,
                 new MovementDispatchService(store, Riot),
                 store,
@@ -1232,8 +1238,6 @@ internal static class JourneyRuntimeWorkerTestKit
             AgvLifecycleGeneration = 1,
             MapId = 25,
             MapIdentity = "MAP-25",
-            GateStationId = "关卡",
-            GateStationRiotId = 210,
             DispatchZone = "MAP-25-WIRE_TO_GATE",
             DispatchGeneration = 1,
             MinimumBatteryPercent = 40,
@@ -1438,11 +1442,19 @@ internal static class JourneyRuntimeWorkerTestKit
 
         public void SetMapStations(params RiotMapStation[] stations) => _mapStations = stations;
 
+        /// <summary>When set, the next Map/Station catalog read throws it instead of answering, once.</summary>
+        public Exception? FailNextMapRead { get; set; }
+
         public Task<RiotMapStationCatalogSnapshot> ReadMapStationsAsync(
             int mapId,
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            if (FailNextMapRead is { } failure)
+            {
+                FailNextMapRead = null;
+                return Task.FromException<RiotMapStationCatalogSnapshot>(failure);
+            }
             return Task.FromResult(new RiotMapStationCatalogSnapshot(
                 mapId,
                 _clock.GetUtcNow(),

@@ -1,0 +1,64 @@
+# control-server#161 fault injection D3 on 52a351c0: remark-unknown-without-dedupe
+# Injected into the implementation of 52a351c0, run with --filter FullyQualifiedName~TaskTypeStationActivationTests, then reverted.
+# ===== injected diff =====
+--- a/src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs
+@@ -178,7 +178,7 @@
+             pointer.UpdatedAt = at;
+ 
+             List<TaskTypeStationHoldRow> open = await OpenAttemptHoldsAsync(attempt.MapId, attempt.AttemptId, cancellationToken);
+-            HashSet<string> held = new(open.Select(row => row.TaskType), StringComparer.Ordinal);
++            HashSet<string> held = new(StringComparer.Ordinal);
+             foreach (string taskType in attempt.HeldTaskTypes.Where(taskType => !held.Contains(taskType)))
+             {
+                 open.Add(AddUnknownHold(attempt, taskType, at));
+# ===== dotnet test output =====
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:15.49]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased [11 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 1
+           ↓ (pos 0)
+Expected: "WIRE_TO_GATE"
+Actual:   "STAGING_TO_WIRE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.<>c__DisplayClass15_0.<<ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased>g__AssertOneOpenActivationHoldPerTaskTypeAsync|0>d.MoveNext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 460
+--- End of stack trace from previous location ---
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 484
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 502
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:32.57]     ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld [945 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 1
+           ↓ (pos 0)
+Expected: "WIRE_TO_GATE"
+Actual:   "STAGING_TO_WIRE"
+           ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 108
+   at ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 116
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:    24, Skipped:     0, Total:    26, Duration: 42 s - ControlServer.Tests.dll (net8.0)
+exit=1
