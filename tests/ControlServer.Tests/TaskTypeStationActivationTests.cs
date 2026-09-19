@@ -1186,6 +1186,34 @@ public sealed class TaskTypeStationActivationTests
     }
 
     /// <summary>
+    /// cs#191 对照：一张从未激活过的图（没有指针行）、需求集为空，第一次激活在两步之间中断。没有暂停记着它的来历，分不清先前是墓碑
+    /// 还是「从未激活」，按墓碑处理（fail-safe）：对账后留墓碑，重启不装预置。这是有意的取舍——代价是这张图要等一次 FieldOps 激活。
+    /// </summary>
+    [Fact]
+    public async Task AnInterruptedFirstActivationOfAnEmptyRequirementSetIsTakenAsFromATombstoneAndARestartKeepsThePresetOut()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        RiotMapStationCatalogSnapshot map26 = TaskTypeStationCatalogEvidence.Supplied(
+            26, TaskTypeStationActivationHarness.CatalogStations, TaskTypeStationActivationHarness.Now);
+        await harness.ConfirmCatalogAsync(map26, TaskTypeStationActivationHarness.Now.AddSeconds(-30));
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying))
+            .ActivateAsync(new TaskTypeStationCandidate(26, 1, [], []), catalog: map26);
+        Assert.StartsWith("25|1|ACTIVE|<null>\n26|<null>|ACTIVATION_UNKNOWN|", await harness.PointerRowAsync(), StringComparison.Ordinal);
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            26, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled.Conclusion);
+        Assert.Equal("25|1|ACTIVE|<null>\n26|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+
+        await RestartWithPresetAsync(harness, 26);
+
+        Assert.Equal("25|1|ACTIVE|<null>\n26|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+        Assert.Null(await harness.Default().Bindings.ReadActiveAsync(26, Token));
+    }
+
+    /// <summary>
     /// 同一台重新起的服务端：在 <paramref name="harness"/> 的库文件上，带一份把 <c>WIRE_TO_GATE</c> 绑到 210 的预置，跑一遍启动装载。
     /// 返回启动写的每一行日志。
     /// </summary>
