@@ -151,6 +151,25 @@ Get-Content .\SHA256SUMS.txt | ForEach-Object {
 `blocked-journey-escalation.settings.json` 里，不在 `appsettings.json`。卸载时把同样的任务名与安装目录传给
 `Uninstall-ControlServerLocal.ps1` 的 `-DashboardTaskName`／`-DashboardInstallRoot`；不传则不动看板。
 
+**看板「暂停」与同机判定（control-server#162、#201）。** 看板上的「暂停」按钮经服务端 `POST /api/task-type-holds`
+按 `Map + TASK_TYPE` 立即收紧。这个入口不设凭据，**只收本机来源**：回环，或等于这条连接到达的本机地址（服务端绑在
+`-HealthBindAddress` 的厂区网卡地址上时，看板转过来的请求就从这个地址来）。判定看的是 **TCP 对端地址**，所以：
+
+- **服务端不能与本机上的端口转发共存。**`netsh interface portproxy`、反向代理、把外部连接转进来的 SSH 隧道（`ssh -R`
+  之类）都会让外部来的请求在服务端看来是本机发出的，于是被当成本机受理。维护管理员用
+  `ssh -L 58009:127.0.0.1:58009 <服务器>` 连**看板**端口是既定用法，不在此列：暂停请求由看板进程自己发出。
+- **WinNAT 回流是否改写源地址：未核实。**若回流把源地址改写成本机地址，效果与端口转发相同。
+- 非本机来源的请求在读请求体之前就被拒（403），审计只记地址与结果；本机来源的请求体最多读 16 KiB，超过按既有的
+  422 形状拒收（`REQUEST_BODY_TOO_LARGE`）。
+
+暂停的解除不在看板上，只在 FieldOps（`tools/ControlServer.FieldOps`）。两种情形要多走一步：
+
+- **站点删除或换 id 造成的暂停，要两步才解得开**：先 `activate-task-type-stations` 激活新版本（绑到新站），再
+  `release-task-type-station-hold` 解除暂停。
+- **地图被人工收尾（墓碑）时看板仍能下暂停，但要等下一次激活之后才能解除**：`close-task-type-station-activation`
+  之后地图没有生效版本，`release-task-type-station-hold` 解不掉那期间下的人工暂停；下一次
+  `activate-task-type-stations`（或 `rollback-task-type-stations`）生效之后再解除。
+
 ### 4.3 隔离安装（不影响已有部署）
 
 全部路径、服务名与端口都是参数，默认值即生产值。要在同一台机器上验证一个与生产部署完全隔离的

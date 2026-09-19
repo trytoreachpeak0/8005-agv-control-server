@@ -88,9 +88,11 @@ param(
 
     # Which batch's exit this run is evidence for. Specification 8.4 asks assertions.json to be
     # able to answer "whose exit evidence is this", and nothing in the repository can derive it:
-    # a batch is a plan, not a property of the code. It is a parameter with a default rather than
-    # a constant so that CI states it explicitly and a later batch changes one argument.
-    [string]$BatchId = 'batch-2'
+    # a batch is a plan, not a property of the code. It is a parameter rather than a constant so
+    # that CI states it explicitly and a later batch changes one argument. Left out, the evidence
+    # says so: the default is 'unspecified', never a batch that looks real (control-server#201 --
+    # the old default 'batch-2' labelled every local run of every later batch as batch 2's).
+    [string]$BatchId = 'unspecified'
 )
 
 $ErrorActionPreference = 'Stop'

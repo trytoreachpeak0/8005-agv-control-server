@@ -1,0 +1,35 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:14.26]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext [8 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+           ↓ (pos 0)
+Expected: "ec5c7cc5fb764bd394add9d53d96bcde|CS200_NEXT"
+Actual:   "0c32fef4a87143a18dc14545483ef600|CS200_REFUSED"
+           ↑ (pos 0)
+  Stack Trace:
+[xUnit.net 00:00:15.44]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked [1 s]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+             ↓ (pos 0)
+Collection: [BusinessAuditRecordRow {AuditRecordId: 7248f170dc1b4de490e9489edf3a6143} Added]
+  Stack Trace:
+[xUnit.net 00:00:16.20]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext [757 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+           ↓ (pos 0)
+Expected: "f6c1b881bc9646d483c9fad6105bf8af|CS200_NEXT"
+Actual:   "c1ae8ee31668418987c8254c2af574a8|CS200_REFUSED"
+           ↑ (pos 0)
+  Stack Trace:
+Results File: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\evidence\l1\20260920-cs200-red-d-31d5322f\red.trx
+
+Failed!  - Failed:     3, Passed:     0, Skipped:     0, Total:     3, Duration: 10 s - ControlServer.Tests.dll (net8.0)

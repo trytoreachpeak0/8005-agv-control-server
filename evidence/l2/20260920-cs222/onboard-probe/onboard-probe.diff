@@ -1,0 +1,143 @@
+diff --git a/tests/SQCD.Agv.WireToGateG2Tests/WireToGateG2Tests.cs b/tests/SQCD.Agv.WireToGateG2Tests/WireToGateG2Tests.cs
+index 6f7b7f2..34d948d 100644
+--- a/tests/SQCD.Agv.WireToGateG2Tests/WireToGateG2Tests.cs
++++ b/tests/SQCD.Agv.WireToGateG2Tests/WireToGateG2Tests.cs
+@@ -1287,7 +1287,7 @@ public sealed class WireToGateG2Tests
+         }
+ 
+         int unlocksBeforeRestart = io.UnlockCount;
+-        server.SendSlotOperationCommandAfterRecovery = false;
++        server.SendSlotOperationCommandAfterRecovery = true;
+         server.SimulateOnboardProcessRestart();
+         await using (WireToGateSessionService session = NewSession())
+         await using (WireToGateBusinessService business = NewBusiness(session))
+@@ -2618,6 +2618,111 @@ public sealed class WireToGateG2Tests
+             .Where(item => item.MessageType == "OnboardAlarmSnapshot")
+             .Select(item => WireToGateProtocolSerializer.DeserializeAndValidate(item.WireLine, "AGV-8005-01").Payload)];
+ 
++    [Fact]
++    public async Task Cs222ProbeResumeEntryAfterInterruptedSettlement()
++    {
++        const string operatorVariable = "W2G_G2_CS222_OPERATOR";
++        const string proofVariable = "W2G_G2_CS222_PROOF";
++        Environment.SetEnvironmentVariable(operatorVariable, "maintenance-222");
++        Environment.SetEnvironmentVariable(proofVariable, "proof-222");
++        CancellationToken testToken = TestContext.Current.CancellationToken;
++        await using FakeControlServer server = new(IPAddress.Loopback)
++        {
++            SendReadinessAfterRecoveryAck = true,
++            SendSlotOperationCommandAfterRecovery = true
++        };
++        FakeIoModuleClient io = new() { OperatorNeverActs = true };
++        NullLogger logger = new();
++        string journalPath = NewJournalPath();
++
++        WireToGateSessionService NewSession() => new(
++            CreateSessionOptions(server),
++            io,
++            new SqliteWireToGateJournal(journalPath),
++            logger,
++            new SystemClock(),
++            new DelegateVehicleSafetySignalProvider(() => true),
++            new OnboardAlarmBoard("AGV-8005-01", TimeProvider.System),
++            new SlotConfigurationActivationCoordinator(
++                new DocumentActiveSlotConfigurationStore(
++                    new G2SlotConfigurationFixtures.InMemoryAtomicDocument(),
++                    G2SlotConfigurationFixtures.Approved()),
++                TimeProvider.System),
++            TimeSpan.FromSeconds(30),
++            TimeSpan.FromSeconds(5),
++            TimeSpan.FromMilliseconds(500));
++        WireToGateBusinessService NewBusiness(WireToGateSessionService session) => new(
++            session,
++            io,
++            logger,
++            new SystemClock(),
++            () => true,
++            new WireToGateSlotOperationExecutorOptions(
++                TimeSpan.FromSeconds(1),
++                TimeSpan.FromSeconds(1),
++                TimeSpan.FromMinutes(5),
++                TimeSpan.FromMilliseconds(10),
++                TimeSpan.FromSeconds(30)),
++            operatorVariable,
++            recoveryOptions: new WireToGateRecoveryOptions(
++                true,
++                proofVariable,
++                "MAINTENANCE_ADMINISTRATOR",
++                "CONFIGURED_PROOF"));
++
++        await using (WireToGateSessionService session = NewSession())
++        {
++            WireToGateBusinessService business = NewBusiness(session);
++            business.Start();
++            await session.Client.ConnectAndRecoverAsync(testToken);
++            await WaitUntilAsync(
++                () => server.ReceivedEnvelopes.Any(item =>
++                    item.MessageType == "OperationProgress"
++                    && item.WireLine.Contains("WAITING_OPERATOR", StringComparison.Ordinal)),
++                testToken);
++            await business.DisposeAsync();
++        }
++
++        server.SendSlotOperationCommandAfterRecovery = true;
++        server.SimulateOnboardProcessRestart();
++        io.CloseDoor(0, cargo: false);
++        server.ForceRecoveryRequiredReadiness = true;
++
++        List<string> events = [];
++        WireToGateHmiOperationSnapshot? viewModelOperation = null;
++        await using (WireToGateSessionService session = NewSession())
++        await using (WireToGateBusinessService business = NewBusiness(session))
++        {
++            business.OperatorEventPublished += (_, args) =>
++            {
++                lock (events)
++                {
++                    events.Add($"{args.Value.Kind} stage={args.Value.Operation?.Stage.ToString() ?? "-"} canResume={business.CanRequestResumeAfterRepair} canCompensate={business.CanRequestLoadCompensation} readiness={session.Current.Readiness}");
++                    if (args.Value.Operation is not null)
++                    {
++                        viewModelOperation = args.Value.Operation.Stage == WireToGateHmiOperationStage.Completed ? null : args.Value.Operation;
++                    }
++                }
++            };
++            business.Start();
++            await session.Client.ConnectAndRecoverAsync(testToken);
++            await WaitUntilAsync(
++                () => server.ReceivedEnvelopes.Any(item => item.MessageType == "OperationResult"),
++                testToken);
++            await Task.Delay(3000, testToken);
++            string dump;
++            lock (events)
++            {
++                dump = string.Join("\n", events)
++                    + $"\nFINAL canResume={business.CanRequestResumeAfterRepair} canCompensate={business.CanRequestLoadCompensation}"
++                    + $" readiness={session.Current.Readiness} connected={session.Current.Connected}"
++                    + $" businessOp={business.CurrentOperationSnapshot?.Stage.ToString() ?? "null"}"
++                    + $" vmOp={viewModelOperation?.Stage.ToString() ?? "null"}";
++            }
++            Assert.Fail(dump);
++        }
++    }
++
+     /// <summary>
+     /// An operation whose process died while the slot stood unlocked is settled from the live IO on
+     /// the next session, and its result travels the pending-result path.
+@@ -2702,7 +2807,7 @@ public sealed class WireToGateG2Tests
+ 
+         Assert.DoesNotContain(server.ReceivedEnvelopes, item => item.MessageType == "OperationResult");
+         int unlocksBeforeRestart = io.UnlockCount;
+-        server.SendSlotOperationCommandAfterRecovery = false;
++        server.SendSlotOperationCommandAfterRecovery = true;
+         server.SimulateOnboardProcessRestart();
+         // The operator shut the door while nothing was running, and put nothing in.
+         io.CloseDoor(0, cargo: false);
+@@ -2845,7 +2950,7 @@ public sealed class WireToGateG2Tests
+             await business.DisposeAsync();
+         }
+ 
+-        server.SendSlotOperationCommandAfterRecovery = false;
++        server.SendSlotOperationCommandAfterRecovery = true;
+         server.SimulateOnboardProcessRestart();
+         // The basket went in and the door was shut while nothing was running.
+         io.CloseDoor(0, cargo: true);

@@ -153,7 +153,7 @@ function Invoke-L2LanePlan {
                 # -EvidenceRoot must not exist; the run number keeps a scenario's consecutive runs apart.
                 $evidence = Join-Path $using:EvidenceRoot "$($item.Name)-$('{0:d2}' -f $run)"
                 $log = "$evidence.log"
-                $batch = if ($item.PSObject.Properties['BatchId'] -and $item.BatchId) { $item.BatchId } else { 'batch-2' }
+                $batch = if ($item.PSObject.Properties['BatchId'] -and $item.BatchId) { $item.BatchId } else { 'unspecified' }
                 Write-Host "L2 lane $($lane.Lane) (slot $($lane.Slot)) start: $label"
                 $started = [Diagnostics.Stopwatch]::StartNew()
                 & pwsh -NoProfile -File $using:Orchestrator -Scenario $item.Name -EvidenceRoot $evidence `

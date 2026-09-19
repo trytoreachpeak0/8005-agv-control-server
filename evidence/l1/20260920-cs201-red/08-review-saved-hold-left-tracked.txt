@@ -1,0 +1,8 @@
+  Failed ControlServer.Tests.CatalogBindingHoldEngineHookTests.AFailureAfterTheHoldWasSavedLeavesNothingOfTheAttemptTrackedAndTheNextRoundConverges [613 ms]
+  Error Message:
+   Assert.DoesNotContain() Failure: Filter matched in collection
+                                                                                                                                                 ↓ (pos 4)
+Collection: [···, ProtocolInboxRow {MessageId: 19779216-f6da-4791-8159-034c75dbda89} Unchanged, MapStationCatalogStateRow {MapId: 25} Unchanged, TaskTypeStationHoldRow {HoldId: 2ed020a8eb284618940ce62325d5fafa} Unchanged, AdmissionPolicyStateRow {Id: 1} Unchanged, StationTaskTypeAdmissionRow {StationId: N1-1, TaskType: STAGING_TO_WIRE} Unchanged, ···]
+  Stack Trace:
+--
+Failed!  - Failed:     1, Passed:     4, Skipped:     0, Total:     5, Duration: 12 s - ControlServer.Tests.dll (net8.0)

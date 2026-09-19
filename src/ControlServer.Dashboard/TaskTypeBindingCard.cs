@@ -41,14 +41,14 @@ public sealed class TaskTypeBindingCard : IDashboardCard
                 && version.ValueKind == JsonValueKind.Number
                     ? version.ToString()
                     : "无";
-            string pointerState = map.TryGetProperty("activationState", out JsonElement state)
+            string? pointerState = map.TryGetProperty("activationState", out JsonElement state)
                 && state.ValueKind == JsonValueKind.String
-                    ? state.GetString()!
-                    : "无";
+                    ? state.GetString()
+                    : null;
             html.Append(CultureInfo.InvariantCulture, $"<h3>Map {WebUtility.HtmlEncode(mapId)}，生效绑定集版本 ")
                 .Append(WebUtility.HtmlEncode(activeVersion))
-                .Append("，生效指针 ")
-                .Append(WebUtility.HtmlEncode(pointerState))
+                .Append("，生效指针：")
+                .Append(WebUtility.HtmlEncode(PointerState(pointerState)))
                 .Append("</h3>");
             html.Append("<table><tr><th>任务类型</th><th>需求集合</th><th>绑定站点</th><th>状态</th><th>暂停</th><th></th></tr>");
             foreach (JsonElement row in map.GetProperty("taskTypes").EnumerateArray())
@@ -75,6 +75,19 @@ public sealed class TaskTypeBindingCard : IDashboardCard
         row.TryGetProperty("stationRiotId", out JsonElement id) && id.ValueKind == JsonValueKind.Number
             ? $"{id.GetInt32().ToString(CultureInfo.InvariantCulture)} {DashboardPageRenderer.Text(row, "stationName")}"
             : "无";
+
+    /// <summary>
+    /// 生效指针的中文说明，码值附在后面以便对照。<c>CLOSED_MANUALLY</c> 不预设来历：人工收尾会留下它，一次无暂停可还原的
+    /// 结果未知尝试对账之后也会回到它（control-server#191、#200）。措辞避开看板源码的禁用词（<c>DashboardSkeletonTests</c>）。
+    /// </summary>
+    private static string PointerState(string? state) => state switch
+    {
+        null => "无（该图还没有过生效版本）",
+        "ACTIVE" => "生效（ACTIVE）",
+        "ACTIVATION_UNKNOWN" => "换版结果未知，等待对账（ACTIVATION_UNKNOWN）",
+        "CLOSED_MANUALLY" => "无生效版本，已收尾，等 FieldOps 换上新的一版（CLOSED_MANUALLY）",
+        _ => state
+    };
 
     private static string Status(string status) => status switch
     {

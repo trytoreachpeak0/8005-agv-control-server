@@ -110,7 +110,12 @@ public sealed class TaskTypeBindingDashboardTests
         using JsonDocument card = JsonDocument.Parse("{\"maps\":[" + map.GetRawText() + "]}");
         string html = new TaskTypeBindingCard().RenderFact(card.RootElement);
         Assert.Contains("无生效绑定集", html, StringComparison.Ordinal);
+        // control-server#200 b: a tombstone is also what an unknown attempt with no hold to restore reconciles back to, when
+        // nobody closed anything by hand. The card says what the pointer means, not how it got there; the code stays beside it.
+        // (Not "等待下一次激活": the dashboard source may not carry 激活 or 回滚, DashboardSkeletonTests.)
+        Assert.Contains("生效指针：无生效版本，已收尾，等 FieldOps 换上新的一版", html, StringComparison.Ordinal);
         Assert.Contains(TaskTypeStationActivationState.ClosedManually, html, StringComparison.Ordinal);
+        Assert.DoesNotContain("人工收尾", html, StringComparison.Ordinal);
     }
 
     [Fact]

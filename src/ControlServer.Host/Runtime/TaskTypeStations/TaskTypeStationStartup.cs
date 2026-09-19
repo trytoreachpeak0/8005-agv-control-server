@@ -198,7 +198,7 @@ public static class TaskTypeStationStartup
         pointer.State switch
         {
             TaskTypeStationActivationState.ClosedManually =>
-                "it was closed manually and has no active version, and stays without one",
+                "it has no active version since an activation was closed (by hand, or by a reconciliation of an attempt with no hold to restore), and stays without one",
             TaskTypeStationActivationState.ActivationUnknown => pointer.ActiveVersion is long active
                 ? FormattableString.Invariant($"binding set version {active} stays as it is while an activation of version {pointer.PendingVersion} has an unknown result, until reconcile-task-type-stations concludes it")
                 : FormattableString.Invariant($"it has no active version while an activation of version {pointer.PendingVersion} has an unknown result, until reconcile-task-type-stations concludes it"),

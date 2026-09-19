@@ -1,0 +1,10 @@
+  Failed ControlServer.Tests.CatalogBindingHoldEngineHookTests.AConvergenceFailingOnABusyDatabaseDoesNotStopTheRoundAndTheHoldLandsOnTheNextOne [2 s]
+  Error Message:
+   Microsoft.EntityFrameworkCore.DbUpdateException : An error occurred while saving the entity changes. See the inner exception for details.
+---- Microsoft.Data.Sqlite.SqliteException : database is locked
+  Stack Trace:
+--
+   at ControlServer.Host.Runtime.JourneyRuntimeEngine.ExecuteOnceAsync(CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-201-8005-agv-control-server\src\ControlServer.Host\Runtime\JourneyRuntimeEngine.cs:line 193
+   at ControlServer.Tests.CatalogBindingHoldEngineHookTests.AConvergenceFailingOnABusyDatabaseDoesNotStopTheRoundAndTheHoldLandsOnTheNextOne() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-201-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldEngineHookTests.cs:line 70
+--
+Failed!  - Failed:     1, Passed:     3, Skipped:     0, Total:     4, Duration: 8 s - ControlServer.Tests.dll (net8.0)

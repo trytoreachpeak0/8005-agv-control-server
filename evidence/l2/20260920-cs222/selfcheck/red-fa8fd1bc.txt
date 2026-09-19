@@ -1,0 +1,50 @@
+area-assignment-import-rejects.ps1                           ok
+area-assignment-unmapped-silent.ps1                          ok
+area-assignment-version-freeze.ps1                           ok
+blocked-journey-dashboard-projection.ps1                     ok
+command-surface-order-hold.ps1                               ok
+create-gate-unapproved.ps1                                   ok
+create-gate.ps1                                              ok
+emergency-stop-operator-release.ps1                          ok
+emergency-stop-single-trigger.ps1                            ok
+g3-exception-compensate.ps1                                  ok
+g3-exception-resume.ps1                                      ok
+g3-fault-cargo-handoff.ps1                                   ok
+g3-forced-mechanical-recovery.ps1                            ok
+g3-journey-demand-to-pickup.ps1                              ok
+g3-load-cancellation-before-load.ps1                         ok
+g3-load-cancellation.ps1                                     ok
+g3-manual-charging-return.ps1                                ok
+g3-operation-result-unknown-reconcile.ps1                    ok
+g3-pickup-load-and-correction.ps1                            ok
+g3-predeparture-check-expires.ps1                            ok
+g3-sublot-rejected.ps1                                       ok
+load-cancelled-before-sublot.ps1                             ok
+load-command-never-answered.ps1                              ok
+load-determinate-failure-and-door-open-timeout.ps1           ok
+load-result-requires-recovery.ps1                            ok
+mixed-side-station-two-trips.ps1                             ok
+normal-load.ps1                                              ok
+onboard-alarm-snapshot-dashboard.ps1                         ok
+real-onboard-clock-skew.ps1                                  ok
+real-onboard-load-door-closed-empty-reopens.ps1              ok
+real-onboard-normal-load.ps1                                 ok
+real-onboard-recovery-entry-missing.ps1                      ok
+real-onboard-restart-with-open-recovery-session.ps1          3 stale use(s)
+real-onboard-station-timeout-door-open.ps1                   ok
+real-onboard-unload-not-emptied.ps1                          ok
+route-graph-engine.ps1                                       ok
+route-graph-staleness.ps1                                    ok
+session-established-while-moving.ps1                         ok
+slot-configuration-activation-replay.ps1                     ok
+slot-group-disabled-no-alert.ps1                             ok
+slot-group-selection.ps1                                     ok
+slot-group-temporarily-full.ps1                              ok
+station-deadline-sublot-timeout.ps1                          ok
+structural-block-oversized-demand.ps1                        ok
+sublot-rejected-after-entry.ps1                              ok
+three-synthetic-peers.ps1                                    ok
+three-vehicle-exit.ps1                                       ok
+STALE ONBOARD HANDLE: real-onboard-restart-with-open-recovery-session.ps1:150 uses $onboard after the restart at line 136 without re-reading $Context.Onboard
+STALE ONBOARD HANDLE: real-onboard-restart-with-open-recovery-session.ps1:156 uses $onboard after the restart at line 136 without re-reading $Context.Onboard
+STALE ONBOARD HANDLE: real-onboard-restart-with-open-recovery-session.ps1:175 uses $onboard after the restart at line 136 without re-reading $Context.Onboard
