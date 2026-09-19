@@ -65,6 +65,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["Batch6MigrationDisciplineTests"] = "cross-cutting migration guard for batch 6's one migration (control-server#159); hanging it off a slice would defer the guard with the slice",
             ["BlockedJourneyDashboardTests"] = "batch 5 control-server#80 blocked-journey start time and dashboard card; server and dashboard only, the dashboard is disjoint from the protocol and nothing is pushed (REQ-0270)",
             ["CatalogBindingChangeClassifierTests"] = "batch 6 FP-C9a REQ-0341/REQ-0342 catalog change classification by stable station identity (control-server#162); server-internal, no wire message",
+            ["CatalogBindingHoldEngineHookTests"] = "batch 6 FP-C9a REQ-0342 the engine runs catalog change convergence after each complete catalog confirmation (control-server#162); server-internal, no wire message",
             ["CatalogBindingHoldConvergenceTests"] = "batch 6 FP-C9a REQ-0342/REQ-0345 catalog change holds confined to the affected task type (control-server#162); server-internal, no wire message",
             ["ControlServerSqliteConnectionTests"] = "cross-cutting guard on the one place the server's SQLite connection string is built; the busy timeout two processes share is a policy, not a slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
