@@ -200,6 +200,19 @@ $scenarioAssertions = [ordered]@{
         'G3-10-08' = 'onboardShowsOnlyTheBoundTaskType'
         'G3-10-09' = 'admissionFinalStateNoDuplicateCommit'
     }
+    # Batch 6 (control-server#164): CV-REVERSED-DIRECTION-JOURNEY, a STAGING_TO_WIRE demand bound to a dispatch
+    # staging station and delivered to its AREA machine.
+    'g3-reversed-direction-journey' = [ordered]@{
+        'G3-11-01' = 'reversedPlanRunsFromStagingStationToAreaMachine'
+        'G3-11-02' = 'reversedWorklistStopRolesFollowThePlan'
+        'G3-11-03' = 'reversedSequenceMatchesVector'
+        'G3-11-04' = 'onboardShowsPickupAtTheStagingStation'
+        'G3-11-05' = 'onboardShowsDropoffAtTheAreaMachine'
+        'G3-11-06' = 'loadAtStagingStationUnloadAtAreaMachineOnTheTargetSlots'
+        'G3-11-07' = 'originAndDestinationNeverSwapped'
+        'G3-11-08' = 'admissionFrozenOnTheUnload'
+        'G3-11-09' = 'reversedJourneyFinalStateNoDuplicateCommit'
+    }
 }
 
 function Get-ScriptFunction {

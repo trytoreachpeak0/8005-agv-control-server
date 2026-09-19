@@ -444,6 +444,22 @@ function Get-G3RunnerClaim {
                     'onboardShowsNoTaskTypeBeforeAWorklistItem',
                     'onboardShowsOnlyTheBoundTaskType',
                     'admissionFinalStateNoDuplicateCommit')
+                # CV-REVERSED-DIRECTION-JOURNEY (batch 6, control-server#164): STAGING_TO_WIRE bound to a dispatch
+                # staging station, so the fixed end is the origin and the AREA machine the destination. Server
+                # halves: DERIVE_DIRECTION_FROM_TASK_TYPE_RULE (plan, worklist roles, where each operation ran)
+                # and NEVER_SWAP_ORIGIN_AND_DESTINATION (the journey's two ends, the RIoT orders' destinations);
+                # admissionFrozenOnTheUnload is I6 overturned, the admission riding the leg at the AREA end. The
+                # onboard half, DISPLAY_DIRECTION_AS_PLANNED, is read through UI Automation at both stops.
+                'FP-IS-11' = @(
+                    'reversedPlanRunsFromStagingStationToAreaMachine',
+                    'reversedWorklistStopRolesFollowThePlan',
+                    'reversedSequenceMatchesVector',
+                    'onboardShowsPickupAtTheStagingStation',
+                    'onboardShowsDropoffAtTheAreaMachine',
+                    'loadAtStagingStationUnloadAtAreaMachineOnTheTargetSlots',
+                    'originAndDestinationNeverSwapped',
+                    'admissionFrozenOnTheUnload',
+                    'reversedJourneyFinalStateNoDuplicateCommit')
             }
         }
     }
