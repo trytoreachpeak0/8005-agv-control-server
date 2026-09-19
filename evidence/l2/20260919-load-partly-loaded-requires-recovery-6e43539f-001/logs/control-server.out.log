@@ -1,0 +1,20 @@
+[10:15:46 INF] Onboard NDJSON listener started on 127.0.0.1:58405; transport=plaintext
+[10:15:47 INF] Now listening on: http://127.0.0.1:58407
+[10:15:47 INF] Application started. Press Ctrl+C to shut down.
+[10:15:47 INF] Hosting environment: Production
+[10:15:47 INF] Content root path: C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\bin\Release\net8.0\win-x64
+[10:15:47 INF] HTTP GET /health/live responded 200 in 13.5831 ms
+[10:15:53 INF] HTTP GET /health/ready responded 200 in 25.4108 ms
+[10:16:02 WRN] Onboard connection ended with a protocol or transport error.
+System.IO.IOException: Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host..
+ ---> System.Net.Sockets.SocketException (10054): An existing connection was forcibly closed by the remote host.
+   --- End of inner exception stack trace ---
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.ThrowException(SocketError error, CancellationToken cancellationToken)
+   at System.Net.Sockets.Socket.AwaitableSocketAsyncEventArgs.System.Threading.Tasks.Sources.IValueTaskSource<System.Int32>.GetResult(Int16 token)
+   at System.IO.StreamReader.ReadBufferAsync(CancellationToken cancellationToken)
+   at System.IO.StreamReader.ReadLineAsyncInternal(CancellationToken cancellationToken)
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 101
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 129
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 129
+   at ControlServer.Host.Transport.OnboardTcpServer.HandleClientAsync(TcpClient client, CancellationToken cancellationToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 129
+   at ControlServer.Host.Transport.OnboardTcpServer.ExecuteAsync(CancellationToken stoppingToken) in C:\Users\szy\8005-wt\cs-170\src\ControlServer.Host\Transport\OnboardTcpServer.cs:line 44

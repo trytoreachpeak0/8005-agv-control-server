@@ -1,0 +1,32 @@
+{"at":"2026-09-19T02:14:58.1342391+00:00","note":"L2 run 20260919T021457999Z starting for scenario 'load-partly-loaded-requires-recovery'."}
+{"at":"2026-09-19T02:14:58.4694244+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T02:14:59.1557512+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-19T02:15:29.5513434+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T02:15:29.8096792+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T02:15:40.9813902+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T02:15:43.3882853+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T02:15:47.6800731+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T02:15:50.1165660+00:00","criterion":"onboard-readiness","value":"(null)"}
+{"at":"2026-09-19T02:15:52.8598721+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T02:15:53.4288877+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T02:15:53.4948589+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T02:15:53.6269460+00:00","note":"Environment is up; entering scenario 'load-partly-loaded-requires-recovery'."}
+{"at":"2026-09-19T02:15:53.8902636+00:00","note":"Publishing demand 7d47e75a477a4568ba73cf91bbfa22ad (sublot L2-SUBLOT-20260919T021457999Z, three baskets)."}
+{"at":"2026-09-19T02:15:54.4315917+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-19T02:15:56.0671835+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-609c4b61-3c0d-fc55-b59e-c05a890c3a6e-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-19T02:15:56.0950330+00:00","note":"Vehicle drives to the pickup station and comes to rest."}
+{"at":"2026-09-19T02:15:56.3605481+00:00","criterion":"pending-operation","value":"(null)"}
+{"at":"2026-09-19T02:15:57.9965460+00:00","criterion":"pending-operation","value":"operation:fb458400-b8ba-1f56-8221-f9c37a3f4c0b"}
+{"at":"2026-09-19T02:15:58.0724463+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-19T02:15:58.1265951+00:00","note":"The first two slots took their baskets, the third never did; the peer reports that (operation:fb458400-b8ba-1f56-8221-f9c37a3f4c0b)."}
+{"at":"2026-09-19T02:15:58.2276985+00:00","criterion":"operation-result","value":"(null)"}
+{"at":"2026-09-19T02:15:58.4963587+00:00","criterion":"operation-result","value":"[{\"SlotNumber\":1,\"State\":1,\"DoorLocked\":true,\"UnlockOutputReset\":true},{\"SlotNumber\":2,\"State\":1,\"DoorLocked\":true,\"UnlockOutputReset\":true},{\"SlotNumber\":3,\"State\":0,\"DoorLocked\":true,\"UnlockOutputReset\":true}]"}
+{"at":"2026-09-19T02:15:58.5037774+00:00","criterion":"operation-result-evidence","value":"[{\"SlotNumber\":1,\"State\":1,\"DoorLocked\":true,\"UnlockOutputReset\":true},{\"SlotNumber\":2,\"State\":1,\"DoorLocked\":true,\"UnlockOutputReset\":true},{\"SlotNumber\":3,\"State\":0,\"DoorLocked\":true,\"UnlockOutputReset\":true}]"}
+{"at":"2026-09-19T02:15:58.8216390+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-19T02:15:58.9072155+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-19T02:15:59.7260260+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-19T02:16:00.7948935+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-19T02:16:01.6533448+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-19T02:16:02.7199360+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-19T02:16:02.7335743+00:00","note":"Scenario finished."}
+{"at":"2026-09-19T02:16:53.6943450+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 13 lines, 13 distinct, 8 message types, 0 distinct violations, 0 known; schema compilation 45297 ms."}
