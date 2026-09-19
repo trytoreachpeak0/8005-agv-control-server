@@ -279,7 +279,7 @@ public sealed class TaskTypeStationActivationStore(
             TaskTypeStationActiveReadBack readBack = await ReadBackAsync(mapId, cancellationToken);
             TaskTypeStationReconciliationConclusion conclusion = decide(attempt, readBack);
 
-            List<string> released = [];
+            List<TaskTypeStationHoldRow> released = [];
             if (conclusion != TaskTypeStationReconciliationConclusion.Contradictory)
             {
                 TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(mapId, cancellationToken);
@@ -315,9 +315,11 @@ public sealed class TaskTypeStationActivationStore(
                 released = await ReleaseActivationHoldsAsync(mapId, at, cancellationToken);
                 await _context.SaveChangesAsync(cancellationToken);
             }
-            string auditId = await _audit.WriteBusinessAsync(audit(attempt, readBack, conclusion, released), at, cancellationToken);
+            string auditId = await _audit.WriteBusinessAsync(
+                audit(attempt, readBack, conclusion, HoldIds(released)), at, cancellationToken);
+            await RecordReleaserAsync(released, "fieldops:reconcile:" + auditId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new TaskTypeStationReconciliation(attempt, readBack, conclusion, released, auditId);
+            return new TaskTypeStationReconciliation(attempt, readBack, conclusion, HoldIds(released), auditId);
         }
         catch
         {
@@ -342,7 +344,7 @@ public sealed class TaskTypeStationActivationStore(
             TaskTypeStationActiveReadBack readBack = await ReadBackAsync(mapId, cancellationToken);
             bool close = isContradictory(attempt, readBack);
 
-            List<string> released = [];
+            List<TaskTypeStationHoldRow> released = [];
             if (close)
             {
                 // Neither version reads back whole, so none is claimed to be in force: the map has no active version, and a
@@ -365,9 +367,11 @@ public sealed class TaskTypeStationActivationStore(
                 released = await ReleaseActivationHoldsAsync(mapId, at, cancellationToken);
                 await _context.SaveChangesAsync(cancellationToken);
             }
-            string auditId = await _audit.WriteBusinessAsync(audit(attempt, readBack, close, released), at, cancellationToken);
+            string auditId = await _audit.WriteBusinessAsync(
+                audit(attempt, readBack, close, HoldIds(released)), at, cancellationToken);
+            await RecordReleaserAsync(released, "fieldops:close:" + auditId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return new TaskTypeStationManualClose(attempt, readBack, close, released, auditId);
+            return new TaskTypeStationManualClose(attempt, readBack, close, HoldIds(released), auditId);
         }
         catch
         {
@@ -527,8 +531,14 @@ public sealed class TaskTypeStationActivationStore(
         return [.. rows.Where(row => row.ReleasedAt is null)];
     }
 
-    /// <summary>撤该图全部仍成立的「激活结果未知」暂停，以置下它的那次尝试的名义。</summary>
-    private async Task<List<string>> ReleaseActivationHoldsAsync(int mapId, DateTimeOffset at, CancellationToken cancellationToken)
+    /// <summary>
+    /// 撤该图全部仍成立的「激活结果未知」暂停，只写 <c>ReleasedAt</c>；<c>ReleasedBy</c> 等这次动作的审计写成之后由
+    /// <see cref="RecordReleaserAsync"/> 在同一个事务里填上。
+    /// </summary>
+    private async Task<List<TaskTypeStationHoldRow>> ReleaseActivationHoldsAsync(
+        int mapId,
+        DateTimeOffset at,
+        CancellationToken cancellationToken)
     {
         List<TaskTypeStationHoldRow> open = await _context.Set<TaskTypeStationHoldRow>()
             .Where(row => row.MapId == mapId
@@ -539,10 +549,32 @@ public sealed class TaskTypeStationActivationStore(
         foreach (TaskTypeStationHoldRow row in open)
         {
             row.ReleasedAt = at;
-            row.ReleasedBy = row.RaisedBy;
         }
-        return [.. open.Select(row => row.HoldId).Order(StringComparer.Ordinal)];
+        return open;
     }
+
+    /// <summary>
+    /// 记下是谁撤的：这次对账或收尾，以它那条审计的记录号为名——理由、自报角色与部署身份都在那条审计里。置暂停的那次尝试仍在
+    /// <c>RaisedBy</c>，不动（control-server#191）。
+    /// </summary>
+    private async Task RecordReleaserAsync(
+        List<TaskTypeStationHoldRow> released,
+        string releasedBy,
+        CancellationToken cancellationToken)
+    {
+        if (released.Count == 0)
+        {
+            return;
+        }
+        foreach (TaskTypeStationHoldRow row in released)
+        {
+            row.ReleasedBy = releasedBy;
+        }
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private static List<string> HoldIds(List<TaskTypeStationHoldRow> rows) =>
+        [.. rows.Select(row => row.HoldId).Order(StringComparer.Ordinal)];
 
     private sealed record HoldAttempt(
         string AttemptId,

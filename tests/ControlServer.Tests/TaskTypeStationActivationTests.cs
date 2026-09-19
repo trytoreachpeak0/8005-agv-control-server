@@ -508,14 +508,22 @@ public sealed class TaskTypeStationActivationTests
         Assert.Null(holds.Single(hold => hold.HoldId == manual.HoldId).ReleasedAt);
         Assert.DoesNotContain(holds, hold => hold.ReleasedAt is null
             && hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown);
-        // Every activation hold this attempt ever raised names this attempt, and each release names it too.
-        Assert.All(
-            holds.Where(hold => hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown && hold.HoldId != "foreign-hold"),
-            hold =>
-            {
-                Assert.Contains(unknown.AttemptId, hold.DetailJson, StringComparison.Ordinal);
-                Assert.Equal("fieldops:activation:" + unknown.AttemptId, hold.ReleasedBy);
-            });
+        // Every activation hold this attempt ever raised names this attempt. Each release names whoever released it
+        // (control-server#191): the attempt's own second step for the first two, the reconciliation for the re-raised two.
+        TaskTypeStationHoldRow[] ours = [.. holds.Where(hold =>
+            hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown && hold.HoldId != "foreign-hold")];
+        Assert.Equal(4, ours.Length);
+        Assert.All(ours, hold =>
+        {
+            Assert.Contains(unknown.AttemptId, hold.DetailJson, StringComparison.Ordinal);
+            Assert.Equal("fieldops:activation:" + unknown.AttemptId, hold.RaisedBy);
+            Assert.Equal(
+                first.ReleasedHoldIds.Contains(hold.HoldId)
+                    ? "fieldops:reconcile:" + first.AuditRecordId
+                    : "fieldops:activation:" + unknown.AttemptId,
+                hold.ReleasedBy);
+        });
+        Assert.Equal(2, ours.Count(hold => first.ReleasedHoldIds.Contains(hold.HoldId)));
     }
 
     [Fact]
