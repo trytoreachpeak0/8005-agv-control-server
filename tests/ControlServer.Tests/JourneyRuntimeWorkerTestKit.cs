@@ -91,6 +91,9 @@ internal static class JourneyRuntimeWorkerTestKit
         /// </summary>
         private DbContextOptions<ControlServerDbContext> DbOptions { get; }
 
+        /// <summary>The same options, for a test that writes configuration from a scope of its own.</summary>
+        public DbContextOptions<ControlServerDbContext> DbOptionsForTests => DbOptions;
+
         public ControlServerDbContext Context { get; }
         public RecordingCatalog Catalog { get; }
         public RecordingBoxCounts BoxCounts { get; }

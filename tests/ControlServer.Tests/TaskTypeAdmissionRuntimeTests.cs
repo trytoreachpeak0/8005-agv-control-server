@@ -57,6 +57,63 @@ public sealed class TaskTypeAdmissionRuntimeTests
     }
 
     /// <summary>
+    /// 引擎受理时冻结当时生效的规则版本、绑定集版本与解析出的固定站；之后绑定改了、服务重启了，这条需求仍按冻结的
+    /// 关卡 210 建关卡腿，冻结行不被改写（REQ-0344）。同一需求不会在后续轮次里再被准入、再被冻结一次。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task TheAcceptanceFreezesTheVersionsAndTheStationAndARebindingAndARestartChangeNeither()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(220, "关卡2"),
+            new RiotMapStation(300, "等待点"));
+        TaskTypeStationBindingSetVersion active = (await ActiveBindingsAsync(fixture))!;
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        DemandTaskTypeStationFreeze expected = new(
+            "10000000-0000-4000-8000-000000000001", active.RuleVersion, 25, active.Version, Now);
+        Assert.Equal(expected, await FreezeAsync(fixture));
+        FrozenStationFact dropoff = Assert.Single(
+            await new CatalogAvailabilityStore(fixture.Context).ReadFrozenStationsAsync(expected.DemandId, Token),
+            station => station.Role == FrozenStationRole.Dropoff);
+        Assert.Equal(new FrozenStationFact(FrozenStationRole.Dropoff, 25, 210, "关卡"), dropoff);
+
+        // The binding moves to 220 and the server restarts; the journey goes on to its gate leg.
+        await TaskTypeStationRuntimeSeed.ActivateAsync(
+            fixture.DbOptionsForTests,
+            Now,
+            bindings: [TaskTypeStationRuntimeSeed.GateBinding with { StationRiotId = 220, StationName = "关卡2" }]);
+        Assert.NotEqual(active.Version, (await ActiveBindingsAsync(fixture))!.Version);
+        await fixture.RecreateEngineAsync();
+        JourneyRuntimeRow runtime = await fixture.AdvanceToGateArrivalAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, runtime.Stage);
+        OrderIntentRow gateLeg = await fixture.Context.OrderIntents.AsNoTracking()
+            .SingleAsync(row => row.UpperId == runtime.GateUpperId, Token);
+        Assert.Equal(210, gateLeg.DestinationStationId);
+        Assert.Equal(expected, await FreezeAsync(fixture));
+        Assert.Equal(2, await fixture.Context.Set<ConfigurationConsumerBindingRow>().AsNoTracking()
+            .CountAsync(row => row.ConsumerId == expected.DemandId &&
+                row.ObjectKind != GovernedObjectKind.DispatchZoneAreaAssignment, Token));
+    }
+
+    private static async Task<TaskTypeStationBindingSetVersion?> ActiveBindingsAsync(RuntimeFixture fixture) =>
+        await TaskTypeStationRuntimeSeed.Access(fixture.Context).Bindings.ReadActiveAsync(25, Token);
+
+    private static async Task<DemandTaskTypeStationFreeze?> FreezeAsync(RuntimeFixture fixture)
+    {
+        fixture.Context.ChangeTracker.Clear();
+        return await new DemandTaskTypeStationFreezeStore(fixture.Context)
+            .ReadAsync("10000000-0000-4000-8000-000000000001", Token);
+    }
+
+    /// <summary>
     /// 只有 <c>WIRE_TO_GATE</c> 可执行时，由规则导出的种子与改动前逐项相同：内容哈希不变，既有部署升级后不触发准入策略漂移。
     /// </summary>
     [Fact]
