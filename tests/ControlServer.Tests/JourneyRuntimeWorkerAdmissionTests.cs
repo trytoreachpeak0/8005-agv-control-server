@@ -853,9 +853,11 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
             .ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Equal(0, fixture.Riot.TotalCreateCount);
         // The live map is not an import (ADR-cross-0051): version 1 still binds what it was imported with.
+        // Read for WIRE_TO_GATE alone: since control-server#163 each station is paired with STAGING_TO_WIRE too.
         Assert.Equal(
             ["N1-1", "N1-2_N1-3"],
             await fixture.Context.StationTaskTypeAdmissions.AsNoTracking()
+                .Where(row => row.TaskType == "WIRE_TO_GATE")
                 .Select(row => row.StationId)
                 .OrderBy(stationId => stationId)
                 .ToArrayAsync(TestContext.Current.CancellationToken));
