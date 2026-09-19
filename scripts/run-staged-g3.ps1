@@ -81,7 +81,9 @@ param(
     #     brought up to control-server#187 (one renamed, g3-slice-evidence.ps1 with it). Scripts only; src/ and
     #     tests/ are those of 905ffd1d. All four runners re-run on it (the claim table is shared).
     [string]$ControlServerCommit = '85381ea2a37e46b4c720ff5f1843161ad6deb69d',
-    [string]$OnboardCommit = '44b3aa6e255f0820c3988d3f50f0b4dba1105006',
+    #   $OnboardCommit -> 4d716340: onboard-hmi#133 merged the batch-6 G2 evidence onto w2g/fp-v2-impl, and
+    #     New-ExactClone requires the tip. 44b3aa6e..4d716340 is evidence/ only; the product is that of 44b3aa6e.
+    [string]$OnboardCommit = '4d716340982de4e39339c2151c291efe1a21e1d1',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
