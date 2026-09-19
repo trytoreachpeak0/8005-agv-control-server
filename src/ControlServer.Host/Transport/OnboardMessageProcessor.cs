@@ -150,23 +150,29 @@ public sealed partial class OnboardMessageProcessor(
                 : firstResponse => RebindDurableAckAsync(
                     firstResponse, messageType, messageId, agvId, contentHash, state, cancellationToken))
             .ConfigureAwait(false);
-        bool hasDeferredRecoveryOutbound = OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
-                                           OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
-                                           messageType == "OperationResult" ||
-                                           messageType == "SlotOperationCommandRejected" ||
-                                           messageType == "RecoveryStateReport";
-        if (hasDeferredRecoveryOutbound && state.DeferOutboundUntilResponseWritten)
+        // Never inside the handshake (control-server#202). A reconnecting vehicle resends what the last session left
+        // unacknowledged and reads exactly one answer per line until its recovery report is answered, so a command
+        // or session snapshot sent after one of these answers would be read in place of the next one, and the
+        // vehicle would drop the connection. Nothing is lost by holding them: the recovery report's replay sends every
+        // open recovery command and every unacknowledged session snapshot, rebound to the new session -- including
+        // the CLOSED snapshot of a session a resent refusal or result closed, which the vehicle needs to clear its
+        // own record of it (onboard-hmi#123, #129). Decided here, once, for the deferred send as well; flushing
+        // reads no state of its own.
+        bool triggersRecoverySend = state.HandshakeCompleted &&
+                                    (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
+                                     OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
+                                     messageType == "OperationResult" ||
+                                     messageType == "SlotOperationCommandRejected");
+        bool replaysPendingRecovery = messageType == "RecoveryStateReport";
+        if ((triggersRecoverySend || replaysPendingRecovery) && state.DeferOutboundUntilResponseWritten)
         {
             state.DeferredRecoveryLine = line;
         }
-        else if (OnboardRecoveryCoordinator.IsRecoveryRequest(messageType) ||
-                 OnboardRecoveryCoordinator.IsRecoveryResult(messageType) ||
-                 messageType == "OperationResult" ||
-                 messageType == "SlotOperationCommandRejected")
+        else if (triggersRecoverySend)
         {
             await recoveryCoordinator.SendTriggeredCommandAsync(root, cancellationToken).ConfigureAwait(false);
         }
-        else if (messageType == "RecoveryStateReport")
+        else if (replaysPendingRecovery)
         {
             await recoveryCoordinator.ReplayPendingCommandsAsync(
                 agvId,
@@ -189,6 +195,13 @@ public sealed partial class OnboardMessageProcessor(
     /// as the next answer and break the handshake; and the safety snapshot it just sent is fresh anyway.
     /// The request is appended after this message's own answer, outside the first-response capture, so a
     /// resent message never asks twice.
+    /// </para>
+    /// <para>
+    /// Once per message, by design: one physical action that the vehicle reports as several safety changes -- a door
+    /// closing on an overdue slot comes as about four SafetyStateChanged within a second -- asks for a snapshot after
+    /// each (control-server#167, looked into and kept by the user's decision of 2026-09-19 in control-server#202).
+    /// Merging them is not free: <c>L2-EAO-13</c> of control-server#204 relies on the server asking again after a
+    /// change that follows an answered request.
     /// </para>
     /// <para>
     /// <c>VERSION_GAP</c> with no requested version: the slot states this server holds are those of the
@@ -405,7 +418,8 @@ public sealed partial class OnboardMessageProcessor(
                 return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "SlotOperationCommandRejected":
                 // A refused resume command closes its recovery session (control-server#187); every other
-                // refusal is only acknowledged. The closing snapshot goes out with the triggered sends below.
+                // refusal is only acknowledged. The closing snapshot goes out with the triggered sends below, or, for a
+                // refusal resent inside a reconnect handshake, with the recovery report's replay (control-server#202).
                 await recoveryCoordinator.ObserveCommandRejectedAsync(root, cancellationToken).ConfigureAwait(false);
                 return DurableAck(messageType, messageId, agvId, generation, contentHash);
             case "OperationResult":

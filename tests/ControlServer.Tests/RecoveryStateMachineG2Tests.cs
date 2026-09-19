@@ -4382,10 +4382,10 @@ public sealed class RecoveryStateMachineG2Tests
             long generation = reconnected.SessionGeneration!.Value;
             string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(refusal, generation));
             wire.AddRange(resent);
-            wire.AddRange(await FinishHandshakeAsync(processor, peer, reconnected));
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
 
             Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
-            AssertNothingSentInsideTheHandshake(wire);
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
             string closing = Assert.Single(wire, IsClosedSessionSnapshot);
             Assert.Equal(generation, SessionGenerationOf(closing));
         }
@@ -4433,10 +4433,10 @@ public sealed class RecoveryStateMachineG2Tests
             long generation = reconnected.SessionGeneration!.Value;
             string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(result, generation));
             wire.AddRange(resent);
-            wire.AddRange(await FinishHandshakeAsync(processor, peer, reconnected));
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
 
             Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
-            AssertNothingSentInsideTheHandshake(wire);
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
             string closing = Assert.Single(wire, IsClosedSessionSnapshot);
             Assert.Equal(generation, SessionGenerationOf(closing));
             Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
@@ -4484,10 +4484,10 @@ public sealed class RecoveryStateMachineG2Tests
             string[] answered = await ExchangeAsync(
                 processor, peer, reconnected, InSession(RecoveryAction("RESUME_AFTER_REPAIR"), generation));
             wire.AddRange(answered);
-            wire.AddRange(await FinishHandshakeAsync(processor, peer, reconnected));
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
 
             Assert.Equal(["RecoveryActionAccepted"], answered.Select(MessageType).ToArray());
-            AssertNothingSentInsideTheHandshake(wire);
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
             string command = Assert.Single(wire, line => MessageType(line) == "SlotOperationResumeCommand");
             Assert.Equal(generation, SessionGenerationOf(command));
             Assert.All(
@@ -4532,7 +4532,7 @@ public sealed class RecoveryStateMachineG2Tests
             await ReconnectAsync(processor, peer, reconnected);
             long generation = reconnected.SessionGeneration!.Value;
             await ExchangeAsync(processor, peer, reconnected, InSession(refusal, generation));
-            await FinishHandshakeAsync(processor, peer, reconnected);
+            await FinishHandshakeAsync(processor, peer, reconnected, []);
             string[] again = await ExchangeAsync(processor, peer, reconnected, InSession(refusal, generation));
 
             Assert.Equal(["DurableAck", "ExceptionRecoverySessionSnapshot"], again.Select(MessageType).ToArray());
@@ -4583,9 +4583,9 @@ public sealed class RecoveryStateMachineG2Tests
             long generation = reconnected.SessionGeneration!.Value;
             Assert.True(generation > dropped.SessionGeneration!.Value);
             wire.AddRange(await ExchangeAsync(processor, peer, reconnected, InSession(refusal, generation)));
-            wire.AddRange(await FinishHandshakeAsync(processor, peer, reconnected));
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
 
-            AssertNothingSentInsideTheHandshake(wire);
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
             string closing = Assert.Single(wire, IsClosedSessionSnapshot);
             Assert.Equal(generation, SessionGenerationOf(closing));
         }
@@ -4596,16 +4596,24 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
-    /// Everything the server wrote in a reconnect up to its answer to the recovery report is an answer to the line
-    /// the vehicle had just sent, one per line, and nothing after it is: no recovery command and no recovery session
-    /// snapshot before the handshake's SessionReadiness (control-server#202).
+    /// Everything the server wrote in a reconnect before the recovery report is an answer to the line the vehicle had
+    /// just sent, one per line: no recovery command and no recovery session snapshot while the vehicle reads one
+    /// answer at a time (control-server#202). Where sends wait for the answer to be written, as they do on
+    /// <c>OnboardTcpServer</c>'s connections, the report's own answer -- its DurableAck and SessionReadiness -- also
+    /// comes before anything its replay sends.
     /// </summary>
-    private static void AssertNothingSentInsideTheHandshake(IReadOnlyList<string> wire)
+    private static void AssertNothingSentInsideTheHandshake(
+        IReadOnlyList<string> wire,
+        int reportAt,
+        OnboardConnectionState state)
     {
-        int readiness = wire.Select(MessageType).ToList().IndexOf("SessionReadiness");
-        Assert.True(readiness >= 0, "The handshake was never answered with SessionReadiness.");
-        string[] insideTheHandshake = wire.Take(readiness).Select(MessageType).ToArray();
-        Assert.All(insideTheHandshake, type => Assert.Contains(type, HandshakeAnswers));
+        Assert.All(wire.Take(reportAt).Select(MessageType), type => Assert.Contains(type, HandshakeAnswers));
+        if (state.DeferOutboundUntilResponseWritten)
+        {
+            Assert.Equal(
+                ["DurableAck", "SessionReadiness"],
+                wire.Skip(reportAt).Take(2).Select(MessageType).ToArray());
+        }
     }
 
     private static readonly string[] HandshakeAnswers =
@@ -4679,15 +4687,16 @@ public sealed class RecoveryStateMachineG2Tests
 
     /// <summary>
     /// The rest of the handshake after the resends: capability, safety and alarm snapshots, then the recovery report
-    /// that ends it (WireToGateSessionClient).
+    /// that ends it (WireToGateSessionClient). What goes back is added to <paramref name="wire"/>; returns where the
+    /// recovery report's exchange starts in it.
     /// </summary>
-    private static async Task<string[]> FinishHandshakeAsync(
+    private static async Task<int> FinishHandshakeAsync(
         OnboardMessageProcessor processor,
         RecordingPeer peer,
-        OnboardConnectionState state)
+        OnboardConnectionState state,
+        List<string> wire)
     {
         long generation = state.SessionGeneration!.Value;
-        List<string> wire = [];
         wire.AddRange(await ExchangeAsync(processor, peer, state, InSession(Envelope(
             Guid.NewGuid().ToString("D"),
             "CapabilitySnapshot",
@@ -4712,10 +4721,11 @@ public sealed class RecoveryStateMachineG2Tests
             Guid.NewGuid().ToString("D"),
             "OnboardAlarmSnapshot",
             new { alarmSnapshotRevision = 1, observedAt = Now, alarms = Array.Empty<object>() }), generation)));
+        int reportAt = wire.Count;
         wire.AddRange(await ExchangeAsync(
             processor, peer, state, RecoveryStateReport(generation, unsettledAttemptId: null)));
         Assert.True(state.HandshakeCompleted);
-        return [.. wire];
+        return reportAt;
     }
 
     /// <summary>The same line sent into <paramref name="generation"/>, as a resend after a reconnect is.</summary>
