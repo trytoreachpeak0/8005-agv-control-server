@@ -291,6 +291,36 @@ public sealed class Batch7JourneyAcceptanceTests
         await Batch7JourneyFixture.AcceptAsync(replay, "D-717", "agv-01", "VK-01", Batch7JourneyFixture.Now);
     }
 
+    [Fact]
+    public async Task AnAcceptanceRefusedByThePurposeClaimLeavesNothingStagedForTheNextSaveOnTheSameContext()
+    {
+        // The pattern control-server#198 guards against: a caller that catches the refusal and saves the same context again
+        // -- the engine writes the demand's backlog reason right after intake -- must not commit half an acceptance.
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        fixture.Context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
+        {
+            VehicleKey = "VK-01",
+            Purpose = "TRANSPORT",
+            JourneyId = "journey:D-OTHER",
+            ClaimedAt = Batch7JourneyFixture.Now.AddMinutes(-1)
+        });
+        await fixture.Context.SaveChangesAsync(cancellationToken);
+        await using ControlServerDbContext context = fixture.NewContext();
+
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(() =>
+            Batch7JourneyFixture.AcceptAsync(context, "D-718", "agv-01", "VK-01", Batch7JourneyFixture.Now));
+        await context.SaveChangesAsync(cancellationToken);
+
+        foreach (string table in (string[])
+                 ["AcceptedDemands", "VehicleDispatchLeases", "OrderIntents", "JourneyRuntimes", "JourneyStops",
+                  "JourneyDemands", "VehicleSnapshotRevisions"])
+        {
+            Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, table));
+        }
+        Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaims"));
+    }
+
     private static string Describe(JourneyRuntimeRow row) =>
         $"{row.DemandId} {row.VehicleBusinessRevision}/{row.WorklistRevision}/{row.PlanRevision} "
         + string.Join(
