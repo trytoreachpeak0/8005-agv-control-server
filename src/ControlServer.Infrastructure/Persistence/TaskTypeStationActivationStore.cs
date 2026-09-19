@@ -18,6 +18,9 @@ public sealed class TaskTypeStationActivationStore(
     ITaskTypeStationBindingStore bindings,
     IGovernanceAuditWriter audit) : ITaskTypeStationActivationStore
 {
+    /// <summary>未结尝试的尝试号，当没有任何暂停记着它的来历时（需求集为空的图）。</summary>
+    private const string UnattributedAttemptId = "unattributed";
+
     private readonly ControlServerDbContext _context = context ?? throw new ArgumentNullException(nameof(context));
     private readonly ITaskTypeStationBindingStore _bindings = bindings ?? throw new ArgumentNullException(nameof(bindings));
     private readonly IGovernanceAuditWriter _audit = audit ?? throw new ArgumentNullException(nameof(audit));
@@ -247,9 +250,10 @@ public sealed class TaskTypeStationActivationStore(
         }
 
         // Unknown with nothing held (a map whose requirement set was empty). Neither step touches the active version before
-        // the second step commits, so whatever is active and is not the target is the version from before.
+        // the second step commits, so whatever is active and is not the target is the version from before. Whether the map
+        // was a tombstone before is not known here; the reconciliation assumes it was (control-server#191).
         return new TaskTypeStationActivationAttempt(
-            "unattributed",
+            UnattributedAttemptId,
             mapId,
             pointer.ActiveVersion == target ? null : pointer.ActiveVersion,
             target,
@@ -281,10 +285,13 @@ public sealed class TaskTypeStationActivationStore(
                 TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(mapId, cancellationToken);
                 if (pointer is not null && pointer.ActiveVersion is null
                     && conclusion == TaskTypeStationReconciliationConclusion.PreviousActive
-                    && string.Equals(attempt?.PreviousState, TaskTypeStationActivationState.ClosedManually, StringComparison.Ordinal))
+                    && (string.Equals(attempt?.PreviousState, TaskTypeStationActivationState.ClosedManually, StringComparison.Ordinal)
+                        || string.Equals(attempt?.AttemptId, UnattributedAttemptId, StringComparison.Ordinal)))
                 {
                     // The attempt started from a manual close: back to that tombstone, not to "never activated" -- a restart
-                    // would read the latter as leave to load the preset (review round 2, N1).
+                    // would read the latter as leave to load the preset (review round 2, N1). An attempt with no hold to tell
+                    // where it started from (an empty requirement set) is taken to have started from a tombstone too: better
+                    // a map that waits for an activation than a preset nobody reviewed coming into force (control-server#191).
                     pointer.State = TaskTypeStationActivationState.ClosedManually;
                     pointer.PendingVersion = null;
                     pointer.UpdatedAt = at;
