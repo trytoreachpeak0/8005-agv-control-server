@@ -59,7 +59,7 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         ArgumentNullException.ThrowIfNull(fixedStation);
         if (fixedStation.Station is not { } fixedEnd)
         {
-            throw new ArgumentException("A refused fixed station has no route.", nameof(fixedStation));
+            return JourneyRouteDecision.Refused(fixedStation.RefusalReasonCode!);
         }
 
         if (fixedStation.FixedEnd != FixedStationEnd.Destination)

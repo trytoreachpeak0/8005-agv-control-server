@@ -90,7 +90,7 @@ public sealed record FixedTaskStationResolution
         long? ruleVersion = null,
         long? bindingSetVersion = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
+        ArgumentNullException.ThrowIfNull(taskType);
         ArgumentNullException.ThrowIfNull(station);
         return new(taskType, fixedEnd, station, null, ruleVersion, bindingSetVersion);
     }
@@ -102,7 +102,7 @@ public sealed record FixedTaskStationResolution
         long? ruleVersion = null,
         long? bindingSetVersion = null)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
+        ArgumentNullException.ThrowIfNull(taskType);
         ArgumentException.ThrowIfNullOrWhiteSpace(refusalReasonCode);
         return new(taskType, fixedEnd, null, refusalReasonCode, ruleVersion, bindingSetVersion);
     }

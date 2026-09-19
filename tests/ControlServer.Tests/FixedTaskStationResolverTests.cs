@@ -128,6 +128,9 @@ public sealed class FixedTaskStationResolverTests
             PropertyInfo property = endpoints.GetProperty(end)!;
             Assert.Equal(typeof(RiotMapStation), property.PropertyType);
             Assert.NotNull(property.GetCustomAttribute<RequiredMemberAttribute>());
+            Assert.Contains(
+                typeof(IsExternalInit),
+                property.SetMethod!.ReturnParameter.GetRequiredCustomModifiers());
         }
         Assert.DoesNotContain(
             endpoints.GetConstructors(),
