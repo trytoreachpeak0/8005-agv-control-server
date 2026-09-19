@@ -5,6 +5,7 @@ using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using static ControlServer.Tests.DispatchZoneParameterImportHarness;
 
 namespace ControlServer.Tests;
@@ -149,6 +150,78 @@ public sealed class DispatchZoneParameterFieldOpsTests
             Assert.Equal(attempt == 0 ? ["OK", "UNCHANGED"] : ["UNCHANGED", "UNCHANGED"], outcomes);
         }
         Assert.Equal(["v1 snapshot=1 audit=1", "v2 snapshot=1 audit=1"], await harness.GovernanceTrailAsync());
+    }
+
+    /// <summary>
+    /// A preview takes no write lock. The database is deliberately not in WAL mode, so a dry run that opened a write
+    /// transaction would queue behind -- and hold up -- the running server's writes for the whole busy timeout.
+    /// </summary>
+    [Fact]
+    public async Task ADryRunAnswersWhileAnotherWriterHoldsTheWriteLock()
+    {
+        await using DispatchZoneParameterImportHarness harness = await CreateAsync();
+        string table = WriteCsv(harness, "preview.csv", Csv($"{ZoneA},20000,600"));
+
+        await using SqliteConnection writer = new(ControlServerSqlite.ForDatabaseFile(harness.DatabasePath, readOnly: false));
+        await writer.OpenAsync(Token);
+        await using SqliteTransaction held = (SqliteTransaction)await writer.BeginTransactionAsync(Token);
+        await using (SqliteCommand touch = writer.CreateCommand())
+        {
+            touch.Transaction = held;
+            touch.CommandText = "UPDATE DispatchZoneVehicles SET ConfigurationVersion = 'held'";
+            await touch.ExecuteNonQueryAsync(Token);
+        }
+
+        System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+        (int exit, JsonElement preview) = await RunAsync(Import, "--database", harness.DatabasePath, "--input", table, "--dry-run");
+        clock.Stop();
+        await held.RollbackAsync(Token);
+
+        Assert.Equal((0, "OK"), (exit, preview.GetProperty("outcome").GetString()));
+        Assert.True(
+            clock.Elapsed < TimeSpan.FromSeconds(ControlServerSqlite.BusyTimeoutSeconds / 2.0),
+            $"The dry run waited {clock.Elapsed.TotalSeconds:F1}s, so it was queueing for the write lock.");
+        Assert.Equal((0L, 0L, 0L, 0L), await harness.FootprintAsync());
+    }
+
+    /// <summary>
+    /// A table written the way the field writes one: Excel's "CSV UTF-8", which means a byte order mark and CRLF endings.
+    /// </summary>
+    [Fact]
+    public async Task ATableSavedWithABomAndCrlfEndingsIsImportedLikeAnyOther()
+    {
+        await using DispatchZoneParameterImportHarness harness = await CreateAsync();
+        string path = Path.Combine(harness.Directory, "excel.csv");
+        File.WriteAllText(
+            path,
+            Csv($"{ZoneA},20000,600").ReplaceLineEndings("\r\n"),
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        (int exit, JsonElement imported) = await RunAsync(Import, "--database", harness.DatabasePath, "--input", path);
+
+        Assert.Equal((0, "OK", 1L), (exit, imported.GetProperty("outcome").GetString(), imported.GetProperty("version").GetInt64()));
+        Assert.Equal(1, imported.GetProperty("entryCount").GetInt32());
+        Assert.Contains($"{ZoneA} ALLOWED/20000 CONFIGURED/600", Zones((await RunAsync(Read, "--database", harness.DatabasePath)).Output));
+    }
+
+    /// <summary>
+    /// Only losing the race for a version number is a CONFLICT. Anything else the database throws -- a full disk, a constraint
+    /// somewhere else -- must not be reported as "another import committed first; run it again".
+    /// </summary>
+    [Theory]
+    [InlineData("constraint", true)]
+    [InlineData("disk", false)]
+    [InlineData("snapshot-conflict", true)]
+    public void OnlyAVersionNumberAlreadyTakenIsReportedAsAConflict(string kind, bool expected)
+    {
+        Exception failure = kind switch
+        {
+            "constraint" => new DbUpdateException("save failed", new SqliteException("UNIQUE constraint failed", 19)),
+            "disk" => new DbUpdateException("save failed", new SqliteException("disk I/O error", 10)),
+            _ => new GovernedSnapshotVersionConflictException()
+        };
+
+        Assert.Equal(expected, ControlServer.FieldOps.Program.IsVersionNumberAlreadyTaken(failure));
     }
 
     [Fact]

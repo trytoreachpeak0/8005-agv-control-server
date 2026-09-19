@@ -58,7 +58,7 @@ internal static partial class Program
                 await transaction.CommitAsync(CancellationToken.None);
             }
         }
-        catch (Exception conflict) when (conflict is DbUpdateException or GovernedSnapshotVersionConflictException)
+        catch (Exception conflict) when (IsVersionNumberAlreadyTaken(conflict))
         {
             // Another import took the same version number first; this one rolled back whole. Nothing of it was written.
             // Different content under that number is refused by the snapshot freeze, identical content by the version row.
@@ -113,6 +113,10 @@ internal static partial class Program
             },
             result.Outcome == DispatchZoneParameterImportOutcome.Rejected ? 1 : 0);
     }
+
+    /// <summary>今天的行为，原样提出来：撞号判定（control-server#216 审查后续）。</summary>
+    internal static bool IsVersionNumberAlreadyTaken(Exception failure) =>
+        failure is DbUpdateException or GovernedSnapshotVersionConflictException;
 
     /// <summary>
     /// 当前（或指定）那一版每区派车参数，外加库内调度策略里每个分区的取值。

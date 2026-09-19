@@ -64,6 +64,20 @@ public sealed class DispatchZoneParameterImportTests
         Assert.Equal((0L, 0L, 0L, 0L), await harness.FootprintAsync());
     }
 
+    /// <summary>The allowed side of each bound, so a bound written the wrong way round (&lt; for &lt;=) is caught.</summary>
+    [Fact]
+    public async Task TheLargestAndSmallestAllowedValuesAreAccepted()
+    {
+        await using DispatchZoneParameterImportHarness harness = await CreateAsync();
+
+        DispatchZoneParameterImportResult result = await harness.ImportAsync(Csv(
+            $"{ZoneA},{DispatchZoneParameterImportService.MaxEnRouteAdditionPathCostIncrease},{DispatchZoneParameterImportService.MaxStarvationThresholdSeconds}",
+            $"{ZoneB},0,1"));
+
+        Assert.Equal(DispatchZoneParameterImportOutcome.Accepted, result.Outcome);
+        Assert.Equal([$"{ZoneA} 1000000 86400", $"{ZoneB} 0 1"], Describe(await harness.ReadCurrentAsync()));
+    }
+
     [Fact]
     public async Task ABadTableOnTopOfAConfiguredOneLeavesTheCurrentVersionAsItWas()
     {
