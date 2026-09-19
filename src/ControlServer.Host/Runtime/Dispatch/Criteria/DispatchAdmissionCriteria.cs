@@ -90,7 +90,7 @@ public static class DispatchAdmissionCriteria
         return criteria;
     }
 
-    /// <summary>Registers the chain and its ranker for the host.</summary>
+    /// <summary>Registers the chain, its ranker and the dispatch round for the host.</summary>
     public static IServiceCollection AddDispatchAdmission(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -120,6 +120,10 @@ public static class DispatchAdmissionCriteria
         services.AddScoped<IDispatchCandidateRanker, RouteGraphCostRanker>();
         // The structural dispatch block (control-server#74): what can only be concluded across every vehicle.
         services.AddScoped<IDispatchRoundOutcomeSink, StructuralDispatchBlockSink>();
+        // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like
+        // the engine: both must be handed the engine's own DbContext -- see DispatchRoundRunner.
+        services.AddScoped<OnboardDispatchFactsReader>();
+        services.AddScoped<DispatchRoundRunner>();
         return services;
     }
 }

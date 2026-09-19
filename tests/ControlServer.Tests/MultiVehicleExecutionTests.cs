@@ -1086,23 +1086,17 @@ public sealed partial class MultiVehicleExecutionTests
                 NullLogger<CatalogAvailabilityAccess>.Instance);
             PreCreateGate gate = new(
                 Riot, new CatalogAvailabilityStore(Context), Clock, NullLogger<PreCreateGate>.Instance);
-            return new JourneyRuntimeEngine(
+            // One of each, shared by the round and the engine, the way the host's scope shares them.
+            VehicleDispatchPolicyAccess dispatchPolicy =
+                new(new VehicleDispatchPolicyStore(Context), options, Clock);
+            OnboardDispatchFactsReader onboardFacts = new(Context, options, Clock);
+            DispatchRoundRunner dispatchRound = new(
                 Context,
                 Catalog,
                 Riot,
-                Riot,
-                new MapStationResolver(),
-                new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
-                TaskTypeStationRuntimeSeed.Access(Context),
-                TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
                 new JourneyIntakeCoordinator(
                     new DemandIntakeService(Catalog, new RecordingAcceptances(store, AcceptedPlans)),
                     movement),
-                movement,
-                store,
-                new OnboardJourneyPublisher(store, new SilentPeer(), Clock),
-                BoxCounts,
-                new PackageCapacityStore(Context),
                 new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
                     options,
                     new MapStationResolver(),
@@ -1115,17 +1109,37 @@ public sealed partial class MultiVehicleExecutionTests
                     catalog: catalogAccess,
                     createGate: gate)),
                 new FirstSeenDispatchCandidateRanker(),
+                dispatchPolicy,
+                AreaAssignments,
+                SlotPositions,
+                RoundOutcomes,
+                onboardFacts,
+                options,
+                Clock,
+                EngineLog);
+            return new JourneyRuntimeEngine(
+                Context,
+                Riot,
+                Riot,
+                new MapStationResolver(),
+                new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
+                TaskTypeStationRuntimeSeed.Access(Context),
+                TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
+                movement,
+                store,
+                new OnboardJourneyPublisher(store, new SilentPeer(), Clock),
+                BoxCounts,
+                new PackageCapacityStore(Context),
                 catalogAccess,
                 new CatalogAvailabilityStore(Context),
                 gate,
                 new VehicleRoster(options),
-                new VehicleDispatchPolicyAccess(new VehicleDispatchPolicyStore(Context), options, Clock),
+                dispatchPolicy,
                 Riot,
                 CheckpointWaits,
                 CreateFaultCoordinator(),
-                AreaAssignments,
-                SlotPositions,
-                RoundOutcomes,
+                dispatchRound,
+                onboardFacts,
                 options,
                 Clock,
                 EngineLog);

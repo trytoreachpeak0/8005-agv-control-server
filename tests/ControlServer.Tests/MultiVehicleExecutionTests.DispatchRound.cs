@@ -3,9 +3,11 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace ControlServer.Tests;
@@ -250,6 +252,26 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal(
             [FleetFixture.AgvIds[1], FleetFixture.AgvIds[2]],
             Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles.Select(vehicle => vehicle.AgvId).ToArray());
+    }
+
+    /// <summary>
+    /// The host builds the round, and the Onboard facts reader it shares with the engine, in the engine's own scope:
+    /// scoped like the engine and the <see cref="ControlServerDbContext"/>, so all three get the one context the
+    /// scope holds -- which is what makes the round's <c>ChangeTracker.Clear()</c> clear the tracker the round's
+    /// later saves go through.
+    /// </summary>
+    [Fact]
+    public void TheHostBuildsTheRoundInTheEnginesScope()
+    {
+        ServiceCollection services = new();
+        services.AddDispatchAdmission();
+
+        Assert.Equal(
+            ServiceLifetime.Scoped,
+            Assert.Single(services, descriptor => descriptor.ServiceType == typeof(DispatchRoundRunner)).Lifetime);
+        Assert.Equal(
+            ServiceLifetime.Scoped,
+            Assert.Single(services, descriptor => descriptor.ServiceType == typeof(OnboardDispatchFactsReader)).Lifetime);
     }
 
     /// <summary>
