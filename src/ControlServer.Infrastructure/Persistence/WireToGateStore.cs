@@ -357,14 +357,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                      !forcedRecoveryAwaitsHardwareRecord &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
+        // The slot configuration mismatch is named first when it applies: every other reason here is about this
+        // session's own progress, and an operator who reads one of those would go looking in the wrong place for a
+        // vehicle whose configuration is simply not the approved one.
         row.ReasonCode = ready
             ? "READY"
             : slotConfigurationAgrees
                 ? GetRecoveryReason(
                     row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord)
-                // Named first when it applies: every other reason here is about this session's own
-                // progress, and an operator who reads one of those would go looking in the wrong
-                // place for a vehicle whose configuration is simply not the approved one.
                 : SlotConfigurationFingerprintVerdict.MismatchCode;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -539,7 +539,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                     .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                     .ConfigureAwait(false);
                 if (runtime is null || !Matches(runtime, journey) ||
-                    !await AreaAssignmentFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false))
+                    !await AreaAssignmentFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false) ||
+                    !await TaskTypeStationFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false))
                 {
                     throw new BusinessIdentityConflictException(
                         "Accepted demand replay does not match its persisted journey runtime.");
@@ -564,6 +565,21 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         if (journey?.AreaAssignmentVersion is long areaAssignmentVersion)
         {
             await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);
+        }
+
+        // REQ-0344: the rule and binding set versions the demand's fixed station was resolved under, in the transaction
+        // that accepts it, so an accepted demand is never without them. Whatever later happens to the rules, the
+        // bindings or a station's name, this demand is not rewritten, migrated or resolved again.
+        if (journey is { StationCatalogRevision: long catalogRevision })
+        {
+            await FreezeEndpointsAsync(snapshot, journey, catalogRevision, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (journey is { TaskTypeStationRuleVersion: long ruleVersion, TaskTypeStationBindingSetVersion: long bindingSetVersion })
+        {
+            await new DemandTaskTypeStationFreezeStore(dbContext)
+                .FreezeAsync(snapshot.DemandId, ruleVersion, journey.MapId, bindingSetVersion, snapshot.AcceptedAt, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         dbContext.AcceptedDemands.Add(new AcceptedDemandRow
@@ -2308,6 +2324,62 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 .SingleOrDefaultAsync(cancellationToken)
                 .ConfigureAwait(false);
         return string.Equals(frozenSlotPosition, journey.RequiredSlotPosition, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Freezes both endpoints of the plan (REQ-0305) inside the acceptance transaction, so an acceptance that does not
+    /// happen freezes nothing (control-server#160).
+    /// </summary>
+    /// <remarks>
+    /// Rows already there can only be what an earlier, refused attempt left behind before the freeze moved in here:
+    /// this branch runs only for a demand this server has not accepted, so they are no task's endpoints. They are
+    /// replaced rather than refused -- refusing them failed every round for every task type once the binding they
+    /// were taken under had changed.
+    /// </remarks>
+    private async Task FreezeEndpointsAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyExecutionPlan journey,
+        long catalogRevision,
+        CancellationToken cancellationToken)
+    {
+        await dbContext.FrozenDemandStations
+            .Where(row => row.DemandId == snapshot.DemandId)
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await new CatalogAvailabilityStore(dbContext).FreezeDemandStationsAsync(
+            snapshot.DemandId,
+            snapshot.TransportDemandKey,
+            [
+                new FrozenStationFact(FrozenStationRole.Pickup, journey.MapId, journey.PickupStationRiotId, journey.PickupStationId),
+                new FrozenStationFact(FrozenStationRole.Dropoff, journey.MapId, journey.GateStationRiotId, journey.GateStationId),
+            ],
+            catalogRevision,
+            snapshot.AcceptedAt,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether a plan's task type station rule and binding set versions are what the demand durably froze
+    /// (REQ-0344, control-server#160).
+    /// </summary>
+    /// <remarks>
+    /// Like the area assignment version, the two live in <c>ConfigurationConsumerBindings</c> rather than on the
+    /// journey row, and are written in the acceptance transaction; a plan carrying neither matches only a demand
+    /// that froze neither.
+    /// </remarks>
+    private async Task<bool> TaskTypeStationFreezeMatchesAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyExecutionPlan journey,
+        CancellationToken cancellationToken)
+    {
+        DemandTaskTypeStationFreeze? frozen = await new DemandTaskTypeStationFreezeStore(dbContext)
+            .ReadAsync(snapshot.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        return frozen is null
+            ? journey.TaskTypeStationRuleVersion is null && journey.TaskTypeStationBindingSetVersion is null
+            : frozen.RuleVersion == journey.TaskTypeStationRuleVersion
+                && frozen.BindingSetVersion == journey.TaskTypeStationBindingSetVersion
+                && frozen.MapId == journey.MapId;
     }
 
     /// <summary>

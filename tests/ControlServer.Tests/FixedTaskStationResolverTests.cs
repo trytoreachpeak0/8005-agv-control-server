@@ -29,43 +29,8 @@ public sealed class FixedTaskStationResolverTests
 
     private static readonly JourneyRuntimeOptions Configured = new()
     {
-        GateStationId = "关卡",
-        GateStationRiotId = 210,
         AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
     };
-
-    [Fact]
-    public async Task TheConfiguredResolverResolvesWireToGateToTheGateStationAtTheDestinationEnd()
-    {
-        IFixedTaskStationView view = await new ConfiguredGateStationResolver(
-                new MapStationResolver(), Options.Create(Configured))
-            .ReadForRoundAsync(Map, TestContext.Current.CancellationToken);
-
-        FixedTaskStationResolution resolution = view.Resolve("WIRE_TO_GATE");
-
-        Assert.Equal("WIRE_TO_GATE", resolution.TaskType);
-        Assert.Equal(FixedStationEnd.Destination, resolution.FixedEnd);
-        Assert.Equal(Gate, resolution.Station);
-        Assert.Null(resolution.RefusalReasonCode);
-        Assert.Null(resolution.RuleVersion);
-        Assert.Null(resolution.BindingSetVersion);
-    }
-
-    /// <summary>
-    /// A Map without the configured gate is still a whole-Map failure, under the reason the engine has
-    /// always recorded for it -- not a per-task-type refusal.
-    /// </summary>
-    [Fact]
-    public async Task TheConfiguredResolverFailsTheWholeMapWhenTheGateStationIsMissing()
-    {
-        RiotMapStationCatalogSnapshot withoutGate = Map with { Stations = [new RiotMapStation(12, "N1-1")] };
-
-        StationResolutionException error = await Assert.ThrowsAsync<StationResolutionException>(() =>
-            new ConfiguredGateStationResolver(new MapStationResolver(), Options.Create(Configured))
-                .ReadForRoundAsync(withoutGate, TestContext.Current.CancellationToken));
-
-        Assert.Equal("FIXED_STATION_BINDING_INVALID", error.ReasonCode);
-    }
 
     /// <summary>
     /// REQ-0335: a task type the round cannot resolve is refused under the resolver's own reason, and

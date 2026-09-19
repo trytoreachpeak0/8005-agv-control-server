@@ -32,8 +32,6 @@ public sealed class ReversedDirectionJourneyTests
         MapId = 25,
         MapIdentity = "MAP-25",
         DispatchGeneration = 1,
-        GateStationId = "关卡",
-        GateStationRiotId = 210,
         AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
     };
 

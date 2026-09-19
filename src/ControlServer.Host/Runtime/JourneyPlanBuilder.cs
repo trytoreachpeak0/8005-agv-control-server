@@ -82,6 +82,12 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             fixedStation));
     }
 
+    /// <summary>The plan a candidate is accepted under.</summary>
+    /// <remarks>
+    /// The fixed station's rule and binding set versions, and the catalog revision the endpoints were taken from, are
+    /// carried through untouched: the acceptance freezes them with the endpoints (REQ-0305, REQ-0344,
+    /// control-server#160).
+    /// </remarks>
     public JourneyExecutionPlan CreatePlan(
         FleetVehicle fleetVehicle,
         EligibleDispatchCandidate candidate,
@@ -110,26 +116,11 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             options.DispatchGeneration,
             now,
             candidate.AreaAssignmentVersion,
-            candidate.RequiredSlotPosition);
+            candidate.RequiredSlotPosition,
+            candidate.Route.FixedStation.RuleVersion,
+            candidate.Route.FixedStation.BindingSetVersion,
+            candidate.CatalogRevision);
     }
-
-    /// <summary>
-    /// The endpoints a plan freezes (REQ-0305): both ends, because both are stations the task will be
-    /// sent to and a later rename of either must not reach the task that already exists.
-    /// </summary>
-    public static IReadOnlyList<FrozenStationFact> FrozenStations(JourneyExecutionPlan plan) =>
-    [
-        new FrozenStationFact(
-            FrozenStationRole.Pickup,
-            plan.MapId,
-            plan.PickupStationRiotId,
-            plan.PickupStationId),
-        new FrozenStationFact(
-            FrozenStationRole.Dropoff,
-            plan.MapId,
-            plan.GateStationRiotId,
-            plan.GateStationId),
-    ];
 
     /// <summary>The first move order, which is created with the journey.</summary>
     public static OrderIntent PickupIntent(JourneyExecutionPlan plan, string demandId, DateTimeOffset now) => new(

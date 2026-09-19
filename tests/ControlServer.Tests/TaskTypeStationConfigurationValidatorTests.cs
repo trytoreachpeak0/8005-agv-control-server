@@ -10,7 +10,6 @@ public sealed class TaskTypeStationConfigurationValidatorTests
 {
     private const int Map = 25;
 
-    private static readonly TransitionalGateStation Gate = new(210, "关卡");
 
     private static readonly TaskTypeStationRule[] SixRules =
     [
@@ -41,7 +40,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
                 bindings ?? [GateBinding]));
 
     private static IReadOnlyList<TaskTypeStationViolation> Validate(TaskTypeStationConfiguration configuration) =>
-        TaskTypeStationConfigurationValidator.ValidateStatic(configuration, Map, Gate);
+        TaskTypeStationConfigurationValidator.ValidateStatic(configuration, Map);
 
     [Fact]
     public void TheFactoryShapedConfigurationPasses()
@@ -165,8 +164,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     {
         IReadOnlyList<TaskTypeStationViolation> violations = TaskTypeStationConfigurationValidator.ValidateStatic(
             Configuration(bindings: [GateBinding with { StationRiotId = stationRiotId, StationName = stationName }]),
-            Map,
-            gateScalar: null);
+            Map);
 
         TaskTypeStationViolation violation = Assert.Single(violations);
         Assert.Equal(TaskTypeStationReasonCodes.BindingIdentityInvalid, violation.ReasonCode);
@@ -177,7 +175,7 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     public void AMapIdThatIsNotPositiveRefusesStart()
     {
         IReadOnlyList<TaskTypeStationViolation> violations =
-            TaskTypeStationConfigurationValidator.ValidateStatic(Configuration(mapId: 0), 0, Gate);
+            TaskTypeStationConfigurationValidator.ValidateStatic(Configuration(mapId: 0), 0);
 
         TaskTypeStationViolation violation = Assert.Single(violations);
         Assert.Equal(TaskTypeStationReasonCodes.BindingIdentityInvalid, violation.ReasonCode);
@@ -234,34 +232,25 @@ public sealed class TaskTypeStationConfigurationValidatorTests
         Assert.Equal(TransportTaskTypes.WireToGate, violation.TaskType);
     }
 
+    /// <summary>
+    /// control-server#160 删掉了关卡标量，#159 为防两份真相分叉加的过渡校验随之删除：<c>WIRE_TO_GATE</c> 绑到别的站、
+    /// 或者本图不绑它，都不再因为「与标量不一致」被拒。
+    /// </summary>
     [Theory]
     [InlineData(211, "关卡")]
     [InlineData(210, "关卡2")]
-    public void AWireToGateBindingThatDiffersFromTheGateScalarRefusesStart(int stationRiotId, string stationName)
+    public void AWireToGateBindingIsNoLongerComparedWithAGateScalar(int stationRiotId, string stationName)
     {
-        IReadOnlyList<TaskTypeStationViolation> violations = Validate(Configuration(
-            bindings: [GateBinding with { StationRiotId = stationRiotId, StationName = stationName }]));
-
-        TaskTypeStationViolation violation = Assert.Single(violations);
-        Assert.Equal(TaskTypeStationReasonCodes.BindingGateScalarMismatch, violation.ReasonCode);
-        Assert.Equal(TransportTaskTypes.WireToGate, violation.TaskType);
-    }
-
-    [Fact]
-    public void APresetThatDoesNotBindWireToGateWhileTheGateScalarDoesRefusesStart()
-    {
-        // Two truths may not diverge: the scalar says the gate is 210, the preset says WIRE_TO_GATE has no station.
-        IReadOnlyList<TaskTypeStationViolation> violations = Validate(Configuration(required: [], bindings: []));
-
-        TaskTypeStationViolation violation = Assert.Single(violations);
-        Assert.Equal(TaskTypeStationReasonCodes.BindingGateScalarMismatch, violation.ReasonCode);
+        Assert.Empty(Validate(Configuration(
+            bindings: [GateBinding with { StationRiotId = stationRiotId, StationName = stationName }])));
+        Assert.Empty(Validate(Configuration(required: [], bindings: [])));
     }
 
     [Fact]
     public void APresetForAnotherMapThanTheJourneyRuntimeMapRefusesStart()
     {
         IReadOnlyList<TaskTypeStationViolation> violations =
-            TaskTypeStationConfigurationValidator.ValidateStatic(Configuration(mapId: 26), Map, gateScalar: null);
+            TaskTypeStationConfigurationValidator.ValidateStatic(Configuration(mapId: 26), Map);
 
         TaskTypeStationViolation violation = Assert.Single(violations);
         Assert.Equal(TaskTypeStationReasonCodes.BindingMapMismatch, violation.ReasonCode);

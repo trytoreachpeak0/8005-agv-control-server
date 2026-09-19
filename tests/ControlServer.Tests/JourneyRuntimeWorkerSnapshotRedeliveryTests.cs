@@ -214,8 +214,8 @@ public sealed class JourneyRuntimeWorkerSnapshotRedeliveryTests
             runtime.PreDepartureSafetyCheckMessageId);
         await IterateAsync();
 
-        fixture.Riot.SetSuccessfulArrival("TO_GATE", fixture.Options.GateStationRiotId);
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = fixture.Options.GateStationRiotId };
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", TaskTypeStationRuntimeSeed.GateStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
         // The gate publishes the second revision of all three snapshot types.
         await IterateAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await fixture.RuntimeAsync()).Stage);

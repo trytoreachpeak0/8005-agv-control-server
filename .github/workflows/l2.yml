@@ -198,10 +198,20 @@ jobs:
               # Batch 6 (program#123). Each ticket adds its own scenario here from its own pull request, sorted by
               # name, so a batch-6 regression is caught before the next one merges; the batch-6 exit
               # (control-server#165) makes every line three runs.
+<<<<<<< HEAD
               # control-server#163, specification 8.3 batch-6 mechanism criterion 6: STAGING_TO_WIRE runs the
               # journey in the reverse direction, and loads into the group its destination AREA is assigned.
               @{ Name = 'staging-to-wire-reversed-journey'; Runs = 1; BatchId = 'batch-6' }
               @{ Name = 'staging-to-wire-slot-group'; Runs = 1; BatchId = 'batch-6' }
+=======
+              # control-server#160, specification 8.3 batch-6 mechanism criterion 3: REQ-0187's AREA/EQP uniqueness
+              # across task types.
+              @{ Name = 'area-eqp-unique-across-task-types'; Runs = 1; BatchId = 'batch-6' }
+              # control-server#160, criterion 2: the end station taken from the binding, frozen at acceptance.
+              @{ Name = 'task-type-binding-admits-bound-station'; Runs = 1; BatchId = 'batch-6' }
+              # control-server#160, criterion 1: a missing binding fails closed for its own task type only.
+              @{ Name = 'task-type-binding-missing-not-cascading'; Runs = 1; BatchId = 'batch-6' }
+>>>>>>> origin/fp/v2-impl
               # control-server#159, specification 8.3 batch-6 mechanism criterion 4: one station bound to two task
               # types refuses start.
               @{ Name = 'task-type-binding-station-reused-refuses-start'; Runs = 1; BatchId = 'batch-6' }
