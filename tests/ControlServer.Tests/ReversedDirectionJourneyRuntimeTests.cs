@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -199,6 +200,61 @@ public sealed class ReversedDirectionJourneyRuntimeTests
     }
 
     /// <summary>
+    /// control-server#198 c-2: the second leg of a reverse journey -- from the staging station, where it has loaded, to
+    /// the AREA machine -- is a move order that does not exist yet, so it waits while STAGING_TO_WIRE is held on the
+    /// Map (REQ-0344's last sentence, REQ-0345): no order, the journey under TASK_TYPE_HELD before departure, the
+    /// pickup order untouched. Released, the next round creates the leg to the frozen drop-off.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased()
+    {
+        await using RuntimeFixture fixture = await AcceptedReverseAsync();
+        TaskTypeStationHold hold = await RaiseHoldAsync(fixture, TransportTaskTypes.StagingToWire);
+        string pickupBefore = await fixture.IntentStatusAsync("TO_PICKUP");
+
+        JourneyRuntimeRow held = await fixture.AdvanceToGateArrivalAsync();
+
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingDepartureSafety, DispatchReasonCodes.TaskTypeHeld),
+            (held.Stage, held.BlockReasonCode));
+        Assert.False(await fixture.Context.OrderIntents.AnyAsync(row => row.UpperId == held.GateUpperId, Token));
+        Assert.Equal(pickupBefore, await fixture.IntentStatusAsync("TO_PICKUP"));
+
+        await TaskTypeStationRuntimeSeed.Access(fixture.Context).Holds.ReleaseAsync(hold.HoldId, "test", Now, Token);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        JourneyRuntimeRow released = await fixture.RuntimeAsync();
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, released.Stage);
+        FrozenStationFact dropoff = Assert.Single(
+            await new CatalogAvailabilityStore(fixture.Context).ReadFrozenStationsAsync(ReverseDemand, Token),
+            station => station.Role == FrozenStationRole.Dropoff);
+        Assert.Equal(
+            dropoff.StationId,
+            (await fixture.Context.OrderIntents.AsNoTracking().SingleAsync(row => row.UpperId == released.GateUpperId, Token))
+                .DestinationStationId);
+    }
+
+    /// <summary>
+    /// control-server#198 c-2: a hold is on the demand's own task type. Holding WIRE_TO_GATE does not reach a
+    /// STAGING_TO_WIRE journey: its second leg is created as usual.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg()
+    {
+        await using RuntimeFixture fixture = await AcceptedReverseAsync();
+        await RaiseHoldAsync(fixture, TransportTaskTypes.WireToGate);
+
+        JourneyRuntimeRow runtime = await fixture.AdvanceToGateArrivalAsync();
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, runtime.Stage);
+        Assert.NotEqual(DispatchReasonCodes.TaskTypeHeld, runtime.BlockReasonCode);
+        Assert.True(await fixture.Context.OrderIntents.AnyAsync(row => row.UpperId == runtime.GateUpperId, Token));
+    }
+
+    /// <summary>
     /// A restart between preparing the unload and saving the stage re-enters the arrival with the unload already
     /// prepared and its admission frozen. The frozen decision is what stands (ADR-cross-0050/0051): even with the
     /// machine no longer admitting the task type, the journey goes on to await the unload's result on the command
@@ -276,6 +332,26 @@ public sealed class ReversedDirectionJourneyRuntimeTests
             requiredTaskTypes: [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
             bindings: [TaskTypeStationRuntimeSeed.GateBinding, StagingBinding]);
         return fixture;
+    }
+
+    /// <summary>A reverse journey accepted before any hold: a hold in force at acceptance refuses the demand itself.</summary>
+    private static async Task<RuntimeFixture> AcceptedReverseAsync()
+    {
+        RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        fixture.Context.ChangeTracker.Clear();
+        return fixture;
+    }
+
+    private static async Task<TaskTypeStationHold> RaiseHoldAsync(RuntimeFixture fixture, string taskType)
+    {
+        TaskTypeStationHold hold = (await TaskTypeStationRuntimeSeed.Access(fixture.Context).Holds.RaiseAsync(
+            25, taskType, TaskTypeStationHoldSource.Manual, "TEST_HOLD", "{}", "test", Now, Token)).Hold;
+        fixture.Context.ChangeTracker.Clear();
+        return hold;
     }
 
     /// <summary>Carries a reverse journey onto its second leg and into arrival at the AREA machine station.</summary>
