@@ -162,27 +162,33 @@ public sealed class JourneyRuntimeEngine(
     /// arriving a round late only delays what it adds on top -- staying in force once the station is back.
     /// </para>
     /// <para>
-    /// The convergence's transaction rolls back on its own, but whatever it added or changed stays tracked on the
-    /// shared context, and the round's next save would write it after all: a hold without its change record or its
-    /// audit. Every pending entry is detached; nothing else in the round leaves one pending at this point, because
-    /// every step before this one saved. A shutdown cancellation still ends the round.
+    /// The convergence's transaction rolls back on its own, but what it touched stays tracked on the shared context:
+    /// a pending entry the round's next save would write after all (a hold without its change record or its audit),
+    /// or an entry it already saved inside the rolled-back transaction, tracked as Unchanged for a row the database no
+    /// longer has. So every entry the attempt began tracking is detached, and every pending one too; nothing else in
+    /// the round leaves one pending at this point, because every step before this one saved. A shutdown cancellation
+    /// still ends the round.
     /// </para>
     /// </remarks>
     private async Task ConvergeCatalogBindingHoldsAsync(
         RiotMapStationCatalogSnapshot currentMap,
         CancellationToken cancellationToken)
     {
+        HashSet<object> trackedBefore = dbContext.ChangeTracker.Entries()
+            .Select(entry => entry.Entity)
+            .ToHashSet(ReferenceEqualityComparer.Instance);
         try
         {
             await catalogBindingHolds.ApplyAsync(currentMap, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
-            foreach (EntityEntry pending in dbContext.ChangeTracker.Entries()
-                .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            foreach (EntityEntry left in dbContext.ChangeTracker.Entries()
+                .Where(entry => !trackedBefore.Contains(entry.Entity)
+                    || entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                 .ToArray())
             {
-                pending.State = EntityState.Detached;
+                left.State = EntityState.Detached;
             }
             LogCatalogBindingHoldConvergenceFailed(logger, currentMap.MapId, error);
         }
