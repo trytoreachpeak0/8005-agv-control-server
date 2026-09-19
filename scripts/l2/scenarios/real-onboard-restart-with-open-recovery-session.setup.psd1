@@ -8,5 +8,8 @@
 @{
     Onboard                     = 'Real'
     RecoveryResume              = $true
+    # 车载端的 wireToGate 连接经 tools/ControlServer.ProtocolFaultProxy 转发。场景在按「申请恢复」之前布下
+    # 「丢一条 ExceptionRecoverySessionOpened、链路不断」，让会话在车重启时开着（control-server#222）。
+    ProtocolFaultProxy          = $true
     StationDepartureWaitTimeout = '00:00:30'
 }

@@ -1,0 +1,20 @@
+车载端 4d716340 上的一次性 G2 探针（未提交，补丁见 onboard-probe.diff；在 WireToGateG2Tests 里临时加一条测试，
+拿 AnOperationInterruptedWhileWaitingForTheOperatorIsSettledFromLiveIoOnTheNextSession 的前两段：等人时进程没了、
+空门被关上、下一个进程中断结算 UNKNOWN；恢复开关与凭据打开）。测试以 Assert.Fail 打印事件序列，所以结论是 Failed。
+
+第一次：假服务端默认回 Ready（真服务端此时回 RecoveryRequired，见红证据车载端日志），入口当然不给：
+   OPERATION_PROGRESS stage=RecoveryRequired canResume=False canCompensate=False readiness=Ready
+OPERATION_RECOVERY_REQUIRED stage=RecoveryRequired canResume=False canCompensate=False readiness=Ready
+OPERATION_RECOVERY_REQUIRED stage=RecoveryRequired canResume=False canCompensate=False readiness=Ready
+FINAL canResume=False canCompensate=False readiness=Ready connected=True businessOp=RecoveryRequired vmOp=RecoveryRequired
+
+第二次：第二个进程时 ForceRecoveryRequiredReadiness = true（与真服务端一致）：
+   OPERATION_PROGRESS stage=RecoveryRequired canResume=True canCompensate=True readiness=RecoveryRequired
+OPERATION_RECOVERY_REQUIRED stage=RecoveryRequired canResume=True canCompensate=True readiness=RecoveryRequired
+OPERATION_RECOVERY_REQUIRED stage=RecoveryRequired canResume=True canCompensate=True readiness=RecoveryRequired
+FINAL canResume=True canCompensate=True readiness=RecoveryRequired connected=True businessOp=RecoveryRequired vmOp=RecoveryRequired
+
+第三次：第二个进程也重放 SlotOperationCommand，结果同第二次。
+
+结论：业务层 CanRequestResumeAfterRepair=True，视图模型会拿到的操作阶段是 RecoveryRequired（MainViewModel 对「申请恢复」
+多要求的那一条），所以车载端本该给出「申请恢复」。入口「不出现」不是车载端的事。

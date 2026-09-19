@@ -1,0 +1,24 @@
+2026-09-20T00:55:11.6615711+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+4d716340982de4e39339c2151c291efe1a21e1d1。
+2026-09-20T00:55:12.3219638+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-20T00:55:12.3503437+08:00	Information	OnboardController	IO模块在线。
+2026-09-20T00:55:12.3518776+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-20T00:55:13.2227599+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-20T00:55:21.9240444+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=ROS-20260919T165500438Z。 
+2026-09-20T00:55:22.5440059+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=ROS-20260919T165500438Z。 
+2026-09-20T00:55:22.9089733+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-20T00:55:22.9541057+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-20T00:55:23.0820408+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-20T00:55:23.4296423+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-20T00:55:23.5064327+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=af33b5ab-967b-9b56-9c0b-ff7f9565cce1。
+2026-09-20T00:55:24.9200252+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+4d716340982de4e39339c2151c291efe1a21e1d1。
+2026-09-20T00:55:25.3890623+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-20T00:55:25.3965347+08:00	Information	OnboardController	IO模块在线。
+2026-09-20T00:55:25.3984447+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-20T00:55:25.7957683+08:00	Warning	WireToGateBusinessService	上次仓位操作在执行中中断，未再输出开锁，按实时IO结算：attempt=af33b5ab-967b-9b56-9c0b-ff7f9565cce1，outcome=UNKNOWN，checkpoint=SAFE_FINISH_REACHED。
+2026-09-20T00:55:25.8676137+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
+2026-09-20T00:55:31.6306613+08:00	Warning	WireToGateBusinessService	恢复申请未执行：session=575ffec1-57d5-ec57-bb66-2788e84ff8e0，reason=The operation has timed out.。 | TimeoutException: The operation has timed out.
+2026-09-20T00:55:33.2569587+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+4d716340982de4e39339c2151c291efe1a21e1d1。
+2026-09-20T00:55:33.6910290+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-20T00:55:33.7238984+08:00	Information	OnboardController	IO模块在线。
+2026-09-20T00:55:33.7261280+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-20T00:55:34.0990135+08:00	Information	WireToGateSessionService	上层会话已建立：generation=3，readiness=RecoveryRequired。
