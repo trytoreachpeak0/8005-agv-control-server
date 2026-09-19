@@ -37,6 +37,19 @@ public sealed class Batch6MigrationDisciplineTests
         "TaskTypeStationRules",
     ];
 
+    /// <summary>
+    /// 批次 6 迁移之后允许存在的迁移，按名字点出来。
+    /// </summary>
+    /// <remarks>
+    /// 原来断言「批次 6 的迁移是最后一个」，批次 7 建表票 control-server#206 的迁移一进来就是假的；照
+    /// <see cref="Batch3MigrationDisciplineTests"/> 的写法改成点名，比原来更紧：说清它之后允许有谁。批次 7 自己的断言在
+    /// <see cref="Batch7MigrationDisciplineTests"/>，后续迁移（control-server#199、#186）加在那边的名单里，也加在这里。
+    /// </remarks>
+    private static readonly string[] MigrationsAfterBatch6 =
+    [
+        "20260919154546_Batch7MultiDemandJourneyPersistence",
+    ];
+
     [Fact]
     public async Task Batch6AddsExactlyOneMigrationAndItComesStraightAfterTheBatch5Migration()
     {
@@ -46,7 +59,7 @@ public sealed class Batch6MigrationDisciplineTests
         string batch6 = Assert.Single(migrations, name => name.Contains("Batch6", StringComparison.Ordinal));
         Assert.EndsWith(Batch6MigrationSuffix, batch6, StringComparison.Ordinal);
         Assert.Equal(MigrationBeforeBatch6, migrations[Array.IndexOf(migrations, batch6) - 1]);
-        Assert.Equal(batch6, migrations[^1]);
+        Assert.Equal(MigrationsAfterBatch6, migrations[(Array.IndexOf(migrations, batch6) + 1)..]);
     }
 
     [Fact]

@@ -972,6 +972,8 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         AcceptedDemandSnapshot cancelled)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
+        // Batch 7 (control-server#206): the ending released the purpose claim together with the lease.
+        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
         AcceptedDemandSnapshot next = fixture.Demand(NextDemandId, "SUBLOT-002", createdAt: Now.AddMinutes(-5));
         fixture.Catalog.Set([cancelled, next]);
         fixture.BoxCounts.Set("SUBLOT-002", 7);
@@ -983,6 +985,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, nextRuntime.Stage);
         Assert.Equal((await fixture.RuntimeAsync(cancelled.DemandId)).AgvId, nextRuntime.AgvId);
         Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
+        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
     }
 
     private static string InFlightCancellationRequest(RuntimeFixture fixture, string attemptId) =>

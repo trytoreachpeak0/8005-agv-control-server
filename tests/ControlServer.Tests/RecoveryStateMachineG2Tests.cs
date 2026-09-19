@@ -2676,6 +2676,7 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal(JourneyRuntimeStage.Completed, settled.Stage);
             Assert.Equal("CANCELLED_BY_LOAD_COMPENSATION", settled.BlockReasonCode);
             Assert.Equal(Now.AddMinutes(1), settled.LeaseReleasedAt);
+            await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(context);
             Assert.Equal(Now.AddMinutes(1), settled.OccupancyReleasedAt);
             clock.Current = Now.AddMinutes(2);
 
@@ -5283,9 +5284,18 @@ public sealed class RecoveryStateMachineG2Tests
         });
         context.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
         {
+            JourneyId = JourneyIdentity.ForAnchorDemand(DemandId),
             DemandId = DemandId,
             VehicleKey = "VEHICLE-001",
             AcquiredAt = Now.AddMinutes(-8)
+        });
+        // Batch 7 (control-server#206): acceptance writes the purpose claim beside the lease.
+        context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
+        {
+            VehicleKey = "VEHICLE-001",
+            Purpose = VehiclePurposes.Transport,
+            JourneyId = JourneyIdentity.ForAnchorDemand(DemandId),
+            ClaimedAt = Now.AddMinutes(-8)
         });
         context.OrderIntents.AddRange(
             Intent("pickup-leg", "UPPER-PICKUP", "TO_PICKUP", 11),
@@ -5392,6 +5402,7 @@ public sealed class RecoveryStateMachineG2Tests
     {
         JourneyRuntimeRow runtime = new()
         {
+            JourneyId = JourneyIdentity.ForAnchorDemand(DemandId),
             DemandId = DemandId,
             Stage = JourneyRuntimeStage.Blocked,
             AgvId = AgvId,

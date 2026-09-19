@@ -304,6 +304,7 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
 
     private static JourneyRuntimeRow Journey(string demandId, JourneyRuntimeStage stage) => new()
     {
+        JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
         DemandId = demandId,
         Stage = stage,
         AgvId = "AGV-TEST",

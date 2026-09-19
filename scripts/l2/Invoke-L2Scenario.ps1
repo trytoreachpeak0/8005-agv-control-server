@@ -104,6 +104,8 @@ Import-Module (Join-Path $PSScriptRoot 'L2PortLock.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'L2TaskTypeStations.psm1') -Force
 # REQ-0358's expected-action-overdue threshold, one setup key for both ends (control-server#167).
 Import-Module (Join-Path $PSScriptRoot 'L2ExpectedActionOverdue.psm1') -Force
+# Batch 7's CargoHoldingTimeout and DispatchZoneParameters setup keys (control-server#206).
+Import-Module (Join-Path $PSScriptRoot 'L2DispatchZoneParameters.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
@@ -238,8 +240,17 @@ if ($setup.ContainsKey('AreaAssignments')) {
 if (-not $slotModelPreseed -and $areaAssignmentsSetting -isnot [bool]) {
     throw "SlotModelPreseed = `$false in $Scenario.setup.psd1 needs AreaAssignments = `$false as well: the table import is validated against the slot model this scenario says it seeds itself."
 }
+# Batch 7 (control-server#206), read here so that a misspelt key or value fails before any process starts. The default
+# precondition is "per-zone dispatch parameters unconfigured": without DispatchZoneParameters no version is written,
+# which is today's behaviour -- no en-route addition, no cargo holding wait, ageing without escalation. Anything else
+# would hold every existing single-demand scenario's cargo until the cargo holding timeout ran out.
+$cargoHoldingTimeout = Resolve-L2CargoHoldingTimeout -Setup $setup -Where "$Scenario.setup.psd1"
+$dispatchZoneParameters = Resolve-L2DispatchZoneParameters -Setup $setup -Where "$Scenario.setup.psd1"
 # A server expected to refuse to start never runs the FieldOps verbs' prerequisites, so there is nothing to preseed.
 if ($expectedStartupRefusal) {
+    if ($null -ne $dispatchZoneParameters) {
+        throw "DispatchZoneParameters in $Scenario.setup.psd1 means nothing for a server expected to refuse to start: there is no store to write them into."
+    }
     $slotModelPreseed = $false
     $areaAssignmentsSetting = $false
 }
@@ -620,6 +631,12 @@ try {
             (($fleet | ForEach-Object { "$($_.AgvId)/$($_.VehicleKey)" }) -join ', '))
     }
 
+    # ADR-cross-0057's cargo holding timeout (control-server#206), mapped the way StationDepartureWaitTimeout is. Passed
+    # only when the setup file names it; otherwise the server keeps its own thirty-minute default.
+    if ($null -ne $cargoHoldingTimeout) {
+        $serverEnvironment['JourneyRuntime__cargoHoldingTimeout'] = $cargoHoldingTimeout
+    }
+
     # FP-C13: the two REQ-0302 values, approved. A commissioned server has them, so every scenario
     # faces one. `CatalogApproved = $false` in a setup file takes them away, which is the negative
     # evidence specification 8.6 requires -- and there is no switch that turns the check off, only
@@ -706,6 +723,13 @@ try {
     $journal.Note('Package capacity rules imported.')
 
     # 3. ControlServer, against the doubles.
+    # What the server process is started with for batch 7's cargo holding timeout (control-server#206), recorded as
+    # handed to Start-Process -Environment: the evidence that the setup key became the server's JourneyRuntime setting.
+    # Absent from the timeline when the setup file does not name it.
+    if ($serverEnvironment.ContainsKey('JourneyRuntime__cargoHoldingTimeout')) {
+        $journal.Observe('server-environment:JourneyRuntime__cargoHoldingTimeout',
+            $serverEnvironment['JourneyRuntime__cargoHoldingTimeout'], $null)
+    }
     $serverHandle = Start-L2Process -Name 'control-server' `
         -FilePath (Join-Path $hostDirectory 'ControlServer.Host.exe') `
         -WorkingDirectory $hostDirectory -Environment $serverEnvironment -LogRoot $logRoot |
@@ -1092,6 +1116,23 @@ try {
         }
     }
 
+    # Per-zone dispatch parameters (control-server#206). Written straight into the server's database as one version with
+    # Source = L2_PRESET -- no governed snapshot, no audit: the FieldOps import verb is control-server#216's, and so is the
+    # evidence for it. After the server is live, so its migration has created the tables, and before the scenario
+    # publishes its first demand. Without the setup key nothing is written: the default precondition is "unconfigured".
+    if ($null -eq $dispatchZoneParameters) {
+        $journal.Note('Per-zone dispatch parameters left unconfigured (the default precondition).')
+    } else {
+        $zoneVersion = Write-L2DispatchZoneParameters -DatabasePath $databasePath -Zones $dispatchZoneParameters `
+            -LoadedAt ([DateTimeOffset]::UtcNow)
+        [IO.File]::WriteAllText(
+            (Join-Path $snapshotRoot 'preseed-dispatch-zone-parameters.json'), $zoneVersion.Content,
+            [Text.UTF8Encoding]::new($false))
+        $journal.Observe('preseed:dispatch-zone-parameters', 'OK', @{
+                version = $zoneVersion.Version; contentSha256 = $zoneVersion.ContentSha256; source = 'L2_PRESET'
+                zones   = @($dispatchZoneParameters) })
+    }
+
     $context = [pscustomobject]@{
         Journal             = $journal
         Assertions          = $assertions
@@ -1282,7 +1323,9 @@ try {
                              'DispatchZoneAreaAssignments', 'StructuralDispatchBlocks',
                              # What the task type station preset loaded at startup (control-server#159).
                              'TaskTypeStationRuleVersions', 'TaskTypeStationBindingSetVersions',
-                             'TaskTypeStationBindings', 'TaskTypeStationActiveBindingSets')) {
+                             'TaskTypeStationBindings', 'TaskTypeStationActiveBindingSets',
+                             # Batch 7's per-zone dispatch parameters, and the occupancy of record (control-server#206).
+                             'DispatchZoneParameterVersions', 'DispatchZoneParameters', 'VehiclePurposeClaims')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(

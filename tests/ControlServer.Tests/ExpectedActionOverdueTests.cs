@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ControlServer.Dashboard;
@@ -868,6 +869,7 @@ public sealed class ExpectedActionOverdueTests
 
     private static JourneyRuntimeRow Runtime(string demandId, string agvId) => new()
     {
+        JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
         DemandId = demandId,
         Stage = JourneyRuntimeStage.AwaitingSublot,
         AgvId = agvId,

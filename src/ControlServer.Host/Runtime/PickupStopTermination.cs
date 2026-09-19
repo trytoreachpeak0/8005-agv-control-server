@@ -66,6 +66,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
         VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
             .SingleAsync(row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
         lease.ReleasedAt ??= endedAt;
+        await VehiclePurposeClaimRelease.StageAsync(dbContext, lease, cancellationToken).ConfigureAwait(false);
         OrderIntentRow pickup = await dbContext.OrderIntents
             .SingleAsync(row => row.UpperId == runtime.PickupUpperId, cancellationToken).ConfigureAwait(false);
         pickup.VehicleOccupancyReleasedAt ??= endedAt;

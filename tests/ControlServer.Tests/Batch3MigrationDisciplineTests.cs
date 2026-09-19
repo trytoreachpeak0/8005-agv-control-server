@@ -48,7 +48,11 @@ public sealed class Batch3MigrationDisciplineTests
         "20260917015519_Batch5JourneyBlockReasonSince",
         // 批次 6 唯一建表票 control-server#159：任务类型规则、按图绑定集、暂停、目录变化记录，只建新表。
         // 在 #80 合入之后的 fp/v2-impl 上生成，排在它后面。批次 6 自己的断言在 Batch6MigrationDisciplineTests。
-        "20260919021150_Batch6TaskTypeStationBindings"
+        "20260919021150_Batch6TaskTypeStationBindings",
+        // 批次 7 唯一建表票 control-server#206：停靠与需求从属、用途占有、按业务键抑制、每区派车参数、按车修订号计数器，
+        // JourneyRuntimes／VehicleDispatchLeases 主键改 JourneyId。在 #159 合入之后的 fp/v2-impl 上生成。批次 7 自己的断言在
+        // Batch7MigrationDisciplineTests；迁移通道上排在它后面的是 control-server#199、#186。
+        "20260919154546_Batch7MultiDemandJourneyPersistence"
     ];
 
     private static readonly string[] Batch3Tables =
