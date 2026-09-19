@@ -1,0 +1,31 @@
+{"at":"2026-09-19T07:19:10.3795935+00:00","note":"L2 run 20260919T071910244Z starting for scenario 'catalog-change-binding-hold'."}
+{"at":"2026-09-19T07:19:10.5205906+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-19T07:19:10.5294665+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T07:19:35.7525428+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T07:19:36.4188298+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T07:19:36.9259058+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 230=派工待送取货"}
+{"at":"2026-09-19T07:19:37.0239139+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-09-19T07:19:45.2720926+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T07:19:47.5353838+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T07:19:53.0140230+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T07:19:54.1312636+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T07:19:55.7877573+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T07:19:56.2110318+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T07:19:56.6197364+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T07:19:58.7507278+00:00","criterion":"dashboard-live","value":"200"}
+{"at":"2026-09-19T07:19:58.9897632+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T071910244Z\\controlserver.db"}
+{"at":"2026-09-19T07:20:04.9398735+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"97767f59513f4552acc893001093a228","version":1,"slotCount":8}}}
+{"at":"2026-09-19T07:20:04.9602549+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T071910244Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T07:20:08.6228337+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"97767f59513f4552acc893001093a228","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T07:20:08.7702208+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T07:20:08.7767968+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T071910244Z\\controlserver.db --input C:\\Users\\szy\\cs162-evidence\\red-c-rename\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T07:20:12.5871188+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\cs162-evidence\\red-c-rename\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"c0159d3aed7b4be883103e0d2a4fe169","importedAt":"2026-09-19T15:20:09.2290669+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T07:20:12.6028544+00:00","note":"Environment is up; entering scenario 'catalog-change-binding-hold'."}
+{"at":"2026-09-19T07:20:12.7747588+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-09-19T07:20:13.6198279+00:00","criterion":"runtime-iterations","value":"22"}
+{"at":"2026-09-19T07:20:14.4878636+00:00","criterion":"runtime-iterations","value":"23"}
+{"at":"2026-09-19T07:20:14.5043506+00:00","note":"Fake RIoT stations on map 25 become: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 230=派工待送取货-临时堆放"}
+{"at":"2026-09-19T07:20:14.5300833+00:00","criterion":"hold-renamed","value":""}
+{"at":"2026-09-19T07:21:14.7244166+00:00","note":"Run failed: Timed out after 60s waiting for: the rename of station 230 holds STAGING_TO_WIRE. Last observed: "}
+{"at":"2026-09-19T07:21:14.7328373+00:00","note":"Failure at: at Wait-L2Condition, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-06-8005-agv-control-server\\scripts\\l2\\L2.psm1: line 103\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-06-8005-agv-control-server\\scripts\\l2\\scenarios\\catalog-change-binding-hold.ps1: line 54\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-06-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1207"}
+{"at":"2026-09-19T07:21:22.9700908+00:00","note":"L2 port block lock released."}

@@ -1,0 +1,51 @@
+commit: f071ba404066bbaf1280f933af4a7002d85c4131 dirty: 0
+filter: FullyQualifiedName~CatalogBindingChangeClassifierTests
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:05.21]     ControlServer.Tests.CatalogBindingChangeClassifierTests.TheSameIdUnderAnotherNameIsARenameThatNeedsASiteReview [FAIL]
+[xUnit.net 00:00:05.23]     ControlServer.Tests.CatalogBindingChangeClassifierTests.ANewIdCarryingTheOldNameIsANewStationAndIsNeverReboundByName [FAIL]
+[xUnit.net 00:00:05.28]     ControlServer.Tests.CatalogBindingChangeClassifierTests.EachBindingIsJudgedOnItsOwnStation [FAIL]
+[xUnit.net 00:00:05.28]     ControlServer.Tests.CatalogBindingChangeClassifierTests.ABoundIdMissingFromTheCatalogIsRemovedAndInvalidatesTheBinding [FAIL]
+  Failed ControlServer.Tests.CatalogBindingChangeClassifierTests.TheSameIdUnderAnotherNameIsARenameThatNeedsASiteReview [65 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Renamed
+Actual:   Unchanged
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingChangeClassifierTests.TheSameIdUnderAnotherNameIsARenameThatNeedsASiteReview() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingChangeClassifierTests.cs:line 31
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.CatalogBindingChangeClassifierTests.ANewIdCarryingTheOldNameIsANewStationAndIsNeverReboundByName [1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: IdReplaced
+Actual:   Unchanged
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingChangeClassifierTests.ANewIdCarryingTheOldNameIsANewStationAndIsNeverReboundByName() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingChangeClassifierTests.cs:line 57
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.CatalogBindingChangeClassifierTests.EachBindingIsJudgedOnItsOwnStation [63 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                   ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<ValueTuple<string, CatalogBindingChangeKind>>                        [Tuple ("STAGING_TO_WIRE", Renamed), Tuple ("WIRE_TO_GATE", Unchanged)]
+Actual:   SelectIListIterator<CatalogBindingChange, ValueTuple<string, CatalogBindingChangeKind>> [Tuple ("WIRE_TO_GATE", Unchanged), Tuple ("STAGING_TO_WIRE", Unchanged)]
+                                                                                                   ↑ (pos 0)
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingChangeClassifierTests.EachBindingIsJudgedOnItsOwnStation() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingChangeClassifierTests.cs:line 71
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.CatalogBindingChangeClassifierTests.ABoundIdMissingFromTheCatalogIsRemovedAndInvalidatesTheBinding [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Removed
+Actual:   Unchanged
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingChangeClassifierTests.ABoundIdMissingFromTheCatalogIsRemovedAndInvalidatesTheBinding() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingChangeClassifierTests.cs:line 45
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     4, Passed:     1, Skipped:     0, Total:     5, Duration: 203 ms - ControlServer.Tests.dll (net8.0)

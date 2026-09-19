@@ -63,11 +63,11 @@ public static class TaskTypeStationStartup
             new EventId(9304, "TaskTypeStationGateScalarsIgnored"),
             "JourneyRuntime:gateStationId ({GateStationId}) / gateStationRiotId ({GateStationRiotId}) are still configured but are ignored since control-server#160: the WIRE_TO_GATE end station is the Map's binding in the task type station preset. Remove the two keys, and check that binding if the gate here is not the preset's.");
 
-    private static readonly Action<ILogger, string, int, long?, string, Exception?> NotApplied =
-        LoggerMessage.Define<string, int, long?, string>(
+    private static readonly Action<ILogger, string, int, string, string, Exception?> NotApplied =
+        LoggerMessage.Define<string, int, string, string>(
             LogLevel.Warning,
             new EventId(9305, "TaskTypeStationPresetNotApplied"),
-            "Task type station preset {Path} was not applied to Map {MapId}: binding set version {ActiveVersion} stays active (pointer state {State}); a different version only comes from a FieldOps activation.");
+            "Task type station preset {Path} was not applied to Map {MapId} (pointer state {State}): {Standing}; a different version only comes from a FieldOps activation or rollback.");
 
     public static async Task<TaskTypeStationStartupResult?> EnsureAsync(
         IServiceProvider services,
@@ -158,7 +158,7 @@ public static class TaskTypeStationStartup
             if (!SameContent(kept, ruleWrite.Version.Version, map)
                 || !string.Equals(existing.State, TaskTypeStationActivationState.Active, StringComparison.Ordinal))
             {
-                NotApplied(logger, preset.Path, map.MapId, existing.ActiveVersion, existing.State, null);
+                NotApplied(logger, preset.Path, map.MapId, existing.State, Standing(existing), null);
             }
             else
             {
@@ -192,6 +192,18 @@ public static class TaskTypeStationStartup
             null);
         return new TaskTypeStationStartupResult(ruleWrite, bindingWrite);
     }
+
+    /// <summary>9305 日志里「该图现在是什么样」那一句，按指针状态说，不打印空版本号。</summary>
+    private static string Standing(TaskTypeStationActivePointer pointer) =>
+        pointer.State switch
+        {
+            TaskTypeStationActivationState.ClosedManually =>
+                "it was closed manually and has no active version, and stays without one",
+            TaskTypeStationActivationState.ActivationUnknown => pointer.ActiveVersion is long active
+                ? FormattableString.Invariant($"binding set version {active} stays as it is while an activation of version {pointer.PendingVersion} has an unknown result, until reconcile-task-type-stations concludes it")
+                : FormattableString.Invariant($"it has no active version while an activation of version {pointer.PendingVersion} has an unknown result, until reconcile-task-type-stations concludes it"),
+            _ => FormattableString.Invariant($"binding set version {pointer.ActiveVersion} stays active")
+        };
 
     private static bool SameContent(TaskTypeStationBindingSetVersion kept, long ruleVersion, TaskTypeStationMapConfiguration map) =>
         kept.RuleVersion == ruleVersion

@@ -91,12 +91,19 @@ public sealed class DashboardSkeletonTests
     {
         // 无人员认证的前提下界面只允许 fail-safe 方向的动作。这条守卫盯的是「界面上有没有这些
         // 入口」，所以它同时扫动作词与任何可以提交的控件。
+        //
+        // control-server#162 起看板有了第一个写操作（按 Map + TASK_TYPE 暂停），约定照卡片的样子立：动作自注册，
+        // 能提交的控件与 POST 路由只活在约定那一个文件里（DashboardActionRoutes.cs），别的文件照旧一个都不许有；
+        // 有哪些动作由 DashboardActionTests 按名单守着，名单上只有收紧方向的。
         foreach (string file in DashboardSourceFiles())
         {
             string source = ExecutableLines(file);
-            Assert.DoesNotContain("<form", source, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("<button", source, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("MapPost", source, StringComparison.Ordinal);
+            if (!string.Equals(Path.GetFileName(file), "DashboardActionRoutes.cs", StringComparison.Ordinal))
+            {
+                Assert.DoesNotContain("<form", source, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("<button", source, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("MapPost", source, StringComparison.Ordinal);
+            }
             Assert.DoesNotContain("MapPut", source, StringComparison.Ordinal);
             Assert.DoesNotContain("MapDelete", source, StringComparison.Ordinal);
             foreach (string word in FailUnsafeWords)

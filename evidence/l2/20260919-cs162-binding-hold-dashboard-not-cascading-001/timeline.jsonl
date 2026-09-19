@@ -1,0 +1,30 @@
+{"at":"2026-09-19T06:55:14.5564402+00:00","note":"L2 run 20260919T065514403Z starting for scenario 'binding-hold-dashboard-not-cascading'."}
+{"at":"2026-09-19T06:55:14.7274447+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-19T06:55:14.7383954+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T06:55:39.1619451+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T06:55:39.6414641+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T06:55:39.8651875+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 230=派工待送取货"}
+{"at":"2026-09-19T06:55:39.8944072+00:00","note":"Fleet of 2: AGV-L2-001/BROKERX-L2-0001, AGV-L2-002/BROKERX-L2-0002"}
+{"at":"2026-09-19T06:55:39.9933497+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-09-19T06:55:45.8701027+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T06:55:48.0415293+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T06:55:51.4234463+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T06:55:51.6762428+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T06:55:53.1705402+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T06:55:53.7371549+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T06:55:55.6698803+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T06:55:57.7892475+00:00","criterion":"dashboard-live","value":"200"}
+{"at":"2026-09-19T06:55:58.2151293+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T065514403Z\\controlserver.db"}
+{"at":"2026-09-19T06:56:03.3830867+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"2d7bc3d1c6304b569cc8c40b74715afb","version":1,"slotCount":8}}}
+{"at":"2026-09-19T06:56:03.4061698+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T065514403Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T06:56:07.0210803+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"2d7bc3d1c6304b569cc8c40b74715afb","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T06:56:07.0258792+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T065514403Z\\controlserver.db --agv AGV-L2-002"}
+{"at":"2026-09-19T06:56:11.3019416+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-002","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-002","slotModelVersionId":"2d7bc3d1c6304b569cc8c40b74715afb","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T06:56:11.6500282+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T06:56:11.6565442+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T065514403Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-06-8005-agv-control-server\\evidence\\l2\\20260919-cs162-binding-hold-dashboard-not-cascading-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T06:56:16.1809028+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-06-8005-agv-control-server\\evidence\\l2\\20260919-cs162-binding-hold-dashboard-not-cascading-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"cf8f84baf6ba4c4bbf3776d204490bea","importedAt":"2026-09-19T14:56:12.3348984+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T06:56:16.2015738+00:00","note":"Environment is up; entering scenario 'binding-hold-dashboard-not-cascading'."}
+{"at":"2026-09-19T06:56:16.4868556+00:00","note":"Submitting a dashboard hold on STAGING_TO_WIRE (派工待送取货点被料车占住)."}
+{"at":"2026-09-19T06:56:16.8824048+00:00","note":"Run failed: Operation is not valid due to the current state of the object."}
+{"at":"2026-09-19T06:56:16.8892052+00:00","note":"Failure at: at Submit-L2DashboardHold, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-06-8005-agv-control-server\\scripts\\l2\\L2TaskTypeHolds.psm1: line 208\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-06-8005-agv-control-server\\scripts\\l2\\scenarios\\binding-hold-dashboard-not-cascading.ps1: line 44\r\nat <ScriptBlock>, C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-06-8005-agv-control-server\\scripts\\l2\\Invoke-L2Scenario.ps1: line 1207"}
+{"at":"2026-09-19T06:56:17.7965342+00:00","note":"L2 port block lock released."}

@@ -380,7 +380,7 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
 {
     private readonly ControlServerDbContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
-    public async Task<TaskTypeStationHold> RaiseAsync(
+    public async Task<TaskTypeStationHoldRaise> RaiseAsync(
         int mapId,
         string taskType,
         string source,
@@ -401,6 +401,28 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
                 nameof(source));
         }
 
+        // The check and the insert share one transaction. On SQLite that transaction begins IMMEDIATE, so a second
+        // writer -- another scope in this server, or FieldOps in its own process -- waits for this one to commit and
+        // then finds the hold already standing, instead of both finding none and inserting two.
+        await using IDbContextTransaction? transaction = _context.Database.CurrentTransaction is null
+            ? await _context.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+
+        TaskTypeStationHoldRow? standing = await _context.Set<TaskTypeStationHoldRow>()
+            .AsNoTracking()
+            .Where(candidate => candidate.MapId == mapId
+                && candidate.TaskType == taskType
+                && candidate.Source == source
+                && candidate.ReasonCode == reasonCode
+                && candidate.ReleasedAt == null)
+            .OrderBy(candidate => candidate.HoldId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (standing is not null)
+        {
+            // A retry, or the same catalog change judged again next round: the hold that stands is the answer.
+            return new(Project(standing), Created: false);
+        }
+
         TaskTypeStationHoldRow row = new()
         {
             HoldId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
@@ -414,7 +436,11 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
         };
         _context.Set<TaskTypeStationHoldRow>().Add(row);
         await _context.SaveChangesAsync(cancellationToken);
-        return Project(row);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+        return new(Project(row), Created: true);
     }
 
     public async Task<bool> ReleaseAsync(
@@ -426,17 +452,17 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
         ArgumentException.ThrowIfNullOrWhiteSpace(holdId);
         ArgumentException.ThrowIfNullOrWhiteSpace(releasedBy);
 
-        TaskTypeStationHoldRow? row = await _context.Set<TaskTypeStationHoldRow>()
-            .SingleOrDefaultAsync(candidate => candidate.HoldId == holdId && candidate.ReleasedAt == null, cancellationToken);
-        if (row is null)
-        {
-            return false;
-        }
-        // Released, never deleted: the row is the record that the task type was held, by whom and why.
-        row.ReleasedAt = releasedAt;
-        row.ReleasedBy = releasedBy;
-        await _context.SaveChangesAsync(cancellationToken);
-        return true;
+        // One conditional statement rather than read-then-save: when two releases race, the second one's update
+        // matches no row, so the first one's ReleasedBy stands. Released, never deleted: the row is the record that
+        // the task type was held, by whom and why.
+        int released = await _context.Set<TaskTypeStationHoldRow>()
+            .Where(candidate => candidate.HoldId == holdId && candidate.ReleasedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(candidate => candidate.ReleasedAt, releasedAt)
+                    .SetProperty(candidate => candidate.ReleasedBy, releasedBy),
+                cancellationToken);
+        return released == 1;
     }
 
     public async Task<IReadOnlyList<TaskTypeStationHold>> ListUnreleasedAsync(
