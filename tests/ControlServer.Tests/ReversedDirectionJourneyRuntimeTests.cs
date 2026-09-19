@@ -688,7 +688,7 @@ public sealed class ReversedDirectionJourneyRuntimeTests
 
         // The stage save is lost to a restart: the row is back where it was before the admission returned.
         unloading.Stage = JourneyRuntimeStage.AwaitingGateArrival;
-        unloading.AreaEndAdmissionRevokedSince = heldSince;
+        unloading.HoldForAreaEndAdmission(heldSince);
         await fixture.Context.SaveChangesAsync(Token);
         fixture.Clock.Advance(TimeSpan.FromMinutes(2));
         await fixture.RecreateEngineAsync();
@@ -701,6 +701,35 @@ public sealed class ReversedDirectionJourneyRuntimeTests
             (resumed.Stage, resumed.BlockReasonCode, resumed.AreaEndAdmissionRevokedSince));
         Assert.Single(await fixture.Context.StationOperations.AsNoTracking()
             .Where(row => row.OperationType == SlotOperationType.Unload).ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#228: the start of the wait has no public setter, the way <c>BlockReasonSince</c> has none -- a write
+    /// that bypasses the two write points would restart a wait that has not restarted, and it has to be a compile error
+    /// rather than a silently wrong start. Held again while it already holds, it keeps the first time and hands it back,
+    /// because the hold is written on every round the stop stands there.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task TheStartOfTheWaitIsOnlyWrittenThroughItsTwoWritePoints()
+    {
+        System.Reflection.PropertyInfo start = typeof(JourneyRuntimeRow)
+            .GetProperty(nameof(JourneyRuntimeRow.AreaEndAdmissionRevokedSince))!;
+        Assert.True(
+            start.SetMethod is null || start.SetMethod.IsPrivate,
+            "The start of the wait must have no public setter.");
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        DateTimeOffset at = Batch7JourneyFixture.Now;
+        await Batch7JourneyFixture.AcceptAsync(fixture.Context, "D-HOLD", "agv-01", "VK-01", at);
+        JourneyRuntimeRow runtime = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
+
+        DateTimeOffset first = runtime.HoldForAreaEndAdmission(at);
+        DateTimeOffset second = runtime.HoldForAreaEndAdmission(at.AddMinutes(7));
+
+        Assert.Equal((at, at, (DateTimeOffset?)at), (first, second, runtime.AreaEndAdmissionRevokedSince));
+        runtime.ReleaseAreaEndAdmissionHold();
+        Assert.Null(runtime.AreaEndAdmissionRevokedSince);
+        Assert.Equal(at.AddMinutes(9), runtime.HoldForAreaEndAdmission(at.AddMinutes(9)));
     }
 
     /// <summary>

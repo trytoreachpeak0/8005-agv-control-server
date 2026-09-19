@@ -987,7 +987,7 @@ public sealed class JourneyRuntimeEngine(
                     // The first hold stores when the wait began, in this same save as the hold itself, so a crash leaves
                     // both or neither. The block is written from that start too: back from another code -- a failed
                     // order -- the hold names the whole wait, not the part since the last code change.
-                    DateTimeOffset revokedSince = runtime.AreaEndAdmissionRevokedSince ??= now;
+                    DateTimeOffset revokedSince = runtime.HoldForAreaEndAdmission(now);
                     runtime.SetBlockReason(AreaEndAdmissionHeldReason, revokedSince);
                     runtime.UpdatedAt = now;
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -995,7 +995,7 @@ public sealed class JourneyRuntimeEngine(
                 }
                 await PublishGateStateAndUnloadAsync(runtime, session, cancellationToken).ConfigureAwait(false);
                 // Admitted again: the one place the wait's start is cleared.
-                runtime.AreaEndAdmissionRevokedSince = null;
+                runtime.ReleaseAreaEndAdmissionHold();
                 SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now);
                 break;
             case JourneyRuntimeStage.AwaitingUnloadResult:
@@ -1528,9 +1528,7 @@ public sealed class JourneyRuntimeEngine(
             .SingleAsync(cancellationToken).ConfigureAwait(false);
         if (await store.AreaEndOperationAsync(runtime.DemandId, workType, cancellationToken).ConfigureAwait(false)
                 != SlotOperationType.Unload ||
-            await dbContext.StationOperations.AsNoTracking()
-                .AnyAsync(row => row.SlotOperationAttemptId == runtime.UnloadSlotOperationAttemptId, cancellationToken)
-                .ConfigureAwait(false))
+            await UnloadPreparedAsync(runtime, cancellationToken).ConfigureAwait(false))
         {
             return true;
         }
@@ -1671,7 +1669,7 @@ public sealed class JourneyRuntimeEngine(
         if (!await store.IsTaskTypeAllowedAtAreaEndAsync(runtime, demand.WorkType, cancellationToken)
                 .ConfigureAwait(false))
         {
-            runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", now);
+            runtime.SetBlockReason(AreaEndAdmissionHeldReason, now);
             runtime.UpdatedAt = now;
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return false;
@@ -2505,7 +2503,7 @@ public sealed class JourneyRuntimeEngine(
 
     private static bool IsHeldForAreaEndAdmission(JourneyRuntimeRow runtime) =>
         runtime.Stage == JourneyRuntimeStage.AwaitingGateArrival &&
-        string.Equals(runtime.BlockReasonCode, "TASK_TYPE_NOT_ALLOWED_AT_STATION", StringComparison.Ordinal);
+        string.Equals(runtime.BlockReasonCode, AreaEndAdmissionHeldReason, StringComparison.Ordinal);
 
     private static void Block(JourneyRuntimeRow runtime, string reason, DateTimeOffset now)
     {
@@ -2541,9 +2539,7 @@ public sealed class JourneyRuntimeEngine(
     {
         if (runtime.AreaEndAdmissionRevokedSince is not DateTimeOffset revokedSince ||
             now - revokedSince < runtimeOptions.AreaEndAdmissionRevokedTimeout ||
-            await dbContext.StationOperations.AsNoTracking()
-                .AnyAsync(row => row.SlotOperationAttemptId == runtime.UnloadSlotOperationAttemptId, cancellationToken)
-                .ConfigureAwait(false))
+            await UnloadPreparedAsync(runtime, cancellationToken).ConfigureAwait(false))
         {
             return false;
         }
@@ -2560,6 +2556,14 @@ public sealed class JourneyRuntimeEngine(
             null);
         return true;
     }
+
+    /// <summary>
+    /// Whether this journey's unload at the AREA machine has already been prepared: the attempt has a
+    /// <c>StationOperations</c> row, which is written with the admission frozen on it (ADR-cross-0050/0051).
+    /// </summary>
+    private Task<bool> UnloadPreparedAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
+        dbContext.StationOperations.AsNoTracking()
+            .AnyAsync(row => row.SlotOperationAttemptId == runtime.UnloadSlotOperationAttemptId, cancellationToken);
 
     private async Task<string?> FindSafetyResultMessageIdAsync(
         string checkId,
