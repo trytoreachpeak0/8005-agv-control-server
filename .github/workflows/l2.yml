@@ -48,8 +48,8 @@ on:
 
 # Never cancel a running job here. Cancelling one on a self-hosted runner also cancels the runner's
 # broker long-poll; the backoff retries exhaust and the session wedges without self-healing.
-# Measured on 2026-09-03: 4 hours 14 minutes of dead CI. This repository has exactly one runner, so
-# a wedged session is its entire CI. Cancelling a QUEUED job is safe and still happens.
+# Measured on 2026-09-03: 4 hours 14 minutes of dead CI. Only one runner may take this job, so a
+# wedged session stops every l2 run. Cancelling a QUEUED job is safe and still happens.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -60,6 +60,8 @@ jobs:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     # `headless` matters: win11-01 also hosts an interactive runner, and a job that only asked for
     # [self-hosted] could be taken by either. This one must NOT land on the golden-renderer runner.
+    # It also keeps l2 off win11-01-control-server-2, which carries 'cs-test' and not 'headless':
+    # l2 runs on win11-01-control-server alone, so two l2 jobs never contend for the port slots.
     runs-on: [self-hosted, headless]
     # A timeout ends the job by cancelling it, which may well take the path that wedged this runner,
     # so it must never be what ends a run. The consecutive modes, and a pull request's L2-Consecutive
