@@ -25,7 +25,9 @@ $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
 $serverBase = "http://127.0.0.1:$($Context.HealthPort)"
-# The admission reason for a held task type, as batch 6-04 (control-server#160) registered it.
+# The admission reason for a held task type: DispatchReasonCodes.TaskTypeHeld, registered by batch 6-04
+# (control-server#160) as ordinary backlog, criterion order 20. A script cannot name the C# constant, so the value is
+# written out; DispatchReasonCodes.cs is where it is defined.
 $heldReasonCode = 'TASK_TYPE_HELD'
 
 function Format-Holds([object[]]$Holds) {
