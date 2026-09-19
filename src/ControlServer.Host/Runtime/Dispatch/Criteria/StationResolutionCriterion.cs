@@ -4,7 +4,8 @@ using Microsoft.Extensions.Options;
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
-/// Resolves the candidate's AREA to a unique pickup station and validates the resulting route.
+/// Resolves the candidate's task type to its fixed station and its AREA to a unique station, has the
+/// plan builder turn the two into a route, and validates the route.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -12,6 +13,12 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// after it depends on that being set. A resolution failure carries the resolver's own reason code
 /// through unchanged rather than being flattened into one generic block — the operator needs to
 /// know whether the station was missing, ambiguous or out of the Map.
+/// </para>
+/// <para>
+/// The fixed station comes from the round's view, asked for this candidate's task type. A task type
+/// the view refuses is refused here under the view's own reason and touches no other candidate
+/// (REQ-0335). Which end of the route the fixed station is, and so which station is the pickup, is the
+/// plan builder's decision, not this criterion's.
 /// </para>
 /// <para>
 /// The two route validations that follow resolution stay here rather than becoming their own
@@ -47,22 +54,31 @@ public sealed class StationResolutionCriterion(
             return Task.FromResult(DispatchReasonCodes.OutOfScopeArea);
         }
 
+        FixedTaskStationResolution fixedStation =
+            evaluation.Round.FixedStations.Resolve(evaluation.Candidate.WorkType);
+        evaluation.FixedStation = fixedStation;
+        if (fixedStation.RefusalReasonCode is { } refusal)
+        {
+            return Task.FromResult(refusal);
+        }
+
         try
         {
-            RiotMapStation resolvedPickup = stationResolver.ResolveUniquePickup(
+            RiotMapStation areaStation = stationResolver.ResolveUniquePickup(
                 evaluation.Round.Map,
                 evaluation.Candidate.LiveMesFields!.Area!);
 
-            ResolvedJourneyRoute route = new(
+            JourneyRouteDecision decision = JourneyPlanBuilder.ResolveRoute(
+                evaluation.Round.Map,
                 assignment.DispatchZone,
-                MapStationResolver.BuildRouteEvidenceId(
-                    evaluation.Round.Map,
-                    resolvedPickup,
-                    evaluation.Round.Gate,
-                    evaluation.Candidate.LiveMesFields.Area!,
-                    evaluation.Candidate.LiveMesFields.Eqp!),
-                resolvedPickup.StationName,
-                resolvedPickup.StationId);
+                areaStation,
+                fixedStation,
+                evaluation.Candidate.LiveMesFields.Area!,
+                evaluation.Candidate.LiveMesFields.Eqp!);
+            if (decision.Route is not { } route)
+            {
+                return Task.FromResult(decision.RefusalReasonCode!);
+            }
             evaluation.Route = route;
 
             if (!_options.AllowedDispatchZones.Contains(route.DispatchZone, StringComparer.Ordinal))

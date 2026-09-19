@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Infrastructure.Persistence;
@@ -273,7 +274,7 @@ public sealed class SlotGroupSelectionTests
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot(candidate.HistoryEpoch, 21, [candidate]),
                 new RiotMapStationCatalogSnapshot(25, Now, new string('c', 64), []),
-                new RiotMapStation(210, "关卡"),
+                new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
                 new HashSet<string>(StringComparer.Ordinal),
                 Now,
                 new VehicleDispatchPolicy([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY")),
@@ -310,7 +311,7 @@ public sealed class SlotGroupSelectionTests
             new LiveMesFieldSet("N1-3", "EQP-01", "STEP-01", Now, "PDFN5×6-8L(12R)"));
         return new EligibleDispatchCandidate(
             snapshot,
-            new ResolvedJourneyRoute(Zone, "ROUTE-1", "N1-3", 12),
+            new ResolvedJourneyRoute(Zone, "ROUTE-1", "N1-3", 12, "关卡", 210, FixedTaskStationResolution.Resolved("WIRE_TO_GATE", FixedStationEnd.Destination, new RiotMapStation(210, "关卡"))),
             1,
             [1],
             firstSeen,

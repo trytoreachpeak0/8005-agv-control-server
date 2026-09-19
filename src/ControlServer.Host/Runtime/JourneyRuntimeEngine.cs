@@ -24,6 +24,7 @@ public sealed class JourneyRuntimeEngine(
     IRiotVehicleFacts vehicleFacts,
     IRiotMapStationCatalog mapStationCatalog,
     MapStationResolver stationResolver,
+    IFixedTaskStationResolver fixedStationResolver,
     JourneyIntakeCoordinator intakeCoordinator,
     MovementDispatchService movementDispatch,
     WireToGateStore store,
@@ -145,14 +146,18 @@ public sealed class JourneyRuntimeEngine(
         }
 
         RiotMapStationCatalogSnapshot currentMap;
-        RiotMapStation gate;
+        IFixedTaskStationView fixedStations;
         IReadOnlyList<RiotMapStation> machineStations;
         try
         {
             currentMap = await mapStationCatalog.ReadMapStationsAsync(
                 runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);
-            gate = stationResolver.RequireFixedStation(
-                currentMap, runtimeOptions.GateStationRiotId, runtimeOptions.GateStationId);
+            // Once per round, so that every candidate is judged against the same bindings. A resolver
+            // that cannot use the Map at all throws StationResolutionException, recorded below as the
+            // catalog-level failure it always was; one task type it cannot resolve is a refusal on
+            // that task type's candidates only.
+            fixedStations = await fixedStationResolver.ReadForRoundAsync(currentMap, cancellationToken)
+                .ConfigureAwait(false);
             machineStations = stationResolver.ParseAreaNamedMachineStations(currentMap);
         }
         catch (Exception error) when (
@@ -174,7 +179,7 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        // Read whole, gate station found, machine stations parsed: this is what a complete
+        // Read whole, fixed stations read, machine stations parsed: this is what a complete
         // confirmation is, and the only thing freshness is measured from.
         await catalogAvailability.RecordConfirmationAsync(currentMap, cancellationToken)
             .ConfigureAwait(false);
@@ -277,13 +282,13 @@ public sealed class JourneyRuntimeEngine(
                 $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
         }
 
-        await DiscoverAndAcceptAsync(currentMap, gate, free, admissionPolicyDrifted, cancellationToken)
+        await DiscoverAndAcceptAsync(currentMap, fixedStations, free, admissionPolicyDrifted, cancellationToken)
             .ConfigureAwait(false);
     }
 
     private async Task DiscoverAndAcceptAsync(
         RiotMapStationCatalogSnapshot currentMap,
-        RiotMapStation gate,
+        IFixedTaskStationView fixedStations,
         IReadOnlyList<FleetVehicle> vehicles,
         bool admissionPolicyDrifted,
         CancellationToken cancellationToken)
@@ -329,7 +334,7 @@ public sealed class JourneyRuntimeEngine(
         AreaAssignmentTableVersion? areaAssignmentTable = await areaAssignments
             .ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
         DispatchRoundFacts round = new(
-            snapshot, currentMap, gate, acceptedDemandIds, now, policy, areaAssignmentTable,
+            snapshot, currentMap, fixedStations, acceptedDemandIds, now, policy, areaAssignmentTable,
             admissionPolicyDrifted);
         List<DispatchVehicleOutcome> completedVehicles = [];
 
@@ -484,7 +489,7 @@ public sealed class JourneyRuntimeEngine(
         }
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
-        JourneyExecutionPlan plan = CreatePlan(fleetVehicle, selected, intakeAt);
+        JourneyExecutionPlan plan = new JourneyPlanBuilder(runtimeOptions).CreatePlan(fleetVehicle, selected, intakeAt);
         // REQ-0305: the endpoints are taken from the snapshot that was fresh when the demand was
         // taken, and frozen there. Both ends, because both are stations this task will be sent to
         // and a later rename of either must not reach the task that already exists. The store
@@ -493,33 +498,11 @@ public sealed class JourneyRuntimeEngine(
         await catalogStore.FreezeDemandStationsAsync(
             selected.Snapshot.DemandId,
             selected.Snapshot.TransportDemandKey,
-            [
-                new FrozenStationFact(
-                    FrozenStationRole.Pickup,
-                    plan.MapId,
-                    plan.PickupStationRiotId,
-                    plan.PickupStationId),
-                new FrozenStationFact(
-                    FrozenStationRole.Dropoff,
-                    plan.MapId,
-                    plan.GateStationRiotId,
-                    plan.GateStationId),
-            ],
+            JourneyPlanBuilder.FrozenStations(plan),
             selected.CatalogRevision,
             intakeAt,
             cancellationToken).ConfigureAwait(false);
-        OrderIntent pickup = new(
-            plan.PickupMovementLegId,
-            selected.Snapshot.DemandId,
-            plan.PickupUpperId,
-            "TO_PICKUP",
-            plan.PickupStationId,
-            intakeAt,
-            plan.VehicleKey,
-            plan.MapId,
-            plan.PickupStationRiotId,
-            plan.AgvLifecycleGeneration,
-            plan.DispatchGeneration);
+        OrderIntent pickup = JourneyPlanBuilder.PickupIntent(plan, selected.Snapshot.DemandId, intakeAt);
         // Taken before the call rather than after it: a candidate this vehicle is committing to
         // must stop being a candidate for the vehicles behind it in this round whatever the intake
         // then reports, because every refusal below leaves the demand bound to this attempt.
@@ -842,7 +825,7 @@ public sealed class JourneyRuntimeEngine(
                     return;
                 }
 
-                OrderIntent gateIntent = GateIntent(runtime, now);
+                OrderIntent gateIntent = JourneyPlanBuilder.GateIntent(runtime, now);
                 await new WireToGateStore(dbContext).AuthorizeMovementAsync(
                     gateIntent, safety, now, cancellationToken).ConfigureAwait(false);
                 MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
@@ -1218,7 +1201,7 @@ public sealed class JourneyRuntimeEngine(
             runtime.PlanMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            PickupPlan(runtime),
+            JourneyPlanBuilder.PickupPlan(runtime),
             cancellationToken).ConfigureAwait(false);
         // One demand per journey, so the dispatch scope is this demand's sublot (protocol 2.0.0 item 2).
         await publisher.PublishSublotEntryRequestAsync(
@@ -1273,7 +1256,7 @@ public sealed class JourneyRuntimeEngine(
             messageId,
             runtime.AgvId,
             session.SessionGeneration,
-            PickupDispatchPlan(runtime),
+            JourneyPlanBuilder.PickupDispatchPlan(runtime),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1364,7 +1347,7 @@ public sealed class JourneyRuntimeEngine(
             runtime.GatePlanMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            GatePlan(runtime),
+            JourneyPlanBuilder.GatePlan(runtime),
             cancellationToken).ConfigureAwait(false);
         int[] slots = JsonSerializer.Deserialize<int[]>(runtime.TargetSlotsJson) ?? [];
         await publisher.PublishSlotOperationCommandAsync(
@@ -1623,7 +1606,7 @@ public sealed class JourneyRuntimeEngine(
         CancellationToken cancellationToken)
     {
         await publisher.PublishSublotRejectedAsync(
-            StableGuid(submission.MessageId, "sublot-rejected"),
+            JourneyPlanBuilder.StableGuid(submission.MessageId, "sublot-rejected"),
             submission.MessageId,
             runtime.AgvId,
             session.SessionGeneration,
@@ -2109,37 +2092,6 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private JourneyExecutionPlan CreatePlan(
-        FleetVehicle fleetVehicle,
-        EligibleDispatchCandidate candidate,
-        DateTimeOffset now)
-    {
-        string demandId = candidate.Snapshot.DemandId;
-        return new JourneyExecutionPlan(
-            fleetVehicle.AgvId,
-            fleetVehicle.VehicleKey,
-            fleetVehicle.AgvLifecycleGeneration,
-            runtimeOptions.MapId,
-            runtimeOptions.MapIdentity,
-            candidate.Route.DispatchZone,
-            candidate.Route.RouteEvidenceId,
-            candidate.Route.PickupStationId,
-            candidate.Route.PickupStationRiotId,
-            runtimeOptions.GateStationId,
-            runtimeOptions.GateStationRiotId,
-            candidate.ExpectedBasketCount,
-            candidate.TargetSlots,
-            StableGuid(demandId, "operation-session"),
-            StableGuid(demandId, "pickup-leg"),
-            $"W2G-{demandId}-PICKUP-{runtimeOptions.DispatchGeneration}",
-            StableGuid(demandId, "gate-leg"),
-            $"W2G-{demandId}-GATE-{runtimeOptions.DispatchGeneration}",
-            runtimeOptions.DispatchGeneration,
-            now,
-            candidate.AreaAssignmentVersion,
-            candidate.RequiredSlotPosition);
-    }
-
     /// <summary>
     /// Re-runs the pre-create gate for the gate-bound move order, against the endpoint this demand
     /// froze rather than a freshly resolved one.
@@ -2201,19 +2153,6 @@ public sealed class JourneyRuntimeEngine(
             cancellationToken).ConfigureAwait(false);
     }
 
-    private static OrderIntent GateIntent(JourneyRuntimeRow runtime, DateTimeOffset now) => new(
-        runtime.GateMovementLegId,
-        runtime.DemandId,
-        runtime.GateUpperId,
-        "TO_GATE",
-        runtime.GateStationId,
-        now,
-        runtime.VehicleKey,
-        runtime.MapId,
-        runtime.GateStationRiotId,
-        runtime.AgvLifecycleGeneration,
-        runtime.DispatchGeneration);
-
     /// <summary>
     /// The worklist for one stop. The revision is explicit because the gate stop is a different
     /// worklist from the pickup stop -- different station, different role -- and the peer keys a
@@ -2241,12 +2180,6 @@ public sealed class JourneyRuntimeEngine(
                 demand.WorkType,
                 role,
                 runtime.ExpectedBasketCount)]);
-
-    // Every leg this runtime plans is BUSINESS: it moves a demand from a pickup station to a
-    // dropoff station and does nothing else. WAITING_POINT is FP-C4, batch 5, and CHARGER is
-    // FP-C1, batch 8 -- neither exists here to be reported, so the constant is a fact about this
-    // profile rather than a placeholder for one.
-    private const string BusinessStopPurpose = "BUSINESS";
 
     // Likewise the only activePurpose this runtime can be in. CHARGING is batch 8, IDLE_RETURN is
     // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.
@@ -2303,48 +2236,6 @@ public sealed class JourneyRuntimeEngine(
         _ => throw new ArgumentOutOfRangeException(nameof(stage), stage, "Journey stage has no loading phase mapping.")
     };
 
-    // The plan stream advances three times per journey: before the pickup arrival at the stored
-    // revision, at the pickup one above it, at the gate two above it. WireToGateStore seeds the next
-    // journey on the vehicle three above, so the stream never steps back across journeys.
-    private static UpcomingStopPlanProjection PickupDispatchPlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision,
-        [
-            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "ACTIVE"),
-            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "PLANNED")
-        ]);
-
-    private static UpcomingStopPlanProjection PickupPlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision + 1,
-        [
-            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "ARRIVED"),
-            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "PLANNED")
-        ]);
-
-    private static UpcomingStopPlanProjection GatePlan(JourneyRuntimeRow runtime) => new(
-        runtime.PlanRevision + 2,
-        [
-            PlanLeg(runtime, runtime.PickupMovementLegId, "TO_PICKUP", 1, runtime.PickupStationId, "COMPLETED"),
-            PlanLeg(runtime, runtime.GateMovementLegId, "TO_DROPOFF", 2, runtime.GateStationId, "ARRIVED")
-        ]);
-
-    private static UpcomingMovementLeg PlanLeg(
-        JourneyRuntimeRow runtime,
-        string movementLegId,
-        string legType,
-        int sequence,
-        string stationId,
-        string state) => new(
-            movementLegId,
-            legType,
-            BusinessStopPurpose,
-            runtime.DemandId,
-            // FP-C9b, batch 4. Null is what this server knows, not a value it is withholding.
-            null,
-            sequence,
-            stationId,
-            runtime.MapIdentity,
-            state);
-
     private static string BusinessHash(string demandId, string sublot, string operation, IEnumerable<int> slots) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
             $"{demandId}|{sublot}|{operation}|{string.Join(',', slots)}"))).ToLowerInvariant();
@@ -2352,7 +2243,7 @@ public sealed class JourneyRuntimeEngine(
     // Derived rather than stored: the row predates this snapshot, and a deterministic id from the
     // demand is what the stored ones are anyway (WireToGateStore.ToRuntimeRow), without a migration.
     private static string PickupDispatchPlanMessageId(JourneyRuntimeRow runtime) =>
-        StableGuid(runtime.DemandId, "pickup-dispatch-plan");
+        JourneyPlanBuilder.StableGuid(runtime.DemandId, "pickup-dispatch-plan");
 
     private static HashSet<string> RuntimeMessageIds(JourneyRuntimeRow runtime) =>
     [
@@ -2368,15 +2259,6 @@ public sealed class JourneyRuntimeEngine(
         runtime.GatePlanMessageId,
         runtime.UnloadCommandMessageId
     ];
-
-    private static string StableGuid(string demandId, string purpose)
-    {
-        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes($"{demandId}|{purpose}"));
-        Span<byte> guidBytes = bytes.AsSpan(0, 16);
-        guidBytes[6] = (byte)((guidBytes[6] & 0x0f) | 0x50);
-        guidBytes[8] = (byte)((guidBytes[8] & 0x3f) | 0x80);
-        return new Guid(guidBytes).ToString("D");
-    }
 
     private static string RequiredString(JsonElement element, string propertyName) =>
         element.GetProperty(propertyName).GetString()
@@ -2857,9 +2739,10 @@ public sealed class JourneyRuntimeEngine(
         {
             check.FencedAt = now;
         }
-        runtime.PreDepartureSafetyCheckId = StableGuid(runtime.PreDepartureSafetyCheckId, "reissued-after-expiry");
+        runtime.PreDepartureSafetyCheckId =
+            JourneyPlanBuilder.StableGuid(runtime.PreDepartureSafetyCheckId, "reissued-after-expiry");
         runtime.PreDepartureSafetyCheckMessageId =
-            StableGuid(runtime.PreDepartureSafetyCheckMessageId, "reissued-after-expiry");
+            JourneyPlanBuilder.StableGuid(runtime.PreDepartureSafetyCheckMessageId, "reissued-after-expiry");
         await publisher.PublishPreDepartureSafetyCheckAsync(
             runtime.PreDepartureSafetyCheckMessageId,
             runtime.AgvId,

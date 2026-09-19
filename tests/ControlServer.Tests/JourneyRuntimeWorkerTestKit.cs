@@ -907,6 +907,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 Riot,
                 Riot,
                 new MapStationResolver(),
+                new ConfiguredGateStationResolver(new MapStationResolver(), options),
                 intake,
                 new MovementDispatchService(store, Riot),
                 store,

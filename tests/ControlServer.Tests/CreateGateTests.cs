@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
@@ -445,7 +446,7 @@ public sealed class CreateGateTests
         DispatchRoundFacts round = new(
             new DemandCatalogSnapshot("EPOCH", 0, [candidate]),
             new RiotMapStationCatalogSnapshot(MapId, Origin, new string('a', 64), []),
-            new RiotMapStation(210, "关卡"),
+            new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
             new HashSet<string>(),
             Origin,
             EmptyPolicy);

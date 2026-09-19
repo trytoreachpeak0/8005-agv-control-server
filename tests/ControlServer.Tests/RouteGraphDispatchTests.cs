@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.RouteGraph;
@@ -247,7 +248,7 @@ public sealed class RouteGraphDispatchTests
         DispatchRoundFacts round = new(
             new DemandCatalogSnapshot("EPOCH", 0, [candidate]),
             new RiotMapStationCatalogSnapshot(MapId, Origin, "sha", []),
-            new RiotMapStation(pickupStation, "N1-3_N1-7"),
+            new ConfiguredGateStationView(new RiotMapStation(pickupStation, "N1-3_N1-7")),
             new HashSet<string>(),
             Origin,
             EmptyPolicy);
@@ -263,12 +264,12 @@ public sealed class RouteGraphDispatchTests
 
         return new DispatchCandidateEvaluation(candidate, round, vehicle)
         {
-            Route = new ResolvedJourneyRoute("ZONE", "EVIDENCE", "N1-3_N1-7", pickupStation),
+            Route = new ResolvedJourneyRoute("ZONE", "EVIDENCE", "N1-3_N1-7", pickupStation, "关卡", 210, FixedTaskStationResolution.Resolved("WIRE_TO_GATE", FixedStationEnd.Destination, new RiotMapStation(210, "关卡"))),
         };
     }
 
     private static EligibleDispatchCandidate Candidate(string demandId, DateTimeOffset firstSeen, long? cost) =>
-        new(Snapshot(demandId, firstSeen), new ResolvedJourneyRoute("ZONE", "EVIDENCE", "N1-3_N1-7", 12),
+        new(Snapshot(demandId, firstSeen), new ResolvedJourneyRoute("ZONE", "EVIDENCE", "N1-3_N1-7", 12, "关卡", 210, FixedTaskStationResolution.Resolved("WIRE_TO_GATE", FixedStationEnd.Destination, new RiotMapStation(210, "关卡"))),
             1, [1], firstSeen, cost);
 
     private static AcceptedDemandSnapshot Snapshot(string demandId, DateTimeOffset createdAt) => new(

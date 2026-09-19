@@ -833,7 +833,7 @@ public sealed class MultiVehicleExecutionTests
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot("epoch-1", 1, [candidate]),
                 new RiotMapStationCatalogSnapshot(25, Now, new string('a', 64), []),
-                new RiotMapStation(210, "关卡"),
+                new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
                 new HashSet<string>(StringComparer.Ordinal),
                 Now,
                 policy),
@@ -844,7 +844,7 @@ public sealed class MultiVehicleExecutionTests
                 new RiotVehicleObservation("BROKERX-1", true, true, "IDLE", "MAP-25", 4, 90, "NO_CHARGE", 0, Now),
                 Now))
         {
-            Route = new ResolvedJourneyRoute(zone, "MAPCAT-1", "N1-1", 12),
+            Route = new ResolvedJourneyRoute(zone, "MAPCAT-1", "N1-1", 12, "关卡", 210, FixedTaskStationResolution.Resolved("WIRE_TO_GATE", FixedStationEnd.Destination, new RiotMapStation(210, "关卡"))),
         };
         return evaluation;
     }
@@ -1063,6 +1063,7 @@ public sealed class MultiVehicleExecutionTests
                 Riot,
                 Riot,
                 new MapStationResolver(),
+                new ConfiguredGateStationResolver(new MapStationResolver(), options),
                 new JourneyIntakeCoordinator(
                     new DemandIntakeService(Catalog, new RecordingAcceptances(store, AcceptedPlans)),
                     movement),
