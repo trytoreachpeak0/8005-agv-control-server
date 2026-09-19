@@ -1228,6 +1228,104 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#169, device half. Closing the session over a FAILED forced recovery lifts nothing about
+    /// the hardware: the doors were forced either way. While the load still needs recovery that is the reason
+    /// the vehicle reports; once a new session has settled the load -- here by a compensation that proves every
+    /// slot empty -- the vehicle is still held under FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED, and the
+    /// administrator files the hardware record against the forced workflow of the session that is now CLOSED.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task AFailedForcedRecoveryStillHoldsTheVehicleForItsHardwareRecordAfterItsSessionClosed()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_FORCED_FAILED_CLOSED";
+        const string proof = "forced-failed-closed-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context, productionShapedSession: true);
+            WireToGateStore store = new(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+            await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1, outcome: "FAILED"), state, token);
+            await store.ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000000169", forcedRecoveryGeneration: 1,
+                null, "NONE", [], [], [], token);
+
+            string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.SingleAsync(token)).State);
+            Assert.Equal("OPERATION_RECOVERY_REQUIRED", (await store.DecideReadinessAsync(AgvId, 3, token)).ReasonCode);
+
+            // The administrator opens a new session and compensates: every slot proven empty ends the load.
+            const string nextRequestId = "41000000-0000-4000-8000-000000000169";
+            const string compensationId = "51000000-0000-4000-8000-000000000169";
+            string nextSessionId = StableGuid(nextRequestId, "exception-recovery-session");
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+            JsonNode compensate = JsonNode.Parse(RecoveryAction(
+                "COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001691",
+                actionId: compensationId))!;
+            compensate["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
+            Assert.Equal("RecoveryActionAccepted",
+                MessageType(await processor.ProcessAsync(compensate.ToJsonString(), state, token)));
+            await processor.ProcessAsync(
+                Envelope(
+                    "90000000-0000-4000-8000-000000000169",
+                    "LoadCompensationRequested",
+                    new
+                    {
+                        recoveryActionId = compensationId,
+                        exceptionRecoverySessionId = nextSessionId,
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        @operator = Operator()
+                    }),
+                state,
+                token);
+            JsonNode compensated = JsonNode.Parse(AllEmptyCompensationResult(Envelope(
+                "a0000000-0000-4000-8000-000000000169",
+                "LoadCompensationResult",
+                new
+                {
+                    recoveryActionId = compensationId,
+                    demandId = DemandId,
+                    slotOperationAttemptId = AttemptId,
+                    overallOutcome = "FAILED",
+                    slotResults = Array.Empty<object>(),
+                    observedAt = Now.AddSeconds(6)
+                })))!;
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(compensated.ToJsonString(), state, token)));
+            Assert.Equal(JourneyRuntimeStage.Completed, (await context.JourneyRuntimes.SingleAsync(token)).Stage);
+
+            SessionReadinessDecision held = await store.DecideReadinessAsync(AgvId, 3, token);
+            Assert.Equal(SessionReadiness.RecoveryRequired, held.Readiness);
+            Assert.Equal("FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED", held.ReasonCode);
+
+            string recorded = await processor.ProcessAsync(
+                HardwareRecoveryRecord("e1000000-0000-4000-8000-000000000169", slots: RecoverySlots), state, token);
+
+            Assert.Equal("HardwareRecoveryRecordResult", MessageType(recorded));
+            Assert.Equal("RECORDED", FirstPayload(recorded).GetProperty("outcome").GetString());
+            HardwareRecoveryRecordRow record = await context.HardwareRecoveryRecords.SingleAsync(token);
+            Assert.Equal(firstSessionId, record.ExceptionRecoverySessionId);
+            Assert.Equal(ActionId, record.RecoveryActionId);
+            Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#169 for a resume. Its result is the replacement OperationResult, judged on the operation
     /// rather than as a recovery result, and one the vehicle cannot vouch for leaves the operation needing
     /// recovery again. The session goes where every other unreconciled result sends it -- CLOSED, the
