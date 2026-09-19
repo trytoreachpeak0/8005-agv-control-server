@@ -217,6 +217,10 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
         Assert.Empty(await fixture.Context.AcceptedDemands.AsNoTracking().ToArrayAsync(Token));
     }
 
+    /// <remarks>
+    /// Carries a catalog revision whenever it carries the versions, as the engine's plans always do
+    /// (<c>JourneyPlanBuilder.CreatePlan</c>); control-server#198 refuses a plan that has the versions without it.
+    /// </remarks>
     private static JourneyExecutionPlan Plan(long? ruleVersion, long? bindingSetVersion) => new(
         "AGV-1",
         "BROKERX-0001",
@@ -240,8 +244,6 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
         Now,
         TaskTypeStationRuleVersion: ruleVersion,
         TaskTypeStationBindingSetVersion: bindingSetVersion,
-        // The engine's plans always carry the revision with the versions (JourneyPlanBuilder.CreatePlan); control-server#198
-        // refuses a plan that has the versions without it.
         StationCatalogRevision: ruleVersion is null && bindingSetVersion is null ? null : 20);
 
     private static AcceptedDemandSnapshot Demand() => new(
