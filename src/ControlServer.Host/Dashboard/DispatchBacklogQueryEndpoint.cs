@@ -50,6 +50,9 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "本图没有为这个任务类型绑定固定站点（不在本图需求集里，或在需求集里却没绑定），只有这个任务类型不投运",
             [TaskTypeStationReasonCodes.BindingStationNotInCatalog] =
                 "这个任务类型绑定的固定站点不在当前站点目录里（被删、改名或不是本图），只有这个任务类型不投运",
+            // REQ-0302：新鲜度按最近一次完整确认算，是整图的状态；不新鲜时依赖站点目录的业务全部不启用，不是只停这一类。
+            [TaskTypeStationReasonCodes.BindingCatalogNotFresh] =
+                "本图站点目录超过允许时长没有完整确认，整图所有任务类型暂停受理（不是只停这一类），目录重新确认后恢复",
             [DispatchReasonCodes.TaskTypeHeld] =
                 "本图这个任务类型处于暂停（人工暂停、站点目录变化或绑定激活结果未知），解除后才会派车",
             [DispatchReasonCodes.TaskTypeNotYetExecutable] =
