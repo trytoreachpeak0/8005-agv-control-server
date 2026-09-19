@@ -188,11 +188,14 @@ public sealed class OnboardRecoveryCoordinator(
         OperationResultDisposition disposition,
         CancellationToken cancellationToken)
     {
+        // Only the resume still waiting for its result. One already judged RecoveryRequired closed its session
+        // (control-server#169), and the next session may resume the same attempt again: judging the new result
+        // against both would fail, and judging it against the old one would rewrite why that session closed.
         RecoveryWorkflowRow? workflow = await dbContext.RecoveryWorkflows.SingleOrDefaultAsync(
             row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
                    row.SlotOperationAttemptId == slotOperationAttemptId &&
-                   row.State != RecoveryWorkflowState.Reconciled &&
-                   row.State != RecoveryWorkflowState.HistoricalOnly,
+                   (row.State == RecoveryWorkflowState.CommandPending ||
+                    row.State == RecoveryWorkflowState.AwaitingResult),
             cancellationToken).ConfigureAwait(false);
         if (workflow is null || disposition is OperationResultDisposition.Replay or OperationResultDisposition.HistoricalOnly)
             return;
