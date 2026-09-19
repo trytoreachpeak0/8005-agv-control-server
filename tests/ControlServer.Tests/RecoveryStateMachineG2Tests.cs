@@ -1777,6 +1777,258 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#180. An attempt admits one replacement result per resume authorization, so it can have only
+    /// one resume waiting for that result. A second RESUME_AFTER_REPAIR on the same attempt while the first still
+    /// waits -- here the administrator pressing it twice in one session -- is refused before any workflow exists,
+    /// and the replacement result that follows settles the first resume as if the second had never been asked.
+    /// Before the fix both were accepted, and the replacement result then matched two waiting resumes and threw.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ASecondResumeWhileTheFirstStillAwaitsItsResultIsRefusedAndTheFirstStillSettles()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME_TWICE";
+        const string proof = "resume-twice-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string sessionId = StableGuid(RequestId, "exception-recovery-session");
+            ExceptionRecoverySessionRow before = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            BusinessPicture pictureBefore = await BusinessPictureAsync(context);
+            int outboxBefore = await context.ProtocolOutbox.CountAsync(token);
+
+            const string secondResumeId = "51000000-0000-4000-8000-000000000180";
+            string refused = await processor.ProcessAsync(
+                RecoveryAction(
+                    "RESUME_AFTER_REPAIR", messageId: "e0000000-0000-4000-8000-000000001800", actionId: secondResumeId),
+                state,
+                token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("RecoveryActionRejected", MessageType(refused));
+            JsonElement problem = FirstPayload(refused);
+            Assert.Equal(secondResumeId, problem.GetProperty("recoveryActionId").GetString());
+            Assert.Equal(before.Revision, problem.GetProperty("recoverySessionRevision").GetInt64());
+            Assert.Equal(ServerReasonCodes.ActionNotAllowedInState,
+                problem.GetProperty("problem").GetProperty("reasonCode").GetString());
+            RecoveryWorkflowRow first = Assert.Single(await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+            Assert.Equal(ActionId, first.WorkflowId);
+            Assert.Equal(RecoveryWorkflowState.AwaitingResult, first.State);
+            ExceptionRecoverySessionRow after = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal(("EXECUTING", before.Revision, before.UpdatedAt), (after.State, after.Revision, after.UpdatedAt));
+            Assert.Equal(pictureBefore, await BusinessPictureAsync(context));
+            Assert.Equal(outboxBefore, await context.ProtocolOutbox.CountAsync(token));
+
+            string ack = await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001801",
+                    "OperationResult",
+                    OperationResultPayload(journalCheckpoint: "RESUME_RESULT_RECORDED")),
+                state,
+                token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(RecoveryWorkflowState.Reconciled,
+                (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == sessionId, token)).State);
+            Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.SingleAsync(token)).Status);
+            Assert.Equal("RECONCILED", (await ClosingReasonsAsync(context))[sessionId].Reason);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#180. The refusal of a second waiting resume must not catch the first one resent: the same
+    /// recoveryActionId, under a new messageId the inbox has never seen, is still answered with the acceptance
+    /// its workflow recorded -- before and after a server restart -- and the replacement result that follows,
+    /// taken by the restarted server, settles that one resume.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task AResentResumeIsAnsweredWithItsAcceptanceAcrossRestartWhileItAwaitsItsResult()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME_RESENT";
+        const string proof = "resume-resent-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            ExceptionRecoverySessionRow before = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            int outboxBefore = await context.ProtocolOutbox.CountAsync(token);
+
+            string resent = await processor.ProcessAsync(
+                RecoveryAction("RESUME_AFTER_REPAIR", messageId: "e0000000-0000-4000-8000-000000001810"), state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            AssertAcceptedFirstResume(resent);
+
+            // The server restarts: a new context and processor over the same store.
+            await using ControlServerDbContext restarted = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
+            OnboardMessageProcessor afterRestart = Processor(restarted, new RecordingPeer(restarted), proofVariable);
+            string resentAfterRestart = await afterRestart.ProcessAsync(
+                RecoveryAction("RESUME_AFTER_REPAIR", messageId: "e0000000-0000-4000-8000-000000001811"), state, token);
+            await afterRestart.FlushDeferredOutboundAsync(state, token);
+            AssertAcceptedFirstResume(resentAfterRestart);
+
+            RecoveryWorkflowRow resume = Assert.Single(await restarted.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+            Assert.Equal((ActionId, RecoveryWorkflowState.AwaitingResult), (resume.WorkflowId, resume.State));
+            ExceptionRecoverySessionRow after = await restarted.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal((before.State, before.Revision), (after.State, after.Revision));
+            Assert.Equal(outboxBefore, await restarted.ProtocolOutbox.CountAsync(token));
+
+            string ack = await afterRestart.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001812",
+                    "OperationResult",
+                    OperationResultPayload(journalCheckpoint: "RESUME_RESULT_RECORDED")),
+                state,
+                token);
+            await afterRestart.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(RecoveryWorkflowState.Reconciled,
+                (await restarted.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).State);
+            Assert.Equal("CLOSED", (await restarted.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+            Assert.Equal(StationOperationStatus.Committed,
+                (await restarted.StationOperations.AsNoTracking().SingleAsync(token)).Status);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+
+        static void AssertAcceptedFirstResume(string wire)
+        {
+            Assert.Equal("RecoveryActionAccepted", MessageType(wire));
+            JsonElement payload = FirstPayload(wire);
+            Assert.Equal(ActionId, payload.GetProperty("recoveryActionId").GetString());
+            Assert.Equal("RESUME_AFTER_REPAIR", payload.GetProperty("acceptedAction").GetString());
+            Assert.Equal(AttemptId, payload.GetProperty("slotOperationAttemptId").GetString());
+        }
+    }
+
+    /// <summary>
+    /// control-server#180. The refusal is about the attempt, not the session: a resume waiting in one session
+    /// refuses a resume on the same attempt in the next, and only while it waits. Once its result has been judged
+    /// -- here RecoveryRequired, which leaves the operation needing recovery -- the next session's resume is
+    /// accepted and takes the next replacement result.
+    /// </summary>
+    /// <remarks>
+    /// The protocol gives no way today to close a session while its resume still waits: a session closes only on
+    /// a result of its own, and it cannot take a different action. So the first session is closed directly in the
+    /// store, which is the only way to put a waiting resume under another session and prove the refusal does not
+    /// filter by session. The judged half needs no seeding.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task AResumeInTheNextSessionIsRefusedWhileTheLastOneAwaitsItsResultAndAcceptedOnceItIsJudged()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME_NEXT_SESSION";
+        const string proof = "resume-next-session-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            (await context.ExceptionRecoverySessions.SingleAsync(token)).State = "CLOSED";
+            await context.SaveChangesAsync(token);
+
+            const string nextRequestId = "41000000-0000-4000-8000-000000000169";
+            const string refusedResumeId = "51000000-0000-4000-8000-000000000181";
+            const string secondResumeId = "51000000-0000-4000-8000-000000000182";
+            string nextSessionId = StableGuid(nextRequestId, "exception-recovery-session");
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            long nextRevision = (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == nextSessionId, token)).Revision;
+
+            string refused = await processor.ProcessAsync(
+                ResumeInNextSession("e0000000-0000-4000-8000-000000001820", refusedResumeId), state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("RecoveryActionRejected", MessageType(refused));
+            Assert.Equal(ServerReasonCodes.ActionNotAllowedInState,
+                FirstPayload(refused).GetProperty("problem").GetProperty("reasonCode").GetString());
+            Assert.Equal(ActionId, Assert.Single(await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token)).WorkflowId);
+            ExceptionRecoverySessionRow next = await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == nextSessionId, token);
+            Assert.Equal(("OPEN", nextRevision, (string?)null), (next.State, next.Revision, next.SelectedAction));
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001821",
+                    "OperationResult",
+                    OperationResultPayload(completed: false, journalCheckpoint: "RESUME_RESULT_UNKNOWN_RECORDED")),
+                state,
+                token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ActionId, token)).State);
+
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                ResumeInNextSession("e0000000-0000-4000-8000-000000001822", secondResumeId), state, token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001823",
+                    "OperationResult",
+                    OperationResultPayload(journalCheckpoint: "SECOND_RESUME_RESULT_RECORDED")),
+                state,
+                token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == secondResumeId, token)).State);
+            Assert.False(await context.RecoveryWorkflows.AnyAsync(row => row.WorkflowId == refusedResumeId, token));
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == nextSessionId, token)).State);
+            Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.SingleAsync(token)).Status);
+
+            string ResumeInNextSession(string messageId, string actionId)
+            {
+                JsonNode resume = JsonNode.Parse(RecoveryAction(
+                    "RESUME_AFTER_REPAIR", messageId: messageId, actionId: actionId))!;
+                resume["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
+                return resume.ToJsonString();
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#175. Session A took the same action twice; the first result did not reconcile and closed A,
     /// and the administrator is now working the demand in session B. The second result of A then arrives. Whether
     /// it concludes success or not, it is the record of A's own attempt and nothing more: it is acknowledged and
