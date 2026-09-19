@@ -603,6 +603,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         });
         dbContext.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
         {
+            JourneyId = JourneyIdentity.ForAnchorDemand(snapshot.DemandId),
             DemandId = snapshot.DemandId,
             VehicleKey = orderIntent.VehicleKey,
             AcquiredAt = snapshot.AcceptedAt
@@ -2481,6 +2482,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         string Id(string purpose) => DeterministicGuid($"{demandId}|{purpose}");
         return new JourneyRuntimeRow
         {
+            JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
             DemandId = demandId,
             Stage = JourneyRuntimeStage.AwaitingPickupArrival,
             AgvId = journey.AgvId,

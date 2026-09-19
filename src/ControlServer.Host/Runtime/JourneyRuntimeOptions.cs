@@ -37,6 +37,7 @@ public sealed class JourneyRuntimeOptions
     /// also takes the correction window away; any other value must be at least five seconds.
     /// </remarks>
     public TimeSpan StationDepartureWaitTimeout { get; set; } = TimeSpan.FromMinutes(5);
+    public TimeSpan CargoHoldingTimeout { get; set; } = TimeSpan.FromMinutes(30);
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
     public string[] AllowedDispatchZones { get; set; } = [];

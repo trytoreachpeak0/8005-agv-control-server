@@ -118,6 +118,7 @@ internal sealed class AreaAssignmentImportHarness : IAsyncDisposable
     {
         Context.Set<JourneyRuntimeRow>().Add(new JourneyRuntimeRow
         {
+            JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
             DemandId = demandId,
             Stage = JourneyRuntimeStage.Completed,
             AgvId = "AGV-TEST",

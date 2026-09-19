@@ -70,7 +70,10 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<AcceptedDemandRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<AcceptedDemandRow>().HasIndex(row => row.TransportDemandKey).IsUnique();
         modelBuilder.Entity<AcceptedDemandRow>().Property(row => row.Status).HasConversion<string>();
-        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasKey(row => row.DemandId);
+        // Batch 7 (control-server#206): keyed on the journey, the demand kept as a plain column because scripts and
+        // G3 scenarios read it, and because every release site still finds the lease by its anchor demand.
+        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasKey(row => row.JourneyId);
+        modelBuilder.Entity<VehicleDispatchLeaseRow>().HasIndex(row => row.DemandId);
         modelBuilder.Entity<VehicleDispatchLeaseRow>()
             .HasIndex(row => row.VehicleKey)
             .IsUnique()
@@ -140,7 +143,11 @@ public sealed class ControlServerDbContext(DbContextOptions<ControlServerDbConte
         modelBuilder.Entity<RecoveryResultEvidenceRow>().HasKey(row => row.MessageId);
         modelBuilder.Entity<JourneyBacklogRow>().HasKey(row => row.DemandId);
         modelBuilder.Entity<JourneyBacklogRow>().HasIndex(row => row.TransportDemandKey);
-        modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.DemandId);
+        // Batch 7 (control-server#206): keyed on the journey. DemandId stays as the anchor demand -- the first one the
+        // journey accepted -- with an ordinary index: after a redispatch (control-server#215) the same demand may anchor
+        // a second journey, so the index is deliberately not unique.
+        modelBuilder.Entity<JourneyRuntimeRow>().HasKey(row => row.JourneyId);
+        modelBuilder.Entity<JourneyRuntimeRow>().HasIndex(row => row.DemandId);
         modelBuilder.Entity<JourneyRuntimeRow>().Property(row => row.Stage).HasConversion<string>();
         modelBuilder.Entity<AdmissionPolicyStateRow>().HasKey(row => row.Id);
         modelBuilder.Entity<AdmissionPolicyStateRow>().Property(row => row.Id).ValueGeneratedNever();
@@ -205,6 +212,8 @@ public sealed class AcceptedDemandRow
 
 public sealed class VehicleDispatchLeaseRow
 {
+    /// <summary>The journey the lease is held for; the key since batch 7 (control-server#206).</summary>
+    public required string JourneyId { get; set; }
     public required string DemandId { get; set; }
     public required string VehicleKey { get; set; }
     public DateTimeOffset AcquiredAt { get; set; }
@@ -551,10 +560,28 @@ public sealed class JourneyBacklogRow
     public required string ReasonCode { get; set; }
     public DateTimeOffset LastSeenAt { get; set; }
     public DateTimeOffset? AcceptedAt { get; set; }
+
+    /// <summary>
+    /// When the starvation escalation for this demand was raised (control-server#214), so that it is raised once per
+    /// demand: this row is keyed on the demand and survives the demand leaving the catalogue, which only changes its
+    /// reason code. Null until then; batch 7's schema ticket (control-server#206) adds it and writes nothing.
+    /// </summary>
+    public DateTimeOffset? StarvationEscalatedAt { get; set; }
+
+    /// <summary>The per-zone dispatch parameter version the escalation was decided under, or null.</summary>
+    public long? StarvationEscalationParameterVersion { get; set; }
 }
 
 public sealed class JourneyRuntimeRow
 {
+    /// <summary>
+    /// The journey's identity and, since batch 7 (control-server#206), the key. A single-demand journey's is
+    /// <c>journey:{DemandId}</c>, the same value the migration back-fills, so a back-filled row and a newly accepted
+    /// one cannot be told apart.
+    /// </summary>
+    public required string JourneyId { get; set; }
+
+    /// <summary>The anchor demand: the first demand the journey accepted. Every existing reader still finds the row by it.</summary>
     public required string DemandId { get; set; }
     public JourneyRuntimeStage Stage { get; set; }
     public required string AgvId { get; set; }
@@ -616,6 +643,28 @@ public sealed class JourneyRuntimeRow
     public DateTimeOffset? BlockReasonSince { get; private set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+
+    // The loading phase (REQ-0354, REQ-0355, ADR-cross-0057). All nullable and none written by control-server#206, which
+    // only lands the columns; control-server#212 and #213 write them. Kept apart from StationDepartureWaitStartedAt on
+    // purpose: the cargo holding clock and the station departure wait must never share a field.
+
+    /// <summary>When the cargo holding clock started: the first LoadBatch's safety closure. Never reset by a new stop, a disconnect or a restart.</summary>
+    public DateTimeOffset? CargoHoldingStartedAt { get; set; }
+
+    /// <summary><c>LOADING</c>, <c>CARGO_HOLDING_WAIT</c>, <c>VEHICLE_FULL</c> or <c>CLOSED</c>; null before the first load.</summary>
+    public string? LoadingPhaseState { get; set; }
+
+    /// <summary>Why loading closed; set only while <see cref="LoadingPhaseState"/> is <c>CLOSED</c>.</summary>
+    public string? LoadingClosedReason { get; set; }
+
+    /// <summary>Which slot positions (<c>FRONT</c>, <c>REAR</c>) the loading phase judged full, as a JSON array; null until judged.</summary>
+    public string? FullSlotPositionsJson { get; set; }
+
+    /// <summary>When another vehicle's acceptance made this one yield its station (control-server#213).</summary>
+    public DateTimeOffset? YieldTriggeredAt { get; set; }
+
+    /// <summary>The vehicle whose acceptance triggered the yield, when <see cref="YieldTriggeredAt"/> is set.</summary>
+    public string? YieldTriggeredByVehicleKey { get; set; }
 
     /// <summary>
     /// The one way to write <see cref="BlockReasonCode"/>: the first write of a code records when it
