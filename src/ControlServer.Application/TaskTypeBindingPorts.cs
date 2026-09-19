@@ -255,6 +255,12 @@ public static class TaskTypeStationHoldSource
 {
     public const string Manual = "MANUAL";
     public const string CatalogChange = "CATALOG_CHANGE";
+
+    /// <summary>
+    /// 激活第一步置、第二步或对账撤的暂停（REQ-0347，control-server#161）。只由激活流程写，
+    /// <see cref="ITaskTypeStationHoldStore.RaiseAsync"/> 不收它；解除暂停动词也不碰它。
+    /// </summary>
+    public const string ActivationResultUnknown = "ACTIVATION_RESULT_UNKNOWN";
 }
 
 /// <summary>一条暂停。<see cref="ReleasedAt"/> 为空表示仍成立。</summary>

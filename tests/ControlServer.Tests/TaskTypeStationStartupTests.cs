@@ -127,29 +127,72 @@ public sealed class TaskTypeStationStartupTests
     }
 
     [Fact]
-    public async Task ChangingOneFieldMakesANewVersionMovesThePointerAndLeavesTheOldVersionReadableAsItWas()
+    public async Task ARestartWithAChangedPresetKeepsTheActiveVersionAndSaysThePresetWasNotApplied()
     {
+        // Specification 21.2 item 4, from control-server#161 on: the preset is only the first version of a map. Once a map
+        // has an active version, a different version only ever comes from a FieldOps activation, and a restart does not
+        // overwrite it -- not even with a preset that differs.
         await using Harness harness = await Harness.CreateAsync(Runtime());
         harness.WritePreset(Preset());
         TaskTypeStationStartupResult first = (await TaskTypeStationStartup.EnsureAsync(harness.Services, Token))!;
 
         TaskTypeStationBinding reverified = GateBinding with { SiteVerificationRef = "SITE-CHECK-2026-09-19" };
         harness.WritePreset(Preset(bindings: [reverified]));
+        harness.Logs.Clear();
         TaskTypeStationStartupResult second = Assert.IsType<TaskTypeStationStartupResult>(
             await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
 
-        Assert.False(second.Rules.Created);
-        Assert.True(second.Bindings.Created);
-        Assert.Equal(2, second.Bindings.Version.Version);
+        Assert.False(second.Bindings.Created);
+        Assert.Equal(1, second.Bindings.Version.Version);
+        Assert.Equal(1, await harness.CountAsync<TaskTypeStationBindingSetVersionRow>());
         await using AsyncServiceScope scope = harness.Services.CreateAsyncScope();
         ITaskTypeStationBindingStore bindings = scope.ServiceProvider.GetRequiredService<ITaskTypeStationBindingStore>();
-        Assert.Equal(2, (await bindings.ReadActiveAsync(25, Token))!.Version);
-        Assert.Equal([reverified], (await bindings.ReadActiveAsync(25, Token))!.Bindings);
-        TaskTypeStationBindingSetVersion old = Assert.IsType<TaskTypeStationBindingSetVersion>(
-            await bindings.ReadVersionAsync(25, 1, Token));
-        Assert.Equal(first.Bindings.Version.SnapshotId, old.SnapshotId);
-        Assert.Equal(first.Bindings.Version.ContentSha256, old.ContentSha256);
-        Assert.Equal([GateBinding], old.Bindings);
+        TaskTypeStationBindingSetVersion active = (await bindings.ReadActiveAsync(25, Token))!;
+        Assert.Equal((1L, first.Bindings.Version.SnapshotId), (active.Version, active.SnapshotId));
+        Assert.Equal([GateBinding], active.Bindings);
+        string logged = Assert.Single(harness.Logs, line => line.Contains("not applied", StringComparison.Ordinal));
+        Assert.Contains("binding set version 1 stays active", logged, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ARestartWhileAnActivationResultIsUnknownLeavesThePointerAndItsHoldsAsTheyAre()
+    {
+        await using Harness harness = await Harness.CreateAsync(Runtime());
+        harness.WritePreset(Preset());
+        await TaskTypeStationStartup.EnsureAsync(harness.Services, Token);
+        // A FieldOps activation whose first step committed and whose process then died.
+        await using (AsyncServiceScope scope = harness.Services.CreateAsyncScope())
+        {
+            ControlServerDbContext context = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
+            TaskTypeStationActivationStore store = new(
+                context,
+                scope.ServiceProvider.GetRequiredService<ITaskTypeStationBindingStore>(),
+                scope.ServiceProvider.GetRequiredService<ControlServer.Application.IGovernanceAuditWriter>());
+            await store.BeginAsync(
+                new TaskTypeStationActivationStart(
+                    "attempt-1",
+                    new TaskTypeStationCandidate(25, 1, [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire], [GateBinding, StagingBinding]),
+                    1, null, "fieldops:activate:attempt-1",
+                    [TransportTaskTypes.StagingToWire, TransportTaskTypes.WireToGate], Now),
+                attempt => new GovernanceAuditEntry(
+                    TaskTypeStationActivationAuditActions.Started, ControlServer.Domain.GovernedObjectKind.PublicStationBinding,
+                    "map-25", attempt.TargetVersion, ControlServer.Domain.GovernanceActionOutcome.ResultUnknown,
+                    """{"attemptId":"attempt-1","bindingSetVersion":{"previous":1}}"""),
+                Token);
+        }
+
+        harness.WritePreset(Preset());
+        await TaskTypeStationStartup.EnsureAsync(harness.Services, Token);
+
+        await using AsyncServiceScope after = harness.Services.CreateAsyncScope();
+        ITaskTypeStationBindingStore bindings = after.ServiceProvider.GetRequiredService<ITaskTypeStationBindingStore>();
+        TaskTypeStationActivePointer pointer = (await bindings.ReadActivePointerAsync(25, Token))!;
+        Assert.Equal(
+            (1L, TaskTypeStationActivationState.ActivationUnknown, 2L),
+            (pointer.ActiveVersion!.Value, pointer.State, pointer.PendingVersion!.Value));
+        ITaskTypeStationHoldStore holds = after.ServiceProvider.GetRequiredService<ITaskTypeStationHoldStore>();
+        Assert.Equal(2, (await holds.ListUnreleasedAsync(25, Token)).Count);
+        Assert.Equal(2, await harness.CountAsync<TaskTypeStationBindingSetVersionRow>());
     }
 
     [Fact]

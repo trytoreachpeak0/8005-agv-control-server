@@ -21,7 +21,7 @@ namespace ControlServer.FieldOps;
 /// 编排脚本据此写 <c>timeline.jsonl</c> 与 <c>assertions.json</c>。
 /// </para>
 /// </remarks>
-internal static class Program
+internal static partial class Program
 {
     private static readonly JsonSerializerOptions Output = new()
     {
@@ -85,7 +85,7 @@ internal static class Program
 
         // 一行不写的命令连库都用 SQLite 自己的只读模式开——「只读」由驱动保证，不是靠这里自觉。
         // 一个判断、一份名单：新增只读动词往这里加，不要在别处另起一套。
-        bool readOnly = args[0] is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand;
+        bool readOnly = OpensReadOnly(args[0]);
         // 服务端主机正在写同一个文件。连接串走共用的那一处，等写锁的上限两边因此是同一个值——自己拼一串
         // 出来的话，这个进程会在对方一次正常的写事务上直接报 database is locked。
         DbContextOptions<ControlServerDbContext> contextOptions =
@@ -114,6 +114,10 @@ internal static class Program
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
+
+    /// <summary>Stub for control-server#161's test commit: the list as it was.</summary>
+    internal static bool OpensReadOnly(string command) =>
+        command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand;
 
     private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
 
