@@ -69,8 +69,16 @@ param(
     #   $SimulatorCommit and $ProtocolCommit unchanged.
     #   Same day, $ControlServerCommit -> d3003c2f: cs#156 (PR #157), g3-forced-mechanical-recovery presses the
     #     second step onboard-hmi#107 added. Scripts only; src/ and tests/ are still those of e0f26b37.
-    [string]$ControlServerCommit = 'd3003c2f688431436850df634a7d028fcb14f346',
-    [string]$OnboardCommit = '29fbf65e0b4d58c80849d5e6d0e44f40903c411e',
+    #
+    # 2026-09-19, batch 6 exit (control-server#165): FP-IS-10 and FP-IS-11 get their G3 surface.
+    #   $ControlServerCommit -> 905ffd1d, the fp/v2-impl tip with every batch-6 server ticket (cs#158 to cs#164)
+    #     and the tickets merged alongside it (cs#167, #169, #175, #180, #187, #189 step one, #191, #193, #196).
+    #   $OnboardCommit -> 44b3aa6e, the w2g/fp-v2-impl tip: hmi#115 (task type and direction), hmi#119, #120,
+    #     #123, #124 and #127 (the in-flight load result sent after a reconnect). 29fbf65e predated hmi#115, and
+    #     New-ExactClone requires the tip of $OnboardRemoteRef.
+    #   $SimulatorCommit and $ProtocolCommit unchanged: batch 6 changes no protocol.
+    [string]$ControlServerCommit = '905ffd1dc0b4de1f048163342b45e58f3a7261fc',
+    [string]$OnboardCommit = '44b3aa6e255f0820c3988d3f50f0b4dba1105006',
     [string]$SimulatorCommit = 'fb5f7c593742bf98bc3957b8729a38aad5321f28',
     [string]$ProtocolCommit = '86575456c847041515b7b75e8851a00e0d939804',
     # The ref whose tip -OnboardCommit must equal. It is a parameter rather than a literal because the
