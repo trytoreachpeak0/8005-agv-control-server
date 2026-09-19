@@ -54,19 +54,68 @@ public sealed record CatalogBindingChange(
 /// <summary>
 /// Classifies each binding of a Map's active binding set against a complete catalog read (control-server#162).
 /// </summary>
+/// <remarks>
+/// The baseline is what the binding recorded -- station id and name -- not the previous catalog. A change made while
+/// the service was down is therefore judged the same way on the first round after the restart, and a change that
+/// persists is judged the same way every round. Identity is the id alone: a name never makes two ids the same
+/// station, so a new id under the old name is reported and left alone, never rebound to (REQ-0342).
+/// </remarks>
 public static class CatalogBindingChangeClassifier
 {
+    /// <summary>One entry per binding, ordered by task type.</summary>
     public static IReadOnlyList<CatalogBindingChange> Classify(
         IReadOnlyList<TaskTypeStationBinding> bindings,
         RiotMapStationCatalogSnapshot catalog)
     {
         ArgumentNullException.ThrowIfNull(bindings);
         ArgumentNullException.ThrowIfNull(catalog);
+
+        Dictionary<int, string> namesById = [];
+        foreach (RiotMapStation station in catalog.Stations)
+        {
+            namesById.TryAdd(station.StationId, station.StationName);
+        }
+
         return
         [
-            .. bindings.Select(binding => new CatalogBindingChange(
-                binding.TaskType, binding.StationRiotId, binding.StationName, binding.StationName,
-                CatalogBindingChangeKind.Unchanged, []))
+            .. bindings
+                .OrderBy(binding => binding.TaskType, StringComparer.Ordinal)
+                .Select(binding => Classify(binding, catalog, namesById))
         ];
+    }
+
+    private static CatalogBindingChange Classify(
+        TaskTypeStationBinding binding,
+        RiotMapStationCatalogSnapshot catalog,
+        Dictionary<int, string> namesById)
+    {
+        if (namesById.TryGetValue(binding.StationRiotId, out string? currentName))
+        {
+            return new CatalogBindingChange(
+                binding.TaskType,
+                binding.StationRiotId,
+                binding.StationName,
+                currentName,
+                string.Equals(currentName, binding.StationName, StringComparison.Ordinal)
+                    ? CatalogBindingChangeKind.Unchanged
+                    : CatalogBindingChangeKind.Renamed,
+                []);
+        }
+
+        int[] sameName =
+        [
+            .. catalog.Stations
+                .Where(station => string.Equals(station.StationName, binding.StationName, StringComparison.Ordinal))
+                .Select(station => station.StationId)
+                .Distinct()
+                .Order()
+        ];
+        return new CatalogBindingChange(
+            binding.TaskType,
+            binding.StationRiotId,
+            binding.StationName,
+            CurrentStationName: null,
+            sameName.Length > 0 ? CatalogBindingChangeKind.IdReplaced : CatalogBindingChangeKind.Removed,
+            sameName);
     }
 }
