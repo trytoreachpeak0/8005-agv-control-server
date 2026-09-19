@@ -200,6 +200,28 @@ public sealed class TaskTypeStationConfigurationValidatorTests
     }
 
     [Theory]
+    [InlineData("N01-1", true)]
+    [InlineData("N01-1_N01-2", true)]
+    [InlineData("T01-3_T02-1_T03-9", true)]
+    [InlineData("N01-1_N01-2_N01-3_N01-4", false)]
+    [InlineData("N01-1_N01-1", false)]
+    [InlineData("n01-1", false)]
+    [InlineData("关卡", false)]
+    [InlineData("N01", false)]
+    [InlineData("N01-1_关卡", false)]
+    public void TheValidatorsAreaRuleIsTheSameAsTheResolversMachineStationRule(string stationName, bool areaNamed)
+    {
+        // The validator lives in Application and cannot reach MapStationResolver in Host; this keeps the two copies
+        // of the rule from drifting apart.
+        bool resolverSays = new ControlServer.Host.Runtime.MapStationResolver().ParseAreaNamedMachineStations(
+            new RiotMapStationCatalogSnapshot(Map, DateTimeOffset.UnixEpoch, "sha", [new RiotMapStation(1, stationName)]))
+            .Count == 1;
+
+        Assert.Equal(areaNamed, resolverSays);
+        Assert.Equal(areaNamed, ControlServer.Domain.AreaNamedStationName.IsAreaNamed(stationName));
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("  ")]
     public void ABindingWithoutASiteVerificationReferenceRefusesStart(string reference)
