@@ -200,7 +200,7 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
   在自动登录的 session 1 里由登录触发的计划任务拉起；服务模式的两个 runner 在 session 0，没有桌面，起不了 WPF 窗口。
   安装脚本是工作区的 `remote-ops/factory-server/scripts/18-install-control-server-desktop-runner.ps1`。
 - **为什么放进 `l2.yml` 而不是新文件。** `workflow_dispatch` 只认默认分支（`main`）上存在的 workflow 文件，而 v2
-  这条线不合入 `main`，新文件根本触发不了。放在这里还顺带与合成作业共用同一个 `concurrency` 分组（按 ref）。
+  这条线不合入 `main`，新文件根本触发不了。`rig=real` 的手动触发用自己的 `concurrency` 分组（组名加 `-real`），所以同一分支上先后触发合成与真装置两轮会各跑各的，排队中的真装置轮次也不会被下一次合成触发顶掉。
 - **对端。** 车载端和模拟器按输入的提交（或分支）各自 checkout 到 `peers/` 下的独立子目录，服务端在 `control-server/`，
   三者都不在 `$GITHUB_WORKSPACE` 根上；显式传 `-OnboardRepository`／`-SimulatorRepository`。对端发布按提交缓存在
   vm01 `agvops` 的 `%LOCALAPPDATA%\8005-l2-peers`，同一对提交第二次起不再构建。
@@ -218,7 +218,7 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
   这一遍记为 `NOT_STARTED_COMMIT_GUARD`，本轮停下，作业以 `RIG_COMMIT_GUARD` 判红，不靠作业超时去结束它。整轮每 2 秒
   采样一次，写进证据的 `commit-samples.csv`，作业摘要给出最低与峰值。作业不留构建服务器（MSBuild 节点、VBCSCompiler）。
   实测见下表。
-- **不取消、超时给足。** 作业超时 300 分钟；手动取消与超时取消都可能卡死 runner 会话。
+- **不取消、超时给足、有自己的截止。** 作业超时 360 分钟；手动取消与超时取消都可能卡死 runner 会话，所以作业开跑 270 分钟后不再开新的一遍，记为 `NOT_STARTED_DEADLINE` 并自己判红（`RIG_DEADLINE`），给最坏的一遍（内存等 30 分钟、桌面锁等 30 分钟、场景本身）留出余量。某一遍等满桌面锁没拿到，记为 `NOT_STARTED_DESKTOP_LOCK`，作业以 `RIG_DESKTOP_LOCK` 判红，与产品红分开。每跑完一遍立即把那一遍的日志打到控制台。残留检查、摘要与判定放在 `finally` 里，中途出异常也会执行；崩溃对话框只算本轮自己进程的，别的仓的只记警告、不关。
 - **证据。** artifact `real-rig-evidence`：每一遍一个目录加同名 `.log`、`commits.json`（三端提交）、`SUMMARY.md`、
   `commit-samples.csv`。
 

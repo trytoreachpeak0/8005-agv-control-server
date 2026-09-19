@@ -72,17 +72,20 @@ on:
         type: string
         default: ''
 
-# The real-onboard job shares this group, so on one ref a real-rig round and a synthetic round never
-# overlap. Across refs the guard is the real-rig job's own whole-machine commit check (below), because
-# a repository-wide group would let pull request rounds of different tickets replace each other while
-# pending.
+# A real-rig dispatch gets its own group (suffix `-real`); push, pull request and synthetic dispatch
+# keep their names. Sharing one group serialised a synthetic and a real dispatch on the same ref for no
+# reason (different runners, different port slots), and let the next dispatch on that ref silently
+# replace a real-rig round still pending -- a batch exit dispatches both on fp/v2-impl. Memory between
+# the two is the real-rig job's own whole-machine commit guard (below), which also sees other refs and
+# repositories; a repository-wide group would let pull request rounds of different tickets replace
+# each other while pending.
 #
 # Never cancel a running job here. Cancelling one on a self-hosted runner also cancels the runner's
 # broker long-poll; the backoff retries exhaust and the session wedges without self-healing.
 # Measured on 2026-09-03: 4 hours 14 minutes of dead CI. Only one runner may take this job, so a
 # wedged session stops every l2 run. Cancelling a QUEUED job is safe and still happens.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}${{ inputs.rig == 'real' && '-real' || '' }}
   cancel-in-progress: false
 
 jobs:
@@ -419,16 +422,17 @@ jobs:
 
   # The real-onboard rig, since 2026-09-19. A job of this workflow rather than a workflow of its own
   # because workflow_dispatch only reaches workflows that exist on the default branch (main), which
-  # this line does not merge into; and so that it shares the synthetic job's concurrency group.
+  # this line does not merge into.
   # Everything specific to it is in the comment at the top of this file.
   real-rig:
     if: github.event_name == 'workflow_dispatch' && inputs.rig == 'real'
     runs-on: [self-hosted, cs-desktop]
     # A timeout ends the job by cancelling it, which may take the path that wedges a runner, so it
-    # must never be what ends a round. consecutive-all over the whole list is 33 runs of 25 to 400
-    # seconds (laptop median 69 s), plus up to 30 minutes queued per scenario for the desktop lock
-    # when a golden-renderer run holds it.
-    timeout-minutes: 300
+    # must never be what ends a round. consecutive-all over the whole list is 30 runs of 40 to 120
+    # seconds on vm01, a batch exit perhaps 45; each run may also wait up to 30 minutes for memory and
+    # 30 for the desktop lock. The run step stops starting runs after RIG_START_DEADLINE_MINUTES and
+    # fails on its own, which leaves one worst-case run (about 70 minutes) plus the upload inside this.
+    timeout-minutes: 360
     env:
       # Same reason as the scenarios job: NuGet's audit fetch failing is a red run that says nothing about code.
       NuGetAudit: 'false'
@@ -441,6 +445,7 @@ jobs:
       # fits under the limit with a margin.
       RIG_COMMIT_START_CEILING_GIB: '12'
       RIG_COMMIT_WAIT_MINUTES: '30'
+      RIG_START_DEADLINE_MINUTES: '270'
       # No build servers. They outlive the build by minutes, and on the first CI round (run
       # 35449244079) the job's own server build and peer publishes left about 3 GiB committed through
       # both scenarios: 8.08 GiB peak against 3.45 idle, of which the scenarios themselves were about
@@ -577,105 +582,142 @@ jobs:
           $env:TMP = $stageTemp
 
           $ceiling = [double]$env:RIG_COMMIT_START_CEILING_GIB
+          $deadlineMinutes = [double]$env:RIG_START_DEADLINE_MINUTES
           $records = [Collections.Generic.List[object]]::new()
-          $commitGuardTripped = $false
-          foreach ($item in $runList) {
-              if ($commitGuardTripped) { break }
-              for ($run = 1; $run -le $item.Runs; $run++) {
-                  $label = '{0}-{1:D2}' -f $item.Name, $run
+          # Why the round stopped early, if it did: NOT_STARTED_COMMIT_GUARD or NOT_STARTED_DEADLINE.
+          $stoppedBy = $null
+          $leftovers = @()
+          $jobClock = [Diagnostics.Stopwatch]::StartNew()
 
-                  # The commit guard. Waits first: whatever holds the memory (the synthetic job's
-                  # four lanes, test.yml, the onboard HMI's CI) finishes in minutes.
-                  $waitClock = [Diagnostics.Stopwatch]::StartNew()
-                  $commit = Get-CommitGiB
-                  while ($commit.Committed -gt $ceiling -and $waitClock.Elapsed.TotalMinutes -lt [double]$env:RIG_COMMIT_WAIT_MINUTES) {
-                      Write-Host "RIG_COMMIT_WAITING: $($commit.Committed)/$($commit.Limit) GiB committed, starting at or below $ceiling"
-                      Start-Sleep -Seconds 30
+          # Everything after this runs under try/finally, so the leftover check, the summary and the
+          # verdict happen even when something throws mid-round (a CIM query, a child that cannot start).
+          try {
+              foreach ($item in $runList) {
+                  if ($stoppedBy) { break }
+                  for ($run = 1; $run -le $item.Runs; $run++) {
+                      $label = '{0}-{1:D2}' -f $item.Name, $run
+
+                      # The round's own deadline. Each run can wait up to 30 minutes for memory and 30 for
+                      # the desktop lock, with no bound on the sum; a batch exit is some 45 runs. So no new
+                      # run starts after RIG_START_DEADLINE_MINUTES, which leaves one worst-case run (both
+                      # waits plus a slow scenario, about 70 minutes) inside timeout-minutes. The job then
+                      # fails with its own verdict instead of being cancelled by the timeout.
+                      if ($jobClock.Elapsed.TotalMinutes -gt $deadlineMinutes) {
+                          Write-Host "::error title=Round deadline::$label not started: $([Math]::Round($jobClock.Elapsed.TotalMinutes)) minutes into the job, past the $deadlineMinutes-minute start deadline"
+                          $records.Add([pscustomobject]@{
+                              Label = $label; Scenario = $item.Name; Run = $run; Runs = $item.Runs
+                              ExitCode = 'NOT_STARTED_DEADLINE'; Result = 'NOT_STARTED_DEADLINE'; Seconds = 0; CommittedAtStartGiB = $null
+                          })
+                          $stoppedBy = 'NOT_STARTED_DEADLINE'
+                          break
+                      }
+
+                      # The commit guard. Waits first: whatever holds the memory (the synthetic job's
+                      # four lanes, test.yml, the onboard HMI's CI) finishes in minutes.
+                      $waitClock = [Diagnostics.Stopwatch]::StartNew()
                       $commit = Get-CommitGiB
-                  }
-                  # Still above after the whole wait: stop the round with a verdict of its own. Starting
-                  # anyway risks an allocation failure that reads as a product defect, and letting the
-                  # job timeout end it would cancel the job, which can wedge the runner.
-                  if ($commit.Committed -gt $ceiling) {
-                      Write-Host "::error title=Commit guard::$label not started: $($commit.Committed)/$($commit.Limit) GiB committed after waiting $env:RIG_COMMIT_WAIT_MINUTES minutes (ceiling $ceiling)"
+                      while ($commit.Committed -gt $ceiling -and $waitClock.Elapsed.TotalMinutes -lt [double]$env:RIG_COMMIT_WAIT_MINUTES) {
+                          Write-Host "RIG_COMMIT_WAITING: $($commit.Committed)/$($commit.Limit) GiB committed, starting at or below $ceiling"
+                          Start-Sleep -Seconds 30
+                          $commit = Get-CommitGiB
+                      }
+                      # Still above after the whole wait: stop the round with a verdict of its own. Starting
+                      # anyway risks an allocation failure that reads as a product defect, and letting the
+                      # job timeout end it would cancel the job, which can wedge the runner.
+                      if ($commit.Committed -gt $ceiling) {
+                          Write-Host "::error title=Commit guard::$label not started: $($commit.Committed)/$($commit.Limit) GiB committed after waiting $env:RIG_COMMIT_WAIT_MINUTES minutes (ceiling $ceiling)"
+                          $records.Add([pscustomobject]@{
+                              Label = $label; Scenario = $item.Name; Run = $run; Runs = $item.Runs
+                              ExitCode = 'NOT_STARTED_COMMIT_GUARD'; Result = 'NOT_STARTED_COMMIT_GUARD'; Seconds = 0; CommittedAtStartGiB = $commit.Committed
+                          })
+                          $stoppedBy = 'NOT_STARTED_COMMIT_GUARD'
+                          break
+                      }
+
+                      $runRoot = Join-Path $evidenceRoot $label
+                      $log = "$runRoot.log"
+                      $arguments = @('-Scenario', $item.Name, '-EvidenceRoot', $runRoot,
+                          '-OnboardRepository', $onboardRepository, '-SimulatorRepository', $simulatorRepository, '-SkipBuild')
+                      if ($env:RIG_BATCH_ID) { $arguments += '-BatchId', $env:RIG_BATCH_ID }
+
+                      Write-Host "$label starting at $($commit.Committed) GiB committed"
+                      $clock = [Diagnostics.Stopwatch]::StartNew()
+                      # A child pwsh per run, so one scenario's modules and state never leak into the next.
+                      & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 @arguments *>&1 |
+                          Tee-Object -FilePath $log | Out-Null
+                      $exitCode = $LASTEXITCODE
+                      $seconds = [Math]::Round($clock.Elapsed.TotalSeconds)
+                      # A run that waited out the desktop lock never started its scenario: that is the
+                      # schedule colliding with 8005-mes-ingest's desktop jobs, not a product red, and the
+                      # summary says so.
+                      $result = if ($exitCode -eq 0) { 'PASS' }
+                          elseif (Select-String -LiteralPath $log -SimpleMatch 'DESKTOP_LOCK_BUSY' -Quiet) { 'NOT_STARTED_DESKTOP_LOCK' }
+                          else { "FAIL ($exitCode)" }
                       $records.Add([pscustomobject]@{
                           Label = $label; Scenario = $item.Name; Run = $run; Runs = $item.Runs
-                          ExitCode = 'NOT_STARTED_COMMIT_GUARD'; Seconds = 0; CommittedAtStartGiB = $commit.Committed
+                          ExitCode = $exitCode; Result = $result; Seconds = $seconds; CommittedAtStartGiB = $commit.Committed
                       })
-                      $commitGuardTripped = $true
-                      break
+                      # This run's own log now, not only at the end: a long round is readable while it runs.
+                      Write-Host "::group::$label -- $result, ${seconds}s"
+                      if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log | ForEach-Object { Write-Host $_ } }
+                      Write-Host '::endgroup::'
                   }
-
-                  $runRoot = Join-Path $evidenceRoot $label
-                  $log = "$runRoot.log"
-                  $arguments = @('-Scenario', $item.Name, '-EvidenceRoot', $runRoot,
-                      '-OnboardRepository', $onboardRepository, '-SimulatorRepository', $simulatorRepository, '-SkipBuild')
-                  if ($env:RIG_BATCH_ID) { $arguments += '-BatchId', $env:RIG_BATCH_ID }
-
-                  Write-Host "$label starting at $($commit.Committed) GiB committed"
-                  $clock = [Diagnostics.Stopwatch]::StartNew()
-                  # A child pwsh per run, so one scenario's modules and state never leak into the next.
-                  & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 @arguments *>&1 |
-                      Tee-Object -FilePath $log | Out-Null
-                  $exitCode = $LASTEXITCODE
-                  $seconds = [Math]::Round($clock.Elapsed.TotalSeconds)
-                  $records.Add([pscustomobject]@{
-                      Label = $label; Scenario = $item.Name; Run = $run; Runs = $item.Runs
-                      ExitCode = $exitCode; Seconds = $seconds; CommittedAtStartGiB = $commit.Committed
-                  })
-                  Write-Host "$label $(if ($exitCode -eq 0) { 'PASS' } else { "FAIL ($exitCode)" }) in ${seconds}s"
               }
+          } finally {
+              Stop-Job $sampler -ErrorAction SilentlyContinue; Remove-Job $sampler -Force -ErrorAction SilentlyContinue
+
+              # What the round left behind. This desktop renders golden baselines, so a leftover onboard or
+              # simulator window, an orphaned server or double, or a crash dialog of ours is a defect here:
+              # listed, closed, and the round fails. Only processes started from this round's own
+              # directories (the checkouts, the evidence and stage roots, the peer publish cache), and crash
+              # dialogs raised for such a process -- 8005-mes-ingest's desktop jobs may be running windows,
+              # and crashing, between our scenarios, and those are not ours to close.
+              $ownRoots = @(@((Resolve-Path ..).Path, $evidenceRoot, (Join-Path $env:LOCALAPPDATA '8005-l2-peers')) |
+                  ForEach-Object { $_.TrimEnd([char]'\') + [char]'\' })
+              $isOurs = { param($path) $path -and @($ownRoots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0 }
+              $leftovers = @(Get-Process | Where-Object { & $isOurs $_.Path })
+              # WerFault is started as `WerFault.exe -u -p <pid> ...`; the crashed process stays alive while
+              # its dialog is up, so its path tells whose crash it is.
+              foreach ($wer in @(Get-CimInstance Win32_Process -Filter "Name = 'WerFault.exe'" -ErrorAction SilentlyContinue)) {
+                  if ($wer.ProcessId -in $werBefore) { continue }
+                  $crashedPid = if ($wer.CommandLine -match '-p\s+(\d+)') { [int]$Matches[1] } else { $null }
+                  $crashed = if ($crashedPid) { Get-Process -Id $crashedPid -ErrorAction SilentlyContinue } else { $null }
+                  if ($crashed -and (& $isOurs $crashed.Path)) {
+                      $leftovers += @(Get-Process -Id $wer.ProcessId -ErrorAction SilentlyContinue)
+                  } else {
+                      Write-Host "::warning title=Crash dialog not ours::WerFault pid $($wer.ProcessId) for pid $crashedPid; left alone"
+                  }
+              }
+              foreach ($process in $leftovers) {
+                  Write-Host "::error title=Leftover process::$($process.ProcessName) (pid $($process.Id)) $($process.Path) window '$($process.MainWindowTitle)'"
+                  Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+              }
+
+              $values = @(Import-Csv -LiteralPath $samplesPath -ErrorAction SilentlyContinue |
+                  ForEach-Object { [double]::Parse($_.committedGiB, [Globalization.CultureInfo]::InvariantCulture) })
+              $peak = ($values | Measure-Object -Maximum).Maximum
+              $floor = ($values | Measure-Object -Minimum).Minimum
+
+              $summary = @(
+                  "### Real-onboard L2 ($env:RIG_MODE, $($records.Count) runs$(if ($stoppedBy) { ", stopped: $stoppedBy" }))", '',
+                  "control-server $($commits['control-server']), onboard $($commits['8005-agv-onboard-hmi']), simulator $($commits['slots-simulator'])", '',
+                  "Whole-machine committed memory during the step: min $floor GiB, peak $peak GiB ($($values.Count) samples, commit-samples.csv in the evidence).", '',
+                  '| Run | Result | Seconds | Committed at start (GiB) |', '| --- | --- | --- | --- |'
+              )
+              foreach ($record in $records) {
+                  $summary += "| $($record.Label) | $($record.Result) | $($record.Seconds) | $($record.CommittedAtStartGiB) |"
+              }
+              if ($leftovers.Count -gt 0) { $summary += '', "Leftover processes closed: $(($leftovers | ForEach-Object ProcessName) -join ', ')" }
+              $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+              $summary | Set-Content -LiteralPath (Join-Path $evidenceRoot 'SUMMARY.md') -Encoding utf8NoBOM
+              $summary | ForEach-Object { Write-Host $_ }
           }
 
-          Stop-Job $sampler; Remove-Job $sampler -Force
-
-          foreach ($record in $records) {
-              Write-Host "::group::$($record.Label) -- $(if ($record.ExitCode -eq 0) { 'PASS' } else { "FAIL ($($record.ExitCode))" }), $($record.Seconds)s"
-              $log = Join-Path $evidenceRoot "$($record.Label).log"
-              if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log | ForEach-Object { Write-Host $_ } }
-              Write-Host '::endgroup::'
-          }
-
-          # What the round left behind. This desktop renders golden baselines, so a leftover onboard or
-          # simulator window, an orphaned server or double, or a crash dialog is a defect here: listed,
-          # closed, and the round fails. Only processes started from this round's own directories (the
-          # checkouts, the evidence and stage roots, the peer publish cache) and crash dialogs that
-          # appeared during it -- 8005-mes-ingest's desktop jobs may be running windows of their own
-          # between our scenarios, and those are not ours to close.
-          $ownRoots = @((Resolve-Path ..).Path, $evidenceRoot, (Join-Path $env:LOCALAPPDATA '8005-l2-peers'))
-          $leftovers = @(Get-Process | Where-Object {
-                  $path = $_.Path
-                  ($path -and @($ownRoots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) -or
-                  ($_.ProcessName -eq 'WerFault' -and $_.Id -notin $werBefore)
-              })
-          foreach ($process in $leftovers) {
-              Write-Host "::error title=Leftover process::$($process.ProcessName) (pid $($process.Id)) $($process.Path) window '$($process.MainWindowTitle)'"
-              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-          }
-
-          $samples = @(Import-Csv -LiteralPath $samplesPath)
-          $values = @($samples | ForEach-Object { [double]::Parse($_.committedGiB, [Globalization.CultureInfo]::InvariantCulture) })
-          $peak = ($values | Measure-Object -Maximum).Maximum
-          $floor = ($values | Measure-Object -Minimum).Minimum
-          $failed = @($records | Where-Object ExitCode -ne 0)
-
-          $summary = @(
-              "### Real-onboard L2 ($env:RIG_MODE, $($records.Count) runs)", '',
-              "control-server $($commits['control-server']), onboard $($commits['8005-agv-onboard-hmi']), simulator $($commits['slots-simulator'])", '',
-              "Whole-machine committed memory during the step: min $floor GiB, peak $peak GiB ($($samples.Count) samples, commit-samples.csv in the evidence).", '',
-              '| Run | Result | Seconds | Committed at start (GiB) |', '| --- | --- | --- | --- |'
-          )
-          foreach ($record in $records) {
-              $result = if ($record.ExitCode -eq 0) { 'PASS' } else { "FAIL ($($record.ExitCode))" }
-              $summary += "| $($record.Label) | $result | $($record.Seconds) | $($record.CommittedAtStartGiB) |"
-          }
-          if ($leftovers.Count -gt 0) { $summary += '', "Leftover processes closed: $(($leftovers | ForEach-Object ProcessName) -join ', ')" }
-          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          $summary | Set-Content -LiteralPath (Join-Path $evidenceRoot 'SUMMARY.md') -Encoding utf8NoBOM
-          $summary | ForEach-Object { Write-Host $_ }
-
-          if ($commitGuardTripped) { throw "RIG_COMMIT_GUARD: the round stopped before $(($records | Select-Object -Last 1).Label); the machine stayed above $ceiling GiB committed for $env:RIG_COMMIT_WAIT_MINUTES minutes." }
+          if ($stoppedBy) { throw "RIG_$($stoppedBy -replace '^NOT_STARTED_', ''): the round stopped before $(($records | Select-Object -Last 1).Label)." }
+          $lockTimeouts = @($records | Where-Object Result -eq 'NOT_STARTED_DESKTOP_LOCK')
+          $failed = @($records | Where-Object { $_.Result -like 'FAIL*' })
           if ($failed.Count -gt 0) { throw "Real-onboard scenarios failed: $(($failed | ForEach-Object Label) -join ', ')" }
+          if ($lockTimeouts.Count -gt 0) { throw "RIG_DESKTOP_LOCK: $(($lockTimeouts | ForEach-Object Label) -join ', ') waited out the desktop lock; not a product result." }
           if ($leftovers.Count -gt 0) { throw "The round left $($leftovers.Count) process(es) behind." }
 
       # Diagnostics, not a deliverable: the verdict is the step above. Same reasoning as the scenarios job.
