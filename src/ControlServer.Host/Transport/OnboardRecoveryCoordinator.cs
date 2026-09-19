@@ -838,6 +838,26 @@ public sealed class OnboardRecoveryCoordinator(
                         "The recovery session this compensation belongs to has already closed.")
                 });
             }
+            // Only one compensation of a session goes to the vehicle at a time (control-server#187). A second one may
+            // be submitted while the first still awaits its authorization -- refusing that at submission could leave a
+            // session whose one compensation is never authorized with no action left -- so the line is drawn here,
+            // where the command is sent: while another compensation of the session has its command out and awaits the
+            // outcome, this one is not authorized, and the vehicle does not compensate twice.
+            if (await dbContext.RecoveryWorkflows.AnyAsync(
+                    row => row.WorkflowType == "COMPENSATE_LOAD_ALL_EMPTY" &&
+                           row.WorkflowId != actionId &&
+                           row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId &&
+                           (row.State == RecoveryWorkflowState.CommandPending ||
+                            row.State == RecoveryWorkflowState.AwaitingResult),
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return Response(root, "LoadCompensationRejected", new
+                {
+                    recoveryActionId = actionId,
+                    problem = Problem(ServerReasonCodes.ActionNotAllowedInState, "payload",
+                        "Another compensation of this recovery session is already awaiting its outcome.")
+                });
+            }
             string commandId = StableGuid(actionId, "load-compensation-command");
             string hash = RecoveryCommandHash.Compute(
                 actionId, workflow.DemandId!, workflow.SlotOperationAttemptId!, workflow.SlotsJson);
