@@ -283,6 +283,38 @@ public sealed class TaskTypeStationActivationFollowUpTests
         Assert.All(await harness.HoldsAsync(), hold => Assert.Equal(releaser, hold.ReleasedBy));
     }
 
+    /// <summary>
+    /// cs#200 d：数据库真的拒绝了插入（触发器 <c>RAISE(ABORT)</c>），而且是在调用方开着的外层事务里——EF 回滚到保存点。调用方接着在
+    /// 同一个事务、同一个上下文上再写一条并提交：只有后一条落库。
+    /// </summary>
+    [Fact]
+    public async Task AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        await harness.ExecuteAsync("""
+            CREATE TRIGGER cs200_refuse BEFORE INSERT ON BusinessAuditRecords
+            WHEN NEW.Action = 'CS200_REFUSED' BEGIN SELECT RAISE(ABORT, 'cs200 refused'); END;
+            """);
+        ControlServerDbContext context = harness.NewContext();
+        GovernanceStore store = Governance(context);
+
+        await using (Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
+            await context.Database.BeginTransactionAsync(Token))
+        {
+            await Assert.ThrowsAsync<DbUpdateException>(() => store.WriteBusinessAsync(
+                Entry("CS200_REFUSED"), TaskTypeStationActivationHarness.Now, Token));
+            await store.WriteBusinessAsync(Entry("CS200_NEXT"), TaskTypeStationActivationHarness.Now, Token);
+            await transaction.CommitAsync(Token);
+        }
+
+        await using ControlServerDbContext reader = harness.NewContext();
+        string[] written = await reader.Set<BusinessAuditRecordRow>().AsNoTracking()
+            .Where(row => row.Action.StartsWith("CS200_"))
+            .Select(row => row.Action)
+            .ToArrayAsync(Token);
+        Assert.Equal(["CS200_NEXT"], written);
+    }
+
     private static GovernanceStore Governance(ControlServerDbContext context) =>
         new(context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default);
 
