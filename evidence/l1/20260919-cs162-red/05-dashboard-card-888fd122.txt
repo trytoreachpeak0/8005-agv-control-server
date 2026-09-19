@@ -1,0 +1,26 @@
+commit: 888fd122f48f4c0ce241fb742647882898bc60c1 dirty: 0
+filter: FullyQualifiedName~TaskTypeBindingDashboardTests
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:13.99]     ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource [FAIL]
+  Failed ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource [8 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeBindingDashboardTests.cs:line 59
+   at ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeBindingDashboardTests.cs:line 83
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:13.99]     ControlServer.Tests.TaskTypeBindingDashboardTests.TheCardListsEachTaskTypeWithItsStatusTheHoldSourcesAndAHoldLinkOnEveryRow [FAIL]
+  Failed ControlServer.Tests.TaskTypeBindingDashboardTests.TheCardListsEachTaskTypeWithItsStatusTheHoldSourcesAndAHoldLinkOnEveryRow [2 ms]
+  Error Message:
+   No row for WIRE_TO_GATE.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeBindingDashboardTests.RowOf(String html, String taskType) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeBindingDashboardTests.cs:line 175
+   at ControlServer.Tests.TaskTypeBindingDashboardTests.TheCardListsEachTaskTypeWithItsStatusTheHoldSourcesAndAHoldLinkOnEveryRow() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeBindingDashboardTests.cs:line 104
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     2, Passed:     2, Skipped:     0, Total:     4, Duration: 8 s - ControlServer.Tests.dll (net8.0)
