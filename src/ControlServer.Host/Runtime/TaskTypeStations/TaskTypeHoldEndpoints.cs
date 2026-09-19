@@ -67,6 +67,15 @@ public static class TaskTypeHoldEndpoints
     /// <summary>The longest claimed role taken, in UTF-16 code units after trimming.</summary>
     public const int MaxClaimedRoleLength = 64;
 
+    /// <summary>
+    /// The largest request body read, in bytes: the longest reason and claimed role written as escaped JSON (six bytes a
+    /// UTF-16 code unit at most) with room to spare for the rest of the request.
+    /// </summary>
+    public const int MaxRequestBodyBytes = 16 * 1024;
+
+    /// <summary>The audit object of a request refused before its body was read: which Map it named is not known.</summary>
+    public const string UnknownMapObjectId = "map-unknown";
+
     private static readonly JsonSerializerOptions DetailOptions = new()
     {
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
