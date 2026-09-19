@@ -215,7 +215,7 @@ public sealed class GovernanceStore : IConfigurationSnapshotStore, IGovernanceAu
             DetailJson = entry.DetailJson
         };
         _context.Set<BusinessAuditRecordRow>().Add(row);
-        await _context.SaveChangesAsync(cancellationToken);
+        await SaveOrUntrackAsync(row, cancellationToken);
         return row.AuditRecordId;
     }
 
@@ -243,8 +243,36 @@ public sealed class GovernanceStore : IConfigurationSnapshotStore, IGovernanceAu
             DetailJson = entry.DetailJson
         };
         _context.Set<AdministratorAuditRecordRow>().Add(row);
-        await _context.SaveChangesAsync(cancellationToken);
+        await SaveOrUntrackAsync(row, cancellationToken);
         return row.AuditRecordId;
+    }
+
+    /// <summary>
+    /// 保存一条刚加进来的审计；没保存成就把这一行从跟踪里摘掉再抛（control-server#200）。
+    /// </summary>
+    /// <remarks>
+    /// 留在跟踪里的 <c>Added</c> 行不是无害的：同一个上下文的下一次 <c>SaveChanges</c>——往往正是调用方随后写的那条失败审计——会
+    /// 把它补交进去，一条说「成功」的审计就这样落在一次失败之后；被拒的原因若是这一行自己，下一次保存又会因它再失败一次。只摘这一行：
+    /// 跟踪器里别的东西是调用方自己的工作单元，回滚与否由它决定。
+    /// </remarks>
+    private async Task SaveOrUntrackAsync(object row, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            try
+            {
+                _context.Entry(row).State = EntityState.Detached;
+            }
+            catch (ObjectDisposedException)
+            {
+                // A disposed context tracks nothing any more; the save's own failure is the one to report.
+            }
+            throw;
+        }
     }
 
     public async Task<GovernedVersionView?> ReadVersionAsync(

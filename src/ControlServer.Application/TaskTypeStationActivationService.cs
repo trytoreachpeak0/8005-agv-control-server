@@ -124,9 +124,9 @@ public sealed class TaskTypeStationActivationService(
             reconciled = await _activations.ReconcileAsync(
                 mapId,
                 Decide,
-                (attempt, readBack, conclusion, released) => ReconcileEntry(
+                (attempt, readBack, conclusion, released, after) => ReconcileEntry(
                     mapId, request, attempt, readBack, conclusion, released,
-                    Describe(mapId, attempt, readBack, conclusion), OutcomeOf(conclusion)),
+                    Describe(mapId, attempt, readBack, conclusion), OutcomeOf(conclusion), after),
                 now,
                 cancellationToken);
         }
@@ -138,7 +138,7 @@ public sealed class TaskTypeStationActivationService(
             string? auditId = await TryWriteAsync(
                 ReconcileEntry(
                     mapId, request, null, null, TaskTypeStationReconciliationConclusion.NotConcluded, [], detail,
-                    TimedOutOrUnknown(failure)),
+                    TimedOutOrUnknown(failure), after: null),
                 now);
             return new TaskTypeStationReconciliationResult(
                 TaskTypeStationReconciliationConclusion.NotConcluded, mapId, null, null, null, null, null, [], auditId ?? string.Empty,
@@ -278,7 +278,8 @@ public sealed class TaskTypeStationActivationService(
         TaskTypeStationReconciliationConclusion conclusion,
         IReadOnlyList<string> released,
         string detail,
-        GovernanceActionOutcome outcome) =>
+        GovernanceActionOutcome outcome,
+        TaskTypeStationPointerAfterWrite? after) =>
         new(
             TaskTypeStationActivationAuditActions.Reconciled,
             GovernedObjectKind.PublicStationBinding,
@@ -304,6 +305,18 @@ public sealed class TaskTypeStationActivationService(
                     heldTaskTypes = attempt?.HeldTaskTypes ?? [],
                     releasedHoldIds = released,
                     conclusion = ConclusionName(conclusion),
+                    // What the reconciliation left, read back after its write (control-server#200); null when it did not
+                    // commit. rowPresent false is "no pointer row": the map is back to never activated.
+                    pointerAfter = after is null
+                        ? null
+                        : new
+                        {
+                            write = after.Write,
+                            rowPresent = after.Row is not null,
+                            state = after.Row?.State,
+                            activeVersion = after.Row?.ActiveVersion,
+                            pendingVersion = after.Row?.PendingVersion
+                        },
                     detail
                 },
                 AuditJson),
@@ -521,7 +534,7 @@ public sealed class TaskTypeStationActivationService(
             (IReadOnlyList<TaskTypeStationHold> released, string auditId) = await _activations.ReleaseManualAndCatalogHoldsAsync(
                 mapId,
                 taskType,
-                "fieldops:release-hold:" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+                "fieldops:release-hold:",
                 released => Entry(released.Count == 0 ? nothingHeld : [], released),
                 now,
                 cancellationToken);

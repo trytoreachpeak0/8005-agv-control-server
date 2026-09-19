@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="a9d5d261-ae08-427f-94ed-08171b05b9f9" name="szy@LAB-WIN-01 2026-09-20 01:05:23" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-20T01:05:23.1943118+08:00" queuing="2026-09-20T01:05:23.1943122+08:00" start="2026-09-20T01:05:06.6805993+08:00" finish="2026-09-20T01:05:25.8180427+08:00" />
+  <TestSettings name="default" id="77befa28-2815-4c06-99b7-f8af9245258a">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-09-20_01_05_23" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="c0ff3805-a31e-4e38-9b8f-acdbb3d54115" testId="ccdb04c6-ea9a-47b4-c493-5e594ef463a0" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked" computerName="LAB-WIN-01" duration="00:00:01.1706927" startTime="2026-09-20T01:05:23.1453681+08:00" endTime="2026-09-20T01:05:24.3182850+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c0ff3805-a31e-4e38-9b8f-acdbb3d54115">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.DoesNotContain() Failure: Filter matched in collection&#xD;
+             ↓ (pos 0)&#xD;
+Collection: [BusinessAuditRecordRow {AuditRecordId: 7248f170dc1b4de490e9489edf3a6143} Added]</Message>
+          <StackTrace>   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 239&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 239&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="2dc2a819-9922-4657-b63b-862760d78c41" testId="0ec95463-e607-6b55-64f4-d09e9e773674" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext" computerName="LAB-WIN-01" duration="00:00:08.2813064" startTime="2026-09-20T01:05:14.8005957+08:00" endTime="2026-09-20T01:05:23.1357170+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2dc2a819-9922-4657-b63b-862760d78c41">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ at index 0&#xD;
+           ↓ (pos 0)&#xD;
+Expected: "ec5c7cc5fb764bd394add9d53d96bcde|CS200_NEXT"&#xD;
+Actual:   "0c32fef4a87143a18dc14545483ef600|CS200_REFUSED"&#xD;
+           ↑ (pos 0)</Message>
+          <StackTrace>   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 196&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 196&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 196&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1b0b109e-b23d-4bec-9c3d-6e8c601691d5" testId="ede02bdf-b183-7b47-3877-b845d9e74763" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext" computerName="LAB-WIN-01" duration="00:00:00.7571843" startTime="2026-09-20T01:05:24.3224634+08:00" endTime="2026-09-20T01:05:25.0807183+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1b0b109e-b23d-4bec-9c3d-6e8c601691d5">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ at index 0&#xD;
+           ↓ (pos 0)&#xD;
+Expected: "f6c1b881bc9646d483c9fad6105bf8af|CS200_NEXT"&#xD;
+Actual:   "c1ae8ee31668418987c8254c2af574a8|CS200_REFUSED"&#xD;
+           ↑ (pos 0)</Message>
+          <StackTrace>   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 217&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 217&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 217&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="ede02bdf-b183-7b47-3877-b845d9e74763">
+      <Execution id="1b0b109e-b23d-4bec-9c3d-6e8c601691d5" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="ccdb04c6-ea9a-47b4-c493-5e594ef463a0">
+      <Execution id="c0ff3805-a31e-4e38-9b8f-acdbb3d54115" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="ARefusedAuditLeavesTheCallersOwnPendingChangesTracked" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="0ec95463-e607-6b55-64f4-d09e9e773674">
+      <Execution id="2dc2a819-9922-4657-b63b-862760d78c41" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="ccdb04c6-ea9a-47b4-c493-5e594ef463a0" executionId="c0ff3805-a31e-4e38-9b8f-acdbb3d54115" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="0ec95463-e607-6b55-64f4-d09e9e773674" executionId="2dc2a819-9922-4657-b63b-862760d78c41" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ede02bdf-b183-7b47-3877-b845d9e74763" executionId="1b0b109e-b23d-4bec-9c3d-6e8c601691d5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="3" executed="3" passed="0" failed="3" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:01.48]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:04.81]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:05.69]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:14.26]       Assert.Equal() Failure: Collections differ at index 0&#xD;
+[xUnit.net 00:00:14.26]                  ↓ (pos 0)&#xD;
+[xUnit.net 00:00:14.26]       Expected: "ec5c7cc5fb764bd394add9d53d96bcde|CS200_NEXT"&#xD;
+[xUnit.net 00:00:14.26]       Actual:   "0c32fef4a87143a18dc14545483ef600|CS200_REFUSED"&#xD;
+[xUnit.net 00:00:14.26]                  ↑ (pos 0)&#xD;
+[xUnit.net 00:00:14.26]       Stack Trace:&#xD;
+[xUnit.net 00:00:14.27]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(196,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext()&#xD;
+[xUnit.net 00:00:14.27]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(196,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext()&#xD;
+[xUnit.net 00:00:14.27]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(196,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext()&#xD;
+[xUnit.net 00:00:14.27]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:15.44]       Assert.DoesNotContain() Failure: Filter matched in collection&#xD;
+[xUnit.net 00:00:15.44]                    ↓ (pos 0)&#xD;
+[xUnit.net 00:00:15.44]       Collection: [BusinessAuditRecordRow {AuditRecordId: 7248f170dc1b4de490e9489edf3a6143} Added]&#xD;
+[xUnit.net 00:00:15.44]       Stack Trace:&#xD;
+[xUnit.net 00:00:15.44]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(239,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked()&#xD;
+[xUnit.net 00:00:15.44]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(239,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked()&#xD;
+[xUnit.net 00:00:15.44]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:16.20]       Assert.Equal() Failure: Collections differ at index 0&#xD;
+[xUnit.net 00:00:16.20]                  ↓ (pos 0)&#xD;
+[xUnit.net 00:00:16.20]       Expected: "f6c1b881bc9646d483c9fad6105bf8af|CS200_NEXT"&#xD;
+[xUnit.net 00:00:16.20]       Actual:   "c1ae8ee31668418987c8254c2af574a8|CS200_REFUSED"&#xD;
+[xUnit.net 00:00:16.20]                  ↑ (pos 0)&#xD;
+[xUnit.net 00:00:16.20]       Stack Trace:&#xD;
+[xUnit.net 00:00:16.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(217,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext()&#xD;
+[xUnit.net 00:00:16.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(217,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext()&#xD;
+[xUnit.net 00:00:16.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(217,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext()&#xD;
+[xUnit.net 00:00:16.20]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:16.73]   Finished:    ControlServer.Tests (ID = 'ebc8ae64a5f3b5d8cf19a69ab5de76219f4d0732ddb06039fa65c53d9df48bae')&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T01:05:23.1465910+08:00">
+        <Text>[xUnit.net 00:00:14.26]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T01:05:24.3199094+08:00">
+        <Text>[xUnit.net 00:00:15.44]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.ARefusedAuditLeavesTheCallersOwnPendingChangesTracked [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T01:05:25.0817670+08:00">
+        <Text>[xUnit.net 00:00:16.20]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
