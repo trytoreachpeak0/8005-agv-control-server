@@ -240,6 +240,7 @@ if (app.Configuration.GetValue<bool>("SlotConfigurationActivation:enabled"))
 {
     app.MapSlotConfigurationActivation();
 }
+app.MapTaskTypeHolds();
 // 默认不挂。REQ-0356 的人工确认解除：这个入口会把一台车的急停解开，要现场明确打开才提供。
 if (app.Configuration.GetValue<bool>("EmergencyStopRelease:enabled"))
 {
