@@ -1,0 +1,6 @@
+== no key (real-onboard-station-timeout-door-open.setup.psd1)
+onboard stage copy workflow: {"unlockFeedbackTimeoutMs":3000,"unlockOutputResetTimeoutMs":3000,"operationTimeoutMs":120000,"feedbackStableMs":300,"ioSnapshotMaxAgeMs":1000,"maxSublotLength":128,"maxReopenAttempts":2}
+server environment ExpectedActionOverdue__threshold present: False value: 
+== with key (real-onboard-expected-action-overdue.setup.psd1)
+onboard stage copy workflow: {"unlockFeedbackTimeoutMs":3000,"unlockOutputResetTimeoutMs":3000,"operationTimeoutMs":120000,"feedbackStableMs":300,"ioSnapshotMaxAgeMs":1000,"maxSublotLength":128,"maxReopenAttempts":2,"expectedActionOverdueMs":20000}
+server environment ExpectedActionOverdue__threshold present: True value: 00:00:20
