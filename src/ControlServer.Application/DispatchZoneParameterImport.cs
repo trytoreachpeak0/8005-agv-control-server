@@ -73,8 +73,9 @@ public sealed record DispatchZoneParameterImportResult(
 /// 的同一个事务里。
 /// </para>
 /// <para>
-/// <b>内容与当前版本相同则不产生新版本</b>（与分区归属表不同，那边同内容也出新版本）：读参数的派车轮按版本号判断参数变没变，一个只换了
-/// 号的版本会被当成一次变更。回滚是把旧内容再导入一次，它与当前内容不同，所以照常形成新版本。
+/// <b>内容与当前版本相同则不产生新版本</b>，一版都没有时导入空表也不产生（与分区归属表不同，那边同内容也出新版本）：读参数的派车轮按版本号判断参数变没变，一个只换了
+/// 号的版本会被当成一次变更。回滚是把旧内容再导入一次，它与当前内容不同，所以照常形成新版本。两个导入并发时「比较」与「写入」要在同一个
+/// 写事务里才可靠：调用方（FieldOps）在外面开写事务，<see cref="IDispatchZoneParameterStore.WriteVersionAsync"/> 加入它而不另开。
 /// </para>
 /// <para>
 /// <b>不停车生效。</b>这里只写库；服务端不重启，读参数的派车轮在下一轮读到新版本。一轮之内只读一次版本，轮中发生的导入本轮不生效——
@@ -157,12 +158,13 @@ public sealed class DispatchZoneParameterImportService(
 
         DispatchZoneParameters[] accepted = [.. rows.Select(row => row.Zone)];
         IReadOnlyList<DispatchZoneParameterChange> changes = Compare(current, accepted);
-        if (changes.Count == 0 && current is not null)
+        if (changes.Count == 0)
         {
             // Every zone reads the same as it does now, so a new version would change nothing but the version number -- and
             // the round that compares numbers would treat it as a change. A rollback always differs from what is current.
+            // With no version at all every zone is already unconfigured, so an empty table changes nothing either.
             return new DispatchZoneParameterImportResult(
-                DispatchZoneParameterImportOutcome.Unchanged, dryRun, accepted.Length, current.Version, current, [], []);
+                DispatchZoneParameterImportOutcome.Unchanged, dryRun, accepted.Length, current?.Version, current, [], []);
         }
 
         DispatchZoneParameterTableVersion? written = dryRun
@@ -282,7 +284,8 @@ public sealed class DispatchZoneParameterImportService(
         {
             return null;
         }
-        if (text.All(char.IsAsciiDigit) &&
+        // No sign, no unit, no leading zero: "020000" and "00" are not how anybody writes the value they mean.
+        if (text.All(char.IsAsciiDigit) && (text.Length == 1 || text[0] != '0') &&
             long.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long value) &&
             value >= minimum && value <= maximum)
         {

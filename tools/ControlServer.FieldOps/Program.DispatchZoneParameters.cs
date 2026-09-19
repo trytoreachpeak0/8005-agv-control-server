@@ -2,6 +2,7 @@ using System.Globalization;
 using ControlServer.Application;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace ControlServer.FieldOps;
 
@@ -43,14 +44,24 @@ internal static partial class Program
         DispatchZoneParameterImportService importer = new(
             new DispatchZoneParameterStore(context, new GovernedConfigurationPublisher(governance, governance)),
             new DispatchZoneParameterImportFacts(context));
+        string csv = await File.ReadAllTextAsync(inputPath);
         DispatchZoneParameterImportResult result;
         try
         {
-            result = await importer.ImportAsync(await File.ReadAllTextAsync(inputPath), dryRun, now, CancellationToken.None);
+            // One write transaction (SQLite BEGIN IMMEDIATE) around reading the current version, comparing and writing: a
+            // second import of the same table waits here, then reads the version the first one wrote and reports UNCHANGED
+            // instead of writing a version that changes nothing but its number. The store joins this transaction.
+            await using IDbContextTransaction transaction = await context.Database.BeginTransactionAsync(CancellationToken.None);
+            result = await importer.ImportAsync(csv, dryRun, now, CancellationToken.None);
+            if (result.Outcome == DispatchZoneParameterImportOutcome.Accepted && !dryRun)
+            {
+                await transaction.CommitAsync(CancellationToken.None);
+            }
         }
-        catch (DbUpdateException conflict)
+        catch (Exception conflict) when (conflict is DbUpdateException or GovernedSnapshotVersionConflictException)
         {
             // Another import took the same version number first; this one rolled back whole. Nothing of it was written.
+            // Different content under that number is refused by the snapshot freeze, identical content by the version row.
             return Emit(
                 new
                 {
