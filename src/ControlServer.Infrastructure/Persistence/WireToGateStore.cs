@@ -552,6 +552,53 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        HashSet<object> trackedBefore = new(
+            dbContext.ChangeTracker.Entries().Select(entry => entry.Entity), ReferenceEqualityComparer.Instance);
+        try
+        {
+            await StageAndCommitAcceptanceAsync(snapshot, orderIntent, journey, transaction, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception) when (ForgetStagedAcceptance(trackedBefore))
+        {
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Drops from the change tracker everything a failed acceptance staged -- the rows it added and the changes it made to
+    /// rows already tracked -- and returns false, so that the exception it runs under propagates unchanged.
+    /// </summary>
+    /// <remarks>
+    /// The transaction rolls the database back, but the tracker would keep the staged rows for the caller's next
+    /// SaveChanges on the same context: a refused acceptance followed by the engine saving the demand's backlog reason
+    /// would commit half an acceptance. The same guard control-server#198 keeps by refusing a plan before anything is
+    /// staged; this one covers the refusals that can only come after, such as the purpose claim's key.
+    /// </remarks>
+    private bool ForgetStagedAcceptance(HashSet<object> trackedBefore)
+    {
+        foreach (var entry in dbContext.ChangeTracker.Entries().ToArray())
+        {
+            if (!trackedBefore.Contains(entry.Entity))
+            {
+                entry.State = EntityState.Detached;
+            }
+            else if (entry.State is EntityState.Modified or EntityState.Deleted)
+            {
+                entry.CurrentValues.SetValues(entry.OriginalValues);
+                entry.State = EntityState.Unchanged;
+            }
+        }
+        return false;
+    }
+
+    private async Task StageAndCommitAcceptanceAsync(
+        AcceptedDemandSnapshot snapshot,
+        OrderIntent orderIntent,
+        JourneyExecutionPlan? journey,
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction,
+        CancellationToken cancellationToken)
+    {
         VehicleDispatchLeaseRow? activeLease = await dbContext.VehicleDispatchLeases
             .SingleOrDefaultAsync(
                 row => row.VehicleKey == orderIntent.VehicleKey && row.ReleasedAt == null,
