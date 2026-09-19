@@ -1334,6 +1334,103 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#169. Why a session closed is not on the wire and has no column: it is read from the store,
+    /// as a CLOSED session whose own workflow is RecoveryRequired with the vehicle's outcome on it. That reading
+    /// only holds while nothing after the closing rewrites the workflow -- neither the vehicle resending the
+    /// result, nor the administrator opening the next session on the same demand and taking it through its own
+    /// unreconciled action. Each session keeps its own account.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [InlineData("FAILED")]
+    [InlineData("UNKNOWN")]
+    public async Task WhyASessionClosedStaysReadableAfterTheResultIsResentAndTheNextSessionRuns(string outcome)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_CLOSE_REASON_KEPT";
+        const string proof = "close-reason-kept-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            string first = await ReachUnreconciledResultAsync("LoadCompensationResult", outcome, processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
+            long firstClosedRevision = (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == firstSessionId, token)).Revision;
+
+            // The vehicle resends the result; then the administrator opens the next session and hands the
+            // cargo off, and that fails too.
+            await processor.ProcessAsync(first, state, token);
+            const string nextRequestId = "41000000-0000-4000-8000-000000000169";
+            const string handoffActionId = "51000000-0000-4000-8000-000000000171";
+            string nextSessionId = StableGuid(nextRequestId, "exception-recovery-session");
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+            JsonNode handoff = JsonNode.Parse(RecoveryAction(
+                "FAULT_CARGO_HANDOFF", messageId: "e0000000-0000-4000-8000-000000001710",
+                actionId: handoffActionId))!;
+            handoff["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
+            Assert.Equal("RecoveryActionAccepted",
+                MessageType(await processor.ProcessAsync(handoff.ToJsonString(), state, token)));
+            string handoffResult = Envelope(
+                "b3200000-0000-4000-8000-000000000171",
+                "FaultCargoRecoveryResult",
+                new
+                {
+                    exceptionRecoverySessionId = nextSessionId,
+                    recoveryActionId = handoffActionId,
+                    demandId = DemandId,
+                    handoffId = StableGuid(handoffActionId, "fault-cargo-handoff"),
+                    overallOutcome = "FAILED",
+                    slotResults = RecoverySlots.Select(slot => new
+                    {
+                        slotNo = slot,
+                        outcome = "FAILED",
+                        finalPhysicalState = "UNKNOWN",
+                        lockState = "LOCKED",
+                        unlockOutputState = "RESET",
+                        reasonCodes = UnknownReasonCodes
+                    }).ToArray(),
+                    @operator = Operator(),
+                    observedAt = Now.AddSeconds(7)
+                });
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(handoffResult, state, token)));
+
+            RecoveryWorkflowRow compensation = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ActionId, token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, compensation.State);
+            Assert.Equal(outcome, compensation.Outcome);
+            Assert.Equal("a0000000-0000-4000-8000-000000000021", compensation.ResultMessageId);
+            Assert.Equal(firstClosedRevision, (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == firstSessionId, token)).Revision);
+            // The derivation itself, the way an operator's query would read it.
+            ExceptionRecoverySessionRow[] closedSessions = await context.ExceptionRecoverySessions.AsNoTracking()
+                .Where(row => row.State == "CLOSED").ToArrayAsync(token);
+            RecoveryWorkflowRow[] workflows = await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token);
+            Dictionary<string, string?> closedUnreconciled = closedSessions.ToDictionary(
+                session => session.ExceptionRecoverySessionId,
+                session => workflows.Single(workflow =>
+                    workflow.ExceptionRecoverySessionId == session.ExceptionRecoverySessionId &&
+                    workflow.State == RecoveryWorkflowState.RecoveryRequired).Outcome);
+            Assert.Equal(2, closedUnreconciled.Count);
+            Assert.Equal(outcome, closedUnreconciled[firstSessionId]);
+            Assert.Equal("FAILED", closedUnreconciled[nextSessionId]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#169, device half. Closing the session over a FAILED forced recovery lifts nothing about
     /// the hardware: the doors were forced either way. While the load still needs recovery that is the reason
     /// the vehicle reports; once a new session has settled the load -- here by a compensation that proves every
