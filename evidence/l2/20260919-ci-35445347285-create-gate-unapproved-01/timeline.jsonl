@@ -1,0 +1,27 @@
+{"at":"2026-09-19T13:37:30.5997190+00:00","note":"L2 run 20260919T133730517Z starting for scenario 'create-gate-unapproved'."}
+{"at":"2026-09-19T13:37:30.6385074+00:00","note":"L2 port block lock acquired (slot 2, Global\\W2G-L2PortBlock-slot2)."}
+{"at":"2026-09-19T13:37:30.6413505+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-19T13:37:31.4825165+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T13:37:31.7267241+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T13:37:31.7856021+00:00","note":"Map/Station catalog parameters deliberately unapproved for this scenario."}
+{"at":"2026-09-19T13:37:31.8138058+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T13:37:34.9677990+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T13:37:37.0353916+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T13:37:37.4118437+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T13:37:37.5410529+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T13:37:38.2256391+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T13:37:38.4856513+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T13:37:38.5607952+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T13:37:38.6154083+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133730517Z-slot2\\controlserver.db"}
+{"at":"2026-09-19T13:37:40.2348700+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"362a28d2118b49c6995d4c1f03f3d1e8","version":1,"slotCount":8}}}
+{"at":"2026-09-19T13:37:40.2445064+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133730517Z-slot2\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T13:37:41.8181900+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"362a28d2118b49c6995d4c1f03f3d1e8","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T13:37:42.0193764+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T13:37:42.0241302+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133730517Z-slot2\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\create-gate-unapproved-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T13:37:43.7435913+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\create-gate-unapproved-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"8f86974afea34261b3e8c04121e3011c","importedAt":"2026-09-19T21:37:42.2638891+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T13:37:43.7563097+00:00","note":"Environment is up; entering scenario 'create-gate-unapproved'."}
+{"at":"2026-09-19T13:37:43.8390414+00:00","note":"Publishing demand 67477e05fbe749c48f2347f38ab2d085 (sublot L2-CGU-20260919T133730517Z) against an uncommissioned catalog."}
+{"at":"2026-09-19T13:37:43.9367113+00:00","criterion":"backlog-reason","value":""}
+{"at":"2026-09-19T13:37:44.4375469+00:00","criterion":"backlog-reason","value":"CATALOG_PARAMETERS_NOT_APPROVED"}
+{"at":"2026-09-19T13:37:49.4702492+00:00","note":"未批准的两个值确实阻断了一切依赖 Map/Station 的业务，而服务端本身照常运行。"}
+{"at":"2026-09-19T13:37:49.8611747+00:00","note":"L2 port block lock released."}

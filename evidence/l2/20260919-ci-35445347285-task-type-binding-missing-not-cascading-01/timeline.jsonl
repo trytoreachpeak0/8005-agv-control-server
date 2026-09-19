@@ -1,0 +1,46 @@
+{"at":"2026-09-19T13:33:39.8737316+00:00","note":"L2 run 20260919T133339798Z starting for scenario 'task-type-binding-missing-not-cascading'."}
+{"at":"2026-09-19T13:33:39.9138215+00:00","note":"L2 port block lock acquired (slot 2, Global\\W2G-L2PortBlock-slot2)."}
+{"at":"2026-09-19T13:33:39.9165774+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-19T13:33:40.7984441+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T13:33:41.0555422+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T13:33:41.1320394+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T13:33:44.3073758+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T13:33:46.3777815+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T13:33:46.7528354+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T13:33:46.8723789+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T13:33:47.5666939+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T13:33:47.8310186+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T13:33:47.8838972+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T13:33:47.9483944+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133339798Z-slot2\\controlserver.db"}
+{"at":"2026-09-19T13:33:49.5823404+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"229a33d3bccc4842a057cf67604d8709","version":1,"slotCount":8}}}
+{"at":"2026-09-19T13:33:49.5919893+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133339798Z-slot2\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T13:33:51.2030084+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"229a33d3bccc4842a057cf67604d8709","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T13:33:51.3196980+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T13:33:51.3240089+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133339798Z-slot2\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\task-type-binding-missing-not-cascading-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T13:33:53.1049113+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\task-type-binding-missing-not-cascading-01\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"dbe9021a8f7142fe988250606affec0a","importedAt":"2026-09-19T21:33:51.6002706+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T13:33:53.1172544+00:00","note":"Environment is up; entering scenario 'task-type-binding-missing-not-cascading'."}
+{"at":"2026-09-19T13:33:53.2030201+00:00","note":"Publishing demand 93ca2a4f5241428e9be71733cf4af8ec (STAGING_TO_WIRE, AREA N1-7) to the fake MesIngest catalog."}
+{"at":"2026-09-19T13:33:53.2552412+00:00","note":"Publishing demand ca87d100e60d4e8598b905fd517fb78a (WIRE_TO_GATE, AREA N1-3) to the fake MesIngest catalog."}
+{"at":"2026-09-19T13:33:53.2963967+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-19T13:33:54.3251256+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-19T13:33:54.3575353+00:00","criterion":"backlog-row","value":"TASK_TYPE_BINDING_MISSING"}
+{"at":"2026-09-19T13:33:54.3826098+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-19T13:33:54.6331173+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-ca87d100-e60d-4e85-98b9-05fd517fb78a-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED; DestinationStationId=12}"}
+{"at":"2026-09-19T13:33:54.6417916+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-19T13:33:54.7191934+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-19T13:33:56.0002125+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-19T13:33:56.7570247+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-19T13:33:57.7674511+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-09-19T13:34:28.6378379+00:00","criterion":"journey-stage","value":"AwaitingDepartureSafety"}
+{"at":"2026-09-19T13:34:28.8918478+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-19T13:34:28.9178359+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-ca87d100-e60d-4e85-98b9-05fd517fb78a-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED; DestinationStationId=210}"}
+{"at":"2026-09-19T13:34:28.9534625+00:00","note":"Vehicle departs for the gate."}
+{"at":"2026-09-19T13:34:28.9809567+00:00","note":"Vehicle arrives at the gate and comes to rest."}
+{"at":"2026-09-19T13:34:30.2529865+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-19T13:34:30.7577967+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-19T13:34:30.8013344+00:00","criterion":"runtime-iterations","value":"45"}
+{"at":"2026-09-19T13:34:31.5500486+00:00","criterion":"runtime-iterations","value":"46"}
+{"at":"2026-09-19T13:34:32.5759029+00:00","criterion":"runtime-iterations","value":"47"}
+{"at":"2026-09-19T13:34:33.5862358+00:00","criterion":"runtime-iterations","value":"48"}
+{"at":"2026-09-19T13:34:33.6715603+00:00","note":"缺绑定只停 STAGING_TO_WIRE；WIRE_TO_GATE 同一次运行内受理并走完。"}
+{"at":"2026-09-19T13:34:34.0374722+00:00","note":"L2 port block lock released."}

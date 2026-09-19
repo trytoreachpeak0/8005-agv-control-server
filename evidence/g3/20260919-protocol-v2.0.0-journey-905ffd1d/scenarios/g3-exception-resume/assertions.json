@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "scenario": "g3-exception-resume",
+  "runId": "20260919T125111356Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "batch-2",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "44b3aa6e255f0820c3988d3f50f0b4dba1105006",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T125111356Z",
+    "controlServerCommit": "905ffd1dc0b4de1f048163342b45e58f3a7261fc",
+    "rig": "RealOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "G3-07-01",
+      "description": "消息顺序与向量一致：结果 → DurableAck → 重启后新会话的恢复状态报告 → 同一 messageId 的结果按新会话代号补发 → 补发的 DurableAck（CV-OPERATION-RESULT-UNKNOWN-RECONCILE orderedExpectedMessages）",
+      "outcome": "PASS",
+      "expected": "Result(g2) < Ack < RecoveryStateReport(g3) < Result(g3, 同号) < Ack(新行哈希)",
+      "actual": "Result g2 ack=DurableAck / Report g3 / Replay g3 ack=DurableAck / 有序=True"
+    },
+    {
+      "id": "G3-07-02",
+      "description": "车载端如实报未知并从日志补发：结果 overallOutcome 为 UNKNOWN；重启后的报告列出未结清尝试与这份结果；补发载荷与第一份逐字段相同（REPORT_UNKNOWN_AS_UNKNOWN / REPLAY_RESULT_ON_RECONNECT）",
+      "outcome": "PASS",
+      "expected": "UNKNOWN / unsettled=1d57ed32-401e-ec5b-9848-b201ddbf0a67 / pendingResults 含该结果 / 载荷相同",
+      "actual": "UNKNOWN / unsettled=1d57ed32-401e-ec5b-9848-b201ddbf0a67 / pendingResults 1 条、含该结果 1 / 载荷相同=True"
+    },
+    {
+      "id": "G3-07-03",
+      "description": "未知不当成功、不重复提交：补发之后这次操作仍只有一行 UNKNOWN 结果，装载仍 RecoveryRequired，旅程仍 Blocked（NEVER_TREAT_UNKNOWN_AS_SUCCESS / forbidden unknown-as-success、duplicate-business-commit）",
+      "outcome": "PASS",
+      "expected": "1 行 UNKNOWN / RecoveryRequired / Blocked",
+      "actual": "1 行 UNKNOWN / RecoveryRequired / Blocked"
+    },
+    {
+      "id": "G3-07-04",
+      "description": "服务端按报告的日志对账且不提前就绪：新会话代次大于重启前，补发之后待结清列表已清空，会话仍 RecoveryRequired（RECONCILE_FROM_REPORTED_JOURNAL / forbidden ready-before-reconciliation）",
+      "outcome": "PASS",
+      "expected": "代次 >2 / [] / RecoveryRequired",
+      "actual": "代次 3 / [] / RecoveryRequired (PENDING_FACT_RECONCILIATION_REQUIRED)"
+    },
+    {
+      "id": "G3-07-05",
+      "description": "补发不碰物理：重启与补发之后这次操作没有再开锁，装载仓仍关门、空、锁上、输出复位（forbidden duplicate-slot-unlock / NO_UNPROVEN_STATE）",
+      "outcome": "PASS",
+      "expected": "UNLOCKING 1 次不变 / CLOSED/EMPTY/1/0",
+      "actual": "UNLOCKING 1 → 1 / CLOSED/EMPTY/1/0 → CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "G3-07-06",
+      "description": "消息顺序与向量一致：ExceptionRecoverySessionRequested → Opened → RecoveryActionSubmitted(RESUME_AFTER_REPAIR) → Accepted → SlotOperationResumeCommand → OperationResult（CV-EXCEPTION-RESUME orderedExpectedMessages）",
+      "outcome": "PASS",
+      "expected": "SessionRequested→Opened ≤ ActionSubmitted→Accepted(RESUME_AFTER_REPAIR) ≤ ResumeCommand < OperationResult",
+      "actual": "SessionRequested→ExceptionRecoverySessionOpened / Action→RecoveryActionAccepted RESUME_AFTER_REPAIR / 有序=True"
+    },
+    {
+      "id": "G3-07-07",
+      "description": "恢复会话只为已验证的管理员打开：会话记下车上配置的管理员与 MAINTENANCE_ADMINISTRATOR 角色，范围是这条需求与装载仓（OPEN_RECOVERY_SESSION_FOR_VERIFIED_ADMINISTRATOR）",
+      "outcome": "PASS",
+      "expected": "管理员 L2-OPERATOR / MAINTENANCE_ADMINISTRATOR / 200857b7-5bfb-4a30-8819-3311b49642e4 / 1",
+      "actual": "L2-OPERATOR / MAINTENANCE_ADMINISTRATOR / 200857b7-5bfb-4a30-8819-3311b49642e4 / [1]"
+    },
+    {
+      "id": "G3-07-08",
+      "description": "只恢复授权的范围：恢复命令指向原尝试、原仓位与已证实的检查点；恢复之后车载端只重开了这个仓，且只开一次（AUTHORIZE_RESUME_SCOPE / RESUME_ONLY_AUTHORIZED_SCOPE / forbidden expanded-active-unlock-set）",
+      "outcome": "PASS",
+      "expected": "attempt 1d57ed32-401e-ec5b-9848-b201ddbf0a67 / 仓 1 / 已证实检查点 / 恢复后开锁 1 次、仓 1",
+      "actual": "attempt 1d57ed32-401e-ec5b-9848-b201ddbf0a67 / 仓 1 / SAFE_FINISH_REACHED / 恢复后开锁 1 次、仓 1"
+    },
+    {
+      "id": "G3-07-09",
+      "description": "车载端报恢复后的结果：COMPLETED，服务端以它替换那份 UNKNOWN（第一行被第二行替换，第二行存活）（REPORT_RESUMED_OUTCOME）",
+      "outcome": "PASS",
+      "expected": "COMPLETED / UNKNOWN 被替换 → COMPLETED 存活",
+      "actual": "COMPLETED / UNKNOWN(被替换) → COMPLETED"
+    },
+    {
+      "id": "G3-07-10",
+      "description": "恢复收敛且只提交一次：恢复工作流 Reconciled，恢复会话 CLOSED，装载 Committed 且只有这一笔，旅程离开 Blocked 继续往下走（finalState NO_DUPLICATE_COMMIT）",
+      "outcome": "PASS",
+      "expected": "Reconciled / CLOSED / Committed ×1 / 旅程已离开 Blocked",
+      "actual": "Reconciled / CLOSED / Committed ×1 / AwaitingStationDeparture"
+    },
+    {
+      "id": "G3-07-11",
+      "description": "终态物理状态已证实：装载仓关门、有货、锁上、开锁输出复位，与车载端报的 COMPLETED 一致（finalState NO_UNPROVEN_STATE）",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0",
+      "actual": "CLOSED/OCCUPIED/1/0"
+    }
+  ]
+}

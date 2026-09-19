@@ -1,0 +1,404 @@
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://127.0.0.1:47414
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\actions-runner\win11-01-control-server\_work\8005-agv-control-server\8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:47414/ - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /'
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 113.986ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 129.7641ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 27.2242ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 27.3221ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 29.5554ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 29.7546ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 26.7716ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 26.8933ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 18.2902ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 18.3998ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 9.3426ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 9.4577ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 45.1957ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 45.3062ms - 200
+info: Microsoft.AspNetCore.Http.Result.ContentResult[2]
+      Write content with HTTP Response ContentType of text/html; charset=utf-8
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:47414/ - 200 3273 text/html;+charset=utf-8 401.1981ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:47414/actions/task-type-hold?mapId=25&taskType=STAGING_TO_WIRE - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /actions/{actionId}'
+info: Microsoft.AspNetCore.Http.Result.ContentResult[2]
+      Write content with HTTP Response ContentType of text/html; charset=utf-8
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /actions/{actionId}'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:47414/actions/task-type-hold?mapId=25&taskType=STAGING_TO_WIRE - 200 692 text/html;+charset=utf-8 12.9309ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://127.0.0.1:47414/actions/task-type-hold - application/x-www-form-urlencoded 183
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /actions/{actionId} => SubmitAsync'
+info: System.Net.Http.HttpClient.dashboard-actions.LogicalHandler[100]
+      Start processing HTTP request POST http://127.0.0.1:47407/api/task-type-holds
+info: System.Net.Http.HttpClient.dashboard-actions.ClientHandler[100]
+      Sending HTTP request POST http://127.0.0.1:47407/api/task-type-holds
+info: System.Net.Http.HttpClient.dashboard-actions.ClientHandler[101]
+      Received HTTP response headers after 126.6972ms - 201
+info: System.Net.Http.HttpClient.dashboard-actions.LogicalHandler[101]
+      End processing HTTP request after 126.8502ms - 201
+info: Microsoft.AspNetCore.Http.Result.StatusCodeResult[1]
+      Setting HTTP status code 303.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /actions/{actionId} => SubmitAsync'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://127.0.0.1:47414/actions/task-type-hold - 303 0 - 149.1556ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:47414/ - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /'
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 15.7221ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 15.8794ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 5.1618ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 5.2564ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 11.0414ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 11.1528ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 9.5355ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 9.7218ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 8.5709ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 8.7434ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 3.8626ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 4.0159ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 17.8847ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 18.0812ms - 200
+info: Microsoft.AspNetCore.Http.Result.ContentResult[2]
+      Write content with HTTP Response ContentType of text/html; charset=utf-8
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:47414/ - 200 3364 text/html;+charset=utf-8 87.5871ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:47414/ - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /'
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 10.1505ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 10.2927ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 3.0687ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 3.206ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 5.5036ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 5.6152ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 10.179ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 10.2858ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 9.1398ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 9.2711ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 3.5102ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 3.6465ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 11.772ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 11.9226ms - 200
+info: Microsoft.AspNetCore.Http.Result.ContentResult[2]
+      Write content with HTTP Response ContentType of text/html; charset=utf-8
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:47414/ - 200 3364 text/html;+charset=utf-8 61.4507ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:47414/actions/task-type-hold?mapId=25&taskType=WIRE_TO_GATE - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /actions/{actionId}'
+info: Microsoft.AspNetCore.Http.Result.ContentResult[2]
+      Write content with HTTP Response ContentType of text/html; charset=utf-8
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /actions/{actionId}'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:47414/actions/task-type-hold?mapId=25&taskType=WIRE_TO_GATE - 200 686 text/html;+charset=utf-8 0.6754ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://127.0.0.1:47414/actions/task-type-hold - application/x-www-form-urlencoded 135
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /actions/{actionId} => SubmitAsync'
+info: System.Net.Http.HttpClient.dashboard-actions.LogicalHandler[100]
+      Start processing HTTP request POST http://127.0.0.1:47407/api/task-type-holds
+info: System.Net.Http.HttpClient.dashboard-actions.ClientHandler[100]
+      Sending HTTP request POST http://127.0.0.1:47407/api/task-type-holds
+info: System.Net.Http.HttpClient.dashboard-actions.ClientHandler[101]
+      Received HTTP response headers after 30.1331ms - 201
+info: System.Net.Http.HttpClient.dashboard-actions.LogicalHandler[101]
+      End processing HTTP request after 30.3407ms - 201
+info: Microsoft.AspNetCore.Http.Result.StatusCodeResult[1]
+      Setting HTTP status code 303.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /actions/{actionId} => SubmitAsync'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://127.0.0.1:47414/actions/task-type-hold - 303 0 - 31.5627ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:47414/ - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /'
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 19.6724ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 19.8017ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 10.8301ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 10.9153ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 13.1107ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 13.2457ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 8.4677ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 8.6215ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 6.3138ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 6.4434ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 3.6049ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 3.7168ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 11.4487ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 11.55ms - 200
+info: Microsoft.AspNetCore.Http.Result.ContentResult[2]
+      Write content with HTTP Response ContentType of text/html; charset=utf-8
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:47414/ - 200 4207 text/html;+charset=utf-8 97.3911ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 GET http://127.0.0.1:47414/ - - -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: GET /'
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/blocked-journeys
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 11.5099ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 11.6191ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/dispatch-backlog
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 4.9644ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 5.0751ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/expected-action-overdue
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 9.6859ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 9.7917ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/fleet-sessions
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 11.9042ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 12.0081ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/onboard-alarms
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 11.6193ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 11.7185ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/slot-configurations
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 2.9248ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 3.0396ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[100]
+      Start processing HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[100]
+      Sending HTTP request GET http://127.0.0.1:47407/api/dashboard/task-type-bindings
+info: System.Net.Http.HttpClient.DashboardDataFetcher.ClientHandler[101]
+      Received HTTP response headers after 10.5111ms - 200
+info: System.Net.Http.HttpClient.DashboardDataFetcher.LogicalHandler[101]
+      End processing HTTP request after 10.6463ms - 200
+info: Microsoft.AspNetCore.Http.Result.ContentResult[2]
+      Write content with HTTP Response ContentType of text/html; charset=utf-8
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: GET /'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 GET http://127.0.0.1:47414/ - 200 4207 text/html;+charset=utf-8 71.4323ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/1.1 POST http://127.0.0.1:47414/actions/task-type-hold-release - application/x-www-form-urlencoded 30
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'HTTP: POST /actions/{actionId} => SubmitAsync'
+info: Microsoft.AspNetCore.Http.Result.NotFoundObjectResult[1]
+      Setting HTTP status code 404.
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'HTTP: POST /actions/{actionId} => SubmitAsync'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/1.1 POST http://127.0.0.1:47414/actions/task-type-hold-release - 404 0 - 0.7966ms

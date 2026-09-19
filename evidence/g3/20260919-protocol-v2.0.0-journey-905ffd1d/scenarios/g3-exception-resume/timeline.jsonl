@@ -1,0 +1,75 @@
+{"at":"2026-09-19T12:51:11.3879516+00:00","note":"L2 run 20260919T125111356Z starting for scenario 'g3-exception-resume'."}
+{"at":"2026-09-19T12:51:11.4300632+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-19T12:51:11.4327015+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T12:51:16.0047824+00:00","note":"Reusing cached onboard-hmi publish for 44b3aa6e255f0820c3988d3f50f0b4dba1105006."}
+{"at":"2026-09-19T12:51:16.0719096+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-19T12:51:16.0762616+00:00","note":"Peers: onboard-hmi@44b3aa6e255f0820c3988d3f50f0b4dba1105006, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-19T12:51:16.0818326+00:00","note":"Interactive desktop lock acquired."}
+{"at":"2026-09-19T12:51:16.8128037+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T12:51:16.9789819+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T12:51:18.2378263+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-19T12:51:18.3145727+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T12:51:20.2861906+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T12:51:21.8929958+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T12:51:21.9711665+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T12:51:23.7759519+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-19T12:51:23.7896987+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-19T12:51:23.8350901+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-19T12:51:24.1019635+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T12:51:24.1986596+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T125111356Z\\controlserver.db"}
+{"at":"2026-09-19T12:51:25.3967176+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"adc32ed7131f4bc9924a9923d7b18958","version":1,"slotCount":8}}}
+{"at":"2026-09-19T12:51:25.4037745+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T125111356Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T12:51:26.5135386+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"adc32ed7131f4bc9924a9923d7b18958","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T12:51:26.6236712+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T12:51:26.6262265+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T125111356Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-09-8005-agv-control-server\\evidence\\g3\\20260919-protocol-v2.0.0-journey-905ffd1d\\scenarios\\g3-exception-resume\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T12:51:27.8382603+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-09-8005-agv-control-server\\evidence\\g3\\20260919-protocol-v2.0.0-journey-905ffd1d\\scenarios\\g3-exception-resume\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"9be89fbedd5845d9ab4e7c4273392579","importedAt":"2026-09-19T20:51:26.7985495+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T12:51:27.8465001+00:00","note":"Environment is up; entering scenario 'g3-exception-resume'."}
+{"at":"2026-09-19T12:51:28.0207092+00:00","note":"Publishing demand 200857b75bfb4a3088193311b49642e4 (sublot G3-07R-20260919T125111356Z)."}
+{"at":"2026-09-19T12:51:28.0814038+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-19T12:51:29.3820994+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-19T12:51:29.3880901+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-19T12:51:29.6534601+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-200857b7-5bfb-4a30-8819-3311b49642e4-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-19T12:51:29.7288652+00:00","criterion":"onboard-can-submit","value":"False"}
+{"at":"2026-09-19T12:51:30.0025067+00:00","criterion":"onboard-can-submit","value":"True"}
+{"at":"2026-09-19T12:51:30.0398566+00:00","criterion":"onboard-submit-ready","value":"True"}
+{"at":"2026-09-19T12:51:30.0764365+00:00","criterion":"load-attempt","value":"(null)"}
+{"at":"2026-09-19T12:51:31.0908849+00:00","criterion":"load-attempt","value":"1d57ed32-401e-ec5b-9848-b201ddbf0a67"}
+{"at":"2026-09-19T12:51:31.1333457+00:00","criterion":"load-waiting-operator","value":"(null)"}
+{"at":"2026-09-19T12:51:31.9259228+00:00","criterion":"load-waiting-operator","value":"@{At=09/19/2026 12:51:31 +00:00; Phase=WAITING_OPERATOR; Active=System.Object[]}"}
+{"at":"2026-09-19T12:51:31.9322482+00:00","note":"Stopping component 'onboard-hmi'."}
+{"at":"2026-09-19T12:51:32.1407291+00:00","note":"While the onboard is down the operator closes slot 1 without the basket."}
+{"at":"2026-09-19T12:51:32.1752385+00:00","criterion":"slot-closed-empty","value":"CLOSED/EMPTY/0/0"}
+{"at":"2026-09-19T12:51:32.4400583+00:00","criterion":"slot-closed-empty","value":"CLOSED/EMPTY/1/0"}
+{"at":"2026-09-19T12:51:32.4600601+00:00","note":"Restarting the onboard HMI (power cycle)."}
+{"at":"2026-09-19T12:51:33.3321673+00:00","note":"Onboard window after restart: 8005 多仓位AGV车载端"}
+{"at":"2026-09-19T12:51:33.3391990+00:00","criterion":"unknown-result","value":"(null)"}
+{"at":"2026-09-19T12:51:33.6024189+00:00","criterion":"unknown-result","value":"@{MessageId=1d57ed32-401e-ec5b-9848-b201ddbf0a67; At=09/19/2026 12:51:33 +00:00; Generation=2; Payload=; PayloadJson={\"demandId\":\"200857b7-5bfb-4a30-8819-3311b49642e4\",\"slotOperationAttemptId\":\"1d57ed32-401e-ec5b-9848-b201ddbf0a67\",\"operationType\":\"LOAD\",\"overallOutcome\":\"UNKNOWN\",\"slotResults\":[{\"slotNo\":1,\"outcome\":\"UNKNOWN\",\"finalPhysicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[\"RECOVERY_CHECKPOINT_NOT_UNIQUE\"]}],\"observedAt\":\"2026-09-19T20:51:33.4484217+08:00\",\"journalCheckpoint\":\"SAFE_FINISH_REACHED\",\"resultContentSha256\":\"95628738634dde2d6bd59ccccba8631bcc4fe0433fd9e9c99d2064761a3f9f18\"}; ContentHash=d94e41b745c06f437db2f016257d493a652692dc7398396f1f6971393ced896f; Response=DurableAck; ResponsePayload=; ResponseLine=}"}
+{"at":"2026-09-19T12:51:33.6066022+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-19T12:51:33.8629792+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-19T12:51:33.8648598+00:00","note":"Load 1d57ed32-401e-ec5b-9848-b201ddbf0a67 on slot 1 ended UNKNOWN; journey Blocked."}
+{"at":"2026-09-19T12:51:33.8850327+00:00","note":"Restarting the onboard HMI (power cycle)."}
+{"at":"2026-09-19T12:51:34.8360836+00:00","note":"Onboard window after restart: 8005 多仓位AGV车载端"}
+{"at":"2026-09-19T12:51:34.8440955+00:00","criterion":"replayed-result","value":"(null)"}
+{"at":"2026-09-19T12:51:35.1007302+00:00","criterion":"replayed-result","value":"@{MessageId=1d57ed32-401e-ec5b-9848-b201ddbf0a67; At=09/19/2026 12:51:34 +00:00; Generation=3; Payload=; PayloadJson={\"demandId\":\"200857b7-5bfb-4a30-8819-3311b49642e4\",\"slotOperationAttemptId\":\"1d57ed32-401e-ec5b-9848-b201ddbf0a67\",\"operationType\":\"LOAD\",\"overallOutcome\":\"UNKNOWN\",\"slotResults\":[{\"slotNo\":1,\"outcome\":\"UNKNOWN\",\"finalPhysicalState\":\"EMPTY\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[\"RECOVERY_CHECKPOINT_NOT_UNIQUE\"]}],\"observedAt\":\"2026-09-19T20:51:33.4484217+08:00\",\"journalCheckpoint\":\"SAFE_FINISH_REACHED\",\"resultContentSha256\":\"95628738634dde2d6bd59ccccba8631bcc4fe0433fd9e9c99d2064761a3f9f18\"}; ContentHash=93aee8fdc1e8eea805c54d1c7ca9af60b96b308fca0d7b7de4cc078f943a6c63; Response=DurableAck; ResponsePayload=; ResponseLine=}"}
+{"at":"2026-09-19T12:51:35.1184713+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-19T12:51:35.9151916+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-19T12:51:36.9682604+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-19T12:51:37.7627731+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-19T12:51:38.8329621+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-19T12:51:38.9027186+00:00","criterion":"onboard-resume-entry","value":"True"}
+{"at":"2026-09-19T12:51:38.9037903+00:00","note":"Maintenance presses 申请恢复 and confirms."}
+{"at":"2026-09-19T12:51:40.0352545+00:00","note":"Pressing 申请恢复 (attempt 1)."}
+{"at":"2026-09-19T12:51:40.8437370+00:00","criterion":"resume-command","value":"@{MessageId=9169b086-c076-bd5e-8191-c69466f7090b; At=09/19/2026 12:51:40 +00:00; Payload=; Acknowledged=False; Fenced=False}"}
+{"at":"2026-09-19T12:51:40.8680139+00:00","criterion":"resume-waiting-operator","value":"(null)"}
+{"at":"2026-09-19T12:51:41.6681066+00:00","criterion":"resume-waiting-operator","value":"@{At=09/19/2026 12:51:41 +00:00; Phase=WAITING_OPERATOR; Active=System.Object[]}"}
+{"at":"2026-09-19T12:51:41.6704069+00:00","note":"Operator loads the basket into slot 1 and closes it."}
+{"at":"2026-09-19T12:51:41.7379426+00:00","criterion":"resumed-result","value":"(null)"}
+{"at":"2026-09-19T12:51:42.5199570+00:00","criterion":"resumed-result","value":"@{MessageId=02c141e3-f390-6955-ae4c-a1f7c0e5df85; At=09/19/2026 12:51:42 +00:00; Generation=3; Payload=; PayloadJson={\"demandId\":\"200857b7-5bfb-4a30-8819-3311b49642e4\",\"slotOperationAttemptId\":\"1d57ed32-401e-ec5b-9848-b201ddbf0a67\",\"operationType\":\"LOAD\",\"overallOutcome\":\"COMPLETED\",\"slotResults\":[{\"slotNo\":1,\"outcome\":\"COMPLETED\",\"finalPhysicalState\":\"OCCUPIED\",\"lockState\":\"LOCKED\",\"unlockOutputState\":\"RESET\",\"reasonCodes\":[]}],\"observedAt\":\"2026-09-19T20:51:42.2384173+08:00\",\"journalCheckpoint\":\"SAFE_FINISH_REACHED\",\"resultContentSha256\":\"75113ef1d3e5753af3ff80d67653a223ed423dfbeb07072a2a617bbe6ec6f793\"}; ContentHash=8d03fa2ab1b439e02f2fdeaf0db961cd2aea38494571d3e163ec8faf75fa1da9; Response=DurableAck; ResponsePayload=; ResponseLine=}"}
+{"at":"2026-09-19T12:51:42.5366164+00:00","criterion":"load-status","value":"Committed"}
+{"at":"2026-09-19T12:51:42.5427674+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-09-19T12:51:42.8001547+00:00","criterion":"runtime-iterations","value":"22"}
+{"at":"2026-09-19T12:51:43.8632843+00:00","criterion":"runtime-iterations","value":"23"}
+{"at":"2026-09-19T12:51:44.9276244+00:00","criterion":"runtime-iterations","value":"24"}
+{"at":"2026-09-19T12:51:45.7240637+00:00","criterion":"runtime-iterations","value":"25"}
+{"at":"2026-09-19T12:51:45.7887456+00:00","note":"FP-IS-07: an UNKNOWN load was reconciled across an onboard restart, resumed on authorization and committed once."}
+{"at":"2026-09-19T12:51:46.3247758+00:00","note":"L2 port block lock released."}

@@ -149,7 +149,10 @@ function Get-G3RunnerClaim {
                     'hardwareRecoveryRecordScopeEnforced',
                     'recoveryCommandSurvivesMidFlightDisconnect',
                     'forcedRecoveryGenerationAdvancesMonotonically',
-                    'supersededGenerationResultIsHistoricalEvidenceOnly',
+                    # Renamed at the batch-6 exit (control-server#165): since control-server#187 the stale-generation
+                    # path is unreachable in a staged run and L1 covers it; see run-staged-g3.ps1 and
+                    # docs/defects/20260919-staged-g3-second-forced-submission-predates-cs187.md.
+                    'secondForcedRecoveryWhileFirstUnsettledIsRejected',
                     'recoveryNeverReportsFalseCompletion')
                 # Weaker than the vectors in two places (review items 11-12): the conflict pair asserts
                 # the connection closed, not the MESSAGE_ID_CONTENT_CONFLICT problem; delay and reorder

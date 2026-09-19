@@ -1,0 +1,35 @@
+{"at":"2026-09-19T13:35:38.3789655+00:00","note":"L2 run 20260919T133538306Z starting for scenario 'onboard-alarm-snapshot-dashboard'."}
+{"at":"2026-09-19T13:35:38.4171688+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-19T13:35:38.4199670+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-19T13:35:39.2810641+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T13:35:39.5144582+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T13:35:39.5896754+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T13:35:42.7547742+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T13:35:44.8190960+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T13:35:45.1925630+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T13:35:45.3012979+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T13:35:45.9696222+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T13:35:46.2425267+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T13:35:46.2995159+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T13:35:47.3281062+00:00","criterion":"dashboard-live","value":"200"}
+{"at":"2026-09-19T13:35:47.4106604+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133538306Z-slot4\\controlserver.db"}
+{"at":"2026-09-19T13:35:49.2424585+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"0fe01634005f48288256fc7a2bab5431","version":1,"slotCount":8}}}
+{"at":"2026-09-19T13:35:49.2506978+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133538306Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T13:35:50.8922844+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"0fe01634005f48288256fc7a2bab5431","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T13:35:51.0059878+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T13:35:51.0081913+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133538306Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\onboard-alarm-snapshot-dashboard-03\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T13:35:52.7659571+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\onboard-alarm-snapshot-dashboard-03\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"f8a415cd4e5f4025ae77ff01d782bc11","importedAt":"2026-09-19T21:35:51.2488794+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T13:35:52.7803411+00:00","note":"Environment is up; entering scenario 'onboard-alarm-snapshot-dashboard'."}
+{"at":"2026-09-19T13:35:52.8279095+00:00","criterion":"alarm-snapshot-handshake","value":"@{AgvId=AGV-L2-001; SessionGeneration=1; SnapshotSequence=1; AlarmsJson=[]}"}
+{"at":"2026-09-19T13:35:52.9510996+00:00","criterion":"dashboard-empty","value":"AGV-L2-001  无"}
+{"at":"2026-09-19T13:35:53.0124390+00:00","note":"Vehicle published alarm snapshot revision 2 with 2 alarm(s)."}
+{"at":"2026-09-19T13:35:53.0175493+00:00","criterion":"alarm-snapshot-2","value":"@{AgvId=AGV-L2-001; SessionGeneration=1; SnapshotSequence=1; AlarmsJson=[]}"}
+{"at":"2026-09-19T13:35:53.2668011+00:00","criterion":"alarm-snapshot-2","value":"@{AgvId=AGV-L2-001; SessionGeneration=1; SnapshotSequence=2; AlarmsJson=[{\"AlarmCode\":\"L2_ALARM_VEHICLE_RELATED\",\"Severity\":\"WARNING\",\"RaisedAt\":\"2026-09-19T13:35:52.9930265+00:00\",\"Scope\":\"CurrentVehicle\",\"Message\":\"\\u4E0E\\u8FD9\\u53F0\\u8F66\\u76F4\\u63A5\\u76F8\\u5173\",\"DemandId\":null,\"StationId\":null,\"SlotOperationAttemptId\":null,\"PhysicalSlotNumber\":null,\"AlarmId\":\"68e1cf15-a13c-45ff-a680-d98b24f650ce\"},{\"AlarmCode\":\"L2_ALARM_FLEET_FIRST\",\"Severity\":\"CRITICAL\",\"RaisedAt\":\"2026-09-19T13:35:52.9930265+00:00\",\"Scope\":\"Fleet\",\"Message\":\"\\u4E0E\\u4EFB\\u4F55\\u4E00\\u53F0\\u8F66\\u7684\\u5F53\\u4E0B\\u90FD\\u65E0\\u5173\",\"DemandId\":null,\"StationId\":null,\"SlotOperationAttemptId\":null,\"PhysicalSlotNumber\":null,\"AlarmId\":\"5e30f9bb-d168-4c8a-a8d9-6c814f1ac3e9\"}]}"}
+{"at":"2026-09-19T13:35:53.3522932+00:00","criterion":"dashboard-first-alarm","value":"AGV-L2-001  L2_ALARM_VEHICLE_RELATED、L2_ALARM_FLEET_FIRST"}
+{"at":"2026-09-19T13:35:53.3740878+00:00","note":"Vehicle published alarm snapshot revision 3 with 1 alarm(s)."}
+{"at":"2026-09-19T13:35:53.4630308+00:00","criterion":"dashboard-replaced","value":"AGV-L2-001  L2_ALARM_FLEET_SECOND"}
+{"at":"2026-09-19T13:35:53.5872391+00:00","criterion":"dashboard-lost-contact","value":"AGV-L2-001  L2_ALARM_FLEET_SECOND"}
+{"at":"2026-09-19T13:35:59.6048600+00:00","criterion":"dashboard-lost-contact","value":"AGV-L2-001  车辆失联"}
+{"at":"2026-09-19T13:35:59.7446464+00:00","criterion":"dashboard-reconnected","value":"AGV-L2-001  L2_ALARM_FLEET_SECOND"}
+{"at":"2026-09-19T13:35:59.7568600+00:00","note":"车载产快照 → 服务端消费 → 看板可见走通；收敛、整体取代、失联直述、重连采纳各有一条断言。"}
+{"at":"2026-09-19T13:36:00.2279431+00:00","note":"L2 port block lock released."}

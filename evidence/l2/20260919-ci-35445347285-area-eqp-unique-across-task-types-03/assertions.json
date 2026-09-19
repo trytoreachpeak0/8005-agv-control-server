@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "scenario": "area-eqp-unique-across-task-types",
+  "runId": "20260919T132810403Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "50dc987d680a33c3f8732619a91f5761453ddd63",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "batchId": "batch-6",
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132810403Z-slot3"
+  },
+  "assertions": [
+    {
+      "id": "L2-AEUT-01",
+      "description": "WIRE_TO_GATE 候选未受理：同 AREA 在另一个任务类型的行里对应另一台 EQP，原因 AREA_EQP_NOT_UNIQUE",
+      "outcome": "PASS",
+      "expected": "AREA_EQP_NOT_UNIQUE / not accepted / 0 rows",
+      "actual": "AREA_EQP_NOT_UNIQUE / AcceptedAt= / 0 rows"
+    },
+    {
+      "id": "L2-AEUT-02",
+      "description": "删掉其它任务类型那一行后，WIRE_TO_GATE 在后续一轮被受理并派去取货点",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival / ACCEPTED",
+      "actual": "AwaitingPickupArrival / ACCEPTED"
+    }
+  ]
+}

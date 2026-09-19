@@ -1,0 +1,35 @@
+{"at":"2026-09-19T13:33:38.1395125+00:00","note":"L2 run 20260919T133338048Z starting for scenario 'area-assignment-unmapped-silent'."}
+{"at":"2026-09-19T13:33:38.1765445+00:00","note":"L2 port block lock acquired (slot 3, Global\\W2G-L2PortBlock-slot3)."}
+{"at":"2026-09-19T13:33:38.1792677+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-19T13:33:39.0640249+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T13:33:39.3183133+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T13:33:39.4062009+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T13:33:42.5714955+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T13:33:44.6458610+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T13:33:45.0036777+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T13:33:45.1225732+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T13:33:45.8182520+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T13:33:46.0800596+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T13:33:46.1301467+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T13:33:46.1788587+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133338048Z-slot3\\controlserver.db"}
+{"at":"2026-09-19T13:33:47.8536561+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"a9c9385f8fae4493ab08429892114de8","version":1,"slotCount":8}}}
+{"at":"2026-09-19T13:33:47.8642124+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133338048Z-slot3\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T13:33:49.4665940+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"a9c9385f8fae4493ab08429892114de8","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T13:33:49.5644546+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T13:33:49.5676445+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133338048Z-slot3\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-unmapped-silent-01\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T13:33:51.3072524+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-unmapped-silent-01\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"8562988780a72fe24a1d641871b538d4b8ee7d5c0d17e02747cbe688b0d6f3ea","snapshotId":"f88ae12c0db2447a98ff17bc8f27ec0a","importedAt":"2026-09-19T21:33:49.8147115+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T13:33:51.3210187+00:00","note":"Environment is up; entering scenario 'area-assignment-unmapped-silent'."}
+{"at":"2026-09-19T13:33:51.3875976+00:00","note":"FieldOps: area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133338048Z-slot3\\controlserver.db"}
+{"at":"2026-09-19T13:33:52.7936409+00:00","note":"Publishing demand 9ad5f1f693f54becbd7ac351fa9b73ec (N1-7, AREA N1-7) to the fake MesIngest catalog."}
+{"at":"2026-09-19T13:33:52.8655094+00:00","note":"Publishing demand 2f0ce011d53b4896a43b804194b7dbc7 (T5-2, AREA T5-2) to the fake MesIngest catalog."}
+{"at":"2026-09-19T13:33:52.9091666+00:00","criterion":"backlog-rows","value":"0"}
+{"at":"2026-09-19T13:33:54.1829464+00:00","criterion":"backlog-rows","value":"2"}
+{"at":"2026-09-19T13:33:54.2454504+00:00","criterion":"runtime-iterations","value":"10"}
+{"at":"2026-09-19T13:33:55.0074519+00:00","criterion":"runtime-iterations","value":"11"}
+{"at":"2026-09-19T13:33:56.0350988+00:00","criterion":"runtime-iterations","value":"12"}
+{"at":"2026-09-19T13:33:56.8067744+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-19T13:33:56.8162450+00:00","note":"Publishing demand 2e9ff6dfcacb4f0e9831d5a85f2c89aa (N1-3, AREA N1-3) to the fake MesIngest catalog."}
+{"at":"2026-09-19T13:33:56.8551850+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-19T13:33:57.6130957+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-19T13:33:57.6929112+00:00","note":"表里没有的 AREA 静默不执行，表里有的 T 开头 AREA 通过白名单，N1-3 受理并冻结当前版本。"}
+{"at":"2026-09-19T13:33:58.1029692+00:00","note":"L2 port block lock released."}

@@ -1,0 +1,38 @@
+{"at":"2026-09-19T13:27:22.4251644+00:00","note":"L2 run 20260919T132722353Z starting for scenario 'area-assignment-import-rejects'."}
+{"at":"2026-09-19T13:27:22.4629071+00:00","note":"L2 port block lock acquired (slot 1, Global\\W2G-L2PortBlock-slot1)."}
+{"at":"2026-09-19T13:27:22.4655718+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-19T13:27:23.3362173+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T13:27:23.5930961+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T13:27:23.6969177+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T13:27:26.8595125+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T13:27:28.9227273+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T13:27:29.3223760+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T13:27:29.4424765+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T13:27:30.1300735+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T13:27:30.3922039+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T13:27:30.4728847+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T13:27:30.5262711+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db"}
+{"at":"2026-09-19T13:27:32.1434317+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"036a083443864e78b4ef6d7e1c35b7c6","version":1,"slotCount":8}}}
+{"at":"2026-09-19T13:27:32.1513206+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T13:27:33.7669398+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"036a083443864e78b4ef6d7e1c35b7c6","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T13:27:33.8096389+00:00","note":"Area assignment import skipped: AreaAssignments = $false."}
+{"at":"2026-09-19T13:27:33.8142956+00:00","note":"Environment is up; entering scenario 'area-assignment-import-rejects'."}
+{"at":"2026-09-19T13:27:33.8455956+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db"}
+{"at":"2026-09-19T13:27:35.2533968+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\group-not-in-model.csv"}
+{"at":"2026-09-19T13:27:36.6776379+00:00","note":"Rejected import 'group-not-in-model': exit 1, reasons SLOT_POSITION_NOT_IN_PUBLISHED_MODEL."}
+{"at":"2026-09-19T13:27:36.6839260+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\group-missing.csv"}
+{"at":"2026-09-19T13:27:38.1025199+00:00","note":"Rejected import 'group-missing': exit 1, reasons SLOT_POSITION_MISSING."}
+{"at":"2026-09-19T13:27:38.1052419+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\area-duplicated.csv"}
+{"at":"2026-09-19T13:27:39.5636430+00:00","note":"Rejected import 'area-duplicated': exit 1, reasons AREA_DUPLICATED."}
+{"at":"2026-09-19T13:27:39.5675788+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\area-format-invalid.csv"}
+{"at":"2026-09-19T13:27:41.0226752+00:00","note":"Rejected import 'area-format-invalid': exit 1, reasons AREA_FORMAT_INVALID."}
+{"at":"2026-09-19T13:27:41.0278239+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\dispatch-zone-not-found.csv"}
+{"at":"2026-09-19T13:27:42.4518633+00:00","note":"Rejected import 'dispatch-zone-not-found': exit 1, reasons DISPATCH_ZONE_NOT_FOUND."}
+{"at":"2026-09-19T13:27:42.4594681+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\every-kind-at-once.csv"}
+{"at":"2026-09-19T13:27:43.9649989+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\accepted.csv --dry-run"}
+{"at":"2026-09-19T13:27:45.4313716+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\accepted.csv"}
+{"at":"2026-09-19T13:27:47.1843199+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\area-assignment-import-rejects-03\\snapshots\\area-assignment-csv\\accepted.csv"}
+{"at":"2026-09-19T13:27:48.8829654+00:00","note":"FieldOps: area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db"}
+{"at":"2026-09-19T13:27:50.3056471+00:00","note":"FieldOps: area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132722353Z-slot1\\controlserver.db --version 1"}
+{"at":"2026-09-19T13:27:51.8326370+00:00","note":"五类配置错误各自整份拒绝，正确的一份形成新版本并留下快照与不可改写审计。"}
+{"at":"2026-09-19T13:27:52.2880027+00:00","note":"L2 port block lock released."}

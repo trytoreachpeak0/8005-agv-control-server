@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "scenario": "task-type-binding-admits-bound-station",
+  "runId": "20260919T133535845Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "batchId": "batch-6",
+    "controlServerCommit": "50dc987d680a33c3f8732619a91f5761453ddd63",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133535845Z-slot1",
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-TTAB-01",
+      "description": "受理冻结的规则版本、绑定集版本等于当前生效版本，冻结的卸货站是 220",
+      "outcome": "PASS",
+      "expected": "rule v1 / map-25 bindings v1 / dropoff 220",
+      "actual": "rule v1 / map-25 bindings v1 / dropoff 220"
+    },
+    {
+      "id": "L2-TTAB-02",
+      "description": "关卡腿的订单目标站是绑定的 220「关卡2」，不是地图上仍在的 210",
+      "outcome": "PASS",
+      "expected": "220",
+      "actual": "220"
+    },
+    {
+      "id": "L2-TTAB-03",
+      "description": "旅程走完：Completed，全程两条 RIoT 单",
+      "outcome": "PASS",
+      "expected": "Completed / 2 RIoT orders",
+      "actual": "Completed / 2 RIoT orders"
+    }
+  ]
+}
