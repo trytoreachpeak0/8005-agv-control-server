@@ -959,7 +959,8 @@ public sealed class JourneyRuntimeEngine(
                 // is the admission returning, so neither stops or restarts this count. Escalating returns at once, so the
                 // order failure check never runs in the same round and cannot write its code over the escalation, and a
                 // Blocked journey is not observed for arrival again.
-                if (EscalateAreaEndAdmissionRevokedPastTimeout(runtime, now))
+                if (await EscalateAreaEndAdmissionRevokedPastTimeoutAsync(runtime, now, cancellationToken)
+                        .ConfigureAwait(false))
                 {
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
@@ -2526,11 +2527,23 @@ public sealed class JourneyRuntimeEngine(
     /// journey carries this round -- the hold, a failed order, a checkpoint wait, none -- the block is the escalated hold,
     /// and it starts where the wait started, which is what the dashboard's escalation ladder is measured from. The start
     /// stays on the row: it is cleared only by the admission returning.
+    /// <para>
+    /// A prepared unload is the admission having returned: it is frozen with the unload, and the stage save that follows
+    /// is what clears the start. A restart between the two leaves the start on a row still at AwaitingGateArrival, and
+    /// escalating it would hand the journey to a person with an unload command already out; the arrival path below goes
+    /// on under the frozen admission instead, and clears it.
+    /// </para>
     /// </remarks>
-    private bool EscalateAreaEndAdmissionRevokedPastTimeout(JourneyRuntimeRow runtime, DateTimeOffset now)
+    private async Task<bool> EscalateAreaEndAdmissionRevokedPastTimeoutAsync(
+        JourneyRuntimeRow runtime,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
         if (runtime.AreaEndAdmissionRevokedSince is not DateTimeOffset revokedSince ||
-            now - revokedSince < runtimeOptions.AreaEndAdmissionRevokedTimeout)
+            now - revokedSince < runtimeOptions.AreaEndAdmissionRevokedTimeout ||
+            await dbContext.StationOperations.AsNoTracking()
+                .AnyAsync(row => row.SlotOperationAttemptId == runtime.UnloadSlotOperationAttemptId, cancellationToken)
+                .ConfigureAwait(false))
         {
             return false;
         }
