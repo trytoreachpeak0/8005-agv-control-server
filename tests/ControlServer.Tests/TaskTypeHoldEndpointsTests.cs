@@ -437,9 +437,10 @@ public sealed class TaskTypeHoldEndpointsTests
         DefaultHttpContext context = new();
         context.Connection.RemoteIpAddress = remote;
         context.Connection.LocalIpAddress = noLocalAddress ? null : local ?? IPAddress.Loopback;
+        context.Request.ContentType = "application/json";
+        context.Request.Body = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(request, JsonSerializerOptions.Default));
         IResult result = await TaskTypeHoldEndpoints.HandleAsync(
             context,
-            request,
             fixture.Context,
             fixture.Rules,
             fixture.Bindings,

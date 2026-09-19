@@ -6,6 +6,8 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
+using HttpJsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 namespace ControlServer.Host.Runtime.TaskTypeStations;
 
@@ -42,6 +44,12 @@ public sealed record TaskTypeHoldResponse(
 /// request is audited by its addresses alone; the reason and the claimed role are length-limited.
 /// </para>
 /// <para>
+/// <b>The source is judged before the body is read</b> (control-server#201). The handler takes no bound request
+/// parameter: the framework binds those before the handler runs -- endpoint filters too see arguments already bound --
+/// so a stranger's body, malformed or oversized, was parsed before the 403, and a malformed one never reached the 403
+/// at all. The body is read here, after the source check, and never past <see cref="MaxRequestBodyBytes"/>.
+/// </para>
+/// <para>
 /// <b>Immediate, and no further than that</b>: the hold is read by the next admission round and by the pre-create check
 /// of any leg not yet created (batch 6-04). An order already created in RIoT is not changed, re-targeted or cancelled.
 /// </para>
@@ -76,6 +84,8 @@ public static class TaskTypeHoldEndpoints
     /// <summary>The audit object of a request refused before its body was read: which Map it named is not known.</summary>
     public const string UnknownMapObjectId = "map-unknown";
 
+    private static readonly JsonSerializerOptions WebOptions = new(JsonSerializerDefaults.Web);
+
     private static readonly JsonSerializerOptions DetailOptions = new()
     {
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
@@ -85,6 +95,7 @@ public static class TaskTypeHoldEndpoints
     {
         ArgumentNullException.ThrowIfNull(app);
         app.MapPost(Route, HandleAsync)
+            .Accepts<TaskTypeHoldRequest>("application/json")
             .WithName("HoldTaskTypeOnMap")
             .WithSummary("Hold one Map + TASK_TYPE at once on a person's word (REQ-0340, tightening only)")
             .Produces<TaskTypeHoldResponse>(StatusCodes.Status201Created)
@@ -95,7 +106,6 @@ public static class TaskTypeHoldEndpoints
 
     public static async Task<IResult> HandleAsync(
         HttpContext context,
-        TaskTypeHoldRequest? request,
         ControlServerDbContext dbContext,
         ITaskTypeStationRuleStore rules,
         ITaskTypeStationBindingStore bindings,
@@ -116,20 +126,16 @@ public static class TaskTypeHoldEndpoints
 
         context.Response.Headers.CacheControl = "no-store";
         DateTimeOffset now = timeProvider.GetUtcNow();
-        int mapId = request?.MapId ?? 0;
-        string? taskType = request?.TaskType;
-        string? reason = string.IsNullOrWhiteSpace(request?.Reason) ? null : request.Reason.Trim();
-        string? claimedRole = string.IsNullOrWhiteSpace(request?.ClaimedRole) ? null : request.ClaimedRole.Trim();
 
         if (!IsFromThisMachine(context.Connection.RemoteIpAddress, context.Connection.LocalIpAddress))
         {
-            // Nothing the caller typed is kept: a server bound to the plant interface is reachable from the whole plant
-            // network, and the audit table is not to be filled with a refused stranger's text.
+            // Nothing the caller sent is read, let alone kept: a server bound to the plant interface is reachable from the
+            // whole plant network, and neither its parser nor the audit table is for a refused stranger's text. Which Map
+            // the request named is therefore not known either.
             await WriteAuditAsync(
-                audit, mapId, version: null, GovernanceActionOutcome.Failed, claimedRole: null, now,
+                audit, UnknownMapObjectId, version: null, GovernanceActionOutcome.Failed, claimedRole: null, now,
                 new
                 {
-                    mapId,
                     remoteAddress = context.Connection.RemoteIpAddress?.ToString(),
                     localAddress = context.Connection.LocalIpAddress?.ToString(),
                     result = "FORBIDDEN_NOT_LOCAL"
@@ -140,6 +146,32 @@ public static class TaskTypeHoldEndpoints
                 title: "Hold requests are taken from this machine only",
                 detail: "The task type hold entry answers requests from this machine only; use the dashboard on the control host.");
         }
+
+        RequestBody read = await ReadRequestAsync(context, cancellationToken).ConfigureAwait(false);
+        if (read.Refusal is { } refusal)
+        {
+            await WriteAuditAsync(
+                audit, UnknownMapObjectId, version: null, GovernanceActionOutcome.Failed, claimedRole: null, now,
+                new { codes = new[] { refusal.Code }, result = "REJECTED" },
+                cancellationToken).ConfigureAwait(false);
+            return refusal.StatusCode == StatusCodes.Status422UnprocessableEntity
+                ? TypedResults.Problem(
+                    statusCode: refusal.StatusCode,
+                    title: "Hold request refused",
+                    detail: refusal.Message,
+                    extensions: new Dictionary<string, object?>
+                    {
+                        ["codes"] = new[] { refusal.Code },
+                        ["problems"] = new[] { refusal.Message }
+                    })
+                : TypedResults.Problem(statusCode: refusal.StatusCode, title: refusal.Message);
+        }
+
+        TaskTypeHoldRequest? request = read.Request;
+        int mapId = request?.MapId ?? 0;
+        string? taskType = request?.TaskType;
+        string? reason = string.IsNullOrWhiteSpace(request?.Reason) ? null : request.Reason.Trim();
+        string? claimedRole = string.IsNullOrWhiteSpace(request?.ClaimedRole) ? null : request.ClaimedRole.Trim();
 
         // A Map this server serves is one with an activation pointer, whatever its state. After a manual close
         // (#161's CLOSED_MANUALLY tombstone) the pointer names no active version, and the hold is still taken: an
@@ -184,7 +216,8 @@ public static class TaskTypeHoldEndpoints
             string[] codes = problems.Select(problem => problem.Code).ToArray();
             string[] messages = problems.Select(problem => problem.Message).ToArray();
             await WriteAuditAsync(
-                audit, mapId, active?.Version, GovernanceActionOutcome.Failed, roleFits ? claimedRole : null, now,
+                audit, TaskTypeStationGovernance.BindingSetObjectId(mapId), active?.Version, GovernanceActionOutcome.Failed,
+                roleFits ? claimedRole : null, now,
                 new
                 {
                     mapId,
@@ -233,7 +266,8 @@ public static class TaskTypeHoldEndpoints
             now,
             cancellationToken).ConfigureAwait(false);
         await WriteAuditAsync(
-            audit, mapId, active?.Version, GovernanceActionOutcome.Succeeded, claimedRole, now,
+            audit, TaskTypeStationGovernance.BindingSetObjectId(mapId), active?.Version, GovernanceActionOutcome.Succeeded,
+            claimedRole, now,
             new
             {
                 mapId,
@@ -285,9 +319,72 @@ public static class TaskTypeHoldEndpoints
     private static IPAddress Normalize(IPAddress address) =>
         address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
 
+    /// <summary>What the body said, or why it was not taken. An empty body is no request, as binding made it before.</summary>
+    private sealed record RequestBody(TaskTypeHoldRequest? Request, BodyRefusal? Refusal);
+
+    private sealed record BodyRefusal(int StatusCode, string Code, string Message);
+
+    /// <summary>
+    /// Reads the body of a request from this machine, never past <see cref="MaxRequestBodyBytes"/>, with the same JSON
+    /// options the framework's binding used. The answers binding gave stay as they were -- 415 for a body that is not
+    /// JSON, 400 for JSON that does not parse -- and an oversized body is refused in the 422 shape of the field limits.
+    /// </summary>
+    private static async Task<RequestBody> ReadRequestAsync(HttpContext context, CancellationToken cancellationToken)
+    {
+        BodyRefusal tooLarge = new(
+            StatusCodes.Status422UnprocessableEntity,
+            "REQUEST_BODY_TOO_LARGE",
+            $"The request body is larger than {MaxRequestBodyBytes} bytes; the reason and the claimed role fit well within it.");
+        if (context.Request.ContentLength > MaxRequestBodyBytes)
+        {
+            return new(null, tooLarge);
+        }
+
+        byte[] buffer = new byte[MaxRequestBodyBytes + 1];
+        int length = 0;
+        while (length < buffer.Length)
+        {
+            int read = await context.Request.Body.ReadAsync(buffer.AsMemory(length), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+            length += read;
+        }
+        if (length > MaxRequestBodyBytes)
+        {
+            return new(null, tooLarge);
+        }
+        if (length == 0)
+        {
+            return new(null, null);
+        }
+        if (!context.Request.HasJsonContentType())
+        {
+            return new(null, new(
+                StatusCodes.Status415UnsupportedMediaType,
+                "REQUEST_BODY_NOT_JSON",
+                "The request body is not JSON."));
+        }
+
+        JsonSerializerOptions options = context.RequestServices?.GetService<IOptions<HttpJsonOptions>>()?.Value.SerializerOptions
+            ?? WebOptions;
+        try
+        {
+            return new(JsonSerializer.Deserialize<TaskTypeHoldRequest>(buffer.AsSpan(0, length), options), null);
+        }
+        catch (JsonException)
+        {
+            return new(null, new(
+                StatusCodes.Status400BadRequest,
+                "REQUEST_BODY_MALFORMED",
+                "The request body is not a hold request."));
+        }
+    }
+
     private static Task<string> WriteAuditAsync(
         IGovernanceAuditWriter audit,
-        int mapId,
+        string objectId,
         long? version,
         GovernanceActionOutcome outcome,
         string? claimedRole,
@@ -298,7 +395,7 @@ public static class TaskTypeHoldEndpoints
             new GovernanceAuditEntry(
                 HoldRequestedAction,
                 GovernedObjectKind.PublicStationBinding,
-                TaskTypeStationGovernance.BindingSetObjectId(mapId),
+                objectId,
                 version,
                 outcome,
                 JsonSerializer.Serialize(detail, DetailOptions),
