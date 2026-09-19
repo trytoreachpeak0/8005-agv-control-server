@@ -275,7 +275,6 @@ public sealed class TaskTypeStationStartupTests
     /// Warning，说明这两个键已无人读、关卡以绑定为准（#188 审查顺手改）。没有这两个键时不记。
     /// </summary>
     [Theory]
-    [Trait("IntegrationSlice", "FP-IS-10")]
     [InlineData(true)]
     [InlineData(false)]
     public async Task LeftoverGateScalarsInTheConfigurationAreReportedAsIgnored(bool leftover)
