@@ -328,6 +328,60 @@ public sealed class BlockedJourneyDashboardTests
         Assert.Equal("MaintenanceAdministrator", missing.GetProperty("escalationLevel").GetString());
     }
 
+    /// <summary>
+    /// control-server#198：停在 AREA 机台等准入恢复的旅程，车载端掉线时引擎保留 <c>TASK_TYPE_NOT_ALLOWED_AT_STATION</c>
+    /// （计时从第一次停住起算，不因掉线归零）。看板照样把它当会话未就绪看：带出会话原因与两个安全字段，安全证据未知或
+    /// 会话行缺失就直接最高档，不等时长；阻断码与开始时间原样给出。会话就绪时不带会话、按时长走，与改前一样。
+    /// </summary>
+    [Fact]
+    public async Task AStopHeldForAdmissionAtTheMachineWithTheSessionDownIsJudgedAsASessionNotReadyBlock()
+    {
+        await using DashboardDatabase database = await DashboardDatabase.CreateAsync();
+        JourneyRuntimeRow unknownSafety = HeldForAdmission("D-HELD-UNKNOWN", "AGV-01");
+        JourneyRuntimeRow noSession = HeldForAdmission("D-HELD-NO-SESSION", "AGV-02");
+        JourneyRuntimeRow sessionUp = HeldForAdmission("D-HELD-READY", "AGV-03");
+        database.Context.JourneyRuntimes.AddRange(unknownSafety, noSession, sessionUp);
+        SessionRecoveryRow ready = Session("AGV-03", "READY", "[]", safetyUnknownPresent: false);
+        ready.Readiness = SessionReadiness.Ready;
+        database.Context.SessionRecoveries.AddRange(
+            Session("AGV-01", "DEPARTURE_SAFETY_NOT_READY", """["IO_FACT_UNKNOWN"]""", safetyUnknownPresent: true),
+            ready);
+        await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(database);
+        Dictionary<string, JsonElement> byDemand = fact.RootElement.GetProperty("journeys").EnumerateArray()
+            .ToDictionary(journey => journey.GetProperty("demandId").GetString()!, StringComparer.Ordinal);
+
+        JsonElement unknown = byDemand["D-HELD-UNKNOWN"];
+        Assert.Equal(
+            ("TASK_TYPE_NOT_ALLOWED_AT_STATION", 120L, "MaintenanceAdministrator"),
+            (unknown.GetProperty("blockReasonCode").GetString(), unknown.GetProperty("blockedSeconds").GetInt64(),
+                unknown.GetProperty("escalationLevel").GetString()));
+        Assert.Equal(JsonValueKind.Object, unknown.GetProperty("session").ValueKind);
+        JsonElement unknownSession = unknown.GetProperty("session");
+        Assert.True(unknownSession.GetProperty("present").GetBoolean());
+        Assert.Equal("DEPARTURE_SAFETY_NOT_READY", unknownSession.GetProperty("reasonCode").GetString());
+        Assert.Equal("""["IO_FACT_UNKNOWN"]""", unknownSession.GetProperty("safetyReasonCodesJson").GetString());
+        Assert.True(unknownSession.GetProperty("safetyUnknownPresent").GetBoolean());
+
+        JsonElement missing = byDemand["D-HELD-NO-SESSION"];
+        Assert.Equal(JsonValueKind.Object, missing.GetProperty("session").ValueKind);
+        Assert.False(missing.GetProperty("session").GetProperty("present").GetBoolean());
+        Assert.Equal("MaintenanceAdministrator", missing.GetProperty("escalationLevel").GetString());
+
+        JsonElement up = byDemand["D-HELD-READY"];
+        Assert.Equal(JsonValueKind.Null, up.GetProperty("session").ValueKind);
+        Assert.Equal("Operator", up.GetProperty("escalationLevel").GetString());
+    }
+
+    private static JourneyRuntimeRow HeldForAdmission(string demandId, string agvId)
+    {
+        JourneyRuntimeRow runtime = Runtime(demandId, agvId);
+        runtime.Stage = JourneyRuntimeStage.AwaitingGateArrival;
+        runtime.SetBlockReason("TASK_TYPE_NOT_ALLOWED_AT_STATION", Now.AddMinutes(-2));
+        return runtime;
+    }
+
     [Fact]
     public async Task AVehicleOnItsOwnMoveOrderIsNotSentToMaintenanceButEveryOtherUnknownStillIs()
     {

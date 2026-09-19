@@ -9,7 +9,13 @@ public enum DemandIntakeOutcome
     Accepted,
     CandidateGone,
     CandidateChanged,
-    FinalAdmissionRejected
+    FinalAdmissionRejected,
+
+    /// <summary>
+    /// The plan names the task type station versions but not the catalog revision its endpoints came from, so it could
+    /// not be accepted without freezing the versions alone (control-server#198). Nothing was written.
+    /// </summary>
+    JourneyPlanIncomplete
 }
 
 public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAcceptanceStore store)
@@ -91,6 +97,13 @@ public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAccept
                 // A new area assignment version was imported after the round judged this candidate. That is a
                 // decision fact changing under intake like any other, and nothing was written.
                 return DemandIntakeOutcome.CandidateChanged;
+            }
+            catch (JourneyPlanFreezeIncompleteException)
+            {
+                // control-server#198: refused before anything was written. Reported as this demand's outcome, not
+                // thrown: thrown, it left the engine's round at this vehicle, and the same demand was picked again
+                // every round.
+                return DemandIntakeOutcome.JourneyPlanIncomplete;
             }
         }
         else

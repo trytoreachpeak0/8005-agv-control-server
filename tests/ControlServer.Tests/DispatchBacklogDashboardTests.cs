@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Dashboard;
 using ControlServer.Host.Dashboard;
 using ControlServer.Host.Runtime.Dispatch;
@@ -190,6 +191,33 @@ public sealed class DispatchBacklogDashboardTests
             Assert.Contains($"<td>{UnknownReason}</td><td>{DispatchBacklogCard.UnregisteredDescription}</td>", row,
                 StringComparison.Ordinal);
         }
+    }
+
+    /// <summary>
+    /// control-server#198：站点目录不新鲜时整图所有任务类型停受理（REQ-0302），这个码归积压，会出现在积压卡上，
+    /// 所以要有中文说明，并且说清是整图状态、不是只停这一类。
+    /// </summary>
+    [Fact]
+    public async Task TheCatalogNotFreshReasonIsExplainedAsAWholeMapStateRatherThanShownAsUnregistered()
+    {
+        await using AreaAssignmentPersistenceFixture fixture = await AreaAssignmentPersistenceFixture.CreateAsync();
+        string reason = TaskTypeStationReasonCodes.BindingCatalogNotFresh;
+        AddBacklog(fixture, "D-NOT-FRESH", reason, DateTimeOffset.UtcNow.AddMinutes(-1));
+        await fixture.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument fact = await ReadAsync(fixture);
+        string html = new DispatchBacklogCard().RenderFact(fact.RootElement);
+
+        Assert.True(
+            DispatchBacklogQueryEndpoint.Descriptions.TryGetValue(reason, out string? description),
+            reason + " has no description.");
+        Assert.Matches(@"\p{IsCJKUnifiedIdeographs}", description);
+        Assert.Contains("所有任务类型", description, StringComparison.Ordinal);
+        JsonElement row = Assert.Single(fact.RootElement.GetProperty("backlog").EnumerateArray());
+        Assert.Equal(description, row.GetProperty("reasonDescription").GetString());
+        string rendered = RowOf(html, "TDK-D-NOT-FRESH");
+        Assert.Contains(description, rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain(DispatchBacklogCard.UnregisteredDescription, rendered, StringComparison.Ordinal);
     }
 
     [Fact]
