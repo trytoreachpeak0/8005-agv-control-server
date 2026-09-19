@@ -1228,6 +1228,112 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#169. The vehicle resends an unreconciled result it got no acknowledgement for. The resend
+    /// is answered with the first DurableAck and moves nothing: the session that result closed keeps its
+    /// revision and gets no second closing snapshot.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task AResentUnreconciledResultIsAcknowledgedFromTheFirstAndDoesNotCloseTheSessionAgain()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_UNRECONCILED_RESENT";
+        const string proof = "unreconciled-resent-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            string result = await ReachCompensationResultAsync(processor, state, proof);
+            string firstAck = await processor.ProcessAsync(result, state, token);
+            long closedRevision = (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).Revision;
+            int snapshots = await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "ExceptionRecoverySessionSnapshot", token);
+
+            string resentAck = await processor.ProcessAsync(result, state, token);
+
+            Assert.Equal("DurableAck", MessageType(firstAck));
+            Assert.Equal(firstAck, resentAck);
+            ExceptionRecoverySessionRow session = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal("CLOSED", session.State);
+            Assert.Equal(closedRevision, session.Revision);
+            Assert.Equal(snapshots, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "ExceptionRecoverySessionSnapshot", token));
+            Assert.Single(await context.RecoveryResultEvidence.ToArrayAsync(token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#169. Protocol 2.0.0 lets the same action be submitted again in a session that is still
+    /// executing, each under its own recoveryActionId. The first of them to report closes the session; a later
+    /// one reporting into the CLOSED session is recorded against its own workflow, and does not close the
+    /// session a second time -- no new revision, no second closing snapshot, no second closing log -- so the
+    /// session keeps the closing the first result gave it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    public async Task ASecondActionsResultArrivingAfterTheSessionClosedDoesNotCloseItAgain()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_SECOND_RESULT";
+        const string proof = "second-result-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), new FixedTimeProvider(Now), Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            string first = await ReachUnreconciledResultAsync("FaultCargoRecoveryResult", "FAILED", processor, state, proof);
+            const string secondActionId = "51000000-0000-4000-8000-000000000170";
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                RecoveryAction("FAULT_CARGO_HANDOFF", messageId: "e0000000-0000-4000-8000-000000001700",
+                    actionId: secondActionId), state, token)));
+            JsonNode second = JsonNode.Parse(first)!;
+            second["messageId"] = "b3200000-0000-4000-8000-000000000170";
+            second["payload"]!["recoveryActionId"] = secondActionId;
+            second["payload"]!["handoffId"] = StableGuid(secondActionId, "fault-cargo-handoff");
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            long closedRevision = (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).Revision;
+            int snapshots = await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "ExceptionRecoverySessionSnapshot", token);
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(second.ToJsonString(), state, token)));
+
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows
+                .SingleAsync(row => row.WorkflowId == secondActionId, token)).State);
+            ExceptionRecoverySessionRow session = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal("CLOSED", session.State);
+            Assert.Equal(closedRevision, session.Revision);
+            Assert.Equal(snapshots, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "ExceptionRecoverySessionSnapshot", token));
+            Assert.Single(log.Entries, entry =>
+                entry.Message.Contains("RECOVERY_ACTION_RESULT_NOT_RECONCILED", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#169, device half. Closing the session over a FAILED forced recovery lifts nothing about
     /// the hardware: the doors were forced either way. While the load still needs recovery that is the reason
     /// the vehicle reports; once a new session has settled the load -- here by a compensation that proves every
