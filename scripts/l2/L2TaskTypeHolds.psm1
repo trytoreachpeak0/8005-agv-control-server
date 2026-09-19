@@ -201,15 +201,50 @@ function Submit-L2DashboardHold {
     $page = Invoke-WebRequest -NoProxy -TimeoutSec 10 `
         -Uri "$($Context.DashboardUrl)/actions/task-type-hold?mapId=$($Context.MapId)&taskType=$TaskType"
     $Context.Journal.Note("Submitting a dashboard hold on $TaskType ($Reason).")
-    $submitted = Invoke-WebRequest -NoProxy -TimeoutSec 20 -Method Post -MaximumRedirection 0 -SkipHttpErrorCheck `
-        -Uri "$($Context.DashboardUrl)/actions/task-type-hold" `
-        -Headers @{ Origin = $Context.DashboardUrl } `
-        -ContentType 'application/x-www-form-urlencoded; charset=utf-8' `
-        -Body "mapId=$($Context.MapId)&taskType=$TaskType&reason=$([uri]::EscapeDataString($Reason))&claimedRole=$([uri]::EscapeDataString('L2 场景'))"
+    $submitted = Send-L2FormPost -Uri "$($Context.DashboardUrl)/actions/task-type-hold" -Origin $Context.DashboardUrl -Fields ([ordered]@{
+        mapId = [string]$Context.MapId; taskType = $TaskType; reason = $Reason; claimedRole = 'L2 场景'
+    })
     return [pscustomobject]@{
         ConfirmationPage = [string]$page.Content
-        StatusCode       = [int]$submitted.StatusCode
-        Location         = [string]($submitted.Headers.Location | Select-Object -First 1)
+        StatusCode       = $submitted.StatusCode
+        Location         = $submitted.Location
+    }
+}
+
+<#
+Posts a form the way a browser submits one, and does not follow the redirect: the 303 itself is what is asserted.
+HttpClient rather than Invoke-WebRequest, whose -MaximumRedirection 0 turns every redirect into an error record, and
+under $ErrorActionPreference = 'Stop' into a failed run. Returns the status code, the Location and the body.
+#>
+function Send-L2FormPost {
+    param(
+        [Parameter(Mandatory)][string]$Uri,
+        [string]$Origin,
+        [System.Collections.IDictionary]$Fields = @{}
+    )
+
+    $handler = [System.Net.Http.HttpClientHandler]::new()
+    $handler.AllowAutoRedirect = $false
+    $handler.UseProxy = $false
+    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds(20)
+    try {
+        $pairs = [System.Collections.Generic.List[System.Collections.Generic.KeyValuePair[string, string]]]::new()
+        foreach ($key in $Fields.Keys) {
+            $pairs.Add([System.Collections.Generic.KeyValuePair[string, string]]::new([string]$key, [string]$Fields[$key]))
+        }
+        $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Post, $Uri)
+        $request.Content = [System.Net.Http.FormUrlEncodedContent]::new($pairs)
+        if ($Origin) { $null = $request.Headers.TryAddWithoutValidation('Origin', $Origin) }
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        return [pscustomobject]@{
+            StatusCode = [int]$response.StatusCode
+            Location   = if ($response.Headers.Location) { $response.Headers.Location.OriginalString } else { $null }
+            Body       = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+        }
+    }
+    finally {
+        $client.Dispose()
     }
 }
 
@@ -237,4 +272,4 @@ function Get-L2DashboardPage {
 
 Export-ModuleMember -Function New-L2WireToGateDemand, Get-L2Journey, Get-L2JourneyStage, Get-L2Intent,
     Get-L2BacklogReason, Start-L2JourneyToPickup, Complete-L2PickupArrival, Invoke-L2JourneyToGateLeg, Complete-L2JourneyAtGate, Get-L2TaskTypeHolds, Get-L2ActiveBindings,
-    Submit-L2DashboardHold, Get-L2DashboardBindingRow, Get-L2DashboardPage
+    Submit-L2DashboardHold, Send-L2FormPost, Get-L2DashboardBindingRow, Get-L2DashboardPage

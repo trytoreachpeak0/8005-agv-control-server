@@ -166,9 +166,8 @@ $assertions.Add(
 # --- 5. 没有解除入口 -------------------------------------------------------------------------------
 
 $page = Get-L2DashboardPage -Context $Context
-$dashboardRelease = Invoke-WebRequest -NoProxy -TimeoutSec 10 -Method Post -SkipHttpErrorCheck -MaximumRedirection 0 `
-    -Uri "$($Context.DashboardUrl)/actions/task-type-hold-release" -Headers @{ Origin = $Context.DashboardUrl } `
-    -ContentType 'application/x-www-form-urlencoded' -Body "mapId=$($Context.MapId)&taskType=WIRE_TO_GATE"
+$dashboardRelease = Send-L2FormPost -Uri "$($Context.DashboardUrl)/actions/task-type-hold-release" `
+    -Origin $Context.DashboardUrl -Fields ([ordered]@{ mapId = [string]$Context.MapId; taskType = 'WIRE_TO_GATE' })
 $serverDelete = Invoke-WebRequest -NoProxy -TimeoutSec 10 -Method Delete -SkipHttpErrorCheck `
     -Uri "$serverBase/api/task-type-holds"
 $serverRelease = Invoke-WebRequest -NoProxy -TimeoutSec 10 -Method Post -SkipHttpErrorCheck `
