@@ -65,10 +65,12 @@ $first = New-L2WireToGateDemand -Context $Context -Label 'first'
 $firstGate = Invoke-L2JourneyToGateLeg -Context $Context -Demand $first
 $firstStage = Complete-L2JourneyAtGate -Context $Context -Demand $first -GateIntent $firstGate
 $firstReason = Get-L2BacklogReason -Context $Context -Demand $first
+# A demand accepted by an earlier round reads DEMAND_ALREADY_ACCEPTED on later rounds (the other vehicle is still being
+# served), so "accepted" is either code; what matters is that the journey exists and ran.
 $assertions.Add(
     'L2-BH-03', 'STAGING_TO_WIRE 暂停期间，WIRE_TO_GATE 需求照常受理并走完两段（不连带）',
-    ($firstReason -eq 'ACCEPTED' -and $firstStage -eq 'Completed'),
-    'ACCEPTED → Completed', "$firstReason → $firstStage")
+    ($firstReason -in @('ACCEPTED', 'DEMAND_ALREADY_ACCEPTED') -and $firstStage -eq 'Completed'),
+    'ACCEPTED or DEMAND_ALREADY_ACCEPTED → Completed', "$firstReason → $firstStage")
 
 $stagingRow = Wait-L2Condition -Description 'the dashboard shows STAGING_TO_WIRE held by a person' `
     -Journal $journal -Criterion 'dashboard-staging-row' -TimeoutSeconds 30 `
@@ -166,6 +168,12 @@ $assertions.Add(
 # --- 5. 没有解除入口 -------------------------------------------------------------------------------
 
 $page = Get-L2DashboardPage -Context $Context
+# The page may say 「解除」 in prose -- batch 6-04's backlog card explains a held task type as 「解除后才会派车」 --
+# so the criterion is about entries: no form on the main page, no link whose target lifts a hold, and none of that
+# wording inside this ticket's own card.
+$bindingCard = Get-L2DashboardBindingRow -Context $Context -TaskType 'WIRE_TO_GATE'
+$liftLinks = @([regex]::Matches($page, 'href="([^"]*)"') | ForEach-Object { $_.Groups[1].Value } |
+    Where-Object { $_ -match 'release|lift|unhold|解除' })
 $dashboardRelease = Send-L2FormPost -Uri "$($Context.DashboardUrl)/actions/task-type-hold-release" `
     -Origin $Context.DashboardUrl -Fields ([ordered]@{ mapId = [string]$Context.MapId; taskType = 'WIRE_TO_GATE' })
 $serverDelete = Invoke-WebRequest -NoProxy -TimeoutSec 10 -Method Delete -SkipHttpErrorCheck `
@@ -176,11 +184,12 @@ $serverRelease = Invoke-WebRequest -NoProxy -TimeoutSec 10 -Method Post -SkipHtt
 $statuses = @([int]$dashboardRelease.StatusCode, [int]$serverDelete.StatusCode, [int]$serverRelease.StatusCode)
 $holds = Get-L2TaskTypeHolds -Context $Context
 $assertions.Add(
-    'L2-BH-09', '看板页面没有解除字样，看板与服务端的解除请求都不是成功响应，两条暂停仍然成立',
-    (-not $page.Contains('解除') -and @($statuses | Where-Object { $_ -ge 200 -and $_ -lt 400 }).Count -eq 0 -and
-        @($holds).Count -eq 2),
-    'no 解除 on page; every release attempt >= 400; 2 holds standing',
-    "解除 on page: $($page.Contains('解除')); statuses $($statuses -join ', '); $(Format-Holds $holds)")
+    'L2-BH-09', '看板主页没有表单、没有指向解除的链接，本票卡片里没有解除字样；看板与服务端的解除请求都不是成功响应，两条暂停仍然成立',
+    (-not $page.Contains('<form') -and $liftLinks.Count -eq 0 -and -not $bindingCard.Contains('解除') -and
+        @($statuses | Where-Object { $_ -ge 200 -and $_ -lt 400 }).Count -eq 0 -and @($holds).Count -eq 2),
+    'no form, no lifting link, no 解除 in the binding card; every release attempt >= 400; 2 holds standing',
+    "form: $($page.Contains('<form')); lifting links: $($liftLinks -join ' '); 解除 in card: $($bindingCard.Contains('解除')); " +
+        "statuses $($statuses -join ', '); $(Format-Holds $holds)")
 
 $bindingsAfter = Get-L2ActiveBindings -Context $Context
 $assertions.Add(

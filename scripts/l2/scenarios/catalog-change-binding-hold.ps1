@@ -74,10 +74,12 @@ $assertions.Add(
 $first = New-L2WireToGateDemand -Context $Context -Label 'first'
 $firstGate = Invoke-L2JourneyToGateLeg -Context $Context -Demand $first
 $firstReason = Get-L2BacklogReason -Context $Context -Demand $first
+# A demand accepted by an earlier round reads DEMAND_ALREADY_ACCEPTED on later rounds (the other vehicle is still being
+# served), so "accepted" is either code; what matters is that the journey exists and ran.
 $assertions.Add(
     'L2-CC-03', 'STAGING_TO_WIRE 因目录变化暂停期间，WIRE_TO_GATE 需求照常受理并建出关卡单（不连带）',
-    ($firstReason -eq 'ACCEPTED' -and $firstGate.Status -eq 'CONFIRMED'),
-    'ACCEPTED / TO_GATE CONFIRMED', "$firstReason / TO_GATE $($firstGate.Status)")
+    ($firstReason -in @('ACCEPTED', 'DEMAND_ALREADY_ACCEPTED') -and $firstGate.Status -eq 'CONFIRMED'),
+    'ACCEPTED or DEMAND_ALREADY_ACCEPTED / TO_GATE CONFIRMED', "$firstReason / TO_GATE $($firstGate.Status)")
 
 # --- 3. 210 从目录删掉：WIRE_TO_GATE 暂停，原因站点已不在目录；已建关卡单那一趟不被取消 --------------------------------
 
