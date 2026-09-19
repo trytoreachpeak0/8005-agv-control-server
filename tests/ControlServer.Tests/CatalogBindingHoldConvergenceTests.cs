@@ -179,6 +179,28 @@ public sealed class CatalogBindingHoldConvergenceTests
     }
 
     [Fact]
+    public async Task ARenameBackToAnEarlierNameIsRecordedAgainBecauseOnlyTheLatestRecordIsCompared()
+    {
+        // X, then Y, then X again under the same hold, each round later than the one before: the third is a change from
+        // Y, so it is a row, although an earlier row already says X.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        (long Revision, string Name, int Minutes)[] rounds = [(1000, "派工待送取货-X", 0), (2000, "派工待送取货-Y", 1), (3000, "派工待送取货-X", 2)];
+        foreach ((long revision, string name, int minutes) in rounds)
+        {
+            await TaskTypeHoldTestKit.Convergence(fixture.Context, new AtClock(Now.AddMinutes(minutes)))
+                .ApplyAsync(TaskTypeHoldTestKit.Catalog25At(revision, (210, "关卡"), (305, name)), Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+
+        IReadOnlyList<TaskTypeStationCatalogChange> changes = await fixture.CatalogChanges.ListAsync(25, Token);
+        Assert.Equal(
+            [(1000L, "派工待送取货-X"), (2000L, "派工待送取货-Y"), (3000L, "派工待送取货-X")],
+            changes.Select(change => (change.CatalogRevision, change.CurrentStationName)));
+        Assert.Single(changes.Select(change => change.HoldId).Distinct());
+    }
+
+    [Fact]
     public async Task TheSameChangeUnderANewHoldAfterFieldOpsReleasedTheOldOneIsRecordedAgain()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
@@ -197,6 +219,11 @@ public sealed class CatalogBindingHoldConvergenceTests
         Assert.Equal(
             [first.Hold.HoldId, second.Hold.HoldId],
             changes.OrderBy(change => change.CatalogRevision).Select(change => change.HoldId));
+    }
+
+    private sealed class AtClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     [Fact]
@@ -301,7 +328,10 @@ internal static class TaskTypeHoldTestKit
     public static CatalogBindingHoldConvergence Convergence(TaskTypeStationPersistenceFixture fixture) =>
         Convergence(fixture.Context);
 
-    public static CatalogBindingHoldConvergence Convergence(ControlServerDbContext context)
+    public static CatalogBindingHoldConvergence Convergence(ControlServerDbContext context) =>
+        Convergence(context, new FixedClock());
+
+    public static CatalogBindingHoldConvergence Convergence(ControlServerDbContext context, TimeProvider clock)
     {
         GovernanceStore governance = new(
             context,
@@ -314,7 +344,7 @@ internal static class TaskTypeHoldTestKit
             new TaskTypeStationCatalogChangeStore(context),
             governance,
             new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
-            new FixedClock());
+            clock);
     }
 
     /// <summary>A demand of this task type accepted, its journey heading for the gate, and its RIoT order created.</summary>
