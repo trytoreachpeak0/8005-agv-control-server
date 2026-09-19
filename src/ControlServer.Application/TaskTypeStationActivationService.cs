@@ -799,8 +799,7 @@ public sealed class TaskTypeStationActivationService(
             candidate.MapId, candidate.RequiredTaskTypes ?? [], candidate.Bindings ?? []);
         violations.AddRange(TaskTypeStationConfigurationValidator.ValidateStatic(
             new TaskTypeStationConfiguration(currentRules?.Rules ?? [], map),
-            candidate.MapId,
-            gateScalar: null));
+            candidate.MapId));
 
         violations.AddRange(TaskTypeStationCatalogEvidence.JudgeFreshness(candidate.MapId, catalog, catalogState, now));
         if (catalog is not null)

@@ -3,12 +3,21 @@ using ControlServer.Infrastructure.Persistence;
 namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 
 /// <summary>
-/// The resolved pickup station must admit this work type under the current admission policy.
+/// The route's AREA machine station must admit this work type under the current admission policy.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Station-scoped admission, distinct from the vehicle-scoped admission ticket 09 adds: this one
 /// asks whether the work may happen at that station at all, not whether this vehicle may take it.
 /// Both are fail-closed and both must pass.
+/// </para>
+/// <para>
+/// <b>The AREA end, not the pickup</b> (control-server#160, overturning I6's criterion side). The admission
+/// policy is seeded per area-named machine station, and which end of the route that station is depends on the
+/// task type's fixed end: the pickup when the fixed station is the destination (WIRE_TO_GATE, so nothing changes
+/// for it), the dropoff when the fixed station is the origin (STAGING_TO_WIRE). control-server#163 relies on this
+/// rather than touching the criterion.
+/// </para>
 /// </remarks>
 public sealed class StationTaskTypeAdmissionCriterion(WireToGateStore store) : IDispatchAdmissionCriterion
 {
@@ -20,8 +29,12 @@ public sealed class StationTaskTypeAdmissionCriterion(WireToGateStore store) : I
     {
         ArgumentNullException.ThrowIfNull(evaluation);
 
+        ResolvedJourneyRoute route = evaluation.Route!;
+        string areaStation = route.FixedStation.FixedEnd == FixedStationEnd.Origin
+            ? route.DropoffStationId
+            : route.PickupStationId;
         bool allowed = await store.IsTaskTypeAllowedAsync(
-            evaluation.Route!.PickupStationId,
+            areaStation,
             evaluation.Candidate.WorkType,
             cancellationToken).ConfigureAwait(false);
 

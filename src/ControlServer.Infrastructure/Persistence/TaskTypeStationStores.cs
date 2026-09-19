@@ -80,8 +80,7 @@ public sealed class TaskTypeStationRuleStore(
         // constraint guards FixedEnd, so this is the line. A rule table alone is checked against an empty map.
         IReadOnlyList<TaskTypeStationViolation> violations = TaskTypeStationConfigurationValidator.ValidateStatic(
             new TaskTypeStationConfiguration(rules, new TaskTypeStationMapConfiguration(RulesOnlyMapId, [], [])),
-            RulesOnlyMapId,
-            gateScalar: null);
+            RulesOnlyMapId);
         if (violations.Count > 0)
         {
             throw new TaskTypeStationConfigurationException(violations);
@@ -266,8 +265,7 @@ public sealed class TaskTypeStationBindingStore(
             .ToArrayAsync(cancellationToken);
         IReadOnlyList<TaskTypeStationViolation> violations = TaskTypeStationConfigurationValidator.ValidateStatic(
             new TaskTypeStationConfiguration(namedRules, new TaskTypeStationMapConfiguration(mapId, requiredTaskTypes, bindings)),
-            mapId,
-            gateScalar: null);
+            mapId);
         if (violations.Count > 0)
         {
             throw new TaskTypeStationConfigurationException(violations);
