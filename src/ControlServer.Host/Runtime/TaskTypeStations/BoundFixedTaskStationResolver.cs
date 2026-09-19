@@ -25,7 +25,17 @@ public sealed class BoundFixedTaskStationResolver(
     IOptions<JourneyRuntimeOptions> options) : IFixedTaskStationResolver
 {
     /// <summary>Every reason code a view of this resolver refuses a task type with.</summary>
-    public static IReadOnlyList<string> RefusalReasonCodes { get; } = [];
+    /// <remarks>
+    /// The structural classification's guard reads this list, because the station-resolution criterion returns these
+    /// codes through a variable where no literal scan can see them (control-server#158's review handoff).
+    /// </remarks>
+    public static IReadOnlyList<string> RefusalReasonCodes { get; } =
+    [
+        DispatchReasonCodes.OutOfScopeWorkType,
+        DispatchReasonCodes.TaskTypeBindingMissing,
+        TaskTypeStationReasonCodes.BindingStationNotInCatalog,
+        DispatchReasonCodes.TaskTypeHeld,
+    ];
 
     private readonly int _mapId = options.Value.MapId;
 
