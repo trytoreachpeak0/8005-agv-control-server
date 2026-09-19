@@ -24,8 +24,15 @@ durable-ack-lost 场景」。MVP 线的参照是 `ControlServer_MVP` 同名场�
 `acceptedMessageType = OperationResult` 的 `DurableAck`」，代理在服务端写出那条 ack 时不转发、两头都断。服务端那一侧
 的提交是真的，车那一侧没收到 ack 也是真的——从两端看，这就是提交之后链路掉了。
 
-业务链路与 `real-onboard-normal-load` 相同，只在装货结果那一处注入。出厂配置，不开恢复入口。判据只读三处：服务端库、
-代理的 `/snapshot`（每条连接上走过哪些报文，只有信封身份）、模拟器的 `/snapshot`。不读车载端界面文字。
+业务链路与 `real-onboard-normal-load` 相同，只在装货结果那一处注入。出厂配置，不开恢复入口。`L2-DA-00`～`08` 只读三处：
+服务端库、代理的 `/snapshot`（每条连接上走过哪些报文，只有信封身份）、模拟器的 `/snapshot`。
+
+**唯一读车载端界面的是 `L2-DA-09`**（onboard-hmi#124，由该票越界、调度授权）。丢掉的是一份**已完成**装货的确认：
+车重连、补发被确认之后，车载端曾在下一次开锁之前一直把这次装货投影成「上次装货操作未完成……需要管理员恢复」
+（`RecoveryRequired`，连带 `ONBOARD_SLOT_OPERATION_UNFINISHED`）。这件事服务端与代理都看不见——服务端的告警快照按车
+只存最新一份，收尾时早被下一单覆盖——所以从会话重回 `Ready` 起、到卸货的等操作员为止，经 UIA 轮询 HMI 窗口里每个元素
+的名字（WPF 文本元素的 UIA 名字就是显示的文字；这句话同时进当前操作指引与日志列表）。服务端告警快照那一行只在同一窗口里
+顺带读、记进 journal 作诊断，不作判据：它的上报节奏不归这里管，拿它判会成为假红源。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -44,6 +51,26 @@ if ($null -eq $proxy) { throw 'This scenario needs ProtocolFaultProxy = $true in
 
 function Get-ProxyLines([string]$direction, [string]$messageType) {
     return , @(@((Get-L2RealTraffic $proxy).lines) | Where-Object { $_.direction -eq $direction -and $_.messageType -eq $messageType })
+}
+
+<#
+`L2-DA-09` 的取样（onboard-hmi#124）。每调用一次扫一遍 HMI 主窗口的全部元素，记下名字里含「上次装货操作未完成」的；
+顺带读服务端告警快照那一行，只作诊断。扫描中元素消失（UIA ElementNotAvailable）只丢这一个元素，不丢这一轮。
+#>
+$unfinishedPhrase = '上次装货操作未完成'
+$unfinishedWatch = @{ Scans = 0; Seen = [System.Collections.Generic.List[string]]::new(); AlarmSeen = $false }
+function Watch-UnfinishedProjection {
+    $window = $Context.Onboard.Window
+    if (-not $window) { return $unfinishedWatch.Seen.Count }
+    foreach ($element in $window.FindAll(
+            [System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
+        try { $name = [string]$element.Current.Name } catch { continue }
+        if ($name.Contains($unfinishedPhrase) -and -not $unfinishedWatch.Seen.Contains($name)) { $unfinishedWatch.Seen.Add($name) }
+    }
+    $unfinishedWatch.Scans++
+    $alarms = Get-L2RealScalar $connection "SELECT AlarmsJson AS Value FROM OnboardAlarmSnapshots WHERE AgvId = '$($Context.AgvId)'"
+    if ([string]$alarms -like '*ONBOARD_SLOT_OPERATION_UNFINISHED*') { $unfinishedWatch.AlarmSeen = $true }
+    return $unfinishedWatch.Seen.Count
 }
 
 <#
@@ -191,6 +218,12 @@ $assertions.Add(
         [string]$sessionAfter.Readiness -eq 'Ready' -and [string]$sessionAfter.ReasonCode -eq 'READY'),
     "gen > $($sessionBefore.SessionGeneration) / Ready / READY", (Format-L2RealSession $sessionAfter))
 
+# L2-DA-09 的窗口从这里开始：会话已在新世代回到 Ready，车载端的恢复判断就在这条 readiness 上跑（不早一步）。先连扫
+# 10 秒，缺陷版本在 Ready 之后几毫秒内就发布那条投影；之后每一个等待的探针都再扫一遍，直到卸货在等操作员。
+$null = Wait-L2RealOrLast -Description 'no unfinished-operation projection on the HMI in the first 10 s after Ready' `
+    -Journal $journal -Criterion 'unfinished-projection' -TimeoutSeconds 10 `
+    -Probe { Watch-UnfinishedProjection } -Until { param($v) $v -gt 0 }
+
 # 服务端日志只做诊断，不当判据：判据读的是库和代理。
 $logRoot = Join-Path (Split-Path -Parent $Context.SnapshotRoot) 'logs'
 $conflicts = @(Get-ChildItem -LiteralPath $logRoot -Filter 'control-server*.log' |
@@ -198,7 +231,7 @@ $conflicts = @(Get-ChildItem -LiteralPath $logRoot -Filter 'control-server*.log'
 $journal.Note("ControlServer logged $conflicts 'MessageId was replayed with different normalized content' conflict(s).")
 
 if ([int]$replayAcked -lt 1) {
-    Add-L2RealNotReached $assertions @('L2-DA-05', 'L2-DA-06') "补发一直没被确认（stage $(Get-L2RealStage $connection $demandId)）"
+    Add-L2RealNotReached $assertions @('L2-DA-05', 'L2-DA-06', 'L2-DA-09') "补发一直没被确认（stage $(Get-L2RealStage $connection $demandId)）"
     Add-ConnectionAssertions -dropConnection $dropConnection
     $journal.Note('Scenario stopped after the replay verdict.')
     return
@@ -208,18 +241,33 @@ if ([int]$replayAcked -lt 1) {
 
 $null = Wait-L2Condition -Description 'the journey reached the gate leg' `
     -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 180 `
-    -Probe { Get-L2RealStage $connection $demandId } -Until { param($v) $v -eq 'AwaitingGateArrival' }
+    -Probe { $null = Watch-UnfinishedProjection; Get-L2RealStage $connection $demandId } -Until { param($v) $v -eq 'AwaitingGateArrival' }
 $gateIntent = Wait-L2RealIntent $Context $demandId 'TO_GATE' 60
 Move-L2RealVehicleTo $Context $gateIntent $Context.GateStationRiotId 'the gate'
 
 $unloadAttempt = Wait-L2Condition -Description 'the server issued the unload command' `
     -Journal $journal -Criterion 'unload-attempt' -TimeoutSeconds 180 `
-    -Probe { Get-L2RealScalar $connection "SELECT SlotOperationAttemptId AS Value FROM StationOperations WHERE DemandId = '$demandId' AND OperationType = 'Unload'" } `
+    -Probe {
+        $null = Watch-UnfinishedProjection
+        Get-L2RealScalar $connection "SELECT SlotOperationAttemptId AS Value FROM StationOperations WHERE DemandId = '$demandId' AND OperationType = 'Unload'"
+    } `
     -Until { param($v) $v }
 $unloadWaiting = Wait-L2Condition -Description 'the onboard is waiting for the operator at the gate' `
     -Journal $journal -Criterion 'unload-waiting-operator' -TimeoutSeconds 120 `
-    -Probe { @((Get-L2RealProgress $connection $unloadAttempt) | Where-Object { $_.Phase -eq 'WAITING_OPERATOR' })[0] } `
+    -Probe {
+        $null = Watch-UnfinishedProjection
+        @((Get-L2RealProgress $connection $unloadAttempt) | Where-Object { $_.Phase -eq 'WAITING_OPERATOR' })[0]
+    } `
     -Until { param($v) $null -ne $v }
+$null = Watch-UnfinishedProjection
+$journal.Note("L2-DA-09 window closed at the unload's WAITING_OPERATOR after $($unfinishedWatch.Scans) HMI scans; " +
+    "server alarm snapshot showed ONBOARD_SLOT_OPERATION_UNFINISHED: $($unfinishedWatch.AlarmSeen) (diagnostic only).")
+$unfinishedSeenText = if ($unfinishedWatch.Seen.Count -gt 0) { ': ' + ($unfinishedWatch.Seen -join ' | ') } else { '' }
+$assertions.Add(
+    'L2-DA-09', '确认丢失的那次装货已完成：会话重回 Ready 之后、卸货等操作员之前，HMI 上从未出现「上次装货操作未完成」（onboard-hmi#124）',
+    ($unfinishedWatch.Scans -ge 10 -and $unfinishedWatch.Seen.Count -eq 0),
+    '>= 10 HMI scans, 0 unfinished projections',
+    "$($unfinishedWatch.Scans) scans, $($unfinishedWatch.Seen.Count) seen$unfinishedSeenText")
 $unloadSlot = [int]$unloadWaiting.Active[0]
 $journal.Note("Operator empties slot $unloadSlot and closes it.")
 $null = $simulator.Command('Put', "slots/$unloadSlot/cargo", @{ state = 'EMPTY' })
