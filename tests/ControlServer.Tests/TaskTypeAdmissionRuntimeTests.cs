@@ -14,6 +14,11 @@ public sealed class TaskTypeAdmissionRuntimeTests
 {
     private const string DemandA = "10000000-0000-4000-8000-00000000000a";
 
+    private const string OtherTaskTypeDemand = "10000000-0000-4000-8000-00000000000b";
+
+    private static readonly TaskTypeStationBinding StagingBinding =
+        new(TransportTaskTypes.StagingToWire, 305, "派工待送取货", "SITE-CHECK-STAGING");
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     /// <summary>
@@ -139,6 +144,12 @@ public sealed class TaskTypeAdmissionRuntimeTests
     /// 引擎这一轮不抛异常。落点站若在受理事务之外先冻结，被拒那次会留下 210 的冻结行，下一轮改写被拒、异常冒出
     /// <c>ExecuteOnceAsync</c>，从此每一轮都失败，所有任务类型都不再受理（#160 审查应修第 2 条）。
     /// </summary>
+    /// <remarks>
+    /// control-server#198：同一轮里另有一条别的任务类型的需求（<c>STAGING_TO_WIRE</c>，AREA 在图上没有站点），它这一轮
+    /// 照常得到自己的判定——结构性的 <c>AREA_STATION_NOT_FOUND</c>，由轮末汇总立成一条结构性派车阻断。夹具只有一辆车，两条
+    /// 需求不能同轮受理，所以看的是轮末汇总：在缺陷版本上这一轮在 A 的冻结处中断，汇总走不到，B 的判定就到不了。B 的断言
+    /// 排在「本轮不抛异常」与原有断言之前，缺陷版本红在它上面。
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task AnAcceptanceRefusedAtTheLastMomentLeavesNothingFrozenSoARebindingIsTakenNextRound()
@@ -169,14 +180,37 @@ public sealed class TaskTypeAdmissionRuntimeTests
         Assert.False(await fixture.Context.AcceptedDemands.AnyAsync(row => row.DemandId == demandId, Token));
 
         fixture.Catalog.BeforeRead = null;
-        fixture.Catalog.Set(demand);
+        // Another task type's demand joins the round: STAGING_TO_WIRE, bound and allowed, at an AREA the Map has no station
+        // for. Younger than the first, so the one vehicle is offered the first.
+        AcceptedDemandSnapshot other = fixture.Demand(OtherTaskTypeDemand, "SUBLOT-002", Now.AddMinutes(-5), area: "N22-1") with
+        {
+            WorkType = TransportTaskTypes.StagingToWire,
+            TransportDemandKey = $"SUBLOT-002|{TransportTaskTypes.StagingToWire}",
+        };
+        fixture.Catalog.Set(demand, other);
+        fixture.BoxCounts.Set("SUBLOT-002", 7);
+        fixture.Options.AllowedWorkTypes = [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire];
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(220, "关卡2"),
+            new RiotMapStation(300, "等待点"),
+            new RiotMapStation(StagingBinding.StationRiotId, StagingBinding.StationName));
         (long ruleVersion, long bindingSetVersion) = await TaskTypeStationRuntimeSeed.ActivateAsync(
             fixture.DbOptionsForTests,
             Now,
-            bindings: [TaskTypeStationRuntimeSeed.GateBinding with { StationRiotId = 220, StationName = "关卡2" }]);
+            requiredTaskTypes: [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
+            bindings: [TaskTypeStationRuntimeSeed.GateBinding with { StationRiotId = 220, StationName = "关卡2" }, StagingBinding]);
         fixture.Context.ChangeTracker.Clear();
-        await fixture.Engine.ExecuteOnceAsync(Token);
+        Exception? thrown = await Record.ExceptionAsync(() => fixture.Engine.ExecuteOnceAsync(Token));
 
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Equal("AREA_STATION_NOT_FOUND", (await fixture.BacklogAsync(OtherTaskTypeDemand)).ReasonCode);
+        Assert.Contains(
+            await new StructuralDispatchBlockStore(fixture.Context).ListUnclearedAsync(Token),
+            block => block.DemandId == OtherTaskTypeDemand && block.ReasonCode == "AREA_STATION_NOT_FOUND");
+        Assert.Null(thrown);
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
         FrozenStationFact dropoff = Assert.Single(
             await new CatalogAvailabilityStore(fixture.Context).ReadFrozenStationsAsync(demandId, Token),
