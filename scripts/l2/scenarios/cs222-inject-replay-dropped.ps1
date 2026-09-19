@@ -238,8 +238,8 @@ Write-RosOnboardRecoveryState 'before restart'
 
 # --- 3. 会话开着时重启车载端 ----------------------------------------------------------------------------
 
-$journal.Note('FAULT INJECTION (cs#222): the proxy drops the first ExceptionRecoverySessionSnapshot after the restart, i.e. the replay.')
-$null = $proxy.Command('Put', 'drop-message', @{ messageType = 'ExceptionRecoverySessionSnapshot'; count = 1 })
+$journal.Note('FAULT INJECTION (cs#222): the proxy drops the next ten ExceptionRecoverySessionSnapshot lines after the restart: every replay (run 35456298574 showed the server replays it twice, so one drop is not enough).')
+$null = $proxy.Command('Put', 'drop-message', @{ messageType = 'ExceptionRecoverySessionSnapshot'; count = 10 })
 $restartAt = [DateTimeOffset]::UtcNow
 $null = & $Context.RestartOnboard
 $onboard = $Context.Onboard
