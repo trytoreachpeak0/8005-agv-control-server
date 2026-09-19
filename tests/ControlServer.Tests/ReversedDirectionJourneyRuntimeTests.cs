@@ -279,6 +279,8 @@ public sealed class ReversedDirectionJourneyRuntimeTests
             await StateAsync(fixture));
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(10));
+        // A live vehicle keeps heartbeating while it waits; without it the arrival stops being trusted.
+        await fixture.HearFromPeerAsync();
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
 
@@ -299,6 +301,8 @@ public sealed class ReversedDirectionJourneyRuntimeTests
 
         // The same round again: still Blocked under the same code, from the same moment.
         fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        // A live vehicle keeps heartbeating while it waits; without it the arrival stops being trusted.
+        await fixture.HearFromPeerAsync();
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal(
@@ -324,6 +328,8 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(10) - TimeSpan.FromSeconds(1));
+        // A live vehicle keeps heartbeating while it waits; without it the arrival stops being trusted.
+        await fixture.HearFromPeerAsync();
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal(
@@ -361,6 +367,8 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         await fixture.Engine.ExecuteOnceAsync(Token);
 
         fixture.Clock.Advance(TimeSpan.FromMinutes(3));
+        // A live vehicle keeps heartbeating while it waits; without it the arrival stops being trusted.
+        await fixture.HearFromPeerAsync();
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
 
