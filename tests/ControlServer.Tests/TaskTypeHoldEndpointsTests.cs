@@ -95,6 +95,35 @@ public sealed class TaskTypeHoldEndpointsTests
     }
 
     [Fact]
+    public async Task AMapWhoseActivationWasClosedByHandCanStillBeHeldSoTheHoldOutlivesTheNextActivation()
+    {
+        // #161's tombstone leaves the Map with no active version until the next activation, and an activation does not
+        // lift a manual hold. Refusing the hold here would leave the person no way to keep the task type stopped through
+        // that activation -- the fail-safe direction is to take it.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        long closedVersion = await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        TaskTypeStationActiveBindingSetRow pointer = fixture.Context.Set<TaskTypeStationActiveBindingSetRow>().Single();
+        pointer.ActiveVersion = null;
+        pointer.State = TaskTypeStationActivationState.ClosedManually;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        IResult result = await Post(fixture, ValidRequest(), IPAddress.Loopback);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(StatusCodes.Status201Created, StatusOf(result));
+        Assert.Equal(TransportTaskTypes.WireToGate, Assert.Single(await fixture.Holds.ListUnreleasedAsync(25, Token)).TaskType);
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.Null(audit.Version);
+        using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
+        Assert.Equal(TaskTypeStationActivationState.ClosedManually, detail.RootElement.GetProperty("activationState").GetString());
+        Assert.Equal(JsonValueKind.Null, detail.RootElement.GetProperty("bindingSetVersion").ValueKind);
+        Assert.NotEqual(0, closedVersion);
+    }
+
+    [Fact]
     public async Task ASecondRequestForAHeldTaskTypeAddsNoHoldButIsStillAudited()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();

@@ -66,9 +66,9 @@ public sealed class TaskTypeBindingDashboardTests
         Assert.Equal("STATION_NOT_IN_CATALOG", rows[TransportTaskTypes.WireToGate].GetProperty("status").GetString());
         Assert.Equal(210, rows[TransportTaskTypes.WireToGate].GetProperty("stationRiotId").GetInt32());
         Assert.Equal("关卡", rows[TransportTaskTypes.WireToGate].GetProperty("stationName").GetString());
-        Assert.Equal("BINDING_MISSING", rows[TransportTaskTypes.WireToOptical].GetProperty("status").GetString());
-        Assert.True(rows[TransportTaskTypes.WireToOptical].GetProperty("required").GetBoolean());
-        Assert.Equal("NOT_REQUIRED", rows[TransportTaskTypes.WireToNitrogen].GetProperty("status").GetString());
+        Assert.Equal("NOT_REQUIRED", rows[TransportTaskTypes.WireToOptical].GetProperty("status").GetString());
+        Assert.False(rows[TransportTaskTypes.WireToOptical].GetProperty("required").GetBoolean());
+        Assert.True(rows[TransportTaskTypes.StagingToWire].GetProperty("required").GetBoolean());
 
         JsonElement staging = rows[TransportTaskTypes.StagingToWire];
         Assert.Equal("HELD", staging.GetProperty("status").GetString());
@@ -81,6 +81,36 @@ public sealed class TaskTypeBindingDashboardTests
             Assert.Single(rows[TransportTaskTypes.DieToOven].GetProperty("holds").EnumerateArray())
                 .GetProperty("sourceLabel").GetString());
         Assert.Equal("HELD", rows[TransportTaskTypes.DieToOven].GetProperty("status").GetString());
+    }
+
+    [Fact]
+    public async Task AMapLeftWithoutAnActiveBindingSetByAManualCloseShowsThatInsteadOfPretendingEachTaskTypeIsUnused()
+    {
+        // #161's tombstone: a contradictory activation closed by hand leaves the pointer CLOSED_MANUALLY with no active
+        // version until the next FieldOps activation or rollback.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await ActivateWithRequirementAsync(fixture);
+        TaskTypeStationActiveBindingSetRow pointer = fixture.Context.Set<TaskTypeStationActiveBindingSetRow>().Single();
+        pointer.ActiveVersion = null;
+        pointer.State = TaskTypeStationActivationState.ClosedManually;
+        await fixture.Context.SaveChangesAsync(Token);
+        await fixture.Holds.RaiseAsync(
+            25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual,
+            TaskTypeHoldEndpoints.ManualHoldReasonCode, """{"reason":"收尾之后先停着"}""", "deployment:test", Now, Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        JsonElement map = Assert.Single((await ReadAsync(fixture.Context)).GetProperty("maps").EnumerateArray());
+        Assert.Equal(JsonValueKind.Null, map.GetProperty("activeBindingSetVersion").ValueKind);
+        Assert.Equal(TaskTypeStationActivationState.ClosedManually, map.GetProperty("activationState").GetString());
+        Dictionary<string, JsonElement> rows = map.GetProperty("taskTypes").EnumerateArray()
+            .ToDictionary(row => row.GetProperty("taskType").GetString()!, StringComparer.Ordinal);
+        Assert.Equal("HELD", rows[TransportTaskTypes.WireToGate].GetProperty("status").GetString());
+        Assert.Equal("NO_ACTIVE_BINDING_SET", rows[TransportTaskTypes.StagingToWire].GetProperty("status").GetString());
+
+        using JsonDocument card = JsonDocument.Parse("{\"maps\":[" + map.GetRawText() + "]}");
+        string html = new TaskTypeBindingCard().RenderFact(card.RootElement);
+        Assert.Contains("无生效绑定集", html, StringComparison.Ordinal);
+        Assert.Contains(TaskTypeStationActivationState.ClosedManually, html, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -151,7 +181,7 @@ public sealed class TaskTypeBindingDashboardTests
         TaskTypeStationBindingSetVersion written = (await fixture.Bindings.WriteVersionAsync(
             25,
             rules.Version,
-            [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire, TransportTaskTypes.WireToOptical, TransportTaskTypes.DieToOven],
+            [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
             bindings,
             catalogRevision: null,
             Source,
