@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="317545ca-9872-4abd-a3df-686ea4f7b6b2" name="szy@LAB-WIN-01 2026-09-20 01:10:56" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-20T01:10:56.4858819+08:00" queuing="2026-09-20T01:10:56.4858827+08:00" start="2026-09-20T01:10:47.0964596+08:00" finish="2026-09-20T01:10:56.4929986+08:00" />
+  <TestSettings name="default" id="f5d0e6c6-a013-43c6-8f8a-3f6a7b808f16">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-09-20_01_10_56" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="4fc95e10-53ff-4e9f-8bc9-fee38131fe49" testId="d28582d2-f847-1112-422b-e58c10c6eef6" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds" computerName="LAB-WIN-01" duration="00:00:04.8295508" startTime="2026-09-20T01:10:50.8660615+08:00" endTime="2026-09-20T01:10:55.7362913+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4fc95e10-53ff-4e9f-8bc9-fee38131fe49">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Equal() Failure: Collections differ&#xD;
+                                                                                     ↓ (pos 0)&#xD;
+Expected: &lt;&gt;z__ReadOnlyArray&lt;ValueTuple&lt;string, string&gt;&gt;                            [Tuple ("operator", "fieldops:release-hold:e7d1d274142148038593d1ac696a"···), Tuple ("server", "fieldops:release-hold:e7d1d274142148038593d1ac696a"···)]&#xD;
+Actual:   OrderedEnumerable&lt;ValueTuple&lt;string, string&gt;, ValueTuple&lt;string, string&gt;&gt; [Tuple ("operator", "fieldops:release-hold:a8709be12a0a4f78833e57687e95"···), Tuple ("server", "fieldops:release-hold:a8709be12a0a4f78833e57687e95"···)]&#xD;
+                                                                                     ↑ (pos 0)</Message>
+          <StackTrace>   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 267&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 283&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="d28582d2-f847-1112-422b-e58c10c6eef6">
+      <Execution id="4fc95e10-53ff-4e9f-8bc9-fee38131fe49" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="d28582d2-f847-1112-422b-e58c10c6eef6" executionId="4fc95e10-53ff-4e9f-8bc9-fee38131fe49" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:00.61]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:02.32]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:02.63]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:07.60]       Assert.Equal() Failure: Collections differ&#xD;
+[xUnit.net 00:00:07.60]                                                                                            ↓ (pos 0)&#xD;
+[xUnit.net 00:00:07.60]       Expected: &lt;&gt;z__ReadOnlyArray&lt;ValueTuple&lt;string, string&gt;&gt;                            [Tuple ("operator", "fieldops:release-hold:e7d1d274142148038593d1ac696a"···), Tuple ("server", "fieldops:release-hold:e7d1d274142148038593d1ac696a"···)]&#xD;
+[xUnit.net 00:00:07.60]       Actual:   OrderedEnumerable&lt;ValueTuple&lt;string, string&gt;, ValueTuple&lt;string, string&gt;&gt; [Tuple ("operator", "fieldops:release-hold:a8709be12a0a4f78833e57687e95"···), Tuple ("server", "fieldops:release-hold:a8709be12a0a4f78833e57687e95"···)]&#xD;
+[xUnit.net 00:00:07.60]                                                                                            ↑ (pos 0)&#xD;
+[xUnit.net 00:00:07.61]       Stack Trace:&#xD;
+[xUnit.net 00:00:07.61]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(267,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds()&#xD;
+[xUnit.net 00:00:07.61]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(283,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds()&#xD;
+[xUnit.net 00:00:07.61]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:08.19]   Finished:    ControlServer.Tests (ID = 'ebc8ae64a5f3b5d8cf19a69ab5de76219f4d0732ddb06039fa65c53d9df48bae')&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T01:10:55.7486329+08:00">
+        <Text>[xUnit.net 00:00:07.60]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

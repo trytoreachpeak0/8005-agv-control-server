@@ -1,0 +1,146 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="289bccd9-bd2d-4b69-9dde-1430b3d627aa" name="szy@LAB-WIN-01 2026-09-20 00:48:32" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-20T00:48:32.5895721+08:00" queuing="2026-09-20T00:48:32.5895727+08:00" start="2026-09-20T00:48:12.8178824+08:00" finish="2026-09-20T00:48:39.9503114+08:00" />
+  <TestSettings name="default" id="6b86d9ad-eec1-40ca-84b6-0d0905720054">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-09-20_00_48_32" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="5f459ca8-7fb1-4d69-b7fa-d6c62d7f273d" testId="0e035364-4c10-5721-6bca-5440ada99fef" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow" computerName="LAB-WIN-01" duration="00:00:11.6275742" startTime="2026-09-20T00:48:20.7703499+08:00" endTime="2026-09-20T00:48:32.5020538+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5f459ca8-7fb1-4d69-b7fa-d6c62d7f273d">
+      <Output>
+        <ErrorInfo>
+          <Message>System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.</Message>
+          <StackTrace>   at System.Text.Json.JsonElement.GetProperty(String propertyName)&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 135&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 135&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 86&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 92&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="c8958c4c-c1e3-4330-b399-20814dfe3740" testId="d4b180d3-c1e4-283d-4b9e-1a151a19ba83" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten" computerName="LAB-WIN-01" duration="00:00:01.7741851" startTime="2026-09-20T00:48:34.0036914+08:00" endTime="2026-09-20T00:48:35.7810325+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c8958c4c-c1e3-4330-b399-20814dfe3740">
+      <Output>
+        <ErrorInfo>
+          <Message>System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.</Message>
+          <StackTrace>   at System.Text.Json.JsonElement.GetProperty(String propertyName)&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 135&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 135&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 59&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 61&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="161a7b5c-f378-41d4-af9a-8678adfabe64" testId="8c368b9c-780d-2a71-4871-dc71feb25780" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas" computerName="LAB-WIN-01" duration="00:00:01.2936576" startTime="2026-09-20T00:48:35.7953964+08:00" endTime="2026-09-20T00:48:37.0910970+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="161a7b5c-f378-41d4-af9a-8678adfabe64">
+      <Output>
+        <ErrorInfo>
+          <Message>System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.</Message>
+          <StackTrace>   at System.Text.Json.JsonElement.GetProperty(String propertyName)&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 135&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 135&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 112&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 114&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="41bece8f-d920-4bb4-888f-1273cdcd53c0" testId="b50e7563-249d-0b37-9193-503d65f7a43f" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten" computerName="LAB-WIN-01" duration="00:00:01.4692904" startTime="2026-09-20T00:48:32.5283281+08:00" endTime="2026-09-20T00:48:33.9999824+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="41bece8f-d920-4bb4-888f-1273cdcd53c0">
+      <Output>
+        <ErrorInfo>
+          <Message>System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.</Message>
+          <StackTrace>   at System.Text.Json.JsonElement.GetProperty(String propertyName)&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 135&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 135&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 37&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 39&#xD;
+--- End of stack trace from previous location ---</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="d4b180d3-c1e4-283d-4b9e-1a151a19ba83">
+      <Execution id="c8958c4c-c1e3-4330-b399-20814dfe3740" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="8c368b9c-780d-2a71-4871-dc71feb25780">
+      <Execution id="161a7b5c-f378-41d4-af9a-8678adfabe64" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="b50e7563-249d-0b37-9193-503d65f7a43f">
+      <Execution id="41bece8f-d920-4bb4-888f-1273cdcd53c0" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten" />
+    </UnitTest>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="0e035364-4c10-5721-6bca-5440ada99fef">
+      <Execution id="5f459ca8-7fb1-4d69-b7fa-d6c62d7f273d" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="0e035364-4c10-5721-6bca-5440ada99fef" executionId="5f459ca8-7fb1-4d69-b7fa-d6c62d7f273d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d4b180d3-c1e4-283d-4b9e-1a151a19ba83" executionId="c8958c4c-c1e3-4330-b399-20814dfe3740" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="8c368b9c-780d-2a71-4871-dc71feb25780" executionId="161a7b5c-f378-41d4-af9a-8678adfabe64" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="b50e7563-249d-0b37-9193-503d65f7a43f" executionId="41bece8f-d920-4bb4-888f-1273cdcd53c0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="4" executed="4" passed="0" failed="4" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.03] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:02.09]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:04.85]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:05.49]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:17.39]       System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.&#xD;
+[xUnit.net 00:00:17.39]       Stack Trace:&#xD;
+[xUnit.net 00:00:17.39]            at System.Text.Json.JsonElement.GetProperty(String propertyName)&#xD;
+[xUnit.net 00:00:17.39]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(135,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId)&#xD;
+[xUnit.net 00:00:17.39]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(135,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId)&#xD;
+[xUnit.net 00:00:17.39]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(86,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow()&#xD;
+[xUnit.net 00:00:17.39]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(92,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow()&#xD;
+[xUnit.net 00:00:17.39]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:18.88]       System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.&#xD;
+[xUnit.net 00:00:18.88]       Stack Trace:&#xD;
+[xUnit.net 00:00:18.88]            at System.Text.Json.JsonElement.GetProperty(String propertyName)&#xD;
+[xUnit.net 00:00:18.88]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(135,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId)&#xD;
+[xUnit.net 00:00:18.88]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(135,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId)&#xD;
+[xUnit.net 00:00:18.88]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(37,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten()&#xD;
+[xUnit.net 00:00:18.88]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(39,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten()&#xD;
+[xUnit.net 00:00:18.88]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:20.65]       System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.&#xD;
+[xUnit.net 00:00:20.65]       Stack Trace:&#xD;
+[xUnit.net 00:00:20.65]            at System.Text.Json.JsonElement.GetProperty(String propertyName)&#xD;
+[xUnit.net 00:00:20.66]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(135,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId)&#xD;
+[xUnit.net 00:00:20.66]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(135,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId)&#xD;
+[xUnit.net 00:00:20.66]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(59,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten()&#xD;
+[xUnit.net 00:00:20.66]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(61,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten()&#xD;
+[xUnit.net 00:00:20.66]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:21.96]       System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.&#xD;
+[xUnit.net 00:00:21.96]       Stack Trace:&#xD;
+[xUnit.net 00:00:21.96]            at System.Text.Json.JsonElement.GetProperty(String propertyName)&#xD;
+[xUnit.net 00:00:21.96]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(135,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId)&#xD;
+[xUnit.net 00:00:21.96]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(135,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.PointerAfterAsync(TaskTypeStationActivationHarness harness, String auditRecordId)&#xD;
+[xUnit.net 00:00:21.96]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(112,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas()&#xD;
+[xUnit.net 00:00:21.96]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(114,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas()&#xD;
+[xUnit.net 00:00:21.96]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:24.61]   Finished:    ControlServer.Tests (ID = 'ebc8ae64a5f3b5d8cf19a69ab5de76219f4d0732ddb06039fa65c53d9df48bae')&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T00:48:32.5190816+08:00">
+        <Text>[xUnit.net 00:00:17.39]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T00:48:34.0050677+08:00">
+        <Text>[xUnit.net 00:00:18.87]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T00:48:35.7834013+08:00">
+        <Text>[xUnit.net 00:00:20.65]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten [FAIL]</Text>
+      </RunInfo>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T00:48:37.0927127+08:00">
+        <Text>[xUnit.net 00:00:21.96]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
