@@ -48,6 +48,7 @@ public sealed class Batch6MigrationDisciplineTests
     private static readonly string[] MigrationsAfterBatch6 =
     [
         "20260919154546_Batch7MultiDemandJourneyPersistence",
+        "20260919200353_AreaEndAdmissionRevokedSince",
     ];
 
     [Fact]

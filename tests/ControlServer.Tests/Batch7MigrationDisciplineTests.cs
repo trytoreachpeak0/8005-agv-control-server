@@ -29,7 +29,11 @@ public sealed class Batch7MigrationDisciplineTests
     internal const string Batch7MigrationSuffix = "_Batch7MultiDemandJourneyPersistence";
 
     /// <summary>批次 7 迁移之后允许存在的迁移，按名字点出来。</summary>
-    private static readonly string[] MigrationsAfterBatch7 = [];
+    private static readonly string[] MigrationsAfterBatch7 =
+    [
+        // control-server#228：JourneyRuntimes 加 AreaEndAdmissionRevokedSince，迁移通道上排在 #199、#186 之前。
+        "20260919200353_AreaEndAdmissionRevokedSince",
+    ];
 
     [Fact]
     public async Task Batch7AddsExactlyOneMigrationStraightAfterBatch6AndOnlyNamedOnesFollowIt()
