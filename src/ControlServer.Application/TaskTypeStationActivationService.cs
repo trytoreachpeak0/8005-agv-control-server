@@ -662,22 +662,36 @@ public sealed class TaskTypeStationActivationService(
                 now);
         }
 
-        TaskTypeStationActiveReadBack readBack = await _activations.ReadBackAsync(mapId, cancellationToken);
-        if (readBack.ActivePointer?.ActiveVersion != attempt.TargetVersion
-            || !string.Equals(readBack.ActivePointer.State, TaskTypeStationActivationState.Active, StringComparison.Ordinal)
-            || !readBack.ContentVerified)
+        TaskTypeStationActiveReadBack readBack;
+        string activatedId;
+        try
+        {
+            readBack = await _activations.ReadBackAsync(mapId, cancellationToken);
+            if (readBack.ActivePointer?.ActiveVersion != attempt.TargetVersion
+                || !string.Equals(readBack.ActivePointer.State, TaskTypeStationActivationState.Active, StringComparison.Ordinal)
+                || !readBack.ContentVerified)
+            {
+                return await ConcludeUnknownAsync(
+                    facts, attempt, violations, GovernanceActionOutcome.ResultUnknown,
+                    Invariant($"The second step committed but reads back as version {readBack.ActivePointer?.ActiveVersion} in state {readBack.ActivePointer?.State}, not version {attempt.TargetVersion}: {readBack.Detail}"),
+                    now);
+            }
+            activatedId = await _audit.WriteBusinessAsync(
+                facts.Entry(TaskTypeStationActivationAuditActions.Activated, GovernanceActionOutcome.Succeeded,
+                    attempt.TargetVersion, violations, conclusion: "TARGET_ACTIVE", readBack.Active?.SnapshotId,
+                    readBack.Detail),
+                now,
+                cancellationToken);
+        }
+#pragma warning disable CA1031 // The switch committed but was not seen to: unknown, audited, never a crash (review round 2, N3).
+        catch (Exception failure)
+#pragma warning restore CA1031
         {
             return await ConcludeUnknownAsync(
-                facts, attempt, violations, GovernanceActionOutcome.ResultUnknown,
-                Invariant($"The second step committed but reads back as version {readBack.ActivePointer?.ActiveVersion} in state {readBack.ActivePointer?.State}, not version {attempt.TargetVersion}: {readBack.Detail}"),
+                facts, attempt, violations, TimedOutOrUnknown(failure),
+                Invariant($"The second step committed but its read-back or its audit did not complete: {failure.GetType().Name}: {failure.Message}"),
                 now);
         }
-        string activatedId = await _audit.WriteBusinessAsync(
-            facts.Entry(TaskTypeStationActivationAuditActions.Activated, GovernanceActionOutcome.Succeeded,
-                attempt.TargetVersion, violations, conclusion: "TARGET_ACTIVE", readBack.Active?.SnapshotId,
-                readBack.Detail),
-            now,
-            cancellationToken);
         return facts.Result(
             TaskTypeStationActivationOutcome.Activated, attempt.TargetVersion, violations, [activatedId], readBack.Detail);
     }
@@ -704,6 +718,11 @@ public sealed class TaskTypeStationActivationService(
             {
                 await _activations.MarkUnknownAsync(attempt, now, CancellationToken.None);
             }
+        }
+        catch (TaskTypeStationActivationConflictException overtaken)
+        {
+            // Someone else's verdict or activation stands; this attempt only records that it did not get to say (N2).
+            reported += " " + overtaken.Message;
         }
 #pragma warning disable CA1031 // Best effort; the holds committed in the first step already keep the map held.
         catch (Exception failure)

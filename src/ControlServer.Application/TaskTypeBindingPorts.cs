@@ -184,6 +184,12 @@ public static class TaskTypeStationActivationState
 {
     public const string Active = "ACTIVE";
     public const string ActivationUnknown = "ACTIVATION_UNKNOWN";
+
+    /// <summary>
+    /// 墓碑：人工收尾放弃了一次读回矛盾的激活，该图没有生效版本（<c>ActiveVersion</c> 为空），直到下一次 FieldOps 激活或回滚。
+    /// 不是「从未激活」——重启不按第一版装预置（control-server#161 第二轮复审 N1）。
+    /// </summary>
+    public const string ClosedManually = "CLOSED_MANUALLY";
 }
 
 /// <summary>一张图当前生效的绑定集版本指针。</summary>

@@ -57,6 +57,7 @@ public sealed class TaskTypeStationActivationStore(
                 start.StartedAt,
                 cancellationToken);
 
+            string? previousState = pointer?.State;
             if (pointer is null)
             {
                 pointer = new TaskTypeStationActiveBindingSetRow
@@ -76,7 +77,8 @@ public sealed class TaskTypeStationActivationStore(
                 start.ExpectedPreviousVersion,
                 target.Version.Version,
                 start.HeldTaskTypes,
-                []);
+                [],
+                previousState);
             attempt = attempt with
             {
                 HoldIds = [.. start.HeldTaskTypes.Select(taskType => AddUnknownHold(attempt, taskType, start.StartedAt).HoldId)]
@@ -172,21 +174,19 @@ public sealed class TaskTypeStationActivationStore(
         {
             await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(attempt.MapId, cancellationToken);
-            if (pointer is not null
-                && string.Equals(pointer.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal)
-                && pointer.PendingVersion != attempt.TargetVersion)
+            // Only a pointer this attempt still owns is re-marked: still waiting on this very target, or already switched to it
+            // (the second step committed and then threw). Anything else -- a reconciliation's verdict, a newer attempt begun or
+            // completed, a manual close -- overtook this attempt, and re-marking would write "unknown, pending ours" over
+            // someone else's truth (review round 2, N2).
+            bool stillOurs = pointer is not null
+                && ((string.Equals(pointer.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal)
+                        && pointer.PendingVersion == attempt.TargetVersion)
+                    || (string.Equals(pointer.State, TaskTypeStationActivationState.Active, StringComparison.Ordinal)
+                        && pointer.ActiveVersion == attempt.TargetVersion));
+            if (pointer is null || !stillOurs)
             {
                 throw new TaskTypeStationActivationConflictException(Invariant(
-                    $"Map {attempt.MapId} is waiting on another attempt (pending version {pointer.PendingVersion}); attempt {attempt.AttemptId} does not take it over."));
-            }
-            if (pointer is null)
-            {
-                pointer = new TaskTypeStationActiveBindingSetRow
-                {
-                    MapId = attempt.MapId,
-                    State = TaskTypeStationActivationState.ActivationUnknown
-                };
-                _context.Set<TaskTypeStationActiveBindingSetRow>().Add(pointer);
+                    $"Attempt {attempt.AttemptId} was overtaken: Map {attempt.MapId}'s pointer is {pointer?.State ?? "absent"} with active version {pointer?.ActiveVersion} and pending version {pointer?.PendingVersion}; the map is not re-marked."));
             }
             // The active version is left as it reads: which one is really in force is the reconciliation's question.
             pointer.State = TaskTypeStationActivationState.ActivationUnknown;
@@ -242,7 +242,8 @@ public sealed class TaskTypeStationActivationStore(
                     .. ofTarget.Where(hold => hold.AttemptId == first.AttemptId)
                         .Select(hold => hold.TaskType).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
                 ],
-                holdIds);
+                holdIds,
+                first.PreviousState);
         }
 
         // Unknown with nothing held (a map whose requirement set was empty). Neither step touches the active version before
@@ -279,6 +280,16 @@ public sealed class TaskTypeStationActivationStore(
             {
                 TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(mapId, cancellationToken);
                 if (pointer is not null && pointer.ActiveVersion is null
+                    && conclusion == TaskTypeStationReconciliationConclusion.PreviousActive
+                    && string.Equals(attempt?.PreviousState, TaskTypeStationActivationState.ClosedManually, StringComparison.Ordinal))
+                {
+                    // The attempt started from a manual close: back to that tombstone, not to "never activated" -- a restart
+                    // would read the latter as leave to load the preset (review round 2, N1).
+                    pointer.State = TaskTypeStationActivationState.ClosedManually;
+                    pointer.PendingVersion = null;
+                    pointer.UpdatedAt = at;
+                }
+                else if (pointer is not null && pointer.ActiveVersion is null
                     && conclusion == TaskTypeStationReconciliationConclusion.PreviousActive)
                 {
                     // The version from before was none: back to a map without an active version, not an ACTIVE pointer that
@@ -327,13 +338,23 @@ public sealed class TaskTypeStationActivationStore(
             List<string> released = [];
             if (close)
             {
-                // Neither version reads back whole, so none is claimed to be in force: the map goes back to having no active
-                // version, and a new activation or rollback is how it gets one again.
+                // Neither version reads back whole, so none is claimed to be in force: the map has no active version, and a
+                // new activation or rollback is how it gets one again. A tombstone, not a missing row: a restart in between must
+                // not read "never activated" and put the preset's stations back into service (review round 2, N1).
                 TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(mapId, cancellationToken);
-                if (pointer is not null)
+                if (pointer is null)
                 {
-                    _context.Set<TaskTypeStationActiveBindingSetRow>().Remove(pointer);
+                    pointer = new TaskTypeStationActiveBindingSetRow
+                    {
+                        MapId = mapId,
+                        State = TaskTypeStationActivationState.ClosedManually
+                    };
+                    _context.Set<TaskTypeStationActiveBindingSetRow>().Add(pointer);
                 }
+                pointer.ActiveVersion = null;
+                pointer.State = TaskTypeStationActivationState.ClosedManually;
+                pointer.PendingVersion = null;
+                pointer.UpdatedAt = at;
                 released = await ReleaseActivationHoldsAsync(mapId, at, cancellationToken);
                 await _context.SaveChangesAsync(cancellationToken);
             }
@@ -441,7 +462,8 @@ public sealed class TaskTypeStationActivationStore(
             {
                 attemptId = attempt.AttemptId,
                 targetVersion = attempt.TargetVersion,
-                previousVersion = attempt.PreviousVersion
+                previousVersion = attempt.PreviousVersion,
+                previousState = attempt.PreviousState
             }),
             RaisedAt = at,
             RaisedBy = HoldActor(attempt)
@@ -515,7 +537,12 @@ public sealed class TaskTypeStationActivationStore(
         return [.. open.Select(row => row.HoldId).Order(StringComparer.Ordinal)];
     }
 
-    private sealed record HoldAttempt(string AttemptId, long? TargetVersion, long? PreviousVersion, string TaskType);
+    private sealed record HoldAttempt(
+        string AttemptId,
+        long? TargetVersion,
+        long? PreviousVersion,
+        string? PreviousState,
+        string TaskType);
 
     private static HoldAttempt ParseHold(TaskTypeStationHoldRow row)
     {
@@ -525,6 +552,7 @@ public sealed class TaskTypeStationActivationStore(
             root.TryGetProperty("attemptId", out JsonElement attemptId) ? attemptId.GetString() ?? string.Empty : string.Empty,
             root.TryGetProperty("targetVersion", out JsonElement target) && target.ValueKind == JsonValueKind.Number ? target.GetInt64() : null,
             root.TryGetProperty("previousVersion", out JsonElement previous) && previous.ValueKind == JsonValueKind.Number ? previous.GetInt64() : null,
+            root.TryGetProperty("previousState", out JsonElement state) && state.ValueKind == JsonValueKind.String ? state.GetString() : null,
             row.TaskType);
     }
 

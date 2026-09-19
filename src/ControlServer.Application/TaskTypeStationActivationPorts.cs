@@ -217,14 +217,18 @@ public sealed record TaskTypeStationHoldReleaseResult(
     IReadOnlyList<TaskTypeStationHold> Released,
     string AuditRecordId);
 
-/// <summary>一次激活尝试：第一步提交之后它就在库里，直到第二步或对账给出结论。</summary>
+/// <summary>
+/// 一次激活尝试：第一步提交之后它就在库里，直到第二步或对账给出结论。<see cref="PreviousState"/> 是第一步之前的指针状态
+/// （没有指针行时为空），对账判「原版本在用」且原版本为空时据此回到墓碑或回到「从未激活」。
+/// </summary>
 public sealed record TaskTypeStationActivationAttempt(
     string AttemptId,
     int MapId,
     long? PreviousVersion,
     long TargetVersion,
     IReadOnlyList<string> HeldTaskTypes,
-    IReadOnlyList<string> HoldIds);
+    IReadOnlyList<string> HoldIds,
+    string? PreviousState = null);
 
 /// <summary>第一步要落的东西。</summary>
 public sealed record TaskTypeStationActivationStart(
@@ -295,7 +299,9 @@ public interface ITaskTypeStationActivationStore
 
     /// <summary>
     /// 把该图重新标成结果未知：指针状态 <c>ACTIVATION_UNKNOWN</c>、待定版本为目标版本（生效版本不动），本次尝试缺暂停的
-    /// 任务类型补上。第二步失败或读回矛盾时用。该图此刻挂着另一次尝试时抛 <see cref="TaskTypeStationActivationConflictException"/>。
+    /// 任务类型补上。第二步失败或读回矛盾时用。只在指针仍是「未知且待定为本次目标」或「生效且生效为本次目标」时重标；其余
+    /// （对账已结论、更新的尝试已开始或已完成、人工收尾）都是被超越，抛 <see cref="TaskTypeStationActivationConflictException"/>、
+    /// 什么都不写（第二轮复审 N2）。
     /// </summary>
     Task<TaskTypeStationActivationAttempt> MarkUnknownAsync(
         TaskTypeStationActivationAttempt attempt,
@@ -310,8 +316,9 @@ public interface ITaskTypeStationActivationStore
     Task<TaskTypeStationActivationAttempt?> ReadOpenAttemptAsync(int mapId, CancellationToken cancellationToken);
 
     /// <summary>
-    /// 对账，一个事务：读未结尝试与生效版本，交给 <paramref name="decide"/> 判结论；不是「矛盾」时指针回到对应形态（原版本为空时删掉指针行，
-    /// 即「无生效版本」），撤该图全部仍成立的「激活结果未知」暂停；再写 <paramref name="audit"/> 给出的审计。
+    /// 对账，一个事务：读未结尝试与生效版本，交给 <paramref name="decide"/> 判结论；不是「矛盾」时指针回到对应形态（原版本为空时：
+    /// 那次尝试从墓碑出发就回到墓碑，否则删掉指针行，即「从未激活」），撤该图全部仍成立的「激活结果未知」暂停；再写
+    /// <paramref name="audit"/> 给出的审计。
     /// </summary>
     Task<TaskTypeStationReconciliation> ReconcileAsync(
         int mapId,
@@ -321,8 +328,8 @@ public interface ITaskTypeStationActivationStore
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// 人工收尾，一个事务：<paramref name="isContradictory"/> 对此刻读到的状态说「是矛盾」时，删掉指针行（该图回到「无生效版本」）、撤全部
-    /// 「激活结果未知」暂停；否则什么都不改。两种情况都写 <paramref name="audit"/> 给出的审计。
+    /// 人工收尾，一个事务：<paramref name="isContradictory"/> 对此刻读到的状态说「是矛盾」时，指针写成墓碑（<c>CLOSED_MANUALLY</c>、没有生效版本，
+    /// 重启不装预置，第二轮复审 N1）、撤全部「激活结果未知」暂停；否则什么都不改。两种情况都写 <paramref name="audit"/> 给出的审计。
     /// </summary>
     Task<TaskTypeStationManualClose> CloseManuallyAsync(
         int mapId,

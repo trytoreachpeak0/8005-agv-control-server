@@ -28,7 +28,8 @@ public sealed record TaskTypeStationStartupResult(
 /// <para>
 /// <b>预置文件只是一张图的第一版</b>（规格 21.2 第 4 条，control-server#161）。该图一旦有了生效版本（不论是预置装的还是 FieldOps
 /// 激活的），或正有一次激活结果未知，换版本只走 FieldOps 激活，重启不再写绑定集、不动指针与暂停；预置内容与生效版本不同时如实记一条日志，
-/// 说它没有生效。指针行在、却是 <c>ACTIVE</c> 且不指向任何版本的，算没有生效版本，预置照装（审查 S4）。规则表不在此列：它不分图，仍按预置文件装（内容未变不出新版本）。
+/// 说它没有生效。指针行在、却是 <c>ACTIVE</c> 且不指向任何版本的，算没有生效版本，预置照装（审查 S4）；人工收尾留下的墓碑
+/// <c>CLOSED_MANUALLY</c> 不是「第一次」，预置不装，该图保持无生效版本直到下一次 FieldOps 激活或回滚（第二轮复审 N1）。规则表不在此列：它不分图，仍按预置文件装（内容未变不出新版本）。
 /// </para>
 /// </remarks>
 public static class TaskTypeStationStartup
@@ -122,12 +123,14 @@ public static class TaskTypeStationStartup
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> ruleWrite = await rules.WriteVersionAsync(
             preset.Configuration.Rules, source, now, cancellationToken);
         TaskTypeStationActivePointer? existing = await bindings.ReadActivePointerAsync(map.MapId, cancellationToken);
-        // The preset is only a map's first version (specification 21.2 item 4). A map has one once a version is active, or
-        // while an activation's result is unknown; a pointer row that is ACTIVE and names no version is a map without one
-        // (control-server#161 review S4), so the preset still loads there.
+        // The preset is only a map's first version (specification 21.2 item 4). It loads where there is no pointer row, or a
+        // row that is ACTIVE and names no version (control-server#161 review S4). Everything else keeps it out: a version is
+        // active, an activation's result is unknown, or a manual close left its tombstone -- a map with no active version
+        // until the next FieldOps activation or rollback, which an unplanned restart must not undo (review round 2, N1).
         if (existing is not null
             && (existing.ActiveVersion is not null
-                || string.Equals(existing.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal)))
+                || string.Equals(existing.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal)
+                || string.Equals(existing.State, TaskTypeStationActivationState.ClosedManually, StringComparison.Ordinal)))
         {
             TaskTypeStationBindingSetVersion? kept = existing.ActiveVersion is long activeVersion
                 ? await bindings.ReadVersionAsync(map.MapId, activeVersion, cancellationToken)
