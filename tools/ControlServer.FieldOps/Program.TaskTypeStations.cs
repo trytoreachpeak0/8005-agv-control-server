@@ -31,6 +31,8 @@ internal static partial class Program
 
     private const string ReadTaskTypeStationsCommand = "task-type-stations";
 
+    private const string CloseTaskTypeStationActivationCommand = "close-task-type-station-activation";
+
     private static async Task<int> ActivateTaskTypeStationsAsync(
         ControlServerDbContext context,
         GovernanceStore governance,
@@ -107,12 +109,13 @@ internal static partial class Program
 
         TaskTypeStationReconciliationResult result = await ActivationService(context, governance).ReconcileAsync(
             mapId, request!, now, CancellationToken.None);
-        bool contradictory = result.Conclusion == TaskTypeStationReconciliationConclusion.Contradictory;
+        bool concluded = result.Conclusion is not (TaskTypeStationReconciliationConclusion.Contradictory
+            or TaskTypeStationReconciliationConclusion.NotConcluded);
         return Emit(
             new
             {
                 command = ReconcileTaskTypeStationsCommand,
-                outcome = contradictory ? "RESULT_UNKNOWN" : "OK",
+                outcome = concluded ? "OK" : "RESULT_UNKNOWN",
                 conclusion = TaskTypeStationActivationService.ConclusionName(result.Conclusion),
                 mapId = result.MapId,
                 attemptId = result.AttemptId,
@@ -124,7 +127,44 @@ internal static partial class Program
                 auditRecordId = result.AuditRecordId,
                 detail = result.Detail
             },
-            contradictory ? 1 : 0);
+            concluded ? 0 : 1);
+    }
+
+    /// <summary>
+    /// 人工收尾：对账读回「矛盾」时放弃那次激活尝试，该图回到「无生效版本」、撤全部「激活结果未知」暂停，写审计。读回能下结论时拒绝（退出码 1）。
+    /// </summary>
+    private static async Task<int> CloseTaskTypeStationActivationAsync(
+        ControlServerDbContext context,
+        GovernanceStore governance,
+        Dictionary<string, string> options,
+        DateTimeOffset now)
+    {
+        if (!TryReadMap(options, out int mapId))
+        {
+            return Usage($"{CloseTaskTypeStationActivationCommand} needs --map <id> --reason <text>");
+        }
+        if (!TryReadRequest(options, CloseTaskTypeStationActivationCommand, out TaskTypeStationChangeRequest? request, out int usage))
+        {
+            return usage;
+        }
+
+        TaskTypeStationManualCloseResult result = await ActivationService(context, governance).CloseManuallyAsync(
+            mapId, request!, now, CancellationToken.None);
+        bool closed = result.Outcome == TaskTypeStationManualCloseOutcome.Closed;
+        return Emit(
+            new
+            {
+                command = CloseTaskTypeStationActivationCommand,
+                outcome = closed ? "OK" : "REJECTED",
+                mapId = result.MapId,
+                attemptId = result.AttemptId,
+                activeVersionBefore = result.ActiveVersionBefore,
+                releasedHoldIds = result.ReleasedHoldIds,
+                violations = Violations(result.Violations),
+                auditRecordId = result.AuditRecordId,
+                detail = result.Detail
+            },
+            closed ? 0 : 1);
     }
 
     /// <summary>解除一个 <c>Map + TASK_TYPE</c> 上人工或目录变化来源的暂停；带现场核对记录，对新鲜目录完整重验。</summary>

@@ -29,10 +29,13 @@ public static class TaskTypeStationActivationReasonCodes
     /// <summary>激活第二步没有确认落地；该图停在暂停，等对账（REQ-0347）。</summary>
     public const string ActivationResultUnknown = "TASK_TYPE_ACTIVATION_RESULT_UNKNOWN";
 
+    /// <summary>人工收尾只收「矛盾」：读回能给出结论的，走对账。</summary>
     public const string ActivationNotContradictory = "TASK_TYPE_ACTIVATION_NOT_CONTRADICTORY";
 
+    /// <summary>该图没有未结的激活尝试，也没有未解除的「激活结果未知」暂停，没有什么可收尾。</summary>
     public const string NothingToClose = "TASK_TYPE_ACTIVATION_NOTHING_TO_CLOSE";
 
+    /// <summary>这一步写库没有确认落地（超时、断联、提交抛出）；没有任何东西被当作已生效。</summary>
     public const string NotCommitted = "TASK_TYPE_ACTIVATION_STEP_NOT_COMMITTED";
 }
 
@@ -58,6 +61,7 @@ public static class TaskTypeStationRequestCategory
     public const string Rollback = "ROLLBACK";
     public const string Reconcile = "RECONCILE";
     public const string ReleaseHold = "RELEASE_HOLD";
+    public const string CloseManually = "CLOSE_MANUALLY";
 }
 
 /// <summary>
@@ -139,28 +143,12 @@ public enum TaskTypeStationReconciliationConclusion
     /// <summary>读回的既不是目标也不是原版本，或内容与版本记下的指纹不符：暂停保留，如实输出。</summary>
     Contradictory,
 
-    /// <summary>该图没有未结的激活尝试。</summary>
+    /// <summary>该图没有未结的激活尝试。仍有孤儿「激活结果未知」暂停时一并撤掉（该图任何时候最多一次未结尝试）。</summary>
     NothingToReconcile,
 
-    /// <summary>Stub for the review's test commit.</summary>
+    /// <summary>对账本身没能落库（超时、断联）：什么都没改，暂停照旧，稍后再对账。</summary>
     NotConcluded
 }
-
-public enum TaskTypeStationManualCloseOutcome
-{
-    Closed,
-    Rejected
-}
-
-public sealed record TaskTypeStationManualCloseResult(
-    TaskTypeStationManualCloseOutcome Outcome,
-    int MapId,
-    string? AttemptId,
-    long? ActiveVersionBefore,
-    IReadOnlyList<string> ReleasedHoldIds,
-    IReadOnlyList<TaskTypeStationViolation> Violations,
-    string? AuditRecordId,
-    string Detail);
 
 /// <summary>对账结果。</summary>
 public sealed record TaskTypeStationReconciliationResult(
@@ -174,6 +162,44 @@ public sealed record TaskTypeStationReconciliationResult(
     IReadOnlyList<string> ReleasedHoldIds,
     string AuditRecordId,
     string Detail);
+
+/// <summary>人工收尾的结论。</summary>
+public enum TaskTypeStationManualCloseOutcome
+{
+    /// <summary>该图回到「无生效版本」形态，全部「激活结果未知」暂停已撤。</summary>
+    Closed,
+
+    Rejected
+}
+
+/// <summary>
+/// 人工收尾的结果。只在对账读回「矛盾」时才允许：两个版本都读不回完整内容，系统给不出结论，由人决定放弃这次尝试。
+/// </summary>
+public sealed record TaskTypeStationManualCloseResult(
+    TaskTypeStationManualCloseOutcome Outcome,
+    int MapId,
+    string? AttemptId,
+    long? ActiveVersionBefore,
+    IReadOnlyList<string> ReleasedHoldIds,
+    IReadOnlyList<TaskTypeStationViolation> Violations,
+    string? AuditRecordId,
+    string Detail);
+
+/// <summary>对账在一个事务里读到的、判下的、撤掉的。</summary>
+public sealed record TaskTypeStationReconciliation(
+    TaskTypeStationActivationAttempt? Attempt,
+    TaskTypeStationActiveReadBack ReadBack,
+    TaskTypeStationReconciliationConclusion Conclusion,
+    IReadOnlyList<string> ReleasedHoldIds,
+    string AuditRecordId);
+
+/// <summary>人工收尾在一个事务里读到的与撤掉的。</summary>
+public sealed record TaskTypeStationManualClose(
+    TaskTypeStationActivationAttempt? Attempt,
+    TaskTypeStationActiveReadBack ReadBack,
+    bool Closed,
+    IReadOnlyList<string> ReleasedHoldIds,
+    string AuditRecordId);
 
 /// <summary>解除暂停的结论。</summary>
 public enum TaskTypeStationHoldReleaseOutcome
@@ -241,7 +267,8 @@ public sealed class TaskTypeStationActivationConflictException : InvalidOperatio
 
 /// <summary>
 /// 激活的两步落库、读回、对账与解除暂停的存取（control-server#161）。激活尝试用 #159 生效指针表的
-/// <c>State</c>／<c>PendingVersion</c> 表达，尝试的来历在第一步那条审计里，不另建表。
+/// <c>State</c>／<c>PendingVersion</c> 表达，尝试的来历在它置下的「激活结果未知」暂停的 <c>DetailJson</c> 里，不另建表。
+/// 每个会改指针或暂停的方法都是一个事务，判断所依据的读也在同一事务里（SQLite <c>BEGIN IMMEDIATE</c>，写者串行）。
 /// </summary>
 public interface ITaskTypeStationActivationStore
 {
@@ -256,7 +283,11 @@ public interface ITaskTypeStationActivationStore
         Func<TaskTypeStationActivationAttempt, GovernanceAuditEntry> startedAudit,
         CancellationToken cancellationToken);
 
-    /// <summary>第二步，一个事务：指针指向目标版本、状态回到 <c>ACTIVE</c>、撤掉本次尝试的暂停。失败时整体回滚。</summary>
+    /// <summary>
+    /// 第二步，一个事务：指针指向目标版本、状态回到 <c>ACTIVE</c>、撤掉本次尝试的暂停。先核对指针仍是本次尝试留下的样子
+    /// （<c>ACTIVATION_UNKNOWN</c>、待定版本是本次目标、生效版本是本次记下的原版本），不是就抛
+    /// <see cref="TaskTypeStationActivationConflictException"/>、什么都不写——迟到的第二步不能盖掉对账的结论或更新的一次尝试。
+    /// </summary>
     Task CompleteAsync(TaskTypeStationActivationAttempt attempt, DateTimeOffset at, CancellationToken cancellationToken);
 
     /// <summary>读回该图的生效指针与生效版本，按版本行重算内容指纹，与版本头和冻结快照核对。</summary>
@@ -264,27 +295,50 @@ public interface ITaskTypeStationActivationStore
 
     /// <summary>
     /// 把该图重新标成结果未知：指针状态 <c>ACTIVATION_UNKNOWN</c>、待定版本为目标版本（生效版本不动），本次尝试缺暂停的
-    /// 任务类型补上。第二步失败或读回矛盾时用。
+    /// 任务类型补上。第二步失败或读回矛盾时用。该图此刻挂着另一次尝试时抛 <see cref="TaskTypeStationActivationConflictException"/>。
     /// </summary>
     Task<TaskTypeStationActivationAttempt> MarkUnknownAsync(
         TaskTypeStationActivationAttempt attempt,
         DateTimeOffset at,
         CancellationToken cancellationToken);
 
-    /// <summary>该图未结的激活尝试（指针处于 <c>ACTIVATION_UNKNOWN</c>）；没有时为 <c>null</c>。</summary>
+    /// <summary>
+    /// 该图未结的激活尝试：从仍成立的「激活结果未知」暂停的 <c>DetailJson</c> 取尝试号、原版本与目标版本（优先与指针待定版本相符的那次），
+    /// 不按审计时间排序；指针处于 <c>ACTIVATION_UNKNOWN</c> 却没有这样的暂停时，按指针给出。都没有时为 <c>null</c>。
+    /// <see cref="TaskTypeStationActivationAttempt.HoldIds"/> 是该图全部仍成立的「激活结果未知」暂停。
+    /// </summary>
     Task<TaskTypeStationActivationAttempt?> ReadOpenAttemptAsync(int mapId, CancellationToken cancellationToken);
 
-    /// <summary>对账有结论后收尾：指针状态回到 <c>ACTIVE</c>、清掉待定版本（生效版本不动），撤掉本次尝试的暂停。</summary>
-    Task<IReadOnlyList<string>> ResolveAsync(
-        TaskTypeStationActivationAttempt attempt,
+    /// <summary>
+    /// 对账，一个事务：读未结尝试与生效版本，交给 <paramref name="decide"/> 判结论；不是「矛盾」时指针回到对应形态（原版本为空时删掉指针行，
+    /// 即「无生效版本」），撤该图全部仍成立的「激活结果未知」暂停；再写 <paramref name="audit"/> 给出的审计。
+    /// </summary>
+    Task<TaskTypeStationReconciliation> ReconcileAsync(
+        int mapId,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion> decide,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken);
 
-    /// <summary>解除该 <c>Map + TASK_TYPE</c> 全部未解除的人工与目录变化暂停，只记解除、不删行。</summary>
-    Task<IReadOnlyList<TaskTypeStationHold>> ReleaseManualAndCatalogHoldsAsync(
+    /// <summary>
+    /// 人工收尾，一个事务：<paramref name="isContradictory"/> 对此刻读到的状态说「是矛盾」时，删掉指针行（该图回到「无生效版本」）、撤全部
+    /// 「激活结果未知」暂停；否则什么都不改。两种情况都写 <paramref name="audit"/> 给出的审计。
+    /// </summary>
+    Task<TaskTypeStationManualClose> CloseManuallyAsync(
+        int mapId,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, bool> isContradictory,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, bool, IReadOnlyList<string>, GovernanceAuditEntry> audit,
+        DateTimeOffset at,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 解除该 <c>Map + TASK_TYPE</c> 全部未解除的人工与目录变化暂停，只记解除、不删行；<paramref name="audit"/> 给出的审计在同一个事务里写。
+    /// </summary>
+    Task<(IReadOnlyList<TaskTypeStationHold> Released, string AuditRecordId)> ReleaseManualAndCatalogHoldsAsync(
         int mapId,
         string taskType,
         string releasedBy,
+        Func<IReadOnlyList<TaskTypeStationHold>, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken);
 

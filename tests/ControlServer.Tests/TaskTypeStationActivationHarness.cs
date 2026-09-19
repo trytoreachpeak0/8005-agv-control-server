@@ -387,13 +387,30 @@ internal abstract class DelegatingActivationStore(ITaskTypeStationActivationStor
     public virtual Task<TaskTypeStationActivationAttempt?> ReadOpenAttemptAsync(int mapId, CancellationToken cancellationToken) =>
         inner.ReadOpenAttemptAsync(mapId, cancellationToken);
 
-    public virtual Task<IReadOnlyList<string>> ResolveAsync(
-        TaskTypeStationActivationAttempt attempt, DateTimeOffset at, CancellationToken cancellationToken) =>
-        inner.ResolveAsync(attempt, at, cancellationToken);
+    public virtual Task<TaskTypeStationReconciliation> ReconcileAsync(
+        int mapId,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion> decide,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, GovernanceAuditEntry> audit,
+        DateTimeOffset at,
+        CancellationToken cancellationToken) =>
+        inner.ReconcileAsync(mapId, decide, audit, at, cancellationToken);
 
-    public virtual Task<IReadOnlyList<TaskTypeStationHold>> ReleaseManualAndCatalogHoldsAsync(
-        int mapId, string taskType, string releasedBy, DateTimeOffset at, CancellationToken cancellationToken) =>
-        inner.ReleaseManualAndCatalogHoldsAsync(mapId, taskType, releasedBy, at, cancellationToken);
+    public virtual Task<TaskTypeStationManualClose> CloseManuallyAsync(
+        int mapId,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, bool> isContradictory,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, bool, IReadOnlyList<string>, GovernanceAuditEntry> audit,
+        DateTimeOffset at,
+        CancellationToken cancellationToken) =>
+        inner.CloseManuallyAsync(mapId, isContradictory, audit, at, cancellationToken);
+
+    public virtual Task<(IReadOnlyList<TaskTypeStationHold> Released, string AuditRecordId)> ReleaseManualAndCatalogHoldsAsync(
+        int mapId,
+        string taskType,
+        string releasedBy,
+        Func<IReadOnlyList<TaskTypeStationHold>, GovernanceAuditEntry> audit,
+        DateTimeOffset at,
+        CancellationToken cancellationToken) =>
+        inner.ReleaseManualAndCatalogHoldsAsync(mapId, taskType, releasedBy, audit, at, cancellationToken);
 
     public virtual Task<IReadOnlyList<TaskTypeStationInFlightDemand>> ListInFlightDemandsAsync(
         int mapId, CancellationToken cancellationToken) =>

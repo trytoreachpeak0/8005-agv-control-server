@@ -13,7 +13,7 @@ public sealed record TaskTypeStationStartupResult(
 
 /// <summary>
 /// 启动时装载预置配置（control-server#159）：读 <see cref="TaskTypeStationPreset"/> → 静态校验 → 在<b>同一个事务</b>里写规则版本；
-/// 该图还没有生效指针时，再写绑定集第一版并把生效指针指向它（control-server#161）。
+/// 该图还没有生效版本、也没有结果未知的激活时，再写绑定集第一版并把生效指针指向它（control-server#161）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,9 +26,9 @@ public sealed record TaskTypeStationStartupResult(
 /// <see cref="TaskTypeStationConfigurationValidator.EvaluateCatalog"/>。
 /// </para>
 /// <para>
-/// <b>预置文件只是一张图的第一版</b>（规格 21.2 第 4 条，control-server#161）。该图一旦有了生效指针——不论是预置装的还是 FieldOps
-/// 激活的，也不论上一次激活的结果此刻是否未知——换版本只走 FieldOps 激活，重启不再写绑定集、不动指针与暂停；预置内容与生效版本
-/// 不同时如实记一条日志，说它没有生效。规则表不在此列：它不分图，仍按预置文件装（内容未变不出新版本）。
+/// <b>预置文件只是一张图的第一版</b>（规格 21.2 第 4 条，control-server#161）。该图一旦有了生效版本（不论是预置装的还是 FieldOps
+/// 激活的），或正有一次激活结果未知，换版本只走 FieldOps 激活，重启不再写绑定集、不动指针与暂停；预置内容与生效版本不同时如实记一条日志，
+/// 说它没有生效。指针行在、却是 <c>ACTIVE</c> 且不指向任何版本的，算没有生效版本，预置照装（审查 S4）。规则表不在此列：它不分图，仍按预置文件装（内容未变不出新版本）。
 /// </para>
 /// </remarks>
 public static class TaskTypeStationStartup
@@ -122,9 +122,13 @@ public static class TaskTypeStationStartup
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> ruleWrite = await rules.WriteVersionAsync(
             preset.Configuration.Rules, source, now, cancellationToken);
         TaskTypeStationActivePointer? existing = await bindings.ReadActivePointerAsync(map.MapId, cancellationToken);
-        if (existing is not null)
+        // The preset is only a map's first version (specification 21.2 item 4). A map has one once a version is active, or
+        // while an activation's result is unknown; a pointer row that is ACTIVE and names no version is a map without one
+        // (control-server#161 review S4), so the preset still loads there.
+        if (existing is not null
+            && (existing.ActiveVersion is not null
+                || string.Equals(existing.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal)))
         {
-            // The map already has a pointer, so the preset is no longer its authority (specification 21.2 item 4).
             TaskTypeStationBindingSetVersion? kept = existing.ActiveVersion is long activeVersion
                 ? await bindings.ReadVersionAsync(map.MapId, activeVersion, cancellationToken)
                 : await bindings.ReadLatestAsync(map.MapId, cancellationToken);

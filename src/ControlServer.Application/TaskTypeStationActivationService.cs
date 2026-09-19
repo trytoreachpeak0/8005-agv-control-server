@@ -103,8 +103,10 @@ public sealed class TaskTypeStationActivationService(
     }
 
     /// <summary>
-    /// 对账（REQ-0347）：只读取实际生效的版本、它的身份与完整内容，再写结论。生效的是目标版本或仍是原版本，撤掉这次尝试的
-    /// 「激活结果未知」暂停；两者都不是、或内容与记下的指纹不符，暂停保留并如实输出。没有未结尝试时也写一条审计。
+    /// 对账（REQ-0347）：只读取实际生效的版本、它的身份与完整内容，再写结论。读、判、写与审计在一个事务里（审查 S1），迟到的第二步插不进来。
+    /// 生效的是目标版本或仍是原版本，撤该图全部「激活结果未知」暂停（含孤儿，审查 S3）；原版本是「没有」时该图回到无生效版本（审查 S4）；
+    /// 两者都不是、或内容与记下的指纹不符，暂停保留并如实输出，出口是 <see cref="CloseManuallyAsync"/>。没有未结尝试时也写一条审计。
+    /// 对账自己没能落库时结论是 <see cref="TaskTypeStationReconciliationConclusion.NotConcluded"/>，什么都没改（审查 S5）。
     /// </summary>
     public async Task<TaskTypeStationReconciliationResult> ReconcileAsync(
         int mapId,
@@ -115,94 +117,268 @@ public sealed class TaskTypeStationActivationService(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Reason);
 
-        TaskTypeStationActivationAttempt? attempt = await _activations.ReadOpenAttemptAsync(mapId, cancellationToken);
-        TaskTypeStationActiveReadBack readBack = await _activations.ReadBackAsync(mapId, cancellationToken);
-        long? activeVersion = readBack.ActivePointer?.ActiveVersion;
-        string? activeSha = readBack.Active?.ContentSha256;
-
-        TaskTypeStationReconciliationConclusion conclusion;
-        string detail;
-        if (attempt is null)
+        TaskTypeStationReconciliation reconciled;
+        try
         {
-            conclusion = TaskTypeStationReconciliationConclusion.NothingToReconcile;
-            detail = Invariant($"Map {mapId} has no open activation attempt; version {activeVersion} is active. {readBack.Detail}");
+            reconciled = await _activations.ReconcileAsync(
+                mapId,
+                Decide,
+                (attempt, readBack, conclusion, released) => ReconcileEntry(
+                    mapId, request, attempt, readBack, conclusion, released,
+                    Describe(mapId, attempt, readBack, conclusion), OutcomeOf(conclusion)),
+                now,
+                cancellationToken);
         }
-        else if (activeVersion == attempt.TargetVersion && readBack.ContentVerified)
+#pragma warning disable CA1031 // Whatever stopped the reconciliation, nothing changed and the holds stand; say so and stop.
+        catch (Exception failure)
+#pragma warning restore CA1031
         {
-            conclusion = TaskTypeStationReconciliationConclusion.TargetActive;
-            detail = Invariant($"The target version {attempt.TargetVersion} is the one in force. {readBack.Detail}");
-        }
-        else if (activeVersion == attempt.PreviousVersion && (activeVersion is null || readBack.ContentVerified))
-        {
-            conclusion = TaskTypeStationReconciliationConclusion.PreviousActive;
-            detail = Invariant($"The previous version {attempt.PreviousVersion} is still in force; the activation of version {attempt.TargetVersion} did not happen. {readBack.Detail}");
-        }
-        else
-        {
-            conclusion = TaskTypeStationReconciliationConclusion.Contradictory;
-            detail = Invariant($"Neither the target version {attempt.TargetVersion} nor the previous version {attempt.PreviousVersion} reads back whole: {readBack.Detail} The holds stay.");
-        }
-
-        IReadOnlyList<string> released = [];
-        if (attempt is not null && conclusion != TaskTypeStationReconciliationConclusion.Contradictory)
-        {
-            released = await _activations.ResolveAsync(attempt, now, cancellationToken);
+            string detail = Invariant($"The reconciliation did not commit, so nothing changed and the holds stand: {failure.GetType().Name}: {failure.Message}");
+            string? auditId = await TryWriteAsync(
+                ReconcileEntry(
+                    mapId, request, null, null, TaskTypeStationReconciliationConclusion.NotConcluded, [], detail,
+                    TimedOutOrUnknown(failure)),
+                now);
+            return new TaskTypeStationReconciliationResult(
+                TaskTypeStationReconciliationConclusion.NotConcluded, mapId, null, null, null, null, null, [], auditId ?? string.Empty,
+                detail);
         }
 
-        string auditId = await _audit.WriteBusinessAsync(
-            new GovernanceAuditEntry(
-                TaskTypeStationActivationAuditActions.Reconciled,
-                GovernedObjectKind.PublicStationBinding,
-                TaskTypeStationGovernance.BindingSetObjectId(mapId),
-                attempt?.TargetVersion,
-                conclusion == TaskTypeStationReconciliationConclusion.Contradictory
-                    ? GovernanceActionOutcome.ResultUnknown
-                    : GovernanceActionOutcome.Succeeded,
-                JsonSerializer.Serialize(
-                    new
-                    {
-                        mapId,
-                        requestCategory = TaskTypeStationRequestCategory.Reconcile,
-                        reason = request.Reason,
-                        selfReportedRole = request.SelfReportedRole,
-                        attemptId = attempt?.AttemptId,
-                        bindingSetVersion = new
-                        {
-                            previous = attempt?.PreviousVersion,
-                            target = attempt?.TargetVersion,
-                            active = activeVersion
-                        },
-                        activeContentSha256 = activeSha,
-                        contentVerified = readBack.ContentVerified,
-                        heldTaskTypes = attempt?.HeldTaskTypes ?? [],
-                        releasedHoldIds = released,
-                        conclusion = ConclusionName(conclusion),
-                        detail
-                    },
-                    AuditJson),
-                readBack.Active?.SnapshotId),
-            now,
-            cancellationToken);
+        TaskTypeStationActiveReadBack back = reconciled.ReadBack;
         return new TaskTypeStationReconciliationResult(
-            conclusion, mapId, attempt?.AttemptId, attempt?.PreviousVersion, attempt?.TargetVersion, activeVersion, activeSha,
-            released, auditId, detail);
+            reconciled.Conclusion,
+            mapId,
+            reconciled.Attempt?.AttemptId,
+            reconciled.Attempt?.PreviousVersion,
+            reconciled.Attempt?.TargetVersion,
+            back.ActivePointer?.ActiveVersion,
+            back.Active?.ContentSha256,
+            reconciled.ReleasedHoldIds,
+            reconciled.AuditRecordId,
+            Describe(mapId, reconciled.Attempt, back, reconciled.Conclusion));
     }
 
-    /// <summary>Stub for the review's test commit.</summary>
-    public Task<TaskTypeStationManualCloseResult> CloseManuallyAsync(
+    /// <summary>
+    /// 人工收尾（审查 S3）：对账读回「矛盾」、系统给不出结论时，由人决定放弃这次尝试。该图回到「无生效版本」（没有指针行）、撤全部
+    /// 「激活结果未知」暂停；要再有生效版本，走一次新的激活或回滚。理由必填，自报角色原样记下；判定与写入在同一个事务里重读，读回能下结论时拒绝。
+    /// </summary>
+    public async Task<TaskTypeStationManualCloseResult> CloseManuallyAsync(
         int mapId,
         TaskTypeStationChangeRequest request,
         DateTimeOffset now,
-        CancellationToken cancellationToken) =>
-        throw new NotImplementedException();
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Reason);
+
+        TaskTypeStationManualClose close;
+        try
+        {
+            close = await _activations.CloseManuallyAsync(
+                mapId,
+                (attempt, readBack) => attempt is not null
+                    && Decide(attempt, readBack) == TaskTypeStationReconciliationConclusion.Contradictory,
+                (attempt, readBack, closed, released) => CloseEntry(
+                    mapId, request, attempt, readBack, closed, released, CloseViolations(mapId, attempt, readBack, closed)),
+                now,
+                cancellationToken);
+        }
+#pragma warning disable CA1031 // Nothing was closed; the holds stand. Record the refusal and stop.
+        catch (Exception failure)
+#pragma warning restore CA1031
+        {
+            TaskTypeStationViolation[] notCommitted =
+            [
+                new(TaskTypeStationActivationReasonCodes.NotCommitted, null, null,
+                    Invariant($"The manual close did not commit, so nothing changed: {failure.GetType().Name}: {failure.Message}"))
+            ];
+            string? auditId = await TryWriteAsync(CloseEntry(mapId, request, null, null, false, [], notCommitted), now);
+            return new TaskTypeStationManualCloseResult(
+                TaskTypeStationManualCloseOutcome.Rejected, mapId, null, null, [], notCommitted, auditId, notCommitted[0].Detail);
+        }
+
+        IReadOnlyList<TaskTypeStationViolation> violations = CloseViolations(mapId, close.Attempt, close.ReadBack, close.Closed);
+        return new TaskTypeStationManualCloseResult(
+            close.Closed ? TaskTypeStationManualCloseOutcome.Closed : TaskTypeStationManualCloseOutcome.Rejected,
+            mapId,
+            close.Attempt?.AttemptId,
+            close.ReadBack.ActivePointer?.ActiveVersion,
+            close.ReleasedHoldIds,
+            violations,
+            close.AuditRecordId,
+            close.Closed
+                ? Invariant($"Map {mapId} now has no active version; {close.ReleasedHoldIds.Count} activation hold(s) released. {close.ReadBack.Detail}")
+                : violations[0].Detail);
+    }
 
     public static string ConclusionName(TaskTypeStationReconciliationConclusion conclusion) => conclusion switch
     {
         TaskTypeStationReconciliationConclusion.TargetActive => "TARGET_ACTIVE",
         TaskTypeStationReconciliationConclusion.PreviousActive => "PREVIOUS_ACTIVE",
         TaskTypeStationReconciliationConclusion.Contradictory => "CONTRADICTORY",
+        TaskTypeStationReconciliationConclusion.NotConcluded => "NOT_CONCLUDED",
         _ => "NOTHING_TO_RECONCILE"
     };
+
+    /// <summary>对账的判定，只看读回的事实：生效版本是谁、内容是否与记下的指纹一致。</summary>
+    private static TaskTypeStationReconciliationConclusion Decide(
+        TaskTypeStationActivationAttempt? attempt,
+        TaskTypeStationActiveReadBack readBack)
+    {
+        long? active = readBack.ActivePointer?.ActiveVersion;
+        if (attempt is null)
+        {
+            return TaskTypeStationReconciliationConclusion.NothingToReconcile;
+        }
+        if (active == attempt.TargetVersion && readBack.ContentVerified)
+        {
+            return TaskTypeStationReconciliationConclusion.TargetActive;
+        }
+        if (active == attempt.PreviousVersion && (active is null || readBack.ContentVerified))
+        {
+            return TaskTypeStationReconciliationConclusion.PreviousActive;
+        }
+        return TaskTypeStationReconciliationConclusion.Contradictory;
+    }
+
+    private static string Describe(
+        int mapId,
+        TaskTypeStationActivationAttempt? attempt,
+        TaskTypeStationActiveReadBack readBack,
+        TaskTypeStationReconciliationConclusion conclusion) => conclusion switch
+    {
+        TaskTypeStationReconciliationConclusion.NothingToReconcile =>
+            Invariant($"Map {mapId} has no open activation attempt; version {readBack.ActivePointer?.ActiveVersion} is active. {readBack.Detail}"),
+        TaskTypeStationReconciliationConclusion.TargetActive =>
+            Invariant($"The target version {attempt!.TargetVersion} is the one in force. {readBack.Detail}"),
+        TaskTypeStationReconciliationConclusion.PreviousActive => attempt!.PreviousVersion is null
+            ? Invariant($"No version was active before and none is now; the activation of version {attempt.TargetVersion} did not happen, and Map {mapId} is back to having no active version.")
+            : Invariant($"The previous version {attempt.PreviousVersion} is still in force; the activation of version {attempt.TargetVersion} did not happen. {readBack.Detail}"),
+        _ => Invariant($"Neither the target version {attempt!.TargetVersion} nor the previous version {attempt.PreviousVersion} reads back whole: {readBack.Detail} The holds stay; close-task-type-station-activation is the way out.")
+    };
+
+    private static GovernanceActionOutcome OutcomeOf(TaskTypeStationReconciliationConclusion conclusion) =>
+        conclusion == TaskTypeStationReconciliationConclusion.Contradictory
+            ? GovernanceActionOutcome.ResultUnknown
+            : GovernanceActionOutcome.Succeeded;
+
+    private static GovernanceAuditEntry ReconcileEntry(
+        int mapId,
+        TaskTypeStationChangeRequest request,
+        TaskTypeStationActivationAttempt? attempt,
+        TaskTypeStationActiveReadBack? readBack,
+        TaskTypeStationReconciliationConclusion conclusion,
+        IReadOnlyList<string> released,
+        string detail,
+        GovernanceActionOutcome outcome) =>
+        new(
+            TaskTypeStationActivationAuditActions.Reconciled,
+            GovernedObjectKind.PublicStationBinding,
+            TaskTypeStationGovernance.BindingSetObjectId(mapId),
+            attempt?.TargetVersion,
+            outcome,
+            JsonSerializer.Serialize(
+                new
+                {
+                    mapId,
+                    requestCategory = TaskTypeStationRequestCategory.Reconcile,
+                    reason = request.Reason,
+                    selfReportedRole = request.SelfReportedRole,
+                    attemptId = attempt?.AttemptId,
+                    bindingSetVersion = new
+                    {
+                        previous = attempt?.PreviousVersion,
+                        target = attempt?.TargetVersion,
+                        active = readBack?.ActivePointer?.ActiveVersion
+                    },
+                    activeContentSha256 = readBack?.Active?.ContentSha256,
+                    contentVerified = readBack?.ContentVerified,
+                    heldTaskTypes = attempt?.HeldTaskTypes ?? [],
+                    releasedHoldIds = released,
+                    conclusion = ConclusionName(conclusion),
+                    detail
+                },
+                AuditJson),
+            readBack?.Active?.SnapshotId);
+
+    private static IReadOnlyList<TaskTypeStationViolation> CloseViolations(
+        int mapId,
+        TaskTypeStationActivationAttempt? attempt,
+        TaskTypeStationActiveReadBack readBack,
+        bool closed) =>
+        closed
+            ? []
+            : attempt is null
+                ? [new(TaskTypeStationActivationReasonCodes.NothingToClose, null, null,
+                    Invariant($"Map {mapId} has no open activation attempt to close; reconcile-task-type-stations releases any leftover activation hold."))]
+                : [new(TaskTypeStationActivationReasonCodes.ActivationNotContradictory, null, null,
+                    Invariant($"Map {mapId}'s attempt reads back as {ConclusionName(Decide(attempt, readBack))}, not as a contradiction; reconcile-task-type-stations concludes it. {readBack.Detail}"))];
+
+    private static GovernanceAuditEntry CloseEntry(
+        int mapId,
+        TaskTypeStationChangeRequest request,
+        TaskTypeStationActivationAttempt? attempt,
+        TaskTypeStationActiveReadBack? readBack,
+        bool closed,
+        IReadOnlyList<string> released,
+        IReadOnlyList<TaskTypeStationViolation> violations) =>
+        new(
+            closed ? TaskTypeStationActivationAuditActions.ClosedManually : TaskTypeStationActivationAuditActions.CloseRejected,
+            GovernedObjectKind.PublicStationBinding,
+            TaskTypeStationGovernance.BindingSetObjectId(mapId),
+            attempt?.TargetVersion,
+            closed ? GovernanceActionOutcome.Succeeded : GovernanceActionOutcome.Failed,
+            JsonSerializer.Serialize(
+                new
+                {
+                    mapId,
+                    requestCategory = TaskTypeStationRequestCategory.CloseManually,
+                    reason = request.Reason,
+                    selfReportedRole = request.SelfReportedRole,
+                    selfReportedRoleNote = "Recorded as given; not verified. REQ-0336 two-level administrators are deferred and no personnel authentication exists.",
+                    attemptId = attempt?.AttemptId,
+                    bindingSetVersion = new
+                    {
+                        previous = attempt?.PreviousVersion,
+                        target = attempt?.TargetVersion,
+                        activeBefore = readBack?.ActivePointer?.ActiveVersion,
+                        activeAfter = closed ? null : readBack?.ActivePointer?.ActiveVersion
+                    },
+                    readBack = readBack?.Detail,
+                    releasedHoldIds = released,
+                    validation = new
+                    {
+                        passed = violations.Count == 0,
+                        violations = violations.Select(violation => new
+                        {
+                            reasonCode = violation.ReasonCode,
+                            detail = violation.Detail
+                        })
+                    },
+                    conclusion = closed ? "CLOSED_MANUALLY" : "REJECTED"
+                },
+                AuditJson),
+            readBack?.Active?.SnapshotId);
+
+    /// <summary>审计尽力而为地写：写不进去时返回 <c>null</c>，由调用方如实说「审计也没写成」。</summary>
+    private async Task<string?> TryWriteAsync(GovernanceAuditEntry entry, DateTimeOffset now)
+    {
+        try
+        {
+            return await _audit.WriteBusinessAsync(entry, now, CancellationToken.None);
+        }
+#pragma warning disable CA1031 // The caller already reports a failure; a second one must not replace the first.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return null;
+        }
+    }
+
+    private static GovernanceActionOutcome TimedOutOrUnknown(Exception failure) =>
+        failure is TimeoutException || IsLockTimeout(failure)
+            ? GovernanceActionOutcome.TimedOut
+            : GovernanceActionOutcome.ResultUnknown;
 
     /// <summary>
     /// 解除一个明确的 <c>Map + TASK_TYPE</c> 上人工或目录变化来源的暂停（REQ-0340 恢复半边）。必须带现场核对记录，并对当前新鲜目录
@@ -271,23 +447,10 @@ public sealed class TaskTypeStationActivationService(
             }
         }
 
-        IReadOnlyList<TaskTypeStationHold> released = [];
-        if (violations.Count == 0)
+        GovernanceAuditEntry Entry(IReadOnlyList<TaskTypeStationViolation> refused, IReadOnlyList<TaskTypeStationHold> released)
         {
-            released = await _activations.ReleaseManualAndCatalogHoldsAsync(
-                mapId, taskType, "fieldops:release-hold:" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
-                now, cancellationToken);
-            if (released.Count == 0)
-            {
-                violations.Add(new(
-                    TaskTypeStationActivationReasonCodes.NoHoldToRelease, taskType, null,
-                    Invariant($"Map {mapId} {taskType} has no unreleased manual or catalog-change hold.")));
-            }
-        }
-
-        bool ok = violations.Count == 0;
-        string auditId = await _audit.WriteBusinessAsync(
-            new GovernanceAuditEntry(
+            bool ok = refused.Count == 0;
+            return new GovernanceAuditEntry(
                 ok ? TaskTypeStationActivationAuditActions.HoldReleased : TaskTypeStationActivationAuditActions.HoldReleaseRejected,
                 GovernedObjectKind.PublicStationBinding,
                 TaskTypeStationGovernance.BindingSetObjectId(mapId),
@@ -317,7 +480,7 @@ public sealed class TaskTypeStationActivationService(
                         validation = new
                         {
                             passed = ok,
-                            violations = violations.Select(violation => new
+                            violations = refused.Select(violation => new
                             {
                                 reasonCode = violation.ReasonCode,
                                 taskType = violation.TaskType,
@@ -328,12 +491,49 @@ public sealed class TaskTypeStationActivationService(
                         conclusion = ok ? "RELEASED" : "REJECTED"
                     },
                     AuditJson),
-                active?.SnapshotId),
-            now,
-            cancellationToken);
-        return new TaskTypeStationHoldReleaseResult(
-            ok ? TaskTypeStationHoldReleaseOutcome.Released : TaskTypeStationHoldReleaseOutcome.Rejected,
-            mapId, taskType, violations, released, auditId);
+                active?.SnapshotId);
+        }
+
+        if (violations.Count > 0)
+        {
+            string rejectedId = await _audit.WriteBusinessAsync(Entry(violations, []), now, cancellationToken);
+            return new TaskTypeStationHoldReleaseResult(
+                TaskTypeStationHoldReleaseOutcome.Rejected, mapId, taskType, violations, [], rejectedId);
+        }
+
+        TaskTypeStationViolation[] nothingHeld =
+        [
+            new(TaskTypeStationActivationReasonCodes.NoHoldToRelease, taskType, null,
+                Invariant($"Map {mapId} {taskType} has no unreleased manual or catalog-change hold."))
+        ];
+        try
+        {
+            (IReadOnlyList<TaskTypeStationHold> released, string auditId) = await _activations.ReleaseManualAndCatalogHoldsAsync(
+                mapId,
+                taskType,
+                "fieldops:release-hold:" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+                released => Entry(released.Count == 0 ? nothingHeld : [], released),
+                now,
+                cancellationToken);
+            return released.Count == 0
+                ? new TaskTypeStationHoldReleaseResult(
+                    TaskTypeStationHoldReleaseOutcome.Rejected, mapId, taskType, nothingHeld, [], auditId)
+                : new TaskTypeStationHoldReleaseResult(
+                    TaskTypeStationHoldReleaseOutcome.Released, mapId, taskType, [], released, auditId);
+        }
+#pragma warning disable CA1031 // The release and its audit rolled back together; nothing was released. Record that.
+        catch (Exception failure)
+#pragma warning restore CA1031
+        {
+            TaskTypeStationViolation[] notCommitted =
+            [
+                new(TaskTypeStationActivationReasonCodes.NotCommitted, taskType, binding?.StationRiotId,
+                    Invariant($"The release and its audit did not commit, so no hold was released: {failure.GetType().Name}: {failure.Message}"))
+            ];
+            string? auditId = await TryWriteAsync(Entry(notCommitted, []), now);
+            return new TaskTypeStationHoldReleaseResult(
+                TaskTypeStationHoldReleaseOutcome.Rejected, mapId, taskType, notCommitted, [], auditId ?? string.Empty);
+        }
     }
 
     private async Task<TaskTypeStationActivationResult> RunActivationAsync(
@@ -420,20 +620,39 @@ public sealed class TaskTypeStationActivationService(
                 cancellationToken);
             return facts.Result(TaskTypeStationActivationOutcome.Rejected, null, raced, [rejectedId], null);
         }
+#pragma warning disable CA1031 // The first step may or may not have committed: unknown, audited, never a crash (review S5).
+        catch (Exception failure)
+#pragma warning restore CA1031
+        {
+            string detail = Invariant($"The first step did not confirm, so whether the map is now held is not known here; reconcile-task-type-stations reads what is there: {failure.GetType().Name}: {failure.Message}");
+            string? auditId = await TryWriteAsync(
+                facts.Entry(TaskTypeStationActivationAuditActions.ResultUnknown, TimedOutOrUnknown(failure), null,
+                    violations, conclusion: "RESULT_UNKNOWN", detail: detail),
+                now);
+            return facts.Result(
+                TaskTypeStationActivationOutcome.ResultUnknown, null, violations, auditId is null ? [] : [auditId], detail);
+        }
 
         try
         {
             await _activations.CompleteAsync(attempt, now, cancellationToken);
         }
-#pragma warning disable CA1031 // Any failure of the second step means the same thing: the result is not known.
+        catch (TaskTypeStationActivationConflictException overtaken)
+        {
+            // A reconciliation or a newer attempt got there first and wrote nothing of ours: what it wrote stands, so the map
+            // is not re-marked here (review S1).
+            return await ConcludeUnknownAsync(
+                facts, attempt, violations, GovernanceActionOutcome.ResultUnknown,
+                Invariant($"The second step was overtaken and wrote nothing: {overtaken.Message}"),
+                now,
+                remark: false);
+        }
+#pragma warning disable CA1031 // Any other failure of the second step means the same thing: the result is not known.
         catch (Exception failure)
 #pragma warning restore CA1031
         {
-            GovernanceActionOutcome outcome = failure is TimeoutException || IsLockTimeout(failure)
-                ? GovernanceActionOutcome.TimedOut
-                : GovernanceActionOutcome.ResultUnknown;
             return await ConcludeUnknownAsync(
-                facts, attempt, violations, outcome,
+                facts, attempt, violations, TimedOutOrUnknown(failure),
                 Invariant($"The second step did not confirm: {failure.GetType().Name}: {failure.Message}"),
                 now);
         }
@@ -468,14 +687,18 @@ public sealed class TaskTypeStationActivationService(
         IReadOnlyList<TaskTypeStationViolation> violations,
         GovernanceActionOutcome outcome,
         string detail,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        bool remark = true)
     {
         List<string> auditIds = [];
         string reported = detail;
         // Deliberately not the caller's token: a cancelled operator must still leave the map held and say so.
         try
         {
-            await _activations.MarkUnknownAsync(attempt, now, CancellationToken.None);
+            if (remark)
+            {
+                await _activations.MarkUnknownAsync(attempt, now, CancellationToken.None);
+            }
         }
 #pragma warning disable CA1031 // Best effort; the holds committed in the first step already keep the map held.
         catch (Exception failure)

@@ -10,8 +10,8 @@ namespace ControlServer.Infrastructure.Persistence;
 /// <summary>激活两步落库、读回、对账与解除暂停的存取（control-server#161）。</summary>
 /// <remarks>
 /// 激活尝试用 #159 生效指针表的 <c>State</c>／<c>PendingVersion</c> 表达，不另建表（零 migration）：指针处于
-/// <c>ACTIVATION_UNKNOWN</c> 就是有一次未结的尝试，它的来历（尝试号、目标版本、原版本）在第一步那条审计里，
-/// 也写在它置下的每条暂停的 <c>DetailJson</c> 里。失败的写入整体回滚，并清掉上下文里没提交的跟踪，免得下一次保存把它们带上。
+/// <c>ACTIVATION_UNKNOWN</c> 就是有一次未结的尝试，它的来历（尝试号、目标版本、原版本）写在它置下的每条暂停的
+/// <c>DetailJson</c> 里，对账从那里取（审查 S2）。失败的写入整体回滚，并清掉上下文里没提交的跟踪，免得下一次保存把它们带上。
 /// </remarks>
 public sealed class TaskTypeStationActivationStore(
     ControlServerDbContext context,
@@ -102,8 +102,17 @@ public sealed class TaskTypeStationActivationStore(
         try
         {
             await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            TaskTypeStationActiveBindingSetRow pointer = await FreshPointerAsync(attempt.MapId, cancellationToken)
-                ?? throw new InvalidOperationException(Invariant($"Map {attempt.MapId} has no active pointer row."));
+            TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(attempt.MapId, cancellationToken);
+            // Only the pointer this attempt left behind may be switched. A reconciliation that already concluded, or a newer
+            // attempt that already began, is the truth now; a late second step must not overwrite it (review S1).
+            if (pointer is null
+                || !string.Equals(pointer.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal)
+                || pointer.PendingVersion != attempt.TargetVersion
+                || pointer.ActiveVersion != attempt.PreviousVersion)
+            {
+                throw new TaskTypeStationActivationConflictException(Invariant(
+                    $"Map {attempt.MapId}'s pointer is {pointer?.State ?? "absent"} with active version {pointer?.ActiveVersion} and pending version {pointer?.PendingVersion}, not what attempt {attempt.AttemptId} left (unknown, pending {attempt.TargetVersion}, active {attempt.PreviousVersion}); the second step writes nothing."));
+            }
             pointer.ActiveVersion = attempt.TargetVersion;
             pointer.State = TaskTypeStationActivationState.Active;
             pointer.PendingVersion = null;
@@ -163,6 +172,13 @@ public sealed class TaskTypeStationActivationStore(
         {
             await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(attempt.MapId, cancellationToken);
+            if (pointer is not null
+                && string.Equals(pointer.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal)
+                && pointer.PendingVersion != attempt.TargetVersion)
+            {
+                throw new TaskTypeStationActivationConflictException(Invariant(
+                    $"Map {attempt.MapId} is waiting on another attempt (pending version {pointer.PendingVersion}); attempt {attempt.AttemptId} does not take it over."));
+            }
             if (pointer is null)
             {
                 pointer = new TaskTypeStationActiveBindingSetRow
@@ -204,74 +220,86 @@ public sealed class TaskTypeStationActivationStore(
             return null;
         }
 
-        // The attempt's history is the started record the first step committed together with the pointer.
-        string objectId = TaskTypeStationGovernance.BindingSetObjectId(mapId);
-        BusinessAuditRecordRow[] started = await _context.Set<BusinessAuditRecordRow>()
+        // The attempt's history is in the holds it raised, not in audit timestamps (review S2): those come from the clock of
+        // whichever machine ran FieldOps, and one target version can have several started records when a version is reused.
+        TaskTypeStationHoldRow[] open = await _context.Set<TaskTypeStationHoldRow>()
             .AsNoTracking()
-            .Where(row => row.ObjectKind == GovernedObjectKind.PublicStationBinding
-                && row.ObjectId == objectId
-                && row.Action == TaskTypeStationActivationAuditActions.Started
-                && row.Version == target)
+            .Where(row => row.MapId == mapId
+                && row.Source == TaskTypeStationHoldSource.ActivationResultUnknown
+                && row.ReleasedAt == null)
             .ToArrayAsync(cancellationToken);
-        BusinessAuditRecordRow? latest = started.OrderByDescending(row => row.RecordedAtUtcTicks).FirstOrDefault();
-        if (latest is null)
+        HoldAttempt[] ofTarget = [.. open.Select(ParseHold).Where(hold => hold.TargetVersion == target)];
+        string[] holdIds = [.. open.Select(row => row.HoldId).Order(StringComparer.Ordinal)];
+        if (ofTarget.Length > 0)
         {
-            // Not a state the service produces; say what the pointer says and hold on whatever is held.
-            List<TaskTypeStationHoldRow> anyOpen = await _context.Set<TaskTypeStationHoldRow>()
-                .AsNoTracking()
-                .Where(row => row.MapId == mapId
-                    && row.Source == TaskTypeStationHoldSource.ActivationResultUnknown
-                    && row.ReleasedAt == null)
-                .ToListAsync(cancellationToken);
+            HoldAttempt first = ofTarget.OrderBy(hold => hold.AttemptId, StringComparer.Ordinal).First();
             return new TaskTypeStationActivationAttempt(
-                "unknown", mapId, pointer.ActiveVersion, target,
-                [.. anyOpen.Select(row => row.TaskType).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
-                [.. anyOpen.Select(row => row.HoldId).Order(StringComparer.Ordinal)]);
+                first.AttemptId,
+                mapId,
+                first.PreviousVersion,
+                target,
+                [
+                    .. ofTarget.Where(hold => hold.AttemptId == first.AttemptId)
+                        .Select(hold => hold.TaskType).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+                ],
+                holdIds);
         }
 
-        using JsonDocument detail = JsonDocument.Parse(latest.DetailJson);
-        JsonElement root = detail.RootElement;
-        string attemptId = root.GetProperty("attemptId").GetString()!;
-        JsonElement previous = root.GetProperty("bindingSetVersion").GetProperty("previous");
-        string[] heldTaskTypes =
-        [
-            .. root.TryGetProperty("heldTaskTypes", out JsonElement held) && held.ValueKind == JsonValueKind.Array
-                ? held.EnumerateArray().Select(item => item.GetString()!)
-                : []
-        ];
-        List<TaskTypeStationHoldRow> open = await OpenAttemptHoldsAsync(mapId, attemptId, cancellationToken);
+        // Unknown with nothing held (a map whose requirement set was empty). Neither step touches the active version before
+        // the second step commits, so whatever is active and is not the target is the version from before.
         return new TaskTypeStationActivationAttempt(
-            attemptId,
+            "unattributed",
             mapId,
-            previous.ValueKind == JsonValueKind.Number ? previous.GetInt64() : null,
+            pointer.ActiveVersion == target ? null : pointer.ActiveVersion,
             target,
-            heldTaskTypes,
-            [.. open.Select(row => row.HoldId).Order(StringComparer.Ordinal)]);
+            [],
+            holdIds);
     }
 
-    public async Task<IReadOnlyList<string>> ResolveAsync(
-        TaskTypeStationActivationAttempt attempt,
+    public async Task<TaskTypeStationReconciliation> ReconcileAsync(
+        int mapId,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion> decide,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(attempt);
+        ArgumentNullException.ThrowIfNull(decide);
+        ArgumentNullException.ThrowIfNull(audit);
         try
         {
+            // One transaction for the reads the verdict rests on and the writes it causes (review S1): SQLite's BEGIN
+            // IMMEDIATE keeps a second step from committing in between.
             await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            TaskTypeStationActiveBindingSetRow pointer = await FreshPointerAsync(attempt.MapId, cancellationToken)
-                ?? throw new InvalidOperationException(Invariant($"Map {attempt.MapId} has no active pointer row."));
-            pointer.State = TaskTypeStationActivationState.Active;
-            pointer.PendingVersion = null;
-            pointer.UpdatedAt = at;
-            List<TaskTypeStationHoldRow> open = await OpenAttemptHoldsAsync(attempt.MapId, attempt.AttemptId, cancellationToken);
-            foreach (TaskTypeStationHoldRow row in open)
+            TaskTypeStationActivationAttempt? attempt = await ReadOpenAttemptAsync(mapId, cancellationToken);
+            TaskTypeStationActiveReadBack readBack = await ReadBackAsync(mapId, cancellationToken);
+            TaskTypeStationReconciliationConclusion conclusion = decide(attempt, readBack);
+
+            List<string> released = [];
+            if (conclusion != TaskTypeStationReconciliationConclusion.Contradictory)
             {
-                row.ReleasedAt = at;
-                row.ReleasedBy = HoldActor(attempt);
+                TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(mapId, cancellationToken);
+                if (pointer is not null && pointer.ActiveVersion is null
+                    && conclusion == TaskTypeStationReconciliationConclusion.PreviousActive)
+                {
+                    // The version from before was none: back to a map without an active version, not an ACTIVE pointer that
+                    // names nothing (review S4), so the preset may still load as its first version.
+                    _context.Set<TaskTypeStationActiveBindingSetRow>().Remove(pointer);
+                }
+                else if (pointer is not null
+                    && string.Equals(pointer.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal))
+                {
+                    pointer.State = TaskTypeStationActivationState.Active;
+                    pointer.PendingVersion = null;
+                    pointer.UpdatedAt = at;
+                }
+                // A map has at most one open attempt, so once there is a verdict every activation hold on it is released,
+                // orphans included (review S3).
+                released = await ReleaseActivationHoldsAsync(mapId, at, cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
             }
-            await _context.SaveChangesAsync(cancellationToken);
+            string auditId = await _audit.WriteBusinessAsync(audit(attempt, readBack, conclusion, released), at, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
-            return [.. open.Select(row => row.HoldId).Order(StringComparer.Ordinal)];
+            return new TaskTypeStationReconciliation(attempt, readBack, conclusion, released, auditId);
         }
         catch
         {
@@ -280,17 +308,61 @@ public sealed class TaskTypeStationActivationStore(
         }
     }
 
-    public async Task<IReadOnlyList<TaskTypeStationHold>> ReleaseManualAndCatalogHoldsAsync(
+    public async Task<TaskTypeStationManualClose> CloseManuallyAsync(
+        int mapId,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, bool> isContradictory,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, bool, IReadOnlyList<string>, GovernanceAuditEntry> audit,
+        DateTimeOffset at,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(isContradictory);
+        ArgumentNullException.ThrowIfNull(audit);
+        try
+        {
+            await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            TaskTypeStationActivationAttempt? attempt = await ReadOpenAttemptAsync(mapId, cancellationToken);
+            TaskTypeStationActiveReadBack readBack = await ReadBackAsync(mapId, cancellationToken);
+            bool close = isContradictory(attempt, readBack);
+
+            List<string> released = [];
+            if (close)
+            {
+                // Neither version reads back whole, so none is claimed to be in force: the map goes back to having no active
+                // version, and a new activation or rollback is how it gets one again.
+                TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(mapId, cancellationToken);
+                if (pointer is not null)
+                {
+                    _context.Set<TaskTypeStationActiveBindingSetRow>().Remove(pointer);
+                }
+                released = await ReleaseActivationHoldsAsync(mapId, at, cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            string auditId = await _audit.WriteBusinessAsync(audit(attempt, readBack, close, released), at, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new TaskTypeStationManualClose(attempt, readBack, close, released, auditId);
+        }
+        catch
+        {
+            _context.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    public async Task<(IReadOnlyList<TaskTypeStationHold> Released, string AuditRecordId)> ReleaseManualAndCatalogHoldsAsync(
         int mapId,
         string taskType,
         string releasedBy,
+        Func<IReadOnlyList<TaskTypeStationHold>, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
         ArgumentException.ThrowIfNullOrWhiteSpace(releasedBy);
+        ArgumentNullException.ThrowIfNull(audit);
         try
         {
+            // The release and its audit are one transaction (review O2): a release nobody recorded did not happen.
+            await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             List<TaskTypeStationHoldRow> open = await _context.Set<TaskTypeStationHoldRow>()
                 .Where(row => row.MapId == mapId
                     && row.TaskType == taskType
@@ -305,13 +377,16 @@ public sealed class TaskTypeStationActivationStore(
                 row.ReleasedBy = releasedBy;
             }
             await _context.SaveChangesAsync(cancellationToken);
-            return
+            TaskTypeStationHold[] released =
             [
                 .. open.OrderBy(row => row.RaisedAt).ThenBy(row => row.HoldId, StringComparer.Ordinal)
                     .Select(row => new TaskTypeStationHold(
                         row.HoldId, row.MapId, row.TaskType, row.Source, row.ReasonCode, row.DetailJson, row.RaisedAt,
                         row.RaisedBy, row.ReleasedAt, row.ReleasedBy))
             ];
+            string auditId = await _audit.WriteBusinessAsync(audit(released), at, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return (released, auditId);
         }
         catch
         {
@@ -421,6 +496,36 @@ public sealed class TaskTypeStationActivationStore(
             await _context.Entry(row).ReloadAsync(cancellationToken);
         }
         return [.. rows.Where(row => row.ReleasedAt is null)];
+    }
+
+    /// <summary>撤该图全部仍成立的「激活结果未知」暂停，以置下它的那次尝试的名义。</summary>
+    private async Task<List<string>> ReleaseActivationHoldsAsync(int mapId, DateTimeOffset at, CancellationToken cancellationToken)
+    {
+        List<TaskTypeStationHoldRow> open = await _context.Set<TaskTypeStationHoldRow>()
+            .Where(row => row.MapId == mapId
+                && row.Source == TaskTypeStationHoldSource.ActivationResultUnknown
+                && row.ReleasedAt == null)
+            .ToListAsync(cancellationToken);
+        open = await FreshOpenAsync(open, cancellationToken);
+        foreach (TaskTypeStationHoldRow row in open)
+        {
+            row.ReleasedAt = at;
+            row.ReleasedBy = row.RaisedBy;
+        }
+        return [.. open.Select(row => row.HoldId).Order(StringComparer.Ordinal)];
+    }
+
+    private sealed record HoldAttempt(string AttemptId, long? TargetVersion, long? PreviousVersion, string TaskType);
+
+    private static HoldAttempt ParseHold(TaskTypeStationHoldRow row)
+    {
+        using JsonDocument detail = JsonDocument.Parse(row.DetailJson);
+        JsonElement root = detail.RootElement;
+        return new HoldAttempt(
+            root.TryGetProperty("attemptId", out JsonElement attemptId) ? attemptId.GetString() ?? string.Empty : string.Empty,
+            root.TryGetProperty("targetVersion", out JsonElement target) && target.ValueKind == JsonValueKind.Number ? target.GetInt64() : null,
+            root.TryGetProperty("previousVersion", out JsonElement previous) && previous.ValueKind == JsonValueKind.Number ? previous.GetInt64() : null,
+            row.TaskType);
     }
 
     /// <summary>该图仍成立、由这次尝试置下的「激活结果未知」暂停（尝试号在暂停的 <c>DetailJson</c> 里）。</summary>

@@ -116,6 +116,7 @@ internal static partial class Program
             ReconcileTaskTypeStationsCommand => await ReconcileTaskTypeStationsAsync(context, governance, options, now),
             ReleaseTaskTypeStationHoldCommand => await ReleaseTaskTypeStationHoldAsync(context, governance, options, now),
             ReadTaskTypeStationsCommand => await ReadTaskTypeStationsAsync(context, governance, options),
+            CloseTaskTypeStationActivationCommand => await CloseTaskTypeStationActivationAsync(context, governance, options, now),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
@@ -705,7 +706,7 @@ internal static partial class Program
             "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io"
             + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments"
             + "|activate-task-type-stations|rollback-task-type-stations|reconcile-task-type-stations"
-            + "|release-task-type-station-hold|task-type-stations>"
+            + "|release-task-type-station-hold|close-task-type-station-activation|task-type-stations>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
@@ -730,6 +731,7 @@ internal static partial class Program
         Console.Error.WriteLine(
             "  release-task-type-station-hold --map <id> --task-type <TASK_TYPE> --site-verification <ref>"
             + " --catalog <stations.json> --reason <text> [--role <text>]");
+        Console.Error.WriteLine("  close-task-type-station-activation --map <id> --reason <text> [--role <text>]");
         Console.Error.WriteLine("  task-type-stations      --map <id>   read-only");
         Console.Error.WriteLine();
         Console.Error.WriteLine(
@@ -759,7 +761,9 @@ internal static partial class Program
             + " confirmation must still be fresh; otherwise nothing is activated or released.");
         Console.Error.WriteLine(
             "  Activation commits in two steps. If the second one cannot be confirmed the map stays held and the"
-            + " outcome is RESULT_UNKNOWN; run reconcile-task-type-stations, which reads what is really in force.");
+            + " outcome is RESULT_UNKNOWN; run reconcile-task-type-stations, which reads what is really in force."
+            + " Only when it reads back a contradiction does close-task-type-station-activation give up the attempt:"
+            + " the map is left with no active version until the next activation or rollback.");
         Console.Error.WriteLine(
             "  --role is recorded as given and is not verified: there is no personnel authentication, and every audit"
             + " record names this deployment, not a person.");

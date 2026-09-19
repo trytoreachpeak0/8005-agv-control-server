@@ -228,7 +228,8 @@ public interface ITaskTypeStationBindingStore
     /// <summary>
     /// 写入该图的新版本。内容（需求集、绑定与所依赖的规则版本）与该图最新一版相同时不产生新版本；目录修订、来源与时间
     /// 不算内容。不动生效指针。<paramref name="ruleVersion"/> 不存在时抛 <see cref="InvalidOperationException"/>。
-    /// 不做业务校验：写入前调用方须先过 <see cref="TaskTypeStationConfigurationValidator.ValidateStatic"/>。
+    /// 写入前按 <paramref name="ruleVersion"/> 那一版规则过 <see cref="TaskTypeStationConfigurationValidator.ValidateStatic"/>，
+    /// 有违规抛 <see cref="TaskTypeStationConfigurationException"/>、什么都不写（control-server#161 审查 S6：库里没有 CHECK 约束，存储自己把关）。
     /// </summary>
     Task<TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion>> WriteVersionAsync(
         int mapId,
