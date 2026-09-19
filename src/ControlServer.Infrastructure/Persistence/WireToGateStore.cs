@@ -501,6 +501,19 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             throw new BusinessIdentityConflictException("Order intent demand does not match accepted demand.");
         }
 
+        // control-server#198: a plan that names the rule and binding set versions its fixed station was resolved under
+        // took that station from a catalog, and the endpoints are frozen from that catalog's revision (REQ-0305). Without
+        // the revision the freeze below would take the versions and skip the endpoints, silently. Refused here, before
+        // anything is read or staged, so that nothing of it is left in the change tracker for the next SaveChanges -- the
+        // engine writes this demand's backlog reason right after. A plan carrying none of the three (accepted before
+        // control-server#160) is the old shape and goes on as before.
+        if (journey is { StationCatalogRevision: null } &&
+            (journey.TaskTypeStationRuleVersion is not null || journey.TaskTypeStationBindingSetVersion is not null))
+        {
+            throw new JourneyPlanFreezeIncompleteException(FormattableString.Invariant(
+                $"Demand {snapshot.DemandId}'s plan carries task type station rule version {journey.TaskTypeStationRuleVersion} and binding set version {journey.TaskTypeStationBindingSetVersion} but no station catalog revision, so its endpoints cannot be frozen."));
+        }
+
         AcceptedDemandRow? existing = await dbContext.AcceptedDemands
             .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId ||
                                          row.TransportDemandKey == snapshot.TransportDemandKey, cancellationToken)
