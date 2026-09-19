@@ -144,6 +144,38 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
             row => Assert.Equal(21, row.CatalogRevision));
     }
 
+    /// <summary>
+    /// control-server#198 ②：计划带规则版本与绑定集版本、却没有目录修订，受理照旧会冻结版本而不冻结落点，一声不吭。
+    /// 现在整笔受理被拒：不写受理行、租约、意图、旅程，也不写任何冻结行；拒绝之后同一个上下文再保存一次，也不能把被拒的
+    /// 那次受理带进库（引擎紧接着就会为这条需求写积压原因）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task APlanCarryingVersionsButNoCatalogRevisionIsRefusedWholeAndLeavesNothingBehind()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        (long ruleVersion, long bindingSetVersion) = await BoundFixedTaskStationResolverTests.ActivateAsync(
+            fixture, [TransportTaskTypes.WireToGate], [GateBinding]);
+
+        Exception? refused = await Record.ExceptionAsync(() => new WireToGateStore(fixture.Context).AcceptWithOrderIntentAsync(
+            Demand(), PickupIntent(), Plan(ruleVersion, bindingSetVersion) with { StationCatalogRevision = null }, Token));
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        int accepted = await fixture.Context.AcceptedDemands.AsNoTracking().CountAsync(Token);
+        int endpoints = await fixture.Context.FrozenDemandStations.AsNoTracking().CountAsync(row => row.DemandId == DemandId, Token);
+        DemandTaskTypeStationFreeze? versions = await fixture.Freezes.ReadAsync(DemandId, Token);
+        Assert.True(
+            refused is JourneyPlanFreezeIncompleteException,
+            $"exception: {refused?.GetType().Name ?? "none"}; accepted rows: {accepted}; versions frozen: {versions is not null}; endpoints frozen: {endpoints}");
+        Assert.Equal(0, accepted);
+        Assert.Equal(0, endpoints);
+        Assert.Null(versions);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(await fixture.Context.OrderIntents.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(await fixture.Context.VehicleDispatchLeases.AsNoTracking().ToArrayAsync(Token));
+    }
+
     private static JourneyExecutionPlan Plan(long? ruleVersion, long? bindingSetVersion) => new(
         "AGV-1",
         "BROKERX-0001",
@@ -166,7 +198,10 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
         1,
         Now,
         TaskTypeStationRuleVersion: ruleVersion,
-        TaskTypeStationBindingSetVersion: bindingSetVersion);
+        TaskTypeStationBindingSetVersion: bindingSetVersion,
+        // The engine's plans always carry the revision with the versions (JourneyPlanBuilder.CreatePlan); control-server#198
+        // refuses a plan that has the versions without it.
+        StationCatalogRevision: ruleVersion is null && bindingSetVersion is null ? null : 20);
 
     private static AcceptedDemandSnapshot Demand() => new(
         DemandId,
