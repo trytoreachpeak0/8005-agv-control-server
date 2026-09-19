@@ -173,6 +173,9 @@ public sealed class TaskTypeStationActivationStore(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(attempt);
+        // Whatever the step that did not confirm left tracked is not this write's to save -- above all an ACTIVATED audit
+        // row whose insert the database refused, which the next save would otherwise commit (control-server#191).
+        _context.ChangeTracker.Clear();
         try
         {
             await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
