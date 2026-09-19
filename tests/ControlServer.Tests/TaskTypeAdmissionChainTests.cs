@@ -110,7 +110,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
 
     /// <summary>
     /// 同一轮：<c>STAGING_TO_WIRE</c> 缺绑定被挡，<c>WIRE_TO_GATE</c> 照常往下判——它走过了站点解析（有路线），
-    /// 停在后面与任务类型无关的判据上（这里没有包装容量规则）。
+    /// 停在后面与任务类型无关的车辆判据上（这里没给车载端事实）。
     /// </summary>
     [Fact]
     public async Task AMissingBindingStopsOnlyItsOwnTaskTypeAndTheRestOfTheRoundIsJudgedAsUsual()
@@ -124,7 +124,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
         DispatchCandidateEvaluation gate = Evaluation(round, TransportTaskTypes.WireToGate);
 
         Assert.Equal(DispatchReasonCodes.TaskTypeBindingMissing, await chain.EvaluateAsync(staging, Token));
-        Assert.Equal("PACKAGE_CAPACITY_NOT_UNIQUE", await chain.EvaluateAsync(gate, Token));
+        Assert.Equal("ONBOARD_FACTS_NOT_READY", await chain.EvaluateAsync(gate, Token));
         Assert.Equal(Gate.StationName, gate.Route?.DropoffStationId);
     }
 
