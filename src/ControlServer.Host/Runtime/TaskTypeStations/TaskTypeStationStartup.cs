@@ -54,6 +54,12 @@ public static class TaskTypeStationStartup
             new EventId(9302, "TaskTypeStationPresetLoaded"),
             "Task type station preset {Path} loaded: rule version {RuleVersion} ({RuleOutcome}), Map {MapId} binding set version {BindingSetVersion} ({BindingOutcome}) active.");
 
+    private static readonly Action<ILogger, string, string, Exception?> GateScalarsIgnored =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(9304, "TaskTypeStationGateScalarsIgnored"),
+            "JourneyRuntime:gateStationId ({GateStationId}) / gateStationRiotId ({GateStationRiotId}) are still configured but are ignored since control-server#160: the WIRE_TO_GATE end station is the Map's binding in the task type station preset. Remove the two keys, and check that binding if the gate here is not the preset's.");
+
     public static async Task<TaskTypeStationStartupResult?> EnsureAsync(
         IServiceProvider services,
         CancellationToken cancellationToken)
@@ -70,9 +76,18 @@ public static class TaskTypeStationStartup
 
         ILogger logger = provider.GetService<ILoggerFactory>()?.CreateLogger(typeof(TaskTypeStationStartup).FullName!)
             ?? NullLogger.Instance;
+        // An installation upgraded straight from before #159 may still carry the two scalars, and one whose gate is
+        // not the preset's station would otherwise be moved to the preset's station without a word.
+        IConfiguration configuration = provider.GetRequiredService<IConfiguration>();
+        string? leftoverName = configuration[JourneyRuntimeOptions.SectionName + ":gateStationId"];
+        string? leftoverRiotId = configuration[JourneyRuntimeOptions.SectionName + ":gateStationRiotId"];
+        if (!string.IsNullOrWhiteSpace(leftoverName) || !string.IsNullOrWhiteSpace(leftoverRiotId))
+        {
+            GateScalarsIgnored(logger, leftoverName ?? "(absent)", leftoverRiotId ?? "(absent)", null);
+        }
         TaskTypeStationPresetFile? preset = TaskTypeStationPreset.Load(
             AppContext.BaseDirectory,
-            provider.GetRequiredService<IConfiguration>()[TaskTypeStationPreset.SettingsFileKey]);
+            configuration[TaskTypeStationPreset.SettingsFileKey]);
         if (preset is null)
         {
             // The pointer is left alone (specification 21.2 item 4: a restart does not take away a version that is
