@@ -151,7 +151,7 @@ public sealed class JourneyMembershipStore(ControlServerDbContext context) : IJo
         row.RemovalReason, row.DispatchZoneParameterVersion);
 }
 
-// <summary>
+/// <summary>
 /// 车辆用途占有。谁占到由 <c>VehiclePurposeClaims</c> 的主键决定：先插入，被主键拒了再看占着的是谁。
 /// </summary>
 public sealed class VehiclePurposeClaimStore(ControlServerDbContext context) : IVehiclePurposeClaimStore
@@ -421,7 +421,7 @@ public sealed class DispatchZoneParameterStore(
         });
 }
 
-// <summary>
+/// <summary>
 /// 按车修订号计数器。只进不退：任何一条流往回走都拒绝，计数器不变。
 /// </summary>
 public sealed class VehicleSnapshotRevisionStore(ControlServerDbContext context) : IVehicleSnapshotRevisionStore

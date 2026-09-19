@@ -565,8 +565,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        HashSet<object> trackedBefore = new(
-            dbContext.ChangeTracker.Entries().Select(entry => entry.Entity), ReferenceEqualityComparer.Instance);
+        // What the context held before this acceptance staged anything: each entity with its state and its values.
+        Dictionary<object, (EntityState State, Microsoft.EntityFrameworkCore.ChangeTracking.PropertyValues Values)> trackedBefore =
+            dbContext.ChangeTracker.Entries().ToDictionary(
+                entry => entry.Entity, entry => (entry.State, entry.CurrentValues.Clone()), ReferenceEqualityComparer.Instance);
         try
         {
             await StageAndCommitAcceptanceAsync(snapshot, orderIntent, journey, transaction, cancellationToken)
@@ -579,8 +581,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     }
 
     /// <summary>
-    /// Drops from the change tracker everything a failed acceptance staged -- the rows it added and the changes it made to
-    /// rows already tracked -- and returns false, so that the exception it runs under propagates unchanged.
+    /// Puts the change tracker back as it was before a failed acceptance staged anything -- the rows it added are dropped,
+    /// every entity already tracked gets back the state and the values it had, the caller's own unsaved changes included --
+    /// and returns false, so that the exception it runs under propagates unchanged.
     /// </summary>
     /// <remarks>
     /// The transaction rolls the database back, but the tracker would keep the staged rows for the caller's next
@@ -588,19 +591,18 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// would commit half an acceptance. The same guard control-server#198 keeps by refusing a plan before anything is
     /// staged; this one covers the refusals that can only come after, such as the purpose claim's key.
     /// </remarks>
-    private bool ForgetStagedAcceptance(HashSet<object> trackedBefore)
+    private bool ForgetStagedAcceptance(
+        Dictionary<object, (EntityState State, Microsoft.EntityFrameworkCore.ChangeTracking.PropertyValues Values)> trackedBefore)
     {
         foreach (var entry in dbContext.ChangeTracker.Entries().ToArray())
         {
-            if (!trackedBefore.Contains(entry.Entity))
+            if (!trackedBefore.TryGetValue(entry.Entity, out var before))
             {
                 entry.State = EntityState.Detached;
+                continue;
             }
-            else if (entry.State is EntityState.Modified or EntityState.Deleted)
-            {
-                entry.CurrentValues.SetValues(entry.OriginalValues);
-                entry.State = EntityState.Unchanged;
-            }
+            entry.CurrentValues.SetValues(before.Values);
+            entry.State = before.State;
         }
         return false;
     }
@@ -2607,14 +2609,6 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     }
 
     /// <summary>
-    /// Moves the vehicle's revision counter to the journey's seeded revisions, in the same unsaved change as the journey.
-    /// </summary>
-    /// <remarks>
-    /// The seed itself is still derived from <c>JourneyRuntimes</c> exactly as before, so nothing published changes; the
-    /// counter only records it, and so always equals the highest revision stored on the vehicle's journeys. Its readers
-    /// switch over in control-server#208.
-    /// </remarks>
-    /// <summary>
     /// Whether the stops and the demand membership stored for a replayed acceptance are the ones it wrote (batch 7,
     /// control-server#206), judged on what the acceptance fixed; a missing row is a difference too.
     /// </summary>
@@ -2638,6 +2632,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         return storedDemand is not null && SingleDemandJourneyShape.SameDemand(storedDemand, expectedDemand);
     }
 
+    /// <summary>
+    /// Moves the vehicle's revision counter to the journey's seeded revisions, in the same unsaved change as the journey.
+    /// </summary>
+    /// <remarks>
+    /// The seed itself is still derived from <c>JourneyRuntimes</c> exactly as before, so nothing published changes; the
+    /// counter only records it, and so always equals the highest revision stored on the vehicle's journeys. Its readers
+    /// switch over in control-server#208.
+    /// </remarks>
     private async Task AdvanceSnapshotRevisionCounterAsync(
         JourneyRuntimeRow runtime,
         CancellationToken cancellationToken)

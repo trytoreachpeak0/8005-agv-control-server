@@ -392,7 +392,7 @@ DispatchZoneParameters = @{
 
 - 途中追加增量的单位是计划路径代价（今天是毫米），不是时间；阈值是秒。`0` 与 `$null` 都表示本区禁止途中追加，两者都存得下、读回可区分；
   某个字段不写等于 `$null`，表里没列的分区即未配置。
-- **两个键在任何进程启动之前检查，拼错立即报错**：键名写错（例如 `DispatchZoneParameter`、`cargoHoldingTimeout`）、字段名写错、
+- **两个键在任何进程启动之前检查，拼错立即报错**：键名与两者近似（只看字母数字、忽略大小写、编辑距离不超过 3，例如 `DispatchZoneParameter`、`cargoHoldingTimeout`）、字段名写错、
   值不是非负整数、超时不是正的 `hh:mm:ss`、空表，都在起装置之前抛出。自检是 `scripts/l2/Test-L2DispatchZoneParameters.ps1`（一秒，不起装置）。
 - **L2 预置不走正式导入**：辅助模块 `L2DispatchZoneParameters.psm1` 直写服务端库，版本号取当前最大 + 1，版本行 `Source = 'L2_PRESET'`、
   `SnapshotId` 为空，不经治理快照与业务审计。正式导入的动词与它的证据归批次7-11（control-server#216）的场景；它合入之后 L2 是否改走
@@ -516,6 +516,17 @@ DispatchZoneParameters = @{
   改它要连脚本一起改。取值的上界来自装货提交之后那条等待的判据超时（例如 `real-onboard-normal-load` 是 180 秒，
   `g3-predeparture-check-expires` 是 90 秒），下界来自录入那一段，两者之间才是安全区。
   `real-onboard-clock-skew` 与 `g3-manual-charging-return` 不进 `AwaitingSublot`，不受影响，没有加这个键。
+
+下面两个键是批次 7 的（control-server#206），默认前置与写法见上面「批次 7 的默认前置：每区派车参数「未配置」」一节：
+
+- `CargoHoldingTimeout` —— 服务端 `JourneyRuntime:cargoHoldingTimeout`，持货超时（ADR-cross-0057，产品默认 30 分钟），
+  写成正的 `'hh:mm:ss'`。与 `StationDepartureWaitTimeout` 是两只不同的钟，不共用字段。不给就不传。
+- `DispatchZoneParameters` —— 每区派车参数，分区 → 途中追加最大允许增量（计划路径代价，今天是毫米）与防饥饿阈值（秒），
+  两者都是非负整数或 `$null`。不给就一版都不写，即「每区参数未配置」。L2 直写库，`Source = 'L2_PRESET'`，不经治理快照与审计。
+
+两个键都在启动任何进程之前校验。键名与它们「近似」——只看字母数字、忽略大小写、编辑距离不超过 3，例如
+`DispatchZoneParameter`、`cargoHoldingTimeout`、`CargoHoldTimeout`——直接报错；只沾一个词的新键（后续票的
+`CargoHoldingYieldWindow` 之类）不受影响。
 
 下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
 `OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；

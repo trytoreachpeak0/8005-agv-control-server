@@ -275,7 +275,10 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
         /// Statuses are read off the facts the journey already has, because the runtime does not maintain them in this
         /// ticket: the pickup stop is done once the gate order exists or the journey has moved past it, the unload stop is
         /// done when the demand succeeded and removed when the journey ended any other way, and the demand is loaded once
-        /// its load committed or the journey is past the load. A blocked journey is placed by the same facts.
+        /// its load committed or the journey is past the load. A blocked journey is placed by the same facts. A demand
+        /// already Cancelled leaves no stop pending or active, whatever stage the journey was left in: a late recovery
+        /// result can put an ended journey back to Blocked (OnboardRecoveryCoordinator), and a reader taking the first stop
+        /// neither completed nor removed as the current one (control-server#208) must not find it still at its pickup.
         /// </para>
         /// </remarks>
         private static void BackFill(MigrationBuilder migrationBuilder)
@@ -291,14 +294,16 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                        j.VehicleBusinessMessageId, j.WorklistMessageId, j.PlanMessageId,
                        j.SublotRequestMessageId, j.PreDepartureSafetyCheckMessageId, j.PreDepartureSafetyCheckId,
                        CASE
-                           WHEN j.Stage = 'AwaitingPickupArrival' THEN 'PENDING'
                            WHEN j.Stage IN ('AwaitingGateArrival', 'AwaitingUnloadResult', 'Completed') THEN 'COMPLETED'
                            WHEN EXISTS (SELECT 1 FROM OrderIntents o WHERE o.MovementLegId = j.GateMovementLegId)
                                THEN 'COMPLETED'
+                           WHEN d.Status = 'Cancelled' THEN 'REMOVED'
+                           WHEN j.Stage = 'AwaitingPickupArrival' THEN 'PENDING'
                            ELSE 'ACTIVE'
                        END,
                        j.CreatedAt
-                FROM JourneyRuntimes j;
+                FROM JourneyRuntimes j
+                LEFT JOIN AcceptedDemands d ON d.DemandId = j.DemandId;
                 """);
             migrationBuilder.Sql(
                 """
@@ -312,7 +317,7 @@ namespace ControlServer.Infrastructure.Persistence.Migrations
                        NULL, NULL, NULL,
                        CASE
                            WHEN d.Status = 'Succeeded' THEN 'COMPLETED'
-                           WHEN j.Stage = 'Completed' THEN 'REMOVED'
+                           WHEN j.Stage = 'Completed' OR d.Status = 'Cancelled' THEN 'REMOVED'
                            WHEN j.Stage = 'AwaitingUnloadResult' THEN 'ACTIVE'
                            WHEN EXISTS (SELECT 1 FROM StationOperations s
                                         WHERE s.SlotOperationAttemptId = j.UnloadSlotOperationAttemptId) THEN 'ACTIVE'

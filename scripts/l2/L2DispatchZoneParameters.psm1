@@ -17,8 +17,10 @@ $script:ZoneParameterFields = @('EnRouteAdditionMaxPathCostIncrease', 'Starvatio
 $script:Batch7SetupKeys = @('CargoHoldingTimeout', 'DispatchZoneParameters')
 
 <#
-Refuses a setup key that looks like one of batch 7's two keys but is not spelled like either: a misspelt key would
-otherwise be ignored, and the scenario would run on the default precondition while claiming the one it asked for.
+Refuses a setup key that is a near miss of one of batch 7's two keys -- the same letters but another case, or within three
+edits of one, ignoring everything but letters and digits: a misspelt key would otherwise be ignored, and the scenario would
+run on the default precondition while claiming the one it asked for. A key that only shares a word with them
+(CargoHoldingYieldWindow, a later ticket's) is not a near miss and passes.
 #>
 function Assert-L2Batch7SetupKeysSpelled {
     param(
@@ -29,10 +31,30 @@ function Assert-L2Batch7SetupKeysSpelled {
     foreach ($key in @($Setup.Keys)) {
         $name = [string]$key
         if ($name -cin $script:Batch7SetupKeys) { continue }
-        if ($name -match '(?i)cargo|holding|zone.?param|param.*zone|dispatch.?zone.?par') {
-            throw "Unknown setup key '$name' in ${Where}: did you mean $($script:Batch7SetupKeys -join ' or ')?"
+        $normalized = ($name -replace '[^A-Za-z0-9]', '').ToLowerInvariant()
+        foreach ($known in $script:Batch7SetupKeys) {
+            if ((Get-L2EditDistance -Left $normalized -Right $known.ToLowerInvariant()) -le 3) {
+                throw "Unknown setup key '$name' in ${Where}: did you mean ${known}?"
+            }
         }
     }
+}
+
+# Levenshtein distance, for Assert-L2Batch7SetupKeysSpelled.
+function Get-L2EditDistance {
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Left, [Parameter(Mandatory)][AllowEmptyString()][string]$Right)
+
+    $previous = [int[]](0..$Right.Length)
+    for ($i = 1; $i -le $Left.Length; $i++) {
+        $current = [int[]]::new($Right.Length + 1)
+        $current[0] = $i
+        for ($j = 1; $j -le $Right.Length; $j++) {
+            $cost = $Left[$i - 1] -ceq $Right[$j - 1] ? 0 : 1
+            $current[$j] = [Math]::Min([Math]::Min($previous[$j] + 1, $current[$j - 1] + 1), $previous[$j - 1] + $cost)
+        }
+        $previous = $current
+    }
+    return $previous[$Right.Length]
 }
 
 <#
