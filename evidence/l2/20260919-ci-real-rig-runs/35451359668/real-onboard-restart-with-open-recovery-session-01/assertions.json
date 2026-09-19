@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-restart-with-open-recovery-session",
+  "runId": "20260919T151906323Z",
+  "outcome": "FAIL",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server-desktop\\_work\\_temp\\real-rig-35451359668-1\\_stage\\l2-20260919T151906323Z",
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001",
+    "onboardHmiCommit": "4d716340982de4e39339c2151c291efe1a21e1d1",
+    "controlServerCommit": "84a749e335a3c38cf0d317cf44cccf5762b434ca",
+    "batchId": "batch-2"
+  },
+  "assertions": [
+    {
+      "id": "L2-ROS-01",
+      "description": "前提：真车载端报 overallOutcome=UNKNOWN，服务端判装载 RecoveryRequired、旅程 Blocked",
+      "outcome": "PASS",
+      "expected": "UNKNOWN / RecoveryRequired / Blocked",
+      "actual": "UNKNOWN / RecoveryRequired / Blocked/LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-ROS-02",
+      "description": "未到达：装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话"
+    },
+    {
+      "id": "L2-ROS-03",
+      "description": "未到达：装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话"
+    },
+    {
+      "id": "L2-ROS-04",
+      "description": "未到达：装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话"
+    },
+    {
+      "id": "L2-ROS-05",
+      "description": "未到达：装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话"
+    },
+    {
+      "id": "L2-ROS-06",
+      "description": "未到达：装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话"
+    },
+    {
+      "id": "L2-ROS-07",
+      "description": "未到达：装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话"
+    },
+    {
+      "id": "L2-ROS-08",
+      "description": "未到达：装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话",
+      "outcome": "FAIL",
+      "expected": "(reached)",
+      "actual": "(not reached) 装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话"
+    }
+  ]
+}
