@@ -16,7 +16,8 @@ namespace ControlServer.Tests;
 /// </summary>
 public sealed class ReversedDirectionJourneyRuntimeTests
 {
-    private const string ReverseDemand = "20000000-0000-4000-8000-000000000001";
+    // The demand id the fixture's arrival helpers derive their upper ids from.
+    private const string ReverseDemand = "10000000-0000-4000-8000-000000000001";
 
     private const int StagingStationRiotId = 305;
 
