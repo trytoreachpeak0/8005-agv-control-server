@@ -113,6 +113,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["SlotGroupSelectionTests"] = "batch 4 FP-C15 REQ-0349/REQ-0351/REQ-0352 target slots chosen inside the demand's slot group (control-server#73); the side is decided on the server only (spec 5.1 #10), no wire message",
             ["StructuralDispatchBlockTests"] = "batch 4 REQ-0210/REQ-0352 structural dispatch block summarised across vehicles at the end of a round (control-server#74); server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
             ["StructuralDispatchBlockStoreTests"] = "batch 4 REQ-0210 structural dispatch block storage; server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
+            ["TaskTypeBindingDashboardTests"] = "batch 6 FP-C9a REQ-0340/REQ-0268 task type binding and hold dashboard card (control-server#162); reads only /api/dashboard/, no wire message",
             ["TaskTypeHoldEndpointsTests"] = "batch 6 FP-C9a REQ-0340/REQ-0348 dashboard tightening entry on the server, loopback only (control-server#162); an HTTP operations entry, no wire message",
             ["TaskTypeStationConfigurationValidatorTests"] = "batch 6 FP-C9a REQ-0334/REQ-0338/REQ-0343 startup fail-closed validation of task type rules and bindings (control-server#159); binding reasons stay on the server (spec 5.3), no wire message",
             ["TaskTypeStationHoldAndCatalogChangeStoreTests"] = "batch 6 FP-C9b REQ-0340/REQ-0341 task type holds and catalog change records (control-server#159); server-internal, no wire message",
