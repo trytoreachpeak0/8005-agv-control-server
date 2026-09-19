@@ -1,0 +1,25 @@
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ABodyFromThisMachineThatIsNotAHoldRequestIsRefusedAsBindingDidAndIsAudited(body: "reason=x", mediaType: "text/plain", status: UnsupportedMediaType, code: "REQUEST_BODY_NOT_JSON") [580 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.ABodyFromThisMachineThatIsNotAHoldRequestIsRefusedAsBindingDidAndIsAudited(String body, String mediaType, HttpStatusCode status, String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-201-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 439
+--
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ABodyFromThisMachineThatIsNotAHoldRequestIsRefusedAsBindingDidAndIsAudited(body: "{\"mapId\": 25, \"taskType\": ", mediaType: "application/json", status: BadRequest, code: "REQUEST_BODY_MALFORMED") [1 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.ABodyFromThisMachineThatIsNotAHoldRequestIsRefusedAsBindingDidAndIsAudited(String body, String mediaType, HttpStatusCode status, String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-201-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 439
+--
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AnEmptyBodyFromThisMachineIsNoRequestAndIsRefusedAsUnprocessableAndAudited [502 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: UnprocessableEntity
+Actual:   BadRequest
+--
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOversizedBodyFromThisMachineIsRefusedInTheExisting422ShapeWithoutBeingReadWhole [457 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOversizedBodyFromThisMachineIsRefusedInTheExisting422ShapeWithoutBeingReadWhole() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-201-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 393
+--
+Failed!  - Failed:     4, Passed:    25, Skipped:     0, Total:    29, Duration: 16 s - ControlServer.Tests.dll (net8.0)

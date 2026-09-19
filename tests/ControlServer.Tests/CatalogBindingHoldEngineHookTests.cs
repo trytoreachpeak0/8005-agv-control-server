@@ -92,6 +92,38 @@ public sealed class CatalogBindingHoldEngineHookTests
             .ListAsync(25, TestContext.Current.CancellationToken));
     }
 
+    /// <summary>
+    /// The hold is saved inside the convergence's transaction, then its change record fails: the rollback takes the hold
+    /// out of the database, but the saved hold stays tracked as Unchanged -- a row the context believes exists and the
+    /// database does not have. Nothing of the failed attempt may stay tracked (review of control-server#201).
+    /// </summary>
+    [Fact]
+    public async Task AFailureAfterTheHoldWasSavedLeavesNothingOfTheAttemptTrackedAndTheNextRoundConverges()
+    {
+        FailingHoldInsert failing = new("INSERT INTO \"TaskTypeStationCatalogChanges\"");
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: failing);
+        fixture.Riot.SetMapStations(RenamedGateMap);
+        failing.Arm(() => new SqliteException("database is locked", 5));
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, failing.Thrown);
+        Assert.DoesNotContain(
+            fixture.Context.ChangeTracker.Entries(),
+            entry => entry.Entity is TaskTypeStationHoldRow or TaskTypeStationCatalogChangeRow or BusinessAuditRecordRow);
+        await using (ControlServerDbContext other = new(fixture.DbOptionsForTests))
+        {
+            Assert.Empty(await new TaskTypeStationHoldStore(other).ListUnreleasedAsync(25, TestContext.Current.CancellationToken));
+        }
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        Assert.Single(
+            await new TaskTypeStationHoldStore(fixture.Context).ListUnreleasedAsync(25, TestContext.Current.CancellationToken));
+        Assert.Single(await new TaskTypeStationCatalogChangeStore(fixture.Context)
+            .ListAsync(25, TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task AShutdownCancellationDuringTheConvergenceStillEndsTheRound()
     {
@@ -118,8 +150,8 @@ public sealed class CatalogBindingHoldEngineHookTests
         new RiotMapStation(300, "等待点")
     ];
 
-    /// <summary>Fails the next insert of a hold once, the way SQLite does when another writer holds the database.</summary>
-    private sealed class FailingHoldInsert : DbCommandInterceptor
+    /// <summary>Fails the next insert into one table once, the way SQLite does when another writer holds the database.</summary>
+    private sealed class FailingHoldInsert(string insert = "INSERT INTO \"TaskTypeStationHolds\"") : DbCommandInterceptor
     {
         private Func<Exception>? _failure;
 
@@ -150,7 +182,7 @@ public sealed class CatalogBindingHoldEngineHookTests
         private void FailIfArmed(DbCommand command)
         {
             if (_failure is null
-                || !command.CommandText.Contains("INSERT INTO \"TaskTypeStationHolds\"", StringComparison.Ordinal))
+                || !command.CommandText.Contains(insert, StringComparison.Ordinal))
             {
                 return;
             }
