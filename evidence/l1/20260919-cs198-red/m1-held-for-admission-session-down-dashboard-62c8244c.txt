@@ -1,0 +1,49 @@
+commit: 62c8244c test: 机台等准入的旅程掉线时看板按会话未就绪判档并带出安全字段（cs#198 调度审查 M1）
+worktree dirty: 0 file(s)
+filter: FullyQualifiedName~BlockedJourneyDashboardTests.AStopHeldForAdmissionAtTheMachineWithTheSessionDownIsJudgedAsASessionNotReadyBlock
+---
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.01] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:01.00]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:03.25]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:03.83]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:13.41]     ControlServer.Tests.BlockedJourneyDashboardTests.AStopHeldForAdmissionAtTheMachineWithTheSessionDownIsJudgedAsASessionNotReadyBlock [FAIL]
+[xUnit.net 00:00:13.41]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:13.41]       Expected: Tuple ("TASK_TYPE_NOT_ALLOWED_AT_STATION", 120, "MaintenanceAdministrator")
+[xUnit.net 00:00:13.42]       Actual:   Tuple ("TASK_TYPE_NOT_ALLOWED_AT_STATION", 120, "Operator")
+[xUnit.net 00:00:13.42]       Stack Trace:
+[xUnit.net 00:00:13.42]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs(355,0): at ControlServer.Tests.BlockedJourneyDashboardTests.AStopHeldForAdmissionAtTheMachineWithTheSessionDownIsJudgedAsASessionNotReadyBlock()
+[xUnit.net 00:00:13.42]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs(373,0): at ControlServer.Tests.BlockedJourneyDashboardTests.AStopHeldForAdmissionAtTheMachineWithTheSessionDownIsJudgedAsASessionNotReadyBlock()
+[xUnit.net 00:00:13.42]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.BlockedJourneyDashboardTests.AStopHeldForAdmissionAtTheMachineWithTheSessionDownIsJudgedAsASessionNotReadyBlock [9 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple ("TASK_TYPE_NOT_ALLOWED_AT_STATION", 120, "MaintenanceAdministrator")
+Actual:   Tuple ("TASK_TYPE_NOT_ALLOWED_AT_STATION", 120, "Operator")
+  Stack Trace:
+     at ControlServer.Tests.BlockedJourneyDashboardTests.AStopHeldForAdmissionAtTheMachineWithTheSessionDownIsJudgedAsASessionNotReadyBlock() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 355
+   at ControlServer.Tests.BlockedJourneyDashboardTests.AStopHeldForAdmissionAtTheMachineWithTheSessionDownIsJudgedAsASessionNotReadyBlock() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\BlockedJourneyDashboardTests.cs:line 373
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:14.96]   Finished:    ControlServer.Tests (ID = '7fe1d27820c58fa88990765005f51436f5418fd1c28f465e44b0b77937c5f8c4')
+Test Run Failed.
+Total tests: 1
+     Failed: 1
+ Total time: 16.3831 Seconds
