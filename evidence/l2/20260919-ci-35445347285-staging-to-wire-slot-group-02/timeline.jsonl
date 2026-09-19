@@ -1,0 +1,47 @@
+{"at":"2026-09-19T13:30:37.9089180+00:00","note":"L2 run 20260919T133037841Z starting for scenario 'staging-to-wire-slot-group'."}
+{"at":"2026-09-19T13:30:37.9456011+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-19T13:30:37.9482646+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-19T13:30:38.8085206+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T13:30:39.0746041+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T13:30:39.2651264+00:00","note":"Fake RIoT stations on map 25: 11=C15-13, 12=N1-3_N1-7, 210=关卡, 305=派工待送取货"}
+{"at":"2026-09-19T13:30:39.3166354+00:00","note":"Task type station preset: the scenario's own (2 binding(s))"}
+{"at":"2026-09-19T13:30:42.5408009+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T13:30:44.6044182+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T13:30:44.9578508+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T13:30:45.0726479+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T13:30:45.7787228+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T13:30:46.0362685+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T13:30:46.1125734+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T13:30:46.1738937+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133037841Z-slot4\\controlserver.db"}
+{"at":"2026-09-19T13:30:47.7759763+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"424a77625dce42a2af37e54d38919d77","version":1,"slotCount":8}}}
+{"at":"2026-09-19T13:30:47.7852294+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133037841Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T13:30:49.4106873+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"424a77625dce42a2af37e54d38919d77","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T13:30:49.4721598+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T13:30:49.4747530+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133037841Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\staging-to-wire-slot-group-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T13:30:51.2308372+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\staging-to-wire-slot-group-02\\snapshots\\preseed-area-assignments.csv","entryCount":2,"version":1,"contentSha256":"04efbe7b636d311420caf517f8af22cd0a39d4e17d2976caf9251637eecc0556","snapshotId":"065c91b968744a35b3fcd90cc2feac69","importedAt":"2026-09-19T21:30:49.7525657+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T13:30:51.2455252+00:00","note":"Environment is up; entering scenario 'staging-to-wire-slot-group'."}
+{"at":"2026-09-19T13:30:51.3423625+00:00","note":"Vehicle AGV-L2-001 slot model 424a77625dce42a2af37e54d38919d77 via LatestPublishedIoBinding: 1=FRONT, 2=FRONT, 3=FRONT, 4=FRONT, 5=REAR, 6=REAR, 7=REAR, 8=REAR"}
+{"at":"2026-09-19T13:30:51.3502427+00:00","note":"Publishing STAGING_TO_WIRE demand 552e85be40e0466093102aee58f464e9 (sublot L2-S2WSG-N1-3-20260919T133037841Z, area N1-3, 12 boxes)."}
+{"at":"2026-09-19T13:30:51.4026860+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-19T13:30:52.6830580+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-19T13:30:52.7712671+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-552e85be-40e0-4660-9310-2aee58f464e9-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-19T13:30:53.3721280+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-19T13:30:54.1328754+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-19T13:30:54.8874369+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-09-19T13:31:25.0574510+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-19T13:31:25.0634703+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-552e85be-40e0-4660-9310-2aee58f464e9-GATE-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-19T13:31:26.3579116+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-19T13:31:26.8729002+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-19T13:31:26.8981228+00:00","note":"Publishing STAGING_TO_WIRE demand 6d5bc74d59e541a1a9d6c53ccef2be51 (sublot L2-S2WSG-N1-7-20260919T133037841Z, area N1-7, 12 boxes)."}
+{"at":"2026-09-19T13:31:26.9149835+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-19T13:31:28.1685865+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-19T13:31:28.1819323+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-6d5bc74d-59e5-41a1-a9d6-c53ccef2be51-PICKUP-1; OrderId=ORDER-000003; Status=CONFIRMED}"}
+{"at":"2026-09-19T13:31:29.4619777+00:00","criterion":"journey-stage","value":"AwaitingSublot"}
+{"at":"2026-09-19T13:31:29.9694125+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-19T13:31:30.9802364+00:00","criterion":"journey-stage","value":"AwaitingStationDeparture"}
+{"at":"2026-09-19T13:32:02.0278608+00:00","criterion":"journey-stage","value":"AwaitingGateArrival"}
+{"at":"2026-09-19T13:32:02.0325696+00:00","criterion":"to-gate-intent","value":"@{UpperId=W2G-6d5bc74d-59e5-41a1-a9d6-c53ccef2be51-GATE-1; OrderId=ORDER-000004; Status=CONFIRMED}"}
+{"at":"2026-09-19T13:32:03.0978939+00:00","criterion":"journey-stage","value":"AwaitingUnloadResult"}
+{"at":"2026-09-19T13:32:03.8703738+00:00","criterion":"journey-stage","value":"Completed"}
+{"at":"2026-09-19T13:32:03.8780941+00:00","note":"Scenario finished."}
+{"at":"2026-09-19T13:32:04.3262828+00:00","note":"L2 port block lock released."}

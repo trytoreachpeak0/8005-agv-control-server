@@ -4,23 +4,29 @@ control-server#165（批次6-09）。本报告逐项对照规格 `8005-agv-progr
 （第 19 节、第 21 节补记优先；地图号按第 21.5 节读作 26）。需求条目按基线 **`v1.4.0`**（tag `requirements-baseline-v1.4.0`，359 条）引用。
 本批不改协议，门禁与证据绑 `protocol-v2.0.0`。
 
-> **状态：跑批中。**2026-09-19 20:32～21:15 的真装置封锁时段已跑完并归还：两端 G2、G3 四个 runner、真装置 13 次、车载端全量 L1。
-> staged G3 红在判据落后（第四节缺陷单），修好后从头重跑 staged；CI `test` 与 `l2` 三连在跑。标 〔待取〕 的格子等这些结果。
+> **状态：证据齐，待本 PR 默认 CI。**两次真装置封锁时段（20:32～21:15、21:28～21:49）都已跑完并归还。第一段的 staged G3 红在判据落后于 control-server#187，
+> 在本分支内改判据（测试代码，调度定不另开票）后，第二段四个 G3 runner 在出口提交上从头重跑，全绿。唯一的〔待取〕是本 PR 转 ready 后的默认 CI。
 
 ## 结论
 
-〔待取〕
+**批次 6 出口达成**（本 PR 默认 CI 待取）。规格第 8.3 节批次 6 行的每一项都在 `protocol-v2.0.0` 发布身份上成立：
+`FP-IS-10`、`FP-IS-11` 四门禁全 PASS；CI 上 36 个合成场景各连续三次、共 108 次全 PASS（批次 6 的 8 个场景 24 次）；六条机制判据各有三份独立证据；
+真装置 13 次 PASS（含调度登记必跑的 `real-onboard-expected-action-overdue` 三连）；两端全量 L1 全绿（服务端 1559/1559，车载端 623/623）。
+**本报告不写「六类都跑通」**：验收期现场只有 `WIRE_TO_GATE` 能真实触发（第五节第 1 点）。
+
+过程中一处红：第一段封锁里 staged G3 两次 `INCONCLUSIVE_RUNNER_ERROR`，定性为 G3 判据落后于 control-server#187（PR #190）有意的行为改动，不是产品缺陷。
+判据在本分支修复、一条断言改名，因为改了四个 runner 共用的归属表，四个 G3 runner 从头重跑，全绿；红证据原样保留（第四节）。
 
 | 出口（规格 8.2／8.3 批次 6 行、本票验收） | 状态 | 依据 |
 | --- | --- | --- |
 | 前置核对逐项通过；六条判据与场景对照表完整 | 前置已核（下一节）；v2 克隆与本机空闲两项开跑时再核 | 「前置核对」「二、L2」 |
-| L1：两端测试套件在出口提交上全绿；新能力逐项有新增测试 | 车载端 623/623（`44b3aa6e`）；服务端 CI `test` 〔待取〕；对照表已列 | 第一节 |
+| L1：两端测试套件在出口提交上全绿；新能力逐项有新增测试 | **成立**：服务端 1559/1559（CI run `35445345577`）；车载端 623/623（`44b3aa6e`）；对照表已列 | 第一节 |
 | `FP-IS-10`、`FP-IS-11` 四门禁全 PASS，`gate-result.json` 绑 `protocol-v2.0.0` 精确身份 | **成立**：G1 协议侧发布证据；两端 G2 各两片 PASS；G3（journey）两片 PASS | 第三节 |
-| G3 按 control-server#164 的归属出证，两片 `formalSlicePass` 由断言算出；同一次 journey 运行里既有场景全绿 | **成立**：`JOURNEY_G3_PASS`，14/14 场景，六片 `formalSlicePass true`。staged runner 另红（不认领这两片），见第四节 | 第三节 |
-| `l2.yml` 批次 6 区块 `Runs = 3`；CI 上批次 6 全部场景连续三次通过，证据独立入库 | `Runs = 3` 已改（`7872001e`）；三连〔待取〕 | 第二节 |
-| 六条机制判据各有证据目录 | 场景已对上；证据目录〔待取〕 | 第二节 |
+| G3 按 control-server#164 的归属出证，两片 `formalSlicePass` 由断言算出；同一次 journey 运行里既有场景全绿 | **成立**：现行一轮 `JOURNEY_G3_PASS`，14/14 场景，六片 `formalSlicePass true`；四个 runner 全绿 | 第三节 |
+| `l2.yml` 批次 6 区块 `Runs = 3`；CI 上批次 6 全部场景连续三次通过，证据独立入库 | **成立**：`Runs = 3`（`7872001e`，先红后绿）；run `35445347285` `consecutive-all`，108/108 PASS，证据 `evidence/l2/20260919-ci-35445347285-*` | 第二节 |
+| 六条机制判据各有证据目录 | **成立** | 第二节对照表 |
 | 两端向量等待名单里没有 `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED`、`CV-REVERSED-DIRECTION-JOURNEY` | **成立**（现顶端已核，出口顶端再核一次） | 第一节末 |
-| 每次门禁 `-Output`／`-EvidenceRoot` 新目录；红证据保留，`docs/defects/` 有记录 | 成立至今：每次新目录；staged 两次红原样保留，缺陷单已入库 | 第四节 |
+| 每次门禁 `-Output`／`-EvidenceRoot` 新目录；红证据保留，`docs/defects/` 有记录 | **成立**：每次新目录；staged 两次红与一次未启动的目录原样保留，缺陷单已入库并记修复 | 第四节 |
 | 十三点如实写明，无第 8.8 节禁用表述 | 已写（第五节） | 第五节 |
 | 未切换 `C:\Users\szy\Desktop\8005-workspace\repos\` 下任何克隆 | 至今成立 | 全部操作在 `8005-workspace-v2` |
 | 本 PR 的 CI `test` 与 `l2` 两项绿 | 〔待取〕 | PR |
@@ -53,9 +59,10 @@ control-server#165（批次6-09）。本报告逐项对照规格 `8005-agv-progr
 | 协议 | `(AGV_FULL_PRODUCT, 3)`，`releaseVersion 2.0.0`，tag `protocol-v2.0.0` → `86575456c847041515b7b75e8851a00e0d939804`；本批零改动 |
 | `ProtocolReleaseIdentity` 其余字段 | manifest `4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7`，schema bundle `9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221`，vectors `391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a`，`APPROVED_RELEASE` |
 | 服务端产品代码 | `fp/v2-impl@905ffd1d`（批次 6 全部服务端票与同期修复）；runner 与证据提交 `76c2ca21` 相对它只多 G3 绑定、`l2.yml` 三连与出口报告，`src/`、`tests/` 零差异 |
-| 车载端 | `w2g/fp-v2-impl@44b3aa6e`（onboard-hmi#127，PR onboard-hmi#131 合入） |
+| 车载端 | `w2g/fp-v2-impl@44b3aa6e`（onboard-hmi#127，PR onboard-hmi#131 合入）：真装置、两端 G2、车载端 L1；现行 G3 绑 `4d716340`＝`44b3aa6e`＋onboard-hmi#133 的 G2 证据（只有 `evidence/`） |
 | 模拟器 | `main@fb5f7c59`（不变） |
-| G3 共享绑定 | `76c2ca21`（`chore(g3)`）：`ControlServerCommit 905ffd1d`、`OnboardCommit 44b3aa6e`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456`。原绑 cs `d3003c2f`／onboard `29fbf65e`，后者早于 onboard-hmi#115，runner 要求 `OnboardCommit` 等于 `origin/w2g/fp-v2-impl` 顶端；tag 字面量（`scripts/run-staged-g3.ps1:2020`、`:2129`）与 `run-demand-bearing-g3-vectors.ps1:638` 已是 `protocol-v2.0.0`，未动。移绑定使引用它的 G3 结果全部失效，四个 runner 都重跑了 |
+| **现行** G3 共享绑定 | `3c42b4a7`：`ControlServerCommit 85381ea2`、`OnboardCommit 4d716340`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456`（见第三节「现行 G3 的身份」） |
+| 第一段 G3 共享绑定（历史） | `76c2ca21`（`chore(g3)`）：`ControlServerCommit 905ffd1d`、`OnboardCommit 44b3aa6e`、`SimulatorCommit fb5f7c59`、`ProtocolCommit 86575456`。原绑 cs `d3003c2f`／onboard `29fbf65e`，后者早于 onboard-hmi#115，runner 要求 `OnboardCommit` 等于 `origin/w2g/fp-v2-impl` 顶端；tag 字面量（`scripts/run-staged-g3.ps1:2020`、`:2129`）与 `run-demand-bearing-g3-vectors.ps1:638` 已是 `protocol-v2.0.0`，未动。移绑定使引用它的 G3 结果全部失效，四个 runner 都重跑了 |
 
 ## 一、L1
 
@@ -63,7 +70,7 @@ control-server#165（批次6-09）。本报告逐项对照规格 `8005-agv-progr
 
 | 端 | 命令 | 结果 |
 | --- | --- | --- |
-| 服务端 | CI `test.yml`，`workflow_dispatch` 于 `50dc987d`（run `35445345577`） | 〔待取〕 |
+| 服务端 | CI `test.yml`，`workflow_dispatch` 于 `50dc987d`（run [`35445345577`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35445345577)） | **1559 / 1559 通过**，0 失败 0 跳过（CI 日志原文 `已通过! - 失败: 0，通过: 1559，已跳过: 0，总计: 1559`）。`50dc987d` 之后本分支只改了 `scripts/run-staged-g3.ps1`、`scripts/g3-slice-evidence.ps1`、证据与文档，`src/`、`tests/` 与 `905ffd1d` 零差异 |
 | 车载端 | `dotnet test ./SQCD_8005AGV.sln -c Release`（`44b3aa6e`，经 `Invoke-HeavyLocal.ps1 -Ticket cs#165`，封锁时段内） | **623 / 623 通过**，0 失败 0 跳过（`SQCD.Agv.UnitTests` 395、`SQCD.Agv.WireToGateG2Tests` 228）；`evidence/l1/20260919-onboard-hmi-44b3aa6e/` |
 
 车载端仓的 `global.json` 选中的 SDK 是 `8.0.425`（`dotnet --version` 实读），与服务端基线 `8.0.424` 不同；车载端属只报告的仓，这里如实记下，不改。
@@ -110,13 +117,13 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 
 | 判据（规格 8.3 批次 6 行） | 场景（票） | 判据编号 | 证据目录（CI 三连） |
 | --- | --- | --- | --- |
-| ① 缺绑定时 fail-closed 正确拒绝，且不连带其它任务类型 | `task-type-binding-missing-not-cascading`（#160） | `L2-TTBM-01`～`04` | 〔待取〕 |
-| ② 绑定完备时正确放行（双 Fake） | `task-type-binding-admits-bound-station`（#160） | `L2-TTAB-01`～`03` | 〔待取〕 |
-| ③ `REQ-0187` 唯一性跨任务类型 | `area-eqp-unique-across-task-types`（#160） | `L2-AEUT-01`～`02` | 〔待取〕 |
-| ④ 同一 Station 被两个任务类型绑定时启动期拒绝 | `task-type-binding-station-reused-refuses-start`（#159） | `L2-TTSR-01`～`05` | 〔待取〕 |
-| ⑤ 按 `Map + TASK_TYPE` 暂停不连带 | `binding-hold-dashboard-not-cascading`（#162，看板人工暂停）；`catalog-change-binding-hold`（#162，目录变化自动暂停） | `L2-BH-01`～`12`；`L2-CC-01`～`10` | 〔待取〕 |
-| ⑥ 送往前侧机台的 `STAGING_TO_WIRE` 需求在派工待送点装入前侧（后侧同理） | `staging-to-wire-slot-group`（#163）：同一机台站挂 `N1-3`→`REAR`、`N1-7`→`FRONT` 两条需求，两侧各断言一次 | 场景内断言 | 〔待取〕 |
-| （⑥ 的前提：反向旅程本身） | `staging-to-wire-reversed-journey`（#163） | `L2-S2W-01`～`07` | 〔待取〕 |
+| ① 缺绑定时 fail-closed 正确拒绝，且不连带其它任务类型 | `task-type-binding-missing-not-cascading`（#160） | `L2-TTBM-01`～`04` | 3/3 PASS：`evidence/l2/20260919-ci-35445347285-task-type-binding-missing-not-cascading-01`～`03/` |
+| ② 绑定完备时正确放行（双 Fake） | `task-type-binding-admits-bound-station`（#160） | `L2-TTAB-01`～`03` | 3/3 PASS：`evidence/l2/20260919-ci-35445347285-task-type-binding-admits-bound-station-01`～`03/` |
+| ③ `REQ-0187` 唯一性跨任务类型 | `area-eqp-unique-across-task-types`（#160） | `L2-AEUT-01`～`02` | 3/3 PASS：`evidence/l2/20260919-ci-35445347285-area-eqp-unique-across-task-types-01`～`03/` |
+| ④ 同一 Station 被两个任务类型绑定时启动期拒绝 | `task-type-binding-station-reused-refuses-start`（#159） | `L2-TTSR-01`～`05` | 3/3 PASS：`evidence/l2/20260919-ci-35445347285-task-type-binding-station-reused-refuses-start-01`～`03/` |
+| ⑤ 按 `Map + TASK_TYPE` 暂停不连带 | `binding-hold-dashboard-not-cascading`（#162，看板人工暂停）；`catalog-change-binding-hold`（#162，目录变化自动暂停） | `L2-BH-01`～`12`；`L2-CC-01`～`10` | 各 3/3 PASS：`evidence/l2/20260919-ci-35445347285-binding-hold-dashboard-not-cascading-01`～`03/`、`…-catalog-change-binding-hold-01`～`03/` |
+| ⑥ 送往前侧机台的 `STAGING_TO_WIRE` 需求在派工待送点装入前侧（后侧同理） | `staging-to-wire-slot-group`（#163）：同一机台站挂 `N1-3`→`REAR`、`N1-7`→`FRONT` 两条需求，两侧各断言一次 | 场景内断言 | 3/3 PASS：`evidence/l2/20260919-ci-35445347285-staging-to-wire-slot-group-01`～`03/` |
+| （⑥ 的前提：反向旅程本身） | `staging-to-wire-reversed-journey`（#163） | `L2-S2W-01`～`07` | 3/3 PASS：`evidence/l2/20260919-ci-35445347285-staging-to-wire-reversed-journey-01`～`03/` |
 
 这 8 个场景都是合成 L2（假 RIoT、假 MesIngest、合成车载端），是 `FP-C9a` 机制判据的证据来源（规格 8.5 节）；真车载端上的方向与准入由 G3 两条 journey 场景证明。
 
@@ -129,8 +136,12 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 - **作业超时不改。**拉取请求仍每个场景跑一遍（不带 `DefaultRuns`），默认一轮时长不变；出口 `consecutive-all` 全部 36 个场景各三遍，
   按批次 5 的 28 个场景 859 秒（run `35361077376`，4 路）外推约 20 分钟，远低于 `workflow_dispatch` 的 180 分钟。
   超时不该是结束一轮的方式（取消会卡死 runner），留的余量足够。
-- 出口运行：〔待取〕`gh workflow run l2.yml --ref <本分支> -f mode=consecutive-all`，全部 36 个合成场景各三遍（批次 2～5 的 28 个随批次 6 代码回归，批次 6 的 8 个是本批三连）。
-  下载后按 `evidence/l2/<日期>-ci-<runId>-<场景>-NN` 入库，逐份核对 `outcome`、`identity.protocolReleaseIdentity`、`identity.batchId`（批次 6 为 `batch-6`）。
+- 出口运行：`gh workflow run l2.yml --ref b6-09/batch-6-exit -f mode=consecutive-all`，run [`35445347285`](https://github.com/trytoreachpeak0/8005-agv-control-server/actions/runs/35445347285)，
+  提交 `50dc987d`，4 路并行。全部 36 个合成场景各三遍（批次 2～5 的 28 个随批次 6 代码回归，批次 6 的 8 个是本批三连），**108 次全部 PASS，中途没有红**。
+- 下载后逐份核对：108 份 `assertions.json` 的 `outcome` 都是 `PASS`；`identity.protocolReleaseIdentity` 都是 `protocol-v2.0.0`、`APPROVED_RELEASE`；
+  `identity.controlServerCommit` 都是 `50dc987d`；`identity.batchId` 与 `l2.yml` 逐行一致（`batch-2` 39、`batch-3` 6、`batch-4` 24、`batch-5` 15、`batch-6` 24）。
+- 入库：`evidence/l2/20260919-ci-35445347285-<场景>-NN/`，108 个目录，连同各自的 `.log`，照批次 5 出口的先例。
+- `50dc987d` 之后本分支改的 G3 脚本不在合成 L2 的路径上（合成场景只用 `scripts/l2/`），三连结果沿用。
 
 ### 真装置
 
@@ -165,18 +176,19 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 
 ## 三、门禁
 
-按票面步骤表，在出口顶端跑（除第 5、6 步外都在 2026-09-19 20:32～21:15 的封锁时段内）：
+按票面步骤表，在出口顶端跑。第 2～4 步与真装置在第一段封锁（20:32～21:15）内；staged 判据修复后，第 4 步四个 G3 runner 在第二段封锁（21:28～21:49）内从头重跑，**现行 G3 证据是第二段**：
 
 | 步 | 做什么 | 结果 | 证据目录 |
 | --- | --- | --- | --- |
 | 1 | 移 G3 共享绑定（`chore(g3)` `76c2ca21`） | 见「身份」 | — |
 | 2 | `CONTROL_SERVER_G2` × 2（从 detached worktree `76c2ca21`，经 `Invoke-HeavyLocal.ps1`） | `FP-IS-10` PASS（48/48 测试，出站 42 行零违约）；`FP-IS-11` PASS（11/11，49 行零违约） | `evidence/g2/20260919-protocol-v2.0.0-76c2ca21/` |
 | 3 | `ONBOARD_HMI_G2` × 2（`44b3aa6e`，`run-w2g-g2.ps1 -Slice`） | 两片 PASS，build／test／format 退出码 0，出站零违约，每片在发布态重跑协议 G1 | 车载端仓 `evidence/g2/20260919-protocol-v2.0.0-44b3aa6e/`，小 PR trytoreachpeak0/8005-agv-onboard-hmi#133 |
-| 4a | `run-staged-g3.ps1` | **`INCONCLUSIVE_RUNNER_ERROR`**，同一封锁内重跑一次同样中止（第四节） | `evidence/g3/20260919-protocol-v2.0.0-staged-905ffd1d/`、`…-staged-905ffd1d-rerun/` |
-| 4b | `run-staged-g3-restart.ps1` | `STAGED_G3_PROCESS_RESTART_PASS`，四片 PASS | `evidence/g3/20260919-protocol-v2.0.0-restart-905ffd1d/` |
-| 4c | `run-demand-bearing-g3-vectors.ps1`（`-FieldRunRoot …fullloop-20260829T131549Z`） | `DEMAND_BEARING_G3_VECTORS_PASS` | `evidence/g3/20260919-protocol-v2.0.0-demand-bearing-905ffd1d/` |
-| 4d | `run-journey-g3.ps1` | **`JOURNEY_G3_PASS`**，14/14 场景；`FP-IS-01`／`02`／`03`／`07`／`10`／`11` 的 `gate-result.json` 都是 `PASS`、`formalSlicePass true` | `evidence/g3/20260919-protocol-v2.0.0-journey-905ffd1d/` |
-| 5 | CI `l2.yml` `consecutive-all` | 〔待取〕run `35445347285` | 见第二节 |
+| 4a | `run-staged-g3.ps1`（现行，runner `3c42b4a7`） | **`STAGED_G3_RECOVERY_REPLAY_PASS`**，`FP-IS-00`／`06`／`07`／`14`／`15` 五片 PASS，没有非 PASS 断言 | `evidence/g3/20260919-protocol-v2.0.0-staged-85381ea2-r2/` |
+| 4b | `run-staged-g3-restart.ps1`（现行） | `STAGED_G3_PROCESS_RESTART_PASS`，四片 PASS | `evidence/g3/20260919-protocol-v2.0.0-restart-85381ea2/` |
+| 4c | `run-demand-bearing-g3-vectors.ps1`（现行，`-FieldRunRoot …fullloop-20260829T131549Z`） | `DEMAND_BEARING_G3_VECTORS_PASS` | `evidence/g3/20260919-protocol-v2.0.0-demand-bearing-85381ea2/` |
+| 4d | `run-journey-g3.ps1`（现行） | **`JOURNEY_G3_PASS`**，14/14 场景；`FP-IS-01`／`02`／`03`／`07`／`10`／`11` 的 `gate-result.json` 都是 `PASS`、`formalSlicePass true` | `evidence/g3/20260919-protocol-v2.0.0-journey-85381ea2/` |
+| 4（第一段，历史） | 同上四个，绑定 `76c2ca21`（cs `905ffd1d`／onboard `44b3aa6e`） | staged 两次 `INCONCLUSIVE_RUNNER_ERROR`（第四节）；restart、需求承载、journey（14/14）PASS | `evidence/g3/20260919-protocol-v2.0.0-*-905ffd1d*/` |
+| 5 | CI `l2.yml` `consecutive-all` | run `35445347285` success，108/108 PASS | 见第二节 |
 | 6 | 本 PR 默认 CI（`test`、`l2`） | 〔待取〕 | PR 检查页 |
 
 两端 G2 的 `gate-result.json` 都绑 `protocolTag protocol-v2.0.0`、`protocolRepositoryCommit 86575456`、`protocolManifestSha256 4ac095ad…`、`protocolApprovalStatus APPROVED_RELEASE`。
@@ -187,15 +199,30 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 **`FP-IS-10`、`FP-IS-11` 的四道门禁**：G1 是协议侧发布证据——`protocol-v2.0.0` 的 G1 在发布态通过（program#97，`evidence/g1/20260916-protocol-v2.0.0-release-8657545/`），本批协议零改动，
 车载端 G2 每片又在发布态重跑了一次（`logs/protocol-g1.log`）；两端 G2 如上；G3 由 journey 认领（control-server#164 的归属表），PASS。**四道全 PASS。**
 
-**staged 那处红挡的是 staged 认领的 `FP-IS-00`、`06`、`07`、`14`、`15` 的 staged 面**，不是本批两片；但按「修好后从头重跑受影响的门禁、不拼接」，修复合入后移绑定、从头重跑 staged。〔待修复〕
+**现行 G3 的身份**：runner `3c42b4a7`，`ControlServerCommit 85381ea2`（staged 判据修复；`src/`、`tests/` 与 `905ffd1d` 零差异），`OnboardCommit 4d716340`，模拟器 `fb5f7c59`，协议 `86575456`。
+车载端绑 `4d716340` 而不是 `44b3aa6e`：调度合入车载端 G2 证据小 PR（onboard-hmi#133）后顶端前移，runner 要求 `OnboardCommit` 等于 `origin/w2g/fp-v2-impl` 顶端；
+第二段的 staged 第一次启动就在克隆车载端时停住（场景一个没跑，目录 `…-staged-85381ea2/` 只有克隆日志，原样保留，不算红）。`44b3aa6e..4d716340` 只有 `evidence/`，
+所以真装置 13 次、两端 G2 与车载端 L1（`44b3aa6e`）和现行 G3（`4d716340`）是同一份车载端产品。
+
+**为什么四个 runner 都重跑**：修复改了 `run-staged-g3.ps1` 与共用的切片归属表 `g3-slice-evidence.ps1`（四个 runner 都加载它；另三个还读 `run-staged-g3.ps1` 的绑定、记它的哈希，需求承载编译它的 harness），
+调度据此定四个都在出口提交上从头重跑；真装置、两端 G2、车载端 L1 沿用第一段（产品提交不变，只动 G3 脚本）。
 
 ## 四、红证据与缺陷单
 
 | 单 | 红在哪里 | 性质 | 修复去向 |
 | --- | --- | --- | --- |
-| [`20260919-staged-g3-second-forced-submission-predates-cs187.md`](defects/20260919-staged-g3-second-forced-submission-predates-cs187.md) | `run-staged-g3.ps1` 两次 `INCONCLUSIVE_RUNNER_ERROR`：恢复探针在第 1 代强制机械取出未结清时提交第 2 条，期待 `RecoveryActionAccepted`；七条恢复断言 `FAIL_OR_INCONCLUSIVE` | **G3 判据落后**：control-server#187（PR #190）有意让同会话同类动作未结清时再提交回 `RecoveryActionRejected`／`ActionNotAllowedInState`、强制取出不推进代次；staged 探针没跟着改。确定性复现（同一封锁内重跑一次，同一异常）。协议向量不要求受理第二条，不是契约冲突。与批次 5 缺陷单 B 同类 | 〔待调度定票号〕 |
+| [`20260919-staged-g3-second-forced-submission-predates-cs187.md`](defects/20260919-staged-g3-second-forced-submission-predates-cs187.md) | `run-staged-g3.ps1` 两次 `INCONCLUSIVE_RUNNER_ERROR`：恢复探针在第 1 代强制机械取出未结清时提交第 2 条，期待 `RecoveryActionAccepted`；七条恢复断言 `FAIL_OR_INCONCLUSIVE` | **G3 判据落后**：control-server#187（PR #190）有意让同会话同类动作未结清时再提交回 `RecoveryActionRejected`／`ActionNotAllowedInState`、强制取出不推进代次；staged 探针没跟着改。确定性复现（同一封锁内重跑一次，同一异常）。协议向量不要求受理第二条，不是契约冲突。与批次 5 缺陷单 B 同类 | **出口分支内修复**（调度定：测试代码，不另开票）：`85381ea2`，见下 |
 
 红证据原样保留，没有被绿覆盖：`evidence/g3/20260919-protocol-v2.0.0-staged-905ffd1d/` 与 `…-rerun/`。
+
+**修复**（`85381ea2`，依据 control-server#187 的 PR #190「做了什么」第 ① 条、合并提交 `c1252932`；协议向量 `CV-FORCED-MECHANICAL-RECOVERY` 对服务端只断言 `FENCE_FORCED_RECOVERY_BY_GENERATION`，不要求受理第二条并发的强制取出）：
+
+- 探针：第二条期待 `RecoveryActionRejected`／`ACTION_NOT_ALLOWED_IN_STATE`；第一条用它自己的当前代次结果结清；重放、内容冲突、硬件记录与范围不符改指第一条。
+- `forcedRecoveryGenerationAdvancesMonotonically`、`recoveryNeverReportsFalseCompletion` 名字仍准确，保留，按一个工作流、代次 1 改判；`recoveryCommandSurvivesMidFlightDisconnect` 的发件箱命令行数 2 → 1。
+- **`supersededGenerationResultIsHistoricalEvidenceOnly` 改名为 `secondForcedRecoveryWhileFirstUnsettledIsRejected`**（调度定：断言名就是它证明的东西），`g3-slice-evidence.ps1` 的 `FP-IS-07` 名单同步。
+  原「旧代次结果只作历史证据」在 #187 之后 staged 上不可达，改由 PR #190 的 12 例 L1 承担，点名 `RecoveryStateMachineG2Tests.ALateForcedRecoveryOfAClosedSessionIsHistoricalAndSettlesNothing`（第六节）。
+- 离线自检 `Test-G3RunnerClaims.ps1` 通过（`G3_CLAIMS_OK`）；harness 单独编译通过；第二段封锁里新判据 PASS。
+- 红证据：旧判据跑在 #187 之后的产品上的两次中止，即上面两份目录；调度定不另造。
 
 ## 五、必须如实写明的各点
 
@@ -268,7 +295,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 ### 证据的边界
 
 - **车载端 `ONBOARD_HMI_G2` 对 `FP-IS-10`／`11` 每片只选中 1 个测试**（两个向量具名测试）；方向与任务类型显示的其余覆盖在不带切片标记的单元测试里，随全量 L1 跑，不在门禁的片选里。
-- **staged G3 本轮没有结论**（第四节），`FP-IS-00`、`06`、`07`、`14`、`15` 的 staged 面等修复后重跑。
+- **「旧代次结果只作历史证据」（`REFUSE_STALE_FORCED_RECOVERY_GENERATION` 在服务端的对应面）在 G3 上已不可达**：control-server#187 之后同会话未结清时不受理第二条强制取出，旧代次结果只剩存量数据能产生。它改由 PR #190 的 12 例 L1 承担（`RecoveryStateMachineG2Tests.ALateForcedRecoveryOfAClosedSessionIsHistoricalAndSettlesNothing` 等）；staged 的对应断言已改名为它现在真正证明的「第二条被拒」。
 - **真装置只实测一个管理员恢复入口**（「补偿清空」），其余三个入口由 G2 覆盖（onboard-hmi#115、#120、#124）。
 - **G3 `FP-IS-10`／`11` 的判据**（control-server#164）：「全程只出现一种任务类型」只在四个点采样，不是连续监视；路线证据是哈希，G3 读不出起终点。
 - **control-server#162 的三份 L2 红证据**跑在合入 #161 之前的 `d223b14e`，没有在新代码上重取。

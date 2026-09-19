@@ -1,0 +1,30 @@
+{"at":"2026-09-19T13:38:31.4618188+00:00","note":"L2 run 20260919T133831393Z starting for scenario 'slot-configuration-activation-replay'."}
+{"at":"2026-09-19T13:38:31.4991193+00:00","note":"L2 port block lock acquired (slot 2, Global\\W2G-L2PortBlock-slot2)."}
+{"at":"2026-09-19T13:38:31.5021475+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-19T13:38:32.3644499+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T13:38:32.6092092+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T13:38:32.6784204+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T13:38:35.8894956+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T13:38:37.9784133+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T13:38:38.3671712+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T13:38:38.4841966+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T13:38:39.1728678+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T13:38:39.4404912+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T13:38:39.4842129+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T13:38:39.5250431+00:00","note":"Slot model preseed skipped: SlotModelPreseed = $false."}
+{"at":"2026-09-19T13:38:39.5260726+00:00","note":"Area assignment import skipped: AreaAssignments = $false."}
+{"at":"2026-09-19T13:38:39.5394248+00:00","note":"Environment is up; entering scenario 'slot-configuration-activation-replay'."}
+{"at":"2026-09-19T13:38:39.6173276+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133831393Z-slot2\\controlserver.db"}
+{"at":"2026-09-19T13:38:41.2422520+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133831393Z-slot2\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T13:38:43.1889827+00:00","note":"Activation 0f43091d-978e-4f11-b48e-bcfe8ef2c7fc issued: PENDING_RESULT, command bd161b0f-1d1f-447f-8366-a3d0eaebf68f."}
+{"at":"2026-09-19T13:38:43.2515581+00:00","criterion":"activation-command-held","value":"1"}
+{"at":"2026-09-19T13:38:43.3314875+00:00","note":"Vehicle concluded the activation locally and dropped the link before reporting it."}
+{"at":"2026-09-19T13:38:43.3988807+00:00","criterion":"runtime-iterations","value":"6"}
+{"at":"2026-09-19T13:38:44.1658030+00:00","criterion":"runtime-iterations","value":"7"}
+{"at":"2026-09-19T13:38:45.1911895+00:00","criterion":"runtime-iterations","value":"8"}
+{"at":"2026-09-19T13:38:46.2029489+00:00","criterion":"runtime-iterations","value":"9"}
+{"at":"2026-09-19T13:38:46.3623896+00:00","criterion":"activation-activated","value":"PENDING_RESULT"}
+{"at":"2026-09-19T13:38:46.6458877+00:00","criterion":"activation-activated","value":"ACTIVATED"}
+{"at":"2026-09-19T13:38:46.6733030+00:00","note":"FieldOps: export-audit --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133831393Z-slot2\\controlserver.db --stream business --format csv --output C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\slot-configuration-activation-replay-01\\snapshots\\audit-business-export.csv"}
+{"at":"2026-09-19T13:38:48.0152322+00:00","note":"下发 → 断线 → 重连 → 补报走通；服务端断线期间不猜，补发同一行，只收敛一次。"}
+{"at":"2026-09-19T13:38:48.4077753+00:00","note":"L2 port block lock released."}

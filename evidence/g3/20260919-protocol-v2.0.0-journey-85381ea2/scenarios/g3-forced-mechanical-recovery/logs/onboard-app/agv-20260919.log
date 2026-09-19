@@ -1,0 +1,19 @@
+2026-09-19T21:45:37.5400576+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+4d716340982de4e39339c2151c291efe1a21e1d1。
+2026-09-19T21:45:38.2845885+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T21:45:38.3039946+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T21:45:38.3057640+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T21:45:38.8496343+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-19T21:45:46.4258117+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-07M-20260919T134523628Z。 
+2026-09-19T21:45:47.2058662+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-07M-20260919T134523628Z。 
+2026-09-19T21:45:47.4402334+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-19T21:45:47.5262514+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-19T21:45:47.6357353+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-19T21:45:47.9631155+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-19T21:45:48.2104261+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=31dca711-d0ca-6b50-aea9-f346884be66e。
+2026-09-19T21:45:49.2413741+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+4d716340982de4e39339c2151c291efe1a21e1d1。
+2026-09-19T21:45:49.7424328+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T21:45:49.7490616+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T21:45:49.7505647+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T21:45:50.0643903+08:00	Warning	WireToGateBusinessService	上次仓位操作在执行中中断，未再输出开锁，按实时IO结算：attempt=31dca711-d0ca-6b50-aea9-f346884be66e，outcome=UNKNOWN，checkpoint=SAFE_FINISH_REACHED。
+2026-09-19T21:45:50.0947454+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
+2026-09-19T21:45:54.0597519+08:00	Warning	WireToGateBusinessService	恢复向量FORCED_MECHANICAL_RECOVERY未执行：reason=RECOVERY_STATE_MISMATCH。 | InvalidDataException: RECOVERY_STATE_MISMATCH

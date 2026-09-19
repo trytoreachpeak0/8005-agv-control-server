@@ -1,0 +1,28 @@
+{"at":"2026-09-19T13:37:16.4670307+00:00","note":"L2 run 20260919T133716396Z starting for scenario 'create-gate'."}
+{"at":"2026-09-19T13:37:16.5044808+00:00","note":"L2 port block lock acquired (slot 4, Global\\W2G-L2PortBlock-slot4)."}
+{"at":"2026-09-19T13:37:16.5071158+00:00","note":"Build skipped (-SkipBuild); running the output already built."}
+{"at":"2026-09-19T13:37:17.3572290+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T13:37:17.6075263+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T13:37:17.6673529+00:00","note":"Route graph engine enabled for map 25."}
+{"at":"2026-09-19T13:37:17.6924160+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T13:37:20.7984603+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T13:37:22.8570348+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T13:37:23.7542577+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T13:37:23.8683700+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T13:37:24.5668185+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T13:37:24.8354896+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T13:37:24.9052366+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T13:37:24.9600107+00:00","note":"FieldOps: seed-approved-facts --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133716396Z-slot4\\controlserver.db"}
+{"at":"2026-09-19T13:37:26.6195034+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"83dd1c0cdfce487994e32bcdda31fe4d","version":1,"slotCount":8}}}
+{"at":"2026-09-19T13:37:26.6317518+00:00","note":"FieldOps: bind-io --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133716396Z-slot4\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T13:37:28.2450558+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"83dd1c0cdfce487994e32bcdda31fe4d","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T13:37:28.3451921+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T13:37:28.3480209+00:00","note":"FieldOps: import-area-assignments --database C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133716396Z-slot4\\controlserver.db --input C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\create-gate-02\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T13:37:30.0886633+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\create-gate-02\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"143f5b0101d04ce8b1f08b23e3370b0c","importedAt":"2026-09-19T21:37:28.6042801+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T13:37:30.1051768+00:00","note":"Environment is up; entering scenario 'create-gate'."}
+{"at":"2026-09-19T13:37:30.1383190+00:00","criterion":"catalog-confirmation","value":"2026-09-19 13:37:29.2134505+00:00"}
+{"at":"2026-09-19T13:37:30.1505695+00:00","note":"Publishing demand 871bcc61ade5403fac455f3af610e648 (sublot L2-CG-20260919T133716396Z) with the create gate in the chain."}
+{"at":"2026-09-19T13:37:30.2644096+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-19T13:37:31.0220373+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-19T13:37:31.0751976+00:00","note":"建单前置门禁在真链路里工作：目录被完整确认、端点被冻结、两个证据源分别落进审计。"}
+{"at":"2026-09-19T13:37:31.4657730+00:00","note":"L2 port block lock released."}

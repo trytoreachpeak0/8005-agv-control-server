@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "1.3.0",
+  "gate": "G3",
+  "runKind": "STAGED_G3_REAL_PEERS_DETERMINISTIC_PLAINTEXT",
+  "runId": "20260919T133116449Z",
+  "integrationSliceId": "FP-IS-07",
+  "status": "PASS",
+  "assuranceLevel": "STAGED_REBUILD",
+  "formalSlicePass": true,
+  "startedAt": "2026-09-19T13:31:16.4494366+00:00",
+  "finishedAt": "2026-09-19T13:32:57.5452460+00:00",
+  "implementationRepository": "8005-agv-control-server",
+  "commits": {
+    "controlServer": "85381ea2a37e46b4c720ff5f1843161ad6deb69d",
+    "onboardEvidenceBinding": "4d716340982de4e39339c2151c291efe1a21e1d1",
+    "slotsSimulator": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "protocol": "86575456c847041515b7b75e8851a00e0d939804",
+    "harness": "3c42b4a766c25542f338859b657f85778ba55b73",
+    "harnessWorktreeCleanAtStart": true
+  },
+  "protocolReleaseVersion": "2.0.0",
+  "protocolTag": "protocol-v2.0.0",
+  "protocolProfileId": "AGV_FULL_PRODUCT",
+  "protocolVersion": 3,
+  "protocolApprovalStatus": "APPROVED_RELEASE",
+  "protocolRepositoryCommit": "86575456c847041515b7b75e8851a00e0d939804",
+  "protocolManifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+  "protocolSchemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+  "protocolVectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+  "integrationSliceIndexSha256": "268ce62be4e0ec8fe6d26e2048a59cf1732f02713415a0c5f41b6b009951b6fc",
+  "integrationSliceIndexSource": "vendor/8005-agv-protocol/integration-slices/index.json",
+  "vectorIds": [
+    "CV-OPERATION-RESULT-UNKNOWN-RECONCILE",
+    "CV-EXCEPTION-RESUME",
+    "CV-EXCEPTION-COMPENSATE",
+    "CV-FAULT-CARGO-HANDOFF",
+    "CV-FORCED-MECHANICAL-RECOVERY",
+    "CV-MANUAL-CHARGING-RETURN"
+  ],
+  "assertionIds": {
+    "recoverySessionAuthorisationBoundary": "PASS",
+    "recoveryActionsRefusedWithoutPersistedOperation": "PASS",
+    "hardwareRecoveryRecordScopeEnforced": "PASS",
+    "recoveryCommandSurvivesMidFlightDisconnect": "PASS",
+    "forcedRecoveryGenerationAdvancesMonotonically": "PASS",
+    "secondForcedRecoveryWhileFirstUnsettledIsRejected": "PASS",
+    "recoveryNeverReportsFalseCompletion": "PASS",
+    "identityRejections": "PASS",
+    "noMovementOrExternalSideEffects": "PASS",
+    "secretScan": "PASS"
+  }
+}

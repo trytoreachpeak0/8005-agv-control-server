@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "scenario": "slot-group-temporarily-full",
+  "runId": "20260919T133601252Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "50dc987d680a33c3f8732619a91f5761453ddd63",
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-4",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133601252Z-slot4"
+  },
+  "assertions": [
+    {
+      "id": "L2-SGF-01",
+      "description": "握手种子下本车 REAR 组没有可用仓、FRONT 组全部可用，且 FRONT 组足够装下 2 个花篮",
+      "outcome": "PASS",
+      "expected": "available [1,2,3,4] = FRONT group; REAR group [5,6,7,8] all unavailable",
+      "actual": "available [1,2,3,4]; FRONT [1,2,3,4]; REAR [5,6,7,8]"
+    },
+    {
+      "id": "L2-SGF-02",
+      "description": "积压原因为「所需分组暂时空仓不足」，再过三轮仍是",
+      "outcome": "PASS",
+      "expected": "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE",
+      "actual": "first SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE, after three rounds SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE"
+    },
+    {
+      "id": "L2-SGF-03",
+      "description": "整车 FRONT 组空着但不受理：没有受理行、没有旅程、没有建 RIoT 单",
+      "outcome": "PASS",
+      "expected": "AcceptedDemands 0, JourneyRuntimes 0, RIoT orders 0",
+      "actual": "AcceptedDemands 0, JourneyRuntimes 0, RIoT orders 0"
+    },
+    {
+      "id": "L2-SGF-04",
+      "description": "StructuralDispatchBlocks 没有这条需求的行（正常积压，不是结构性问题）",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-SGF-05",
+      "description": "换种子重连后，服务端按新会话的快照算出 REAR 组 [5,6] 可用",
+      "outcome": "PASS",
+      "expected": "[1,2,3,4,5,6]",
+      "actual": "[1,2,3,4,5,6]"
+    },
+    {
+      "id": "L2-SGF-06",
+      "description": "REAR 组有空仓后受理，目标仓恰好是变空的 [5,6]",
+      "outcome": "PASS",
+      "expected": "AwaitingPickupArrival, [5,6]",
+      "actual": "AwaitingPickupArrival, [5,6]"
+    },
+    {
+      "id": "L2-SGF-07",
+      "description": "目标仓全部属于本车 REAR 组、升序，且恰好是该组编号最小的 2 个可用仓",
+      "outcome": "PASS",
+      "expected": "[5,6]（REAR 组最小的可用仓，升序）",
+      "actual": "[5,6] on AGV-L2-001"
+    }
+  ]
+}

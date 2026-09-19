@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "scenario": "task-type-binding-station-reused-refuses-start",
+  "runId": "20260919T133256778Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE",
+      "source": "appsettings.json:ProtocolCandidate"
+    },
+    "rig": "SyntheticOnboard",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133256778Z-slot3",
+    "controlServerCommit": "50dc987d680a33c3f8732619a91f5761453ddd63",
+    "batchId": "batch-6",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-TTSR-01",
+      "description": "服务端进程以非零退出码结束",
+      "outcome": "PASS",
+      "expected": "非零",
+      "actual": -532462766
+    },
+    {
+      "id": "L2-TTSR-02",
+      "description": "/health/live 始终不通",
+      "outcome": "PASS",
+      "expected": "从未答过",
+      "actual": "从未答过"
+    },
+    {
+      "id": "L2-TTSR-03",
+      "description": "服务端日志含 TASK_TYPE_STATION_REUSED",
+      "outcome": "PASS",
+      "expected": "TASK_TYPE_STATION_REUSED",
+      "actual": "[21:33:03 ERR] Task type station preset C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133256778Z-slot3\\task-type-stations.settings.json refused: TASK_TYPE_STATION_REUSED Station 关卡/210 is bound to 2 task types (STAGING_TO_WIRE, WIRE_TO_GATE); one station serves at most one task type."
+    },
+    {
+      "id": "L2-TTSR-04",
+      "description": "拒绝点名 Station 关卡/210 与 WIRE_TO_GATE、STAGING_TO_WIRE",
+      "outcome": "PASS",
+      "expected": "关卡/210 + WIRE_TO_GATE + STAGING_TO_WIRE",
+      "actual": "[21:33:03 ERR] Task type station preset C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133256778Z-slot3\\task-type-stations.settings.json refused: TASK_TYPE_STATION_REUSED Station 关卡/210 is bound to 2 task types (STAGING_TO_WIRE, WIRE_TO_GATE); one station serves at most one task type."
+    },
+    {
+      "id": "L2-TTSR-05",
+      "description": "规则版本与绑定集版本都没有落库",
+      "outcome": "PASS",
+      "expected": "Rules=0 BindingSets=0",
+      "actual": "Rules=0 BindingSets=0"
+    }
+  ]
+}

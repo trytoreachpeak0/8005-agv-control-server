@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "scenario": "task-type-binding-missing-not-cascading",
+  "runId": "20260919T133434938Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "batchId": "batch-6",
+    "vehicleKey": "BROKERX-L2-0001",
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T133434938Z-slot2",
+    "controlServerCommit": "50dc987d680a33c3f8732619a91f5761453ddd63",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    }
+  },
+  "assertions": [
+    {
+      "id": "L2-TTBM-01",
+      "description": "WIRE_TO_GATE 在同一次运行内被受理并走完两段：另一个任务类型缺绑定不连带它",
+      "outcome": "PASS",
+      "expected": "Completed / gate leg to 210 / 2 RIoT orders",
+      "actual": "Completed / gate leg to 210 / 2 RIoT orders"
+    },
+    {
+      "id": "L2-TTBM-02",
+      "description": "STAGING_TO_WIRE 未受理：积压原因 TASK_TYPE_BINDING_MISSING，没有受理行、旅程、订单意图",
+      "outcome": "PASS",
+      "expected": "TASK_TYPE_BINDING_MISSING / not accepted / 0 rows",
+      "actual": "TASK_TYPE_BINDING_MISSING / AcceptedAt= / 0 rows"
+    },
+    {
+      "id": "L2-TTBM-03",
+      "description": "/api/dashboard/dispatch-backlog 列出这条 STAGING_TO_WIRE 需求，原因码 TASK_TYPE_BINDING_MISSING 带中文说明",
+      "outcome": "PASS",
+      "expected": "one row / TASK_TYPE_BINDING_MISSING / Chinese description",
+      "actual": "TASK_TYPE_BINDING_MISSING / 本图没有为这个任务类型绑定固定站点（不在本图需求集里，或在需求集里却没绑定），只有这个任务类型不投运"
+    },
+    {
+      "id": "L2-TTBM-04",
+      "description": "StructuralDispatchBlocks 没有这条 STAGING_TO_WIRE 需求的行：缺绑定是配置造成的不投运，不是结构性告警",
+      "outcome": "PASS",
+      "expected": "0",
+      "actual": 0
+    }
+  ]
+}

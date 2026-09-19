@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "scenario": "route-graph-staleness",
+  "runId": "20260919T132532878Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "SyntheticOnboard",
+    "agvId": "AGV-L2-001",
+    "controlServerCommit": "50dc987d680a33c3f8732619a91f5761453ddd63",
+    "stageRoot": "C:\\actions-runner\\win11-01-control-server\\_work\\_temp\\l2-35445347285-1\\_stage\\l2-20260919T132532878Z-slot4",
+    "batchId": "batch-2",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "vehicleKey": "BROKERX-L2-0001"
+  },
+  "assertions": [
+    {
+      "id": "L2-RGS-01",
+      "description": "基线快照建立：设计态、边组指纹、动态代价都取过一次，且不陈旧",
+      "outcome": "PASS",
+      "expected": "(无陈旧原因)",
+      "actual": "(null)"
+    },
+    {
+      "id": "L2-RGS-02",
+      "description": "边组指纹是空串而不是「没取过」（合成 RIoT 与 map25 一样一个边组都没有）",
+      "outcome": "PASS",
+      "expected": "'' + 已取过",
+      "actual": "'' + 已取过"
+    },
+    {
+      "id": "L2-RGS-03",
+      "description": "触发一（超 TTL）：快照进陈旧态，原因是 ROUTE_GRAPH_RUNTIME_STATE_EXPIRED",
+      "outcome": "PASS",
+      "expected": "ROUTE_GRAPH_RUNTIME_STATE_EXPIRED",
+      "actual": "ROUTE_GRAPH_RUNTIME_STATE_EXPIRED"
+    },
+    {
+      "id": "L2-RGS-04",
+      "description": "触发一 fail-closed：候选被挡住，原因直指引擎而不是笼统的「无候选」",
+      "outcome": "PASS",
+      "expected": "ROUTE_GRAPH_RUNTIME_STATE_EXPIRED",
+      "actual": "ROUTE_GRAPH_RUNTIME_STATE_EXPIRED"
+    },
+    {
+      "id": "L2-RGS-05",
+      "description": "触发二（动态代价由空变非空）：原因是 ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED",
+      "outcome": "PASS",
+      "expected": "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED",
+      "actual": "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED"
+    },
+    {
+      "id": "L2-RGS-06",
+      "description": "刷新恢复正常之后它仍然陈旧：动态代价这条不因等待而解除",
+      "outcome": "PASS",
+      "expected": "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED",
+      "actual": "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED"
+    },
+    {
+      "id": "L2-RGS-07",
+      "description": "触发二 fail-closed：阻断原因跟着换成这一条",
+      "outcome": "PASS",
+      "expected": "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED",
+      "actual": "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED"
+    },
+    {
+      "id": "L2-RGS-08",
+      "description": "触发三（边组指纹变化）：原因是 ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED",
+      "outcome": "PASS",
+      "expected": "ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED",
+      "actual": "ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED"
+    },
+    {
+      "id": "L2-RGS-09",
+      "description": "指纹确实换了值，而不是只翻了个标志位",
+      "outcome": "PASS",
+      "expected": "≠ ''",
+      "actual": "'61771dd33f0dcf0a1d43740415958f2f8552c77eab15832471948d1cf407b965'"
+    },
+    {
+      "id": "L2-RGS-10",
+      "description": "触发三 fail-closed：阻断原因跟着换成这一条",
+      "outcome": "PASS",
+      "expected": "ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED",
+      "actual": "ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED"
+    },
+    {
+      "id": "L2-RGS-11",
+      "description": "三条陈旧全程没有建出任何 journey",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-RGS-12",
+      "description": "一张 RIoT move 单都没建",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "id": "L2-RGS-13",
+      "description": "需求始终没有被受理",
+      "outcome": "PASS",
+      "expected": 0,
+      "actual": 0
+    }
+  ]
+}

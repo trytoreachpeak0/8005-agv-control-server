@@ -1,0 +1,15 @@
+2026-09-19T21:39:02.8362858+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+4d716340982de4e39339c2151c291efe1a21e1d1。
+2026-09-19T21:39:03.6012857+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T21:39:03.6164644+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T21:39:03.6178869+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T21:39:04.1495893+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-19T21:39:09.7913395+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02C-20260919T133848102Z。 
+2026-09-19T21:39:10.4589361+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=G3-02C-20260919T133848102Z。 
+2026-09-19T21:39:10.6959883+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-19T21:39:10.7309921+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-19T21:39:10.8399594+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-19T21:39:11.2917684+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-19T21:39:11.4618550+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=101fb073-0c5e-865e-9df3-0574074e25ef。
+2026-09-19T21:39:12.2190476+08:00	Information	WireToGateBusinessService	装货已被授权的装货取消中止，不上报OperationResult：attempt=101fb073-0c5e-865e-9df3-0574074e25ef。
+2026-09-19T21:39:12.4804319+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=101fb073-0c5e-865e-9df3-0574074e25ef已开始且未结算，或已由装货取消接手，未再次执行仓门IO。
+2026-09-19T21:39:12.5039949+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 1->1。
