@@ -12,8 +12,8 @@ public sealed record TaskTypeStationStartupResult(
     TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> Bindings);
 
 /// <summary>
-/// 启动时装载预置配置（control-server#159）：读 <see cref="TaskTypeStationPreset"/> → 静态校验 → 在<b>同一个事务</b>里写规则版本与
-/// 该图的绑定集版本（内容未变则不出新版本），并把生效指针指向它。
+/// 启动时装载预置配置（control-server#159）：读 <see cref="TaskTypeStationPreset"/> → 静态校验 → 在<b>同一个事务</b>里写规则版本；
+/// 该图还没有生效版本、也没有结果未知的激活时，再写绑定集第一版并把生效指针指向它（control-server#161）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,7 +26,10 @@ public sealed record TaskTypeStationStartupResult(
 /// <see cref="TaskTypeStationConfigurationValidator.EvaluateCatalog"/>。
 /// </para>
 /// <para>
-/// 启动装载即激活，是批次6-05 之前的形态；批次6-05 起预置文件只在一张图还没有生效版本时装为第一版（规格 21.2 第 4 条）。
+/// <b>预置文件只是一张图的第一版</b>（规格 21.2 第 4 条，control-server#161）。该图一旦有了生效版本（不论是预置装的还是 FieldOps
+/// 激活的），或正有一次激活结果未知，换版本只走 FieldOps 激活，重启不再写绑定集、不动指针与暂停；预置内容与生效版本不同时如实记一条日志，
+/// 说它没有生效。指针行在、却是 <c>ACTIVE</c> 且不指向任何版本的，算没有生效版本，预置照装（审查 S4）；人工收尾留下的墓碑
+/// <c>CLOSED_MANUALLY</c> 不是「第一次」，预置不装，该图保持无生效版本直到下一次 FieldOps 激活或回滚（第二轮复审 N1）。规则表不在此列：它不分图，仍按预置文件装（内容未变不出新版本）。
 /// </para>
 /// </remarks>
 public static class TaskTypeStationStartup
@@ -59,6 +62,12 @@ public static class TaskTypeStationStartup
             LogLevel.Warning,
             new EventId(9304, "TaskTypeStationGateScalarsIgnored"),
             "JourneyRuntime:gateStationId ({GateStationId}) / gateStationRiotId ({GateStationRiotId}) are still configured but are ignored since control-server#160: the WIRE_TO_GATE end station is the Map's binding in the task type station preset. Remove the two keys, and check that binding if the gate here is not the preset's.");
+
+    private static readonly Action<ILogger, string, int, long?, string, Exception?> NotApplied =
+        LoggerMessage.Define<string, int, long?, string>(
+            LogLevel.Warning,
+            new EventId(9305, "TaskTypeStationPresetNotApplied"),
+            "Task type station preset {Path} was not applied to Map {MapId}: binding set version {ActiveVersion} stays active (pointer state {State}); a different version only comes from a FieldOps activation.");
 
     public static async Task<TaskTypeStationStartupResult?> EnsureAsync(
         IServiceProvider services,
@@ -127,6 +136,38 @@ public static class TaskTypeStationStartup
         await using IDbContextTransaction transaction = await context.Database.BeginTransactionAsync(cancellationToken);
         TaskTypeStationVersionWrite<TaskTypeStationRuleVersion> ruleWrite = await rules.WriteVersionAsync(
             preset.Configuration.Rules, source, now, cancellationToken);
+        TaskTypeStationActivePointer? existing = await bindings.ReadActivePointerAsync(map.MapId, cancellationToken);
+        // The preset is only a map's first version (specification 21.2 item 4). It loads where there is no pointer row, or a
+        // row that is ACTIVE and names no version (control-server#161 review S4). Everything else keeps it out: a version is
+        // active, an activation's result is unknown, or a manual close left its tombstone -- a map with no active version
+        // until the next FieldOps activation or rollback, which an unplanned restart must not undo (review round 2, N1).
+        if (existing is not null
+            && (existing.ActiveVersion is not null
+                || string.Equals(existing.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal)
+                || string.Equals(existing.State, TaskTypeStationActivationState.ClosedManually, StringComparison.Ordinal)))
+        {
+            TaskTypeStationBindingSetVersion? kept = existing.ActiveVersion is long activeVersion
+                ? await bindings.ReadVersionAsync(map.MapId, activeVersion, cancellationToken)
+                : await bindings.ReadLatestAsync(map.MapId, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            if (kept is null)
+            {
+                throw new InvalidOperationException(FormattableString.Invariant(
+                    $"Map {map.MapId} has an active pointer but no binding set version to read back."));
+            }
+            if (!SameContent(kept, ruleWrite.Version.Version, map)
+                || !string.Equals(existing.State, TaskTypeStationActivationState.Active, StringComparison.Ordinal))
+            {
+                NotApplied(logger, preset.Path, map.MapId, existing.ActiveVersion, existing.State, null);
+            }
+            else
+            {
+                Loaded(logger, preset.Path, ruleWrite.Version.Version, ruleWrite.Created ? "new" : "unchanged", map.MapId,
+                    kept.Version, "unchanged", null);
+            }
+            return new TaskTypeStationStartupResult(ruleWrite, new(kept, Created: false));
+        }
+
         TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> bindingWrite = await bindings.WriteVersionAsync(
             map.MapId,
             ruleWrite.Version.Version,
@@ -136,12 +177,8 @@ public static class TaskTypeStationStartup
             source,
             now,
             cancellationToken);
-        TaskTypeStationActivePointer? pointer = await bindings.ReadActivePointerAsync(map.MapId, cancellationToken);
-        if (pointer?.ActiveVersion != bindingWrite.Version.Version
-            || !string.Equals(pointer.State, TaskTypeStationActivationState.Active, StringComparison.Ordinal))
-        {
-            await bindings.SetActiveAsync(map.MapId, bindingWrite.Version.Version, now, cancellationToken);
-        }
+        // First version of this map: nothing was active, so the preset is what becomes active.
+        await bindings.SetActiveAsync(map.MapId, bindingWrite.Version.Version, now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         Loaded(
@@ -155,4 +192,10 @@ public static class TaskTypeStationStartup
             null);
         return new TaskTypeStationStartupResult(ruleWrite, bindingWrite);
     }
+
+    private static bool SameContent(TaskTypeStationBindingSetVersion kept, long ruleVersion, TaskTypeStationMapConfiguration map) =>
+        kept.RuleVersion == ruleVersion
+        && kept.RequiredTaskTypes.SequenceEqual(
+            map.RequiredTaskTypes.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal), StringComparer.Ordinal)
+        && kept.Bindings.SequenceEqual(map.Bindings.OrderBy(binding => binding.TaskType, StringComparer.Ordinal));
 }

@@ -1,0 +1,484 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:02.89]     ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(contentSha256: "8e1df56b366705969098327145588a67612a05b172c8958aa1"···) [FAIL]
+[xUnit.net 00:00:02.91]     ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(contentSha256: "0000000000000001ffffffffffffffffffffffffffffffffff"···) [FAIL]
+[xUnit.net 00:00:02.91]     ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(contentSha256: "ffffffffffffffff0000000000000000000000000000000000"···) [FAIL]
+[xUnit.net 00:00:02.91]     ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.FingerprintMatchesTheOneTheGatewayComputesForTheSameCatalog [FAIL]
+[xUnit.net 00:00:02.91]     ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.ACatalogConfirmedByTheServerInsideItsWindowIsFreshAndAnyOtherIsNot [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(contentSha256: "8e1df56b366705969098327145588a67612a05b172c8958aa1"···) [38 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Application.TaskTypeStationCatalogEvidence.RevisionOf(String contentSha256) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 9
+   at ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(String contentSha256) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationCatalogEvidenceTests.cs:line 28
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(contentSha256: "0000000000000001ffffffffffffffffffffffffffffffffff"···) [< 1 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Application.TaskTypeStationCatalogEvidence.RevisionOf(String contentSha256) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 9
+   at ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(String contentSha256) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationCatalogEvidenceTests.cs:line 28
+   at InvokeStub_TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(contentSha256: "ffffffffffffffff0000000000000000000000000000000000"···) [< 1 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Application.TaskTypeStationCatalogEvidence.RevisionOf(String contentSha256) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 9
+   at ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(String contentSha256) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationCatalogEvidenceTests.cs:line 28
+   at InvokeStub_TaskTypeStationCatalogEvidenceTests.RevisionMatchesTheOneTheServerRecordsOnConfirmation(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+  Failed ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.FingerprintMatchesTheOneTheGatewayComputesForTheSameCatalog [< 1 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Application.TaskTypeStationCatalogEvidence.Fingerprint(Int32 mapId, IEnumerable`1 stations) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 7
+   at ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.FingerprintMatchesTheOneTheGatewayComputesForTheSameCatalog() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationCatalogEvidenceTests.cs:line 17
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.ACatalogConfirmedByTheServerInsideItsWindowIsFreshAndAnyOtherIsNot [1 ms]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationCatalogEvidenceTests.ACatalogConfirmedByTheServerInsideItsWindowIsFreshAndAnyOtherIsNot() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationCatalogEvidenceTests.cs:line 36
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+[xUnit.net 00:00:06.86]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased [FAIL]
+[xUnit.net 00:00:06.89]     ControlServer.Tests.TaskTypeStationFieldOpsTests.ARejectedActivationExitsOneAndListsEveryReason [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased [4 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 443
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationFieldOpsTests.ARejectedActivationExitsOneAndListsEveryReason [4 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationFieldOpsTests.ARejectedActivationExitsOneAndListsEveryReason() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 66
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:08.78]     ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(command: "rollback-task-type-stations", a: "--map", b: "25", c: "--version", d: "1") [FAIL]
+[xUnit.net 00:00:08.83]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "station-reused", reasonCode: "TASK_TYPE_STATION_REUSED", detail: "is bound to 2 task types") [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(command: "rollback-task-type-stations", a: "--map", b: "25", c: "--version", d: "1") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(String command, String a, String b, String c, String d) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 142
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "station-reused", reasonCode: "TASK_TYPE_STATION_REUSED", detail: "is bound to 2 task types") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 274
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:10.48]     ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(command: "reconcile-task-type-stations", a: "--map", b: "25", c: "--role", d: "x") [FAIL]
+[xUnit.net 00:00:10.61]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "no-site-verification", reasonCode: "TASK_TYPE_BINDING_SITE_VERIFICATION_MISSING", detail: "without a site verification reference") [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(command: "reconcile-task-type-stations", a: "--map", b: "25", c: "--role", d: "x") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(String command, String a, String b, String c, String d) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 142
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "no-site-verification", reasonCode: "TASK_TYPE_BINDING_SITE_VERIFICATION_MISSING", detail: "without a site verification reference") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 274
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:11.51]     ControlServer.Tests.TaskTypeStationStartupTests.ARestartWithAChangedPresetKeepsTheActiveVersionAndSaysThePresetWasNotApplied [FAIL]
+[xUnit.net 00:00:11.55]     ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(command: "activate-task-type-stations", a: "--input", b: "candidate.json", c: "--catalog", d: "catalog.json") [FAIL]
+[xUnit.net 00:00:11.72]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "other-map", reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", detail: "The catalog is for Map 26, not Map 25") [FAIL]
+[xUnit.net 00:00:12.61]     ControlServer.Tests.TaskTypeStationStartupTests.ARestartWhileAnActivationResultIsUnknownLeavesThePointerAndItsHoldsAsTheyAre [FAIL]
+[xUnit.net 00:00:12.81]     ControlServer.Tests.TaskTypeStationFieldOpsTests.RollbackReconcileAndReleaseRunThroughTheProcessWithTheirExitCodes [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationStartupTests.ARestartWithAChangedPresetKeepsTheActiveVersionAndSaysThePresetWasNotApplied [2 s]
+  Error Message:
+   Assert.False() Failure
+Expected: False
+Actual:   True
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationStartupTests.ARestartWithAChangedPresetKeepsTheActiveVersionAndSaysThePresetWasNotApplied() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 145
+   at ControlServer.Tests.TaskTypeStationStartupTests.ARestartWithAChangedPresetKeepsTheActiveVersionAndSaysThePresetWasNotApplied() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 154
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(command: "activate-task-type-stations", a: "--input", b: "candidate.json", c: "--catalog", d: "catalog.json") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationFieldOpsTests.AMissingReasonIsAUsageErrorAndWritesNothing(String command, String a, String b, String c, String d) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 142
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "other-map", reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", detail: "The catalog is for Map 26, not Map 25") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 274
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationStartupTests.ARestartWhileAnActivationResultIsUnknownLeavesThePointerAndItsHoldsAsTheyAre [1 s]
+  Error Message:
+   System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Infrastructure.Persistence.TaskTypeStationActivationStore.BeginAsync(TaskTypeStationActivationStart start, Func`2 startedAudit, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationActivationStore.cs:line 18
+   at ControlServer.Tests.TaskTypeStationStartupTests.ARestartWhileAnActivationResultIsUnknownLeavesThePointerAndItsHoldsAsTheyAre() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 171
+   at ControlServer.Tests.TaskTypeStationStartupTests.ARestartWhileAnActivationResultIsUnknownLeavesThePointerAndItsHoldsAsTheyAre() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 171
+   at ControlServer.Tests.TaskTypeStationStartupTests.ARestartWhileAnActivationResultIsUnknownLeavesThePointerAndItsHoldsAsTheyAre() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationStartupTests.cs:line 195
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeStationFieldOpsTests.RollbackReconcileAndReleaseRunThroughTheProcessWithTheirExitCodes [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationFieldOpsTests.RollbackReconcileAndReleaseRunThroughTheProcessWithTheirExitCodes() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 91
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:12.92]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "rule-not-current", reasonCode: "TASK_TYPE_BINDING_RULE_VERSION_NOT_CURRENT", detail: "the current rule version is 2") [FAIL]
+[xUnit.net 00:00:13.92]     ControlServer.Tests.TaskTypeStationFieldOpsTests.TheReadOnlyVerbOpensTheDatabaseInSqliteReadOnlyMode [FAIL]
+[xUnit.net 00:00:13.99]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "station-missing", reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", detail: "has no station 999") [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "rule-not-current", reasonCode: "TASK_TYPE_BINDING_RULE_VERSION_NOT_CURRENT", detail: "the current rule version is 2") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 274
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationFieldOpsTests.TheReadOnlyVerbOpensTheDatabaseInSqliteReadOnlyMode [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationFieldOpsTests.TheReadOnlyVerbOpensTheDatabaseInSqliteReadOnlyMode() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 154
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "station-missing", reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", detail: "has no station 999") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 274
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:15.06]     ControlServer.Tests.TaskTypeStationFieldOpsTests.ActivateDryRunThenActivateThenReadBackThroughTheProcess [FAIL]
+[xUnit.net 00:00:15.09]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "task-type-twice", reasonCode: "TASK_TYPE_BINDING_DUPLICATE", detail: "WIRE_TO_GATE is bound 2 times") [FAIL]
+[xUnit.net 00:00:15.80]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "required-unbound", reasonCode: "TASK_TYPE_BINDING_REQUIRED_MISSING", detail: "STAGING_TO_WIRE is in this map's requirement set") [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationFieldOpsTests.ActivateDryRunThenActivateThenReadBackThroughTheProcess [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationFieldOpsTests.ActivateDryRunThenActivateThenReadBackThroughTheProcess() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationFieldOpsTests.cs:line 26
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "task-type-twice", reasonCode: "TASK_TYPE_BINDING_DUPLICATE", detail: "WIRE_TO_GATE is bound 2 times") [1 s]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 274
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "required-unbound", reasonCode: "TASK_TYPE_BINDING_REQUIRED_MISSING", detail: "STAGING_TO_WIRE is in this map's requirement set") [699 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 274
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:16.56]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "catalog-stale", reasonCode: "TASK_TYPE_BINDING_CATALOG_NOT_FRESH", detail: "more than the approved 300 s") [FAIL]
+[xUnit.net 00:00:17.25]     ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(scenario: "catalog-stale", reasonCode: "TASK_TYPE_BINDING_CATALOG_NOT_FRESH", detail: "more than the approved 300 s") [757 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRevalidatesAndRefusesWithEveryReasonListed(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 274
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld [693 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 91
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:17.95]     ControlServer.Tests.TaskTypeStationActivationTests.ProcessDyingBetweenTheStepsLeavesTheMapHeldAcrossARestartUntilReconciliationFindsThePreviousVersion [FAIL]
+[xUnit.net 00:00:18.62]     ControlServer.Tests.TaskTypeStationActivationTests.RollbackIsAFreshlyValidatedActivationOfOldContentAndEveryActivationKeepsItsOwnRecord [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ProcessDyingBetweenTheStepsLeavesTheMapHeldAcrossARestartUntilReconciliationFindsThePreviousVersion [692 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ProcessDyingBetweenTheStepsLeavesTheMapHeldAcrossARestartUntilReconciliationFindsThePreviousVersion() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 150
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.RollbackIsAFreshlyValidatedActivationOfOldContentAndEveryActivationKeepsItsOwnRecord [662 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.RollbackIsAFreshlyValidatedActivationOfOldContentAndEveryActivationKeepsItsOwnRecord() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 339
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:19.34]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationSwitchesTheWholeMapAtOnceAfterTheFirstStepHeldEveryRequiredTaskType [FAIL]
+[xUnit.net 00:00:19.65]     ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRecordsTheReleaseAndKeepsTheHoldRowAndLeavesActivationHoldsAlone [FAIL]
+[xUnit.net 00:00:20.07]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationNeverReleasesAManualOrCatalogChangeHold [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationSwitchesTheWholeMapAtOnceAfterTheFirstStepHeldEveryRequiredTaskType [716 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationSwitchesTheWholeMapAtOnceAfterTheFirstStepHeldEveryRequiredTaskType() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 56
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRecordsTheReleaseAndKeepsTheHoldRowAndLeavesActivationHoldsAlone [312 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRecordsTheReleaseAndKeepsTheHoldRowAndLeavesActivationHoldsAlone() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 538
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationNeverReleasesAManualOrCatalogChangeHold [413 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationNeverReleasesAManualOrCatalogChangeHold() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 514
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:20.40]     ControlServer.Tests.TaskTypeStationActivationTests.ReadBackThatContradictsTheTargetPutsTheMapBackOnHoldAndNeverSaysActivated [FAIL]
+[xUnit.net 00:00:20.73]     ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(scenario: "no-site-verification", reasonCode: "TASK_TYPE_BINDING_SITE_VERIFICATION_MISSING", detail: "without a site verification") [FAIL]
+[xUnit.net 00:00:21.02]     ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(scenario: "station-gone", reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", detail: "has no station 210") [FAIL]
+[xUnit.net 00:00:21.39]     ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(scenario: "catalog-stale", reasonCode: "TASK_TYPE_BINDING_CATALOG_NOT_FRESH", detail: "more than the approved 300 s") [FAIL]
+[xUnit.net 00:00:21.73]     ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(scenario: "name-changed", reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", detail: "is now named 关卡-北, not 关卡") [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReadBackThatContradictsTheTargetPutsTheMapBackOnHoldAndNeverSaysActivated [329 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReadBackThatContradictsTheTargetPutsTheMapBackOnHoldAndNeverSaysActivated() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 124
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(scenario: "no-site-verification", reasonCode: "TASK_TYPE_BINDING_SITE_VERIFICATION_MISSING", detail: "without a site verification") [322 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 683
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(scenario: "station-gone", reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", detail: "has no station 210") [289 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 683
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(scenario: "catalog-stale", reasonCode: "TASK_TYPE_BINDING_CATALOG_NOT_FRESH", detail: "more than the approved 300 s") [361 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 683
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(scenario: "name-changed", reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", detail: "is now named 关卡-北, not 关卡") [344 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReleasingAHoldRevalidatesTheBindingAndRefusesWithTheReason(String scenario, String reasonCode, String detail) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 683
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:22.02]     ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationThatReadsNeitherVersionWholeKeepsTheHoldsAndEachRunKeepsItsOwnRecord [FAIL]
+[xUnit.net 00:00:22.36]     ControlServer.Tests.TaskTypeStationActivationTests.RollbackRevalidatesTheOldContentAndRefusesWhatNoLongerHolds [FAIL]
+[xUnit.net 00:00:22.69]     ControlServer.Tests.TaskTypeStationActivationTests.DryRunPreviewsTheDifferenceAndTheInFlightImpactAndWritesNothingButOneAuditRecord [FAIL]
+[xUnit.net 00:00:23.03]     ControlServer.Tests.TaskTypeStationActivationTests.SecondStepThatCommitsButThrowsIsStillUnknownUntilReconciliationReadsTheTargetBack [FAIL]
+[xUnit.net 00:00:23.34]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRollbackAndReconciliationLeaveEveryInFlightRowExactlyAsItWas [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationThatReadsNeitherVersionWholeKeepsTheHoldsAndEachRunKeepsItsOwnRecord [284 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationThatReadsNeitherVersionWholeKeepsTheHoldsAndEachRunKeepsItsOwnRecord() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 224
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.RollbackRevalidatesTheOldContentAndRefusesWhatNoLongerHolds [305 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.RollbackRevalidatesTheOldContentAndRefusesWhatNoLongerHolds() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 379
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.DryRunPreviewsTheDifferenceAndTheInFlightImpactAndWritesNothingButOneAuditRecord [332 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.DryRunPreviewsTheDifferenceAndTheInFlightImpactAndWritesNothingButOneAuditRecord() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 19
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.SecondStepThatCommitsButThrowsIsStillUnknownUntilReconciliationReadsTheTargetBack [336 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.SecondStepThatCommitsButThrowsIsStillUnknownUntilReconciliationReadsTheTargetBack() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 198
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRollbackAndReconciliationLeaveEveryInFlightRowExactlyAsItWas [304 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRollbackAndReconciliationLeaveEveryInFlightRowExactlyAsItWas() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 409
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+[xUnit.net 00:00:23.65]     ControlServer.Tests.TaskTypeStationActivationTests.EveryActionLeavesAnImmutableExportableAuditRecordWithTheRequiredFields [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.EveryActionLeavesAnImmutableExportableAuditRecordWithTheRequiredFields [308 ms]
+  Error Message:
+   System.TypeInitializationException : The type initializer for 'ControlServer.Tests.TaskTypeStationActivationHarness' threw an exception.
+---- System.NotImplementedException : The method or operation is not implemented.
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationHarness.CreateAsync() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 69
+   at ControlServer.Tests.TaskTypeStationActivationTests.EveryActionLeavesAnImmutableExportableAuditRecordWithTheRequiredFields() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 574
+--- End of stack trace from previous location ---
+----- Inner Stack Trace -----
+   at ControlServer.Application.TaskTypeStationCatalogEvidence.Supplied(Int32 mapId, IReadOnlyList`1 stations, DateTimeOffset observedAt) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\TaskTypeStationCatalogEvidence.cs:line 15
+   at ControlServer.Tests.TaskTypeStationActivationHarness..cctor() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationHarness.cs:line 50
+
+Failed!  - Failed:    40, Passed:    11, Skipped:     0, Total:    51, Duration: 20 s - ControlServer.Tests.dll (net8.0)
+exit=1

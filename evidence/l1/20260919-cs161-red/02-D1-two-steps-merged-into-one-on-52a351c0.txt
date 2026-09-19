@@ -1,0 +1,146 @@
+# control-server#161 fault injection D1 on 52a351c0: two-steps-merged-into-one
+# Injected into the implementation of 52a351c0, run with --filter FullyQualifiedName~TaskTypeStationActivationTests, then reverted.
+# ===== injected diff =====
+--- a/src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs
+@@ -66,8 +66,9 @@
+                 };
+                 _context.Set<TaskTypeStationActiveBindingSetRow>().Add(pointer);
+             }
+-            pointer.State = TaskTypeStationActivationState.ActivationUnknown;
+-            pointer.PendingVersion = target.Version.Version;
++            pointer.ActiveVersion = target.Version.Version;
++            pointer.State = TaskTypeStationActivationState.Active;
++            pointer.PendingVersion = null;
+             pointer.UpdatedAt = start.StartedAt;
+ 
+             TaskTypeStationActivationAttempt attempt = new(
+@@ -79,7 +80,7 @@
+                 []);
+             attempt = attempt with
+             {
+-                HoldIds = [.. start.HeldTaskTypes.Select(taskType => AddUnknownHold(attempt, taskType, start.StartedAt).HoldId)]
++                HoldIds = []
+             };
+             await _context.SaveChangesAsync(cancellationToken);
+             await _audit.WriteBusinessAsync(startedAudit(attempt), start.StartedAt, cancellationToken);
+@@ -99,6 +100,10 @@
+         CancellationToken cancellationToken)
+     {
+         ArgumentNullException.ThrowIfNull(attempt);
++        if (attempt.HoldIds.Count == 0)
++        {
++            return;
++        }
+         try
+         {
+             await using IDbContextTransaction transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+# ===== dotnet test output =====
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:07.97]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased [5 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: ResultUnknown
+Actual:   Activated
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 470
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 502
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:16.75]     ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld [743 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: ResultUnknown
+Actual:   Activated
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 100
+   at ControlServer.Tests.TaskTypeStationActivationTests.SecondStepFailingBeforeCommitLeavesTheOldVersionWholeAndEveryRequiredTaskTypeHeld() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 116
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:17.39]     ControlServer.Tests.TaskTypeStationActivationTests.ProcessDyingBetweenTheStepsLeavesTheMapHeldAcrossARestartUntilReconciliationFindsThePreviousVersion [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ProcessDyingBetweenTheStepsLeavesTheMapHeldAcrossARestartUntilReconciliationFindsThePreviousVersion [639 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+              ↓ (pos 3)
+Expected: "25|1|ACTIVATION_UNKNOWN|2"
+Actual:   "25|2|ACTIVE|<null>"
+              ↑ (pos 3)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ProcessDyingBetweenTheStepsLeavesTheMapHeldAcrossARestartUntilReconciliationFindsThePreviousVersion() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 160
+   at ControlServer.Tests.TaskTypeStationActivationTests.ProcessDyingBetweenTheStepsLeavesTheMapHeldAcrossARestartUntilReconciliationFindsThePreviousVersion() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 192
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:18.42]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationSwitchesTheWholeMapAtOnceAfterTheFirstStepHeldEveryRequiredTaskType [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationSwitchesTheWholeMapAtOnceAfterTheFirstStepHeldEveryRequiredTaskType [455 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                             ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<string>        ["STAGING_TO_WIRE", "WIRE_TO_GATE"]
+Actual:   OrderedEnumerable<string, string> []
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ActivationSwitchesTheWholeMapAtOnceAfterTheFirstStepHeldEveryRequiredTaskType() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 70
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationSwitchesTheWholeMapAtOnceAfterTheFirstStepHeldEveryRequiredTaskType() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 78
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:23.60]     ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationThatReadsNeitherVersionWholeKeepsTheHoldsAndEachRunKeepsItsOwnRecord [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationThatReadsNeitherVersionWholeKeepsTheHoldsAndEachRunKeepsItsOwnRecord [440 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Contradictory
+Actual:   NothingToReconcile
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationThatReadsNeitherVersionWholeKeepsTheHoldsAndEachRunKeepsItsOwnRecord() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 238
+   at ControlServer.Tests.TaskTypeStationActivationTests.ReconciliationThatReadsNeitherVersionWholeKeepsTheHoldsAndEachRunKeepsItsOwnRecord() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 247
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:25.92]     ControlServer.Tests.TaskTypeStationActivationTests.SecondStepThatCommitsButThrowsIsStillUnknownUntilReconciliationReadsTheTargetBack [FAIL]
+[xUnit.net 00:00:26.74]     ControlServer.Tests.TaskTypeStationActivationTests.ActivationRollbackAndReconciliationLeaveEveryInFlightRowExactlyAsItWas [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.SecondStepThatCommitsButThrowsIsStillUnknownUntilReconciliationReadsTheTargetBack [661 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: ResultUnknown
+Actual:   Activated
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.SecondStepThatCommitsButThrowsIsStillUnknownUntilReconciliationReadsTheTargetBack() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 207
+   at ControlServer.Tests.TaskTypeStationActivationTests.SecondStepThatCommitsButThrowsIsStillUnknownUntilReconciliationReadsTheTargetBack() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 218
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.ActivationRollbackAndReconciliationLeaveEveryInFlightRowExactlyAsItWas [809 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: PreviousActive
+Actual:   NothingToReconcile
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRollbackAndReconciliationLeaveEveryInFlightRowExactlyAsItWas() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 431
+   at ControlServer.Tests.TaskTypeStationActivationTests.ActivationRollbackAndReconciliationLeaveEveryInFlightRowExactlyAsItWas() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 433
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:28.01]     ControlServer.Tests.TaskTypeStationActivationTests.EveryActionLeavesAnImmutableExportableAuditRecordWithTheRequiredFields [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationTests.EveryActionLeavesAnImmutableExportableAuditRecordWithTheRequiredFields [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 4
+                                              ↓ (pos 37)
+Expected: ···"TYPE_STATION_BINDING_SET_ACTIVATION_RESULT_UNKNOWN"
+Actual:   ···"TYPE_STATION_BINDING_SET_ACTIVATED"
+                                              ↑ (pos 37)
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeStationActivationTests.EveryActionLeavesAnImmutableExportableAuditRecordWithTheRequiredFields() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 604
+   at ControlServer.Tests.TaskTypeStationActivationTests.EveryActionLeavesAnImmutableExportableAuditRecordWithTheRequiredFields() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-05-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationTests.cs:line 667
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     8, Passed:    18, Skipped:     0, Total:    26, Duration: 25 s - ControlServer.Tests.dll (net8.0)
+exit=1
