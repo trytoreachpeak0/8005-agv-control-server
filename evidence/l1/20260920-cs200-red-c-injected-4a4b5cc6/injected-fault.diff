@@ -1,0 +1,19 @@
+commit 4a4b5cc67700f3a4e629578576a37e531c37fdb7
+Author: Zhengyu Shao <trytoreachpeak0@gmail.com>
+Date:   Sun Sep 20 01:00:12 2026 +0800
+
+    INJECTED FAULT (local only): unattributed 一律回墓碑
+
+diff --git a/src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs b/src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs
+index 20cea13b..360fb574 100644
+--- a/src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/TaskTypeStationActivationStore.cs
+@@ -287,7 +287,7 @@ public sealed class TaskTypeStationActivationStore(
+             if (conclusion != TaskTypeStationReconciliationConclusion.Contradictory)
+             {
+                 TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(mapId, cancellationToken);
+-                if (pointer is not null && pointer.ActiveVersion is null
++                if (pointer is not null
+                     && conclusion == TaskTypeStationReconciliationConclusion.PreviousActive
+                     && (string.Equals(attempt?.PreviousState, TaskTypeStationActivationState.ClosedManually, StringComparison.Ordinal)
+                         || string.Equals(attempt?.AttemptId, UnattributedAttemptId, StringComparison.Ordinal)))

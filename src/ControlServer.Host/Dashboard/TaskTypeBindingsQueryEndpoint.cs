@@ -12,8 +12,8 @@ namespace ControlServer.Host.Dashboard;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 状态按这个次序取第一个成立的：<c>HELD</c>（有未解除暂停）、<c>NO_ACTIVE_BINDING_SET</c>（该图没有生效版本，例如 #161 人工收尾
-/// 之后的墓碑 <c>CLOSED_MANUALLY</c>）、<c>STATION_NOT_IN_CATALOG</c>（当前目录修订下记过绑定站点已不在目录）、<c>BINDING_MISSING</c>（在需求集合里却没有绑定）、<c>NOT_REQUIRED</c>（不在需求集合里）、<c>NORMAL</c>。
+/// 状态按这个次序取第一个成立的：<c>HELD</c>（有未解除暂停）、<c>NO_ACTIVE_BINDING_SET</c>（该图没有生效版本，例如墓碑
+/// <c>CLOSED_MANUALLY</c>——人工收尾之后，或无暂停可还原的结果未知尝试对账之后）、<c>STATION_NOT_IN_CATALOG</c>（当前目录修订下记过绑定站点已不在目录）、<c>BINDING_MISSING</c>（在需求集合里却没有绑定）、<c>NOT_REQUIRED</c>（不在需求集合里）、<c>NORMAL</c>。
 /// </para>
 /// <para>
 /// 暂停来源的中文名在这里给出而不在看板里：看板源码守着一张 fail-safe 词表，「激活结果未知」这个来源名本身不是入口，

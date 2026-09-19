@@ -1,0 +1,30 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:17.39]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatDeletesThePointerRowSaysThereIsNoPointerRow [11 s]
+  Error Message:
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+  Stack Trace:
+[xUnit.net 00:00:18.87]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatPutsThePointerBackToActiveRecordsThePointerAsWritten [1 s]
+  Error Message:
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+  Stack Trace:
+[xUnit.net 00:00:20.65]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AReconciliationThatLeavesATombstoneRecordsThePointerAsWritten [1 s]
+  Error Message:
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+  Stack Trace:
+[xUnit.net 00:00:21.96]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas [FAIL]
+  Failed ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AContradictoryReconciliationRecordsThatItLeftThePointerAsItWas [1 s]
+  Error Message:
+   System.Collections.Generic.KeyNotFoundException : The given key was not present in the dictionary.
+  Stack Trace:
+Results File: C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\evidence\l1\20260920-cs200-red-a-352764d6\red.trx
+
+Failed!  - Failed:     4, Passed:     0, Skipped:     0, Total:     4, Duration: 16 s - ControlServer.Tests.dll (net8.0)

@@ -390,7 +390,7 @@ internal abstract class DelegatingActivationStore(ITaskTypeStationActivationStor
     public virtual Task<TaskTypeStationReconciliation> ReconcileAsync(
         int mapId,
         Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion> decide,
-        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, GovernanceAuditEntry> audit,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, TaskTypeStationPointerAfterWrite, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken) =>
         inner.ReconcileAsync(mapId, decide, audit, at, cancellationToken);
@@ -406,11 +406,11 @@ internal abstract class DelegatingActivationStore(ITaskTypeStationActivationStor
     public virtual Task<(IReadOnlyList<TaskTypeStationHold> Released, string AuditRecordId)> ReleaseManualAndCatalogHoldsAsync(
         int mapId,
         string taskType,
-        string releasedBy,
+        string releasedByPrefix,
         Func<IReadOnlyList<TaskTypeStationHold>, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken) =>
-        inner.ReleaseManualAndCatalogHoldsAsync(mapId, taskType, releasedBy, audit, at, cancellationToken);
+        inner.ReleaseManualAndCatalogHoldsAsync(mapId, taskType, releasedByPrefix, audit, at, cancellationToken);
 
     public virtual Task<IReadOnlyList<TaskTypeStationInFlightDemand>> ListInFlightDemandsAsync(
         int mapId, CancellationToken cancellationToken) =>

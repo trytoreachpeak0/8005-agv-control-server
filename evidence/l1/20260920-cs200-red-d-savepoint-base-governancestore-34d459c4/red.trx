@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="95173c35-c397-4930-9f02-c1162bcd2c6e" name="szy@LAB-WIN-01 2026-09-20 01:31:42" runUser="LAB-WIN-01\szy" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-09-20T01:31:42.4293360+08:00" queuing="2026-09-20T01:31:42.4293365+08:00" start="2026-09-20T01:31:24.2074266+08:00" finish="2026-09-20T01:31:43.1900939+08:00" />
+  <TestSettings name="default" id="bdd9e4da-3ee9-4d21-9c87-bdf8d18fd033">
+    <Deployment runDeploymentRoot="szy_LAB-WIN-01_2026-09-20_01_31_42" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="5399cdf0-57c8-4171-b9eb-6075bafdab0c" testId="e56de7f6-65f6-51da-8611-518d932fd5aa" testName="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt" computerName="LAB-WIN-01" duration="00:00:08.7858772" startTime="2026-09-20T01:31:33.4076267+08:00" endTime="2026-09-20T01:31:42.2771537+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5399cdf0-57c8-4171-b9eb-6075bafdab0c">
+      <Output>
+        <ErrorInfo>
+          <Message>Microsoft.EntityFrameworkCore.DbUpdateException : An error occurred while saving the entity changes. See the inner exception for details.&#xD;
+---- Microsoft.Data.Sqlite.SqliteException : SQLite Error 19: 'cs200 refused'.</Message>
+          <StackTrace>   at Microsoft.EntityFrameworkCore.Update.ReaderModificationCommandBatch.ExecuteAsync(IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.Update.Internal.BatchExecutor.ExecuteAsync(IEnumerable`1 commandBatches, IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.Update.Internal.BatchExecutor.ExecuteAsync(IEnumerable`1 commandBatches, IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.Update.Internal.BatchExecutor.ExecuteAsync(IEnumerable`1 commandBatches, IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.ChangeTracking.Internal.StateManager.SaveChangesAsync(IList`1 entriesToSave, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.ChangeTracking.Internal.StateManager.SaveChangesAsync(StateManager stateManager, Boolean acceptAllChangesOnSuccess, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.DbContext.SaveChangesAsync(Boolean acceptAllChangesOnSuccess, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.DbContext.SaveChangesAsync(Boolean acceptAllChangesOnSuccess, CancellationToken cancellationToken)&#xD;
+   at ControlServer.Infrastructure.Persistence.GovernanceStore.WriteBusinessAsync(GovernanceAuditEntry entry, DateTimeOffset recordedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\GovernanceStore.cs:line 218&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 306&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 308&#xD;
+   at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs:line 315&#xD;
+--- End of stack trace from previous location ---&#xD;
+----- Inner Stack Trace -----&#xD;
+   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)&#xD;
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteReaderAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteReaderAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)&#xD;
+   at Microsoft.EntityFrameworkCore.Update.ReaderModificationCommandBatch.ExecuteAsync(IRelationalConnection connection, CancellationToken cancellationToken)</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt" storage="c:\users\szy\desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\controlserver.tests\bin\debug\net8.0\win-x64\controlserver.tests.dll" id="e56de7f6-65f6-51da-8611-518d932fd5aa">
+      <Execution id="5399cdf0-57c8-4171-b9eb-6075bafdab0c" />
+      <TestMethod codeBase="C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner3/netcore/" className="ControlServer.Tests.TaskTypeStationActivationFollowUpTests" name="AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="e56de7f6-65f6-51da-8611-518d932fd5aa" executionId="5399cdf0-57c8-4171-b9eb-6075bafdab0c" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="1" executed="1" passed="0" failed="1" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)&#xD;
+[xUnit.net 00:00:01.05]   Discovering: ControlServer.Tests&#xD;
+[xUnit.net 00:00:05.05]   Discovered:  ControlServer.Tests&#xD;
+[xUnit.net 00:00:07.08]   Starting:    ControlServer.Tests&#xD;
+[xUnit.net 00:00:16.20]       Microsoft.EntityFrameworkCore.DbUpdateException : An error occurred while saving the entity changes. See the inner exception for details.&#xD;
+[xUnit.net 00:00:16.20]       ---- Microsoft.Data.Sqlite.SqliteException : SQLite Error 19: 'cs200 refused'.&#xD;
+[xUnit.net 00:00:16.20]       Stack Trace:&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.Update.ReaderModificationCommandBatch.ExecuteAsync(IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.Update.Internal.BatchExecutor.ExecuteAsync(IEnumerable`1 commandBatches, IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.Update.Internal.BatchExecutor.ExecuteAsync(IEnumerable`1 commandBatches, IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.Update.Internal.BatchExecutor.ExecuteAsync(IEnumerable`1 commandBatches, IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.ChangeTracking.Internal.StateManager.SaveChangesAsync(IList`1 entriesToSave, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.ChangeTracking.Internal.StateManager.SaveChangesAsync(StateManager stateManager, Boolean acceptAllChangesOnSuccess, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.DbContext.SaveChangesAsync(Boolean acceptAllChangesOnSuccess, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.DbContext.SaveChangesAsync(Boolean acceptAllChangesOnSuccess, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\GovernanceStore.cs(218,0): at ControlServer.Infrastructure.Persistence.GovernanceStore.WriteBusinessAsync(GovernanceAuditEntry entry, DateTimeOffset recordedAt, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(306,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt()&#xD;
+[xUnit.net 00:00:16.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(308,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt()&#xD;
+[xUnit.net 00:00:16.20]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\cs200-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeStationActivationFollowUpTests.cs(315,0): at ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt()&#xD;
+[xUnit.net 00:00:16.20]         --- End of stack trace from previous location ---&#xD;
+[xUnit.net 00:00:16.20]         ----- Inner Stack Trace -----&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.Data.Sqlite.SqliteCommand.ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteReaderAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.Storage.RelationalCommand.ExecuteReaderAsync(RelationalCommandParameterObject parameterObject, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.20]            at Microsoft.EntityFrameworkCore.Update.ReaderModificationCommandBatch.ExecuteAsync(IRelationalConnection connection, CancellationToken cancellationToken)&#xD;
+[xUnit.net 00:00:16.93]   Finished:    ControlServer.Tests (ID = 'ebc8ae64a5f3b5d8cf19a69ab5de76219f4d0732ddb06039fa65c53d9df48bae')&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="LAB-WIN-01" outcome="Error" timestamp="2026-09-20T01:31:42.2935764+08:00">
+        <Text>[xUnit.net 00:00:16.20]     ControlServer.Tests.TaskTypeStationActivationFollowUpTests.AnAuditTheDatabaseRejectsInsideTheCallersTransactionIsNotCommittedWithTheRestOfIt [FAIL]</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>
