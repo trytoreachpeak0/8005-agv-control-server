@@ -177,6 +177,31 @@ public sealed class BoundFixedTaskStationResolverTests
             (await ReadAsync(fixture, Map)).Resolve(TransportTaskTypes.StagingToWire).RefusalReasonCode);
     }
 
+    /// <summary>
+    /// 规则表不认识的任务类型（或者根本还没有规则表）仍是 <c>OUT_OF_SCOPE_WORK_TYPE</c>：没有规则就不知道固定端在哪头，
+    /// 更谈不上绑定。
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ATaskTypeTheRulesDoNotKnowIsOutOfScope(bool withRules)
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        if (withRules)
+        {
+            await ActivateAsync(fixture, [TransportTaskTypes.WireToGate], [GateBinding]);
+        }
+
+        IFixedTaskStationView view = await ReadAsync(fixture, Map);
+
+        Assert.Equal(DispatchReasonCodes.OutOfScopeWorkType, view.Resolve("NOT_A_TASK_TYPE").RefusalReasonCode);
+        Assert.Null(view.Resolve("NOT_A_TASK_TYPE").Station);
+        if (!withRules)
+        {
+            Assert.Equal(DispatchReasonCodes.OutOfScopeWorkType, view.Resolve(TransportTaskTypes.WireToGate).RefusalReasonCode);
+        }
+    }
+
     internal static async Task<(long RuleVersion, long BindingSetVersion)> ActivateAsync(
         TaskTypeStationPersistenceFixture fixture,
         IReadOnlyList<string> required,
