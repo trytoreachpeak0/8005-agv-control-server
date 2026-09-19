@@ -1,0 +1,78 @@
+commit: 6c261e63e368d7e6f54c9efb864adeaeb574f851 dirty: 0
+filter: FullyQualifiedName~TaskTypeHoldEndpointsTests
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:13.27]     ControlServer.Tests.TaskTypeHoldEndpointsTests.ASecondRequestForAHeldTaskTypeAddsNoHoldButIsStillAudited [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ASecondRequestForAHeldTaskTypeAddsNoHoldButIsStillAudited [6 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 201
+Actual:   501
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.ASecondRequestForAHeldTaskTypeAddsNoHoldButIsStillAudited() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 107
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.ASecondRequestForAHeldTaskTypeAddsNoHoldButIsStillAudited() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 118
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:15.12]     ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(mapId: 25, taskType: "WIRE_TO_NOWHERE", reason: "站点被占作他用") [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(mapId: 25, taskType: "WIRE_TO_NOWHERE", reason: "站点被占作他用") [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 422
+Actual:   501
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(Int32 mapId, String taskType, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 50
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(Int32 mapId, String taskType, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 52
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:16.87]     ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(mapId: 99, taskType: "WIRE_TO_GATE", reason: "站点被占作他用") [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(mapId: 99, taskType: "WIRE_TO_GATE", reason: "站点被占作他用") [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 422
+Actual:   501
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(Int32 mapId, String taskType, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 50
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(Int32 mapId, String taskType, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 52
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:18.12]     ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(mapId: 25, taskType: "WIRE_TO_GATE", reason: " ") [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(mapId: 25, taskType: "WIRE_TO_GATE", reason: " ") [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 422
+Actual:   501
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(Int32 mapId, String taskType, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 50
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnUnknownMapAnUnknownTaskTypeOrAMissingReasonIsUnprocessable(Int32 mapId, String taskType, String reason) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 52
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:19.10]     ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromAnywhereButLoopbackIsForbiddenWhateverAddressTheServerListensOn [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromAnywhereButLoopbackIsForbiddenWhateverAddressTheServerListensOn [978 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 403
+Actual:   501
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromAnywhereButLoopbackIsForbiddenWhateverAddressTheServerListensOn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 35
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromAnywhereButLoopbackIsForbiddenWhateverAddressTheServerListensOn() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 36
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:21.52]     ControlServer.Tests.TaskTypeHoldEndpointsTests.ALoopbackRequestHoldsTheTaskTypeAtOnceAndAuditsWhoAskedAsADeploymentNotAPerson [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ALoopbackRequestHoldsTheTaskTypeAtOnceAndAuditsWhoAskedAsADeploymentNotAPerson [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 201
+Actual:   501
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.ALoopbackRequestHoldsTheTaskTypeAtOnceAndAuditsWhoAskedAsADeploymentNotAPerson() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 66
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.ALoopbackRequestHoldsTheTaskTypeAtOnceAndAuditsWhoAskedAsADeploymentNotAPerson() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 94
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:22.98]     ControlServer.Tests.TaskTypeHoldEndpointsTests.TheRouteOnlyTightensThereIsNoWayToReleaseAHoldOverHttp [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.TheRouteOnlyTightensThereIsNoWayToReleaseAHoldOverHttp [1 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.TheRouteOnlyTightensThereIsNoWayToReleaseAHoldOverHttp() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 149
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.TheRouteOnlyTightensThereIsNoWayToReleaseAHoldOverHttp() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 165
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.TheRouteOnlyTightensThereIsNoWayToReleaseAHoldOverHttp() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 165
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     7, Passed:     0, Skipped:     0, Total:     7, Duration: 16 s - ControlServer.Tests.dll (net8.0)

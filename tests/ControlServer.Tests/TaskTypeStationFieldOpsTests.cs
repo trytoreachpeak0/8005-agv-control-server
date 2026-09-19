@@ -165,6 +165,39 @@ public sealed class TaskTypeStationFieldOpsTests
         Assert.Equal("25|1|ACTIVE|<null>", await harness.PointerRowAsync());
     }
 
+    /// <summary>
+    /// cs#191 第 2 条：第二步已提交，数据库拒绝写 <c>ACTIVATED</c> 审计。进程不带未处理异常退出：输出一个 <c>RESULT_UNKNOWN</c> 对象、
+    /// 退出码 1，库里有一条结果未知审计、没有「已生效」审计，该图暂停着等对账。
+    /// </summary>
+    [Fact]
+    public async Task AnActivatedAuditTheDatabaseRefusesEndsTheProcessWithResultUnknownAndExitOne()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        // The process judges freshness by the real clock.
+        await harness.ConfirmCatalogAsync(TaskTypeStationActivationHarness.Catalog, DateTimeOffset.UtcNow);
+        await harness.ExecuteAsync(
+            "CREATE TRIGGER refuse_activated_audit BEFORE INSERT ON BusinessAuditRecords "
+            + $"WHEN NEW.Action = '{TaskTypeStationActivationAuditActions.Activated}' "
+            + "BEGIN SELECT RAISE(ABORT, 'audit storage refused the record'); END");
+        string candidate = WriteCandidate(harness, TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging);
+        string catalog = WriteCatalog(harness, TaskTypeStationActivationHarness.CatalogStations);
+
+        (int exit, JsonElement unknown) = await RunAsync(
+            "activate-task-type-stations", "--database", harness.DatabasePath, "--input", candidate, "--catalog", catalog,
+            "--reason", "加派工待送取货点");
+
+        Assert.Equal(1, exit);
+        Assert.Equal("RESULT_UNKNOWN", unknown.GetProperty("outcome").GetString());
+        Assert.Equal("25|2|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
+        Assert.Equal(2, (await harness.HoldsAsync()).Count(hold => hold.ReleasedAt is null));
+        IReadOnlyList<BusinessAuditRecordRow> audit = await harness.AuditAsync();
+        Assert.DoesNotContain(audit, row => row.Action == TaskTypeStationActivationAuditActions.Activated);
+        Assert.Equal(TaskTypeStationActivationAuditActions.ResultUnknown, audit[^1].Action);
+        Assert.Equal(
+            [audit[^1].AuditRecordId],
+            unknown.GetProperty("auditRecordIds").EnumerateArray().Select(id => id.GetString()));
+    }
+
     [Fact]
     public async Task TheReadOnlyVerbOpensTheDatabaseInSqliteReadOnlyMode()
     {

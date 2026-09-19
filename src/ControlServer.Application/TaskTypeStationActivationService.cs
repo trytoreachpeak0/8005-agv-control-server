@@ -104,7 +104,8 @@ public sealed class TaskTypeStationActivationService(
 
     /// <summary>
     /// 对账（REQ-0347）：只读取实际生效的版本、它的身份与完整内容，再写结论。读、判、写与审计在一个事务里（审查 S1），迟到的第二步插不进来。
-    /// 生效的是目标版本或仍是原版本，撤该图全部「激活结果未知」暂停（含孤儿，审查 S3）；原版本是「没有」时该图回到无生效版本（审查 S4）；
+    /// 生效的是目标版本或仍是原版本，撤该图全部「激活结果未知」暂停（含孤儿，审查 S3）；原版本是「没有」时该图回到无生效版本：
+    /// 从人工收尾的墓碑出发、或没有暂停记着从哪里出发的，回到墓碑（第二轮复审 N1、control-server#191），其余删指针行（审查 S4）；
     /// 两者都不是、或内容与记下的指纹不符，暂停保留并如实输出，出口是 <see cref="CloseManuallyAsync"/>。没有未结尝试时也写一条审计。
     /// 对账自己没能落库时结论是 <see cref="TaskTypeStationReconciliationConclusion.NotConcluded"/>，什么都没改（审查 S5）。
     /// </summary>
@@ -159,8 +160,8 @@ public sealed class TaskTypeStationActivationService(
     }
 
     /// <summary>
-    /// 人工收尾（审查 S3）：对账读回「矛盾」、系统给不出结论时，由人决定放弃这次尝试。该图回到「无生效版本」（没有指针行）、撤全部
-    /// 「激活结果未知」暂停；要再有生效版本，走一次新的激活或回滚。理由必填，自报角色原样记下；判定与写入在同一个事务里重读，读回能下结论时拒绝。
+    /// 人工收尾（审查 S3）：对账读回「矛盾」、系统给不出结论时，由人决定放弃这次尝试。该图留下墓碑（指针 <c>CLOSED_MANUALLY</c>、
+    /// 没有生效版本，第二轮复审 N1）、撤全部「激活结果未知」暂停；重启不装预置，要再有生效版本，走一次新的激活或回滚。理由必填，自报角色原样记下；判定与写入在同一个事务里重读，读回能下结论时拒绝。
     /// </summary>
     public async Task<TaskTypeStationManualCloseResult> CloseManuallyAsync(
         int mapId,
@@ -250,11 +251,13 @@ public sealed class TaskTypeStationActivationService(
         switch (conclusion)
         {
             case TaskTypeStationReconciliationConclusion.NothingToReconcile:
-                return Invariant($"Map {mapId} has no open activation attempt; version {readBack.ActivePointer?.ActiveVersion} is active. {readBack.Detail}");
+                return readBack.ActivePointer?.ActiveVersion is long active
+                    ? Invariant($"Map {mapId} has no open activation attempt; version {active} is active. {readBack.Detail}")
+                    : Invariant($"Map {mapId} has no open activation attempt and no active version (pointer {readBack.ActivePointer?.State ?? "absent"}); an activation or rollback gives it one.");
             case TaskTypeStationReconciliationConclusion.TargetActive:
                 return Invariant($"The target version {attempt!.TargetVersion} is the one in force. {readBack.Detail}");
             case TaskTypeStationReconciliationConclusion.PreviousActive when attempt!.PreviousVersion is null:
-                return Invariant($"No version was active before and none is now; the activation of version {attempt.TargetVersion} did not happen, and Map {mapId} is back to having no active version.");
+                return Invariant($"No version was active before and none is now; the activation of version {attempt.TargetVersion} did not happen, and Map {mapId} is back to having no active version. After a manual close, or when no hold recorded where the attempt started, that is the manual-close tombstone: a restart does not load the preset, and an activation or rollback gives the map a version.");
             case TaskTypeStationReconciliationConclusion.PreviousActive:
                 return Invariant($"The previous version {attempt!.PreviousVersion} is still in force; the activation of version {attempt.TargetVersion} did not happen. {readBack.Detail}");
             default:
@@ -421,7 +424,9 @@ public sealed class TaskTypeStationActivationService(
         {
             violations.Add(new(
                 TaskTypeStationActivationReasonCodes.TaskTypeNotBound, taskType, null,
-                Invariant($"{taskType} has no binding in Map {mapId}'s active version {active?.Version}, so there is nothing to revalidate.")));
+                active is null
+                    ? Invariant($"Map {mapId} has no active version, so {taskType} has no binding to revalidate.")
+                    : Invariant($"{taskType} has no binding in Map {mapId}'s active version {active.Version}, so there is nothing to revalidate.")));
         }
         if (string.IsNullOrWhiteSpace(siteVerificationRef))
         {

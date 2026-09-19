@@ -201,6 +201,10 @@ jobs:
               # control-server#160, specification 8.3 batch-6 mechanism criterion 3: REQ-0187's AREA/EQP uniqueness
               # across task types.
               @{ Name = 'area-eqp-unique-across-task-types'; Runs = 1; BatchId = 'batch-6' }
+              # control-server#162, specification 8.3 batch-6 mechanism criterion 5: a dashboard hold on one Map +
+              # TASK_TYPE does not cascade; a catalog change holds only the task type bound to the changed station.
+              @{ Name = 'binding-hold-dashboard-not-cascading'; Runs = 1; BatchId = 'batch-6' }
+              @{ Name = 'catalog-change-binding-hold'; Runs = 1; BatchId = 'batch-6' }
               # control-server#160, criterion 2: the end station taken from the binding, frozen at acceptance.
               @{ Name = 'task-type-binding-admits-bound-station'; Runs = 1; BatchId = 'batch-6' }
               # control-server#160, criterion 1: a missing binding fails closed for its own task type only.

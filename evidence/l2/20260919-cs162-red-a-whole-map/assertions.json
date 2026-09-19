@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "scenario": "binding-hold-dashboard-not-cascading",
+  "runId": "20260919T071033426Z",
+  "outcome": "FAIL",
+  "failureReason": "Timed out after 90s waiting for: demand first was accepted and dispatched to the pickup station. Last observed: (nothing)",
+  "identity": {
+    "agvId": "AGV-L2-001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T071033426Z",
+    "fleet": [
+      "AGV-L2-001/BROKERX-L2-0001",
+      "AGV-L2-002/BROKERX-L2-0002"
+    ],
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "controlServerCommit": "72877d990227a7f257a0e32b708b7f9c431c9334",
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-2",
+    "rig": "SyntheticOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-BH-01",
+      "description": "确认页不自动刷新，带着这一行的 Map 与任务类型；提交后 303 回到看板主页",
+      "outcome": "PASS",
+      "expected": "no refresh, taskType=STAGING_TO_WIRE, 303 → /",
+      "actual": "refresh=False, 303 → /"
+    },
+    {
+      "id": "L2-BH-02",
+      "description": "暂停只落在 Map 25 的 STAGING_TO_WIRE 上，来源看板人工；WIRE_TO_GATE 没有暂停",
+      "outcome": "FAIL",
+      "expected": "STAGING_TO_WIRE/MANUAL/DASHBOARD_MANUAL_HOLD",
+      "actual": "WIRE_TO_NITROGEN/MANUAL/DASHBOARD_MANUAL_HOLD, WIRE_TO_OPTICAL/MANUAL/DASHBOARD_MANUAL_HOLD, DIE_TO_OVEN/MANUAL/DASHBOARD_MANUAL_HOLD, DIE_TO_WIRE_STAGING/MANUAL/DASHBOARD_MANUAL_HOLD, WIRE_TO_GATE/MANUAL/DASHBOARD_MANUAL_HOLD, STAGING_TO_WIRE/MANUAL/DASHBOARD_MANUAL_HOLD"
+    }
+  ]
+}

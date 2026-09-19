@@ -1,0 +1,20 @@
+commit: f5f7018670167ab3889c2a26d1cc9dcd2b1d3e4f dirty: 1
+filter: FullyQualifiedName~TaskTypeStationActivationTests|FullyQualifiedName~TaskTypeBindingDashboardTests|FullyQualifiedName~TaskTypeHold|FullyQualifiedName~CatalogBinding|FullyQualifiedName~IntegrationSliceTraitArchitectureTests|FullyQualifiedName~DashboardActionTests|FullyQualifiedName~DashboardSkeletonTests
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:08.39]     ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource [FAIL]
+  Failed ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource [5 s]
+  Error Message:
+   ControlServer.Application.TaskTypeStationConfigurationException : The task type station preset configuration has 2 violation(s); refusing to start: TASK_TYPE_BINDING_REQUIRED_MISSING: DIE_TO_OVEN is in this map's requirement set but has no binding.; TASK_TYPE_BINDING_REQUIRED_MISSING: WIRE_TO_OPTICAL is in this map's requirement set but has no binding.
+  Stack Trace:
+     at ControlServer.Infrastructure.Persistence.TaskTypeStationBindingStore.WriteVersionAsync(Int32 mapId, Int64 ruleVersion, IReadOnlyList`1 requiredTaskTypes, IReadOnlyList`1 bindings, Nullable`1 catalogRevision, String source, DateTimeOffset loadedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationStores.cs:line 271
+   at ControlServer.Infrastructure.Persistence.TaskTypeStationBindingStore.WriteVersionAsync(Int32 mapId, Int64 ruleVersion, IReadOnlyList`1 requiredTaskTypes, IReadOnlyList`1 bindings, Nullable`1 catalogRevision, String source, DateTimeOffset loadedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\TaskTypeStationStores.cs:line 324
+   at ControlServer.Tests.TaskTypeBindingDashboardTests.ActivateWithRequirementAsync(TaskTypeStationPersistenceFixture fixture) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeBindingDashboardTests.cs:line 151
+   at ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeBindingDashboardTests.cs:line 23
+   at ControlServer.Tests.TaskTypeBindingDashboardTests.TheQueryListsEveryRuleTaskTypeWithItsBindingAndStatusAndEveryHoldWithItsSource() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeBindingDashboardTests.cs:line 83
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:    93, Skipped:     0, Total:    94, Duration: 44 s - ControlServer.Tests.dll (net8.0)

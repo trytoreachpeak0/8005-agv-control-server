@@ -1,7 +1,14 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Composition;
+using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Tests;
 
@@ -450,9 +457,9 @@ public sealed class TaskTypeStationActivationTests
             "INSERT INTO TaskTypeStationHolds (HoldId, MapId, TaskType, Source, ReasonCode, DetailJson, RaisedAt, RaisedBy) VALUES "
             + "('foreign-hold', 25, 'WIRE_TO_OPTICAL', 'ACTIVATION_RESULT_UNKNOWN', 'TASK_TYPE_ACTIVATION_RESULT_UNKNOWN', "
             + "'{\"attemptId\":\"another-attempt\",\"targetVersion\":9,\"previousVersion\":8}', '2026-09-19 07:00:00+00:00', 'fieldops:activation:another-attempt')");
-        TaskTypeStationHold manual = await harness.Default().Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await harness.Default().Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
 
         async Task AssertOneOpenActivationHoldPerTaskTypeAsync()
         {
@@ -501,14 +508,22 @@ public sealed class TaskTypeStationActivationTests
         Assert.Null(holds.Single(hold => hold.HoldId == manual.HoldId).ReleasedAt);
         Assert.DoesNotContain(holds, hold => hold.ReleasedAt is null
             && hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown);
-        // Every activation hold this attempt ever raised names this attempt, and each release names it too.
-        Assert.All(
-            holds.Where(hold => hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown && hold.HoldId != "foreign-hold"),
-            hold =>
-            {
-                Assert.Contains(unknown.AttemptId, hold.DetailJson, StringComparison.Ordinal);
-                Assert.Equal("fieldops:activation:" + unknown.AttemptId, hold.ReleasedBy);
-            });
+        // Every activation hold this attempt ever raised names this attempt. Each release names whoever released it
+        // (control-server#191): the attempt's own second step for the first two, the reconciliation for the re-raised two.
+        TaskTypeStationHoldRow[] ours = [.. holds.Where(hold =>
+            hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown && hold.HoldId != "foreign-hold")];
+        Assert.Equal(4, ours.Length);
+        Assert.All(ours, hold =>
+        {
+            Assert.Contains(unknown.AttemptId, hold.DetailJson, StringComparison.Ordinal);
+            Assert.Equal("fieldops:activation:" + unknown.AttemptId, hold.RaisedBy);
+            Assert.Equal(
+                first.ReleasedHoldIds.Contains(hold.HoldId)
+                    ? "fieldops:reconcile:" + first.AuditRecordId
+                    : "fieldops:activation:" + unknown.AttemptId,
+                hold.ReleasedBy);
+        });
+        Assert.Equal(2, ours.Count(hold => first.ReleasedHoldIds.Contains(hold.HoldId)));
     }
 
     [Fact]
@@ -516,12 +531,12 @@ public sealed class TaskTypeStationActivationTests
     {
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = harness.Default();
-        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
-        TaskTypeStationHold catalog = await stack.Holds.RaiseAsync(
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
+        TaskTypeStationHold catalog = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.CatalogChange, "CATALOG_RENAMED", "{}", "server",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
 
         TaskTypeStationActivationResult result = await stack.ActivateAsync(
             TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
@@ -540,12 +555,12 @@ public sealed class TaskTypeStationActivationTests
     {
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = harness.Default();
-        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
-        TaskTypeStationHold catalog = await stack.Holds.RaiseAsync(
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
+        TaskTypeStationHold catalog = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.CatalogChange, "CATALOG_RENAMED", "{}", "server",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
 
         TaskTypeStationHoldReleaseResult result = await stack.Service.ReleaseHoldAsync(
             25, TransportTaskTypes.WireToGate, "SITE-RECHECK-0919", TaskTypeStationActivationHarness.Catalog,
@@ -685,9 +700,9 @@ public sealed class TaskTypeStationActivationTests
     {
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = harness.Default();
-        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
         RiotMapStationCatalogSnapshot catalog = TaskTypeStationActivationHarness.Catalog;
         string? siteVerification = "SITE-RECHECK-0919";
         switch (scenario)
@@ -1029,9 +1044,9 @@ public sealed class TaskTypeStationActivationTests
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
             harness.NewContext(), wrapAudit: inner => new FailingAudit(inner, TaskTypeStationActivationAuditActions.HoldReleased));
-        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
 
         TaskTypeStationHoldReleaseResult result = await stack.Service.ReleaseHoldAsync(
             25, TransportTaskTypes.WireToGate, "SITE-RECHECK-0919", TaskTypeStationActivationHarness.Catalog,
@@ -1146,6 +1161,186 @@ public sealed class TaskTypeStationActivationTests
         Assert.True(fault.Failed);
         Assert.Equal(before, await harness.CountRowsAsync());
         Assert.Null(await harness.Default().Bindings.ReadVersionAsync(25, 2, Token));
+    }
+
+    // ======== control-server#191: follow-ups of PR #183 review round 3 ========
+
+    /// <summary>
+    /// cs#191 第 1 条：从墓碑出发、需求集为空的激活在两步之间中断，没有暂停可还原它的来历。对账读回「原版本在用」时回到墓碑，
+    /// 不删指针行；重启后预置不生效，该图仍无生效版本，等 FieldOps 激活或回滚。
+    /// </summary>
+    [Fact]
+    public async Task AnInterruptedActivationOfAnEmptyRequirementSetFromATombstoneReconcilesBackToTheTombstoneAndARestartKeepsThePresetOut()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        await CloseAfterAContradictionAsync(harness);
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying))
+            .ActivateAsync(TaskTypeStationActivationHarness.Candidate());
+        Assert.StartsWith("25|<null>|ACTIVATION_UNKNOWN|", await harness.PointerRowAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now.AddMinutes(1), Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled.Conclusion);
+        Assert.Equal("25|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+
+        List<string> logs = await RestartWithPresetAsync(harness, 25);
+
+        Assert.Equal("25|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+        Assert.Null(await harness.Default().Bindings.ReadActiveAsync(25, Token));
+        Assert.Contains(logs, line => line.Contains("not applied", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// cs#191 对照：一张从未激活过的图（没有指针行）、需求集为空，第一次激活在两步之间中断。没有暂停记着它的来历，分不清先前是墓碑
+    /// 还是「从未激活」，按墓碑处理（fail-safe）：对账后留墓碑，重启不装预置。这是有意的取舍——代价是这张图要等一次 FieldOps 激活。
+    /// </summary>
+    [Fact]
+    public async Task AnInterruptedFirstActivationOfAnEmptyRequirementSetIsTakenAsFromATombstoneAndARestartKeepsThePresetOut()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        RiotMapStationCatalogSnapshot map26 = TaskTypeStationCatalogEvidence.Supplied(
+            26, TaskTypeStationActivationHarness.CatalogStations, TaskTypeStationActivationHarness.Now);
+        await harness.ConfirmCatalogAsync(map26, TaskTypeStationActivationHarness.Now.AddSeconds(-30));
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying))
+            .ActivateAsync(new TaskTypeStationCandidate(26, 1, [], []), catalog: map26);
+        Assert.StartsWith("25|1|ACTIVE|<null>\n26|<null>|ACTIVATION_UNKNOWN|", await harness.PointerRowAsync(), StringComparison.Ordinal);
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            26, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled.Conclusion);
+        Assert.Equal("25|1|ACTIVE|<null>\n26|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+
+        await RestartWithPresetAsync(harness, 26);
+
+        Assert.Equal("25|1|ACTIVE|<null>\n26|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+        Assert.Null(await harness.Default().Bindings.ReadActiveAsync(26, Token));
+    }
+
+    /// <summary>
+    /// cs#191 第 4 条：对账与人工收尾撤「激活结果未知」暂停时，<c>ReleasedBy</c> 记的是这次动作——前缀说是哪个动词，后面是它那条审计的
+    /// 记录号（理由、自报角色与部署身份都在那条审计里）；置暂停的那次尝试仍在 <c>RaisedBy</c> 里，不被改写。
+    /// </summary>
+    [Fact]
+    public async Task AReconciliationOrAManualCloseRecordsItselfAsTheOneWhoReleasedTheHolds()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        ControlServerDbContext dying = harness.NewContext();
+        TaskTypeStationActivationResult interrupted = await TaskTypeStationActivationHarness.StackOver(
+            dying, inner => new DieBeforeComplete(inner, dying)).ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now.AddMinutes(1), Token);
+
+        Assert.Equal(2, reconciled.ReleasedHoldIds.Count);
+        TaskTypeStationHoldRow[] byReconciliation = [.. (await harness.HoldsAsync())
+            .Where(hold => reconciled.ReleasedHoldIds.Contains(hold.HoldId))];
+        Assert.All(byReconciliation, hold => Assert.Equal(
+            ("fieldops:activation:" + interrupted.AttemptId, "fieldops:reconcile:" + reconciled.AuditRecordId),
+            (hold.RaisedBy, hold.ReleasedBy)));
+
+        // A second attempt, a contradiction, and a manual close.
+        ControlServerDbContext dyingAgain = harness.NewContext();
+        TaskTypeStationActivationResult contradicted = await TaskTypeStationActivationHarness.StackOver(
+            dyingAgain, inner => new DieBeforeComplete(inner, dyingAgain)).ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging),
+            at: TaskTypeStationActivationHarness.Now.AddMinutes(2));
+        await harness.ExecuteAsync("UPDATE TaskTypeStationBindings SET StationName = '关卡-改' WHERE MapId = 25 AND Version = 1");
+
+        TaskTypeStationManualCloseResult closed = await harness.Default().Service.CloseManuallyAsync(
+            25, new TaskTypeStationChangeRequest("两个版本都读不回", "现场工程师"), TaskTypeStationActivationHarness.Now.AddMinutes(3), Token);
+
+        Assert.Equal(TaskTypeStationManualCloseOutcome.Closed, closed.Outcome);
+        Assert.Equal(2, closed.ReleasedHoldIds.Count);
+        TaskTypeStationHoldRow[] byClose = [.. (await harness.HoldsAsync())
+            .Where(hold => closed.ReleasedHoldIds.Contains(hold.HoldId))];
+        Assert.All(byClose, hold => Assert.Equal(
+            ("fieldops:activation:" + contradicted.AttemptId, "fieldops:close:" + closed.AuditRecordId),
+            (hold.RaisedBy, hold.ReleasedBy)));
+        // The reconciliation's releases stay as they were written.
+        Assert.All(
+            (await harness.HoldsAsync()).Where(hold => reconciled.ReleasedHoldIds.Contains(hold.HoldId)),
+            hold => Assert.Equal("fieldops:reconcile:" + reconciled.AuditRecordId, hold.ReleasedBy));
+    }
+
+    /// <summary>
+    /// cs#191 第 2 条（第二轮复审 N3 的另一支）：第二步已提交、读回也对，写 <c>Activated</c> 审计时数据库等锁超时。不崩溃，
+    /// 按结果未知处理——写一条超时的结果未知审计、该图重新暂停着，从不留下一条「已生效」审计；对账读到目标版本。
+    /// </summary>
+    [Fact]
+    public async Task AnActivatedAuditThatTheDatabaseRefusesIsConcludedAsUnknownAndNeverRecordedAsActivated()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        AuditInsertFault fault = new(
+            TaskTypeStationActivationAuditActions.Activated,
+            new Microsoft.Data.Sqlite.SqliteException("database is locked", 5));
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(harness.NewContext(fault));
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(1, fault.Thrown);
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
+        Assert.Equal("25|2|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
+        Assert.Equal(2, (await harness.HoldsAsync()).Count(hold => hold.ReleasedAt is null));
+        IReadOnlyList<BusinessAuditRecordRow> audit = await harness.AuditAsync();
+        Assert.DoesNotContain(audit, row => row.Action == TaskTypeStationActivationAuditActions.Activated);
+        Assert.Equal(
+            (TaskTypeStationActivationAuditActions.ResultUnknown, GovernanceActionOutcome.TimedOut),
+            (audit[^1].Action, audit[^1].Outcome));
+        Assert.Equal([audit[^1].AuditRecordId], result.AuditRecordIds);
+        Assert.Contains(result.AttemptId, audit[^1].DetailJson, StringComparison.Ordinal);
+        Assert.Equal(
+            TaskTypeStationReconciliationConclusion.TargetActive,
+            (await harness.Default().Service.ReconcileAsync(25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token)).Conclusion);
+    }
+
+    /// <summary>
+    /// 同一台重新起的服务端：在 <paramref name="harness"/> 的库文件上，带一份把 <c>WIRE_TO_GATE</c> 绑到 210 的预置，跑一遍启动装载。
+    /// 返回启动写的每一行日志。
+    /// </summary>
+    private static async Task<List<string>> RestartWithPresetAsync(TaskTypeStationActivationHarness harness, int mapId)
+    {
+        string presetPath = Path.Combine(Path.GetDirectoryName(harness.DatabasePath)!, TaskTypeStationPreset.FileName);
+        await File.WriteAllTextAsync(presetPath, System.Text.Json.JsonSerializer.Serialize(new
+        {
+            TaskTypeStations = new
+            {
+                rules = TaskTypeStationTestData.SixRules.Select(rule => new { taskType = rule.TaskType, fixedEnd = rule.FixedEnd }),
+                mapId,
+                requiredTaskTypes = new[] { TransportTaskTypes.WireToGate },
+                bindings = new[]
+                {
+                    new
+                    {
+                        taskType = TaskTypeStationActivationHarness.Gate.TaskType,
+                        stationRiotId = TaskTypeStationActivationHarness.Gate.StationRiotId,
+                        stationName = TaskTypeStationActivationHarness.Gate.StationName,
+                        siteVerificationRef = TaskTypeStationActivationHarness.Gate.SiteVerificationRef
+                    }
+                }
+            }
+        }), Token);
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [TaskTypeStationPreset.SettingsFileKey] = presetPath })
+            .Build();
+        List<string> logs = [];
+        ServiceCollection services = new();
+        services.AddLogging(logging => logging.AddProvider(new LineCapturingLoggerProvider(logs)));
+        services.AddSingleton(configuration);
+        services.AddSingleton(Options.Create(new JourneyRuntimeOptions { Enabled = true, MapId = mapId }));
+        services.AddDbContext<ControlServerDbContext>(options =>
+            options.UseSqlite(ControlServerSqlite.ForDatabaseFile(harness.DatabasePath, readOnly: false)));
+        services.AddGovernance(configuration);
+        services.AddTaskTypeStations();
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await TaskTypeStationStartup.EnsureAsync(provider, Token);
+        return logs;
     }
 
     private static async Task CloseAfterAContradictionAsync(TaskTypeStationActivationHarness harness)
@@ -1340,6 +1535,58 @@ internal sealed class SaveFault(Exception toThrow, int failOnSave) : Microsoft.E
         if (++_saves == failOnSave)
         {
             Failed = true;
+            throw toThrow;
+        }
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+}
+
+/// <summary>Collects every formatted log line, in order, for a startup run against the harness's database.</summary>
+internal sealed class LineCapturingLoggerProvider(List<string> lines) : ILoggerProvider
+{
+    public ILogger CreateLogger(string categoryName) => new LineCapturingLogger(lines);
+
+    public void Dispose()
+    {
+    }
+
+    private sealed class LineCapturingLogger(List<string> lines) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (lines)
+            {
+                lines.Add(formatter(state, exception));
+            }
+        }
+    }
+}
+
+/// <summary>
+/// The database refuses the insert of one audit action, once, from inside SaveChanges -- after the row was added to the
+/// context, as a lock timeout or a full disk would.
+/// </summary>
+internal sealed class AuditInsertFault(string action, Exception toThrow)
+    : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+{
+    public int Thrown { get; private set; }
+
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+        Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+        Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (Thrown == 0 && eventData.Context!.ChangeTracker.Entries<BusinessAuditRecordRow>().Any(entry =>
+                entry.State == EntityState.Added && entry.Entity.Action == action))
+        {
+            Thrown++;
             throw toThrow;
         }
         return base.SavingChangesAsync(eventData, result, cancellationToken);

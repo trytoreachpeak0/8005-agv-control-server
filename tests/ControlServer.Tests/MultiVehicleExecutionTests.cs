@@ -1068,6 +1068,7 @@ public sealed class MultiVehicleExecutionTests
                 new MapStationResolver(),
                 new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
                 TaskTypeStationRuntimeSeed.Access(Context),
+                TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
                 new JourneyIntakeCoordinator(
                     new DemandIntakeService(Catalog, new RecordingAcceptances(store, AcceptedPlans)),
                     movement),

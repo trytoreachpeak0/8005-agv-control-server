@@ -27,6 +27,7 @@ public sealed class JourneyRuntimeEngine(
     MapStationResolver stationResolver,
     IFixedTaskStationResolver fixedStationResolver,
     TaskTypeStationAccess taskTypeStations,
+    CatalogBindingHoldConvergence catalogBindingHolds,
     JourneyIntakeCoordinator intakeCoordinator,
     MovementDispatchService movementDispatch,
     WireToGateStore store,
@@ -188,6 +189,8 @@ public sealed class JourneyRuntimeEngine(
         // (REQ-0302); that is the task type's own admission question.
         await catalogAvailability.RecordConfirmationAsync(currentMap, cancellationToken)
             .ConfigureAwait(false);
+        // control-server#162: a bound station renamed or gone holds its own Map + TASK_TYPE, read from the next round on.
+        await catalogBindingHolds.ApplyAsync(currentMap, cancellationToken).ConfigureAwait(false);
 
         // The policy is re-derived from the live map every iteration, and map 25 is shared: RIoT's
         // other users add, rename and remove stations on it. Any such edit to an area-named station
