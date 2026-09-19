@@ -30,6 +30,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -140,7 +142,16 @@ $operationKey = Wait-L2Condition -Description 'the load command reached the peer
     -Probe { Get-PendingOperationKey } -Until { param($v) $null -ne $v }
 $journal.Note("Load command $operationKey reached the peer, which will never answer it.")
 
-$stage = Get-Stage
+# 等，不是读一次（control-server#193）。服务端在同一轮迭代里先把装载指令落库并发出去，再单独保存录入请求的
+# 结算，迭代末尾才保存 AwaitingLoadResult——所以对端手里有指令的那一刻，库里可能还是 AwaitingSublot。CI run
+# 35432232407 就读在这个窗口里；L1 JourneyRuntimeWorkerLoadCommandCommitOrderTests 钉住了这个顺序，也证明窗口里
+# 进来的录入前取消会被拒（它看的是已落库的指令，不是阶段）。load-result-requires-recovery 的 L2-LR-01 是同一对
+# 写入，2026-09-10 就这样修过，这一处当时没跟上。
+#
+# 等不到不抛：超时本身就是 L2-LN-01 的失败，要带着最后读到的阶段落进判据表，而不是变成一条 failureReason。
+$stage = Wait-L2ConditionOrLast -Description 'the journey recorded that it is waiting for the load result' `
+    -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 30 `
+    -Probe { Get-Stage } -Until { param($v) $v -eq 'AwaitingLoadResult' }
 $assertions.Add(
     'L2-LN-01', '装载指令已下发，旅程在等结果',
     ($stage -eq 'AwaitingLoadResult'), 'AwaitingLoadResult', $stage)
