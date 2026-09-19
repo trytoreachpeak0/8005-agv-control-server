@@ -111,13 +111,20 @@ internal static partial class Program
             CheckBindingSnapshotsCommand => await CheckBindingSnapshotsAsync(context),
             ImportAreaAssignmentsCommand => await ImportAreaAssignmentsAsync(context, governance, options, now),
             ReadAreaAssignmentsCommand => await ReadAreaAssignmentsAsync(context, governance, options),
+            ActivateTaskTypeStationsCommand => await ActivateTaskTypeStationsAsync(context, governance, options, now),
+            RollbackTaskTypeStationsCommand => await RollbackTaskTypeStationsAsync(context, governance, options, now),
+            ReconcileTaskTypeStationsCommand => await ReconcileTaskTypeStationsAsync(context, governance, options, now),
+            ReleaseTaskTypeStationHoldCommand => await ReleaseTaskTypeStationHoldAsync(context, governance, options, now),
+            ReadTaskTypeStationsCommand => await ReadTaskTypeStationsAsync(context, governance, options),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
 
-    /// <summary>Stub for control-server#161's test commit: the list as it was.</summary>
+    /// <summary>
+    /// 以 SQLite 只读模式开库的命令。一个判断、一份名单：新增只读动词往这里加，不要在别处另起一套。
+    /// </summary>
     internal static bool OpensReadOnly(string command) =>
-        command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand;
+        command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand or ReadTaskTypeStationsCommand;
 
     private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
 
@@ -696,7 +703,9 @@ internal static partial class Program
         Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"ControlServer.FieldOps: {problem}."));
         Console.Error.WriteLine(
             "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io"
-            + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments>"
+            + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments"
+            + "|activate-task-type-stations|rollback-task-type-stations|reconcile-task-type-stations"
+            + "|release-task-type-station-hold|task-type-stations>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
@@ -711,6 +720,17 @@ internal static partial class Program
             "  check-binding-snapshots   read-only; exit 1 means findings, not a tool failure");
         Console.Error.WriteLine("  import-area-assignments --input <assignments.csv> [--dry-run]");
         Console.Error.WriteLine("  area-assignments        [--version <n>]   read-only");
+        Console.Error.WriteLine(
+            "  activate-task-type-stations --input <candidate.json> --catalog <stations.json> --reason <text>"
+            + " [--role <text>] [--dry-run]");
+        Console.Error.WriteLine(
+            "  rollback-task-type-stations --map <id> --version <n> --catalog <stations.json> --reason <text>"
+            + " [--role <text>] [--dry-run]");
+        Console.Error.WriteLine("  reconcile-task-type-stations --map <id> --reason <text> [--role <text>]");
+        Console.Error.WriteLine(
+            "  release-task-type-station-hold --map <id> --task-type <TASK_TYPE> --site-verification <ref>"
+            + " --catalog <stations.json> --reason <text> [--role <text>]");
+        Console.Error.WriteLine("  task-type-stations      --map <id>   read-only");
         Console.Error.WriteLine();
         Console.Error.WriteLine(
             "import-area-assignments takes a UTF-8 CSV whose header is exactly"
@@ -730,6 +750,19 @@ internal static partial class Program
             "    - the server must have been started once with the intended configuration before importing;");
         Console.Error.WriteLine(
             "    - a zone that is configured but has no vehicle serving it counts as not existing.");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine(
+            "The task type station verbs change which whole binding set version a map uses, and release holds."
+            + " candidate.json is {mapId, ruleVersion, requiredTaskTypes[], bindings[{taskType, stationRiotId,"
+            + " stationName, siteVerificationRef}]}; stations.json is {mapId, stations[{stationId, stationName}]},"
+            + " the map's complete RIoT station list. It must be exactly the list the server last confirmed, and that"
+            + " confirmation must still be fresh; otherwise nothing is activated or released.");
+        Console.Error.WriteLine(
+            "  Activation commits in two steps. If the second one cannot be confirmed the map stays held and the"
+            + " outcome is RESULT_UNKNOWN; run reconcile-task-type-stations, which reads what is really in force.");
+        Console.Error.WriteLine(
+            "  --role is recorded as given and is not verified: there is no personnel authentication, and every audit"
+            + " record names this deployment, not a person.");
         return 2;
     }
 }
