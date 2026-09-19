@@ -10,6 +10,7 @@ using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.Fleet;
 using ControlServer.Host.Runtime.RouteGraph;
+using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -41,6 +42,10 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("VEHICLE_FAULT_ISOLATED", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_FAULT_IDENTITY_UNRESOLVED", DispatchReasonClass.Backlog)]
     [InlineData("OUT_OF_SCOPE_WORK_TYPE", DispatchReasonClass.Backlog)]
+    [InlineData("TASK_TYPE_BINDING_MISSING", DispatchReasonClass.Backlog)]
+    [InlineData("TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", DispatchReasonClass.Backlog)]
+    [InlineData("TASK_TYPE_HELD", DispatchReasonClass.Backlog)]
+    [InlineData("TASK_TYPE_NOT_YET_EXECUTABLE", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_NOT_IN_DISPATCH_POLICY", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_TASK_TYPE_NOT_ADMITTED", DispatchReasonClass.Backlog)]
     [InlineData("REQUIRED_MES_FACT_MISSING", DispatchReasonClass.Backlog)]
@@ -54,6 +59,7 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("AREA_STATION_NOT_UNIQUE", DispatchReasonClass.Structural)]
     [InlineData("DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING", DispatchReasonClass.Structural)]
     [InlineData("ROUTE_EVIDENCE_MISSING", DispatchReasonClass.Backlog)]
+    [InlineData("FIXED_STATION_AS_ORIGIN_NOT_SUPPORTED", DispatchReasonClass.Backlog)]
     [InlineData("DISPATCH_ZONE_HAS_NO_VEHICLES", DispatchReasonClass.Structural)]
     [InlineData("VEHICLE_NOT_ADMITTED_IN_ZONE", DispatchReasonClass.Backlog)]
     [InlineData("PACKAGE_CAPACITY_NOT_UNIQUE", DispatchReasonClass.Backlog)]
@@ -106,13 +112,18 @@ public sealed class StructuralDispatchBlockTests
     /// 上面的逐码清单与分类表一一对应，而分类表覆盖派车链现有的全部原因码：判据源码里的码字面量、各原因码常量类、
     /// 引擎在判据链之后写进积压的码。新加一个码而不登记分类，这里会红。
     /// </summary>
+    /// <remarks>
+    /// control-server#158 之后站点解析判据用变量返回解析器与计划生成器给的码，判据目录里的字面量扫不到它们
+    /// （#158 审查的交接，#160 处理）：所以还扫计划生成器与解析器的源码，并取固定站解析器声明的拒绝码。
+    /// </remarks>
     [Fact]
     public void TheTableCoversEveryReasonCodeTheChainAndTheIntakeBehindItWrite()
     {
         string root = FindRepositoryRoot();
         string runtime = Path.Combine(root, "src", "ControlServer.Host", "Runtime");
         Regex code = new("\"([A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)\"");
-        HashSet<string> notReasonCodes = new(StringComparer.Ordinal) { "WIRE_TO_GATE" };
+        // Leg types the plan builder writes into a plan; not verdicts.
+        HashSet<string> notReasonCodes = new(StringComparer.Ordinal) { "WIRE_TO_GATE", "TO_PICKUP", "TO_GATE", "TO_DROPOFF" };
 
         HashSet<string> written = new(StringComparer.Ordinal);
         foreach (string file in Directory.GetFiles(Path.Combine(runtime, "Dispatch", "Criteria"), "*.cs"))
@@ -124,6 +135,16 @@ public sealed class StructuralDispatchBlockTests
         written.UnionWith(code.Matches(File.ReadAllText(Path.Combine(runtime, "MapStationResolver.cs")))
             .Select(match => match.Groups[1].Value)
             .Where(value => value != "FIXED_STATION_BINDING_INVALID"));
+        foreach (string file in new[]
+                 {
+                     Path.Combine(runtime, "JourneyPlanBuilder.cs"),
+                     Path.Combine(runtime, "FixedTaskStations.cs"),
+                     Path.Combine(runtime, "TaskTypeStations", "BoundFixedTaskStationResolver.cs"),
+                 })
+        {
+            written.UnionWith(code.Matches(File.ReadAllText(file)).Select(match => match.Groups[1].Value));
+        }
+        written.UnionWith(BoundFixedTaskStationResolver.RefusalReasonCodes);
         written.UnionWith(Regex.Matches(
                 File.ReadAllText(Path.Combine(runtime, "JourneyRuntimeEngine.cs")),
                 "\"((?:FINAL|DEMAND)_[A-Z_]+)\"")

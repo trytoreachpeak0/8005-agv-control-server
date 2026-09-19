@@ -24,6 +24,9 @@ public sealed class BoundFixedTaskStationResolver(
     TaskTypeStationAccess access,
     IOptions<JourneyRuntimeOptions> options) : IFixedTaskStationResolver
 {
+    /// <summary>Every reason code a view of this resolver refuses a task type with.</summary>
+    public static IReadOnlyList<string> RefusalReasonCodes { get; } = [];
+
     private readonly int _mapId = options.Value.MapId;
 
     public async Task<IFixedTaskStationView> ReadForRoundAsync(
