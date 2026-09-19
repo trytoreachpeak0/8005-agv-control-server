@@ -174,8 +174,11 @@ public sealed class CatalogBindingHoldConvergenceTests
             [("RENAMED", "派工待送取货-改", 1000L), ("RENAMED", "派工待送取货-再改", 2000L), ("REMOVED", (string?)null, 4000L)],
             changes.Select(change => (change.ChangeKind, change.CurrentStationName, change.CatalogRevision))
                 .OrderBy(change => change.CatalogRevision));
-        Assert.Equal(changes[0].HoldId, changes.Single(change => change.CatalogRevision == 2000).HoldId);
-        Assert.NotEqual(changes[0].HoldId, changes.Single(change => change.CatalogRevision == 4000).HoldId);
+        // Picked by revision: under the fixed clock every row has the same ObservedAt, so the listing order among them is
+        // the random ChangeId's.
+        string? renameHold = changes.Single(change => change.CatalogRevision == 1000).HoldId;
+        Assert.Equal(renameHold, changes.Single(change => change.CatalogRevision == 2000).HoldId);
+        Assert.NotEqual(renameHold, changes.Single(change => change.CatalogRevision == 4000).HoldId);
     }
 
     [Fact]
