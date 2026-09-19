@@ -1,0 +1,103 @@
+{
+  "checkedAt": "2026-09-19T13:05:41.5989776+08:00",
+  "baseUrl": "http://172.19.206.222:8888/",
+  "mapId": 26,
+  "map": {
+    "status": 200,
+    "obtained": true,
+    "id": 26,
+    "name": {
+      "present": true,
+      "text": "老厂前线new_wk",
+      "utf8Hex": "E88081E58E82E5898DE7BABF6E65775F776B"
+    },
+    "gmtUpdate": "2026-09-18 22:01:54",
+    "state": "activated",
+    "syncState": "asynced",
+    "resultKeys": [
+      "description",
+      "floor",
+      "gmtCreate",
+      "gmtUpdate",
+      "id",
+      "mapError",
+      "mapJson",
+      "name",
+      "source",
+      "state",
+      "syncState",
+      "url"
+    ]
+  },
+  "stations": {
+    "status": 200,
+    "obtained": true,
+    "count": 208,
+    "gateStationName": {
+      "present": true,
+      "text": "关卡",
+      "utf8Hex": "E585B3E58DA1"
+    },
+    "gateStationIds": [
+      210
+    ]
+  },
+  "vehicles": [
+    {
+      "deviceKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+      "status": 200,
+      "obtained": true,
+      "connected": false,
+      "vehicleStatus": 2,
+      "enable": true,
+      "procState": "IDLE",
+      "currentPosition": 0,
+      "currentMap": {
+        "present": true,
+        "text": "老厂前线new",
+        "utf8Hex": "E88081E58E82E5898DE7BABF6E6577"
+      }
+    },
+    {
+      "deviceKey": "BROKERX-7daca4ee91da498d8026c68b7b941127",
+      "status": 200,
+      "obtained": true,
+      "connected": false,
+      "vehicleStatus": 2,
+      "enable": true,
+      "procState": "IDLE",
+      "currentPosition": 0,
+      "currentMap": {
+        "present": true,
+        "text": "老厂前线new",
+        "utf8Hex": "E88081E58E82E5898DE7BABF6E6577"
+      }
+    }
+  ],
+  "config": {
+    "appSettingsPath": "src/ControlServer.Host/appsettings.json",
+    "mapId": 25,
+    "mapIdentity": {
+      "present": true,
+      "text": "老厂前线new",
+      "utf8Hex": "E88081E58E82E5898DE7BABF6E6577"
+    },
+    "gateStationId": "关卡",
+    "gateStationRiotId": 210
+  },
+  "verdicts": {
+    "mapNameVsMapIdentity": "different",
+    "vehicles": [
+      {
+        "deviceKey": "BROKERX-f38975561adf46ccb1d2f23833c7d0e4",
+        "currentMapVsMapName": "different",
+        "currentMapVsMapIdentity": "same"
+      },
+      {
+        "deviceKey": "BROKERX-7daca4ee91da498d8026c68b7b941127",
+        "currentMapVsMapName": "different",
+        "currentMapVsMapIdentity": "same"
+      }
+    ]
+  }
+}

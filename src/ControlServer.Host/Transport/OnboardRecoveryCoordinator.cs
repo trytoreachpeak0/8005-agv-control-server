@@ -429,6 +429,21 @@ public sealed class OnboardRecoveryCoordinator(
         string? actionProblem = ValidateActionPreconditions(action, session, connection, operation);
         if (actionProblem is not null)
             return RejectedAction(root, actionId, recoverySessionId, session.Revision, actionProblem);
+        // One resume authorization admits one replacement result, and the result finds its resume by attempt
+        // alone (WireToGateStore.RequireResumeAuthorizationAsync, ObserveOperationResultAsync). A second resume
+        // waiting on the same attempt, in this session or any other, would leave that result two to settle and
+        // it would never be acknowledged (control-server#180). So it is refused here, before it exists; its
+        // preconditions alone cannot tell, because the first resume leaves them true until its result arrives.
+        // A resend of an accepted resume never reaches this point: the replay above answers it.
+        if (action == "RESUME_AFTER_REPAIR" &&
+            await dbContext.RecoveryWorkflows.AnyAsync(
+                row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
+                       row.SlotOperationAttemptId == operation!.SlotOperationAttemptId &&
+                       (row.State == RecoveryWorkflowState.CommandPending ||
+                        row.State == RecoveryWorkflowState.AwaitingResult),
+                cancellationToken).ConfigureAwait(false))
+            return RejectedAction(
+                root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.ActionNotAllowedInState);
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         long forcedGeneration = connection.ForcedRecoveryGeneration;
