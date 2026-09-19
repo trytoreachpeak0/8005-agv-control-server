@@ -2,6 +2,8 @@ using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
+using ControlServer.Host.Runtime.Dispatch.Criteria;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ControlServer.Tests;
 
@@ -12,8 +14,8 @@ namespace ControlServer.Tests;
 /// <remarks>
 /// <para>
 /// <see cref="ReferenceRanker"/> is <c>RouteGraphCostRanker</c> and <c>FirstSeenDispatchCandidateRanker</c> as they
-/// stood on <c>fp/v2-impl@cc8e7992</c>, copied here verbatim in behaviour, so the comparison does not depend on
-/// anything the move touches. Every generated set is ranked by both, and both the pick and the whole order (the pick
+/// stood on <c>fp/v2-impl@cc8e7992</c>, the same orderings written out here, so the comparison does not depend on
+/// anything the move touches; both classes are gone from the product since. Every generated set is ranked by both, and both the pick and the whole order (the pick
 /// taken again from what is left, until nothing is) must agree candidate for candidate.
 /// </para>
 /// <para>
@@ -46,7 +48,7 @@ public sealed class DispatchCandidateOrderingTests
     [InlineData(Shape.OnlyDemandIdDiffers)]
     public void TheProductionRankerOrdersEveryGeneratedSetAsTheRankerBeforeTheMoveDid(Shape shape)
     {
-        RouteGraphCostRanker production = ProductionRanker();
+        IDispatchCandidateRanker production = HostRanker();
         ReferenceRanker reference = new(swapFirstSeenAndCreatedAt: false);
 
         foreach (EligibleDispatchCandidate[] set in Generate(shape))
@@ -74,8 +76,52 @@ public sealed class DispatchCandidateOrderingTests
             set => !ReferenceEquals(reference.SelectNext(set), swapped.SelectNext(set)));
     }
 
-    /// <summary>The ranker the host registers.</summary>
-    private static RouteGraphCostRanker ProductionRanker() => new();
+    /// <summary>
+    /// The layers in the order the registry lists them, one class each: the order the ranker before the move applied.
+    /// </summary>
+    [Fact]
+    public void TheLayersAreRegisteredInOnePlaceInTheOrderTheRankerBeforeTheMoveApplied()
+    {
+        Assert.Equal(
+            [
+                typeof(PricedBeforeUnpricedLayer),
+                typeof(GraphTraversalCostLayer),
+                typeof(FirstSeenLayer),
+                typeof(DemandCreatedAtLayer),
+                typeof(DemandIdOrdinalLayer),
+            ],
+            DispatchCandidateOrdering.Layers().Select(layer => layer.GetType()).ToArray());
+    }
+
+    /// <summary>
+    /// The injected fault the ticket names: the registry's first-seen and created-at layers swapped. The layered
+    /// ranker built that way parts from the ranker before the move on the generated sets, so the equivalence above
+    /// goes red on exactly this mistake.
+    /// </summary>
+    [Fact]
+    public void SwappingTheFirstSeenAndCreatedAtLayersIsCaughtByTheCorpus()
+    {
+        IDispatchCandidateComparisonLayer[] layers = [.. DispatchCandidateOrdering.Layers()];
+        int firstSeen = Array.FindIndex(layers, layer => layer is FirstSeenLayer);
+        int createdAt = Array.FindIndex(layers, layer => layer is DemandCreatedAtLayer);
+        (layers[firstSeen], layers[createdAt]) = (layers[createdAt], layers[firstSeen]);
+        LayeredDispatchCandidateRanker swapped = new(layers);
+        ReferenceRanker reference = new(swapFirstSeenAndCreatedAt: false);
+
+        Assert.Contains(
+            Enum.GetValues<Shape>().SelectMany(Generate),
+            set => !ReferenceEquals(reference.SelectNext(set), swapped.SelectNext(set)));
+    }
+
+    /// <summary>The ranker the host resolves: whatever <c>AddDispatchAdmission</c> registers.</summary>
+    private static IDispatchCandidateRanker HostRanker()
+    {
+        ServiceCollection services = new();
+        services.AddDispatchAdmission();
+        using ServiceProvider provider = services.BuildServiceProvider();
+        using IServiceScope scope = provider.CreateScope();
+        return scope.ServiceProvider.GetRequiredService<IDispatchCandidateRanker>();
+    }
 
     /// <summary>Picks, then picks again from what is left, until every candidate has been picked.</summary>
     private static List<EligibleDispatchCandidate> FullOrder(

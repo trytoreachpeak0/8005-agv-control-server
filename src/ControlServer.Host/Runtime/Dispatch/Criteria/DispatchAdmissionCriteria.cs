@@ -116,8 +116,9 @@ public static class DispatchAdmissionCriteria
 
         services.AddScoped<DispatchAdmissionChain>();
         // Cost-ranked, falling back to first-seen when nothing was priced — which is what
-        // REQ-0207 asks for when a cost is missing rather than a reachability.
-        services.AddScoped<IDispatchCandidateRanker, RouteGraphCostRanker>();
+        // REQ-0207 asks for when a cost is missing rather than a reachability. The layers are listed in
+        // DispatchCandidateOrdering (control-server#209); a new layer is a line there, not here.
+        services.AddScoped<IDispatchCandidateRanker>(_ => DispatchCandidateOrdering.Ranker());
         // The structural dispatch block (control-server#74): what can only be concluded across every vehicle.
         services.AddScoped<IDispatchRoundOutcomeSink, StructuralDispatchBlockSink>();
         // The round itself and the Onboard facts it shares with the advance side (control-server#209). Scoped, like

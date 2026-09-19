@@ -214,7 +214,7 @@ public sealed class SlotGroupSelectionTests
     [InlineData(100L, 100L)]
     public void RankingIgnoresHowMuchRoomACandidatesGroupHas(long? olderCost, long? newerCost)
     {
-        RouteGraphCostRanker ranker = new();
+        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
         EligibleDispatchCandidate older = Eligible("10000000-0000-4000-8000-000000000001", Now.AddMinutes(-10), olderCost);
         EligibleDispatchCandidate newer = Eligible("10000000-0000-4000-8000-000000000002", Now.AddMinutes(-5), newerCost);
         // 旧的那条挤进 FRONT 最后两个空仓，新的那条在全空的 REAR 里还有富余。

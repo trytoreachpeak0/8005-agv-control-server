@@ -1108,7 +1108,7 @@ public sealed partial class MultiVehicleExecutionTests
                     routeGraph: null,
                     catalog: catalogAccess,
                     createGate: gate)),
-                new FirstSeenDispatchCandidateRanker(),
+                DispatchCandidateOrdering.Ranker(),
                 dispatchPolicy,
                 AreaAssignments,
                 SlotPositions,

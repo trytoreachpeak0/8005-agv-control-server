@@ -926,7 +926,7 @@ internal static class JourneyRuntimeWorkerTestKit
                     routeGraph: null,
                     catalog: CreateCatalogAccess(),
                     createGate: CreateGate())),
-                new FirstSeenDispatchCandidateRanker(),
+                DispatchCandidateOrdering.Ranker(),
                 dispatchPolicy,
                 new AreaAssignmentStore(Context, CreateGovernedPublisher()),
                 new VehicleSlotPositionReader(Context),
