@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Dashboard;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
@@ -255,6 +256,124 @@ public sealed class ReversedDirectionJourneyRuntimeTests
     }
 
     /// <summary>
+    /// control-server#198 item 8, decided by the user on 2026-09-19: a reverse journey held at the AREA machine because
+    /// the machine stopped admitting STAGING_TO_WIRE has the goods on board and was held there silently for ever. Past
+    /// the threshold -- ten minutes by default -- it is blocked under its own code, shows on the dashboard's blocked
+    /// journeys, and is Blocked, which is the stage an administrator opens a recovery session on. The count is from the
+    /// first round that held it, and a later round neither restarts it nor escalates it twice.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AnAdmissionStillRevokedPastTheThresholdBlocksTheJourneyForManualRecovery()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        Assert.Equal(TimeSpan.FromMinutes(10), fixture.Options.AreaEndAdmissionRevokedTimeout);
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await ArriveAtTheMachineAsync(fixture);
+        await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingGateArrival, "TASK_TYPE_NOT_ALLOWED_AT_STATION", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(10));
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        DateTimeOffset escalatedAt = fixture.Clock.GetUtcNow();
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)escalatedAt),
+            await StateAsync(fixture));
+        using JsonDocument dashboard = JsonDocument.Parse(JsonSerializer.Serialize(
+            await new BlockedJourneysQueryEndpoint(BlockedJourneyEscalationOptions.Default, fixture.Clock)
+                .ReadAsync(fixture.Context, Token)));
+        JsonElement card = Assert.Single(dashboard.RootElement.GetProperty("journeys").EnumerateArray());
+        Assert.Equal(
+            (ReverseDemand, "Blocked", "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", "N1-1"),
+            (card.GetProperty("demandId").GetString(), card.GetProperty("stage").GetString(),
+                card.GetProperty("blockReasonCode").GetString(), card.GetProperty("stationId").GetString()));
+        Assert.False(await fixture.Context.StationOperations.AnyAsync(
+            row => row.OperationType == SlotOperationType.Unload, Token));
+
+        // The same round again: still Blocked under the same code, from the same moment.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)escalatedAt),
+            await StateAsync(fixture));
+    }
+
+    /// <summary>
+    /// control-server#198 item 8: admitted again inside the threshold, the journey goes on as it always did -- the unload
+    /// is commanded and frozen under the admission -- and the count is gone with the hold. Up to the threshold nothing
+    /// is escalated: a second short of it the journey is still waiting at the machine.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AnAdmissionRestoredInsideTheThresholdGoesOnAndClearsTheCount()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await ArriveAtTheMachineAsync(fixture);
+        StationTaskTypeAdmissionRow[] revoked = await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(10) - TimeSpan.FromSeconds(1));
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingGateArrival, "TASK_TYPE_NOT_ALLOWED_AT_STATION", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+
+        fixture.Context.StationTaskTypeAdmissions.AddRange(revoked);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingUnloadResult, (string?)null, (DateTimeOffset?)null),
+            await StateAsync(fixture));
+        Assert.Single(await fixture.Context.AdmissionDecisionSnapshots.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#198 item 8: the threshold is configuration, and escalating touches no move order. The order the
+    /// vehicle rode to the machine on is left exactly as it was -- not re-sent, not re-targeted, not cancelled -- and
+    /// no new order is created.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task TheThresholdIsConfiguredAndEscalatingLeavesTheOrderToTheMachineAlone()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Options.AreaEndAdmissionRevokedTimeout = TimeSpan.FromMinutes(3);
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow arrived = await ArriveAtTheMachineAsync(fixture);
+        OrderIntentRow[] ordersBefore = await OrdersAsync(fixture);
+        int createsBefore = fixture.Riot.TotalCreateCount;
+        await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(3));
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(JourneyRuntimeStage.Blocked, (await StateAsync(fixture)).Stage);
+        OrderIntentRow[] ordersAfter = await OrdersAsync(fixture);
+        Assert.Equal(
+            ordersBefore.Select(row => (row.UpperId, row.Status, row.DestinationStationId, row.OrderId)),
+            ordersAfter.Select(row => (row.UpperId, row.Status, row.DestinationStationId, row.OrderId)));
+        Assert.Contains(ordersAfter, row => row.UpperId == arrived.GateUpperId);
+        Assert.Equal(createsBefore, fixture.Riot.TotalCreateCount);
+    }
+
+    /// <summary>
     /// A restart between preparing the unload and saving the stage re-enters the arrival with the unload already
     /// prepared and its admission frozen. The frozen decision is what stands (ADR-cross-0050/0051): even with the
     /// machine no longer admitting the task type, the journey goes on to await the unload's result on the command
@@ -333,6 +452,19 @@ public sealed class ReversedDirectionJourneyRuntimeTests
             bindings: [TaskTypeStationRuntimeSeed.GateBinding, StagingBinding]);
         return fixture;
     }
+
+    private static async Task<(JourneyRuntimeStage Stage, string? Code, DateTimeOffset? Since)> StateAsync(RuntimeFixture fixture)
+    {
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
+        return (runtime.Stage, runtime.BlockReasonCode, runtime.BlockReasonSince);
+    }
+
+    private static async Task<OrderIntentRow[]> OrdersAsync(RuntimeFixture fixture) =>
+        await fixture.Context.OrderIntents.AsNoTracking()
+            .Where(row => row.DemandId == ReverseDemand)
+            .OrderBy(row => row.UpperId)
+            .ToArrayAsync(Token);
 
     /// <summary>A reverse journey accepted before any hold: a hold in force at acceptance refuses the demand itself.</summary>
     private static async Task<RuntimeFixture> AcceptedReverseAsync()
