@@ -3063,6 +3063,13 @@ public sealed class RecoveryStateMachineG2Tests
     /// the authorization set A back to EXECUTING and sent the command, so the compensation's ALL_EMPTY then found an
     /// open session and settled the demand under B's feet.
     /// </summary>
+    /// <remarks>
+    /// A live path today, not a defence for stores written before control-server#187 (review C of PR #190, moved
+    /// here by control-server#202). The scene is built in the order the current code accepts: a compensation
+    /// awaiting its authorization has sent nothing and is not counted against a second submission, so W1 is
+    /// submitted, W2 is submitted, W1 is authorized and its command goes out, W1 reports FAILED and closes A, and
+    /// only then does W2's authorization arrive -- straight into the CLOSED check.
+    /// </remarks>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-07")]
     [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
@@ -3086,12 +3093,21 @@ public sealed class RecoveryStateMachineG2Tests
                 new RecordingPeer(context), recoveryLogger: log);
             OnboardConnectionState state = CurrentState();
             string sessionId = StableGuid(RequestId, "exception-recovery-session");
-            string first = await ReachCompensationResultAsync(processor, state, proof);
-            Assert.Equal("RecoveryActionAccepted", MessageType(await ProcessAsBeforeCs187Async(
-                processor, context, state,
-                RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001758",
-                    actionId: SecondActionId))));
+            string first = await ReachCompensationResultAsync(
+                processor, state, proof,
+                beforeAuthorization: async () => Assert.Equal("RecoveryActionAccepted", MessageType(
+                    await processor.ProcessAsync(
+                        RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001758",
+                            actionId: SecondActionId),
+                        state,
+                        token))));
+            Assert.Equal(RecoveryWorkflowState.AwaitingAuthorization, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == SecondActionId, token)).State);
+            Assert.NotNull((await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ActionId, token)).CommandMessageId);
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == sessionId, token)).State);
             clock.Current = Now.AddMinutes(1);
             await OpenNextSessionAndHandOffAsync(processor, state, proof);
             BusinessPicture before = await BusinessPictureAsync(context);
@@ -4320,6 +4336,420 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#202, review B of PR #190. The vehicle's reconnect handshake is one question, one answer: it
+    /// resends each durable message the last session left unacknowledged and reads one DurableAck, then sends its
+    /// capability, safety and alarm snapshots and its recovery report, reading one answer after each, and drops the
+    /// connection on any other line (WireToGateSessionClient). A refusal resent there -- here the one that closed
+    /// the session in session 3 -- is only acknowledged. The CLOSED snapshot the vehicle never acknowledged still
+    /// reaches it, once, after the handshake: the recovery report's replay carries it, rebound to the new session.
+    /// Before the fix the refusal's triggered send put that snapshot straight after the DurableAck, where the
+    /// vehicle reads its capability snapshot's answer, and the report's replay sent it a second time.
+    /// </summary>
+    /// <remarks>
+    /// Both ways a connection sends: deferred until the answer is written, as <c>OnboardTcpServer</c> does, and at
+    /// once. The decision is taken when the line is processed, not when the deferred send is flushed.
+    /// </remarks>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ARefusalResentInTheReconnectHandshakeIsOnlyAcknowledgedAndItsClosingSnapshotFollowsTheHandshake(
+        bool deferOutbound)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REFUSAL_IN_HANDSHAKE";
+        const string proof = "refusal-in-handshake-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string resumeCommandId = (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).CommandMessageId!;
+            string refusal = ResumeCommandRejected("e0000000-0000-4000-8000-000000002021", resumeCommandId);
+            string[] refused = await ExchangeAsync(processor, peer, state, refusal);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+            Assert.Contains(refused, IsClosedSessionSnapshot);
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = deferOutbound };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(refusal, generation));
+            wire.AddRange(resent);
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+            Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+            string closing = Assert.Single(wire, IsClosedSessionSnapshot);
+            Assert.Equal(generation, SessionGenerationOf(closing));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#202. The same for an OperationResult: the resume's replacement result closed the session in
+    /// session 3, the vehicle never saw its DurableAck and resends it in the reconnect handshake. It is processed
+    /// again in the new session (CV-OPERATION-RESULT-UNKNOWN-RECONCILE) and answered with its DurableAck alone; the
+    /// CLOSED snapshot follows the handshake, once. onboard-hmi#127 makes this resend the common case.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task AnOperationResultResentInTheReconnectHandshakeIsOnlyAcknowledgedAndItsClosingSnapshotFollowsTheHandshake()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESULT_IN_HANDSHAKE";
+        const string proof = "result-in-handshake-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string result = Envelope(
+                "e0000000-0000-4000-8000-000000002022",
+                "OperationResult",
+                OperationResultPayload(journalCheckpoint: "RESUME_RESULT_RECORDED"));
+            string[] settled = await ExchangeAsync(processor, peer, state, result);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+            Assert.Contains(settled, IsClosedSessionSnapshot);
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            string[] resent = await ExchangeAsync(processor, peer, reconnected, InSession(result, generation));
+            wire.AddRange(resent);
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+            Assert.Equal(["DurableAck"], resent.Select(MessageType).ToArray());
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+            string closing = Assert.Single(wire, IsClosedSessionSnapshot);
+            Assert.Equal(generation, SessionGenerationOf(closing));
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#202. A recovery request taken before the handshake's recovery report is answered, and its
+    /// command waits for the handshake: the recovery report's replay sends it, once, rebound to the new session,
+    /// together with the session's snapshots. Before the fix the request's triggered send put the command and every
+    /// unacknowledged session snapshot straight after its answer, inside the handshake.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ARecoveryRequestTakenInTheReconnectHandshakeSendsItsCommandOnlyAfterTheHandshake()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REQUEST_IN_HANDSHAKE";
+        const string proof = "request-in-handshake-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await ExchangeAsync(processor, peer, state, Envelope(
+                "e0000000-0000-4000-8000-000000002023",
+                "OperationResult",
+                OperationResultPayload(completed: false, journalCheckpoint: "RESULT_UNKNOWN_RECORDED")));
+            Assert.Contains(await ExchangeAsync(processor, peer, state, RecoverySessionRequest(proof)),
+                line => MessageType(line) == "ExceptionRecoverySessionOpened");
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            string[] answered = await ExchangeAsync(
+                processor, peer, reconnected, InSession(RecoveryAction("RESUME_AFTER_REPAIR"), generation));
+            wire.AddRange(answered);
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+            Assert.Equal(["RecoveryActionAccepted"], answered.Select(MessageType).ToArray());
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+            string command = Assert.Single(wire, line => MessageType(line) == "SlotOperationResumeCommand");
+            Assert.Equal(generation, SessionGenerationOf(command));
+            Assert.All(
+                wire.Where(line => MessageType(line) == "ExceptionRecoverySessionSnapshot"),
+                snapshot => Assert.Equal(generation, SessionGenerationOf(snapshot)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#202, the behaviour it keeps. Once the recovery report has been answered the vehicle reads the
+    /// connection in its receive loop, and a refusal sent then -- here the same one a third time, its DurableAck lost
+    /// again -- still sends the session's unacknowledged CLOSED snapshot straight after its answer.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task AfterTheReconnectHandshakeARefusalStillSendsTheUnacknowledgedClosingSnapshotAtOnce()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_REFUSAL_AFTER_HANDSHAKE";
+        const string proof = "refusal-after-handshake-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string resumeCommandId = (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).CommandMessageId!;
+            string refusal = ResumeCommandRejected("e0000000-0000-4000-8000-000000002024", resumeCommandId);
+            await ExchangeAsync(processor, peer, state, refusal);
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+            await ReconnectAsync(processor, peer, reconnected);
+            long generation = reconnected.SessionGeneration!.Value;
+            await ExchangeAsync(processor, peer, reconnected, InSession(refusal, generation));
+            await FinishHandshakeAsync(processor, peer, reconnected, []);
+            string[] again = await ExchangeAsync(processor, peer, reconnected, InSession(refusal, generation));
+
+            Assert.Equal(["DurableAck", "ExceptionRecoverySessionSnapshot"], again.Select(MessageType).ToArray());
+            Assert.True(IsClosedSessionSnapshot(again[1]));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#202, an interrupted handshake. The vehicle resends the refusal and the connection drops before
+    /// its recovery report; nothing the handshake held back is lost with it. The next reconnect's recovery report
+    /// sends the CLOSED snapshot, once, into that session; the dropped one never sent it at all.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task AHandshakeCutShortAfterAResentRefusalLeavesItsClosingSnapshotToTheNextHandshake()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_HANDSHAKE_CUT_SHORT";
+        const string proof = "handshake-cut-short-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string resumeCommandId = (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).CommandMessageId!;
+            string refusal = ResumeCommandRejected("e0000000-0000-4000-8000-000000002025", resumeCommandId);
+            await ExchangeAsync(processor, peer, state, refusal);
+
+            OnboardConnectionState dropped = new() { DeferOutboundUntilResponseWritten = true };
+            List<string> droppedWire = [.. await ReconnectAsync(processor, peer, dropped)];
+            droppedWire.AddRange(await ExchangeAsync(
+                processor, peer, dropped, InSession(refusal, dropped.SessionGeneration!.Value)));
+            Assert.Equal(["SessionAccepted", "DurableAck"], droppedWire.Select(MessageType).ToArray());
+
+            OnboardConnectionState reconnected = new() { DeferOutboundUntilResponseWritten = true };
+            List<string> wire = [.. await ReconnectAsync(processor, peer, reconnected)];
+            long generation = reconnected.SessionGeneration!.Value;
+            Assert.True(generation > dropped.SessionGeneration!.Value);
+            wire.AddRange(await ExchangeAsync(processor, peer, reconnected, InSession(refusal, generation)));
+            int reportAt = await FinishHandshakeAsync(processor, peer, reconnected, wire);
+
+            AssertNothingSentInsideTheHandshake(wire, reportAt, reconnected);
+            string closing = Assert.Single(wire, IsClosedSessionSnapshot);
+            Assert.Equal(generation, SessionGenerationOf(closing));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// Everything the server wrote in a reconnect before the recovery report is an answer to the line the vehicle had
+    /// just sent, one per line: no recovery command and no recovery session snapshot while the vehicle reads one
+    /// answer at a time (control-server#202). Where sends wait for the answer to be written, as they do on
+    /// <c>OnboardTcpServer</c>'s connections, the report's own answer -- its DurableAck and SessionReadiness -- also
+    /// comes before anything its replay sends.
+    /// </summary>
+    private static void AssertNothingSentInsideTheHandshake(
+        IReadOnlyList<string> wire,
+        int reportAt,
+        OnboardConnectionState state)
+    {
+        Assert.All(wire.Take(reportAt).Select(MessageType), type => Assert.Contains(type, HandshakeAnswers));
+        if (state.DeferOutboundUntilResponseWritten)
+        {
+            Assert.Equal(
+                ["DurableAck", "SessionReadiness"],
+                wire.Skip(reportAt).Take(2).Select(MessageType).ToArray());
+        }
+    }
+
+    private static readonly string[] HandshakeAnswers =
+        ["SessionAccepted", "DurableAck", "SnapshotAppliedAck", "RecoveryActionAccepted"];
+
+    private static bool IsClosedSessionSnapshot(string wire)
+    {
+        if (MessageType(wire) != "ExceptionRecoverySessionSnapshot") return false;
+        using JsonDocument document = JsonDocument.Parse(wire);
+        return document.RootElement.GetProperty("payload").GetProperty("state").GetString() == "CLOSED";
+    }
+
+    private static long SessionGenerationOf(string wire)
+    {
+        using JsonDocument document = JsonDocument.Parse(wire);
+        return document.RootElement.GetProperty("sessionGeneration").GetInt64();
+    }
+
+    /// <summary>
+    /// One line from the vehicle, and what goes back on the wire for it in the order <c>OnboardTcpServer</c> writes
+    /// it: whatever the processor sent while taking the line, then its answer, then the sends deferred until the
+    /// answer is written.
+    /// </summary>
+    private static async Task<string[]> ExchangeAsync(
+        OnboardMessageProcessor processor,
+        RecordingPeer peer,
+        OnboardConnectionState state,
+        string line)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        peer.Lines.Clear();
+        string response = await processor.ProcessAsync(line, state, token);
+        List<string> wire = [.. peer.Lines];
+        wire.AddRange(response.Split('\n', StringSplitOptions.RemoveEmptyEntries));
+        peer.Lines.Clear();
+        await processor.FlushDeferredOutboundAsync(state, token);
+        wire.AddRange(peer.Lines);
+        peer.Lines.Clear();
+        return [.. wire.Select(item => item.TrimEnd('\n'))];
+    }
+
+    private const string HandshakeCredentialVariable = "CONTROL_SERVER_TEST_RECOVERY_HANDSHAKE_CREDENTIAL";
+
+    /// <summary>
+    /// The vehicle's SessionHello on a new connection, which opens the next session generation and starts its
+    /// handshake.
+    /// </summary>
+    private static async Task<string[]> ReconnectAsync(
+        OnboardMessageProcessor processor,
+        RecordingPeer peer,
+        OnboardConnectionState state)
+    {
+        const string credential = "recovery-handshake-credential-not-a-production-secret";
+        Environment.SetEnvironmentVariable(HandshakeCredentialVariable, credential);
+        try
+        {
+            JsonNode hello = JsonNode.Parse(Envelope(
+                Guid.NewGuid().ToString("D"),
+                "SessionHello",
+                new { protocolReleaseIdentity = ReleaseIdentity(), credentialProof = credential }))!;
+            hello["sessionGeneration"] = null;
+            string[] wire = await ExchangeAsync(processor, peer, state, hello.ToJsonString());
+            Assert.Equal(["SessionAccepted"], wire.Select(MessageType).ToArray());
+            return wire;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(HandshakeCredentialVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// The rest of the handshake after the resends: capability, safety and alarm snapshots, then the recovery report
+    /// that ends it (WireToGateSessionClient). What goes back is added to <paramref name="wire"/>; returns where the
+    /// recovery report's exchange starts in it.
+    /// </summary>
+    private static async Task<int> FinishHandshakeAsync(
+        OnboardMessageProcessor processor,
+        RecordingPeer peer,
+        OnboardConnectionState state,
+        List<string> wire)
+    {
+        long generation = state.SessionGeneration!.Value;
+        wire.AddRange(await ExchangeAsync(processor, peer, state, InSession(Envelope(
+            Guid.NewGuid().ToString("D"),
+            "CapabilitySnapshot",
+            new { capabilityVersion = 6, activeSlotConfigurationFingerprint = new string('0', 64) }), generation)));
+        wire.AddRange(await ExchangeAsync(processor, peer, state, InSession(Envelope(
+            Guid.NewGuid().ToString("D"),
+            "SafetyStateSnapshot",
+            new
+            {
+                safetyStateVersion = 8,
+                safety = new
+                {
+                    departureSafe = true,
+                    vehicleStopped = true,
+                    allTargetSlotsLocked = true,
+                    allUnlockOutputsReset = true,
+                    unknownPresent = false,
+                    reasonCodes = Array.Empty<string>()
+                }
+            }), generation)));
+        wire.AddRange(await ExchangeAsync(processor, peer, state, InSession(Envelope(
+            Guid.NewGuid().ToString("D"),
+            "OnboardAlarmSnapshot",
+            new { alarmSnapshotRevision = 1, observedAt = Now, alarms = Array.Empty<object>() }), generation)));
+        int reportAt = wire.Count;
+        wire.AddRange(await ExchangeAsync(
+            processor, peer, state, RecoveryStateReport(generation, unsettledAttemptId: null)));
+        Assert.True(state.HandshakeCompleted);
+        return reportAt;
+    }
+
+    /// <summary>The same line sent into <paramref name="generation"/>, as a resend after a reconnect is.</summary>
+    private static string InSession(string wire, long generation)
+    {
+        JsonNode node = JsonNode.Parse(wire)!;
+        node["sessionGeneration"] = generation;
+        return node.ToJsonString();
+    }
+
+    private static object ReleaseIdentity() => new
+    {
+        repository = "8005-agv-protocol",
+        releaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
+        tag = ProtocolCandidateIdentity.Tag,
+        commit = ProtocolCandidateIdentity.RepositoryCommit,
+        protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+        profileId = ProtocolCandidateIdentity.ProfileId,
+        manifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+        schemaBundleSha256 = ProtocolCandidateIdentity.SchemaBundleSha256,
+        vectorsSha256 = ProtocolCandidateIdentity.VectorsSha256
+    };
+
+    /// <summary>
     /// Why each CLOSED session closed, read from the store the way control-server#169 leaves it -- there is no
     /// column for it. The closing result is the first one judged for the session: of its workflows that a result
     /// has settled (Reconciled or RecoveryRequired; HistoricalOnly never touches a session), the one judged
@@ -4768,6 +5198,11 @@ public sealed class RecoveryStateMachineG2Tests
             context, store, new FixedTimeProvider(Now), Configuration(proofVariable), peer);
     }
 
+    /// <summary>
+    /// A connection in the middle of session 3: its handshake is over, so the vehicle reads it in its receive loop
+    /// and the server may send it commands and snapshots (control-server#202). A test about the handshake itself
+    /// reconnects through <see cref="ReconnectAsync"/> instead.
+    /// </summary>
     private static OnboardConnectionState CurrentState(bool deferOutbound = false) => new()
     {
         AgvId = AgvId,
@@ -4775,6 +5210,7 @@ public sealed class RecoveryStateMachineG2Tests
         CapabilityRevision = 5,
         SafetyRevision = 7,
         Readiness = SessionReadiness.RecoveryRequired,
+        HandshakeCompleted = true,
         DeferOutboundUntilResponseWritten = deferOutbound
     };
 
@@ -5003,15 +5439,19 @@ public sealed class RecoveryStateMachineG2Tests
     /// <summary>
     /// Drives a compensation as far as the line the vehicle is about to send: session opened, action
     /// selected, command issued. Returns the LoadCompensationResult envelope, unsent.
+    /// <paramref name="beforeAuthorization"/> runs between the submission and its authorization, while the
+    /// compensation awaits authorization and has sent nothing.
     /// </summary>
     private static async Task<string> ReachCompensationResultAsync(
         OnboardMessageProcessor processor,
         OnboardConnectionState state,
-        string proof)
+        string proof,
+        Func<Task>? beforeAuthorization = null)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
         await processor.ProcessAsync(RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY"), state, token);
+        if (beforeAuthorization is not null) await beforeAuthorization();
         await processor.ProcessAsync(
             Envelope(
                 "90000000-0000-4000-8000-000000000021",
@@ -5114,7 +5554,8 @@ public sealed class RecoveryStateMachineG2Tests
     private static IConfiguration Configuration(string proofVariable) => new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Recovery:AuthenticationProofEnvironmentVariable"] = proofVariable
+            ["Recovery:AuthenticationProofEnvironmentVariable"] = proofVariable,
+            [$"{OnboardTransportOptions.SectionName}:CredentialEnvironmentVariable"] = HandshakeCredentialVariable
         })
         .Build();
 
