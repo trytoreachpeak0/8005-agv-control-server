@@ -321,6 +321,58 @@ public sealed class Batch7JourneyAcceptanceTests
         Assert.Single(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "VehiclePurposeClaims"));
     }
 
+    [Fact]
+    public async Task ARefusedAcceptanceKeepsTheCallersOwnUnsavedChangesAsTheCallerLeftThem()
+    {
+        // Only what the acceptance itself staged is dropped. A change the caller had made before calling -- to an unrelated
+        // row, or to the demand's backlog row that the acceptance would itself have rewritten -- survives, as the caller
+        // left it, for the caller's next SaveChanges.
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        DateTimeOffset now = Batch7JourneyFixture.Now;
+        fixture.Context.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
+        {
+            VehicleKey = "VK-01",
+            Purpose = "TRANSPORT",
+            JourneyId = "journey:D-OTHER",
+            ClaimedAt = now.AddMinutes(-1)
+        });
+        fixture.Context.MissingPackages.Add(new MissingPackageRow
+        {
+            Package = "PKG-1",
+            FirstSeenAt = now,
+            LastSeenAt = now,
+            Status = "OPEN"
+        });
+        fixture.Context.JourneyBacklog.Add(new JourneyBacklogRow
+        {
+            DemandId = "D-719",
+            TransportDemandKey = "SUBLOT-D-719|WIRE_TO_GATE",
+            FirstSeenAt = now,
+            DemandCreatedAt = now,
+            DecisionFingerprint = "fp-1",
+            ReasonCode = "WAITING",
+            LastSeenAt = now
+        });
+        await fixture.Context.SaveChangesAsync(cancellationToken);
+
+        await using ControlServerDbContext context = fixture.NewContext();
+        (await context.MissingPackages.SingleAsync(cancellationToken)).Status = "RESOLVED";
+        JourneyBacklogRow backlog = await context.JourneyBacklog.SingleAsync(cancellationToken);
+        backlog.ReasonCode = "CALLER_REASON";
+        backlog.LastSeenAt = now.AddMinutes(1);
+
+        await Assert.ThrowsAsync<BusinessIdentityConflictException>(() =>
+            Batch7JourneyFixture.AcceptAsync(context, "D-719", "agv-01", "VK-01", now.AddMinutes(2)));
+        await context.SaveChangesAsync(cancellationToken);
+
+        await using ControlServerDbContext read = fixture.NewContext();
+        Assert.Equal("RESOLVED", (await read.MissingPackages.AsNoTracking().SingleAsync(cancellationToken)).Status);
+        JourneyBacklogRow stored = await read.JourneyBacklog.AsNoTracking().SingleAsync(cancellationToken);
+        Assert.Equal(("CALLER_REASON", now.AddMinutes(1), (DateTimeOffset?)null), (stored.ReasonCode, stored.LastSeenAt, stored.AcceptedAt));
+        Assert.Empty(await Batch7JourneyFixture.DumpAsync(fixture.Connection, "AcceptedDemands"));
+    }
+
     private static string Describe(JourneyRuntimeRow row) =>
         $"{row.DemandId} {row.VehicleBusinessRevision}/{row.WorklistRevision}/{row.PlanRevision} "
         + string.Join(

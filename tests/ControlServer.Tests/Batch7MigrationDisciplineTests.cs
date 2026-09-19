@@ -47,17 +47,17 @@ public sealed class Batch7MigrationDisciplineTests
     [Fact]
     public async Task EveryJourneyInFlightIsBackFilledAsOnePickupStopOneUnloadStopAndOneDemandWithItsOwnIds()
     {
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
-        await SeedFourJourneysThenMigrateDownToBatch6Async(fixture);
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync(migrate: false);
+        await SeedBatch6DatabaseAsync(fixture);
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         Dictionary<string, string[]> before = await DumpEveryTableAsync(fixture.Connection);
-        Assert.Equal(4, before["JourneyRuntimes"].Length);
+        Assert.Equal(5, before["JourneyRuntimes"].Length);
         Assert.NotEmpty(before["ProtocolOutbox"]);
 
         await fixture.Context.Database.MigrateAsync(cancellationToken);
 
         // Existing tables, restricted to the columns they had at batch 6, row for row the same -- ProtocolOutbox included,
-        // so what a reconnect replays is the original wire.
+        // so what a reconnect replays is the original wire, and the old "" and 0001-01-01 defaults untouched.
         foreach ((string table, string[] rows) in before)
         {
             Assert.Equal(rows, await DumpAsync(fixture.Connection, table, await ColumnsAtBatch6Async(table)));
@@ -101,8 +101,8 @@ public sealed class Batch7MigrationDisciplineTests
             Assert.Equal(journey.CreatedAt, pickup.CreatedAt);
             Assert.Null(demand.RemovedAt);
         }
-        Assert.Equal(8, stops.Length);
-        Assert.Equal(4, demands.Length);
+        Assert.Equal(10, stops.Length);
+        Assert.Equal(5, demands.Length);
 
         // Where each journey stood, as its stops and its demand say it after the back-fill.
         Assert.Equal(
@@ -111,6 +111,9 @@ public sealed class Batch7MigrationDisciplineTests
                 "D-B PICKUP=ACTIVE UNLOAD=PENDING demand=PENDING_LOAD",
                 "D-C PICKUP=COMPLETED UNLOAD=PENDING demand=LOADED",
                 "D-D PICKUP=ACTIVE UNLOAD=PENDING demand=PENDING_LOAD",
+                // Cancelled, then put back to Blocked by a late recovery result: nothing is left to do at either stop, so a
+                // reader looking for the first stop neither completed nor removed finds none (control-server#208).
+                "D-F PICKUP=REMOVED UNLOAD=REMOVED demand=TERMINATED",
             ],
             journeys.OrderBy(journey => journey.DemandId, StringComparer.Ordinal).Select(journey =>
                 $"{journey.DemandId} "
@@ -127,12 +130,18 @@ public sealed class Batch7MigrationDisciplineTests
                 .Order(StringComparer.Ordinal),
             claims.Select(claim => $"{claim.VehicleKey} {claim.Purpose} {claim.JourneyId} {claim.ClaimedAt:O}")
                 .Order(StringComparer.Ordinal));
-        Assert.Equal(3, claims.Length);
+        Assert.Equal(4, claims.Length);
         Assert.All(leases, lease => Assert.Equal("journey:" + lease.DemandId, lease.JourneyId));
+        // The acceptance from before journeys existed keeps its vehicle through the claim too, as its lease does today;
+        // the claim names the journey id the rule gives its demand although no journey row exists, and its release goes by
+        // the lease like every other one.
+        Assert.Contains(claims, claim => claim.VehicleKey == "VK-05" && claim.JourneyId == "journey:D-E");
+        Assert.DoesNotContain(journeys, journey => journey.DemandId == "D-E");
+        Assert.DoesNotContain(claims, claim => claim.VehicleKey == "VK-04");
 
         // The counter holds each vehicle's highest stored revision on each stream.
         Assert.Equal(
-            ["agv-01 3/3/4", "agv-02 1/1/1", "agv-03 1/1/1"],
+            ["agv-01 3/3/4", "agv-02 1/1/1", "agv-03 1/1/1", "agv-04 1/1/1"],
             (await read.Set<VehicleSnapshotRevisionRow>().AsNoTracking().ToArrayAsync(cancellationToken))
                 .OrderBy(row => row.AgvId, StringComparer.Ordinal)
                 .Select(row => $"{row.AgvId} {row.VehicleBusinessRevision}/{row.WorklistRevision}/{row.PlanRevision}"));
@@ -149,20 +158,24 @@ public sealed class Batch7MigrationDisciplineTests
     ];
 
     /// <summary>
-    /// Four journeys through the real acceptance path, in the four stages the ticket names -- two of them on one vehicle --
-    /// plus two outbox rows, then the database brought down to batch 6.
+    /// A database migrated straight to batch 6 and filled with raw SQL the way production holds it today: four journeys in
+    /// the four stages the ticket names (two on one vehicle), a journey whose demand was cancelled and which a late recovery
+    /// result then put back to Blocked, an acceptance from before journeys existed -- an active lease with no journey row,
+    /// its demand carrying the "" and 0001-01-01 defaults an old migration filled in -- and two outbox rows.
     /// </summary>
     /// <remarks>
-    /// The acceptance path today writes the batch 7 columns, so it cannot run against a batch 6 schema. The rows are
-    /// therefore accepted on the current schema and taken to batch 6 by the migration's own Down(), which only drops what
-    /// batch 7 added; that the result has exactly batch 6's columns is asserted here against a database migrated straight
-    /// to batch 6.
+    /// The journeys' own column values come from the real acceptance path (<see cref="WireToGateStore"/>) run on a scratch
+    /// database at the current schema; only the columns batch 6 has are copied across. Nothing here goes through this
+    /// migration's Down(): the database under test has never seen batch 7.
     /// </remarks>
-    private static async Task SeedFourJourneysThenMigrateDownToBatch6Async(Batch7JourneyFixture fixture)
+    private static async Task SeedBatch6DatabaseAsync(Batch7JourneyFixture fixture)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         DateTimeOffset now = Batch7JourneyFixture.Now;
-        ControlServerDbContext context = fixture.Context;
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(Batch6Migration, cancellationToken);
+
+        await using Batch7JourneyFixture scratch = await Batch7JourneyFixture.CreateAsync();
+        ControlServerDbContext context = scratch.Context;
 
         // agv-01: a completed journey, then a second one waiting for its sublot.
         await Batch7JourneyFixture.AcceptAsync(context, "D-A", "agv-01", "VK-01", now);
@@ -185,11 +198,14 @@ public sealed class Batch7MigrationDisciplineTests
             now.AddMinutes(5),
             cancellationToken);
 
-        // agv-03: blocked at its pickup.
+        // agv-03: blocked at its pickup, demand still open.
         await Batch7JourneyFixture.AcceptAsync(context, "D-D", "agv-03", "VK-03", now.AddMinutes(2));
         JourneyRuntimeRow blocked = await context.JourneyRuntimes.SingleAsync(row => row.DemandId == "D-D", cancellationToken);
         blocked.Stage = JourneyRuntimeStage.Blocked;
         blocked.SetBlockReason("LOAD_RESULT_REQUIRES_RECOVERY", now.AddMinutes(3));
+
+        // agv-04: accepted here, ended below by raw SQL the way OnboardRecoveryCoordinator can leave it.
+        await Batch7JourneyFixture.AcceptAsync(context, "D-F", "agv-04", "VK-04", now.AddMinutes(4));
 
         context.ProtocolOutbox.AddRange(
             new ProtocolOutboxRow
@@ -208,13 +224,62 @@ public sealed class Batch7MigrationDisciplineTests
                 AcknowledgedAt = now.AddMinutes(3)
             });
         await context.SaveChangesAsync(cancellationToken);
-        await fixture.RenewContextAsync();
 
-        await fixture.Context.GetService<IMigrator>().MigrateAsync(Batch6Migration, cancellationToken);
-
-        foreach (string table in await ReadTableNamesAsync(fixture.Connection))
+        foreach (string table in (string[])["AcceptedDemands", "VehicleDispatchLeases", "OrderIntents", "JourneyRuntimes", "ProtocolOutbox"])
         {
-            Assert.Equal(await ColumnsAtBatch6Async(table), await ColumnsAsync(fixture.Connection, table));
+            await CopyRowsAsync(scratch.Connection, fixture.Connection, table, await ColumnsAtBatch6Async(table));
+        }
+
+        await using SqliteCommand raw = fixture.Connection.CreateCommand();
+        raw.CommandText =
+            """
+            -- D-F: a compensation ended the demand at its pickup (Cancelled, lease released), and a late recovery result then
+            -- put the journey back to Blocked (OnboardRecoveryCoordinator.KeepDemandAndJourneyBlockedAsync).
+            UPDATE AcceptedDemands SET Status = 'Cancelled' WHERE DemandId = 'D-F';
+            UPDATE VehicleDispatchLeases SET ReleasedAt = '2026-09-19 09:06:00+00:00' WHERE DemandId = 'D-F';
+            UPDATE OrderIntents SET VehicleOccupancyReleasedAt = '2026-09-19 09:06:00+00:00' WHERE DemandId = 'D-F';
+            UPDATE JourneyRuntimes SET Stage = 'Blocked', BlockReasonCode = 'LoadCompensationResult_NOT_RECONCILED',
+                BlockReasonSince = '2026-09-19 09:07:00+00:00' WHERE DemandId = 'D-F';
+
+            -- D-E: accepted before journeys existed. An active lease and a pickup order, no journey row, and the demand
+            -- columns an old migration added with "" and 0001-01-01 defaults.
+            INSERT INTO AcceptedDemands
+                (DemandId, SeriesId, TransportDemandKey, WorkType, Sublot, Generation, DemandRevision, HistoryEpoch,
+                 CatalogRevision, CreatedAt, ValueObservedAt, ValuePollTraceId, ValueProjectionCommitId, LiveMesFieldsJson,
+                 AcceptedAt, Status)
+            VALUES
+                ('D-E', '', 'SUBLOT-D-E|WIRE_TO_GATE', '', '', 0, 7, 'history-1', 21, '0001-01-01 00:00:00+00:00',
+                 '0001-01-01 00:00:00+00:00', '', '', '', '2026-09-19 08:30:00+00:00', 'Accepted');
+            INSERT INTO VehicleDispatchLeases (DemandId, VehicleKey, AcquiredAt, ReleasedAt)
+            VALUES ('D-E', 'VK-05', '2026-09-19 08:30:00+00:00', NULL);
+            INSERT INTO OrderIntents
+                (MovementLegId, DemandId, UpperId, Purpose, TargetStationId, VehicleKey, MapId, DestinationStationId,
+                 AgvLifecycleGeneration, DispatchGeneration, CreatedAt, Status)
+            VALUES
+                ('LEG-D-E', 'D-E', 'W2G-D-E-PICKUP-1', 'TO_PICKUP', 'ST-PICKUP', 'VK-05', 25, 101, 1, 1,
+                 '2026-09-19 08:30:00+00:00', 'PENDING_RECONCILIATION');
+            """;
+        await raw.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Copies every row of a table over the named columns from one database to another.</summary>
+    private static async Task CopyRowsAsync(SqliteConnection from, SqliteConnection to, string table, string[] columns)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        string list = string.Join(", ", columns.Select(column => $"\"{column}\""));
+        await using SqliteCommand select = from.CreateCommand();
+        select.CommandText = $"SELECT {list} FROM \"{table}\"";
+        await using SqliteDataReader reader = await select.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            await using SqliteCommand insert = to.CreateCommand();
+            insert.CommandText =
+                $"INSERT INTO \"{table}\" ({list}) VALUES ({string.Join(", ", columns.Select((_, index) => $"$p{index}"))})";
+            for (int index = 0; index < columns.Length; index++)
+            {
+                insert.Parameters.AddWithValue($"$p{index}", reader.GetValue(index));
+            }
+            await insert.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 
@@ -293,13 +358,13 @@ public sealed class Batch7MigrationDisciplineTests
     }
 
     [Fact]
-    public async Task MigratingTheBackFilledDatabaseDownToBatch6AndUpAgainLeavesSchemaAndRowsByteForByteTheSame()
+    public async Task MigratingTheBackFilledDatabaseDownToBatch6AndUpAgainLeavesEveryDefinitionAndRowTheSame()
     {
         // Known limit, stated in the PR: once a journey carries a second demand or a stop the single-demand shape cannot
         // hold, Down() loses it -- JourneyRuntimes only has columns for one pickup and one gate. With nothing but
         // single-demand journeys, which is all this ticket can produce, the round trip is exact.
-        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync();
-        await SeedFourJourneysThenMigrateDownToBatch6Async(fixture);
+        await using Batch7JourneyFixture fixture = await Batch7JourneyFixture.CreateAsync(migrate: false);
+        await SeedBatch6DatabaseAsync(fixture);
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         await fixture.Context.Database.MigrateAsync(cancellationToken);
         string[] schemaBefore = await ReadSchemaAsync(fixture.Connection);
@@ -315,20 +380,40 @@ public sealed class Batch7MigrationDisciplineTests
         {
             Assert.Equal(rows, rowsAfter[table]);
         }
-        Assert.Equal(8, rowsAfter["JourneyStops"].Length);
+        Assert.Equal(10, rowsAfter["JourneyStops"].Length);
     }
 
-    /// <summary>Every table, index and trigger as SQLite stores its definition.</summary>
+    /// <summary>
+    /// Every table's columns (name, type, nullability, default, key position), and every index and trigger as SQLite stores
+    /// its definition.
+    /// </summary>
+    /// <remarks>
+    /// Columns are compared by definition, not by the CREATE TABLE text: Down() drops columns and moves a primary key,
+    /// which EF does on SQLite by rebuilding the table, and a rebuilt table can list its columns in another physical order.
+    /// Nothing reads these tables by position -- EF and the scripts go by name.
+    /// </remarks>
     private static async Task<string[]> ReadSchemaAsync(SqliteConnection connection)
     {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         List<string> schema = [];
+        foreach (string table in await ReadTableNamesAsync(connection))
+        {
+            await using SqliteCommand columns = connection.CreateCommand();
+            columns.CommandText =
+                $"SELECT name || ' ' || type || ' notnull=' || \"notnull\" || ' default=' || coalesce(dflt_value, '-') || ' pk=' || pk FROM pragma_table_info('{table}')";
+            await using SqliteDataReader reader = await columns.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                schema.Add($"column {table}.{reader.GetString(0)}");
+            }
+        }
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
-            "SELECT type || ' ' || name || ': ' || coalesce(sql, '') FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'";
-        await using SqliteDataReader reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
-        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+            "SELECT type || ' ' || name || ': ' || coalesce(sql, '') FROM sqlite_master WHERE type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%'";
+        await using SqliteDataReader definitions = await command.ExecuteReaderAsync(cancellationToken);
+        while (await definitions.ReadAsync(cancellationToken))
         {
-            schema.Add(reader.GetString(0));
+            schema.Add(definitions.GetString(0));
         }
         schema.Sort(StringComparer.Ordinal);
         return [.. schema];

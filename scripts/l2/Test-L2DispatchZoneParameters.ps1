@@ -96,10 +96,16 @@ Test-Case 'a fractional value is refused' {
 } $null 'non-negative whole number'
 
 # Keys that look like batch 7's but are not spelled like either.
-foreach ($misspelt in @('DispatchZoneParameter', 'dispatchZoneParameters', 'ZoneParameters', 'CargoHoldTimeout', 'cargoHoldingTimeout')) {
+foreach ($misspelt in @('DispatchZoneParameter', 'dispatchZoneParameters', 'DispatchZoneParamters', 'Dispatch_Zone_Parameters', 'CargoHoldTimeout', 'cargoHoldingTimeout')) {
     Test-Case "the key '$misspelt' is refused" {
         Resolve-L2DispatchZoneParameters -Setup @{ $misspelt = 1 } -Where $where
     }.GetNewClosure() $null 'Unknown setup key'
+}
+# Keys of later tickets that only share a word with batch 7's are not near misses.
+foreach ($later in @('CargoHoldingYieldWindow', 'LoadingPhaseClosedReason', 'ZoneParameters', 'StarvationEscalation')) {
+    Test-Case "the key '$later' passes" {
+        Resolve-L2DispatchZoneParameters -Setup @{ $later = 1 } -Where $where
+    }.GetNewClosure() $null
 }
 Test-Case 'unrelated keys pass untouched' {
     Resolve-L2CargoHoldingTimeout -Setup @{ StationDepartureWaitTimeout = '00:00:10'; AreaAssignments = $false } -Where $where
