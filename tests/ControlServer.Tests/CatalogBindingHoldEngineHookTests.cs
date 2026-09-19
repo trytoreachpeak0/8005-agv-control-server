@@ -57,7 +57,7 @@ public sealed class CatalogBindingHoldEngineHookTests
     {
         FailingHoldInsert failing = new();
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync(commands: failing);
-        fixture.Catalog.Set(fixture.Demand("D-HOOK-1", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
         fixture.BoxCounts.Set("SUBLOT-001", 7);
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
         JourneyRuntimeRow heading = await fixture.RuntimeAsync();
