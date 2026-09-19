@@ -27,6 +27,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -244,7 +246,13 @@ $null = Wait-L2Condition -Description 'a new emergency stop was issued for the m
     -Journal $journal -Criterion 'new-trigger-issued' -TimeoutSeconds 30 `
     -Probe { (Get-EmergencyAttempts 'triggerEmergency').Count } -Until { param($v) $v -ge 2 }
 
-$second = (Get-EmergencyAttempts 'triggerEmergency')[1]
+# 急停审计行先「武装」（Outcome = Pending）落库，再调 RIoT，回读之后才由 RecordOutcomeAsync 写 Outcome 与
+# ReceiptJson（EmergencyStopSupervisor.TriggerAsync），三步各自提交。行出现了，线上那次调用与结算都未必已经发生，
+# 所以等 ReceiptJson 落库再读这一行和假 RIoT（control-server#193 普查）。
+$second = Wait-L2ConditionOrLast -Description 'the new trigger attempt was settled' `
+    -Journal $journal -Criterion 'new-trigger-settled' -TimeoutSeconds 30 `
+    -Probe { $rows = Get-EmergencyAttempts 'triggerEmergency'; if ($rows.Count -gt 1) { $rows[1] } else { $null } } `
+    -Until { param($row) -not [string]::IsNullOrEmpty([string]$row.ReceiptJson) }
 $assertions.Add(
     'L2-ESR-10',
     '解除之后读到车在动：服务端发出新的一次 triggerEmergency，原因不是 EMERGENCY_LATCH_RELEASED_EXTERNALLY（不是意外恢复，是新的急停）',

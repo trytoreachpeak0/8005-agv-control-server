@@ -17,6 +17,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $mes = $Context.MesIngest
@@ -42,7 +44,14 @@ $edgeCount = Wait-L2Condition -Description 'the engine fetched a design state' `
     -Probe { $s = Get-Snapshot; if ($s) { [int]$s.DesignEdgeCount } else { 0 } } `
     -Until { param($v) $v -gt 0 }
 
-$snapshot = Get-Snapshot
+# 设计态、运行态、边组、动态代价与陈旧判定是一次刷新里前后几次保存（RouteGraphRefresher.RefreshOnceAsync），
+# 设计态有了不等于后面几样也落库了，而新建的快照行起步就带 SNAPSHOT_NEVER_REFRESHED。所以 L2-RG-03 到 L2-RG-05
+# 要读的几样一起等齐再读（control-server#193 普查）；等不到就拿最后一次读到的快照下判据。
+$snapshot = Wait-L2ConditionOrLast -Description 'the first refresh cycle finished and cleared the stale reason' `
+    -Journal $journal -Criterion 'route-graph-settled' -TimeoutSeconds 30 `
+    -Probe { Get-Snapshot } `
+    -Until { param($s) $null -ne $s.RuntimeRefreshedAt -and [string]$s.RuntimeRefreshedAt -ne '' -and
+        $null -ne $s.EdgeGroupRefreshedAt -and ($null -eq $s.StaleReason -or [string]$s.StaleReason -eq '') }
 $assertions.Add(
     'L2-RG-01',
     '设计态读回了种子图的八条有向边',

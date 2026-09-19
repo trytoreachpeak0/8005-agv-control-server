@@ -687,6 +687,10 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     - **到站那一轮**：车辆业务状态、工作清单、计划、录入请求四条出站报文各自在发布时落库
       （`WireToGateStore.QueueOutboundEnvelopeAsync` 每条一次保存），之后引擎才保存 `AwaitingSublot`；期限起点随工作清单那次
       保存一起落库。等到 `AwaitingSublot` 再读这几样是安全的，反过来不是。
+    - **下发装货指令那一轮**（`AwaitingSublot` 分支里的 `PublishLoadAsync`）：发件箱那一行与 `Prepared` 的仓位操作先落库、
+      随即上线；录入请求的结算单独保存一次；`AwaitingLoadResult` 是迭代末尾那次保存。所以「对端收到了装货指令」之后要
+      另等阶段，反过来等到 `AwaitingLoadResult` 再读指令与仓位操作是安全的。L1
+      `JourneyRuntimeWorkerLoadCommandCommitOrderTests` 钉住这个顺序（control-server#193）。
     - **装货结果**由消息处理器收下时写 `StationOperations.Status = Committed`（`ApplyOperationResultAsync`），旅程转
       `AwaitingStationDeparture` 是引擎下一轮的另一次写入。卸货结果那一次提交里有需求 `Succeeded`、租约释放与
       `TransportDemandCompletions`，旅程 `Completed` 与车辆占用释放仍是引擎之后的另一次写入。
