@@ -539,7 +539,8 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                     .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                     .ConfigureAwait(false);
                 if (runtime is null || !Matches(runtime, journey) ||
-                    !await AreaAssignmentFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false))
+                    !await AreaAssignmentFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false) ||
+                    !await TaskTypeStationFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false))
                 {
                     throw new BusinessIdentityConflictException(
                         "Accepted demand replay does not match its persisted journey runtime.");
@@ -564,6 +565,16 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         if (journey?.AreaAssignmentVersion is long areaAssignmentVersion)
         {
             await FreezeAreaAssignmentAsync(snapshot, areaAssignmentVersion, cancellationToken).ConfigureAwait(false);
+        }
+
+        // REQ-0344: the rule and binding set versions the demand's fixed station was resolved under, in the transaction
+        // that accepts it, so an accepted demand is never without them. Whatever later happens to the rules, the
+        // bindings or a station's name, this demand is not rewritten, migrated or resolved again.
+        if (journey is { TaskTypeStationRuleVersion: long ruleVersion, TaskTypeStationBindingSetVersion: long bindingSetVersion })
+        {
+            await new DemandTaskTypeStationFreezeStore(dbContext)
+                .FreezeAsync(snapshot.DemandId, ruleVersion, journey.MapId, bindingSetVersion, snapshot.AcceptedAt, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         dbContext.AcceptedDemands.Add(new AcceptedDemandRow
@@ -2259,6 +2270,30 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 .SingleOrDefaultAsync(cancellationToken)
                 .ConfigureAwait(false);
         return string.Equals(frozenSlotPosition, journey.RequiredSlotPosition, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Whether a plan's task type station rule and binding set versions are what the demand durably froze
+    /// (REQ-0344, control-server#160).
+    /// </summary>
+    /// <remarks>
+    /// Like the area assignment version, the two live in <c>ConfigurationConsumerBindings</c> rather than on the
+    /// journey row, and are written in the acceptance transaction; a plan carrying neither matches only a demand
+    /// that froze neither.
+    /// </remarks>
+    private async Task<bool> TaskTypeStationFreezeMatchesAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyExecutionPlan journey,
+        CancellationToken cancellationToken)
+    {
+        DemandTaskTypeStationFreeze? frozen = await new DemandTaskTypeStationFreezeStore(dbContext)
+            .ReadAsync(snapshot.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        return frozen is null
+            ? journey.TaskTypeStationRuleVersion is null && journey.TaskTypeStationBindingSetVersion is null
+            : frozen.RuleVersion == journey.TaskTypeStationRuleVersion
+                && frozen.BindingSetVersion == journey.TaskTypeStationBindingSetVersion
+                && frozen.MapId == journey.MapId;
     }
 
     /// <summary>
