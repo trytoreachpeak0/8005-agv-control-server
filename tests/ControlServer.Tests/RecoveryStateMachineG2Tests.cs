@@ -2255,6 +2255,60 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#175, review of PR #177. The other way a session closes: its first result reconciled, and the
+    /// second submission of the same action reports afterwards, also ALL_EMPTY. It is recorded against its own
+    /// workflow and settles nothing a second time, and the store still reads A as closed on a normal
+    /// reconciliation -- the late one is RecoveryRequired and judged later, so it never reads as the closer.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ALateResultAfterASessionClosedOnAReconciledResultLeavesThatClosingReadable()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_AFTER_RECONCILED";
+        const string proof = "late-after-reconciled-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
+                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+                AllEmptyCompensationResult(first), state, token)));
+            string sessionId = StableGuid(RequestId, "exception-recovery-session");
+            BusinessPicture settled = await BusinessPictureAsync(context);
+            Assert.Equal(DemandExecutionStatus.Cancelled, settled.Demand);
+            clock.Current = Now.AddMinutes(1);
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(late, state, token)));
+
+            Assert.Equal(settled, await BusinessPictureAsync(context));
+            RecoveryWorkflowRow second = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == SecondActionId, token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, second.State);
+            Assert.Equal("ALL_EMPTY", second.Outcome);
+            Assert.Equal(("RECONCILED", "ALL_EMPTY"), (await ClosingReasonsAsync(context))[sessionId]);
+            Assert.Equal([SecondActionId], await ResultsArrivedAfterClosingAsync(context));
+            AssertSingleLateResultLog(log, sessionId, SecondActionId, "ALL_EMPTY");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#175, review of PR #177. A compensation is authorized in a second message, and that message can
     /// arrive after its session closed: A's second compensation was submitted, the first reported FAILED and closed
     /// A, and the administrator is working the demand in B when the second one's authorization comes in. It is
