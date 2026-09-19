@@ -17,7 +17,7 @@ namespace ControlServer.Host.Dashboard;
 /// </para>
 /// <para>
 /// 暂停来源的中文名在这里给出而不在看板里：看板源码守着一张 fail-safe 词表，「激活结果未知」这个来源名本身不是入口，
-/// 但把它写进看板源码就要给那张词表开口子。来源是批次6-05 写的 <c>ACTIVATION_UNKNOWN</c> 时同样照名显示。
+/// 但把它写进看板源码就要给那张词表开口子。批次6-05 在激活事务里直接写的 <c>ACTIVATION_RESULT_UNKNOWN</c> 来源同样照名显示。
 /// </para>
 /// </remarks>
 internal sealed class TaskTypeBindingsQueryEndpoint : IDashboardQueryEndpoint
@@ -143,7 +143,9 @@ internal sealed class TaskTypeBindingsQueryEndpoint : IDashboardQueryEndpoint
     {
         TaskTypeStationHoldSource.Manual => "看板人工",
         TaskTypeStationHoldSource.CatalogChange => "目录变化",
-        "ACTIVATION_UNKNOWN" => "激活结果未知",
+        // Batch 6-05 (control-server#161) adds TaskTypeStationHoldSource.ActivationResultUnknown with this value;
+        // named literally here until that constant is on this branch.
+        "ACTIVATION_RESULT_UNKNOWN" => "激活结果未知",
         _ => source
     };
 
