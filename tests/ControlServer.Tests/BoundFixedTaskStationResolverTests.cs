@@ -3,6 +3,8 @@ using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.Dispatch;
 using ControlServer.Host.Runtime.TaskTypeStations;
+using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using static ControlServer.Tests.TaskTypeStationTestData;
 
@@ -110,6 +112,69 @@ public sealed class BoundFixedTaskStationResolverTests
             Assert.Equal(staging, other.Station);
             Assert.Equal(FixedStationEnd.Origin, other.FixedEnd);
         }
+    }
+
+    /// <summary>
+    /// 本图该任务类型处于暂停，任何来源都算：看板人工、目录变化、激活结果未知（REQ-0340、REQ-0342、REQ-0347）。
+    /// 人工与目录变化只挡被暂停的那个任务类型；已解除的暂停不再挡。
+    /// </summary>
+    [Theory]
+    [InlineData(TaskTypeStationHoldSource.Manual)]
+    [InlineData(TaskTypeStationHoldSource.CatalogChange)]
+    public async Task AHeldTaskTypeIsRefusedWhateverRaisedTheHoldAndOnlyThatTaskType(string source)
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await ActivateAsync(
+            fixture,
+            [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
+            [GateBinding, StagingBinding]);
+        RiotMapStationCatalogSnapshot map = Map with { Stations = [.. Map.Stations, new RiotMapStation(305, "派工待送取货")] };
+        TaskTypeStationHold released = await fixture.Holds.RaiseAsync(
+            25, TransportTaskTypes.StagingToWire, source, "TEST_HOLD", "{}", "test", Now, Token);
+        await fixture.Holds.ReleaseAsync(released.HoldId, "test", Now, Token);
+        await fixture.Holds.RaiseAsync(25, TransportTaskTypes.WireToGate, source, "TEST_HOLD", "{}", "test", Now, Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        IFixedTaskStationView view = await ReadAsync(fixture, map);
+
+        Assert.Equal(DispatchReasonCodes.TaskTypeHeld, view.Resolve(TransportTaskTypes.WireToGate).RefusalReasonCode);
+        Assert.Null(view.Resolve(TransportTaskTypes.WireToGate).Station);
+        Assert.Null(view.Resolve(TransportTaskTypes.StagingToWire).RefusalReasonCode);
+    }
+
+    /// <summary>激活结果未知时整张图的绑定都不可信，本图每个任务类型都算暂停（REQ-0347）。</summary>
+    [Fact]
+    public async Task AnActivationWhoseOutcomeIsUnknownHoldsEveryTaskTypeOfTheMap()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await ActivateAsync(fixture, [TransportTaskTypes.WireToGate], [GateBinding]);
+        TaskTypeStationActiveBindingSetRow pointer = await fixture.Context.Set<TaskTypeStationActiveBindingSetRow>()
+            .SingleAsync(row => row.MapId == 25, Token);
+        pointer.State = TaskTypeStationActivationState.ActivationUnknown;
+        pointer.PendingVersion = pointer.ActiveVersion + 1;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(
+            DispatchReasonCodes.TaskTypeHeld,
+            (await ReadAsync(fixture, Map)).Resolve(TransportTaskTypes.WireToGate).RefusalReasonCode);
+    }
+
+    /// <summary>
+    /// 顺序是缺绑定 → 绑定站点缺失 → 暂停：一个既暂停又缺绑定的任务类型报缺绑定，现场先要补的是绑定。
+    /// </summary>
+    [Fact]
+    public async Task AMissingBindingIsNamedAheadOfAHold()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await ActivateAsync(fixture, [TransportTaskTypes.WireToGate], [GateBinding]);
+        await fixture.Holds.RaiseAsync(
+            25, TransportTaskTypes.StagingToWire, TaskTypeStationHoldSource.Manual, "TEST_HOLD", "{}", "test", Now, Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(
+            DispatchReasonCodes.TaskTypeBindingMissing,
+            (await ReadAsync(fixture, Map)).Resolve(TransportTaskTypes.StagingToWire).RefusalReasonCode);
     }
 
     internal static async Task<(long RuleVersion, long BindingSetVersion)> ActivateAsync(
