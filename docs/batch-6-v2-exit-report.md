@@ -42,10 +42,10 @@ control-server#165（批次6-09）。本报告逐项对照规格 `8005-agv-progr
 
 | 票 | 仓 | 内容 | 状态（2026-09-19） |
 | --- | --- | --- | --- |
-| onboard-hmi#123 | 车载端 | 开锁前挡住补偿、受控取货、强制取出命令时不回结果，服务端会话停在 `EXECUTING`（control-server#187 审查发现） | open |
-| onboard-hmi#124 | 车载端 | 已完成的装货因结果确认没回来被报成「上次操作未完成」；重启后遗留 attempt 与重发命令竞态不结算 | 车载端 PR #126 已合入（`2b04729`）；服务端场景判据 PR 未合入 |
-| control-server#193 | 服务端 | `load-command-never-answered` 的 `L2-LN-01` 取样竞态 | open |
-| onboard-hmi#127 | 车载端 | 在途装货断线重连后车载端不发结果，与服务端互相等（control-server#189 第二步；#189 第一步 PR #195 已合入 `5a126238`） | open，等 #124 服务端 PR 合入后开工 |
+| onboard-hmi#123 | 车载端 | 开锁前挡住补偿、受控取货、强制取出命令时不回结果，服务端会话停在 `EXECUTING`（control-server#187 审查发现） | open；PR onboard-hmi#125 待改（调度审查必修项 A） |
+| onboard-hmi#124 | 车载端＋服务端 | 已完成的装货因结果确认没回来被报成「上次操作未完成」；重启后遗留 attempt 与重发命令竞态不结算 | 已合入：车载端 PR onboard-hmi#126（`2b04729`）；服务端判据 `L2-DA-09` 进 `real-onboard-durable-ack-lost`，PR #196（`e56ffa4a`） |
+| control-server#193 | 服务端 | `load-command-never-answered` 的 `L2-LN-01` 取样竞态；普查改了六个合成场景的同型取样 | open；PR #194 CI 绿，待审 |
+| onboard-hmi#127 | 车载端 | 在途装货断线重连后车载端不发结果，与服务端互相等（control-server#189 第二步；#189 第一步 PR #195 已合入 `5a126238`） | open，还没有 PR；开工前置 onboard-hmi#124 已满足 |
 
 ## 身份
 
@@ -77,21 +77,21 @@ control-server#165（批次6-09）。本报告逐项对照规格 `8005-agv-progr
 | control-server#162（批次6-06） | `REQ-0304`、`0340`、`0341`、`0342`、`0345`、`0348` | 看板按 `Map + TASK_TYPE` 立即收紧；目录变化按稳定身份与风险分类、影响只收敛到受影响的任务类型；已建单不改单 | `CatalogBindingChangeClassifierTests.TheSameIdUnderAnotherNameIsARenameThatNeedsASiteReview`、`.ANewIdCarryingTheOldNameIsANewStationAndIsNeverReboundByName`、`CatalogBindingHoldConvergenceTests.ARenamedStationHoldsOnlyTheTaskTypeBoundToItAndNothingOnAnotherMap`、`.AHoldDoesNotTouchAJourneyAlreadyUnderWayAndCountsItInTheAudit`、`TaskTypeHoldEndpointsTests.TheRouteOnlyTightensThereIsNoWayToReleaseAHoldOverHttp`、`TaskTypeBindingDashboardTests.TheCardListsEachTaskTypeWithItsStatusTheHoldSourcesAndAHoldLinkOnEveryRow` 等（38）；L2 `binding-hold-dashboard-not-cascading`、`catalog-change-binding-hold` | PR #182 `90433957` |
 | control-server#163（批次6-07） | `REQ-0184`、`0324`（`STAGING_TO_WIRE` 端点）；分侧 `REQ-0352` | `STAGING_TO_WIRE` 反向旅程，推翻 I6；取货点按任务类型绑定；站点任务类型准入跟 AREA 机台端（卸货端）；按目的机台装侧 | `ReversedDirectionJourneyRuntimeTests.AStagingToWireJourneyIsPlannedFromTheStagingStationToTheAreaMachineAndNeverSwapped`、`.AMachineThatNoLongerAdmitsTheTaskTypeHoldsTheUnloadUntilItDoesAgain`、`ReversedDirectionJourneyTests.AReplayedStagingToWireDemandKeepsItsRouteEvidenceAndASwappedOneIsRefused`、`AreaEndAdmissionStoreTests.AStagingToWireUnloadCarriesAndFreezesTheAreaMachineAdmission` 等（10）；L2 `staging-to-wire-reversed-journey`、`staging-to-wire-slot-group` | PR #178 `6b5d3adf` |
 | control-server#164（批次6-08） | 无条目载体 | G3 认领 `FP-IS-10`／`FP-IS-11`：两条 journey 场景、runner 认领与断言归属表 | G3 场景 `g3-task-type-admission-fail-closed`、`g3-reversed-direction-journey`（无新增 `[Fact]`） | PR #176 `93558a07` |
-| control-server#191 | `REQ-0337`、`0347` | 墓碑（手动关闭）之后被中断的空需求集激活，对账回到墓碑、重启不装预置 | `TaskTypeStationActivationTests.AnInterruptedActivationOfAnEmptyRequirementSetFromATombstoneReconcilesBackToTheTombstoneAndARestartKeepsThePresetOut` 等（5） | PR #192 `a2369ce0` |
+| control-server#191（#161 复审后续） | `REQ-0337`、`0347` | 墓碑（手动关闭）之后被中断的空需求集激活，对账回到墓碑、重启不装预置 | `TaskTypeStationActivationTests.AnInterruptedActivationOfAnEmptyRequirementSetFromATombstoneReconcilesBackToTheTombstoneAndARestartKeepsThePresetOut` 等（5） | PR #192 `a2369ce0` |
 | onboard-hmi#115（批次6-03） | 车载半边（`FP-IS-10`／`11`） | 放开非 `WIRE_TO_GATE` 任务的入站校验；按计划显示方向与任务类型；不从计划或 `blockingFacts` 推断未绑定的任务类型 | `TaskTypeAndDirectionVectorG2Tests.AReversedJourneyShowsTheDirectionAsPlanned`（`CV-REVERSED-DIRECTION-JOURNEY`）、`.AnUnboundTaskTypeIsNeverInferredFromThePlanOrTheBlockingFacts`（`CV-TASK-TYPE-ADMISSION-FAIL-CLOSED`）、`InboundPayloadSchemaBoundaryTests.EveryWorkTypeTheSchemaDeclaresIsAccepted`、`WireToGateStopFactsTests.TheSameStopRoleShowsTheSameDirectionWhateverTheTaskType` 等（17） | PR #117 `3547a97` |
 
 `REQ-0336`（两级管理员分工）延后，本批没有它的实现与测试（第五节第 4 点）。`REQ-0359` 不在本批（第五节第 5 点）。
 
 批次 6 期间在同一集成分支上合入、但不属于批次 6 新能力的修复（恢复与会话路径，来自批次 5 遗留或批次 6 审查）：
 control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9）、#180（PR #185 `75c3d39e`，3）、#187（PR #190 `c1252932`，7）、
-#167（PR #181 `169dfa42`，真装置场景 `real-onboard-expected-action-overdue`）、#189 第一步（PR #195 `5a126238`，复现与结论）、#179（PR #184 `969f883d`，26 号图只读核实记录）；
+#167（PR #181 `169dfa42`，真装置场景 `real-onboard-expected-action-overdue`）、#189 第一步（PR #195 `5a126238`，复现与结论）、#196（PR #196 `e56ffa4a`，`real-onboard-durable-ack-lost` 加 `L2-DA-09`，onboard-hmi#124 的服务端判据）、#179（PR #184 `969f883d`，26 号图只读核实记录）；
 车载端 onboard-hmi#120（PR #121 `7ded1b7`，3）、#119（PR #122 `4a6790e`，12）、#124（PR #126 `2b04729`，5）。
 它们的剩余风险见第六节。
 
 ### 向量绑定
 
 两端 `ProtocolVectorTestBindingArchitectureTests` 的 `VectorsAwaitingTheirSlice` 各剩 7 条，全部属于批次 7～11 的切片（`FP-IS-08`、`09`、`12`、`13`）；
-`CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` 与 `CV-REVERSED-DIRECTION-JOURNEY` 已不在名单里（现顶端 `5a126238`／`2b04729` 实读），各有同名具名测试：
+`CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` 与 `CV-REVERSED-DIRECTION-JOURNEY` 已不在名单里（现顶端 `e56ffa4a`／`2b04729` 实读），各有同名具名测试：
 
 | 向量 | 服务端 | 车载端 |
 | --- | --- | --- |
@@ -138,7 +138,8 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
    改视图模型或恢复入口的改动在真装置上跑恢复场景。
 
 计划清单〔申请时段时定稿〕：`real-onboard-expected-action-overdue` × 3；批次 5 出口的七条（control-server#86 三条、#88 四条）各 × 1 作回归；
-onboard-hmi#124 服务端场景判据 PR 与 onboard-hmi#127 若新增真装置场景，一并各 × 3。
+`real-onboard-durable-ack-lost`（含 control-server#196 新加的 `L2-DA-09`）× 3；onboard-hmi#127 若新增真装置场景，一并 × 3。
+真装置只实测一个管理员恢复入口（「补偿清空」），其余三个入口由 G2 覆盖（onboard-hmi#126 审查，调度要求写明）。
 
 ## 三、门禁
 
@@ -183,7 +184,7 @@ onboard-hmi#124 服务端场景判据 PR 与 onboard-hmi#127 若新增真装置�
 9. **反向旅程里 `JourneyRuntimes.GateStationId` 与看板字段 `gateStationId` 装的是 AREA 机台站**（列名沿用 `WIRE_TO_GATE` 口径），
    订单意图名 `TO_GATE` 在反向旅程里同样指 AREA 机台；本批未改名。
 10. **本批 migration 一张**：control-server#159 的 `20260919021150_Batch6TaskTypeStationBindings`（`Batch6MigrationDisciplineTests` 钉住「恰好一张、紧跟批次 5 那张」）。
-    其它票零迁移：`1f5efed1..5a126238` 在 `Migrations/` 下只有这一张新增与模型快照的对应修改。〔出口顶端再核一次〕
+    其它票零迁移：`1f5efed1..e56ffa4a` 在 `Migrations/` 下只有这一张新增与模型快照的对应修改。〔出口顶端再核一次〕
 11. **目录新鲜与站点存在性改为每轮按任务类型判**（control-server#160），不在启动期拒绝。理由：现场共享地图上一处无关的站点变化不应让整个服务起不来、
     还连带所有任务类型，那违背 `REQ-0342`「单一站点变化只阻断绑定在该 Station 上的那个 TASK_TYPE」；目录不新鲜在整图层面本来由 `REQ-0302` 硬阻断。
     **注意这一点的边界**：目录新鲜度过期按设计停整图所有任务类型（`REQ-0302`）；「只停该类」只对绑定站改名或消失成立（control-server#163／PR #178 审查）。
@@ -196,13 +197,47 @@ onboard-hmi#124 服务端场景判据 PR 与 onboard-hmi#127 若新增真装置�
 
 14. **Map 级改名检测「接口可读、未实施」**（control-server#162）。RIoT 地图接口读得到 Map 名称，但没有可靠基线：绑定集不记 Map 名称；
     control-server#179 核实 `JourneyRuntime:mapIdentity`（`老厂前线new`）与 RIoT 26 号图的 `name`（`老厂前线new_wk`）不是同一字面值。
-    用户定走方案一（加一次迁移，把 RIoT `mapInfo/{mapId}` 的 `name` 存作基线），不进批次 6，由分票会话单开一张票挂到后续批次〔票号待补〕。
+    用户定走方案一（加一次迁移，把 RIoT `mapInfo/{mapId}` 的 `name` 存作基线），不进批次 6，已开 control-server#186（open），挂后续批次。
     现状兜底：`VehicleDynamicFactsCriterion` 挡车辆地图名不符；Map 删除或换 `mapId` 由目录新鲜度门禁整图阻断。
 15. **control-server#166（人工建站票）移出批次 6**，见第 1 点。
 
 ## 六、剩余风险
 
-〔汇总中〕
+按来源汇总；出处是各票关闭评论与 PR 审查评论（审查结论都写在 PR 评论里）。出口跑批中新发现的另列在第四节。
+
+### 行为与现场
+
+- **反向旅程到机台时准入被撤，带货无限等待**（control-server#163／PR #178 审查）：停在 `AwaitingGateArrival`／`TASK_TYPE_NOT_ALLOWED_AT_STATION`，没有超时也不升级。
+  在现场只有 `STAGING_TO_WIRE` 投运后才可能出现（本批不投运，第五节第 1 点）。
+- **目录新鲜度过期停整图所有任务类型**（`REQ-0302`，按设计）；「只停该类」只对绑定站改名或消失成立（同上）。
+- **出厂 `allowedWorkTypes` 由一类改为列全六类**（control-server#160，偏离票面）：现场一旦出现同向四类或 `STAGING_TO_WIRE` 需求，
+  看板积压里会多出「缺绑定」行；这是 fail-closed 的显示，不建单。生产 MesIngest 里有没有这些类型的需求没有查（属 Ask first 第 2 类）。
+- **出厂 `admissionPolicyVersion` 由 1 升到 2**（control-server#163）：某实例若按 20260915 缺陷处置手工调到过 2，升级后会判漂移、所有任务类型停受理；v2 目前没有部署，切生产时核对。
+- **出厂 `mapId` 仍是 25，现场是 26**（control-server#159）：切图属切生产配置，不在本批；切时要设 `TaskTypeStations:settingsFile`，
+  否则以 `TASK_TYPE_BINDING_MAP_MISMATCH` 拒绝启动。升级会整目录覆盖 `task-type-stations.settings.json`。
+- **回滚到 control-server#159 之前的包必须连数据库一起回滚**：旧二进制读不了新表的枚举。
+- **人工收尾（`CLOSED_MANUALLY`，墓碑）后该图没有生效版本**，所有需要固定站的任务类型停受理，直到下一次激活（有意的 fail-safe，control-server#161）；
+  规格 21.2 节第 4 条「无生效版本时装第一版预置」只适用于从未有过受控版本的图，墓碑不算。control-server#191 起，从未激活、需求集为空的图首次激活中断后也回到墓碑，要人激活一次。
+- **180 天审计保留**依赖 `PurgeExpiredAuditAsync`，它还没有生产调用点；「审计不可改写」只在 EF 层，数据库层没有触发器（control-server#161 审查 O1）。
+- **FieldOps 激活要运维从 RIoT 取目录带进来**（`--catalog`），且必须落在新鲜窗口内；改了预置里的规则再重启会出新规则版本，下一次激活必须带新规则。
+- **在途装货断线重连两端互等**（control-server#189）：车卡在 `Prepared`／`RecoveryRequired`，只有下一次重连才解得开；人工重启能解开是推论、没实测。
+  修复由 onboard-hmi#127 承接〔出口时的状态待填〕。**MVP 线代码同构，生产上是否碰到过未核实（用户定暂不核实）。**
+- **onboard-hmi#124 之后仍有的窗口**：结果确认晚到而连接没断时，结果要等下一次重连才在车上结算，HMI 停在「结果等待确认」；
+  握手里的 `RecoveryStateReport` 仍把这次 attempt 报成未结算。四条转 onboard-hmi#127。
+- **onboard-hmi#123（PR onboard-hmi#125）自列**：IO 预检 `FAILED`／`UNKNOWN` 之后向量与会话不清；绑定失败的拒绝仍不回结果，服务端停在 `AwaitingResult`〔合入时再核〕。
+- **REQ-0358 期待动作超时**（control-server#167）：车载端重启时卡片状态没有真装置证据；断开时的 HMI 文案只有 G2 覆盖；卸货侧、锁反馈卡死两种变体不做；
+  一次关门服务端约 1 秒内发 4 次快照请求（产品现象，未开票）；MVP `OnboardHmi_MVP` 有同一段代码，未核实。
+- **Map 级改名检测未实施**（第五节第 14 点，control-server#186）。
+
+### 证据的边界
+
+- **真装置只实测一个管理员恢复入口**（「补偿清空」），其余三个入口由 G2 覆盖（onboard-hmi#115、#120、#124）。
+- **G3 `FP-IS-10`／`11` 的判据**（control-server#164）：「全程只出现一种任务类型」只在四个点采样，不是连续监视；路线证据是哈希，G3 读不出起终点。
+- **control-server#162 的三份 L2 红证据**跑在合入 #161 之前的 `d223b14e`，没有在新代码上重取。
+- **control-server#159 负向场景**五条判据里只有 `L2-TTSR-03`／`04` 有区分力，另三条被唯一索引兜底。
+- **control-server#193 普查**改了六个场景的同型取样，没做故障注入；两处「拿不准」和四处「相邻形状」没改（`L2-SCA-09`、`g3-pickup-load-and-correction`、`L2-DC-12` 可能假绿、`L2-NL-03`、`L2-RW-02`）〔合入时再核〕。
+- **向量弱绑定**（第五节第 7 点）；**合成 L2 与真装置都不证明真实硬件**（光幕极性、锁反馈时序、机械弹开），control-server#44 的极性对齐仍是切生产门槛。
+- **G2 证据作废**：onboard-hmi#123、#124 作废车载端 `FP-IS-02`／`03`／`07` 的既有 G2 证据；本批出口只重出 `FP-IS-10`／`11`，其余切片在下一次出口或切 RC 时按顶端重出。
 
 ### 运维说明
 
@@ -213,4 +248,30 @@ onboard-hmi#124 服务端场景判据 PR 与 onboard-hmi#127 若新增真装置�
 
 ## 七、转后续
 
-〔汇总中〕
+已开票：
+
+| 票 | 内容 | 状态 |
+| --- | --- | --- |
+| control-server#166 | 26 号图上建派工待送取货站点、按 `mapId + STAGING_TO_WIRE` 绑定并做现场用途核对 | open，后续批次 |
+| control-server#186 | Map 级改名检测：RIoT 地图名存作基线 | open，后续批次 |
+| onboard-hmi#127 | 在途装货断线重连后车载端补发结果（control-server#189 第二步）；接 onboard-hmi#124 转来的四条 | open，本批追加 |
+| onboard-hmi#123 | 开锁前被挡的恢复命令回结果 | open，本批追加 |
+| control-server#193 | `L2-LN-01` 取样竞态 | open，本批追加 |
+| program#125 | `DISPLAY_ADMISSION_BLOCK_REASON` 契约措辞（随 `protocol-v3.0.0`，program#115） | open |
+| onboard-hmi#61 | 清单项数与腿数两处收窄 | open，批次 7 |
+
+审查里提出、**还没有开成票**的（交调度决定开不开、挂哪一批）：
+
+- control-server#159：迁移 `Down()` 没有「迁下去再迁回」的测试。
+- control-server#160（PR #188 审查 ①～④）：目录码守卫只探得到已知五种形状；计划 `StationCatalogRevision` 为空时静默跳过落点冻结；
+  `TASK_TYPE_BINDING_CATALOG_NOT_FRESH` 缺中文说明；「受理被拒 → 改绑」测试缺同轮其它任务类型不受影响的断言。另：`Invoke-L2Scenario.ps1` 仍传两个无人读的关卡旧环境变量。
+- control-server#161（PR #183 审查 O1）：审计表加 `BEFORE UPDATE/DELETE` 触发器。
+- control-server#162（PR #182 审查 C、D、F、G 与补测）：目录变化记录按（站点, 修订）幂等在共享地图上会重复记行；`ApplyAsync` 抛异常中断整轮；
+  `L2-CC-07` 判据偏弱；本地证据 `batchId` 为默认值；本机地址为 null、来源非回环时应 403 的测试；403 结果码改名需知会外部脚本；请求体在来源判定之前解析；
+  部署文档写明同机判定不能与端口转发共存（本报告第五节已写运维说明）。
+- control-server#163（c）：存储层不校验准入任务类型等于需求 `WorkType`；缺「`STAGING_TO_WIRE` 暂停时第二腿不建」的测试；反向旅程无限等待（第六节）要不要加超时或升级。
+- control-server#164：`G3-10-04` 快照时序收紧并补红；`G3-11-07` 重算路线证据直证起终点；读机台停靠行前先等清单确认；`L2TaskTypeJourney.psm1:240` 查询缺 `ORDER BY`；补 `G3-11-08`、`G3-10-07` 两份红；`rig-runs.log` 改单一写入者。
+- control-server#167：`L2-EAO-13` 加「端点读数版本号前进」判据；门槛重复写两处；red-05 两条缺席；一次关门 4 次快照请求。
+- control-server#191（PR #192 审查 a～d）：对账审计记写入后的指针状态；看板 `CLOSED_MANUALLY` 措辞；补「结果未知、有生效版本、unattributed 回 ACTIVE」测试；核对 `GovernanceStore` 四个调用方；#162 解除路径的 `ReleasedBy` 对齐。
+- control-server#196：单元素读名失败仍计数；UIA 持续抛异常拖成等待超时可能假红；journal「Not reached」措辞；README 状态列。
+- onboard-hmi#115：`docs/LOCAL_G2_EVIDENCE.md:42` 的已实现切片清单未更新。
