@@ -41,6 +41,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-compensate-then-reconnect` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ②：cs#78＋onboard-hmi#70）**：等人时杀车载端、门被空着关上 → 重启后中断结算报 `UNKNOWN` → 补偿清空对账 → 经代理断一次链路 → CLOSED 的恢复会话快照已被确认、补偿命令已结算，一条都不重放进新会话，车还接得了下一单（`L2-CR-07`，control-server#131 修复前红） | 同上 |
 | `real-onboard-restart-while-waiting-operator` | **真的** | **批次 5（control-server#88，program#61 ②：onboard-hmi#70，ADR-cross-0058 决策 2）**：等人时杀车载端、它不在时货放好门关上 → 重启后按实时 IO 补交 `COMPLETED` → 装货提交、会话回 `Ready`、不进恢复，旅程走完；出厂配置 | 同上 |
 | `real-onboard-cancellation-authorization-lost` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ③：onboard-hmi#71＋onboard-hmi#78）**：出厂配置下两仓装货、第一仓装好锁上、第二仓开着时按取消 → 丢掉授权应答、车载端报失败 → 再按一次，新 `messageId`、payload 与首发相同 → 取消 `ALL_EMPTY`、需求 `Cancelled`，全程不重连、不替原 attempt 报结果，取货单的车辆占用释放（`L2-CAL-09`，control-server#131 修复前红）；取消先收尾接手的开门再开已装货的仓，模拟器采样里任一时刻至多一仓未锁闭（`L2-CAL-10`，REQ-0357，onboard-hmi#106） | 同上 |
+| `real-onboard-expected-action-overdue` | **真的**＋协议故障代理＋看板 | **control-server#167（REQ-0358，CP-0005 实现票 1、2 的联调，批次 5 出口剩余风险第一条）**：门槛压到 20 秒（`ExpectedActionOverdueThreshold`）。装货开门后空关一次、车重开，计时不清零 → 门槛前什么都没有 → 越过门槛车载端报 `SLOT_EXPECTED_ACTION_OVERDUE`（`raisedAt` = 第一次开锁 + 门槛）→ 服务端在同一连接上发 `SafetyStateSnapshotRequested`、车回中途快照、会话不回握手 → 看板端点与看板页一行、读数取中途快照且与模拟器一致 → HMI 说「已上报」；上报不改行为；再空关不出第二行；期限过后合成同一行；断链重连后仍是同一行；放货关门后撤下 | 见 control-server#167 的 PR |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -393,6 +394,13 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
   `drop-durable-ack`（丢一次某类报文的 `DurableAck` 并断链）、`drop-message`（丢一条服务端应答、链路不断）、
   `disconnect`（不丢任何行、断一次）。代理默认什么都不丢；它的 `/snapshot` 记下每条连接、每一行的信封身份，收尾时存成
   `snapshots/protocol-fault-proxy.json`。合成对端没有 journal 也不重试，给它设这个键会直接报错。
+- `ExpectedActionOverdueThreshold = '00:00:20'` —— 只对真装置有效（control-server#167）。`REQ-0358` 的期待动作超时门槛，
+  **一个键同时设两端**：车载端 stage 副本写 `workflow.expectedActionOverdueMs`（毫秒），服务端环境写
+  `ExpectedActionOverdue__threshold`。一个键而不是两个，是因为服务端拿不到车上的值，只拿自己那份把告警的 `raisedAt`
+  换算成看板上的「已等待」；两边分开配就会差出两者之差，而这个差在 L2 里看不出来。不写这个键两端都是出厂值（车上
+  3 × `operationTimeoutMs` = 6 分钟，服务端 `00:06:00`），两个出厂文件都不改。在任何组件启动之前校验：合成装置
+  （它不产这条告警，给它门槛只会让场景绿在别的事上）、非正数、解析不了、裸数字、不是整毫秒都直接报错。解析与写入在
+  `L2ExpectedActionOverdue.psm1`，自检是 `Test-L2ExpectedActionOverdue.ps1`（纯输入，几秒）。它与第 11 条的区分见第 11 条。
 
 - `Fleet` —— 主车**之外**的车，每项一对 `AgvId` / `VehicleKey`。编排器把主对放在第一位再逐车
   注入 `JourneyRuntime:Fleet`（`JourneyRuntimeOptions` 的校验器要求名册包含主对，让每个 setup
@@ -642,6 +650,9 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2PortLockQueueing.ps1
     `FAILED`。服务端一样判 `RecoveryRequired`，因为判据是「没有安全完成」而不是「报了失败」。
     等这一步的判据要给到 240 秒。**不要为了跑得快去 stage 副本里调短那个超时**：它是安全相关的
     时序，调短之后场景证的就是一份没人真的在跑的配置。
+    setup 键 `ExpectedActionOverdueThreshold`（control-server#167）调短的是另一个值，不违反这一条：`operationTimeoutMs`
+    它不动；期待动作超时门槛按 `REQ-0358` 说明 2、3 是投运时按现场实测标定的参数，只决定车载端何时上报、服务端看板
+    何时出一行，不改变任何执行器时序（不判失败、不进恢复、不停闭环、不改站点期限，ADR-cross-0062）。
 12. **模态对话框要按 `AutomationId` 找按钮，不要按标题。**`OnWireToGateRecoveryClick` 会弹一个
     `MessageBox` 要现场确认，它是同进程的另一个顶层窗口，得从 `RootElement` 找而不是从主窗口找——
     主窗口这时正停在模态循环里，什么都不答。按钮用 `AutomationId` 认：`MessageBox` 的按钮沿用

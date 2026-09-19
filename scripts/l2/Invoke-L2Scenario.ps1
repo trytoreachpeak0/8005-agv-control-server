@@ -102,6 +102,8 @@ Import-Module (Join-Path $PSScriptRoot 'L2.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'L2PortLock.psm1') -Force
 # Batch 6's task type station preset and the "server refuses to start" scenario shape (control-server#159).
 Import-Module (Join-Path $PSScriptRoot 'L2TaskTypeStations.psm1') -Force
+# REQ-0358's expected-action-overdue threshold, one setup key for both ends (control-server#167).
+Import-Module (Join-Path $PSScriptRoot 'L2ExpectedActionOverdue.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
@@ -183,6 +185,11 @@ if ($protocolFaultProxy -and -not $realOnboard) {
 # The dashboard process. It reads only the server's read-only /api/dashboard/ endpoints over HTTP, so
 # starting it changes nothing about the server under test.
 $dashboard = ($setup.ContainsKey('Dashboard') -and $setup.Dashboard)
+# REQ-0358's expected-action-overdue threshold (control-server#167): $null leaves both ends at their shipped defaults,
+# a TimeSpan goes to the onboard stage copy and the server environment alike. Checked here, before anything starts;
+# see L2ExpectedActionOverdue.psm1 for why it is one key and why it is not what README item 11 forbids.
+$expectedActionOverdueThreshold = Resolve-L2ExpectedActionOverdueThreshold -Setup $setup `
+    -Where "$Scenario.setup.psd1" -RealOnboard $realOnboard
 
 # Batch 6 (control-server#159): every rig's server loads a task type station preset at startup and refuses to start
 # on a misconfigured one. $null installs the default preset for this rig, $false none, anything else the scenario's
@@ -637,6 +644,7 @@ try {
         $serverEnvironment['EmergencyStopRelease__credentialEnvironmentVariable'] = $emergencyReleaseCredentialVariable
         $serverEnvironment[$emergencyReleaseCredentialVariable] = $emergencyReleaseCredential
     }
+    Set-L2ExpectedActionOverdueServerSetting -Environment $serverEnvironment -Threshold $expectedActionOverdueThreshold
     if ($realOnboard) {
         # Only the real onboard polls this projection; the synthetic peer decides for itself what
         # the safety summary says. Leaving it off for the synthetic rig keeps those scenarios
@@ -834,6 +842,9 @@ try {
                 # Into the evidence rather than the stage root: the onboard's own log is the
                 # richest account of a failed run, and the stage root is deleted on a pass.
                 $settings.logging.directory = (Join-Path $logRoot 'onboard-app')
+                # The same threshold the server environment got above, in milliseconds; nothing when the scenario
+                # did not ask, so the shipped 3 x operationTimeoutMs applies.
+                Set-L2ExpectedActionOverdueOnboardSetting -Settings $settings -Threshold $expectedActionOverdueThreshold
             }
         $onboardEnvironment = @{
             'CONTROL_SERVER_ONBOARD_CREDENTIAL' = $credential
@@ -1304,6 +1315,7 @@ try {
     }
     if ($null -ne $clockSkewMs) { $identity['clockSkewMs'] = $clockSkewMs }
     if ($protocolFaultProxy) { $identity['protocolFaultProxy'] = $true }
+    if ($null -ne $expectedActionOverdueThreshold) { $identity['expectedActionOverdueThreshold'] = $expectedActionOverdueThreshold.ToString('c') }
     if ($onboardPublish) { $identity['onboardHmiCommit'] = $onboardPublish.Commit }
     if ($simulatorPublish) { $identity['slotsSimulatorCommit'] = $simulatorPublish.Commit }
     Write-L2Evidence -EvidenceRoot $EvidenceRoot -Scenario $Scenario -RunId $runId `
