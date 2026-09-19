@@ -2217,6 +2217,84 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#187. The vehicle refuses the resume command itself -- SlotOperationCommandRejected, correlated
+    /// to the SlotOperationResumeCommand as the protocol requires. No replacement result will come, so the resume
+    /// is judged there and then, the way control-server#169 judges a result that does not reconcile: the resume is
+    /// RecoveryRequired, its session CLOSED, the vehicle told so, and the business left exactly where it was --
+    /// demand RecoveryRequired, journey Blocked under its code, lease and vehicle held, no ending written -- for the
+    /// administrator to take up in a new session. Before the fix the refusal was only acknowledged: the resume waited
+    /// forever, the session stayed EXECUTING, and neither another action nor another session could be had.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ARejectedResumeCommandClosesItsSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME_REJECTED";
+        const string proof = "resume-rejected-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            RecordingPeer peer = new(context);
+            OnboardMessageProcessor processor = Processor(context, peer, proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string sessionId = StableGuid(RequestId, "exception-recovery-session");
+            string resumeCommandId = (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).CommandMessageId!;
+            JourneyRuntimeRow runtimeBefore = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+            Assert.Equal(JourneyRuntimeStage.Blocked, runtimeBefore.Stage);
+
+            const string rejectionId = "e0000000-0000-4000-8000-000000001890";
+            string ack = await processor.ProcessAsync(
+                ResumeCommandRejected(rejectionId, correlationId: resumeCommandId), state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(rejectionId, FirstPayload(ack).GetProperty("acceptedMessageId").GetString());
+            ExceptionRecoverySessionRow session = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal("CLOSED", session.State);
+            RecoveryWorkflowRow resume = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, resume.State);
+            Assert.Equal((OnboardRecoveryCoordinator.ResumeCommandRejectedOutcome, rejectionId),
+                (resume.Outcome, resume.ResultMessageId));
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+            Assert.Equal((JourneyRuntimeStage.Blocked, runtimeBefore.BlockReasonCode),
+                (runtime.Stage, runtime.BlockReasonCode));
+            Assert.Null((await context.VehicleDispatchLeases.AsNoTracking().SingleAsync(token)).ReleasedAt);
+            Assert.Null((await context.OrderIntents.AsNoTracking()
+                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            Assert.Equal(StationOperationStatus.RecoveryRequired,
+                (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status);
+            Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(token));
+            JsonElement snapshot = await LatestSessionSnapshotAsync(context, sessionId);
+            Assert.Equal(("CLOSED", session.Revision), (snapshot.GetProperty("state").GetString(),
+                snapshot.GetProperty("recoverySessionRevision").GetInt64()));
+            Assert.Empty(snapshot.GetProperty("blockingFacts").EnumerateArray());
+            Assert.Contains(peer.Lines, line =>
+                line.Contains("\"ExceptionRecoverySessionSnapshot\"", StringComparison.Ordinal) &&
+                line.Contains("\"CLOSED\"", StringComparison.Ordinal));
+            Assert.Equal((OnboardRecoveryCoordinator.SessionClosedResultNotReconciled,
+                    OnboardRecoveryCoordinator.ResumeCommandRejectedOutcome),
+                (await ClosingReasonsAsync(context))[sessionId]);
+
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#175. Session A took the same action twice; the first result did not reconcile and closed A,
     /// and the administrator is now working the demand in session B. The second result of A then arrives. Whether
     /// it concludes success or not, it is the record of A's own attempt and nothing more: it is acknowledged and
@@ -4896,6 +4974,32 @@ public sealed class RecoveryStateMachineG2Tests
                 electronicEmptyProven = false,
                 vehicleReadyProven = false
             });
+
+    /// <summary>
+    /// The vehicle refusing a command of the seeded attempt: <c>SlotOperationCommandRejected</c>, correlated to the
+    /// refused command's messageId as the protocol requires (<c>REQUIRED_ORIGINAL_MESSAGE_ID</c>), the way the onboard
+    /// sends it (<c>WireToGateBusinessService.SendOperationRejectedAsync</c>).
+    /// </summary>
+    private static string ResumeCommandRejected(
+        string messageId,
+        string? correlationId,
+        string attemptId = AttemptId) =>
+        Envelope(
+            messageId,
+            "SlotOperationCommandRejected",
+            new
+            {
+                slotOperationAttemptId = attemptId,
+                problem = new
+                {
+                    reasonCode = "ACTION_NOT_ALLOWED_IN_STATE",
+                    fieldPath = (string?)null,
+                    displayMessage = (string?)null
+                },
+                observedCapabilityVersion = 1,
+                conflictingContentSha256 = (string?)null
+            },
+            correlationId);
 
     private static object Operator() => new
     {

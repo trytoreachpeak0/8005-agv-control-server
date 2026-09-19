@@ -52,6 +52,8 @@ public sealed class OnboardRecoveryCoordinator(
     /// </summary>
     internal const string SessionClosedResultNotReconciled = "RECOVERY_ACTION_RESULT_NOT_RECONCILED";
 
+    internal const string ResumeCommandRejectedOutcome = "COMMAND_REJECTED";
+
     private static readonly string[] RecoveryRequestTypes =
     [
         "ExceptionRecoverySessionRequested",
