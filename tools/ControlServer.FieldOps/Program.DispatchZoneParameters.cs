@@ -48,14 +48,24 @@ internal static partial class Program
         DispatchZoneParameterImportResult result;
         try
         {
-            // One write transaction (SQLite BEGIN IMMEDIATE) around reading the current version, comparing and writing: a
-            // second import of the same table waits here, then reads the version the first one wrote and reports UNCHANGED
-            // instead of writing a version that changes nothing but its number. The store joins this transaction.
-            await using IDbContextTransaction transaction = await context.Database.BeginTransactionAsync(CancellationToken.None);
-            result = await importer.ImportAsync(csv, dryRun, now, CancellationToken.None);
-            if (result.Outcome == DispatchZoneParameterImportOutcome.Accepted && !dryRun)
+            if (dryRun)
             {
-                await transaction.CommitAsync(CancellationToken.None);
+                // A preview writes nothing, so it takes no transaction -- and therefore no write lock. This database is
+                // deliberately not in WAL mode (ControlServerSqlite), so a write transaction here would queue behind, and hold
+                // up, the running server's own writes for as long as the preview took.
+                result = await importer.ImportAsync(csv, dryRun: true, now, CancellationToken.None);
+            }
+            else
+            {
+                // One write transaction (SQLite BEGIN IMMEDIATE) around reading the current version, comparing and writing: a
+                // second import of the same table waits here, then reads the version the first one wrote and reports UNCHANGED
+                // instead of writing a version that changes nothing but its number. The store joins this transaction.
+                await using IDbContextTransaction transaction = await context.Database.BeginTransactionAsync(CancellationToken.None);
+                result = await importer.ImportAsync(csv, dryRun: false, now, CancellationToken.None);
+                if (result.Outcome == DispatchZoneParameterImportOutcome.Accepted)
+                {
+                    await transaction.CommitAsync(CancellationToken.None);
+                }
             }
         }
         catch (Exception conflict) when (IsVersionNumberAlreadyTaken(conflict))
@@ -114,9 +124,19 @@ internal static partial class Program
             result.Outcome == DispatchZoneParameterImportOutcome.Rejected ? 1 : 0);
     }
 
-    /// <summary>今天的行为，原样提出来：撞号判定（control-server#216 审查后续）。</summary>
+    /// <summary>
+    /// 这次失败是不是「版本号被另一次导入抢先占了」。
+    /// </summary>
+    /// <remarks>
+    /// 只有两种情形算：同号不同内容由快照冻结抛 <see cref="GovernedSnapshotVersionConflictException"/>，同号同内容由版本行的主键抛
+    /// <c>SQLITE_CONSTRAINT</c>（19）。别的 <see cref="DbUpdateException"/>——磁盘满、别处的约束——不算：把它们也报成 CONFLICT 等于叫
+    /// 现场「再导一次」，而再导一次不会好。
+    /// </remarks>
     internal static bool IsVersionNumberAlreadyTaken(Exception failure) =>
-        failure is DbUpdateException or GovernedSnapshotVersionConflictException;
+        failure is GovernedSnapshotVersionConflictException ||
+        (failure is DbUpdateException && failure.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: SqliteConstraintErrorCode });
+
+    private const int SqliteConstraintErrorCode = 19;
 
     /// <summary>
     /// 当前（或指定）那一版每区派车参数，外加库内调度策略里每个分区的取值。
