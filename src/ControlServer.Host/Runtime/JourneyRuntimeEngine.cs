@@ -301,10 +301,19 @@ public sealed class JourneyRuntimeEngine(
     /// The task types the station admission seed carries: fixed end at the destination, so the AREA station is the
     /// pickup, and executable by this build.
     /// </summary>
+    /// <remarks>
+    /// Read from the rules the Map's active binding set was built on -- the same version the resolver judges the round
+    /// by -- not the latest one: a rule version written ahead of its binding set must not change the seed, which the
+    /// store would take for a policy drift and stop every acceptance on.
+    /// </remarks>
     private async Task<string[]> AdmissionSeedTaskTypesAsync(CancellationToken cancellationToken)
     {
-        TaskTypeStationRuleVersion? rules = await _taskTypeStations.Rules.ReadCurrentAsync(cancellationToken)
-            .ConfigureAwait(false);
+        TaskTypeStationBindingSetVersion? bindingSet = await _taskTypeStations.Bindings
+            .ReadActiveAsync(runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);
+        TaskTypeStationRuleVersion? rules = bindingSet is null
+            ? await _taskTypeStations.Rules.ReadCurrentAsync(cancellationToken).ConfigureAwait(false)
+            : await _taskTypeStations.Rules.ReadVersionAsync(bindingSet.RuleVersion, cancellationToken)
+                .ConfigureAwait(false);
         return
         [
             .. (rules?.Rules ?? [])
