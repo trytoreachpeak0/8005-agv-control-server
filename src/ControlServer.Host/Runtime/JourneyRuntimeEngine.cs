@@ -21,21 +21,17 @@ namespace ControlServer.Host.Runtime;
 
 public sealed class JourneyRuntimeEngine(
     ControlServerDbContext dbContext,
-    IMesIngestCatalog catalog,
     IRiotVehicleFacts vehicleFacts,
     IRiotMapStationCatalog mapStationCatalog,
     MapStationResolver stationResolver,
     IFixedTaskStationResolver fixedStationResolver,
     TaskTypeStationAccess taskTypeStations,
     CatalogBindingHoldConvergence catalogBindingHolds,
-    JourneyIntakeCoordinator intakeCoordinator,
     MovementDispatchService movementDispatch,
     WireToGateStore store,
     OnboardJourneyPublisher publisher,
     ISublotBoxCountReader boxCountReader,
     IPackageCapacityStore packageCapacityStore,
-    DispatchAdmissionChain admissionChain,
-    IDispatchCandidateRanker candidateRanker,
     CatalogAvailabilityAccess catalogAvailability,
     ICatalogAvailabilityStore catalogStore,
     PreCreateGate createGate,
@@ -44,18 +40,13 @@ public sealed class JourneyRuntimeEngine(
     IVehicleMotionFacts motionFacts,
     CheckpointWaitLedger checkpointWaits,
     VehicleFaultCoordinator faults,
-    IAreaAssignmentStore areaAssignments,
-    IVehicleSlotPositionReader slotPositions,
-    IDispatchRoundOutcomeSink roundOutcomes,
+    DispatchRoundRunner dispatchRound,
+    OnboardDispatchFactsReader onboardFacts,
     IOptions<JourneyRuntimeOptions> options,
     TimeProvider timeProvider,
     ILogger<JourneyRuntimeEngine> logger)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
-    private static readonly Action<ILogger, Exception?> LogCatalogPollFailed = LoggerMessage.Define(
-        LogLevel.Warning,
-        new EventId(2101, nameof(LogCatalogPollFailed)),
-        "MesIngest catalog polling failed closed; no journey was accepted.");
     private static readonly Action<ILogger, string, Exception?> LogBoxCountFailed = LoggerMessage.Define<string>(
         LogLevel.Warning,
         new EventId(2102, nameof(LogBoxCountFailed)),
@@ -69,24 +60,12 @@ public sealed class JourneyRuntimeEngine(
         LogLevel.Warning,
         new EventId(2103, nameof(LogMapStationCatalogFailed)),
         "RIoT Map station catalog failed closed; no new journey action was taken.");
-    private static readonly Action<ILogger, string, int, Exception?> LogVehicleRoundBudgetExhausted =
-        LoggerMessage.Define<string, int>(
-            LogLevel.Warning,
-            new EventId(2104, nameof(LogVehicleRoundBudgetExhausted)),
-            "Vehicle {AgvId} exhausted its {BudgetMilliseconds} ms dispatch budget; the round moved on " +
-            "to the remaining vehicles.");
     private static readonly Action<ILogger, string, string, Exception?> LogCheckpointWaitExceeded =
         LoggerMessage.Define<string, string>(
             LogLevel.Warning,
             new EventId(2105, nameof(LogCheckpointWaitExceeded)),
             "Vehicle {AgvId} has been holding at a traffic checkpoint past its budget on journey " +
             "{DemandId}; it is not arriving on its own.");
-    private static readonly Action<ILogger, string, string, Exception?> LogVehicleOccupancyConflict =
-        LoggerMessage.Define<string, string>(
-            LogLevel.Error,
-            new EventId(2106, nameof(LogVehicleOccupancyConflict)),
-            "Vehicle {AgvId} already holds an in-flight order; the claim for {UpperId} was refused by " +
-            "the occupancy index.");
     private static readonly Action<ILogger, string, string, string, Exception?> LogOrderFailedSymptom =
         LoggerMessage.Define<string, string, string>(
             LogLevel.Warning,
@@ -370,7 +349,13 @@ public sealed class JourneyRuntimeEngine(
                 $"Unresolved accepted demand has no production journey runtime: {string.Join(',', orphaned)}.");
         }
 
-        await DiscoverAndAcceptAsync(currentMap, fixedStations, free, admissionPolicyDrifted, cancellationToken)
+        // The vehicles under way reach the round too, on their own path (control-server#209); a round with no free
+        // vehicle still ends above, before the catalog and the orphan check.
+        FleetVehicle[] underWay = roster.Vehicles
+            .Where(vehicle => busy.Contains(vehicle.AgvId))
+            .ToArray();
+        await dispatchRound.RunAsync(
+                currentMap, fixedStations, free, underWay, admissionPolicyDrifted, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -400,277 +385,6 @@ public sealed class JourneyRuntimeEngine(
                 .Select(rule => rule.TaskType)
                 .Order(StringComparer.Ordinal)
         ];
-    }
-
-    private async Task DiscoverAndAcceptAsync(
-        RiotMapStationCatalogSnapshot currentMap,
-        IFixedTaskStationView fixedStations,
-        IReadOnlyList<FleetVehicle> vehicles,
-        bool admissionPolicyDrifted,
-        CancellationToken cancellationToken)
-    {
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        DemandCatalogSnapshot snapshot;
-        try
-        {
-            snapshot = await catalog.ReadCatalogAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception error) when (error is HttpRequestException or InvalidDataException or JsonException)
-        {
-            LogCatalogPollFailed(logger, error);
-            return;
-        }
-
-        Dictionary<string, JourneyBacklogRow> backlogByDemandId = await dbContext.JourneyBacklog
-            .ToDictionaryAsync(row => row.DemandId, StringComparer.Ordinal, cancellationToken)
-            .ConfigureAwait(false);
-        await MarkBacklogLeftCatalogAsync(backlogByDemandId, snapshot, cancellationToken).ConfigureAwait(false);
-        // The MesIngest catalog is MES's own list of open transport demands, and a journey of ours
-        // reaching Completed does not take the demand out of it. Discovery is only reached once no
-        // unresolved journey remains, so the demand that just finished was scored as a fresh
-        // candidate again and, being the oldest thing in the backlog, was selected ahead of every
-        // other one. Intake then met its own AcceptedDemands row and the store refused the replay
-        // -- correctly, because the pickup intent this rebuilds carries the current clock as its
-        // CreatedAt and no longer matches the persisted one. That refusal failed the whole
-        // iteration closed, so no *other* eligible demand could be accepted for as long as the
-        // finished demand stayed in the catalog. A demand this server has accepted is bound to its
-        // one journey permanently; it is never a candidate again, whatever stage that journey
-        // reached.
-        // Kept as a live set rather than a snapshot: a demand taken by an earlier vehicle in this
-        // same round has to stop being a candidate for the later ones. See DispatchRoundFacts.
-        HashSet<string> acceptedDemandIds = (await dbContext.AcceptedDemands
-                .Select(row => row.DemandId)
-                .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-            .ToHashSet(StringComparer.Ordinal);
-
-        VehicleDispatchPolicy policy = await dispatchPolicy.EnsureCurrentAsync(cancellationToken)
-            .ConfigureAwait(false);
-        // Read once with the policy and for the same reason: every candidate in the round is judged against
-        // one version of the table, and that is the version a demand freezes.
-        AreaAssignmentTableVersion? areaAssignmentTable = await areaAssignments
-            .ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
-        DispatchRoundFacts round = new(
-            snapshot, currentMap, fixedStations, acceptedDemandIds, now, policy, areaAssignmentTable,
-            admissionPolicyDrifted);
-        List<DispatchVehicleOutcome> completedVehicles = [];
-
-        // One worker, vehicles in series -- not one worker per vehicle. Serial iteration is what
-        // keeps a round's snapshot fresh: two workers would each decide against their own read of
-        // the same catalog and could accept the same demand twice.
-        //
-        // Each vehicle gets its own budget rather than the round getting one. The failure this
-        // guards against is a single vehicle's reads hanging -- an unreachable peer, a RIoT call
-        // that never answers -- and a round-level budget would let that one vehicle consume the
-        // whole round and starve every vehicle behind it. A vehicle that runs out is skipped for
-        // this round only; nothing about it is remembered, so it is served again next round.
-        foreach (FleetVehicle vehicle in vehicles)
-        {
-            TimeSpan budget = RoundBudget(policy, vehicle.AgvId);
-            using CancellationTokenSource expiry = new(budget, timeProvider);
-            using CancellationTokenSource linked =
-                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, expiry.Token);
-            List<DispatchCandidateVerdict> verdicts = [];
-            try
-            {
-                await DispatchForVehicleAsync(
-                    round, vehicle, acceptedDemandIds, backlogByDemandId, verdicts, now, linked.Token)
-                    .ConfigureAwait(false);
-                // Only once the segment has run to its end. A vehicle its budget cuts off below has not
-                // finished deciding, so what it judged so far says nothing about that vehicle.
-                completedVehicles.Add(new DispatchVehicleOutcome(vehicle.AgvId, vehicle.VehicleKey, verdicts));
-            }
-            catch (OperationCanceledException) when (expiry.IsCancellationRequested &&
-                                                     !cancellationToken.IsCancellationRequested)
-            {
-                LogVehicleRoundBudgetExhausted(
-                    logger, vehicle.AgvId, (int)budget.TotalMilliseconds, null);
-                // Whatever the abandoned segment had staged is not this vehicle's decision any
-                // more and must not be written under the next vehicle's SaveChanges. Dropping it
-                // is what actually keeps one vehicle's timeout from reaching the others -- the
-                // budget only stops the work, the tracker is what would have carried it across.
-                dbContext.ChangeTracker.Clear();
-                backlogByDemandId.Clear();
-                foreach (JourneyBacklogRow row in await dbContext.JourneyBacklog
-                             .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-                {
-                    backlogByDemandId[row.DemandId] = row;
-                }
-            }
-        }
-
-        // After every vehicle, a budget-exhausted one included. Whether any vehicle at all could take a demand
-        // is only answerable across the fleet; JourneyBacklog, overwritten vehicle by vehicle, cannot say.
-        await roundOutcomes.RecordAsync(new DispatchRoundOutcome(round, completedVehicles), cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// How long this vehicle's segment of the round may take.
-    /// </summary>
-    /// <remarks>
-    /// A vehicle the policy does not mention still gets the default budget rather than none. It
-    /// cannot be dispatched — the task-type criterion refuses an unconfigured vehicle — but the
-    /// point of running it anyway is that refusal reaching the backlog under its own reason code.
-    /// A zero budget would replace that diagnosis with a timeout every round.
-    /// </remarks>
-    private static TimeSpan RoundBudget(VehicleDispatchPolicy policy, string agvId)
-    {
-        VehicleDispatchProfile? profile = policy.Vehicles
-            .FirstOrDefault(vehicle => string.Equals(vehicle.AgvId, agvId, StringComparison.Ordinal));
-        int milliseconds = profile?.RoundTimeoutMilliseconds ?? 0;
-        return TimeSpan.FromMilliseconds(milliseconds > 0
-            ? milliseconds
-            : new FleetVehicleOptions().RoundTimeoutMilliseconds);
-    }
-
-    /// <summary>Scores every candidate for one vehicle and dispatches at most one of them.</summary>
-    private async Task DispatchForVehicleAsync(
-        DispatchRoundFacts round,
-        FleetVehicle fleetVehicle,
-        HashSet<string> claimedDemandIds,
-        Dictionary<string, JourneyBacklogRow> backlogByDemandId,
-        List<DispatchCandidateVerdict> verdicts,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        string vehicleKey = fleetVehicle.VehicleKey;
-        // The server's own record of which slot is in which group, once per vehicle per round. Not the
-        // vehicle's report (program#70 decision 4), which is why the onboard slot facts below stay as they are.
-        VehicleSlotPositions? vehicleSlotPositions = await slotPositions
-            .ReadAsync(fleetVehicle.AgvId, cancellationToken).ConfigureAwait(false);
-        // Onboard facts are read for this vehicle's own agvId. Reading them off the single
-        // configured one, as this did while there was one vehicle, would have judged every
-        // vehicle in the fleet against the first vehicle's session -- the exact cross-talk the
-        // per-vehicle iteration exists to prevent.
-        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(fleetVehicle.AgvId, cancellationToken)
-            .ConfigureAwait(false);
-        RiotVehicleObservation vehicle = await vehicleFacts
-            .ReadVehicleAsync(vehicleKey, cancellationToken).ConfigureAwait(false);
-        DispatchVehicleFacts vehicleForRound = new(
-            vehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow(), vehicleSlotPositions);
-
-        List<EligibleDispatchCandidate> eligible = [];
-        foreach (AcceptedDemandSnapshot candidate in round.Catalog.Items)
-        {
-            DispatchCandidateEvaluation evaluation = new(candidate, round, vehicleForRound);
-            string reason = await admissionChain
-                .EvaluateAsync(evaluation, cancellationToken).ConfigureAwait(false);
-
-            verdicts.Add(new DispatchCandidateVerdict(evaluation, reason));
-            JourneyBacklogRow backlog = UpsertBacklog(backlogByDemandId, candidate, reason, now);
-            if (string.Equals(reason, DispatchAdmissionChain.Eligible, StringComparison.Ordinal) &&
-                evaluation.Route is not null)
-            {
-                eligible.Add(new EligibleDispatchCandidate(
-                    candidate,
-                    evaluation.Route,
-                    evaluation.ExpectedBasketCount,
-                    evaluation.TargetSlots,
-                    backlog.FirstSeenAt,
-                    evaluation.GraphTraversalCostMm,
-                    evaluation.CatalogRevision,
-                    evaluation.AreaAssignmentVersion,
-                    evaluation.RequiredSlotPosition));
-            }
-        }
-
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        if (eligible.Count == 0)
-        {
-            return;
-        }
-        if (await dbContext.VehicleDispatchLeases.AnyAsync(
-                row => row.VehicleKey == vehicleKey && row.ReleasedAt == null,
-                cancellationToken).ConfigureAwait(false))
-        {
-            return;
-        }
-
-        EligibleDispatchCandidate selected = candidateRanker.SelectNext(eligible);
-        long expectedSessionGeneration = onboard?.SessionGeneration
-            ?? throw new InvalidOperationException("An eligible candidate requires current Onboard facts.");
-        if (!await FinalDynamicFactsReadyAsync(
-                fleetVehicle,
-                expectedSessionGeneration,
-                selected.TargetSlots,
-                cancellationToken).ConfigureAwait(false))
-        {
-            await SetBacklogReasonAsync(
-                selected.Snapshot.DemandId,
-                "FINAL_DYNAMIC_FACTS_NOT_READY",
-                timeProvider.GetUtcNow(),
-                cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        DateTimeOffset intakeAt = timeProvider.GetUtcNow();
-        // REQ-0305: both endpoints are frozen from the snapshot that was fresh when the demand was taken -- by the
-        // store, inside the transaction that accepts it (control-server#160). Frozen here, ahead of the intake, an
-        // acceptance refused at the last moment left them behind, and after a rebinding the next attempt was
-        // refused a rewrite and failed every round for every task type.
-        JourneyExecutionPlan plan = new JourneyPlanBuilder(runtimeOptions).CreatePlan(fleetVehicle, selected, intakeAt);
-        OrderIntent pickup = JourneyPlanBuilder.PickupIntent(plan, selected.Snapshot.DemandId, intakeAt);
-        // Taken before the call rather than after it: a candidate this vehicle is committing to
-        // must stop being a candidate for the vehicles behind it in this round whatever the intake
-        // then reports, because every refusal below leaves the demand bound to this attempt.
-        claimedDemandIds.Add(selected.Snapshot.DemandId);
-        JourneyIntakeResult result = await intakeCoordinator.AcceptAndDispatchToPickupAsync(
-            selected.Snapshot,
-            pickup,
-            plan,
-            token => FinalDynamicFactsReadyAsync(
-                fleetVehicle,
-                expectedSessionGeneration,
-                selected.TargetSlots,
-                token),
-            cancellationToken).ConfigureAwait(false);
-        if (result.IntakeOutcome != DemandIntakeOutcome.Accepted)
-        {
-            await SetBacklogReasonAsync(
-                selected.Snapshot.DemandId,
-                result.IntakeOutcome switch
-                {
-                    DemandIntakeOutcome.CandidateGone => "FINAL_CATALOG_CANDIDATE_GONE",
-                    DemandIntakeOutcome.CandidateChanged => "FINAL_CATALOG_DECISION_FACT_CHANGED",
-                    DemandIntakeOutcome.FinalAdmissionRejected => "FINAL_DYNAMIC_FACTS_NOT_READY",
-                    DemandIntakeOutcome.JourneyPlanIncomplete => "FINAL_JOURNEY_PLAN_INCOMPLETE",
-                    _ => throw new InvalidOperationException(
-                        $"Unsupported intake outcome '{result.IntakeOutcome}'.")
-                },
-                timeProvider.GetUtcNow(),
-                cancellationToken).ConfigureAwait(false);
-            return;
-        }
-        // The vehicle is now carrying this journey's first order, and that is what the occupancy
-        // claim records. It is decided by the filtered unique index on OrderIntents rather than by
-        // a read, so it is the constraint the lease check above cannot be: the lease is checked
-        // before the round decides and the database enforces this one at the moment of writing. A
-        // refusal here therefore means a second writer got in between, and it is reported rather
-        // than worked around -- the journey exists, so the operator has to see which vehicle is
-        // double-booked.
-        if (!await dispatchPolicy.TryClaimVehicleOccupancyAsync(plan.PickupUpperId, cancellationToken)
-                .ConfigureAwait(false))
-        {
-            LogVehicleOccupancyConflict(logger, fleetVehicle.AgvId, plan.PickupUpperId, null);
-            JourneyRuntimeRow conflicted = await dbContext.JourneyRuntimes
-                .SingleAsync(row => row.DemandId == selected.Snapshot.DemandId, cancellationToken)
-                .ConfigureAwait(false);
-            Block(conflicted, "VEHICLE_OCCUPANCY_CONFLICT", timeProvider.GetUtcNow());
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        if (result.MovementDispatch?.Outcome != MovementDispatchOutcome.Confirmed)
-        {
-            JourneyRuntimeRow runtime = await dbContext.JourneyRuntimes
-                .SingleAsync(row => row.DemandId == selected.Snapshot.DemandId, cancellationToken)
-                .ConfigureAwait(false);
-            runtime.SetBlockReason(
-                result.MovementDispatch?.Outcome.ToString() ?? "PICKUP_DISPATCH_NOT_CONFIRMED", now);
-            runtime.UpdatedAt = now;
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
     }
 
     private async Task AdvanceAsync(
@@ -1040,41 +754,6 @@ public sealed class JourneyRuntimeEngine(
     }
 
 
-
-    /// <summary>
-    /// Re-reads the dynamic facts immediately before intake and re-runs the same verdict the
-    /// admission chain reached.
-    /// </summary>
-    /// <remarks>
-    /// It calls <see cref="VehicleDynamicFactsCriterion.Evaluate"/> rather than repeating its
-    /// clauses, so this check and the chain's cannot drift apart. The session generation and slot
-    /// checks sit on top of it: they are what makes this a re-check of *this* decision rather than
-    /// a fresh one.
-    /// </remarks>
-    private async Task<bool> FinalDynamicFactsReadyAsync(
-        FleetVehicle fleetVehicle,
-        long expectedSessionGeneration,
-        IReadOnlyCollection<int> targetSlots,
-        CancellationToken cancellationToken)
-    {
-        OnboardDispatchFacts? onboard = await ReadOnboardFactsAsync(fleetVehicle.AgvId, cancellationToken)
-            .ConfigureAwait(false);
-        if (onboard is null || onboard.SessionGeneration != expectedSessionGeneration ||
-            targetSlots.Any(slot => !onboard.AvailableSlots.Contains(slot)))
-        {
-            return false;
-        }
-
-        RiotVehicleObservation vehicle = await vehicleFacts.ReadVehicleAsync(
-            fleetVehicle.VehicleKey,
-            cancellationToken).ConfigureAwait(false);
-        DispatchVehicleFacts facts = new(
-            fleetVehicle.VehicleKey, fleetVehicle.AgvId, onboard, vehicle, timeProvider.GetUtcNow());
-        return string.Equals(
-            VehicleDynamicFactsCriterion.Evaluate(facts, runtimeOptions),
-            DispatchAdmissionChain.Eligible,
-            StringComparison.Ordinal);
-    }
 
     /// <summary>
     /// One arrival evaluation, with the order reading it was decided from.
@@ -1891,377 +1570,25 @@ public sealed class JourneyRuntimeEngine(
         return (null, false);
     }
 
-    /// <summary>
-    /// One vehicle's Onboard-side facts, read against that vehicle's own session.
-    /// </summary>
-    /// <remarks>
-    /// The <c>agvId</c> is a parameter rather than the configured one because every read below is
-    /// session-scoped: the session row, the two snapshots and the last inbound message all belong
-    /// to one vehicle's session generation. Reading them for the configured vehicle while deciding
-    /// for another would admit a vehicle on a different vehicle's safety evidence.
-    /// </remarks>
-    private async Task<OnboardDispatchFacts?> ReadOnboardFactsAsync(
-        string agvId,
-        CancellationToken cancellationToken)
-    {
-        SessionRecoveryRow? session = await CurrentReadySessionAsync(agvId, cancellationToken)
-            .ConfigureAwait(false);
-        if (session is null)
-        {
-            return null;
-        }
-        if (session.SafetyRevision is not long safetyRevision)
-        {
-            return null;
-        }
-        ProtocolInboxRow? capability = await LatestInboxForSessionAsync(
-            "CapabilitySnapshot", agvId, session.SessionGeneration, cancellationToken)
-            .ConfigureAwait(false);
-        // The session's baseline SafetyStateSnapshot, not its latest: slot availability is the session baseline
-        // (see below), and since control-server#142 a session can carry later snapshots -- the vehicle's answer
-        // when the dashboard asks for an overdue slot's readings, which reads a slot mid-operation as occupied
-        // or unlocked. Their safety summary still counts, through LatestSafetySummaryForSessionAsync.
-        ProtocolInboxRow? safetyRow = await BaselineSafetySnapshotForSessionAsync(
-            agvId, session.SessionGeneration, cancellationToken)
-            .ConfigureAwait(false);
-        // The snapshot is sent once per session; every later change arrives as SafetyStateChanged
-        // (ADR-cross-0033), which carries the same safety summary and no slotStates. Reading the
-        // summary from the snapshot alone froze it at whatever was true when the session was
-        // established: a session opened while the vehicle was moving reported vehicleStopped false
-        // for its whole life, so the vehicle could stop at the pickup station and neither be
-        // admitted nor have its arrival trusted -- while SessionRecoveries, which SafetyStateChanged
-        // does update, correctly showed Ready. The reverse is worse: a session opened at rest went
-        // on reporting the vehicle stopped after Onboard said it had moved.
-        ProtocolInboxRow? safetySummaryRow = await LatestSafetySummaryForSessionAsync(
-            agvId, session.SessionGeneration, safetyRevision, cancellationToken)
-            .ConfigureAwait(false);
-        if (capability is null || safetyRow is null || safetySummaryRow is null)
-        {
-            return null;
-        }
-        using JsonDocument capabilityDocument = JsonDocument.Parse(capability.RequestJson);
-        using JsonDocument safetyDocument = JsonDocument.Parse(safetyRow.RequestJson);
-        using JsonDocument safetySummaryDocument = JsonDocument.Parse(safetySummaryRow.RequestJson);
-        JsonElement capabilityPayload = capabilityDocument.RootElement.GetProperty("payload");
-        JsonElement safetyPayload = safetyDocument.RootElement.GetProperty("payload");
-        JsonElement safetySummaryPayload = safetySummaryDocument.RootElement.GetProperty("payload");
-        // The two snapshots are session-scoped facts, not polled evidence: the protocol states no
-        // cadence for them and Onboard sends each once per session, so ageing them out would cap
-        // every session's admission window at MaximumEvidenceAge. What must still be bounded is
-        // session *liveness* -- a dead peer leaves a Ready row and its last snapshots behind, and
-        // CurrentReadySessionAsync has no liveness component of its own. So the age limit applies
-        // to the last thing we heard from this session generation (Heartbeat arrives periodically,
-        // and any inbound message counts, which also covers the window before the first one).
-        // Content stays current through the session: everything read here is scoped to this exact
-        // SessionGeneration, a new generation supersedes it, and the safety summary is taken from
-        // the message carrying the session's current safetyStateVersion rather than from the
-        // session-start snapshot. MaximumEvidenceAge still separately governs the RIoT vehicle
-        // observation in ValidateDynamicFacts, which genuinely is polled.
-        //
-        // supportsBatchUnlock is deliberately not consulted: the protocol declares it with no
-        // semantics -- a bare boolean in CapabilitySnapshot, unchanged from protocol-v0.1.1 through
-        // the v2 candidate -- and its own canonical example sets it false, while the real question,
-        // can the vehicle operate this slot set, is answered against AvailableSlots when the command
-        // is actually sent. See docs/defects/20260829-intake-gates-on-unspecified-onboard-facts.md.
-        DateTimeOffset now = timeProvider.GetUtcNow();
-        DateTimeOffset capabilityAt = capabilityPayload.GetProperty("observedAt").GetDateTimeOffset();
-        DateTimeOffset safetyAt = safetySummaryPayload.GetProperty("observedAt").GetDateTimeOffset();
-        if (capabilityAt > now || safetyAt > now)
-        {
-            return null;
-        }
-        DateTimeOffset? lastInboundAt = await LatestInboundAtForSessionAsync(
-            agvId, session.SessionGeneration, cancellationToken).ConfigureAwait(false);
-        if (lastInboundAt is null || lastInboundAt > now ||
-            now - lastInboundAt.Value > runtimeOptions.MaximumEvidenceAge)
-        {
-            return null;
-        }
-        Dictionary<int, JsonElement> safetySlots = safetyPayload.GetProperty("slotStates")
-            .EnumerateArray().ToDictionary(item => item.GetProperty("slotNo").GetInt32());
-        int[] available = capabilityPayload.GetProperty("slotStates").EnumerateArray()
-            .Where(item => SlotAvailable(item, safetySlots))
-            .Select(item => item.GetProperty("slotNo").GetInt32())
-            .Order()
-            .ToArray();
-        // slotStates live only on the snapshot; SafetyStateChanged names the slots it affects but
-        // not their new state. Availability therefore stays on the session baseline, which is what
-        // the slot reservation ledger is built against -- a load and its unload each "affect" the
-        // slots they touch, and treating that as lost availability would strand every slot the
-        // first journey used for the rest of the session.
-        JsonElement safety = safetySummaryPayload.GetProperty("safety");
-        return new OnboardDispatchFacts(
-            session.SessionGeneration,
-            available,
-            safety.GetProperty("departureSafe").GetBoolean(),
-            safety.GetProperty("vehicleStopped").GetBoolean(),
-            safety.GetProperty("allTargetSlotsLocked").GetBoolean(),
-            safety.GetProperty("allUnlockOutputsReset").GetBoolean(),
-            safety.GetProperty("unknownPresent").GetBoolean());
-    }
-
-    private static bool SlotAvailable(JsonElement capability, Dictionary<int, JsonElement> safetySlots)
-    {
-        int slot = capability.GetProperty("slotNo").GetInt32();
-        if (!safetySlots.TryGetValue(slot, out JsonElement safety)) return false;
-        return RequiredString(capability, "operability") == "OPERABLE" &&
-               RequiredString(capability, "administrativeAvailability") == "ENABLED" &&
-               RequiredString(capability, "physicalState") == "EMPTY" &&
-               RequiredString(capability, "lockState") == "LOCKED" &&
-               RequiredString(capability, "unlockOutputState") == "RESET" &&
-               RequiredString(safety, "physicalState") == "EMPTY" &&
-               RequiredString(safety, "lockState") == "LOCKED" &&
-               RequiredString(safety, "unlockOutputState") == "RESET";
-    }
-
-    private async Task<ProtocolInboxRow?> LatestInboxForSessionAsync(
-        string messageType,
-        string agvId,
-        long generation,
-        CancellationToken cancellationToken)
-    {
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == messageType)
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        rows = rows.OrderByDescending(row => row.ReceivedAt).ToArray();
-        return rows.FirstOrDefault(row =>
-        {
-            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
-            JsonElement root = document.RootElement;
-            return RequiredString(root, "agvId") == agvId &&
-                   root.GetProperty("sessionGeneration").GetInt64() == generation;
-        });
-    }
+    /// <summary>One vehicle's Onboard-side facts; see <see cref="OnboardDispatchFactsReader.ReadOnboardFactsAsync"/>.</summary>
+    private Task<OnboardDispatchFacts?> ReadOnboardFactsAsync(string agvId, CancellationToken cancellationToken) =>
+        onboardFacts.ReadOnboardFactsAsync(agvId, cancellationToken);
 
     /// <summary>
-    /// The session's baseline SafetyStateSnapshot: the one with this generation's lowest
-    /// <c>safetyStateVersion</c>, which is the handshake's. Ordered by version rather than receive time
-    /// for the reason LatestSafetySummaryForSessionAsync is: Onboard allocates the version under one lock,
-    /// so it orders the vehicle's safety facts, while the server's receive clock can be stepped back
-    /// between the handshake snapshot and a later answer to SafetyStateSnapshotRequested (control-server#142).
+    /// The vehicle's Ready session row, untracked; see <see cref="OnboardDispatchFactsReader.CurrentReadySessionAsync"/>.
     /// </summary>
-    private async Task<ProtocolInboxRow?> BaselineSafetySnapshotForSessionAsync(
-        string agvId,
-        long generation,
-        CancellationToken cancellationToken)
-    {
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SafetyStateSnapshot")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        ProtocolInboxRow? baseline = null;
-        long baselineVersion = long.MaxValue;
-        foreach (ProtocolInboxRow row in rows)
-        {
-            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
-            JsonElement root = document.RootElement;
-            if (RequiredString(root, "agvId") != agvId ||
-                root.GetProperty("sessionGeneration").GetInt64() != generation)
-            {
-                continue;
-            }
-            long version = root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64();
-            if (version < baselineVersion)
-            {
-                baseline = row;
-                baselineVersion = version;
-            }
-        }
-        return baseline;
-    }
-
-    /// <summary>
-    /// The abstract safety summary Onboard currently stands behind, taken from whichever message
-    /// carries the session's own <c>safetyStateVersion</c>. SafetyStateSnapshot and
-    /// SafetyStateChanged both carry that summary and both advance the revision on the session row
-    /// in the same transaction that stores the envelope, so matching on the revision picks the
-    /// newest one without trusting either peer clock or receive order. No match means the session
-    /// row and the inbox disagree, which proves nothing and fails closed.
-    /// </summary>
-    private async Task<ProtocolInboxRow?> LatestSafetySummaryForSessionAsync(
-        string agvId,
-        long generation,
-        long safetyRevision,
-        CancellationToken cancellationToken)
-    {
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .Where(row => row.MessageType == "SafetyStateSnapshot" || row.MessageType == "SafetyStateChanged")
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        rows = rows.OrderByDescending(row => row.ReceivedAt).ToArray();
-        return rows.FirstOrDefault(row =>
-        {
-            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
-            JsonElement root = document.RootElement;
-            return RequiredString(root, "agvId") == agvId &&
-                   root.GetProperty("sessionGeneration").GetInt64() == generation &&
-                   root.GetProperty("payload").GetProperty("safetyStateVersion").GetInt64() == safetyRevision;
-        });
-    }
-
-    /// <summary>
-    /// Server-observed liveness of one session generation: when any inbound message from it was
-    /// last received. Uses the receive time rather than a payload timestamp so a stopped or
-    /// misconfigured peer clock cannot make a dead session look alive.
-    /// </summary>
-    private async Task<DateTimeOffset?> LatestInboundAtForSessionAsync(
-        string agvId,
-        long generation,
-        CancellationToken cancellationToken)
-    {
-        ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        DateTimeOffset? latest = null;
-        foreach (ProtocolInboxRow row in rows)
-        {
-            using JsonDocument document = JsonDocument.Parse(row.RequestJson);
-            JsonElement root = document.RootElement;
-            // This scans every inbound message, so unlike the per-type readers it meets envelopes
-            // that carry no generation yet (or none at all). Those prove nothing about this
-            // session's liveness and are skipped rather than throwing.
-            if (!root.TryGetProperty("agvId", out JsonElement agv) ||
-                agv.ValueKind != JsonValueKind.String ||
-                agv.GetString() != agvId ||
-                !root.TryGetProperty("sessionGeneration", out JsonElement sessionGeneration) ||
-                sessionGeneration.ValueKind != JsonValueKind.Number ||
-                sessionGeneration.GetInt64() != generation)
-            {
-                continue;
-            }
-            if (latest is null || row.ReceivedAt > latest.Value)
-            {
-                latest = row.ReceivedAt;
-            }
-        }
-        return latest;
-    }
-
-    /// <summary>
-    /// The vehicle's session row as the database holds it right now.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>AsNoTracking is the point of this method, not a performance note.</b> The engine only
-    /// ever reads this row -- Onboard's transport owns every write to it, on its own scope and its
-    /// own <see cref="ControlServerDbContext"/>. A tracking query returns the instance the change
-    /// tracker already holds and leaves its values alone, so the first read in an iteration pinned
-    /// the row for the whole iteration: a SafetyStateChanged that landed while the iteration was
-    /// running was invisible to every later read of it, however long the iteration then ran
-    /// against RIoT.
-    /// </para>
-    /// <para>
-    /// That is not merely stale, it is unsafe, because
-    /// <see cref="ReadOnboardFactsAsync"/> pins the safety summary to
-    /// <c>SafetyRevision</c>: a stale revision does not fail to match, it matches the *previous*
-    /// message, which is still in the inbox and still says whatever was true before. The arrival
-    /// check then read a vehicle Onboard had already reported moving as stopped, and trusted an
-    /// arrival that had not happened. See
-    /// docs/defects/20260916-arrival-trusted-on-a-session-row-pinned-for-one-iteration.md.
-    /// </para>
-    /// </remarks>
     private Task<SessionRecoveryRow?> CurrentReadySessionAsync(string agvId, CancellationToken cancellationToken) =>
-        dbContext.SessionRecoveries.AsNoTracking().SingleOrDefaultAsync(
-            row => row.AgvId == agvId && row.Readiness == SessionReadiness.Ready,
-            cancellationToken);
+        onboardFacts.CurrentReadySessionAsync(agvId, cancellationToken);
 
     /// <summary>
-    /// Marks every unaccepted backlog row whose demand the catalog no longer lists, so it stops reading as waiting.
+    /// When this session generation was last heard from; see
+    /// <see cref="OnboardDispatchFactsReader.LatestInboundAtForSessionAsync"/>.
     /// </summary>
-    /// <remarks>
-    /// Rows are only ever written for demands in the catalog, so without this a demand MES closed before this
-    /// server took it kept its last reason forever. Saved here, ahead of the vehicle loop, because a vehicle that
-    /// runs out its budget clears the change tracker. <c>LastSeenAt</c> is left alone: it stays the last time the
-    /// demand was in the catalog. See <see cref="DispatchReasonCodes.DemandLeftCatalog"/>.
-    /// </remarks>
-    private async Task MarkBacklogLeftCatalogAsync(
-        Dictionary<string, JourneyBacklogRow> backlogByDemandId,
-        DemandCatalogSnapshot snapshot,
-        CancellationToken cancellationToken)
-    {
-        HashSet<string> listed = snapshot.Items.Select(item => item.DemandId).ToHashSet(StringComparer.Ordinal);
-        bool marked = false;
-        foreach (JourneyBacklogRow row in backlogByDemandId.Values)
-        {
-            if (row.AcceptedAt is null &&
-                !listed.Contains(row.DemandId) &&
-                !string.Equals(row.ReasonCode, DispatchReasonCodes.DemandLeftCatalog, StringComparison.Ordinal))
-            {
-                row.ReasonCode = DispatchReasonCodes.DemandLeftCatalog;
-                marked = true;
-            }
-        }
-        if (marked)
-        {
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private JourneyBacklogRow UpsertBacklog(
-        Dictionary<string, JourneyBacklogRow> backlogByDemandId,
-        AcceptedDemandSnapshot candidate,
-        string reason,
-        DateTimeOffset now)
-    {
-        string fingerprint = DecisionFingerprint(candidate);
-        if (!backlogByDemandId.TryGetValue(candidate.DemandId, out JourneyBacklogRow? row))
-        {
-            row = new JourneyBacklogRow
-            {
-                DemandId = candidate.DemandId,
-                TransportDemandKey = candidate.TransportDemandKey,
-                FirstSeenAt = now,
-                DemandCreatedAt = candidate.CreatedAt,
-                DecisionFingerprint = fingerprint,
-                ReasonCode = reason,
-                LastSeenAt = now
-            };
-            dbContext.JourneyBacklog.Add(row);
-            backlogByDemandId.Add(candidate.DemandId, row);
-        }
-        else
-        {
-            bool decisionFactsChanged = row.TransportDemandKey != candidate.TransportDemandKey ||
-                                        row.DecisionFingerprint != fingerprint;
-            row.TransportDemandKey = candidate.TransportDemandKey;
-            row.DemandCreatedAt = candidate.CreatedAt;
-            row.DecisionFingerprint = fingerprint;
-            row.ReasonCode = decisionFactsChanged ? "DEMAND_DECISION_FACT_CHANGED" : reason;
-            row.LastSeenAt = now;
-        }
-        return row;
-    }
-
-    private static string DecisionFingerprint(AcceptedDemandSnapshot candidate)
-    {
-        byte[] content = JsonSerializer.SerializeToUtf8Bytes(new
-        {
-            candidate.DemandId,
-            candidate.HistoryEpoch,
-            candidate.SeriesId,
-            candidate.TransportDemandKey,
-            candidate.WorkType,
-            candidate.Sublot,
-            candidate.Generation,
-            candidate.DemandRevision,
-            candidate.CreatedAt,
-            candidate.ValueObservedAt,
-            candidate.ValuePollTraceId,
-            candidate.ValueProjectionCommitId,
-            candidate.LiveMesFields
-        }, SerializerOptions);
-        return Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
-    }
-
-    private async Task SetBacklogReasonAsync(
-        string demandId,
-        string reason,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        JourneyBacklogRow row = await dbContext.JourneyBacklog.SingleAsync(
-            item => item.DemandId == demandId, cancellationToken).ConfigureAwait(false);
-        row.ReasonCode = reason;
-        row.LastSeenAt = now;
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-    }
+    private Task<DateTimeOffset?> LatestInboundAtForSessionAsync(
+        string agvId,
+        long generation,
+        CancellationToken cancellationToken) =>
+        onboardFacts.LatestInboundAtForSessionAsync(agvId, generation, cancellationToken);
 
     /// <summary>
     /// Re-runs the pre-create gate for the gate-bound move order, against the endpoint this demand

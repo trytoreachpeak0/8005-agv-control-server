@@ -118,7 +118,7 @@ public sealed class RouteGraphDispatchTests
     [Fact]
     public void TheCheapestReachableCandidateWins()
     {
-        RouteGraphCostRanker ranker = new();
+        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
 
         EligibleDispatchCandidate near = Candidate("DEMAND-NEAR", Origin, cost: 10000);
         EligibleDispatchCandidate far = Candidate("DEMAND-FAR", Origin.AddMinutes(-10), cost: 90000);
@@ -133,7 +133,7 @@ public sealed class RouteGraphDispatchTests
     {
         // REQ-0207's second half: 保留相关车辆、对该比较组跳过路径成本层。Nothing is priced here,
         // so the round falls through to the deterministic first-seen order.
-        RouteGraphCostRanker ranker = new();
+        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
 
         EligibleDispatchCandidate older = Candidate("DEMAND-OLD", Origin.AddMinutes(-10), cost: null);
         EligibleDispatchCandidate newer = Candidate("DEMAND-NEW", Origin, cost: null);
@@ -144,7 +144,7 @@ public sealed class RouteGraphDispatchTests
     [Fact]
     public void APricedCandidateIsPreferredOverAnUnpricedOne()
     {
-        RouteGraphCostRanker ranker = new();
+        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
 
         EligibleDispatchCandidate priced = Candidate("DEMAND-PRICED", Origin, cost: 90000);
         EligibleDispatchCandidate unpriced = Candidate("DEMAND-UNPRICED", Origin.AddMinutes(-10), cost: null);
@@ -157,7 +157,7 @@ public sealed class RouteGraphDispatchTests
     [Fact]
     public void EqualCostsFallThroughToTheDeterministicTieBreak()
     {
-        RouteGraphCostRanker ranker = new();
+        LayeredDispatchCandidateRanker ranker = DispatchCandidateOrdering.Ranker();
 
         EligibleDispatchCandidate first = Candidate("DEMAND-B", Origin, cost: 10000);
         EligibleDispatchCandidate second = Candidate("DEMAND-A", Origin, cost: 10000);
@@ -179,7 +179,8 @@ public sealed class RouteGraphDispatchTests
         [
             .. Directory.GetFiles(SourcePath("src/ControlServer.Domain"), "RouteGraph*.cs"),
             .. Directory.GetFiles(SourcePath("src/ControlServer.Host/Runtime/RouteGraph"), "*.cs"),
-            SourcePath("src/ControlServer.Host/Runtime/Dispatch/RouteGraphCostRanker.cs"),
+            SourcePath("src/ControlServer.Host/Runtime/Dispatch/PricedBeforeUnpricedLayer.cs"),
+            SourcePath("src/ControlServer.Host/Runtime/Dispatch/GraphTraversalCostLayer.cs"),
             SourcePath("src/ControlServer.Host/Runtime/Dispatch/Criteria/RouteGraphReachabilityCriterion.cs"),
         ];
 

@@ -31,8 +31,9 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// <para>
 /// Which slot is in which group is the server's record of the vehicle's slot model
 /// (<see cref="DispatchVehicleFacts.SlotPositions"/>, program#70 decision 4), never a slot-number range: a
-/// vehicle bound to a different model is grouped by that model. Which slots are free is still the vehicle's
-/// report, unchanged.
+/// vehicle bound to a different model is grouped by that model. Which slots in the group are free is the slot
+/// ledger's answer (<see cref="IVehicleSlotLedger"/>, control-server#209); for an idle vehicle that is the vehicle's
+/// session baseline, as it was when this criterion read it for itself.
 /// </para>
 /// <para>
 /// <b>There is deliberately no branch on the station type.</b> Loading and unloading both read the one
@@ -43,7 +44,8 @@ namespace ControlServer.Host.Runtime.Dispatch.Criteria;
 /// </remarks>
 public sealed class SlotCapacityCriterion(
     ISublotBoxCountReader boxCountReader,
-    ILogger<SlotCapacityCriterion> logger) : IDispatchAdmissionCriterion
+    ILogger<SlotCapacityCriterion> logger,
+    IVehicleSlotLedger slotLedger) : IDispatchAdmissionCriterion
 {
     private static readonly Action<ILogger, string, Exception?> LogBoxCountFailed =
         LoggerMessage.Define<string>(
@@ -63,7 +65,7 @@ public sealed class SlotCapacityCriterion(
     {
         ArgumentNullException.ThrowIfNull(evaluation);
 
-        OnboardDispatchFacts onboard = evaluation.Vehicle.Onboard
+        _ = evaluation.Vehicle.Onboard
             ?? throw new InvalidOperationException(
                 "Onboard facts are established by VehicleDynamicFactsCriterion before this runs.");
 
@@ -116,13 +118,10 @@ public sealed class SlotCapacityCriterion(
             return DispatchReasonCodes.ExpectedBasketCountExceedsSlotGroup;
         }
 
-        int[] groupAvailableSlots = onboard.AvailableSlots
-            .Where(slot => slotPositions.SlotPositionByPhysicalSlot.TryGetValue(slot, out string? position) &&
-                string.Equals(position, requiredSlotPosition, StringComparison.Ordinal))
-            .Distinct()
-            .Order()
-            .ToArray();
-        if (groupAvailableSlots.Length < expectedBasketCount)
+        IReadOnlyList<int> groupAvailableSlots = await slotLedger
+            .ReadAvailableSlotsAsync(evaluation.Vehicle, requiredSlotPosition, cancellationToken)
+            .ConfigureAwait(false);
+        if (groupAvailableSlots.Count < expectedBasketCount)
         {
             return DispatchReasonCodes.SlotGroupCapacityTemporarilyUnavailable;
         }
