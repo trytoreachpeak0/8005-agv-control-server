@@ -56,6 +56,12 @@ Product at discovery: 车载端 `w2g/fp-v2-impl@3547a97`（含 onboard-hmi#109�
 - `AddExpectedActionOverdue` 见到当前投影不在开锁／等操作员，不报超时；
 - `SlotExpectedActionWaitTracker.Observe` 见到非等待阶段，清掉计时，下一条执行器进度重新起算。
 
+## 由来与影响面
+
+`RestorePendingRecoveryOperationProjectionAsync` 自车载端 `f0465d9`（2026-09-03，fix: harden recovery bootstrap and automation snapshot）起就在，
+`OnboardHmi_MVP` 分支里也有同一段代码。MVP 线上会不会同样触发**未核实**：核实要读 `agv01` 或碰 MVP 服务，本票不做。
+v2 上它之所以现在才显形，是 REQ-0358 的超时告警与计时器（onboard-hmi#109）第一次依赖「当前操作投影」在装货过程中保持为开锁／等操作员。
+
 ## 验证
 
 本地临时分支 `w2g/tmp-cs167-diag-skip-live-attempt`（`3034425`，只在本地、不推送）只在 `TrySettleInterruptedOperationAsync` 之前加一个判断：
@@ -63,7 +69,28 @@ attempt 在 `_operationAttempts` 里就直接 `return`。同一场景同一服�
 `C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs167\diag-skip-live-attempt-001\SUMMARY.md`
 （`L2-EAO-03` 距第一次开锁 + 门槛 −0.05 s；端点一行、读数取中途快照 v12 且与模拟器一致；HMI「……已上报，班组长或管理员会到现场查看」）。
 
-那一行只是诊断，不是修复方案。修复要在车载端定：怎样区分「本进程在执行」与「上个进程遗留」，以及 G2 上补一条「会话中途收到
+已验证的修法方向（`3034425` 的全部改动，`src/SQCD.Agv.Wpf/WireToGateBusinessService.cs`，临时分支不推送）：
+
+```diff
+@@ -709,6 +709,15 @@ public sealed partial class WireToGateBusinessService : IAsyncDisposable
+                 return;
+             }
+ 
++            // tmp(diag) control-server#167: an attempt this process is executing right now is not a leftover to restore.
++            lock (_operationAttemptGate)
++            {
++                if (_operationAttempts.Contains(context.SlotOperationAttemptId))
++                {
++                    return;
++                }
++            }
++
+             if (await TrySettleInterruptedOperationAsync(context, cancellationToken).ConfigureAwait(false))
+             {
+                 return;
+```
+
+这一段只证明方向对，不是定稿的修复方案。修复要在车载端定：怎样区分「本进程在执行」与「上个进程遗留」，以及 G2 上补一条「会话中途收到
 `SessionReadiness` 不改变在执行操作的投影、不清计时、不抬 `ONBOARD_SLOT_OPERATION_UNFINISHED`」的用例。
 onboard-hmi#109 与 #112 的 G2 都用替身互通，替身不会在每条安全变化后回 `SessionReadiness`，所以没看到。
 
