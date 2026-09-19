@@ -1,6 +1,6 @@
 # 缺陷：车载端把正在执行的装货当成遗留操作，每条 SessionReadiness 都给它发 RecoveryRequired 投影，期待动作超时告警一出现就被撤下
 
-Status: open（修复票待开，见文末）
+Status: open（修复票 [onboard-hmi#120](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/120)）
 Owner repository: `8005-agv-onboard-hmi`
 Found by: 真装置 L2 场景 `real-onboard-expected-action-overdue`（control-server#167）本机跑
 `C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs167\red-product-3547a97-001\SUMMARY.md`
@@ -105,9 +105,9 @@ onboard-hmi#109 与 #112 的 G2 都用替身互通，替身不会在每条安全
 OperationResult暂未收到DurableAck：attempt=529547f5-… | InvalidOperationException: WIRE_TO_GATE_NOT_READY
 ```
 
-两端互相等，放货关门后装货也收不了尾。control-server#167 的票面把在途重连列为不做，这里只记下，建议另开票定责（哪一端该让步）。
+两端互相等，放货关门后装货也收不了尾。control-server#167 的票面把在途重连列为不做，这里只记下；已另开票 [control-server#189](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/189) 定责。
 
 ## 后续
 
-- 修复票：待开（车载端）。开出后在此处填链接。
-- control-server#167 的场景保持红，修复合入后在含修复的车载端提交上取正式 PASS 与红证据。
+- 修复票：[onboard-hmi#120](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/120)（车载端）；断链重连互相等另见 [control-server#189](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/189)。
+- control-server#167 的场景保持红，onboard-hmi#120 合入后在含修复的车载端提交上取正式 PASS 与红证据。
