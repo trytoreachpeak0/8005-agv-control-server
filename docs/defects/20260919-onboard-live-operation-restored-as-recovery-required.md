@@ -110,4 +110,8 @@ OperationResult暂未收到DurableAck：attempt=529547f5-… | InvalidOperationE
 ## 后续
 
 - 修复票：[onboard-hmi#120](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/120)（车载端）；断链重连互相等另见 [control-server#189](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/189)。
+- 最终修法（onboard-hmi#120，合入 `7ded1b70`）：`TrySettleInterruptedOperationAsync` 改为三态返回 `InterruptedOperationSettlement`
+  （`InFlight` 本进程正在执行、`TakenOver` 遗留操作已接手、`NotSettled` 遗留操作结算不了），调用方只对遗留操作发布 `RecoveryRequired`
+  投影；G2 新增 `StationDeadlineExpiredG2Tests.LiveAttemptNotLegacy` 三条用例：在执行的装货收到会话中途 `SessionReadiness` 不被当遗留、
+  等待中的期待动作超时告警经 `SessionReadiness` 仍在、上个进程遗留的操作仍照旧恢复为 `RecoveryRequired` 并结算。
 - onboard-hmi#120 已合入（`7ded1b70`，已满足）。control-server#167 在含修复的车载端提交上取正式 PASS 与红证据。

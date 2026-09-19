@@ -13,7 +13,7 @@
   与服务端环境（`ExpectedActionOverdue__threshold`）。它是投运标定的现场参数（REQ-0358 说明 2、3），只决定何时上报、
   不改任何执行器时序，所以不是 README 第 11 条禁止的那种调短；`operationTimeoutMs` 不动。
 - 站点期限 60 秒，从到站起算。时间线（以第一次开锁为 0）：约 8 秒空关、车自己重开；门槛前读一次；20 秒越过门槛；
-  随后读告警、线上请求、中途快照、端点、看板页、HMI；再空关一次看同一超时再报不出第二行；约 54 秒期限过去，看合成一行；
+  随后读告警、线上请求、中途快照、端点、看板页、HMI；门槛后再空关、重开，看端点仍一行、raisedAt 不变；约 54 秒期限过去，看合成一行；
   放货关门闭环，看撤下。全程约 70 秒，在 120 秒的 `operationTimeoutMs` 之内。
 - 判据来源：服务端 SQLite（`ProtocolInbox` 里车载端发来的 `OnboardAlarmSnapshot`／`SafetyStateSnapshot`／`OperationProgress`／
   `OperationResult`，`SessionRecoveries`，`JourneyRuntimes`，`StationOperations`，三张恢复表）；协议故障代理的流量日志
@@ -341,7 +341,8 @@ $assertions.Add(
 
 # --- 7. 同一超时再报一次：不出第二行，不覆盖第一行 ----------------------------------------------------------------
 
-# 再空关一次：车重开，这一仓的状态变化让车载端再发告警快照、服务端再要一次快照；超时还是同一个。
+# 门槛后再空关一次、车重开：这一仓的状态变化让车载端再发告警快照。判的是端点仍恰好一行、raisedAt 不变，
+# 以及各份快照里这一仓的超时始终是同一个 alarmId 与 raisedAt。
 $again = Invoke-L2CloseOverOppositeState -Context $Context -AttemptId $attemptId -SlotNo $slotNo -Criterion 'reopen-after-threshold'
 $null = Wait-L2Iterations -Riot $Context.Riot -Count 3 -Journal $journal
 $reports = @((Get-OverdueReports $slotNo) | Where-Object { $null -ne $_.Alarm })
@@ -350,7 +351,7 @@ $raisedAts = @($reports | ForEach-Object { (ConvertTo-L2RealInstant $_.Alarm.rai
 $afterAgainSlots = Get-Slots (Get-Endpoint)
 $againRow = if ($afterAgainSlots.Count -gt 0) { $afterAgainSlots[0] } else { $null }
 $assertions.Add(
-    'L2-EAO-13', '同一超时再报不出第二行、不覆盖第一行：再空关、重开之后，每份告警快照里这一仓的超时都是同一个 alarmId、同一个 raisedAt；端点仍恰好一行，raisedAt 不变',
+    'L2-EAO-13', '门槛后再空关、重开，端点仍恰好一行、raisedAt 不变；各份告警快照里这一仓的超时都是同一个 alarmId、同一个 raisedAt',
     ($again.After.Physical -eq 'OPEN/EMPTY/0/0' -and $reports.Count -ge 1 -and $alarmIds.Count -eq 1 -and $raisedAts.Count -eq 1 -and
         $afterAgainSlots.Count -eq 1 -and (ConvertTo-L2RealInstant $againRow.raisedAt) -eq $raisedAt),
     "重开 OPEN/EMPTY/0/0 / 1 个 alarmId / 1 个 raisedAt / 端点 1 行 raisedAt $($alarm.raisedAt)",
