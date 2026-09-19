@@ -185,6 +185,28 @@ public sealed record TaskTypeStationManualCloseResult(
     string? AuditRecordId,
     string Detail);
 
+/// <summary>对账对指针做的那一笔（control-server#200）。取值写进对账审计的 <c>pointerAfter.write</c>。</summary>
+public static class TaskTypeStationPointerWrite
+{
+    /// <summary>回到墓碑：<c>CLOSED_MANUALLY</c>，没有生效版本。</summary>
+    public const string Tombstone = "TOMBSTONE";
+
+    /// <summary>删掉指针行：该图回到「从未激活」，没有指针行。</summary>
+    public const string RowDeleted = "ROW_DELETED";
+
+    /// <summary>改回 <c>ACTIVE</c>，生效版本是读回在用的那一版。</summary>
+    public const string RestoredActive = "RESTORED_ACTIVE";
+
+    /// <summary>没动：读回矛盾，或没有未结尝试。</summary>
+    public const string Unchanged = "UNCHANGED";
+}
+
+/// <summary>
+/// 对账写完之后的指针：这一笔是 <see cref="TaskTypeStationPointerWrite"/> 里的哪一种，以及写完之后在同一个事务里重读到的那一行
+/// （删了行时为 <c>null</c>）。
+/// </summary>
+public sealed record TaskTypeStationPointerAfterWrite(string Write, TaskTypeStationActivePointer? Row);
+
 /// <summary>对账在一个事务里读到的、判下的、撤掉的。</summary>
 public sealed record TaskTypeStationReconciliation(
     TaskTypeStationActivationAttempt? Attempt,
@@ -318,12 +340,12 @@ public interface ITaskTypeStationActivationStore
     /// <summary>
     /// 对账，一个事务：读未结尝试与生效版本，交给 <paramref name="decide"/> 判结论；不是「矛盾」时指针回到对应形态（原版本为空时：
     /// 那次尝试从墓碑出发就回到墓碑，否则删掉指针行，即「从未激活」），撤该图全部仍成立的「激活结果未知」暂停；再写
-    /// <paramref name="audit"/> 给出的审计。
+    /// <paramref name="audit"/> 给出的审计，它拿到写完之后重读的指针（control-server#200）。
     /// </summary>
     Task<TaskTypeStationReconciliation> ReconcileAsync(
         int mapId,
         Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion> decide,
-        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, GovernanceAuditEntry> audit,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, TaskTypeStationPointerAfterWrite, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken);
 

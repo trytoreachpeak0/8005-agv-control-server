@@ -267,7 +267,7 @@ public sealed class TaskTypeStationActivationStore(
     public async Task<TaskTypeStationReconciliation> ReconcileAsync(
         int mapId,
         Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion> decide,
-        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, GovernanceAuditEntry> audit,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, TaskTypeStationPointerAfterWrite, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken)
     {
@@ -283,6 +283,7 @@ public sealed class TaskTypeStationActivationStore(
             TaskTypeStationReconciliationConclusion conclusion = decide(attempt, readBack);
 
             List<TaskTypeStationHoldRow> released = [];
+            string write = TaskTypeStationPointerWrite.Unchanged;
             if (conclusion != TaskTypeStationReconciliationConclusion.Contradictory)
             {
                 TaskTypeStationActiveBindingSetRow? pointer = await FreshPointerAsync(mapId, cancellationToken);
@@ -298,6 +299,7 @@ public sealed class TaskTypeStationActivationStore(
                     pointer.State = TaskTypeStationActivationState.ClosedManually;
                     pointer.PendingVersion = null;
                     pointer.UpdatedAt = at;
+                    write = TaskTypeStationPointerWrite.Tombstone;
                 }
                 else if (pointer is not null && pointer.ActiveVersion is null
                     && conclusion == TaskTypeStationReconciliationConclusion.PreviousActive)
@@ -305,6 +307,7 @@ public sealed class TaskTypeStationActivationStore(
                     // The version from before was none: back to a map without an active version, not an ACTIVE pointer that
                     // names nothing (review S4), so the preset may still load as its first version.
                     _context.Set<TaskTypeStationActiveBindingSetRow>().Remove(pointer);
+                    write = TaskTypeStationPointerWrite.RowDeleted;
                 }
                 else if (pointer is not null
                     && string.Equals(pointer.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal))
@@ -312,14 +315,18 @@ public sealed class TaskTypeStationActivationStore(
                     pointer.State = TaskTypeStationActivationState.Active;
                     pointer.PendingVersion = null;
                     pointer.UpdatedAt = at;
+                    write = TaskTypeStationPointerWrite.RestoredActive;
                 }
                 // A map has at most one open attempt, so once there is a verdict every activation hold on it is released,
                 // orphans included (review S3).
                 released = await ReleaseActivationHoldsAsync(mapId, at, cancellationToken);
                 await _context.SaveChangesAsync(cancellationToken);
             }
+            // What the audit says was left is read back inside the same transaction, not taken from the branch taken
+            // (control-server#200): the row as it now stands, or none.
+            TaskTypeStationPointerAfterWrite after = new(write, await _bindings.ReadActivePointerAsync(mapId, cancellationToken));
             string auditId = await _audit.WriteBusinessAsync(
-                audit(attempt, readBack, conclusion, HoldIds(released)), at, cancellationToken);
+                audit(attempt, readBack, conclusion, HoldIds(released), after), at, cancellationToken);
             await RecordReleaserAsync(released, "fieldops:reconcile:" + auditId, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new TaskTypeStationReconciliation(attempt, readBack, conclusion, HoldIds(released), auditId);

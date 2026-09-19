@@ -390,7 +390,7 @@ internal abstract class DelegatingActivationStore(ITaskTypeStationActivationStor
     public virtual Task<TaskTypeStationReconciliation> ReconcileAsync(
         int mapId,
         Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion> decide,
-        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, GovernanceAuditEntry> audit,
+        Func<TaskTypeStationActivationAttempt?, TaskTypeStationActiveReadBack, TaskTypeStationReconciliationConclusion, IReadOnlyList<string>, TaskTypeStationPointerAfterWrite, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken) =>
         inner.ReconcileAsync(mapId, decide, audit, at, cancellationToken);
