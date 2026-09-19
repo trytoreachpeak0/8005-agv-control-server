@@ -43,6 +43,7 @@ public sealed class ReversedDirectionJourneyTests
     /// carries no public station function.
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
     public async Task AStagingToWirePlanPicksUpAtTheStagingStationAndDropsOffAtTheAreaMachine()
     {
         DispatchCandidateEvaluation evaluation = Evaluation(TransportTaskTypes.StagingToWire);
@@ -72,6 +73,7 @@ public sealed class ReversedDirectionJourneyTests
     /// swapped route is a different one, and a replay carrying it is refused.
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
     public async Task AReplayedStagingToWireDemandKeepsItsRouteEvidenceAndASwappedOneIsRefused()
     {
         DispatchCandidateEvaluation first = Evaluation(TransportTaskTypes.StagingToWire);

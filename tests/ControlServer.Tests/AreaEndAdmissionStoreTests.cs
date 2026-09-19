@@ -22,6 +22,7 @@ public sealed class AreaEndAdmissionStoreTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
     public async Task AStagingToWireUnloadCarriesAndFreezesTheAreaMachineAdmission()
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
@@ -46,6 +47,7 @@ public sealed class AreaEndAdmissionStoreTests
     /// and WIRE_TO_GATE's unload at the gate may not either. Both are refused before anything is written.
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
     public async Task AnAdmissionIdentityOnTheLegAwayFromTheAreaMachineIsRefused()
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
