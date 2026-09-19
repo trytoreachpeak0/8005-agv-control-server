@@ -59,17 +59,12 @@ function Get-Count([string]$sql) { return Get-L2RealCount $connection $sql }
 # 部署不允许）、TASK_TYPE_NOT_YET_EXECUTABLE（绑定齐全但本构建还不会执行）是三种不同情形，现场处置也不同。
 $missingBindingReason = 'TASK_TYPE_BINDING_MISSING'
 
-# --- 1. 两条需求同时出现在 MesIngest 目录里 ----------------------------------------------------------------------
+# --- 1. 已绑定的需求先出现；它受理之后，缺绑定的那条再出现 ----------------------------------------------------------
+#
+# 先后是刻意的：派车按「先看到的先派」（FirstSeenDispatchCandidateRanker），只有一台车。缺绑定的需求若先被看到，
+# 一个 fail-open 的服务端会先把车派给它，已绑定的那条就走不成，这时变红的是「已绑定的照常走完」，而不是本该变红的
+# 「缺绑定的不受理」。让已绑定的先受理，缺绑定的那条就在整趟旅程里、以及车空下来之后，一轮一轮地被重新判定。
 
-$journal.Note("Publishing STAGING_TO_WIRE demand $($unboundGuid.ToString('N')) (AREA C15-13), which the factory preset does not bind.")
-$null = $mes.Command('Put', "demands/$($unboundGuid.ToString('N'))", @{
-    workType    = 'STAGING_TO_WIRE'
-    sublot      = "G3-10-UNBOUND-$($Context.RunId)"
-    area        = 'C15-13'
-    eqp         = 'EQP-L2-03'
-    package     = 'L2-PACKAGE'
-    maxBoxCount = 4
-})
 $journal.Note("Publishing WIRE_TO_GATE demand $($boundGuid.ToString('N')) (AREA N1-3, sublot $boundSublot).")
 $null = $mes.Command('Put', "demands/$($boundGuid.ToString('N'))", @{
     workType    = 'WIRE_TO_GATE'
@@ -80,10 +75,23 @@ $null = $mes.Command('Put', "demands/$($boundGuid.ToString('N'))", @{
     maxBoxCount = 4
 })
 
+$publishUnbound = {
+    $journal.Note("Publishing STAGING_TO_WIRE demand $($unboundGuid.ToString('N')) (AREA C15-13), which the factory preset does not bind.")
+    $null = $mes.Command('Put', "demands/$($unboundGuid.ToString('N'))", @{
+        workType    = 'STAGING_TO_WIRE'
+        sublot      = "G3-10-UNBOUND-$($Context.RunId)"
+        area        = 'C15-13'
+        eqp         = 'EQP-L2-03'
+        package     = 'L2-PACKAGE'
+        maxBoxCount = 4
+    })
+}.GetNewClosure()
+
 # --- 2. 已绑定的那一类在真车载端上走完一趟 ------------------------------------------------------------------------
 
 $journey = Invoke-L2TaskTypeJourney -Context $Context -DemandId $boundId -Sublot $boundSublot `
-    -OriginRiotId $Context.PickupStationRiotId -DestinationRiotId $Context.GateStationRiotId
+    -OriginRiotId $Context.PickupStationRiotId -DestinationRiotId $Context.GateStationRiotId `
+    -BeforeFirstArrival { param($intent) & $publishUnbound }
 
 # 走完之后再让运行时多转几轮：缺绑定的需求在此期间一直被重新判定，仍然不受理，才说明是 fail-closed 而不是「还没轮到」。
 $null = Wait-L2Iterations -Riot $riot -Count 4 -Journal $journal

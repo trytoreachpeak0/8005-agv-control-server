@@ -75,27 +75,52 @@ $null = $mes.Command('Put', "demands/$($demandGuid.ToString('N'))", @{
     maxBoxCount = 4
 })
 
-# 车按路线应有的方向被送去两站：先派工待送站、后 AREA 机台。服务端有没有这样排，由下面的判据从它自己的快照和单上读。
+# 路线的两个判据在车出发之前判：计划与旅程的两端在受理时就定了。一个排反了方向的服务端，会让下面按正确方向开车的驱动在
+# 第一站就等不到到站采信而超时；判据若放在整趟之后，就只剩「没走完」，说不出错在哪。
+$judgeRoute = {
+    param($originIntent)
+
+    $early = Get-L2DemandJourneySnapshots $connection $demandId
+    $firstPlan = @($early | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | Select-Object -First 1
+    $planShape = if ($null -ne $firstPlan) {
+        (@($firstPlan.Legs | ForEach-Object { "$($_.sequence):$($_.legType)@$($_.stationId)" }) -join ',')
+    } else { '(no plan)' }
+    $functions = @(@($firstPlan) | Where-Object { $null -ne $_ } | ForEach-Object { @($_.Legs) } |
+        Where-Object { Test-L2RealPresent $_.publicStationFunction })
+    $assertions.Add(
+        'G3-11-01',
+        '计划按任务类型规则排腿：第一腿 TO_PICKUP 到派工待送站、第二腿 TO_DROPOFF 到 AREA 机台，publicStationFunction 为空（DERIVE_DIRECTION_FROM_TASK_TYPE_RULE；车出发前判）',
+        ($planShape -eq "1:TO_PICKUP@$stagingName,2:TO_DROPOFF@$areaName" -and $functions.Count -eq 0),
+        "1:TO_PICKUP@$stagingName,2:TO_DROPOFF@$areaName / publicStationFunction 非空 0 条",
+        "$planShape / publicStationFunction 非空 $($functions.Count) 条")
+
+    $runtime = @(Invoke-L2Query -Connection $connection -Sql (
+            "SELECT PickupStationId, PickupStationRiotId, GateStationId, GateStationRiotId, RouteEvidenceId " +
+            "FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
+    $firstOrder = @(@($riot.Snapshot().body.orders) | Where-Object { [string]$_.upperId -eq [string]$originIntent.UpperId }) |
+        Select-Object -First 1
+    $endsRecorded = if ($runtime.Count -eq 1) {
+        "$($runtime[0].PickupStationId)/$($runtime[0].PickupStationRiotId) → $($runtime[0].GateStationId)/$($runtime[0].GateStationRiotId)"
+    } else { "($($runtime.Count) journey rows)" }
+    $firstOrderTo = if ($null -ne $firstOrder) { Get-OrderDestination $firstOrder } else { $null }
+    $assertions.Add(
+        'G3-11-07',
+        '起终点没有互换：旅程记下的起点是派工待送站、终点是 AREA 机台，只有一行、路线证据非空；RIoT 上第一张单开往派工待送站（NEVER_SWAP_ORIGIN_AND_DESTINATION；车出发前判，第二张单的目的站在 G3-11-06）',
+        ($runtime.Count -eq 1 -and [string]$runtime[0].PickupStationId -eq $stagingName -and [int]$runtime[0].PickupStationRiotId -eq $stagingRiotId -and
+            [string]$runtime[0].GateStationId -eq $areaName -and [int]$runtime[0].GateStationRiotId -eq $areaRiotId -and
+            (Test-L2RealPresent $runtime[0].RouteEvidenceId) -and $firstOrderTo -eq $stagingRiotId),
+        "$stagingName/$stagingRiotId → $areaName/$areaRiotId / 第一张单 → $stagingRiotId",
+        "$endsRecorded / 第一张单 → $(if ($null -ne $firstOrderTo) { $firstOrderTo } else { '(no order)' })")
+}
+
+# 车按路线应有的方向被送去两站：先派工待送站、后 AREA 机台。服务端有没有这样排，由判据从它自己的快照和单上读。
 $journey = Invoke-L2TaskTypeJourney -Context $Context -DemandId $demandId -Sublot $sublot `
-    -OriginRiotId $stagingRiotId -DestinationRiotId $areaRiotId
+    -OriginRiotId $stagingRiotId -DestinationRiotId $areaRiotId -BeforeFirstArrival $judgeRoute
 
 $snapshots = Get-L2DemandJourneySnapshots $connection $demandId
 $described = (@($snapshots | ForEach-Object { "$(Format-L2JourneySnapshot $_) ack=$($_.Acknowledged) fenced=$($_.Fenced)" }) -join ' | ')
 
 # --- 2. 服务端按规则定方向 -----------------------------------------------------------------------------------------
-
-$firstPlan = @($snapshots | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | Select-Object -First 1
-$planShape = if ($null -ne $firstPlan) {
-    (@($firstPlan.Legs | ForEach-Object { "$($_.sequence):$($_.legType)@$($_.stationId)" }) -join ',')
-} else { '(no plan)' }
-$functions = @(@($snapshots | Where-Object { $_.Type -eq 'UpcomingStopPlanSnapshot' }) | ForEach-Object { @($_.Legs) } |
-    Where-Object { Test-L2RealPresent $_.publicStationFunction })
-$assertions.Add(
-    'G3-11-01',
-    '计划按任务类型规则排腿：第一腿 TO_PICKUP 到派工待送站、第二腿 TO_DROPOFF 到 AREA 机台；所有计划的 publicStationFunction 都为空（DERIVE_DIRECTION_FROM_TASK_TYPE_RULE）',
-    ($planShape -eq "1:TO_PICKUP@$stagingName,2:TO_DROPOFF@$areaName" -and $functions.Count -eq 0),
-    "1:TO_PICKUP@$stagingName,2:TO_DROPOFF@$areaName / publicStationFunction 非空 0 条",
-    "$planShape / publicStationFunction 非空 $($functions.Count) 条")
 
 $worklistAt = {
     param([string]$station)
@@ -155,41 +180,22 @@ $loadWhere = if ($null -ne $loadCommand) {
 $unloadWhere = if ($null -ne $unloadCommand) {
     if ($unloadCommand.At -ge $journey.DestinationArrivedAt) { 'area' } else { "outside ($($unloadCommand.At.ToString('O')))" }
 } else { '(no command)' }
+$orders = @($riot.Snapshot().body.orders)
+$secondOrder = @($orders | Where-Object { [string]$_.upperId -eq [string]$journey.DestinationIntent.UpperId }) | Select-Object -First 1
+$secondOrderTo = if ($null -ne $secondOrder) { Get-OrderDestination $secondOrder } else { $null }
 $loadSlots = if ($null -ne $loadCommand) { Format-L2RealSlots @($loadCommand.Payload.slots) } else { '' }
 $unloadSlots = if ($null -ne $unloadCommand) { Format-L2RealSlots @($unloadCommand.Payload.slots) } else { '' }
 $assertions.Add(
     'G3-11-06',
-    '装货在派工待送站、卸货在 AREA 机台：录入请求的站点是派工待送站，装货命令在车到派工待送站之后、出发去机台之前发出，卸货命令在车到机台之后发出；两条命令的 slots 都是目标仓，模拟器上装与卸开的是同一个目标仓',
-    ($entryStations.Count -eq 1 -and $entryStations[0] -eq $stagingName -and $loadWhere -eq 'staging' -and $unloadWhere -eq 'area' -and
+    '装货在派工待送站、卸货在 AREA 机台：录入请求的站点是派工待送站，装货命令在车到派工待送站之后、出发去机台之前发出，第二张 RIoT 单开往 AREA 机台，卸货命令在车到机台之后发出；两条命令的 slots 都是目标仓，模拟器上装与卸开的是同一个目标仓',
+    ($entryStations.Count -eq 1 -and $entryStations[0] -eq $stagingName -and $loadWhere -eq 'staging' -and
+        $secondOrderTo -eq $areaRiotId -and $unloadWhere -eq 'area' -and
         $loadSlots -eq $targets -and $unloadSlots -eq $targets -and
         $journey.Load.OpenedSlot -in $journey.Load.TargetSlots -and $journey.Unload.OpenedSlot -eq $journey.Load.OpenedSlot),
-    "录入@$stagingName / 装 staging / 卸 area / slots $targets / 开仓相同",
-    "录入@$($entryStations -join ',') / 装 $loadWhere / 卸 $unloadWhere / 装 slots $loadSlots 卸 slots $unloadSlots 目标 $targets / 开仓 装 $($journey.Load.OpenedSlot) 卸 $($journey.Unload.OpenedSlot)")
+    "录入@$stagingName / 装 staging / 第二张单 → $areaRiotId / 卸 area / slots $targets / 开仓相同",
+    "录入@$($entryStations -join ',') / 装 $loadWhere / 第二张单 → $(if ($null -ne $secondOrderTo) { $secondOrderTo } else { '(no order)' }) / 卸 $unloadWhere / 装 slots $loadSlots 卸 slots $unloadSlots 目标 $targets / 开仓 装 $($journey.Load.OpenedSlot) 卸 $($journey.Unload.OpenedSlot)")
 
-# --- 5. 起终点不互换 -------------------------------------------------------------------------------------------
-
-$runtime = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT PickupStationId, PickupStationRiotId, GateStationId, GateStationRiotId, RouteEvidenceId, PickupUpperId, GateUpperId " +
-        "FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
-$orders = @($riot.Snapshot().body.orders)
-$originOrder = @($orders | Where-Object { [string]$_.upperId -eq [string]$journey.OriginIntent.UpperId }) | Select-Object -First 1
-$destinationOrder = @($orders | Where-Object { [string]$_.upperId -eq [string]$journey.DestinationIntent.UpperId }) | Select-Object -First 1
-$endsRecorded = if ($runtime.Count -eq 1) {
-    "$($runtime[0].PickupStationId)/$($runtime[0].PickupStationRiotId) → $($runtime[0].GateStationId)/$($runtime[0].GateStationRiotId)"
-} else { "($($runtime.Count) journey rows)" }
-$orderEnds = "$(if ($originOrder) { Get-OrderDestination $originOrder } else { '(no order)' }) → $(if ($destinationOrder) { Get-OrderDestination $destinationOrder } else { '(no order)' })"
-$assertions.Add(
-    'G3-11-07',
-    '起终点没有互换：旅程记下的起点是派工待送站、终点是 AREA 机台，路线证据只有一份；RIoT 上第一张单开往派工待送站、第二张开往 AREA 机台（NEVER_SWAP_ORIGIN_AND_DESTINATION）',
-    ($runtime.Count -eq 1 -and [string]$runtime[0].PickupStationId -eq $stagingName -and [int]$runtime[0].PickupStationRiotId -eq $stagingRiotId -and
-        [string]$runtime[0].GateStationId -eq $areaName -and [int]$runtime[0].GateStationRiotId -eq $areaRiotId -and
-        (Test-L2RealPresent $runtime[0].RouteEvidenceId) -and
-        $null -ne $originOrder -and (Get-OrderDestination $originOrder) -eq $stagingRiotId -and
-        $null -ne $destinationOrder -and (Get-OrderDestination $destinationOrder) -eq $areaRiotId),
-    "$stagingName/$stagingRiotId → $areaName/$areaRiotId / 单 $stagingRiotId → $areaRiotId",
-    "$endsRecorded / 单 $orderEnds")
-
-# --- 6. 准入冻结在卸货那次（推翻 I6） ---------------------------------------------------------------------------
+# --- 5. 准入冻结在卸货那次（推翻 I6） ---------------------------------------------------------------------------
 
 $admissions = @(Invoke-L2Query -Connection $connection -Sql (
         "SELECT SlotOperationAttemptId, StationId, TaskType, Allowed FROM AdmissionDecisionSnapshots " +
@@ -204,7 +210,7 @@ $assertions.Add(
     "卸货 1 行 $areaName/STAGING_TO_WIRE/放行 / 装货 0 行",
     "卸货 $($onUnload.Count) 行$(if ($onUnload.Count) { " $($onUnload[0].StationId)/$($onUnload[0].TaskType)/Allowed=$($onUnload[0].Allowed)" }) / 装货 $($onLoad.Count) 行")
 
-# --- 7. 终态 ---------------------------------------------------------------------------------------------------
+# --- 6. 终态 ---------------------------------------------------------------------------------------------------
 
 $demandStatus = Get-L2RealScalar $connection "SELECT Status AS Value FROM AcceptedDemands WHERE DemandId = '$demandId'"
 $commits = Get-Count "SELECT COUNT(*) AS Total FROM StationOperations WHERE DemandId = '$demandId' AND Status = 'Committed'"

@@ -180,7 +180,11 @@ function Invoke-L2TaskTypeJourney {
         [Parameter(Mandatory)][string]$DemandId,
         [Parameter(Mandatory)][string]$Sublot,
         [Parameter(Mandatory)][int]$OriginRiotId,
-        [Parameter(Mandatory)][int]$DestinationRiotId
+        [Parameter(Mandatory)][int]$DestinationRiotId,
+        # Run once the first plan is acknowledged, before the vehicle moves: judgments about the route the server
+        # planned belong here, so they are written even when a server that planned another route leaves the rest of
+        # the drive to time out.
+        [scriptblock]$BeforeFirstArrival
     )
     $journal = $Context.Journal
     $connection = $Context.Connection
@@ -199,6 +203,7 @@ function Invoke-L2TaskTypeJourney {
     # empty task type here a reading of a rendered plan rather than of a window that has not caught up.
     $readings['en-route-to-origin'] = Wait-L2StopFacts -Context $Context -Criterion 'stop-line:en-route-to-origin' `
         -Description 'the HMI shows the planned direction before the first arrival' -Until { param($f) $f.Direction -ne '' -and $null -ne $f.Direction }
+    if ($null -ne $BeforeFirstArrival) { & $BeforeFirstArrival $originIntent }
 
     Move-L2RealVehicleTo $Context $originIntent $OriginRiotId "the first stop ($OriginRiotId)"
     $originArrivedAt = [DateTimeOffset]::UtcNow
