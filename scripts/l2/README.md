@@ -324,8 +324,10 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
 - `protocolReleaseIdentity` —— 从跑起来的服务端 `/version` **读回**，不在脚本里复述。能按协议
   换代作废 L2 证据的只有 build 真的在线上强制的那一份身份；复述一遍只会让证据与脚本自洽而与
   服务端无关。今天读回的是 `protocol-v1.0.0` 候选的九个字段加 `approvalStatus`（`SUPERSEDING_CANDIDATE`）。
-- `batchId` —— `Invoke-L2Scenario.ps1` 的 `-BatchId` 参数，默认 `batch-2`。批次是计划，仓库里
-  推不出来，所以它是参数而不是常量；CI 显式传，换批次改一个实参。
+- `batchId` —— `Invoke-L2Scenario.ps1` 的 `-BatchId` 参数，不传时记 `unspecified`（明确的「未指定」，
+  control-server#201 起；此前默认 `batch-2`，所以更早的本机证据里的 `batch-2` 不可信）。批次是计划，
+  仓库里推不出来，所以它是参数而不是常量；CI 显式传，换批次改一个实参，`l2.yml` 清单里没写
+  `BatchId` 的行同样记 `unspecified`。`run-journey-g3.ps1` 也收 `-BatchId` 并原样往下传。
 
 时间线的形状抄自 `remote-ops/status/Get-WireToGateStatus.ps1`——2026-09-03 定位缺陷时，就是靠
 它把「12:56:49 STOPPED → 12:57:15 UNKNOWN」精确卡到秒。
