@@ -745,6 +745,22 @@ public sealed class OnboardRecoveryCoordinator(
         }
         if (workflow.CommandMessageId is null)
         {
+            ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
+                row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
+                cancellationToken).ConfigureAwait(false);
+            // The authorization is a second message and can arrive after the session closed on another result of
+            // the same action (control-server#169). Authorizing then would set a CLOSED session back to EXECUTING
+            // and send the command, and the compensation's result would find an open session and settle the
+            // demand the next session is now handling (control-server#175). A CLOSED session is never reopened.
+            if (session.State == "CLOSED")
+            {
+                return Response(root, "LoadCompensationRejected", new
+                {
+                    recoveryActionId = actionId,
+                    problem = Problem(ServerReasonCodes.RecoverySessionNotOpen, "payload",
+                        "The recovery session this compensation belongs to has already closed.")
+                });
+            }
             string commandId = StableGuid(actionId, "load-compensation-command");
             string hash = RecoveryCommandHash.Compute(
                 actionId, workflow.DemandId!, workflow.SlotOperationAttemptId!, workflow.SlotsJson);
@@ -761,9 +777,6 @@ public sealed class OnboardRecoveryCoordinator(
                     hash),
                 cancellationToken).ConfigureAwait(false);
             BindCommand(workflow, commandId, "LoadCompensationCommand", hash);
-            ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
-                row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
-                cancellationToken).ConfigureAwait(false);
             session.State = "EXECUTING";
             session.Revision++;
             session.UpdatedAt = timeProvider.GetUtcNow();
@@ -1046,7 +1059,8 @@ public sealed class OnboardRecoveryCoordinator(
         // refuse outright. Decided here, before either branch below writes anything, once for both directions.
         // The workflow is RecoveryRequired, never HistoricalOnly, so a forced recovery keeps holding the vehicle for
         // its hardware record; and since the session closed on its first judged result, this one reads from the
-        // store as arriving after the closing without changing why the session closed.
+        // store as arriving after the closing without changing why the session closed. The content checks below --
+        // exact slot results, proofs -- are what a settlement rests on, so a result that settles nothing skips them.
         bool sessionClosed = workflow.ExceptionRecoverySessionId is not null &&
                              await dbContext.ExceptionRecoverySessions.AnyAsync(
                                  row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId &&
