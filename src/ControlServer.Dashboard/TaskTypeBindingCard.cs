@@ -37,8 +37,18 @@ public sealed class TaskTypeBindingCard : IDashboardCard
         foreach (JsonElement map in maps.EnumerateArray())
         {
             string mapId = DashboardPageRenderer.Text(map, "mapId");
+            string activeVersion = map.TryGetProperty("activeBindingSetVersion", out JsonElement version)
+                && version.ValueKind == JsonValueKind.Number
+                    ? version.ToString()
+                    : "无";
+            string pointerState = map.TryGetProperty("activationState", out JsonElement state)
+                && state.ValueKind == JsonValueKind.String
+                    ? state.GetString()!
+                    : "无";
             html.Append(CultureInfo.InvariantCulture, $"<h3>Map {WebUtility.HtmlEncode(mapId)}，生效绑定集版本 ")
-                .Append(WebUtility.HtmlEncode(DashboardPageRenderer.Text(map, "activeBindingSetVersion")))
+                .Append(WebUtility.HtmlEncode(activeVersion))
+                .Append("，生效指针 ")
+                .Append(WebUtility.HtmlEncode(pointerState))
                 .Append("</h3>");
             html.Append("<table><tr><th>任务类型</th><th>需求集合</th><th>绑定站点</th><th>状态</th><th>暂停</th><th></th></tr>");
             foreach (JsonElement row in map.GetProperty("taskTypes").EnumerateArray())
@@ -72,6 +82,7 @@ public sealed class TaskTypeBindingCard : IDashboardCard
         "BINDING_MISSING" => "缺绑定",
         "STATION_NOT_IN_CATALOG" => "绑定站点不在目录",
         "HELD" => "已暂停",
+        "NO_ACTIVE_BINDING_SET" => "无生效绑定集",
         "NOT_REQUIRED" => "未启用",
         _ => status
     };

@@ -124,14 +124,20 @@ public static class TaskTypeHoldEndpoints
                 detail: "The task type hold entry answers loopback requests only; use the dashboard on the control host.");
         }
 
-        TaskTypeStationBindingSetVersion? active = request is null
+        // A Map this server serves is one with an activation pointer, whatever its state. After a manual close
+        // (#161's CLOSED_MANUALLY tombstone) the pointer names no active version, and the hold is still taken: an
+        // activation does not lift a manual hold, so it is how a person keeps the task type stopped through the next one.
+        TaskTypeStationActivePointer? pointer = request is null
+            ? null
+            : await bindings.ReadActivePointerAsync(mapId, cancellationToken).ConfigureAwait(false);
+        TaskTypeStationBindingSetVersion? active = pointer?.ActiveVersion is null
             ? null
             : await bindings.ReadActiveAsync(mapId, cancellationToken).ConfigureAwait(false);
         TaskTypeStationRuleVersion? ruleVersion = await rules.ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
         List<string> problems = [];
-        if (active is null)
+        if (pointer is null)
         {
-            problems.Add($"Map {mapId} has no active binding set; it is not a Map this server serves.");
+            problems.Add($"Map {mapId} has no binding set activation; it is not a Map this server serves.");
         }
         if (string.IsNullOrWhiteSpace(taskType)
             || ruleVersion?.Rules.Any(rule => string.Equals(rule.TaskType, taskType, StringComparison.Ordinal)) != true)
@@ -155,7 +161,7 @@ public static class TaskTypeHoldEndpoints
                 extensions: new Dictionary<string, object?> { ["problems"] = problems });
         }
 
-        TaskTypeStationBinding? binding = active!.Bindings
+        TaskTypeStationBinding? binding = active?.Bindings
             .SingleOrDefault(candidate => string.Equals(candidate.TaskType, taskType, StringComparison.Ordinal));
         int inFlight = await TaskTypeInFlightDemands.CountAsync(dbContext, mapId, taskType!, cancellationToken)
             .ConfigureAwait(false);
@@ -175,7 +181,8 @@ public static class TaskTypeHoldEndpoints
                     claimedRole,
                     stationRiotId = binding?.StationRiotId,
                     stationName = binding?.StationName,
-                    bindingSetVersion = active.Version,
+                    bindingSetVersion = active?.Version,
+                    activationState = pointer!.State,
                     inFlightDemands = inFlight
                 },
                 DetailOptions),
@@ -183,14 +190,15 @@ public static class TaskTypeHoldEndpoints
             now,
             cancellationToken).ConfigureAwait(false);
         await WriteAuditAsync(
-            audit, mapId, active.Version, GovernanceActionOutcome.Succeeded, claimedRole, now,
+            audit, mapId, active?.Version, GovernanceActionOutcome.Succeeded, claimedRole, now,
             new
             {
                 mapId,
                 taskType,
                 stationRiotId = binding?.StationRiotId,
                 stationName = binding?.StationName,
-                bindingSetVersion = active.Version,
+                bindingSetVersion = active?.Version,
+                activationState = pointer.State,
                 reason,
                 claimedRole,
                 inFlightDemands = inFlight,
