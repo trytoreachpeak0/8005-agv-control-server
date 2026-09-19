@@ -13,8 +13,6 @@ public sealed class JourneyRuntimeOptions
     public long AgvLifecycleGeneration { get; set; }
     public int MapId { get; set; }
     public string MapIdentity { get; set; } = string.Empty;
-    public string GateStationId { get; set; } = string.Empty;
-    public int GateStationRiotId { get; set; }
     public string DispatchZone { get; set; } = string.Empty;
     public long DispatchGeneration { get; set; }
     public int MinimumBatteryPercent { get; set; } = 30;
@@ -59,8 +57,8 @@ public sealed class JourneyRuntimeOptions
     /// not dispatched at all.
     /// </para>
     /// <para>
-    /// When the roster is stated explicitly it must contain the primary pair, so that the map,
-    /// gate station and dispatch generation the fields above fix are the ones the roster's
+    /// When the roster is stated explicitly it must contain the primary pair, so that the map
+    /// and dispatch generation the fields above fix are the ones the roster's
     /// vehicles actually run under rather than a second, contradictory configuration.
     /// </para>
     /// </remarks>
@@ -122,7 +120,6 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         RequireText(options.AgvId, nameof(options.AgvId), failures);
         RequireText(options.VehicleKey, nameof(options.VehicleKey), failures);
         RequireText(options.MapIdentity, nameof(options.MapIdentity), failures);
-        RequireText(options.GateStationId, nameof(options.GateStationId), failures);
         RequireText(options.DispatchZone, nameof(options.DispatchZone), failures);
         RequireText(options.SublotBoxCountPath, nameof(options.SublotBoxCountPath), failures);
         if (options.SublotBoxCountPath.Length == 0 || options.SublotBoxCountPath[0] != '/' ||
@@ -149,13 +146,10 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         }
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
         if (options.MapId <= 0) failures.Add("MapId must be positive.");
-        if (options.GateStationRiotId <= 0) failures.Add("GateStationRiotId must be positive.");
         if (options.DispatchGeneration <= 0) failures.Add("DispatchGeneration must be positive.");
         if (options.MinimumBatteryPercent is < 1 or > 100) failures.Add("MinimumBatteryPercent must be in 1..100.");
         if (options.AdmissionPolicyVersion <= 0) failures.Add("AdmissionPolicyVersion must be positive.");
         RequireText(options.AdmissionPolicyDeploymentId, nameof(options.AdmissionPolicyDeploymentId), failures);
-        if (!options.AllowedWorkTypes.Contains("WIRE_TO_GATE", StringComparer.Ordinal))
-            failures.Add("AllowedWorkTypes must explicitly include WIRE_TO_GATE.");
         if (!options.AllowedDispatchZones.Contains(options.DispatchZone, StringComparer.Ordinal))
             failures.Add("AllowedDispatchZones must explicitly include DispatchZone.");
         ValidateFleet(options, failures);

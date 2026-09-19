@@ -95,4 +95,10 @@ public enum CreateGateVerdict
     /// overrides the other.
     /// </summary>
     BlockedEvidenceConflict,
+
+    /// <summary>
+    /// The demand's frozen <c>Map + TASK_TYPE</c> is held (control-server#160, REQ-0345): a leg not yet created
+    /// waits for the hold to be released. Decided before RIoT is asked, so it carries no RIoT evidence.
+    /// </summary>
+    BlockedTaskTypeHeld,
 }

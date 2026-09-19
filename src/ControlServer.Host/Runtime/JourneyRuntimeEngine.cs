@@ -15,6 +15,7 @@ using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.TaskTypeStations;
 
 namespace ControlServer.Host.Runtime;
 
@@ -25,6 +26,7 @@ public sealed class JourneyRuntimeEngine(
     IRiotMapStationCatalog mapStationCatalog,
     MapStationResolver stationResolver,
     IFixedTaskStationResolver fixedStationResolver,
+    TaskTypeStationAccess taskTypeStations,
     JourneyIntakeCoordinator intakeCoordinator,
     MovementDispatchService movementDispatch,
     WireToGateStore store,
@@ -138,6 +140,8 @@ public sealed class JourneyRuntimeEngine(
 
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
+    private readonly TaskTypeStationAccess _taskTypeStations = taskTypeStations;
+
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
     {
         if (!runtimeOptions.Enabled)
@@ -152,10 +156,10 @@ public sealed class JourneyRuntimeEngine(
         {
             currentMap = await mapStationCatalog.ReadMapStationsAsync(
                 runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);
-            // Once per round, so that every candidate is judged against the same bindings. A resolver
-            // that cannot use the Map at all throws StationResolutionException, recorded below as the
-            // catalog-level failure it always was; one task type it cannot resolve is a refusal on
-            // that task type's candidates only.
+            // Once per round, so that every candidate is judged against the same rules and bindings. A fixed
+            // station missing from the Map is not a catalog failure (control-server#160, REQ-0342): the view
+            // refuses the task type bound to it and nothing else, so journeys under way and every other task type
+            // go on. Only a resolver that cannot use the Map at all throws StationResolutionException.
             fixedStations = await fixedStationResolver.ReadForRoundAsync(currentMap, cancellationToken)
                 .ConfigureAwait(false);
             machineStations = stationResolver.ParseAreaNamedMachineStations(currentMap);
@@ -179,8 +183,9 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        // Read whole, fixed stations read, machine stations parsed: this is what a complete
-        // confirmation is, and the only thing freshness is measured from.
+        // Read whole and machine stations parsed: this is what a complete confirmation is, and the only thing
+        // freshness is measured from. Whether some task type's fixed station is in it does not enter into it
+        // (REQ-0302); that is the task type's own admission question.
         await catalogAvailability.RecordConfirmationAsync(currentMap, cancellationToken)
             .ConfigureAwait(false);
 
@@ -199,12 +204,18 @@ public sealed class JourneyRuntimeEngine(
         bool admissionPolicyDrifted = false;
         try
         {
+            // Each area-named station is paired with the task types whose AREA end is the pickup -- the rule's fixed
+            // end is the destination -- and that this build can execute (control-server#160). Today that is
+            // WIRE_TO_GATE alone, so the relations and their content hash are exactly what they were before the rules
+            // existed, and an upgraded deployment does not drift.
+            string[] seededTaskTypes = await AdmissionSeedTaskTypesAsync(cancellationToken).ConfigureAwait(false);
             await store.ApplyAdmissionPolicyAsync(
                 new AdmissionPolicyDefinition(
                     runtimeOptions.AdmissionPolicyVersion,
                     runtimeOptions.AdmissionPolicyDeploymentId,
                     liveStationNames
-                        .Select(stationName => new StationTaskTypeAdmission(stationName, "WIRE_TO_GATE"))
+                        .SelectMany(stationName => seededTaskTypes
+                            .Select(taskType => new StationTaskTypeAdmission(stationName, taskType)))
                         .ToArray(),
                     timeProvider.GetUtcNow()),
                 cancellationToken).ConfigureAwait(false);
@@ -284,6 +295,33 @@ public sealed class JourneyRuntimeEngine(
 
         await DiscoverAndAcceptAsync(currentMap, fixedStations, free, admissionPolicyDrifted, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The task types the station admission seed carries: fixed end at the destination, so the AREA station is the
+    /// pickup, and executable by this build.
+    /// </summary>
+    /// <remarks>
+    /// Read from the rules the Map's active binding set was built on -- the same version the resolver judges the round
+    /// by -- not the latest one: a rule version written ahead of its binding set must not change the seed, which the
+    /// store would take for a policy drift and stop every acceptance on.
+    /// </remarks>
+    private async Task<string[]> AdmissionSeedTaskTypesAsync(CancellationToken cancellationToken)
+    {
+        TaskTypeStationBindingSetVersion? bindingSet = await _taskTypeStations.Bindings
+            .ReadActiveAsync(runtimeOptions.MapId, cancellationToken).ConfigureAwait(false);
+        TaskTypeStationRuleVersion? rules = bindingSet is null
+            ? await _taskTypeStations.Rules.ReadCurrentAsync(cancellationToken).ConfigureAwait(false)
+            : await _taskTypeStations.Rules.ReadVersionAsync(bindingSet.RuleVersion, cancellationToken)
+                .ConfigureAwait(false);
+        return
+        [
+            .. (rules?.Rules ?? [])
+                .Where(rule => string.Equals(rule.FixedEnd, TaskTypeFixedEnd.Destination, StringComparison.Ordinal)
+                    && ExecutableTaskTypes.Contains(rule.TaskType))
+                .Select(rule => rule.TaskType)
+                .Order(StringComparer.Ordinal)
+        ];
     }
 
     private async Task DiscoverAndAcceptAsync(
@@ -489,19 +527,11 @@ public sealed class JourneyRuntimeEngine(
         }
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
+        // REQ-0305: both endpoints are frozen from the snapshot that was fresh when the demand was taken -- by the
+        // store, inside the transaction that accepts it (control-server#160). Frozen here, ahead of the intake, an
+        // acceptance refused at the last moment left them behind, and after a rebinding the next attempt was
+        // refused a rewrite and failed every round for every task type.
         JourneyExecutionPlan plan = new JourneyPlanBuilder(runtimeOptions).CreatePlan(fleetVehicle, selected, intakeAt);
-        // REQ-0305: the endpoints are taken from the snapshot that was fresh when the demand was
-        // taken, and frozen there. Both ends, because both are stations this task will be sent to
-        // and a later rename of either must not reach the task that already exists. The store
-        // refuses to rewrite an endpoint it already holds rather than silently moving a
-        // destination.
-        await catalogStore.FreezeDemandStationsAsync(
-            selected.Snapshot.DemandId,
-            selected.Snapshot.TransportDemandKey,
-            JourneyPlanBuilder.FrozenStations(plan),
-            selected.CatalogRevision,
-            intakeAt,
-            cancellationToken).ConfigureAwait(false);
         OrderIntent pickup = JourneyPlanBuilder.PickupIntent(plan, selected.Snapshot.DemandId, intakeAt);
         // Taken before the call rather than after it: a candidate this vehicle is committing to
         // must stop being a candidate for the vehicles behind it in this round whatever the intake
@@ -2100,7 +2130,8 @@ public sealed class JourneyRuntimeEngine(
     /// <para>
     /// REQ-0305 asks for exactly three things before a move order that does not exist yet:
     /// the catalog must be usable, the frozen <c>mapId + stationId</c> must still be in it, and
-    /// RouteCost must pass. When any of them fails the new action is blocked and the reason
+    /// RouteCost must pass. REQ-0345 adds a fourth, asked before RIoT is: the demand's frozen
+    /// <c>Map + TASK_TYPE</c> must not be held. When any of them fails the new action is blocked and the reason
     /// recorded precisely — never resolved to another station, another Map, or a similar name.
     /// </para>
     /// <para>
@@ -2121,6 +2152,26 @@ public sealed class JourneyRuntimeEngine(
         {
             return new CreateGateOutcome(
                 CreateGateVerdict.BlockedCatalogNotFresh, availability.BlockReason, null);
+        }
+
+        // REQ-0344's last sentence and REQ-0345: a move order that does not exist yet waits while the demand's frozen
+        // Map + TASK_TYPE is held, whatever raised the hold. An order already created is not touched -- this is only
+        // ever asked before the gate leg is created. A journey accepted before control-server#160 froze no versions;
+        // it is judged as the WIRE_TO_GATE on the runtime's Map it was, the way the dropoff below falls back.
+        DemandTaskTypeStationFreeze? frozenVersions = await _taskTypeStations.Freezes
+            .ReadAsync(runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        string taskType = frozenVersions is null
+            ? TransportTaskTypes.WireToGate
+            : await dbContext.AcceptedDemands
+                .Where(row => row.DemandId == runtime.DemandId)
+                .Select(row => row.WorkType)
+                .SingleAsync(cancellationToken)
+                .ConfigureAwait(false);
+        TaskTypeHolds holds = await _taskTypeStations
+            .ReadHoldsAsync(frozenVersions?.MapId ?? runtime.MapId, cancellationToken).ConfigureAwait(false);
+        if (holds.Holds(taskType))
+        {
+            return new CreateGateOutcome(CreateGateVerdict.BlockedTaskTypeHeld, DispatchReasonCodes.TaskTypeHeld, null);
         }
 
         IReadOnlyList<FrozenStationFact> frozen = await catalogStore

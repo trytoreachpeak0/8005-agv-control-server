@@ -79,11 +79,6 @@ public sealed record TaskTypeStationConfiguration(
     IReadOnlyList<TaskTypeStationRule> Rules,
     TaskTypeStationMapConfiguration Map);
 
-/// <summary>
-/// 过渡期的旧配置标量 <c>JourneyRuntime:gateStationId</c>／<c>gateStationRiotId</c>。批次6-04 删掉标量时连同这条校验删除。
-/// </summary>
-public sealed record TransitionalGateStation(int StationRiotId, string StationName);
-
 /// <summary>一条违规：原因码、涉及的任务类型与站点（能说出时），以及给人看的明细。</summary>
 public sealed record TaskTypeStationViolation(
     string ReasonCode,
@@ -92,7 +87,7 @@ public sealed record TaskTypeStationViolation(
     string Detail);
 
 /// <summary>
-/// 校验器的原因码。前十一个在启动期拒绝，最后两个（目录相关）只让该任务类型不投运。
+/// 校验器的原因码。前十一个在启动期拒绝（control-server#160 删掉了过渡期的关卡标量校验），最后两个（目录相关）只让该任务类型不投运。
 /// </summary>
 public static class TaskTypeStationReasonCodes
 {
@@ -106,7 +101,6 @@ public static class TaskTypeStationReasonCodes
     public const string BindingIdentityInvalid = "TASK_TYPE_BINDING_IDENTITY_INVALID";
     public const string BindingAreaNamedStation = "TASK_TYPE_BINDING_AREA_NAMED_STATION";
     public const string BindingSiteVerificationMissing = "TASK_TYPE_BINDING_SITE_VERIFICATION_MISSING";
-    public const string BindingGateScalarMismatch = "TASK_TYPE_BINDING_GATE_SCALAR_MISMATCH";
     public const string BindingMapMismatch = "TASK_TYPE_BINDING_MAP_MISMATCH";
 
     public const string BindingStationNotInCatalog = "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG";

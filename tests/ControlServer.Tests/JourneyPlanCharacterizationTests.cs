@@ -48,8 +48,6 @@ public sealed class JourneyPlanCharacterizationTests
             [new RiotMapStation(12, "N1-1"), new RiotMapStation(210, "关卡")]);
         JourneyRuntimeOptions options = new()
         {
-            GateStationId = "关卡",
-            GateStationRiotId = 210,
             AllowedDispatchZones = ["MAP-25-WIRE_TO_GATE"],
         };
         AcceptedDemandSnapshot candidate = new(
@@ -73,7 +71,7 @@ public sealed class JourneyPlanCharacterizationTests
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot(candidate.HistoryEpoch, 21, [candidate]),
                 map,
-                new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
+                new SingleStationView(new RiotMapStation(210, "关卡")),
                 new HashSet<string>(StringComparer.Ordinal),
                 Now,
                 new VehicleDispatchPolicy(

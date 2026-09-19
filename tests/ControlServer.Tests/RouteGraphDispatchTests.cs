@@ -248,7 +248,7 @@ public sealed class RouteGraphDispatchTests
         DispatchRoundFacts round = new(
             new DemandCatalogSnapshot("EPOCH", 0, [candidate]),
             new RiotMapStationCatalogSnapshot(MapId, Origin, "sha", []),
-            new ConfiguredGateStationView(new RiotMapStation(pickupStation, "N1-3_N1-7")),
+            new SingleStationView(new RiotMapStation(pickupStation, "N1-3_N1-7")),
             new HashSet<string>(),
             Origin,
             EmptyPolicy);
