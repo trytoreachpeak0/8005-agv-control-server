@@ -496,7 +496,10 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
             row.RaisedBy, row.ReleasedAt, row.ReleasedBy);
 }
 
-/// <summary>目录变化记录的存取（REQ-0341、REQ-0342），按 <c>(MapId, StationRiotId, CatalogRevision)</c> 去重。</summary>
+/// <summary>
+/// 目录变化记录的存取（REQ-0341、REQ-0342），按 <c>(MapId, StationRiotId, CatalogRevision)</c> 去重；同一站点在同一条暂停下的
+/// 同一个变化（种类与现名称都相同），修订因地图别处改动而变了也不再记（control-server#201）。
+/// </summary>
 public sealed class TaskTypeStationCatalogChangeStore(ControlServerDbContext context)
     : ITaskTypeStationCatalogChangeStore
 {
@@ -513,7 +516,8 @@ public sealed class TaskTypeStationCatalogChangeStore(ControlServerDbContext con
         ArgumentNullException.ThrowIfNull(change.PreviousStationName);
         ArgumentNullException.ThrowIfNull(change.AffectedTaskTypes);
 
-        TaskTypeStationCatalogChangeRow? existing = await FindAsync(change, cancellationToken);
+        TaskTypeStationCatalogChangeRow? existing = await FindAsync(change, cancellationToken)
+            ?? await FindSameChangeAsync(change, cancellationToken);
         if (existing is not null)
         {
             return Project(existing);
@@ -583,6 +587,42 @@ public sealed class TaskTypeStationCatalogChangeStore(ControlServerDbContext con
                     && row.StationRiotId == change.StationRiotId
                     && row.CatalogRevision == change.CatalogRevision,
                 cancellationToken);
+
+    /// <summary>
+    /// The station's latest record under the same hold, when it already says what this one says (control-server#201).
+    /// </summary>
+    /// <remarks>
+    /// The revision is the whole Map's content hash, so an edit to a station no binding names changes it as well; the
+    /// revision alone would record one change again on every such edit. The same station, the same kind, the same
+    /// current name and the same unreleased hold is the same change. Anything else is a new one: the change itself
+    /// moved on (renamed again, or removed after a rename), or the hold it stood under was released and another raised.
+    /// </remarks>
+    private async Task<TaskTypeStationCatalogChangeRow?> FindSameChangeAsync(
+        TaskTypeStationCatalogChange change,
+        CancellationToken cancellationToken)
+    {
+        if (change.HoldId is null)
+        {
+            return null;
+        }
+        TaskTypeStationCatalogChangeRow[] underSameHold = await _context.Set<TaskTypeStationCatalogChangeRow>()
+            .AsNoTracking()
+            .Where(row => row.MapId == change.MapId
+                && row.StationRiotId == change.StationRiotId
+                && row.HoldId == change.HoldId)
+            .ToArrayAsync(cancellationToken);
+        if (underSameHold.Length == 0)
+        {
+            return null;
+        }
+        // Ordered in memory: SQLite cannot ORDER BY a DateTimeOffset.
+        DateTimeOffset latest = underSameHold.Max(row => row.ObservedAt);
+        return underSameHold
+            .Where(row => row.ObservedAt == latest)
+            .OrderBy(row => row.ChangeId, StringComparer.Ordinal)
+            .FirstOrDefault(row => row.ChangeKind == change.ChangeKind
+                && string.Equals(row.CurrentStationName, change.CurrentStationName, StringComparison.Ordinal));
+    }
 
     private static TaskTypeStationCatalogChange Project(TaskTypeStationCatalogChangeRow row) =>
         new(row.ChangeId, row.MapId, row.StationRiotId, row.PreviousStationName, row.CurrentStationName, row.ChangeKind,
