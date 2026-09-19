@@ -300,14 +300,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // could not open a recovery session at all, for any vector.
         //
         // This can only move a session from Ready to RecoveryRequired, never the other way.
-        bool operationNeedsRecovery = await dbContext.StationOperations
-            .Join(dbContext.JourneyRuntimes,
-                operation => operation.DemandId,
-                runtime => runtime.DemandId,
-                (operation, runtime) => new { operation, runtime })
+        // The operation's demand is found in its journey through the demand memberships (control-server#207): an
+        // operation of any demand the vehicle carries holds it, not only one of the journey row's anchor demand.
+        bool operationNeedsRecovery = await OperationsOnJourneys()
             .AnyAsync(
-                pair => pair.runtime.AgvId == agvId &&
-                        pair.operation.Status == StationOperationStatus.RecoveryRequired,
+                pair => pair.Runtime.AgvId == agvId &&
+                        pair.Operation.Status == StationOperationStatus.RecoveryRequired,
                 cancellationToken).ConfigureAwait(false);
         // REQ-0241/0242 and ADR-cross-0036 (control-server#137). A forced mechanical recovery settles the
         // cargo's business and the operation it was about, and with that every input above can say "fine" --
@@ -1503,11 +1501,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         });
         dbContext.StopClosures.Add(new StopClosureRow { DemandId = demandId, CommittedAt = completedAt });
         demand.Status = DemandExecutionStatus.Succeeded;
-        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
-            .SingleAsync(row => row.DemandId == demandId, cancellationToken)
+        // The lease and the purpose claim go when the journey's last open demand ends (control-server#207), decided inside
+        // this write transaction; with one demand that is this one, in this save, as before.
+        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, demandId, completedAt, cancellationToken)
             .ConfigureAwait(false);
-        lease.ReleasedAt ??= completedAt;
-        await VehiclePurposeClaimRelease.StageAsync(dbContext, lease, cancellationToken).ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = transportDemandKey,
@@ -2069,11 +2066,10 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             CommittedAt = result.ObservedAt
         });
         demand.Status = DemandExecutionStatus.Succeeded;
-        VehicleDispatchLeaseRow lease = await dbContext.VehicleDispatchLeases
-            .SingleAsync(row => row.DemandId == result.DemandId, cancellationToken)
+        // As in CompleteDemandAfterUnloadAsync: released only for the journey's last open demand (control-server#207). This
+        // runs inside the inbox's write transaction, which is where "the last" has to be read.
+        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, result.DemandId, result.ObservedAt, cancellationToken)
             .ConfigureAwait(false);
-        lease.ReleasedAt ??= result.ObservedAt;
-        await VehiclePurposeClaimRelease.StageAsync(dbContext, lease, cancellationToken).ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = demand.TransportDemandKey,
@@ -2837,16 +2833,34 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // The probe used to ask whether any operation anywhere was Prepared, so one vehicle mid-load
         // handed every other vehicle an exemption it had not earned: an idle vehicle standing with a
         // door ajar read Ready for as long as any vehicle in the fleet held a slot open.
-        return await dbContext.StationOperations
-            .Join(dbContext.JourneyRuntimes,
-                operation => operation.DemandId,
-                runtime => runtime.DemandId,
-                (operation, runtime) => new { operation, runtime })
+        return await OperationsOnJourneys()
             .AnyAsync(
-                pair => pair.runtime.AgvId == row.AgvId &&
-                        pair.operation.Status == StationOperationStatus.Prepared,
+                pair => pair.Runtime.AgvId == row.AgvId &&
+                        pair.Operation.Status == StationOperationStatus.Prepared,
                 cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Every station operation with the journey that carries its demand, joined through the demand memberships
+    /// (<see cref="DemandJourneyLookup"/>, control-server#207) rather than the journey row's anchor demand.
+    /// </summary>
+    private IQueryable<OperationOnJourney> OperationsOnJourneys() =>
+        dbContext.StationOperations
+            .Join(DemandJourneyLookup.Memberships(dbContext),
+                operation => operation.DemandId,
+                membership => membership.DemandId,
+                (operation, membership) => new { operation, membership.JourneyId })
+            .Join(dbContext.JourneyRuntimes,
+                pair => pair.JourneyId,
+                runtime => runtime.JourneyId,
+                (pair, runtime) => new OperationOnJourney { Operation = pair.operation, Runtime = runtime });
+
+    // Member-initialised rather than positional: EF translates a filter on the members of the first, not of the second.
+    private sealed class OperationOnJourney
+    {
+        public required StationOperationRow Operation { get; init; }
+        public required JourneyRuntimeRow Runtime { get; init; }
     }
 
     private static string GetRecoveryReason(

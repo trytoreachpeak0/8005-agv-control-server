@@ -357,10 +357,13 @@ public sealed class JourneyRuntimeEngine(
                           row.Status != DemandExecutionStatus.Cancelled)
             .Select(row => row.DemandId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        string[] runtimeDemandIds = await dbContext.JourneyRuntimes
+        // A demand is carried by a journey when a membership in force says so (control-server#207), not when a journey
+        // row names it: a demand added to a journey has no row of its own. A journey whose demands have all ended is no
+        // orphan either -- none of them is unresolved -- and the next round closes it.
+        string[] memberDemandIds = await DemandJourneyLookup.Memberships(dbContext)
             .Select(row => row.DemandId)
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
-        string[] orphaned = unresolvedDemandIds.Except(runtimeDemandIds, StringComparer.Ordinal).ToArray();
+        string[] orphaned = unresolvedDemandIds.Except(memberDemandIds, StringComparer.Ordinal).ToArray();
         if (orphaned.Length > 0)
         {
             throw new BusinessIdentityConflictException(

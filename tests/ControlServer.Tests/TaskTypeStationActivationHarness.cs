@@ -160,7 +160,10 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
             CatalogRevision = 1,
             FrozenAt = Now.AddHours(-1)
         });
-        context.JourneyRuntimes.Add(Journey(demandId, JourneyRuntimeStage.AwaitingGateArrival));
+        JourneyRuntimeRow journey = Journey(demandId, JourneyRuntimeStage.AwaitingGateArrival);
+        context.JourneyRuntimes.Add(journey);
+        // control-server#207: acceptance writes the demand's membership beside the journey row.
+        context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(journey));
         context.OrderIntents.Add(new OrderIntentRow
         {
             MovementLegId = $"gate-leg-{demandId}",

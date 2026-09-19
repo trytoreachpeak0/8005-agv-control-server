@@ -695,7 +695,7 @@ public sealed class WireToGateStoreTests
         /// <summary>The journey that carries <paramref name="demandId"/> on <paramref name="agvId"/>.</summary>
         public async Task AddJourneyAsync(string demandId, string agvId)
         {
-            Context.JourneyRuntimes.Add(new JourneyRuntimeRow
+            JourneyRuntimeRow journey = new()
             {
                 JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
                 DemandId = demandId,
@@ -737,7 +737,10 @@ public sealed class WireToGateStoreTests
                 UnloadSlotOperationAttemptId = $"unload-attempt-{demandId}",
                 CreatedAt = Now,
                 UpdatedAt = Now
-            });
+            };
+            Context.JourneyRuntimes.Add(journey);
+            // control-server#207: acceptance writes the demand's membership beside the journey row.
+            Context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(journey));
             await Context.SaveChangesAsync(CancellationToken);
         }
 
