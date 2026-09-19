@@ -263,7 +263,14 @@ public sealed class GovernanceStore : IConfigurationSnapshotStore, IGovernanceAu
         }
         catch
         {
-            _context.Entry(row).State = EntityState.Detached;
+            try
+            {
+                _context.Entry(row).State = EntityState.Detached;
+            }
+            catch (ObjectDisposedException)
+            {
+                // A disposed context tracks nothing any more; the save's own failure is the one to report.
+            }
             throw;
         }
     }
