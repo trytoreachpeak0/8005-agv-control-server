@@ -313,6 +313,46 @@ public sealed class ReversedDirectionJourneyRuntimeTests
     }
 
     /// <summary>
+    /// control-server#198 item 8: the count is from the first hold, and a session lost and regained on the way does not
+    /// start it again. While the session is down the stop is still held for the same reason, so the hold is kept rather
+    /// than overwritten by ONBOARD_SESSION_NOT_READY, the way a Blocked journey keeps the recovery it waits on. Restarted
+    /// at every reconnect, a link that drops more often than the threshold would keep the loaded vehicle waiting for ever.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ASessionLostAndRegainedWhileHeldDoesNotRestartTheCount()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await ArriveAtTheMachineAsync(fixture);
+        await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.DropOnboardSessionAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingGateArrival, "TASK_TYPE_NOT_ALLOWED_AT_STATION", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+
+        await fixture.RestoreSessionReadyAsync();
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        fixture.Clock.Advance(TimeSpan.FromMinutes(4));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+    }
+
+    /// <summary>
     /// control-server#198 item 8: admitted again inside the threshold, the journey goes on as it always did -- the unload
     /// is commanded and frozen under the admission -- and the count is gone with the hold. Up to the threshold nothing
     /// is escalated: a second short of it the journey is still waiting at the machine.
