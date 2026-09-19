@@ -121,6 +121,29 @@ public sealed class JourneyRuntimeOptionsTests
                 .GetMethod("ValidateStatic")!.GetParameters().Length);
     }
 
+    /// <summary>
+    /// 出厂配置的 <c>allowedWorkTypes</c> 列全六类：放不放行交给规则表与本图绑定（control-server#160）。只列
+    /// <c>WIRE_TO_GATE</c> 的话，一条未绑定的 <c>STAGING_TO_WIRE</c> 需求会被笼统挡成范围外，而不是报缺绑定。
+    /// 部署仍可以收窄它，收窄掉的任务类型报 <c>OUT_OF_SCOPE_WORK_TYPE</c>。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public void TheShippedAllowListNamesAllSixTaskTypesSoTheBindingsDecide()
+    {
+        using System.Text.Json.JsonDocument settings = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "ControlServer.Host", "appsettings.json")));
+
+        string[] allowed =
+        [
+            .. settings.RootElement.GetProperty("JourneyRuntime").GetProperty("allowedWorkTypes").EnumerateArray()
+                .Select(item => item.GetString()!)
+        ];
+
+        Assert.Equal(
+            ControlServer.Application.TransportTaskTypes.All.Order(StringComparer.Ordinal),
+            allowed.Order(StringComparer.Ordinal));
+    }
+
     private static string RepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
