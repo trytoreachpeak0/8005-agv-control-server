@@ -1,7 +1,14 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Composition;
+using ControlServer.Host.Runtime;
+using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace ControlServer.Tests;
 
@@ -1148,6 +1155,79 @@ public sealed class TaskTypeStationActivationTests
         Assert.Null(await harness.Default().Bindings.ReadVersionAsync(25, 2, Token));
     }
 
+    // ======== control-server#191: follow-ups of PR #183 review round 3 ========
+
+    /// <summary>
+    /// cs#191 第 1 条：从墓碑出发、需求集为空的激活在两步之间中断，没有暂停可还原它的来历。对账读回「原版本在用」时回到墓碑，
+    /// 不删指针行；重启后预置不生效，该图仍无生效版本，等 FieldOps 激活或回滚。
+    /// </summary>
+    [Fact]
+    public async Task AnInterruptedActivationOfAnEmptyRequirementSetFromATombstoneReconcilesBackToTheTombstoneAndARestartKeepsThePresetOut()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        await CloseAfterAContradictionAsync(harness);
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying))
+            .ActivateAsync(TaskTypeStationActivationHarness.Candidate());
+        Assert.StartsWith("25|<null>|ACTIVATION_UNKNOWN|", await harness.PointerRowAsync(), StringComparison.Ordinal);
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now.AddMinutes(1), Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled.Conclusion);
+        Assert.Equal("25|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+
+        List<string> logs = await RestartWithPresetAsync(harness, 25);
+
+        Assert.Equal("25|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+        Assert.Null(await harness.Default().Bindings.ReadActiveAsync(25, Token));
+        Assert.Contains(logs, line => line.Contains("not applied", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 同一台重新起的服务端：在 <paramref name="harness"/> 的库文件上，带一份把 <c>WIRE_TO_GATE</c> 绑到 210 的预置，跑一遍启动装载。
+    /// 返回启动写的每一行日志。
+    /// </summary>
+    private static async Task<List<string>> RestartWithPresetAsync(TaskTypeStationActivationHarness harness, int mapId)
+    {
+        string presetPath = Path.Combine(Path.GetDirectoryName(harness.DatabasePath)!, TaskTypeStationPreset.FileName);
+        await File.WriteAllTextAsync(presetPath, System.Text.Json.JsonSerializer.Serialize(new
+        {
+            TaskTypeStations = new
+            {
+                rules = TaskTypeStationTestData.SixRules.Select(rule => new { taskType = rule.TaskType, fixedEnd = rule.FixedEnd }),
+                mapId,
+                requiredTaskTypes = new[] { TransportTaskTypes.WireToGate },
+                bindings = new[]
+                {
+                    new
+                    {
+                        taskType = TaskTypeStationActivationHarness.Gate.TaskType,
+                        stationRiotId = TaskTypeStationActivationHarness.Gate.StationRiotId,
+                        stationName = TaskTypeStationActivationHarness.Gate.StationName,
+                        siteVerificationRef = TaskTypeStationActivationHarness.Gate.SiteVerificationRef
+                    }
+                }
+            }
+        }), Token);
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [TaskTypeStationPreset.SettingsFileKey] = presetPath })
+            .Build();
+        List<string> logs = [];
+        ServiceCollection services = new();
+        services.AddLogging(logging => logging.AddProvider(new LineCapturingLoggerProvider(logs)));
+        services.AddSingleton(configuration);
+        services.AddSingleton(Options.Create(new JourneyRuntimeOptions { Enabled = true, MapId = mapId }));
+        services.AddDbContext<ControlServerDbContext>(options =>
+            options.UseSqlite(ControlServerSqlite.ForDatabaseFile(harness.DatabasePath, readOnly: false)));
+        services.AddGovernance(configuration);
+        services.AddTaskTypeStations();
+        await using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await TaskTypeStationStartup.EnsureAsync(provider, Token);
+        return logs;
+    }
+
     private static async Task CloseAfterAContradictionAsync(TaskTypeStationActivationHarness harness)
     {
         ControlServerDbContext dying = harness.NewContext();
@@ -1343,5 +1423,33 @@ internal sealed class SaveFault(Exception toThrow, int failOnSave) : Microsoft.E
             throw toThrow;
         }
         return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
+}
+
+/// <summary>Collects every formatted log line, in order, for a startup run against the harness's database.</summary>
+internal sealed class LineCapturingLoggerProvider(List<string> lines) : ILoggerProvider
+{
+    public ILogger CreateLogger(string categoryName) => new LineCapturingLogger(lines);
+
+    public void Dispose()
+    {
+    }
+
+    private sealed class LineCapturingLogger(List<string> lines) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (lines)
+            {
+                lines.Add(formatter(state, exception));
+            }
+        }
     }
 }
