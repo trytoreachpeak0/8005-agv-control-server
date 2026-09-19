@@ -62,7 +62,9 @@ function Get-Intent([string]$DemandId, [string]$Purpose) {
 function Get-Payloads([string]$MessageType) {
     $rows = Invoke-L2Query -Connection $connection `
         -Sql "SELECT PayloadJson FROM ProtocolOutbox WHERE MessageType = '$MessageType' ORDER BY CreatedAt, MessageId"
-    return , @($rows | ForEach-Object { ([string]$_.PayloadJson | ConvertFrom-Json -Depth 20).payload })
+    # Unrolled, not `return ,`: callers pipe this, and a wrapped array reaches Where-Object as one object whose
+    # stationId and items are every snapshot's at once (the first run of this scenario failed on exactly that).
+    return @($rows | ForEach-Object { ([string]$_.PayloadJson | ConvertFrom-Json -Depth 20).payload })
 }
 
 function Get-Admissions([string]$DemandId) {
