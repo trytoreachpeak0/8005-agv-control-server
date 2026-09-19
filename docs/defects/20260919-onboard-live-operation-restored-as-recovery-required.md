@@ -1,6 +1,6 @@
 # 缺陷：车载端把正在执行的装货当成遗留操作，每条 SessionReadiness 都给它发 RecoveryRequired 投影，期待动作超时告警一出现就被撤下
 
-Status: open（修复票 [onboard-hmi#120](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/120)）
+Status: fixed（修复票 [onboard-hmi#120](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/120)，合入 `w2g/fp-v2-impl@7ded1b70`；真装置复验见 control-server#167）
 Owner repository: `8005-agv-onboard-hmi`
 Found by: 真装置 L2 场景 `real-onboard-expected-action-overdue`（control-server#167）本机跑
 `C:\Users\szy\Desktop\8005-workspace-v2\evidence\cs167\red-product-3547a97-001\SUMMARY.md`
@@ -110,4 +110,4 @@ OperationResult暂未收到DurableAck：attempt=529547f5-… | InvalidOperationE
 ## 后续
 
 - 修复票：[onboard-hmi#120](https://github.com/trytoreachpeak0/8005-agv-onboard-hmi/issues/120)（车载端）；断链重连互相等另见 [control-server#189](https://github.com/trytoreachpeak0/8005-agv-control-server/issues/189)。
-- control-server#167 的场景保持红，onboard-hmi#120 合入后在含修复的车载端提交上取正式 PASS 与红证据。
+- onboard-hmi#120 已合入（`7ded1b70`，已满足）。control-server#167 在含修复的车载端提交上取正式 PASS 与红证据。
