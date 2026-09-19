@@ -310,7 +310,9 @@ public sealed record JourneyExecutionPlan(
     long DispatchGeneration,
     DateTimeOffset CreatedAt,
     long? AreaAssignmentVersion = null,
-    string? RequiredSlotPosition = null);
+    string? RequiredSlotPosition = null,
+    long? TaskTypeStationRuleVersion = null,
+    long? TaskTypeStationBindingSetVersion = null);
 
 public enum ConnectionRecoveryStatus
 {
