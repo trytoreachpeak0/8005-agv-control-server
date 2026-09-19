@@ -1776,6 +1776,623 @@ public sealed class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// control-server#175. Session A took the same action twice; the first result did not reconcile and closed A,
+    /// and the administrator is now working the demand in session B. The second result of A then arrives. Whether
+    /// it concludes success or not, it is the record of A's own attempt and nothing more: it is acknowledged and
+    /// kept as evidence, and the demand, the journey, the lease, the vehicle, the operation and session B are
+    /// exactly as B has them. One warning names the late result for a person to reconcile by hand.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    [InlineData("COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY")]
+    [InlineData("FAULT_CARGO_HANDOFF", "HANDED_OFF")]
+    [InlineData("FAULT_CARGO_HANDOFF", "FAILED")]
+    public async Task ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(
+        string action,
+        string lateOutcome)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_WHILE_NEXT_EXECUTES";
+        const string proof = "late-while-next-executes-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
+                action, lateOutcome, processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
+            clock.Current = Now.AddMinutes(1);
+            string nextSessionId = await OpenNextSessionAndHandOffAsync(processor, state, proof);
+            BusinessPicture before = await BusinessPictureAsync(context);
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, before.Demand);
+            Assert.Equal(JourneyRuntimeStage.Blocked, before.Stage);
+            Assert.Contains($"{nextSessionId}:EXECUTING:", before.Sessions, StringComparison.Ordinal);
+            int logsBefore = log.Entries.Count;
+            clock.Current = Now.AddMinutes(2);
+
+            string ack = await processor.ProcessAsync(late, state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Null((await context.VehicleDispatchLeases.AsNoTracking().SingleAsync(token)).ReleasedAt);
+            await AssertLateResultRecordedAsync(context, firstSessionId, late, lateOutcome, Now.AddMinutes(2));
+            Assert.Equal(logsBefore + 1, log.Entries.Count);
+            AssertSingleLateResultLog(log, firstSessionId, SecondActionId, lateOutcome);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#175, decided by the user on 2026-09-19. A late success that arrives after A closed and before
+    /// anyone opened B is still only recorded: the demand stays RecoveryRequired and the journey blocked, and the
+    /// administrator opens B as usual -- a handoff or compensation there proves the slots empty again, one step
+    /// more, accepted.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ALateSuccessOfAClosedSessionBeforeTheNextOneOpensLeavesTheDemandToIt()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_BEFORE_NEXT";
+        const string proof = "late-before-next-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
+                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
+            BusinessPicture before = await BusinessPictureAsync(context);
+            clock.Current = Now.AddMinutes(1);
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(late, state, token)));
+
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, before.Demand);
+            Assert.Equal(JourneyRuntimeStage.Blocked, before.Stage);
+            await AssertLateResultRecordedAsync(context, firstSessionId, late, "ALL_EMPTY", Now.AddMinutes(1));
+            AssertSingleLateResultLog(log, firstSessionId, SecondActionId, "ALL_EMPTY");
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#175. Session B has already settled the demand -- a compensation proved every slot empty,
+    /// the demand is Cancelled, the journey Completed under CANCELLED_BY_LOAD_COMPENSATION, the vehicle released
+    /// -- when A's second handoff reports HANDED_OFF, late. B's ending stands as B wrote it: reason, times and
+    /// releases included. Before #175 the late handoff ended the journey a second time under its own reason and
+    /// clock.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    public async Task ALateSuccessOfAClosedSessionDoesNotRewriteTheEndingTheNextSessionGaveTheDemand()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_AFTER_NEXT_SETTLED";
+        const string proof = "late-after-next-settled-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
+                "FAULT_CARGO_HANDOFF", "HANDED_OFF", processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
+            clock.Current = Now.AddMinutes(1);
+            await CompensateAllEmptyInNextSessionAsync(processor, state, proof);
+            BusinessPicture settled = await BusinessPictureAsync(context);
+            Assert.Equal(DemandExecutionStatus.Cancelled, settled.Demand);
+            Assert.Equal(JourneyRuntimeStage.Completed, settled.Stage);
+            Assert.Equal("CANCELLED_BY_LOAD_COMPENSATION", settled.BlockReasonCode);
+            Assert.Equal(Now.AddMinutes(1), settled.LeaseReleasedAt);
+            Assert.Equal(Now.AddMinutes(1), settled.OccupancyReleasedAt);
+            clock.Current = Now.AddMinutes(2);
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(late, state, token)));
+
+            Assert.Equal(settled, await BusinessPictureAsync(context));
+            await AssertLateResultRecordedAsync(context, firstSessionId, late, "HANDED_OFF", Now.AddMinutes(2));
+            AssertSingleLateResultLog(log, firstSessionId, SecondActionId, "HANDED_OFF");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#175. Session B resumed the load after repair, the replacement result committed it, and the
+    /// journey went on to deliver: the demand Succeeded. A's second handoff then reports HANDED_OFF, late. Before
+    /// #175 that result tried to end a delivered demand at its pickup stop, PickupStopTermination refused with
+    /// BusinessIdentityConflictException, the whole message rolled back, and the vehicle never got an
+    /// acknowledgement for it however often it resent. It is acknowledged and recorded now, and the delivery
+    /// stands.
+    /// </summary>
+    /// <remarks>
+    /// The journey's run from the committed load to the delivered unload is the runtime's, not the recovery
+    /// coordinator's; it is written here as the runtime leaves it when the unload commits (demand Succeeded,
+    /// journey Completed, lease released, the demand's completion recorded) rather than driven through it.
+    /// </remarks>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    public async Task ALateSuccessOfAClosedSessionIsAcknowledgedAfterTheDemandWasDelivered()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_AFTER_DELIVERY";
+        const string proof = "late-after-delivery-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
+                "FAULT_CARGO_HANDOFF", "HANDED_OFF", processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
+
+            // Session B resumes the load after repair, and the replacement result commits it.
+            clock.Current = Now.AddMinutes(1);
+            string nextSessionId = StableGuid("41000000-0000-4000-8000-000000000169", "exception-recovery-session");
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            JsonNode resume = JsonNode.Parse(RecoveryAction(
+                "RESUME_AFTER_REPAIR", messageId: "e0000000-0000-4000-8000-000000001753",
+                actionId: NextSessionActionId))!;
+            resume["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
+            Assert.Equal("RecoveryActionAccepted",
+                MessageType(await processor.ProcessAsync(resume.ToJsonString(), state, token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001754",
+                    "OperationResult",
+                    OperationResultPayload(journalCheckpoint: "RESUME_AFTER_REPAIR_RESULT_RECORDED")),
+                state,
+                token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.SingleAsync(token)).Status);
+
+            // The journey then delivers.
+            clock.Current = Now.AddMinutes(5);
+            AcceptedDemandRow demand = await context.AcceptedDemands.SingleAsync(token);
+            demand.Status = DemandExecutionStatus.Succeeded;
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
+            runtime.Stage = JourneyRuntimeStage.Completed;
+            runtime.SetBlockReason(null, clock.Current);
+            runtime.UpdatedAt = clock.Current;
+            (await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt = clock.Current;
+            (await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token))
+                .VehicleOccupancyReleasedAt = clock.Current;
+            context.TransportDemandCompletions.Add(new TransportDemandCompletionRow
+            {
+                TransportDemandKey = demand.TransportDemandKey,
+                DemandId = demand.DemandId,
+                DemandRevision = demand.DemandRevision,
+                Evidence = new string('b', 64),
+                CompletedAt = clock.Current
+            });
+            await context.SaveChangesAsync(token);
+            BusinessPicture delivered = await BusinessPictureAsync(context);
+            clock.Current = Now.AddMinutes(6);
+
+            string ack = await processor.ProcessAsync(late, state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(delivered, await BusinessPictureAsync(context));
+            Assert.Equal(DemandExecutionStatus.Succeeded, delivered.Demand);
+            Assert.Equal(StationOperationStatus.Committed, delivered.Operation);
+            await AssertLateResultRecordedAsync(context, firstSessionId, late, "HANDED_OFF", Now.AddMinutes(6));
+            AssertSingleLateResultLog(log, firstSessionId, SecondActionId, "HANDED_OFF");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#175. The vehicle resends a late result it has no acknowledgement for: on the same connection,
+    /// after the server restarted, and rebound into the next session generation after a reconnect. Each resend is
+    /// answered from the first judgement -- the same DurableAck for the same line -- and adds no evidence, no
+    /// workflow change and no second warning; the business stays where session B has it.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task AResentLateResultOfAClosedSessionIsAnsweredFromTheFirstAcrossRestartAndReconnect()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_RESENT";
+        const string proof = "late-resent-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
+                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
+            clock.Current = Now.AddMinutes(1);
+            await OpenNextSessionAndHandOffAsync(processor, state, proof);
+            BusinessPicture before = await BusinessPictureAsync(context);
+            clock.Current = Now.AddMinutes(2);
+            string firstAck = await processor.ProcessAsync(late, state, token);
+            Assert.Equal("DurableAck", MessageType(firstAck));
+            clock.Current = Now.AddMinutes(3);
+
+            Assert.Equal(firstAck, await processor.ProcessAsync(late, state, token));
+
+            // The server restarts: a new context and processor over the same store.
+            await using ControlServerDbContext restarted = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
+            OnboardMessageProcessor afterRestart = TestOnboardProcessorFactory.Create(
+                restarted, new WireToGateStore(restarted), clock, Configuration(proofVariable),
+                new RecordingPeer(restarted), recoveryLogger: log);
+            Assert.Equal(firstAck, await afterRestart.ProcessAsync(late, state, token));
+
+            // The vehicle reconnects into generation 4 and resends the same result rebound to it.
+            await AdvanceSessionGenerationAsync(restarted, state, 4);
+            JsonNode rebound = JsonNode.Parse(late)!;
+            rebound["sessionGeneration"] = 4;
+            Assert.Equal("DurableAck", MessageType(await afterRestart.ProcessAsync(rebound.ToJsonString(), state, token)));
+
+            Assert.Equal(before, await BusinessPictureAsync(restarted));
+            await AssertLateResultRecordedAsync(restarted, firstSessionId, late, "ALL_EMPTY", Now.AddMinutes(2));
+            Assert.Equal(2, await restarted.RecoveryResultEvidence.CountAsync(token));
+            AssertSingleLateResultLog(log, firstSessionId, SecondActionId, "ALL_EMPTY");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#175, the forced recovery's way in, and why it was already closed. A session cannot change
+    /// action, so a late forced result needs A to have forced twice. Each forced action advances the vehicle's
+    /// forced generation, and only the result of the newest generation is current -- so the one that closes A is
+    /// the second, and the first, arriving afterwards, is HistoricalOnly: kept as evidence, the business and
+    /// session B untouched, and no late-result warning, since it never reached the judgement at all. Session B
+    /// hands off here; had B forced too, its generation would make any of A's results historical the same way.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    public async Task ALateForcedRecoveryOfAClosedSessionIsHistoricalAndSettlesNothing()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_FORCED";
+        const string proof = "late-forced-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            WireToGateStore store = new(context);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, store, new FixedTimeProvider(Now), Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token)));
+            await store.ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000000175", forcedRecoveryGeneration: 1,
+                AttemptId, "PREPARED", [], [AttemptId], [], token);
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                RecoveryAction("FORCED_MECHANICAL_RECOVERY", messageId: "e0000000-0000-4000-8000-000000001755",
+                    actionId: SecondActionId), state, token)));
+            await store.ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000000176", forcedRecoveryGeneration: 2,
+                AttemptId, "PREPARED", [], [AttemptId], [], token);
+            JsonNode closing = JsonNode.Parse(MechanicallyIsolatedResult(
+                generation: 2, messageId: "80000000-0000-4000-8000-000000000175", outcome: "FAILED"))!;
+            closing["payload"]!["recoveryActionId"] = SecondActionId;
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(closing.ToJsonString(), state, token)));
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+            await OpenNextSessionAndHandOffAsync(processor, state, proof);
+            BusinessPicture before = await BusinessPictureAsync(context);
+
+            string ack = await processor.ProcessAsync(MechanicallyIsolatedResult(generation: 1), state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Equal(RecoveryWorkflowState.HistoricalOnly, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ActionId, token)).State);
+            Assert.True((await context.RecoveryResultEvidence.AsNoTracking()
+                .SingleAsync(row => row.MessageId == "80000000-0000-4000-8000-000000000001", token)).HistoricalOnly);
+            Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 2122);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#175, the resume's way in. A resume's result is the attempt's replacement OperationResult, and
+    /// a resume authorizes exactly one (WireToGateStore.RequireResumeAuthorizationAsync): once session A's resume
+    /// has been judged and A closed on it, a further replacement for the same attempt -- whether session B is
+    /// executing or has already settled the demand -- finds no resume awaiting it and is refused whole as a replay
+    /// conflict, before anything is written. The demand, the journey, the lease, the operation and session B stay
+    /// as B has them. No late-result settlement is reachable along this path, so the guard is this test.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AFurtherReplacementResultAfterAResumeClosedItsSessionSettlesNothing(bool nextSessionSettled)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_RESUME";
+        const string proof = "late-resume-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001756",
+                    "OperationResult",
+                    OperationResultPayload(completed: false, journalCheckpoint: "RESUME_RESULT_UNKNOWN_RECORDED")),
+                state,
+                token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+            clock.Current = Now.AddMinutes(1);
+            if (nextSessionSettled)
+                await CompensateAllEmptyInNextSessionAsync(processor, state, proof);
+            else
+                await OpenNextSessionAndHandOffAsync(processor, state, proof);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            BusinessPicture before = await BusinessPictureAsync(context);
+            int operationResults = await context.OperationResults.CountAsync(token);
+            clock.Current = Now.AddMinutes(2);
+
+            string late = Envelope(
+                "e0000000-0000-4000-8000-000000001757",
+                "OperationResult",
+                OperationResultPayload(journalCheckpoint: "LATE_RESUME_RESULT_RECORDED"));
+            await Assert.ThrowsAsync<ProtocolContentConflictException>(
+                () => processor.ProcessAsync(late, state, token));
+
+            context.ChangeTracker.Clear();
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Equal(operationResults, await context.OperationResults.CountAsync(token));
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ActionId, token)).State);
+            Assert.DoesNotContain(log.Entries, entry => entry.EventId.Id == 2122);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#175, review of PR #177. The other way a session closes: its first result reconciled, and the
+    /// second submission of the same action reports afterwards, also ALL_EMPTY. It is recorded against its own
+    /// workflow and settles nothing a second time, and the store still reads A as closed on a normal
+    /// reconciliation -- the late one is RecoveryRequired and judged later, so it never reads as the closer.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ALateResultAfterASessionClosedOnAReconciledResultLeavesThatClosingReadable()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_LATE_AFTER_RECONCILED";
+        const string proof = "late-after-reconciled-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
+                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, state, proof);
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+                AllEmptyCompensationResult(first), state, token)));
+            string sessionId = StableGuid(RequestId, "exception-recovery-session");
+            BusinessPicture settled = await BusinessPictureAsync(context);
+            Assert.Equal(DemandExecutionStatus.Cancelled, settled.Demand);
+            clock.Current = Now.AddMinutes(1);
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(late, state, token)));
+
+            Assert.Equal(settled, await BusinessPictureAsync(context));
+            RecoveryWorkflowRow second = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == SecondActionId, token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, second.State);
+            Assert.Equal("ALL_EMPTY", second.Outcome);
+            Assert.Equal(("RECONCILED", "ALL_EMPTY"), (await ClosingReasonsAsync(context))[sessionId]);
+            Assert.Equal([SecondActionId], await ResultsArrivedAfterClosingAsync(context));
+            AssertSingleLateResultLog(log, sessionId, SecondActionId, "ALL_EMPTY");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#175, review of PR #177. A compensation is authorized in a second message, and that message can
+    /// arrive after its session closed: A's second compensation was submitted, the first reported FAILED and closed
+    /// A, and the administrator is working the demand in B when the second one's authorization comes in. It is
+    /// refused: A stays CLOSED at its revision, no compensation command goes out, no snapshot is queued. Before this,
+    /// the authorization set A back to EXECUTING and sent the command, so the compensation's ALL_EMPTY then found an
+    /// open session and settled the demand under B's feet.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ACompensationAuthorizedAfterItsSessionClosedIsRefusedAndDoesNotReopenIt()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_AUTHORIZED_AFTER_CLOSE";
+        const string proof = "authorized-after-close-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            string sessionId = StableGuid(RequestId, "exception-recovery-session");
+            string first = await ReachCompensationResultAsync(processor, state, proof);
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001758",
+                    actionId: SecondActionId), state, token)));
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
+            clock.Current = Now.AddMinutes(1);
+            await OpenNextSessionAndHandOffAsync(processor, state, proof);
+            BusinessPicture before = await BusinessPictureAsync(context);
+            int compensationCommands = await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token);
+            clock.Current = Now.AddMinutes(2);
+
+            string authorized = await processor.ProcessAsync(
+                Envelope(
+                    "90000000-0000-4000-8000-000000000177",
+                    "LoadCompensationRequested",
+                    new
+                    {
+                        recoveryActionId = SecondActionId,
+                        exceptionRecoverySessionId = sessionId,
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        @operator = Operator()
+                    }),
+                state,
+                token);
+
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == sessionId, token)).State);
+            Assert.Equal("LoadCompensationRejected", MessageType(authorized));
+            Assert.Equal("RECOVERY_SESSION_NOT_OPEN",
+                FirstPayload(authorized).GetProperty("problem").GetProperty("reasonCode").GetString());
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Equal(compensationCommands, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token));
+            RecoveryWorkflowRow second = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == SecondActionId, token);
+            Assert.Equal(RecoveryWorkflowState.AwaitingAuthorization, second.State);
+            Assert.Null(second.CommandMessageId);
+
+            // Should the vehicle report that compensation all the same, it is a late result of a closed session.
+            JsonNode late = JsonNode.Parse(AllEmptyCompensationResult(first))!;
+            late["messageId"] = "a0000000-0000-4000-8000-000000000177";
+            late["payload"]!["recoveryActionId"] = SecondActionId;
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(late.ToJsonString(), state, token)));
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            AssertSingleLateResultLog(log, sessionId, SecondActionId, "ALL_EMPTY");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("IntegrationSlice", "FP-IS-05")]
@@ -2987,6 +3604,267 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// The results that reached a session only after it had closed (control-server#175), read from the store by
+    /// the same rule as <see cref="ClosingReasonsAsync"/>: a session closes on the first result judged for it, so
+    /// every other settled workflow of a CLOSED session was judged after the closing. There is no column for it.
+    /// </summary>
+    private static async Task<string[]> ResultsArrivedAfterClosingAsync(ControlServerDbContext context)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string[] closed = await context.ExceptionRecoverySessions.AsNoTracking()
+            .Where(row => row.State == "CLOSED").Select(row => row.ExceptionRecoverySessionId).ToArrayAsync(token);
+        RecoveryWorkflowRow[] settled = await context.RecoveryWorkflows.AsNoTracking()
+            .Where(row => row.State == RecoveryWorkflowState.Reconciled ||
+                          row.State == RecoveryWorkflowState.RecoveryRequired)
+            .ToArrayAsync(token);
+        return
+        [
+            .. settled
+                .Where(row => row.ExceptionRecoverySessionId is not null && closed.Contains(row.ExceptionRecoverySessionId))
+                .GroupBy(row => row.ExceptionRecoverySessionId)
+                .SelectMany(group => group.OrderBy(row => row.UpdatedAt).Skip(1))
+                .Select(row => row.WorkflowId)
+                .Order(StringComparer.Ordinal)
+        ];
+    }
+
+    private const string SecondActionId = "51000000-0000-4000-8000-000000000175";
+
+    /// <summary>
+    /// Session A on the seeded demand with <paramref name="action"/> taken twice while it executes (the protocol
+    /// allows the same action again under a new recoveryActionId). Returns, unsent, the first action's result,
+    /// which does not reconcile and so closes A, and the second action's, concluding <paramref name="lateOutcome"/>
+    /// -- with every slot proven empty when that is a success.
+    /// </summary>
+    private static async Task<(string First, string Second)> ReachTwoSubmissionsOfOneActionAsync(
+        string action,
+        string lateOutcome,
+        OnboardMessageProcessor processor,
+        OnboardConnectionState state,
+        string proof)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string sessionId = StableGuid(RequestId, "exception-recovery-session");
+        string first = action switch
+        {
+            "COMPENSATE_LOAD_ALL_EMPTY" => await ReachCompensationResultAsync(processor, state, proof),
+            "FAULT_CARGO_HANDOFF" => await ReachUnreconciledResultAsync(
+                "FaultCargoRecoveryResult", "FAILED", processor, state, proof),
+            _ => throw new ArgumentOutOfRangeException(nameof(action), action, null)
+        };
+        Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+            RecoveryAction(action, messageId: "e0000000-0000-4000-8000-000000001750", actionId: SecondActionId),
+            state, token)));
+        JsonNode second = JsonNode.Parse(first)!;
+        second["messageId"] = "b3200000-0000-4000-8000-000000000175";
+        second["payload"]!["recoveryActionId"] = SecondActionId;
+        second["payload"]!["overallOutcome"] = lateOutcome;
+        if (action == "COMPENSATE_LOAD_ALL_EMPTY")
+        {
+            await processor.ProcessAsync(
+                Envelope(
+                    "90000000-0000-4000-8000-000000000175",
+                    "LoadCompensationRequested",
+                    new
+                    {
+                        recoveryActionId = SecondActionId,
+                        exceptionRecoverySessionId = sessionId,
+                        demandId = DemandId,
+                        slotOperationAttemptId = AttemptId,
+                        @operator = Operator()
+                    }),
+                state,
+                token);
+        }
+        else
+        {
+            second["payload"]!["handoffId"] = StableGuid(SecondActionId, "fault-cargo-handoff");
+        }
+        if (lateOutcome is "ALL_EMPTY" or "HANDED_OFF")
+        {
+            second["payload"]!["slotResults"] = JsonSerializer.SerializeToNode(RecoverySlots.Select(slot => new
+            {
+                slotNo = slot,
+                outcome = "COMPLETED",
+                finalPhysicalState = "EMPTY",
+                lockState = "LOCKED",
+                unlockOutputState = "RESET",
+                reasonCodes = Array.Empty<string>()
+            }).ToArray(), SerializerOptions);
+        }
+        return (first, second.ToJsonString());
+    }
+
+    /// <summary>
+    /// Opens session B on the seeded demand after A closed, and takes it into EXECUTING with a fault cargo handoff
+    /// whose result has not come back. Returns B's id.
+    /// </summary>
+    private static async Task<string> OpenNextSessionAndHandOffAsync(
+        OnboardMessageProcessor processor,
+        OnboardConnectionState state,
+        string proof)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string nextSessionId = StableGuid("41000000-0000-4000-8000-000000000169", "exception-recovery-session");
+        Assert.Equal("ExceptionRecoverySessionOpened",
+            MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+        JsonNode handoff = JsonNode.Parse(RecoveryAction(
+            "FAULT_CARGO_HANDOFF", messageId: "e0000000-0000-4000-8000-000000001751",
+            actionId: NextSessionActionId))!;
+        handoff["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
+        Assert.Equal("RecoveryActionAccepted",
+            MessageType(await processor.ProcessAsync(handoff.ToJsonString(), state, token)));
+        return nextSessionId;
+    }
+
+    private const string NextSessionActionId = "51000000-0000-4000-8000-000000000176";
+
+    /// <summary>
+    /// Opens session B after A closed and settles the demand in it: a compensation that proves every slot empty
+    /// cancels the demand, completes the journey and releases the vehicle.
+    /// </summary>
+    private static async Task CompensateAllEmptyInNextSessionAsync(
+        OnboardMessageProcessor processor,
+        OnboardConnectionState state,
+        string proof)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string nextSessionId = StableGuid("41000000-0000-4000-8000-000000000169", "exception-recovery-session");
+        Assert.Equal("ExceptionRecoverySessionOpened",
+            MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+        JsonNode compensate = JsonNode.Parse(RecoveryAction(
+            "COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001752",
+            actionId: NextSessionActionId))!;
+        compensate["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
+        Assert.Equal("RecoveryActionAccepted",
+            MessageType(await processor.ProcessAsync(compensate.ToJsonString(), state, token)));
+        await processor.ProcessAsync(
+            Envelope(
+                "90000000-0000-4000-8000-000000000176",
+                "LoadCompensationRequested",
+                new
+                {
+                    recoveryActionId = NextSessionActionId,
+                    exceptionRecoverySessionId = nextSessionId,
+                    demandId = DemandId,
+                    slotOperationAttemptId = AttemptId,
+                    @operator = Operator()
+                }),
+            state,
+            token);
+        Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(AllEmptyCompensationResult(Envelope(
+            "a0000000-0000-4000-8000-000000000176",
+            "LoadCompensationResult",
+            new
+            {
+                recoveryActionId = NextSessionActionId,
+                demandId = DemandId,
+                slotOperationAttemptId = AttemptId,
+                overallOutcome = "FAILED",
+                slotResults = Array.Empty<object>(),
+                observedAt = Now.AddSeconds(6)
+            })), state, token)));
+    }
+
+    private static async Task ClaimPickupOccupancyAsync(ControlServerDbContext context)
+    {
+        OrderIntentRow pickup = await context.OrderIntents.SingleAsync(
+            row => row.UpperId == "UPPER-PICKUP", TestContext.Current.CancellationToken);
+        pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Everything a recovery result may settle, and every session, as the store has it: two pictures taken either
+    /// side of a result that must only be recorded compare equal.
+    /// </summary>
+    private sealed record BusinessPicture(
+        DemandExecutionStatus Demand,
+        JourneyRuntimeStage Stage,
+        string? BlockReasonCode,
+        DateTimeOffset? BlockReasonSince,
+        DateTimeOffset? RuntimeUpdatedAt,
+        DateTimeOffset? LeaseReleasedAt,
+        DateTimeOffset? OccupancyReleasedAt,
+        StationOperationStatus Operation,
+        string Sessions,
+        int Snapshots,
+        int Completions);
+
+    private static async Task<BusinessPicture> BusinessPictureAsync(ControlServerDbContext context)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        JourneyRuntimeRow runtime = await context.JourneyRuntimes.AsNoTracking().SingleAsync(token);
+        ExceptionRecoverySessionRow[] sessions = await context.ExceptionRecoverySessions.AsNoTracking()
+            .ToArrayAsync(token);
+        return new BusinessPicture(
+            (await context.AcceptedDemands.AsNoTracking().SingleAsync(token)).Status,
+            runtime.Stage,
+            runtime.BlockReasonCode,
+            runtime.BlockReasonSince,
+            runtime.UpdatedAt,
+            (await context.VehicleDispatchLeases.AsNoTracking().SingleAsync(token)).ReleasedAt,
+            (await context.OrderIntents.AsNoTracking()
+                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt,
+            (await context.StationOperations.AsNoTracking().SingleAsync(token)).Status,
+            string.Join(';', sessions.OrderBy(row => row.ExceptionRecoverySessionId, StringComparer.Ordinal)
+                .Select(row => $"{row.ExceptionRecoverySessionId}:{row.State}:{row.Revision}:{row.SelectedAction}")),
+            await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "ExceptionRecoverySessionSnapshot", token),
+            await context.TransportDemandCompletions.CountAsync(token));
+    }
+
+    /// <summary>
+    /// What a late result of the first session leaves behind (control-server#175): its evidence and its workflow,
+    /// judged at <paramref name="judgedAt"/>, RecoveryRequired -- never HistoricalOnly, which would let a forced
+    /// recovery's hardware hold go -- and readable from the store as having arrived after the closing, while the
+    /// closing itself still reads as the first result's.
+    /// </summary>
+    private static async Task AssertLateResultRecordedAsync(
+        ControlServerDbContext context,
+        string firstSessionId,
+        string lateResult,
+        string lateOutcome,
+        DateTimeOffset judgedAt)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string messageId = JsonNode.Parse(lateResult)!["messageId"]!.GetValue<string>();
+        RecoveryWorkflowRow late = await context.RecoveryWorkflows.AsNoTracking()
+            .SingleAsync(row => row.WorkflowId == SecondActionId, token);
+        Assert.Equal(messageId, late.ResultMessageId);
+        Assert.Equal(lateOutcome, late.Outcome);
+        Assert.Equal(RecoveryWorkflowState.RecoveryRequired, late.State);
+        Assert.Equal(judgedAt, late.UpdatedAt);
+        RecoveryResultEvidenceRow evidence = await context.RecoveryResultEvidence.AsNoTracking()
+            .SingleAsync(row => row.MessageId == messageId, token);
+        Assert.False(evidence.HistoricalOnly);
+        Assert.Equal(lateOutcome, evidence.Outcome);
+        Assert.Equal(judgedAt, evidence.ReceivedAt);
+        Assert.Equal(("RECOVERY_ACTION_RESULT_NOT_RECONCILED", "FAILED"),
+            (await ClosingReasonsAsync(context))[firstSessionId]);
+        Assert.Equal([SecondActionId], await ResultsArrivedAfterClosingAsync(context));
+    }
+
+    /// <summary>
+    /// The one warning a late result of a closed session writes (control-server#175): EventId 2122, naming the
+    /// session, the workflow and the vehicle's conclusion, whichever way that conclusion went.
+    /// </summary>
+    private static void AssertSingleLateResultLog(
+        EventRecordingLogger<OnboardRecoveryCoordinator> log,
+        string sessionId,
+        string workflowId,
+        string outcome)
+    {
+        (LogLevel Level, EventId EventId, string Message) entry = Assert.Single(
+            log.Entries, entry => entry.EventId.Id == 2122);
+        Assert.Equal(LogLevel.Warning, entry.Level);
+        Assert.Contains(sessionId, entry.Message, StringComparison.Ordinal);
+        Assert.Contains(workflowId, entry.Message, StringComparison.Ordinal);
+        Assert.Contains(outcome, entry.Message, StringComparison.Ordinal);
+        Assert.Contains(DemandId, entry.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A second session request on the seeded demand and slots, as the administrator makes it after the first
     /// session closed: a new press, so a new request and a new message.
     /// </summary>
@@ -3764,5 +4642,43 @@ public sealed class RecoveryStateMachineG2Tests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    /// <summary>
+    /// A clock the test moves by hand, for the facts that are read by the server's time of judgement: which of a
+    /// session's results closed it, and which arrived after.
+    /// </summary>
+    private sealed class MovableTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        public DateTimeOffset Current { get; set; } = start;
+
+        public override DateTimeOffset GetUtcNow() => Current;
+    }
+
+    /// <summary>
+    /// Records each entry with its EventId, which the shared RecordingLogger drops: the late-result warning is
+    /// asserted to be one event whichever way the result concluded.
+    /// </summary>
+    private sealed class EventRecordingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, EventId EventId, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (Entries)
+            {
+                Entries.Add((logLevel, eventId, formatter(state, exception)));
+            }
+        }
     }
 }

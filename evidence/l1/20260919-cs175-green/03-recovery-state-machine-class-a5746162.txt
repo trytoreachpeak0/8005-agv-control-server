@@ -1,0 +1,107 @@
+commit: a574616249aa6a79e5f3016abf692e556e8a8a2a
+command: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~RecoveryStateMachineG2Tests" --logger "console;verbosity=normal"
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.52]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:01.80]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:02.14]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.LoadCorrectionIsAuthorizedOnlyWhileTheVehicleStillWaitsAtThePickup(stage: AwaitingDepartureSafety, authorized: False) [2 s]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.LoadCorrectionIsAuthorizedOnlyWhileTheVehicleStillWaitsAtThePickup(stage: AwaitingStationDeparture, authorized: True) [303 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.LoadCorrectionIsAuthorizedOnlyWhileTheVehicleStillWaitsAtThePickup(stage: AwaitingGateArrival, authorized: False) [229 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AReportNamingAnAttemptTheServerAlreadySettledNeedsNoFurtherResult(status: Prepared, expectedReadiness: "RECOVERY_REQUIRED") [266 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AReportNamingAnAttemptTheServerAlreadySettledNeedsNoFurtherResult(status: Committed, expectedReadiness: "READY") [118 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AReportNamingAnAttemptTheServerAlreadySettledNeedsNoFurtherResult(status: Cancelled, expectedReadiness: "READY") [110 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AReportNamingAnAttemptTheServerAlreadySettledNeedsNoFurtherResult(status: Failed, expectedReadiness: "READY") [121 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ForcedRecoveryAdvancesOnceFencesOldOutboxAndKeepsLateGenerationAsEvidenceOnly [710 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AfterARefusedResultResumeIsRefusedButCompensationIsAuthorized [492 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.FormalCorrectionAndFaultCommandsUseDurableOutboxReplayAndExactAck [192 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AFailedForcedRecoveryStillHoldsTheVehicleForItsHardwareRecordAfterItsSessionClosed [377 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASecondResumeAfterOneThatDidNotReconcileIsJudgedOnItsOwnAndClosesItsOwnSession [333 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.WhyASessionClosedStaysReadableAfterTheResultIsResentAndTheNextSessionRuns(outcome: "FAILED") [207 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.WhyASessionClosedStaysReadableAfterTheResultIsResentAndTheNextSessionRuns(outcome: "UNKNOWN") [172 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AfterAForcedRecoveryTheVehicleStaysUnreadyUntilAHardwareRecoveryRecordForItArrives [144 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.FailedCompensationResultIsDurableReplayableAndNeverReleasesDemandOrVehicle [167 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedRecoveryMadeHistoricalNoLongerHoldsTheVehicleForItsHardwareRecord [133 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASessionIsNotReadyWhileTheServerHoldsAnOperationNeedingRecovery [105 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "LoadCompensationResult", outcome: "UNKNOWN") [175 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "UNKNOWN") [142 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "HANDED_OFF_OVER_AN_OCCUPIED_SLOT") [160 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "FaultCargoRecoveryResult", outcome: "FAILED") [155 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "LoadCompensationResult", outcome: "FAILED") [134 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "ForcedMechanicalRecoveryResult", outcome: "UNKNOWN") [144 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(messageType: "ForcedMechanicalRecoveryResult", outcome: "FAILED") [133 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AFurtherReplacementResultAfterAResumeClosedItsSessionSettlesNothing(nextSessionSettled: False) [202 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AFurtherReplacementResultAfterAResumeClosedItsSessionSettlesNothing(nextSessionSettled: True) [209 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASessionKeepsItsFirstAttemptAndRefusesAnActionOnceTheDemandHasMovedPastIt(action: "FORCED_MECHANICAL_RECOVERY") [122 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASessionKeepsItsFirstAttemptAndRefusesAnActionOnceTheDemandHasMovedPastIt(action: "FAULT_CARGO_HANDOFF") [127 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ACompensationThatProvesEverySlotEmptyTellsTheVehicleItIsReadyAgain [162 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordTakenBeforeTheForcedResultIsRefusedAndLiftsNothing [154 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASessionIsReadyOnceItsOperationIsCommitted [109 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordForAnotherVehiclesForcedRecoveryIsRefused [177 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ACompensationResultSettlesItsCommandSoTheNextSessionDoesNotReplayIt(allEmpty: True) [167 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ACompensationResultSettlesItsCommandSoTheNextSessionDoesNotReplayIt(allEmpty: False) [144 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AuthorizedLoadCancellationReconcilesOnlyWhenEverySlotIsProvenEmpty [239 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AResumeWhoseReplacementResultNeedsRecoveryAgainClosesTheSessionSoAnotherCanOpen [155 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ADeterminateLookingFailureTheServerCannotExplainGoesToRecoveryUnderItsReasonCode(waitStartedMinutesAgo: -6, failedSlotReasonCode: "ACTION_NOT_ALLOWED_IN_STATE", expectedReasonCode: "LOAD_FAILURE_REASON_WITHOUT_TERMINAL_STATE") [128 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ADeterminateLookingFailureTheServerCannotExplainGoesToRecoveryUnderItsReasonCode(waitStartedMinutesAgo: -1, failedSlotReasonCode: "OPERATOR_TIMEOUT", expectedReasonCode: "LOAD_FAILED_BEFORE_STATION_DEADLINE") [110 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASuccessfulResumeSettlesTheReportedAttemptAndTellsTheVehicleItIsReady [158 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AResentRecoveryResultIsNotJudgedASecondTimeOnItsWireHash [162 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "COMPENSATE_LOAD_ALL_EMPTY", lateOutcome: "ALL_EMPTY") [227 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "FAULT_CARGO_HANDOFF", lateOutcome: "FAILED") [175 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "FAULT_CARGO_HANDOFF", lateOutcome: "HANDED_OFF") [171 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ResumeAdmitsExactlyOneReplacementResultForTheOperationThatAlreadyFailedItsFirstResult [149 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AForcedRecoveryWithANamedHandoffEndsTheDemandAndClosesTheSessionSoTheVehicleCanOpenAnother [147 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachRecoveryMessageOfASessionAboutNoLoadNamesNoAttempt(messageType: "ExceptionRecoverySessionSnapshot") [133 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachRecoveryMessageOfASessionAboutNoLoadNamesNoAttempt(messageType: "RecoveryActionAccepted") [163 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachRecoveryMessageOfASessionAboutNoLoadNamesNoAttempt(messageType: "ExceptionRecoverySessionOpened") [122 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachResultThatEndsACommandedLoadFreesTheVehicleForItsNextOrder(messageType: "LoadCompensationResult", reasonCode: "CANCELLED_BY_LOAD_COMPENSATION") [185 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachResultThatEndsACommandedLoadFreesTheVehicleForItsNextOrder(messageType: "LoadCancellationResult", reasonCode: "CANCELLED_BY_OPERATOR") [132 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachResultThatEndsACommandedLoadFreesTheVehicleForItsNextOrder(messageType: "FaultCargoRecoveryResult", reasonCode: "TERMINATED_BY_FAULT_CARGO_HANDOFF") [249 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AResentUnreconciledResultIsAcknowledgedFromTheFirstAndDoesNotCloseTheSessionAgain [244 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AHardwareRecoveryRecordIsAcceptedAgainstAForcedRecoveryThatFailed [515 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionDoesNotRewriteTheEndingTheNextSessionGaveTheDemand [333 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachRecoveryMessageNamesTheAttemptOfTheLoadTheSessionIsAbout(messageType: "ExceptionRecoverySessionOpened") [173 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachRecoveryMessageNamesTheAttemptOfTheLoadTheSessionIsAbout(messageType: "RecoveryActionAccepted") [157 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.EachRecoveryMessageNamesTheAttemptOfTheLoadTheSessionIsAbout(messageType: "ExceptionRecoverySessionSnapshot") [168 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionBeforeTheNextOneOpensLeavesTheDemandToIt [475 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ResumeRejectsAReplacementResultReportedOutsideTheAuthorizedSlotScope [700 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateForcedRecoveryOfAClosedSessionIsHistoricalAndSettlesNothing [332 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALoadCancellationResultWithNoSlotResultsIsReceivedAndAcknowledged [169 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALoadCancellationNamingAnAttemptIsRefusedFromAnotherVehicle [150 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionIsAcknowledgedAfterTheDemandWasDelivered [367 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ARefusedResultTellsTheVehicleItsSessionNeedsRecovery [205 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ASecondActionsResultArrivingAfterTheSessionClosedDoesNotCloseItAgain [263 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.RecoveryReportCannotRegressOrInventForcedRecoveryGeneration [151 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateUnreconciledResultForAClosedSessionDoesNotBlockAJourneyTheNextSessionSettled [339 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ResumeAuthorizationPersistsFormalCommandBeforeSendAndReplaysSameIdentityAfterRestart [494 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ACompensationResultResentInTheNextSessionIsAcknowledgedFromItsFirstAcceptance [349 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AResentLateResultOfAClosedSessionIsAnsweredFromTheFirstAcrossRestartAndReconnect [417 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ALoadCorrectionAfterAResumeOnTheSameConnectionIsJudgedOnTheStoredStage [372 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AResumeResultSettlesTheResumeCommandSoTheNextSessionDoesNotReplayIt(completed: True) [346 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.AResumeResultSettlesTheResumeCommandSoTheNextSessionDoesNotReplayIt(completed: False) [396 ms]
+  Passed ControlServer.Tests.RecoveryStateMachineG2Tests.ADeterminateLoadFailureAfterTheStationDeadlineAsksNoRecovery [165 ms]
+[xUnit.net 00:01:04.01]   Finished:    ControlServer.Tests (ID = '85d1966fbfbb7a0e460917536b600ce1f65ed17cb43ec7c76fdbfb7398d85da5')
+
+Test Run Successful.
+Total tests: 75
+     Passed: 75
+ Total time: 1.0802 Minutes
