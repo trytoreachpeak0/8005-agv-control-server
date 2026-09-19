@@ -46,13 +46,23 @@ function New-L2WireToGateDemand {
     return $demand
 }
 
+<# The demand's journey row (stage, vehicle, block reason, stations, gate UpperId), or $null before it is accepted. #>
+function Get-L2Journey {
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][object]$Demand)
+
+    $rows = Invoke-L2Query -Connection $Context.Connection -Sql (
+        "SELECT Stage, AgvId, VehicleKey, BlockReasonCode, PickupStationRiotId, GateStationRiotId, GateUpperId " +
+        "FROM JourneyRuntimes WHERE DemandId = '$($Demand.Id)'")
+    if ($rows.Count -eq 0) { return $null }
+    return $rows[0]
+}
+
 function Get-L2JourneyStage {
     param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][object]$Demand)
 
-    $rows = Invoke-L2Query -Connection $Context.Connection `
-        -Sql "SELECT Stage FROM JourneyRuntimes WHERE DemandId = '$($Demand.Id)'"
-    if ($rows.Count -eq 0) { return $null }
-    return [string]$rows[0].Stage
+    $journey = Get-L2Journey -Context $Context -Demand $Demand
+    if ($null -eq $journey) { return $null }
+    return [string]$journey.Stage
 }
 
 function Get-L2Intent {
@@ -74,6 +84,44 @@ function Get-L2BacklogReason {
 }
 
 <#
+Waits until the demand is accepted and its TO_PICKUP order confirmed, then sets the vehicle the server chose moving
+towards the pickup -- and leaves it on the way. Returns the journey row (which vehicle) and the TO_PICKUP intent.
+With a fleet the vehicle is whichever one the server picked, so every later move reads it from the journey row.
+#>
+function Start-L2JourneyToPickup {
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][object]$Demand)
+
+    $null = Wait-L2Condition -Description "demand $($Demand.Label) was accepted and dispatched to the pickup station" `
+        -Journal $Context.Journal -Criterion "journey-stage-$($Demand.Label)" -TimeoutSeconds 90 `
+        -Probe { Get-L2JourneyStage -Context $Context -Demand $Demand } -Until { param($v) $v -eq 'AwaitingPickupArrival' }
+    $pickup = Wait-L2Condition -Description "demand $($Demand.Label)'s TO_PICKUP intent was confirmed" `
+        -Journal $Context.Journal -Criterion "to-pickup-intent-$($Demand.Label)" -TimeoutSeconds 60 `
+        -Probe { $row = Get-L2Intent -Context $Context -Demand $Demand -Purpose 'TO_PICKUP'; if ($row -and $row.Status -eq 'CONFIRMED') { $row } else { $null } } `
+        -Until { param($v) $null -ne $v }
+    $journey = Get-L2Journey -Context $Context -Demand $Demand
+    $vehicleKey = [string]$journey.VehicleKey
+    $Context.Journal.Note("Demand $($Demand.Label): $($journey.AgvId) ($vehicleKey) departs for the pickup station.")
+    $null = $Context.Riot.Command('Put', "orders/$($pickup.UpperId)", @{ orderState = 3; executeVehicleKey = $vehicleKey })
+    $null = $Context.Riot.Command('Put', 'vehicle', @{
+        vehicleKey = $vehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
+        processingOrder = $true; orderTaskId = $pickup.OrderId
+    })
+    return [pscustomobject]@{ Journey = $journey; Pickup = $pickup }
+}
+
+<# Brings a vehicle that is on its way to the pickup to rest there and finishes the TO_PICKUP order. #>
+function Complete-L2PickupArrival {
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][object]$Demand, [Parameter(Mandatory)][object]$Started)
+
+    $Context.Journal.Note("Demand $($Demand.Label): $($Started.Journey.AgvId) arrives at the pickup station and comes to rest.")
+    $null = $Context.Riot.Command('Put', 'vehicle', @{
+        vehicleKey = [string]$Started.Journey.VehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
+        currentPosition = [int]$Started.Journey.PickupStationRiotId; processingOrder = $false; clearOrderTaskId = $true
+    })
+    $null = $Context.Riot.Command('Put', "orders/$($Started.Pickup.UpperId)", @{ orderState = 5 })
+}
+
+<#
 Takes an accepted demand from dispatch to the point where its TO_GATE order is created and confirmed: the vehicle
 drives to the pickup, arrives, the synthetic peer loads and reports departure safety on its own. Returns the
 TO_GATE intent.
@@ -81,38 +129,18 @@ TO_GATE intent.
 function Invoke-L2JourneyToGateLeg {
     param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][object]$Demand)
 
-    $journal = $Context.Journal
-    $riot = $Context.Riot
-    $null = Wait-L2Condition -Description "demand $($Demand.Label) was accepted and dispatched to the pickup station" `
-        -Journal $journal -Criterion "journey-stage-$($Demand.Label)" -TimeoutSeconds 90 `
-        -Probe { Get-L2JourneyStage -Context $Context -Demand $Demand } -Until { param($v) $v -eq 'AwaitingPickupArrival' }
-    $pickup = Wait-L2Condition -Description "demand $($Demand.Label)'s TO_PICKUP intent was confirmed" `
-        -Journal $journal -Criterion "to-pickup-intent-$($Demand.Label)" -TimeoutSeconds 60 `
-        -Probe { $row = Get-L2Intent -Context $Context -Demand $Demand -Purpose 'TO_PICKUP'; if ($row -and $row.Status -eq 'CONFIRMED') { $row } else { $null } } `
-        -Until { param($v) $null -ne $v }
-
-    $journal.Note("Demand $($Demand.Label): vehicle drives to the pickup station and comes to rest.")
-    $null = $riot.Command('Put', "orders/$($pickup.UpperId)", @{ orderState = 3; executeVehicleKey = $Context.VehicleKey })
-    $null = $riot.Command('Put', 'vehicle', @{
-        vehicleKey = $Context.VehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
-        processingOrder = $true; orderTaskId = $pickup.OrderId
-    })
-    $null = $riot.Command('Put', 'vehicle', @{
-        vehicleKey = $Context.VehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
-        currentPosition = $Context.PickupStationRiotId; processingOrder = $false; clearOrderTaskId = $true
-    })
-    $null = $riot.Command('Put', "orders/$($pickup.UpperId)", @{ orderState = 5 })
-
+    $started = Start-L2JourneyToPickup -Context $Context -Demand $Demand
+    Complete-L2PickupArrival -Context $Context -Demand $Demand -Started $started
     $null = Wait-L2Condition -Description "demand $($Demand.Label) reached its gate leg" `
-        -Journal $journal -Criterion "gate-leg-$($Demand.Label)" -TimeoutSeconds 120 `
+        -Journal $Context.Journal -Criterion "gate-leg-$($Demand.Label)" -TimeoutSeconds 120 `
         -Probe { Get-L2JourneyStage -Context $Context -Demand $Demand } -Until { param($v) $v -eq 'AwaitingGateArrival' }
     return Wait-L2Condition -Description "demand $($Demand.Label)'s TO_GATE intent was confirmed" `
-        -Journal $journal -Criterion "to-gate-intent-$($Demand.Label)" -TimeoutSeconds 60 `
+        -Journal $Context.Journal -Criterion "to-gate-intent-$($Demand.Label)" -TimeoutSeconds 60 `
         -Probe { $row = Get-L2Intent -Context $Context -Demand $Demand -Purpose 'TO_GATE'; if ($row -and $row.Status -eq 'CONFIRMED') { $row } else { $null } } `
         -Until { param($v) $null -ne $v }
 }
 
-<# Drives the vehicle from the gate leg to the gate and waits for the journey to complete. Returns the final stage. #>
+<# Drives the journey's vehicle from the gate leg to the gate and waits for the journey to complete. Returns the final stage. #>
 function Complete-L2JourneyAtGate {
     param(
         [Parameter(Mandatory)][object]$Context,
@@ -120,18 +148,19 @@ function Complete-L2JourneyAtGate {
         [Parameter(Mandatory)][object]$GateIntent
     )
 
-    $riot = $Context.Riot
-    $Context.Journal.Note("Demand $($Demand.Label): vehicle drives to the gate and comes to rest.")
-    $null = $riot.Command('Put', "orders/$($GateIntent.UpperId)", @{ orderState = 3; executeVehicleKey = $Context.VehicleKey })
-    $null = $riot.Command('Put', 'vehicle', @{
-        vehicleKey = $Context.VehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
+    $journey = Get-L2Journey -Context $Context -Demand $Demand
+    $vehicleKey = [string]$journey.VehicleKey
+    $Context.Journal.Note("Demand $($Demand.Label): $($journey.AgvId) drives to the gate and comes to rest.")
+    $null = $Context.Riot.Command('Put', "orders/$($GateIntent.UpperId)", @{ orderState = 3; executeVehicleKey = $vehicleKey })
+    $null = $Context.Riot.Command('Put', 'vehicle', @{
+        vehicleKey = $vehicleKey; procState = 'RUNNING'; movementState = 'MT_RUNNING'; speed = 0.8
         processingOrder = $true; orderTaskId = $GateIntent.OrderId
     })
-    $null = $riot.Command('Put', 'vehicle', @{
-        vehicleKey = $Context.VehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
-        currentPosition = $Context.GateStationRiotId; processingOrder = $false; clearOrderTaskId = $true
+    $null = $Context.Riot.Command('Put', 'vehicle', @{
+        vehicleKey = $vehicleKey; procState = 'IDLE'; movementState = 'MT_FINISHED'; speed = 0
+        currentPosition = [int]$journey.GateStationRiotId; processingOrder = $false; clearOrderTaskId = $true
     })
-    $null = $riot.Command('Put', "orders/$($GateIntent.UpperId)", @{ orderState = 5 })
+    $null = $Context.Riot.Command('Put', "orders/$($GateIntent.UpperId)", @{ orderState = 5 })
     return Wait-L2Condition -Description "demand $($Demand.Label)'s journey completed at the gate" `
         -Journal $Context.Journal -Criterion "completed-$($Demand.Label)" -TimeoutSeconds 120 `
         -Probe { Get-L2JourneyStage -Context $Context -Demand $Demand } -Until { param($v) $v -eq 'Completed' }
@@ -206,6 +235,6 @@ function Get-L2DashboardPage {
     return [string](Invoke-WebRequest -Uri $Context.DashboardUrl -NoProxy -TimeoutSec 10).Content
 }
 
-Export-ModuleMember -Function New-L2WireToGateDemand, Get-L2JourneyStage, Get-L2Intent, Get-L2BacklogReason,
-    Invoke-L2JourneyToGateLeg, Complete-L2JourneyAtGate, Get-L2TaskTypeHolds, Get-L2ActiveBindings,
+Export-ModuleMember -Function New-L2WireToGateDemand, Get-L2Journey, Get-L2JourneyStage, Get-L2Intent,
+    Get-L2BacklogReason, Start-L2JourneyToPickup, Complete-L2PickupArrival, Invoke-L2JourneyToGateLeg, Complete-L2JourneyAtGate, Get-L2TaskTypeHolds, Get-L2ActiveBindings,
     Submit-L2DashboardHold, Get-L2DashboardBindingRow, Get-L2DashboardPage

@@ -6,12 +6,15 @@
   1. 经看板应用的确认页提交，暂停 STAGING_TO_WIRE。确认页不带自动刷新；提交之后回到看板主页。
   2. 随后一条 WIRE_TO_GATE 需求照常受理并走完两段——暂停没有连带到同图的另一个任务类型。看板主页 STAGING_TO_WIRE
      那一行显示「已暂停」、来源「看板人工」。
-  3. 第二条 WIRE_TO_GATE 需求受理、走到关卡腿（关卡单已建且确认）之后，再经看板暂停 WIRE_TO_GATE。这一趟照常走完：
-     已建单的 RIoT 订单不改单、不换站、不取消。
-  4. 车空出来之后，第三条 WIRE_TO_GATE 需求不受理，JourneyBacklog 的原因是已暂停（批次6-04 的准入判据）。
+  3. 两台车：second 已建关卡单，pending 刚派去取货点、关卡腿尚未建单。此时经看板暂停 WIRE_TO_GATE。second 照常走完
+     （已建单的 RIoT 订单不改单、不换站、不取消）；pending 到站装货后关卡腿不建，旅程阻断原因为已暂停（批次6-04 的
+     建单前检查）——票面合入前置写的「尚未建单的腿不建」。
+  4. 有空车时，第三条 WIRE_TO_GATE 需求不受理，JourneyBacklog 的原因是已暂停（批次6-04 的准入判据）。
   5. 看板页面与服务端都没有解除入口，两条暂停到场景结束仍然成立。
 
-红证据取法（缺陷版本，本地临时提交，不推送）：暂停只按 mapId 落（整图全停）→ 第 2 步「WIRE_TO_GATE 被受理」变红。
+红证据取法（缺陷版本，本地临时提交，不推送）：
+  a) 暂停只按 mapId 落（整图全停）→ 第 2 步「WIRE_TO_GATE 被受理」（L2-BH-03）变红；
+  b) 暂停不进建单门（GateLegAsync 不查暂停）→ 第 3 步「尚未建单的关卡腿不建」（L2-BH-12）变红。
 #>
 [CmdletBinding()]
 param([Parameter(Mandatory)][object]$Context)
@@ -78,11 +81,26 @@ $assertions.Add(
         $null -ne $gateRowBefore -and $gateRowBefore.Contains('正常')),
     'STAGING_TO_WIRE: 已暂停 看板人工 …；WIRE_TO_GATE: 正常', "$stagingRow | $gateRowBefore")
 
-# --- 3. 已建关卡单的那一趟在暂停 WIRE_TO_GATE 之后照常完成 ---------------------------------------------------
+# --- 3. 暂停 WIRE_TO_GATE 的那一刻，两台车各在一处 ------------------------------------------------------------
+#
+# 第一台车的「second」已建出关卡单；第二台车的「pending」刚派去取货点、还在路上，它的关卡腿尚未建单。
+# 暂停落下之后：已建的关卡单不改单、不换站、不取消，照常走完；尚未建单的关卡腿不建，旅程停在建单门前，
+# 阻断原因是已暂停（批次6-04 的建单前检查 GateLegAsync）。这正是票面合入前置写的「尚未建单的腿不建」。
 
 $second = New-L2WireToGateDemand -Context $Context -Label 'second'
 $secondGate = Invoke-L2JourneyToGateLeg -Context $Context -Demand $second
 $ordersBefore = @($riot.Snapshot().body.orders | Where-Object { $_.upperId -eq $secondGate.UpperId })
+
+$pending = New-L2WireToGateDemand -Context $Context -Label 'pending'
+$pendingStarted = Start-L2JourneyToPickup -Context $Context -Demand $pending
+$secondJourney = Get-L2Journey -Context $Context -Demand $second
+$assertions.Add(
+    'L2-BH-11', '暂停之前两趟都已受理、在两台不同的车上：second 已建关卡单，pending 在去取货点的路上、还没有关卡单',
+    ([string]$secondJourney.AgvId -ne [string]$pendingStarted.Journey.AgvId -and
+        $null -eq (Get-L2Intent -Context $Context -Demand $pending -Purpose 'TO_GATE')),
+    'two vehicles; pending has no TO_GATE intent',
+    "second on $($secondJourney.AgvId), pending on $($pendingStarted.Journey.AgvId); pending TO_GATE: " +
+        "$(if (Get-L2Intent -Context $Context -Demand $pending -Purpose 'TO_GATE') { 'present' } else { 'none' })")
 
 $gate = Submit-L2DashboardHold -Context $Context -TaskType 'WIRE_TO_GATE' -Reason '关卡门口在施工'
 $holds = Wait-L2Condition -Description 'the WIRE_TO_GATE hold is standing' `
@@ -109,8 +127,29 @@ $assertions.Add(
     'L2-BH-07', '暂停前已建关卡单的那一趟照常走完',
     ($secondStage -eq 'Completed'), 'Completed', $secondStage)
 
+# pending 那台车到站、装货；合成对端自动应答，所以若没有暂停它会一路走到建关卡单。
+Complete-L2PickupArrival -Context $Context -Demand $pending -Started $pendingStarted
+$pendingBlocked = Wait-L2Condition -Description 'the pending journey stops before its gate leg because WIRE_TO_GATE is held' `
+    -Journal $journal -Criterion 'pending-gate-leg-held' -TimeoutSeconds 180 `
+    -Probe { Get-L2Journey -Context $Context -Demand $pending } `
+    -Until { param($v) $null -ne $v -and [string]$v.BlockReasonCode -eq $heldReasonCode }
+$null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
+$pendingJourney = Get-L2Journey -Context $Context -Demand $pending
+$pendingGate = Get-L2Intent -Context $Context -Demand $pending -Purpose 'TO_GATE'
+$pendingOrders = @($riot.Snapshot().body.orders | Where-Object {
+    $_.upperId -eq $pendingStarted.Pickup.UpperId -or $_.upperId -eq [string]$pendingJourney.GateUpperId })
+$assertions.Add(
+    'L2-BH-12', '暂停时尚未建单的关卡腿不建：没有 TO_GATE 单，旅程阻断原因为已暂停，这趟只在 RIoT 上建过取货单',
+    ([string]$pendingJourney.BlockReasonCode -eq $heldReasonCode -and $null -eq $pendingGate -and
+        [string]$pendingJourney.Stage -ne 'AwaitingGateArrival' -and [string]$pendingJourney.Stage -ne 'Completed' -and
+        $pendingOrders.Count -eq 1),
+    "block $heldReasonCode, no TO_GATE intent, 1 RIoT order",
+    "block '$($pendingJourney.BlockReasonCode)' at $($pendingJourney.Stage), TO_GATE: " +
+        "$(if ($pendingGate) { $pendingGate.Status } else { 'none' }), RIoT orders: $($pendingOrders.Count)")
+
 # --- 4. 暂停之后的新 WIRE_TO_GATE 需求不受理 ----------------------------------------------------------------
 
+# second 那台车已空出来（pending 那台仍停在取货点），所以这里判的是暂停，不是没有空车。
 $third = New-L2WireToGateDemand -Context $Context -Label 'third'
 $thirdReason = Wait-L2Condition -Description 'the third demand is kept back because its task type is held' `
     -Journal $journal -Criterion 'backlog-third' -TimeoutSeconds 60 `
@@ -120,7 +159,7 @@ $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
 $thirdStage = Get-L2JourneyStage -Context $Context -Demand $third
 $thirdReason = Get-L2BacklogReason -Context $Context -Demand $third
 $assertions.Add(
-    'L2-BH-08', '车空闲时，WIRE_TO_GATE 暂停后的新需求不受理，JourneyBacklog 原因为已暂停',
+    'L2-BH-08', '有空车时，WIRE_TO_GATE 暂停后的新需求不受理，JourneyBacklog 原因为已暂停',
     ($null -eq $thirdStage -and $thirdReason -eq $heldReasonCode),
     "no journey / $heldReasonCode", "$(if ($thirdStage) { $thirdStage } else { 'no journey' }) / $thirdReason")
 
