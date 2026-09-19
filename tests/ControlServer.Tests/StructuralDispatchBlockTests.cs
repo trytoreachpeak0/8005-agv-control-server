@@ -44,6 +44,7 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("OUT_OF_SCOPE_WORK_TYPE", DispatchReasonClass.Backlog)]
     [InlineData("TASK_TYPE_BINDING_MISSING", DispatchReasonClass.Backlog)]
     [InlineData("TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", DispatchReasonClass.Backlog)]
+    [InlineData("TASK_TYPE_BINDING_CATALOG_NOT_FRESH", DispatchReasonClass.Backlog)]
     [InlineData("TASK_TYPE_HELD", DispatchReasonClass.Backlog)]
     [InlineData("TASK_TYPE_NOT_YET_EXECUTABLE", DispatchReasonClass.Backlog)]
     [InlineData("VEHICLE_NOT_IN_DISPATCH_POLICY", DispatchReasonClass.Backlog)]
@@ -143,6 +144,11 @@ public sealed class StructuralDispatchBlockTests
             written.UnionWith(code.Matches(File.ReadAllText(file)).Select(match => match.Groups[1].Value));
         }
         written.UnionWith(BoundFixedTaskStationResolver.RefusalReasonCodes);
+        // What the resolver passes through from #159's catalog check, probed rather than listed: a code the check can
+        // return but nobody registered must fail here, not only a code someone remembered to write down.
+        string[] catalogCodes = CatalogCheckReasonCodes();
+        Assert.Subset(BoundFixedTaskStationResolver.RefusalReasonCodes.ToHashSet(StringComparer.Ordinal), catalogCodes.ToHashSet(StringComparer.Ordinal));
+        written.UnionWith(catalogCodes);
         written.UnionWith(Regex.Matches(
                 File.ReadAllText(Path.Combine(runtime, "JourneyRuntimeEngine.cs")),
                 "\"((?:FINAL|DEMAND)_[A-Z_]+)\"")
@@ -169,6 +175,32 @@ public sealed class StructuralDispatchBlockTests
         ];
         Assert.Equal(written.Order(StringComparer.Ordinal), StructuralDispatchClassification.ByCode.Keys.Order(StringComparer.Ordinal));
         Assert.Equal(listed, StructuralDispatchClassification.ByCode.Keys.Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Every reason code <see cref="TaskTypeStationConfigurationValidator.EvaluateCatalog"/> can return, found by driving it
+    /// through each shape of catalog: none, stale, another Map, the station missing, the station renamed.
+    /// </summary>
+    private static string[] CatalogCheckReasonCodes()
+    {
+        TaskTypeStationBinding binding = new("WIRE_TO_GATE", 210, "关卡", "SITE");
+        RiotMapStationCatalogSnapshot catalog(int mapId, params RiotMapStation[] stations) =>
+            new(mapId, DateTimeOffset.UnixEpoch, new string('c', 64), stations);
+        return
+        [
+            .. new (RiotMapStationCatalogSnapshot? Catalog, bool Fresh)[]
+                {
+                    (null, true),
+                    (catalog(25, new RiotMapStation(210, "关卡")), false),
+                    (catalog(26, new RiotMapStation(210, "关卡")), true),
+                    (catalog(25), true),
+                    (catalog(25, new RiotMapStation(210, "关卡-旧")), true),
+                }
+                .SelectMany(shape => TaskTypeStationConfigurationValidator.EvaluateCatalog(25, [binding], shape.Catalog, shape.Fresh))
+                .Select(violation => violation.ReasonCode)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+        ];
     }
 
     /// <summary>
