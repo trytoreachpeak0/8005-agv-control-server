@@ -2217,6 +2217,105 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#187, the compensation's second step. A compensation is submitted, then authorized, and only the
+    /// authorization sends the vehicle its command. A second compensation submitted while the first still awaits its
+    /// authorization is accepted -- refusing it could leave a session whose one compensation is never authorized with
+    /// no action left -- but once one of them has been authorized and its command is out, authorizing the other is
+    /// refused as ActionNotAllowedInState: no second command, the session, the business and the outbox as they were,
+    /// the other still awaiting an authorization it will not get. The first one's result then closes the session as
+    /// usual. Before the fix both were authorized and the vehicle compensated twice.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    public async Task ASecondCompensationIsNotAuthorizedWhileTheFirstAwaitsItsOutcome()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_COMPENSATION_AUTHORIZED_TWICE";
+        const string proof = "compensation-authorized-twice-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            await ClaimPickupOccupancyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY"), state, token)));
+            const string secondId = "51000000-0000-4000-8000-000000000189";
+            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+                RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001896",
+                    actionId: secondId), state, token)));
+            Assert.Equal("", await processor.ProcessAsync(
+                CompensationAuthorization("90000000-0000-4000-8000-000000001896", ActionId), state, token));
+            Assert.Equal(RecoveryWorkflowState.AwaitingResult, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ActionId, token)).State);
+            BusinessPicture before = await BusinessPictureAsync(context);
+            string outbox = await OutboxAccountAsync(context);
+
+            string refused = await processor.ProcessAsync(
+                CompensationAuthorization("90000000-0000-4000-8000-000000001897", secondId), state, token);
+
+            Assert.Equal(1, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token));
+            Assert.Equal("LoadCompensationRejected", MessageType(refused));
+            JsonElement payload = FirstPayload(refused);
+            Assert.Equal(secondId, payload.GetProperty("recoveryActionId").GetString());
+            Assert.Equal(ServerReasonCodes.ActionNotAllowedInState,
+                payload.GetProperty("problem").GetProperty("reasonCode").GetString());
+            RecoveryWorkflowRow second = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == secondId, token);
+            Assert.Equal((RecoveryWorkflowState.AwaitingAuthorization, (string?)null),
+                (second.State, second.CommandMessageId));
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Equal(outbox, await OutboxAccountAsync(context));
+            Assert.Equal(1, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token));
+
+            // The first one's result closes the session as usual; the second is never commanded.
+            JsonNode result = JsonNode.Parse(Envelope(
+                "a0000000-0000-4000-8000-000000001896",
+                "LoadCompensationResult",
+                new
+                {
+                    recoveryActionId = ActionId,
+                    demandId = DemandId,
+                    slotOperationAttemptId = AttemptId,
+                    overallOutcome = "FAILED",
+                    slotResults = Array.Empty<object>(),
+                    observedAt = Now.AddSeconds(3)
+                }))!;
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
+                AllEmptyCompensationResult(result.ToJsonString()), state, token)));
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token)).State);
+            Assert.Equal(RecoveryWorkflowState.AwaitingAuthorization, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == secondId, token)).State);
+            Assert.Equal(1, await context.ProtocolOutbox.CountAsync(
+                row => row.MessageType == "LoadCompensationCommand", token));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+
+        static string CompensationAuthorization(string messageId, string actionId) => Envelope(
+            messageId,
+            "LoadCompensationRequested",
+            new
+            {
+                recoveryActionId = actionId,
+                exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
+                demandId = DemandId,
+                slotOperationAttemptId = AttemptId,
+                @operator = Operator()
+            });
+    }
+
+    /// <summary>
     /// control-server#187. The vehicle refuses the resume command itself -- SlotOperationCommandRejected, correlated
     /// to the SlotOperationResumeCommand as the protocol requires. No replacement result will come, so the resume
     /// is judged there and then, the way control-server#169 judges a result that does not reconcile: the resume is
