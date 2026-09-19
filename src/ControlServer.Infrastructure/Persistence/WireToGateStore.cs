@@ -539,6 +539,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                     .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                     .ConfigureAwait(false);
                 if (runtime is null || !Matches(runtime, journey) ||
+                    !await StopsAndDemandMatchAsync(runtime, cancellationToken).ConfigureAwait(false) ||
                     !await AreaAssignmentFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false) ||
                     !await TaskTypeStationFreezeMatchesAsync(snapshot, journey, cancellationToken).ConfigureAwait(false))
                 {
@@ -601,12 +602,24 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             AcceptedAt = snapshot.AcceptedAt,
             Status = DemandExecutionStatus.Accepted
         });
+        string journeyId = JourneyIdentity.ForAnchorDemand(snapshot.DemandId);
         dbContext.VehicleDispatchLeases.Add(new VehicleDispatchLeaseRow
         {
-            JourneyId = JourneyIdentity.ForAnchorDemand(snapshot.DemandId),
+            JourneyId = journeyId,
             DemandId = snapshot.DemandId,
             VehicleKey = orderIntent.VehicleKey,
             AcquiredAt = snapshot.AcceptedAt
+        });
+        // Batch 7 (control-server#206): the purpose claim is the vehicle's occupancy of record, written beside the lease in
+        // the same save and released wherever the lease is. It is inserted, never read first: the key decides who holds
+        // the vehicle.
+        ForgetClaimsThisContextLastSaw(orderIntent.VehicleKey);
+        dbContext.Set<VehiclePurposeClaimRow>().Add(new VehiclePurposeClaimRow
+        {
+            VehicleKey = orderIntent.VehicleKey,
+            Purpose = VehiclePurposes.Transport,
+            JourneyId = journeyId,
+            ClaimedAt = snapshot.AcceptedAt
         });
         dbContext.OrderIntents.Add(ToRow(orderIntent));
         if (journey is not null)
@@ -614,6 +627,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             JourneyRuntimeRow runtimeRow = ToRuntimeRow(snapshot.DemandId, journey);
             await SeedSnapshotRevisionsAsync(runtimeRow, cancellationToken).ConfigureAwait(false);
             dbContext.JourneyRuntimes.Add(runtimeRow);
+            dbContext.Set<JourneyStopRow>().AddRange(SingleDemandJourneyShape.Stops(runtimeRow));
+            dbContext.Set<JourneyDemandRow>().Add(SingleDemandJourneyShape.Demand(runtimeRow));
+            await AdvanceSnapshotRevisionCounterAsync(runtimeRow, cancellationToken).ConfigureAwait(false);
             JourneyBacklogRow? backlog = await dbContext.JourneyBacklog
                 .SingleOrDefaultAsync(row => row.DemandId == snapshot.DemandId, cancellationToken)
                 .ConfigureAwait(false);
@@ -624,9 +640,43 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 backlog.LastSeenAt = snapshot.AcceptedAt;
             }
         }
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException failure) when (IsPurposeClaimConflict(failure))
+        {
+            // Another journey's claim landed between the lease read above and this insert: the key refused this one, and
+            // the transaction rolls every row of this acceptance back with it. Said the way the lease read says it.
+            throw new BusinessIdentityConflictException(
+                $"Vehicle '{orderIntent.VehicleKey}' is already claimed by another journey: {failure.InnerException?.Message}");
+        }
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Stops tracking a claim on the vehicle that this context loaded or saved earlier and has not changed since.
+    /// </summary>
+    /// <remarks>
+    /// A context that outlives one acceptance -- the runtime's across iterations in the test kit, a connection's for the
+    /// life of the connection -- still holds the claim it wrote for the previous journey after another context released
+    /// it, and tracking a second instance with the same key is refused in memory before the database is ever asked.
+    /// Forgetting it is not a read: whether the vehicle is free is still decided by the key when the insert reaches the
+    /// database. A claim this context itself has staged a change to is left alone.
+    /// </remarks>
+    private void ForgetClaimsThisContextLastSaw(string vehicleKey)
+    {
+        foreach (var stale in dbContext.ChangeTracker.Entries<VehiclePurposeClaimRow>()
+                     .Where(entry => entry.State == EntityState.Unchanged && entry.Entity.VehicleKey == vehicleKey)
+                     .ToArray())
+        {
+            stale.State = EntityState.Detached;
+        }
+    }
+
+    private static bool IsPurposeClaimConflict(DbUpdateException failure) =>
+        failure.InnerException is SqliteException { SqliteErrorCode: 19 } sqlite &&
+        sqlite.Message.Contains("VehiclePurposeClaims.VehicleKey", StringComparison.Ordinal);
 
     public async Task<StoredMovementIntent?> GetByUpperIdAsync(
         string upperId, CancellationToken cancellationToken)
@@ -1378,6 +1428,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .SingleAsync(row => row.DemandId == demandId, cancellationToken)
             .ConfigureAwait(false);
         lease.ReleasedAt ??= completedAt;
+        await VehiclePurposeClaimRelease.StageAsync(dbContext, lease, cancellationToken).ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = transportDemandKey,
@@ -1943,6 +1994,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             .SingleAsync(row => row.DemandId == result.DemandId, cancellationToken)
             .ConfigureAwait(false);
         lease.ReleasedAt ??= result.ObservedAt;
+        await VehiclePurposeClaimRelease.StageAsync(dbContext, lease, cancellationToken).ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
         {
             TransportDemandKey = demand.TransportDemandKey,
@@ -2475,6 +2527,55 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         runtime.VehicleBusinessRevision = highest.VehicleBusiness + RevisionsPerJourney;
         runtime.WorklistRevision = highest.Worklist + RevisionsPerJourney;
         runtime.PlanRevision = highest.Plan + PlanRevisionsPerJourney;
+    }
+
+    /// <summary>
+    /// Moves the vehicle's revision counter to the journey's seeded revisions, in the same unsaved change as the journey.
+    /// </summary>
+    /// <remarks>
+    /// The seed itself is still derived from <c>JourneyRuntimes</c> exactly as before, so nothing published changes; the
+    /// counter only records it, and so always equals the highest revision stored on the vehicle's journeys. Its readers
+    /// switch over in control-server#208.
+    /// </remarks>
+    /// <summary>
+    /// Whether the stops and the demand membership stored for a replayed acceptance are the ones it wrote (batch 7,
+    /// control-server#206), judged on what the acceptance fixed; a missing row is a difference too.
+    /// </summary>
+    private async Task<bool> StopsAndDemandMatchAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken)
+    {
+        JourneyStopRow[] expectedStops = SingleDemandJourneyShape.Stops(runtime);
+        JourneyStopRow[] storedStops = await dbContext.Set<JourneyStopRow>().AsNoTracking()
+            .Where(row => row.JourneyId == runtime.JourneyId)
+            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        if (storedStops.Length != expectedStops.Length ||
+            !expectedStops.All(expected => storedStops.Any(stored => SingleDemandJourneyShape.SameStop(stored, expected))))
+        {
+            return false;
+        }
+
+        JourneyDemandRow expectedDemand = SingleDemandJourneyShape.Demand(runtime);
+        JourneyDemandRow? storedDemand = await dbContext.Set<JourneyDemandRow>().AsNoTracking()
+            .SingleOrDefaultAsync(
+                row => row.JourneyId == runtime.JourneyId && row.DemandId == runtime.DemandId, cancellationToken)
+            .ConfigureAwait(false);
+        return storedDemand is not null && SingleDemandJourneyShape.SameDemand(storedDemand, expectedDemand);
+    }
+
+    private async Task AdvanceSnapshotRevisionCounterAsync(
+        JourneyRuntimeRow runtime,
+        CancellationToken cancellationToken)
+    {
+        VehicleSnapshotRevisionRow? counter = await dbContext.Set<VehicleSnapshotRevisionRow>()
+            .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken)
+            .ConfigureAwait(false);
+        if (counter is null)
+        {
+            counter = new VehicleSnapshotRevisionRow { AgvId = runtime.AgvId };
+            dbContext.Set<VehicleSnapshotRevisionRow>().Add(counter);
+        }
+        counter.VehicleBusinessRevision = runtime.VehicleBusinessRevision;
+        counter.WorklistRevision = runtime.WorklistRevision;
+        counter.PlanRevision = runtime.PlanRevision;
     }
 
     private static JourneyRuntimeRow ToRuntimeRow(string demandId, JourneyExecutionPlan journey)

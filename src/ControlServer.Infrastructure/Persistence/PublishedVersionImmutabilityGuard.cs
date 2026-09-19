@@ -66,6 +66,8 @@ internal static class PublishedVersionImmutabilityGuard
         // 任务类型规则与按图绑定集同样没有草稿态（REQ-0337、REQ-0343），版本行与其子行写入即发布；换内容是写一个新版本。
         TaskTypeStationRuleVersionRow or TaskTypeStationRuleRow
             or TaskTypeStationBindingSetVersionRow or TaskTypeStationBindingRow or TaskTypeStationRequirementRow => true,
+        // 每区派车参数同样没有草稿态（REQ-0198、REQ-0203；control-server#206）：版本行与分区行写入即发布，换参数是写一个新版本。
+        DispatchZoneParameterVersionRow or DispatchZoneParameterRow => true,
         _ => false,
     };
 

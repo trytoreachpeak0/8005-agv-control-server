@@ -37,6 +37,16 @@ public sealed class JourneyRuntimeOptions
     /// also takes the correction window away; any other value must be at least five seconds.
     /// </remarks>
     public TimeSpan StationDepartureWaitTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How long a vehicle may hold cargo waiting for more before it must leave (ADR-cross-0057), counted from the first
+    /// LoadBatch's safety closure and never reset by a new stop, a disconnect or a restart. Kept apart from
+    /// <see cref="StationDepartureWaitTimeout"/> on purpose: the two clocks must never share a field.
+    /// </summary>
+    /// <remarks>
+    /// Thirty minutes by default and always positive. Batch 7's schema ticket (control-server#206) adds the setting; its
+    /// reader is control-server#212.
+    /// </remarks>
     public TimeSpan CargoHoldingTimeout { get; set; } = TimeSpan.FromMinutes(30);
     public string SublotBoxCountPath { get; set; } = string.Empty;
     public string[] AllowedWorkTypes { get; set; } = [];
@@ -145,6 +155,7 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         {
             failures.Add("StationDepartureWaitTimeout must be zero (off) or at least 5 s.");
         }
+        if (options.CargoHoldingTimeout <= TimeSpan.Zero) failures.Add("CargoHoldingTimeout must be positive.");
         if (options.AgvLifecycleGeneration <= 0) failures.Add("AgvLifecycleGeneration must be positive.");
         if (options.MapId <= 0) failures.Add("MapId must be positive.");
         if (options.DispatchGeneration <= 0) failures.Add("DispatchGeneration must be positive.");
