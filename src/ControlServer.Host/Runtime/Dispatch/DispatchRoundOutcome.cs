@@ -25,8 +25,11 @@ public sealed record DispatchVehicleOutcome(
 /// <param name="Round">The facts the round was decided against.</param>
 /// <param name="CompletedVehicles">
 /// The vehicles whose segment ran to its end, in the order they were served. A vehicle that ran out its
-/// budget is absent even when it had already judged candidates: a segment cut off part-way has not
-/// finished deciding, and its verdicts are not a statement about that vehicle.
+/// budget, or whose segment threw (control-server#231), is absent even when it had already judged
+/// candidates: a segment cut off part-way has not finished deciding, and its verdicts are not a statement
+/// about that vehicle. Both exclusions are one rule — a vehicle this round could not get an answer out of
+/// has refused nothing, and reading its absence as a refusal is what would turn a momentarily unreadable
+/// vehicle into a fleet-wide structural alarm.
 /// </param>
 public sealed record DispatchRoundOutcome(
     DispatchRoundFacts Round,
@@ -43,9 +46,10 @@ public sealed record DispatchRoundOutcome(
 /// </para>
 /// <para>
 /// Called once per round that reached the vehicle loop, including a round in which a vehicle ran out its
-/// budget. Not called when the round stopped before the loop (the catalog could not be read) or failed out of
-/// it with an exception. Placed by control-server#69 with a default that does nothing; the structural dispatch
-/// block (control-server#74) provides the implementation.
+/// budget or threw. Not called when the round stopped before the loop, which today means the catalog could
+/// not be read. Until control-server#231 a vehicle throwing also skipped it, and that is what made one
+/// unreachable vehicle end the round for everyone behind it. Placed by control-server#69 with a default that
+/// does nothing; the structural dispatch block (control-server#74) provides the implementation.
 /// </para>
 /// </remarks>
 public interface IDispatchRoundOutcomeSink

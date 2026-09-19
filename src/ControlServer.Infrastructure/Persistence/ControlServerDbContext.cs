@@ -641,6 +641,21 @@ public sealed class JourneyRuntimeRow
     /// nobody recorded.
     /// </summary>
     public DateTimeOffset? BlockReasonSince { get; private set; }
+
+    /// <summary>
+    /// When the stop at the AREA machine was first held because the station no longer admits the demand's task type, by
+    /// this server's clock (control-server#228). The escalation of control-server#198 is measured from it. Kept apart from
+    /// <see cref="BlockReasonSince"/> on purpose: that one restarts whenever another code is written -- a failed order, a
+    /// checkpoint wait -- and the wait for the admission has not restarted then. Written with the first hold, in the same
+    /// save; cleared only when the admission returns and the stop moves on to its unload. A restart or a reconnect leaves
+    /// it as it is.
+    /// </summary>
+    /// <remarks>
+    /// The setter is private for the same reason <see cref="BlockReasonSince"/>'s is: a write that bypasses
+    /// <see cref="HoldForAreaEndAdmission"/> or <see cref="ReleaseAreaEndAdmissionHold"/> is a compile error rather than a
+    /// wait that silently starts over. Restarting it is exactly the defect control-server#228 exists to fix.
+    /// </remarks>
+    public DateTimeOffset? AreaEndAdmissionRevokedSince { get; private set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
@@ -691,6 +706,23 @@ public sealed class JourneyRuntimeRow
     /// one (control-server#198). The escalation schedule of program#55 is measured from <see cref="BlockReasonSince"/>,
     /// and restarting it here would send a block that has already climbed the ladder back to its lowest tier.
     /// </summary>
+    /// <summary>
+    /// The one way to start <see cref="AreaEndAdmissionRevokedSince"/>: the first round that holds the stop records when
+    /// the wait began, every later round keeps that time, and the start is returned so the caller writes the block from it
+    /// (control-server#228). Idempotent on purpose -- the hold is written again on every round it lasts.
+    /// </summary>
+    public DateTimeOffset HoldForAreaEndAdmission(DateTimeOffset now)
+    {
+        AreaEndAdmissionRevokedSince ??= now;
+        return AreaEndAdmissionRevokedSince.Value;
+    }
+
+    /// <summary>
+    /// The one way to clear <see cref="AreaEndAdmissionRevokedSince"/>: the station admits the task type again and the
+    /// stop leaves for its unload. Nothing else ends the wait -- not a restart, not a reconnect, not another block code.
+    /// </summary>
+    public void ReleaseAreaEndAdmissionHold() => AreaEndAdmissionRevokedSince = null;
+
     public void EscalateBlockReason(string reasonCode)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);

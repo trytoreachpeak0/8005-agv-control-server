@@ -117,6 +117,8 @@ internal static partial class Program
             ReleaseTaskTypeStationHoldCommand => await ReleaseTaskTypeStationHoldAsync(context, governance, options, now),
             ReadTaskTypeStationsCommand => await ReadTaskTypeStationsAsync(context, governance, options),
             CloseTaskTypeStationActivationCommand => await CloseTaskTypeStationActivationAsync(context, governance, options, now),
+            ImportDispatchZoneParametersCommand => await ImportDispatchZoneParametersAsync(context, governance, options, now),
+            ReadDispatchZoneParametersCommand => await ReadDispatchZoneParametersAsync(context, governance, options),
             _ => Usage($"unknown command '{args[0]}'")
         };
     }
@@ -125,7 +127,8 @@ internal static partial class Program
     /// 以 SQLite 只读模式开库的命令。一个判断、一份名单：新增只读动词往这里加，不要在别处另起一套。
     /// </summary>
     internal static bool OpensReadOnly(string command) =>
-        command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand or ReadTaskTypeStationsCommand;
+        command is CheckBindingSnapshotsCommand or ReadAreaAssignmentsCommand or ReadTaskTypeStationsCommand
+            or ReadDispatchZoneParametersCommand;
 
     private const string CheckBindingSnapshotsCommand = "check-binding-snapshots";
 
@@ -706,7 +709,8 @@ internal static partial class Program
             "usage: ControlServer.FieldOps <status|verify|release|enable-gate|audit|seed-approved-facts|bind-io"
             + "|export-audit|check-binding-snapshots|import-area-assignments|area-assignments"
             + "|activate-task-type-stations|rollback-task-type-stations|reconcile-task-type-stations"
-            + "|release-task-type-station-hold|close-task-type-station-activation|task-type-stations>"
+            + "|release-task-type-station-hold|close-task-type-station-activation|task-type-stations"
+            + "|import-dispatch-zone-parameters|dispatch-zone-parameters>"
             + " --database <path> [options]");
         Console.Error.WriteLine("  verify      --record <field-record.json>");
         Console.Error.WriteLine("  release     --agv <agvId> --model <slotModelVersionId>");
@@ -733,6 +737,8 @@ internal static partial class Program
             + " --catalog <stations.json> --reason <text> [--role <text>]");
         Console.Error.WriteLine("  close-task-type-station-activation --map <id> --reason <text> [--role <text>]");
         Console.Error.WriteLine("  task-type-stations      --map <id>   read-only");
+        Console.Error.WriteLine("  import-dispatch-zone-parameters --input <zone-parameters.csv> [--dry-run]");
+        Console.Error.WriteLine("  dispatch-zone-parameters        [--version <n>]   read-only");
         Console.Error.WriteLine();
         Console.Error.WriteLine(
             "import-area-assignments takes a UTF-8 CSV whose header is exactly"
@@ -764,6 +770,13 @@ internal static partial class Program
             + " outcome is RESULT_UNKNOWN; run reconcile-task-type-stations, which reads what is really in force."
             + " Only when it reads back a contradiction does close-task-type-station-activation give up the attempt:"
             + " the map is left with no active version until the next activation or rollback.");
+        Console.Error.WriteLine(
+            "import-dispatch-zone-parameters takes a UTF-8 CSV whose header is exactly"
+            + " 'dispatch_zone,en_route_addition_max_path_cost_increase_mm,starvation_threshold_seconds'. The increase is in"
+            + " planned path cost (millimetres, 0 to 1000000), not time; the threshold is in seconds (1 to 86400). An empty"
+            + " value, or a zone not in the table, is unconfigured; an increase of 0 forbids en-route addition in that zone."
+            + " The same whole-table rules as import-area-assignments apply, except that a table whose values equal the"
+            + " current version writes no new version (UNCHANGED).");
         Console.Error.WriteLine(
             "  --role is recorded as given and is not verified: there is no personnel authentication, and every audit"
             + " record names this deployment, not a person.");

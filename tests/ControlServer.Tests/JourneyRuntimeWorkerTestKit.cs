@@ -1497,6 +1497,14 @@ internal static class JourneyRuntimeWorkerTestKit
                 DestinationStationId: stationId);
         }
 
+        /// <summary>Reports the order under <paramref name="upperId"/> as RIoT's terminal FAILED from now on.</summary>
+        public void FailOrder(string upperId) =>
+            _orders[upperId] = _orders[upperId] with
+            {
+                Kind = RiotOrderObservationKind.Terminal,
+                OrderState = RiotOrderState.Failed,
+            };
+
         public Task<RiotVehicleObservation> ReadVehicleAsync(string vehicleKey, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
