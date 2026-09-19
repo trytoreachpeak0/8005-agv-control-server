@@ -68,6 +68,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["CatalogBindingHoldConvergenceTests"] = "batch 6 FP-C9a REQ-0342/REQ-0345 catalog change holds confined to the affected task type (control-server#162); server-internal, no wire message",
             ["ControlServerSqliteConnectionTests"] = "cross-cutting guard on the one place the server's SQLite connection string is built; the busy timeout two processes share is a policy, not a slice",
             ["CreateGateTests"] = "7.5 #9, FP-C13 create gate and catalog availability; server-internal gate",
+            ["DashboardActionTests"] = "batch 6 FP-C9a REQ-0340 dashboard write action convention, same-origin confirmation page (control-server#162); the dashboard is disjoint from the protocol",
             ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
             ["DemandAreaAssignmentFreezeTests"] = "batch 4 FP-C15 REQ-0350 demand freeze of the area assignment version; server-internal, no wire message",
             ["DemandTaskTypeStationFreezeTests"] = "batch 6 FP-C9b REQ-0344 demand freeze of the task type rule and binding set versions (control-server#159); server-internal, no wire message",
