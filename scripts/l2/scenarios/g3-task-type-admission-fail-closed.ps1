@@ -110,11 +110,13 @@ $assertions.Add(
     "受理 $unboundAccepted / 旅程 $unboundRuntimes / 意图 $unboundIntents / 操作 $unboundOperations")
 
 # 发件箱里任何一类消息都不许提到它：计划、清单、业务状态快照都算。两种写法的 id 都查。
-$mentioning = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT MessageType FROM ProtocolOutbox WHERE PayloadJson LIKE '%$unboundId%' " +
-        "OR PayloadJson LIKE '%$($unboundGuid.ToString('N'))%'") | ForEach-Object { [string]$_.MessageType })
-$boundUpperIds = @(Invoke-L2Query -Connection $connection -Sql "SELECT UpperId FROM OrderIntents WHERE DemandId = '$boundId'" |
-    ForEach-Object { [string]$_.UpperId })
+# Invoke-L2Query returns its rows as one wrapped array: assign it first, then enumerate.
+$mentioningRows = Invoke-L2Query -Connection $connection -Sql (
+    "SELECT MessageType FROM ProtocolOutbox WHERE PayloadJson LIKE '%$unboundId%' " +
+    "OR PayloadJson LIKE '%$($unboundGuid.ToString('N'))%'")
+$mentioning = @($mentioningRows | ForEach-Object { [string]$_.MessageType })
+$boundIntentRows = Invoke-L2Query -Connection $connection -Sql "SELECT UpperId FROM OrderIntents WHERE DemandId = '$boundId'"
+$boundUpperIds = @($boundIntentRows | ForEach-Object { [string]$_.UpperId })
 $orders = @($riot.Snapshot().body.orders)
 $foreignOrders = @($orders | Where-Object { [string]$_.upperId -notin $boundUpperIds })
 $assertions.Add(

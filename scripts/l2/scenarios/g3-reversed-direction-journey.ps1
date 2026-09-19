@@ -94,9 +94,10 @@ $judgeRoute = {
         "1:TO_PICKUP@$stagingName,2:TO_DROPOFF@$areaName / publicStationFunction 非空 0 条",
         "$planShape / publicStationFunction 非空 $($functions.Count) 条")
 
-    $runtime = @(Invoke-L2Query -Connection $connection -Sql (
-            "SELECT PickupStationId, PickupStationRiotId, GateStationId, GateStationRiotId, RouteEvidenceId " +
-            "FROM JourneyRuntimes WHERE DemandId = '$demandId'"))
+    # Invoke-L2Query returns its rows as one wrapped array; @() around the call would count that wrapper as one row.
+    $runtime = Invoke-L2Query -Connection $connection -Sql (
+        "SELECT PickupStationId, PickupStationRiotId, GateStationId, GateStationRiotId, RouteEvidenceId " +
+        "FROM JourneyRuntimes WHERE DemandId = '$demandId'")
     $firstOrder = @(@($riot.Snapshot().body.orders) | Where-Object { [string]$_.upperId -eq [string]$originIntent.UpperId }) |
         Select-Object -First 1
     $endsRecorded = if ($runtime.Count -eq 1) {
@@ -197,9 +198,9 @@ $assertions.Add(
 
 # --- 5. 准入冻结在卸货那次（推翻 I6） ---------------------------------------------------------------------------
 
-$admissions = @(Invoke-L2Query -Connection $connection -Sql (
-        "SELECT SlotOperationAttemptId, StationId, TaskType, Allowed FROM AdmissionDecisionSnapshots " +
-        "WHERE SlotOperationAttemptId IN ('$($journey.Load.AttemptId)', '$($journey.Unload.AttemptId)')"))
+$admissions = Invoke-L2Query -Connection $connection -Sql (
+    "SELECT SlotOperationAttemptId, StationId, TaskType, Allowed FROM AdmissionDecisionSnapshots " +
+    "WHERE SlotOperationAttemptId IN ('$($journey.Load.AttemptId)', '$($journey.Unload.AttemptId)')")
 $onUnload = @($admissions | Where-Object { [string]$_.SlotOperationAttemptId -eq $journey.Unload.AttemptId })
 $onLoad = @($admissions | Where-Object { [string]$_.SlotOperationAttemptId -eq $journey.Load.AttemptId })
 $assertions.Add(
