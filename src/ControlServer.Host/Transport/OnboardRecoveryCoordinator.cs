@@ -26,6 +26,24 @@ public sealed class OnboardRecoveryCoordinator(
             "Load cancellation {CancellationId} for demand {DemandId} reported ALL_EMPTY after its stop had " +
             "already moved on (stage {Stage}, reason {BlockReasonCode}); the result is recorded and the stop is " +
             "left as it was decided.");
+    private static readonly Action<ILogger, string, string, string, string, string?, string?, Exception?>
+        LogSessionClosedNotReconciled =
+            LoggerMessage.Define<string, string, string, string, string?, string?>(
+                LogLevel.Warning,
+                new EventId(2121, nameof(LogSessionClosedNotReconciled)),
+                "Exception recovery session {SessionId} closed under {CloseReasonCode}: {WorkflowType} " +
+                "{WorkflowId} reported {Outcome}, which does not reconcile. Demand {DemandId} stays blocked; a new " +
+                "session is needed to recover it.");
+
+    /// <summary>
+    /// Why a session closed on a result that did not reconcile (control-server#169). Not a wire code: the
+    /// snapshot has no field for it and its blocking facts are empty once the session is CLOSED, so it is
+    /// written to the log, and the store keeps what it is derived from -- the closed session's workflow in
+    /// <see cref="RecoveryWorkflowState.RecoveryRequired"/> with the result's outcome, and the journey
+    /// blocked under <c>&lt;messageType&gt;_NOT_RECONCILED</c>.
+    /// </summary>
+    internal const string SessionClosedResultNotReconciled = "RECOVERY_ACTION_RESULT_NOT_RECONCILED";
+
     private static readonly string[] RecoveryRequestTypes =
     [
         "ExceptionRecoverySessionRequested",
@@ -873,6 +891,19 @@ public sealed class OnboardRecoveryCoordinator(
         }
     }
 
+    /// <summary>
+    /// Where a session goes once its action's result has been judged -- the one place that decides it, for the
+    /// recovery results and for a resume's replacement OperationResult alike.
+    /// </summary>
+    /// <remarks>
+    /// The session closes either way (control-server#169, decided by the user on 2026-09-19). A result that
+    /// reconciles has ended what the session was opened for. One that does not -- FAILED, UNKNOWN, or a
+    /// conclusion its slot results do not bear out -- has still arrived, so nothing is left to execute; until
+    /// #169 it left the session EXECUTING, which refused a second action, refused a new session on the vehicle,
+    /// and told the vehicle it was still waiting for a result. Closing it is not "handled": the business stays
+    /// where the result left it (demand RecoveryRequired, journey Blocked, lease and vehicle held), and the
+    /// administrator opens a new session, whose actions are worked out afresh from the vehicle's facts then.
+    /// </remarks>
     private async Task AdvanceSessionAfterResultAsync(
         RecoveryWorkflowRow workflow,
         long sessionGeneration,
@@ -882,9 +913,16 @@ public sealed class OnboardRecoveryCoordinator(
         ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
             row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
             cancellationToken).ConfigureAwait(false);
-        session.State = workflow.State == RecoveryWorkflowState.Reconciled ? "CLOSED" : "EXECUTING";
+        session.State = "CLOSED";
         session.Revision++;
         session.UpdatedAt = timeProvider.GetUtcNow();
+        if (workflow.State != RecoveryWorkflowState.Reconciled)
+        {
+            LogSessionClosedNotReconciled(
+                logger ?? (ILogger)NullLogger.Instance,
+                session.ExceptionRecoverySessionId, SessionClosedResultNotReconciled, workflow.WorkflowType,
+                workflow.WorkflowId, workflow.Outcome, workflow.DemandId, null);
+        }
         await QueueSessionSnapshotAsync(session, sessionGeneration, cancellationToken).ConfigureAwait(false);
     }
 
