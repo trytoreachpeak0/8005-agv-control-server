@@ -534,7 +534,7 @@ public sealed class TaskTypeStationActivationService(
             (IReadOnlyList<TaskTypeStationHold> released, string auditId) = await _activations.ReleaseManualAndCatalogHoldsAsync(
                 mapId,
                 taskType,
-                "fieldops:release-hold:" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+                "fieldops:release-hold:",
                 released => Entry(released.Count == 0 ? nothingHeld : [], released),
                 now,
                 cancellationToken);

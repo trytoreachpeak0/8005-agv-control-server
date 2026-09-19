@@ -362,11 +362,12 @@ public interface ITaskTypeStationActivationStore
 
     /// <summary>
     /// 解除该 <c>Map + TASK_TYPE</c> 全部未解除的人工与目录变化暂停，只记解除、不删行；<paramref name="audit"/> 给出的审计在同一个事务里写。
+    /// 每条的 <c>ReleasedBy</c> 是 <paramref name="releasedByPrefix"/> 加那条审计的记录号，审计写成之后才填（control-server#200）。
     /// </summary>
     Task<(IReadOnlyList<TaskTypeStationHold> Released, string AuditRecordId)> ReleaseManualAndCatalogHoldsAsync(
         int mapId,
         string taskType,
-        string releasedBy,
+        string releasedByPrefix,
         Func<IReadOnlyList<TaskTypeStationHold>, GovernanceAuditEntry> audit,
         DateTimeOffset at,
         CancellationToken cancellationToken);
