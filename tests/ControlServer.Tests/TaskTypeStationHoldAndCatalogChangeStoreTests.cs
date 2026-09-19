@@ -18,12 +18,12 @@ public sealed class TaskTypeStationHoldAndCatalogChangeStoreTests
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
         Assert.False(await fixture.Holds.IsHeldAsync(25, TransportTaskTypes.WireToGate, Token));
 
-        TaskTypeStationHold manual = await fixture.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await fixture.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "OPERATOR_SUSPECTS_BINDING",
-            """{"note":"door sensor"}""", "operator:zhang", Now, Token);
-        TaskTypeStationHold catalog = await fixture.Holds.RaiseAsync(
+            """{"note":"door sensor"}""", "operator:zhang", Now, Token)).Hold;
+        TaskTypeStationHold catalog = (await fixture.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.CatalogChange, "STATION_RENAMED",
-            """{"stationRiotId":210}""", "server", Now.AddMinutes(1), Token);
+            """{"stationRiotId":210}""", "server", Now.AddMinutes(1), Token)).Hold;
         await fixture.Holds.RaiseAsync(
             26, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "OTHER_MAP", "{}", "operator:li",
             Now, Token);

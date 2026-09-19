@@ -350,7 +350,7 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
 {
     private readonly ControlServerDbContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
-    public async Task<TaskTypeStationHold> RaiseAsync(
+    public async Task<TaskTypeStationHoldRaise> RaiseAsync(
         int mapId,
         string taskType,
         string source,
@@ -384,7 +384,7 @@ public sealed class TaskTypeStationHoldStore(ControlServerDbContext context) : I
         };
         _context.Set<TaskTypeStationHoldRow>().Add(row);
         await _context.SaveChangesAsync(cancellationToken);
-        return Project(row);
+        return new(Project(row), Created: true);
     }
 
     public async Task<bool> ReleaseAsync(

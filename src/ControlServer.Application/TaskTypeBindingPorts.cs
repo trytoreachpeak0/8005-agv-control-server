@@ -270,12 +270,20 @@ public sealed record TaskTypeStationHold(
     DateTimeOffset? ReleasedAt,
     string? ReleasedBy);
 
+/// <summary>写一条暂停的结果：<see cref="Created"/> 为假表示同一条暂停已经成立，返回的是已有那条。</summary>
+public sealed record TaskTypeStationHoldRaise(TaskTypeStationHold Hold, bool Created);
+
 /// <summary>
-/// 按 <c>Map + TASK_TYPE</c> 的暂停（REQ-0340）。同一 <c>(MapId, TaskType)</c> 可同时有多条未解除暂停，不自动到期，解除不删行。
+/// 按 <c>Map + TASK_TYPE</c> 的暂停（REQ-0340）。同一 <c>(MapId, TaskType)</c> 可同时有多条来源或原因不同的未解除暂停，
+/// 不自动到期，解除不删行。
 /// </summary>
 public interface ITaskTypeStationHoldStore
 {
-    Task<TaskTypeStationHold> RaiseAsync(
+    /// <summary>
+    /// 置一条暂停。同一 <c>(MapId, TaskType, Source, ReasonCode)</c> 已有未解除暂停时不建新行，返回已有那条
+    /// （<see cref="TaskTypeStationHoldRaise.Created"/> 为假）：超时重试与目录变化逐轮重判都只形成一条暂停。
+    /// </summary>
+    Task<TaskTypeStationHoldRaise> RaiseAsync(
         int mapId,
         string taskType,
         string source,
@@ -285,7 +293,10 @@ public interface ITaskTypeStationHoldStore
         DateTimeOffset raisedAt,
         CancellationToken cancellationToken);
 
-    /// <summary>解除一条仍成立的暂停；没有这条或已解除时返回 <c>false</c>。</summary>
+    /// <summary>
+    /// 解除一条仍成立的暂停；没有这条或已解除时返回 <c>false</c>。两人同时解除时只有先写入的一方返回 <c>true</c>，
+    /// 它记下的 <c>ReleasedBy</c> 不被后到的一方覆盖。
+    /// </summary>
     Task<bool> ReleaseAsync(
         string holdId,
         string releasedBy,
