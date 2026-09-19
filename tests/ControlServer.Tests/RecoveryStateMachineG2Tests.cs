@@ -2295,6 +2295,135 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#187. A refusal is closed on once. The same refusal resent -- on the same connection, and again
+    /// after a server restart -- is answered with its first DurableAck, byte for byte; a second refusal of the same
+    /// command under a new messageId finds the resume already judged. None of them closes the session again, writes a
+    /// new revision or snapshot, logs another closing, or rewrites the judged resume.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ARejectedResumeCommandResentOrRefusedAgainClosesTheSessionOnlyOnce()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_RESUME_REJECTED_AGAIN";
+        const string proof = "resume-rejected-again-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            MovableTimeProvider clock = new(Now);
+            EventRecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), clock, Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string resumeCommandId = (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).CommandMessageId!;
+            string rejection = ResumeCommandRejected("e0000000-0000-4000-8000-000000001891", resumeCommandId);
+            string firstAck = await processor.ProcessAsync(rejection, state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal("DurableAck", MessageType(firstAck));
+            BusinessPicture closed = await BusinessPictureAsync(context);
+            Assert.Contains(":CLOSED:", closed.Sessions, StringComparison.Ordinal);
+            RecoveryWorkflowRow judged = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+            string outbox = await OutboxAccountAsync(context);
+            clock.Current = Now.AddMinutes(1);
+
+            Assert.Equal(firstAck, await processor.ProcessAsync(rejection, state, token));
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            // The server restarts: a new context and processor over the same store.
+            await using ControlServerDbContext restarted = new(
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
+            OnboardMessageProcessor afterRestart = TestOnboardProcessorFactory.Create(
+                restarted, new WireToGateStore(restarted), clock, Configuration(proofVariable),
+                new RecordingPeer(restarted), recoveryLogger: log);
+            Assert.Equal(firstAck, await afterRestart.ProcessAsync(rejection, state, token));
+            await afterRestart.FlushDeferredOutboundAsync(state, token);
+
+            string refusedAgain = await afterRestart.ProcessAsync(
+                ResumeCommandRejected("e0000000-0000-4000-8000-000000001892", resumeCommandId), state, token);
+            await afterRestart.FlushDeferredOutboundAsync(state, token);
+            Assert.Equal("DurableAck", MessageType(refusedAgain));
+
+            Assert.Equal(closed, await BusinessPictureAsync(restarted));
+            Assert.Equal(outbox, await OutboxAccountAsync(restarted));
+            RecoveryWorkflowRow after = await restarted.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+            Assert.Equal((judged.State, judged.Outcome, judged.ResultMessageId, judged.UpdatedAt),
+                (after.State, after.Outcome, after.ResultMessageId, after.UpdatedAt));
+            Assert.Single(log.Entries, entry => entry.EventId.Id == 2121);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#187. Only a refusal of the waiting resume's own command closes anything. A refusal of the
+    /// original SlotOperationCommand names the same attempt but is correlated to that command, not to the resume; a
+    /// refusal whose attempt disagrees with the resume's, or whose correlationId names no command of a waiting resume,
+    /// is not the resume's either. Each is acknowledged and nothing else, as before: the resume still waits, the
+    /// session is still EXECUTING at its revision, and no snapshot or command is queued.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    [InlineData("original-command")]
+    [InlineData("other-attempt")]
+    [InlineData("no-such-command")]
+    public async Task ARejectionThatIsNotOfTheWaitingResumesCommandIsOnlyAcknowledged(string refusal)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_OTHER_REJECTION";
+        const string proof = "other-rejection-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            string resumeCommandId = (await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token)).CommandMessageId!;
+            BusinessPicture before = await BusinessPictureAsync(context);
+            string outbox = await OutboxAccountAsync(context);
+            // The original SlotOperationCommand of the seeded attempt has a messageId of its own, never the resume's.
+            const string originalCommandId = "c0000000-0000-4000-8000-000000001893";
+            string line = refusal switch
+            {
+                "original-command" => ResumeCommandRejected("e0000000-0000-4000-8000-000000001893", originalCommandId),
+                "other-attempt" => ResumeCommandRejected(
+                    "e0000000-0000-4000-8000-000000001894", resumeCommandId,
+                    attemptId: "20000000-0000-4000-8000-000000000187"),
+                _ => ResumeCommandRejected(
+                    "e0000000-0000-4000-8000-000000001895", "c0000000-0000-4000-8000-000000001895")
+            };
+
+            string ack = await processor.ProcessAsync(line, state, token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(before, await BusinessPictureAsync(context));
+            Assert.Equal(outbox, await OutboxAccountAsync(context));
+            Assert.Contains(":EXECUTING:", before.Sessions, StringComparison.Ordinal);
+            RecoveryWorkflowRow resume = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+            Assert.Equal((RecoveryWorkflowState.AwaitingResult, (string?)null, (string?)null),
+                (resume.State, resume.Outcome, resume.ResultMessageId));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#175. Session A took the same action twice; the first result did not reconcile and closed A,
     /// and the administrator is now working the demand in session B. The second result of A then arrives. Whether
     /// it concludes success or not, it is the record of A's own attempt and nothing more: it is acknowledged and
