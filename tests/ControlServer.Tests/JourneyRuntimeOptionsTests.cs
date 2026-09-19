@@ -88,6 +88,48 @@ public sealed class JourneyRuntimeOptionsTests
         }
     }
 
+    /// <summary>
+    /// 终点改由绑定给出（control-server#160）：关卡两个标量从选项与出厂配置里删掉，「必须含 WIRE_TO_GATE」那条校验也删掉——
+    /// 部署只放行别的任务类型不再被拒；#159 为防两份真相分叉加的过渡校验随标量一起删。
+    /// </summary>
+    [Fact]
+    public void TheGateScalarsAreGoneAndAnAllowListWithoutWireToGateIsNoLongerRefused()
+    {
+        Assert.Null(typeof(JourneyRuntimeOptions).GetProperty("GateStationId"));
+        Assert.Null(typeof(JourneyRuntimeOptions).GetProperty("GateStationRiotId"));
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+        options.AllowedWorkTypes = ["STAGING_TO_WIRE"];
+
+        Microsoft.Extensions.Options.ValidateOptionsResult result =
+            new JourneyRuntimeOptionsValidator(new ConfigurationBuilder().Build()).Validate(null, options);
+
+        Assert.DoesNotContain(result.Failures ?? [], failure => failure.Contains("WIRE_TO_GATE", StringComparison.Ordinal));
+        Assert.DoesNotContain(result.Failures ?? [], failure => failure.Contains("GateStation", StringComparison.Ordinal));
+
+        string settings = File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "ControlServer.Host", "appsettings.json"));
+        Assert.DoesNotContain("gateStationId", settings, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("gateStationRiotId", settings, StringComparison.OrdinalIgnoreCase);
+
+        Assert.Null(typeof(ControlServer.Application.TaskTypeStationConfigurationValidator).Assembly
+            .GetType("ControlServer.Application.TransitionalGateStation"));
+        Assert.Null(typeof(ControlServer.Application.TaskTypeStationReasonCodes).GetField("BindingGateScalarMismatch"));
+        Assert.Equal(
+            2,
+            typeof(ControlServer.Application.TaskTypeStationConfigurationValidator)
+                .GetMethod("ValidateStatic")!.GetParameters().Length);
+    }
+
+    private static string RepositoryRoot()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "global.json")))
+        {
+            directory = directory.Parent;
+        }
+        return directory?.FullName ?? throw new InvalidOperationException("No repository root above the test output.");
+    }
+
     private static JourneyRuntimeOptions ValidEnabledOptions() => new()
     {
         Enabled = true,
