@@ -428,8 +428,8 @@ internal static class JourneyRuntimeWorkerTestKit
         public async Task<JourneyRuntimeRow> RunToGateUnloadAsync()
         {
             await AdvanceToGateArrivalAsync();
-            Riot.SetSuccessfulArrival("TO_GATE", Options.GateStationRiotId);
-            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = Options.GateStationRiotId };
+            Riot.SetSuccessfulArrival("TO_GATE", TaskTypeStationRuntimeSeed.GateStationRiotId);
+            Riot.Vehicle = Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
             await Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
             return await RuntimeAsync();
         }
@@ -1235,8 +1235,6 @@ internal static class JourneyRuntimeWorkerTestKit
             AgvLifecycleGeneration = 1,
             MapId = 25,
             MapIdentity = "MAP-25",
-            GateStationId = "关卡",
-            GateStationRiotId = 210,
             DispatchZone = "MAP-25-WIRE_TO_GATE",
             DispatchGeneration = 1,
             MinimumBatteryPercent = 40,
@@ -1441,11 +1439,19 @@ internal static class JourneyRuntimeWorkerTestKit
 
         public void SetMapStations(params RiotMapStation[] stations) => _mapStations = stations;
 
+        /// <summary>When set, the next Map/Station catalog read throws it instead of answering, once.</summary>
+        public Exception? FailNextMapRead { get; set; }
+
         public Task<RiotMapStationCatalogSnapshot> ReadMapStationsAsync(
             int mapId,
             CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            if (FailNextMapRead is { } failure)
+            {
+                FailNextMapRead = null;
+                return Task.FromException<RiotMapStationCatalogSnapshot>(failure);
+            }
             return Task.FromResult(new RiotMapStationCatalogSnapshot(
                 mapId,
                 _clock.GetUtcNow(),

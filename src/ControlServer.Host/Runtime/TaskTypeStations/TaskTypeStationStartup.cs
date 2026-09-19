@@ -92,8 +92,7 @@ public static class TaskTypeStationStartup
 
         IReadOnlyList<TaskTypeStationViolation> violations = TaskTypeStationConfigurationValidator.ValidateStatic(
             preset.Configuration,
-            runtime.MapId,
-            new TransitionalGateStation(runtime.GateStationRiotId, runtime.GateStationId));
+            runtime.MapId);
         if (violations.Count > 0)
         {
             foreach (TaskTypeStationViolation violation in violations)

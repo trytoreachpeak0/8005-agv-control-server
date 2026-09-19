@@ -1484,7 +1484,7 @@ public sealed class VehicleFaultIsolationTests
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot("epoch-1", 1, []),
                 new RiotMapStationCatalogSnapshot(14, Now, "fingerprint", [new RiotMapStation(4, "站 4")]),
-                new ConfiguredGateStationView(new RiotMapStation(4, "站 4")),
+                new SingleStationView(new RiotMapStation(4, "站 4")),
                 new HashSet<string>(StringComparer.Ordinal),
                 Now,
                 new VehicleDispatchPolicy(

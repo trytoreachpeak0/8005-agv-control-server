@@ -130,11 +130,9 @@ public sealed class StructuralDispatchBlockTests
         {
             written.UnionWith(code.Matches(File.ReadAllText(file)).Select(match => match.Groups[1].Value));
         }
-        // ResolveUniquePickup's two codes; FIXED_STATION_BINDING_INVALID is the gate station, resolved before any
-        // round starts, and never a candidate's verdict.
+        // ResolveUniquePickup's two codes.
         written.UnionWith(code.Matches(File.ReadAllText(Path.Combine(runtime, "MapStationResolver.cs")))
-            .Select(match => match.Groups[1].Value)
-            .Where(value => value != "FIXED_STATION_BINDING_INVALID"));
+            .Select(match => match.Groups[1].Value));
         foreach (string file in new[]
                  {
                      Path.Combine(runtime, "JourneyPlanBuilder.cs"),
@@ -551,7 +549,7 @@ public sealed class StructuralDispatchBlockTests
         params AcceptedDemandSnapshot[] catalog) => new(
         new DemandCatalogSnapshot("11111111-1111-4111-8111-111111111111", 21, catalog),
         new RiotMapStationCatalogSnapshot(25, now, new string('c', 64), []),
-        new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
+        new SingleStationView(new RiotMapStation(210, "关卡")),
         accepted.ToHashSet(StringComparer.Ordinal),
         now,
         new VehicleDispatchPolicy([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY"),

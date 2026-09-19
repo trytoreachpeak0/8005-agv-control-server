@@ -25,8 +25,6 @@ public sealed class TaskTypeStationStartupTests
     {
         Enabled = enabled,
         MapId = 25,
-        GateStationId = "关卡",
-        GateStationRiotId = 210,
     };
 
     private static object Preset(

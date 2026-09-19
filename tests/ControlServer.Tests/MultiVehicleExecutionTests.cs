@@ -834,7 +834,7 @@ public sealed class MultiVehicleExecutionTests
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot("epoch-1", 1, [candidate]),
                 new RiotMapStationCatalogSnapshot(25, Now, new string('a', 64), []),
-                new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
+                new SingleStationView(new RiotMapStation(210, "关卡")),
                 new HashSet<string>(StringComparer.Ordinal),
                 Now,
                 policy),
@@ -1278,8 +1278,6 @@ public sealed class MultiVehicleExecutionTests
             AgvLifecycleGeneration = 1,
             MapId = 25,
             MapIdentity = "MAP-25",
-            GateStationId = "关卡",
-            GateStationRiotId = 210,
             DispatchZone = "MAP-25-WIRE_TO_GATE",
             DispatchGeneration = 1,
             MinimumBatteryPercent = 40,

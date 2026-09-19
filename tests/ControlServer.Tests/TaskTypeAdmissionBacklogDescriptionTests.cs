@@ -13,6 +13,7 @@ namespace ControlServer.Tests;
 public sealed class TaskTypeAdmissionBacklogDescriptionTests
 {
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     [InlineData(DispatchReasonCodes.OutOfScopeWorkType)]
     [InlineData(DispatchReasonCodes.TaskTypeBindingMissing)]
     [InlineData(TaskTypeStationReasonCodes.BindingStationNotInCatalog)]

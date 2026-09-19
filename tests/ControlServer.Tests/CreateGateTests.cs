@@ -446,7 +446,7 @@ public sealed class CreateGateTests
         DispatchRoundFacts round = new(
             new DemandCatalogSnapshot("EPOCH", 0, [candidate]),
             new RiotMapStationCatalogSnapshot(MapId, Origin, new string('a', 64), []),
-            new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
+            new SingleStationView(new RiotMapStation(210, "关卡")),
             new HashSet<string>(),
             Origin,
             EmptyPolicy);

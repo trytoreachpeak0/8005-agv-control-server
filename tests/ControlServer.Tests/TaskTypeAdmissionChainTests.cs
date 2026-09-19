@@ -55,6 +55,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
     /// 判决会是 <c>VEHICLE_NOT_IN_DISPATCH_POLICY</c>。
     /// </summary>
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     [InlineData(DispatchReasonCodes.TaskTypeBindingMissing)]
     [InlineData(TaskTypeStationReasonCodes.BindingStationNotInCatalog)]
     [InlineData(DispatchReasonCodes.TaskTypeHeld)]
@@ -72,6 +73,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
 
     /// <summary>部署的 <c>AllowedWorkTypes</c> 里没有的任务类型仍是 <c>OUT_OF_SCOPE_WORK_TYPE</c>，哪怕它有绑定。</summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task ATaskTypeTheDeploymentDoesNotAllowIsOutOfScopeEvenWhenBound()
     {
         DispatchAdmissionChain chain = await ChainAsync(new JourneyRuntimeOptions
@@ -91,6 +93,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
     /// 缺绑定在前，所以一条未绑定的 <c>STAGING_TO_WIRE</c> 需求今天就报缺绑定，而不是笼统挡成范围外。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task ABoundTaskTypeThisBuildCannotExecuteIsNotYetExecutableAndAMissingBindingIsNamedFirst()
     {
         DispatchAdmissionChain chain = await ChainAsync(Configured);
@@ -113,6 +116,7 @@ public sealed class TaskTypeAdmissionChainTests : IAsyncDisposable
     /// 停在后面与任务类型无关的车辆判据上（这里没给车载端事实）。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task AMissingBindingStopsOnlyItsOwnTaskTypeAndTheRestOfTheRoundIsJudgedAsUsual()
     {
         DispatchAdmissionChain chain = await ChainAsync(Configured);

@@ -93,6 +93,7 @@ public sealed class JourneyRuntimeOptionsTests
     /// 部署只放行别的任务类型不再被拒；#159 为防两份真相分叉加的过渡校验随标量一起删。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public void TheGateScalarsAreGoneAndAnAllowListWithoutWireToGateIsNoLongerRefused()
     {
         Assert.Null(typeof(JourneyRuntimeOptions).GetProperty("GateStationId"));
@@ -140,8 +141,6 @@ public sealed class JourneyRuntimeOptionsTests
         AgvLifecycleGeneration = 1,
         MapId = 25,
         MapIdentity = "MAP-25",
-        GateStationId = "关卡",
-        GateStationRiotId = 210,
         DispatchZone = "MAP-25-WIRE_TO_GATE",
         DispatchGeneration = 1,
         MinimumBatteryPercent = 40,

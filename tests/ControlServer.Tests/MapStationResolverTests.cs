@@ -60,19 +60,6 @@ public sealed class MapStationResolverTests
         Assert.Equal("AREA_STATION_NOT_UNIQUE", error.ReasonCode);
     }
 
-    [Fact]
-    public void RequireFixedStationFailsClosedForWrongGateNameAtStation210()
-    {
-        RiotMapStationCatalogSnapshot catalog = Catalog(
-            new RiotMapStation(11, "N1-3"),
-            new RiotMapStation(210, "其它站"));
-
-        StationResolutionException error = Assert.Throws<StationResolutionException>(
-            () => resolver.RequireFixedStation(catalog, 210, "关卡"));
-
-        Assert.Equal("FIXED_STATION_BINDING_INVALID", error.ReasonCode);
-    }
-
     private static RiotMapStationCatalogSnapshot Catalog(params RiotMapStation[] stations) =>
         new(25, new DateTimeOffset(2026, 8, 27, 1, 0, 0, TimeSpan.Zero), new string('a', 64), stations);
 }

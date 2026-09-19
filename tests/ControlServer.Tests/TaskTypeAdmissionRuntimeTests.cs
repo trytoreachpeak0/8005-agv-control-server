@@ -27,6 +27,7 @@ public sealed class TaskTypeAdmissionRuntimeTests
     /// <c>CandidateInvalid</c>；在途旅程照常推进，缺的站只落在该任务类型的准入原因上。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task ABoundStationMissingFromTheCatalogNeitherInvalidatesTheMapNorStopsAJourneyUnderWay()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
@@ -59,6 +60,7 @@ public sealed class TaskTypeAdmissionRuntimeTests
     /// 只有 <c>WIRE_TO_GATE</c> 可执行时，由规则导出的种子与改动前逐项相同：内容哈希不变，既有部署升级后不触发准入策略漂移。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task TheAdmissionSeedDerivedFromTheRulesHashesExactlyAsBeforeWhileOnlyWireToGateIsExecutable()
     {
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();

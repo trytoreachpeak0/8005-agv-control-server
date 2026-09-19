@@ -809,8 +809,8 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
             fixture.Demand(first, "SUBLOT-001", Now.AddMinutes(-10)),
             fixture.Demand(second, "SUBLOT-002", Now.AddMinutes(-9)));
         fixture.BoxCounts.Set("SUBLOT-002", 4);
-        fixture.Riot.SetSuccessfulArrival("TO_GATE", fixture.Options.GateStationRiotId);
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = fixture.Options.GateStationRiotId };
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", TaskTypeStationRuntimeSeed.GateStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
 
         // The worker logs an iteration's exception and tries again on the next tick, so what counts
         // is whether the journey moved -- asserted first, so a red run says that, not just the throw.
@@ -919,9 +919,11 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
     [Trait("IntegrationSlice", "FP-IS-01")]
     public async Task TheCatalogIsConfirmedOnAWholeReadAndOnlyOnAWholeRead()
     {
-        // REQ-0302: what a confirmation is. A read that got as far as the gate station and the
-        // machine stations is one; a read that threw is an attempt, and an attempt must not move
-        // the freshness window.
+        // REQ-0302: what a confirmation is. A read that came back whole and whose machine stations
+        // parsed is one; a read that threw is an attempt, and an attempt must not move the freshness
+        // window. Since control-server#160 a fixed station missing from the Map no longer makes the
+        // read an attempt -- that is its task type's admission question alone
+        // (TaskTypeAdmissionRuntimeTests) -- so the attempt here is a read that failed outright.
         await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
@@ -932,15 +934,14 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         Assert.Equal(30, confirmed.ApprovedSyncPeriodSeconds);
         Assert.Equal(300, confirmed.ApprovedMaxUnconfirmedSeconds);
 
-        // Now the gate station disappears from the Map: the read completes, the resolution does
-        // not, and that is not a confirmation.
-        fixture.Riot.SetMapStations(new RiotMapStation(12, "N1-1"));
+        // Now the read fails: that is an attempt, not a confirmation.
+        fixture.Riot.FailNextMapRead = new HttpRequestException("RIoT did not answer.");
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         MapStationCatalogStateRow afterFailure = await fixture.Context.MapStationCatalogStates
             .SingleAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(MapStationCatalogState.CandidateInvalid, afterFailure.State);
+        Assert.Equal(MapStationCatalogState.RefreshFailed, afterFailure.State);
         Assert.Equal(Now, afterFailure.LastCompleteConfirmationAt);
         Assert.NotNull(afterFailure.LastFailureReason);
     }

@@ -29,6 +29,7 @@ public sealed class BoundFixedTaskStationResolverTests
         new(TransportTaskTypes.WireToGate, 220, "关卡2", "SITE-CHECK-GATE-2");
 
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task ABoundTaskTypeResolvesToItsBoundStationUnderTheActiveVersions()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
@@ -50,6 +51,7 @@ public sealed class BoundFixedTaskStationResolverTests
     /// （最后一种静态校验会拒绝，这里防的是读到这种数据时不猜）。地图上明明有站点 210「关卡」，也不回落到它。
     /// </summary>
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     [InlineData("no-active-set")]
     [InlineData("not-required")]
     [InlineData("required-but-unbound")]
@@ -82,6 +84,7 @@ public sealed class BoundFixedTaskStationResolverTests
     /// 同一轮里另一个绑定站点还在的任务类型照常解析（REQ-0342，不连带）。
     /// </summary>
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     [InlineData("absent")]
     [InlineData("renamed")]
     [InlineData("other-map")]
@@ -119,6 +122,7 @@ public sealed class BoundFixedTaskStationResolverTests
     /// 人工与目录变化只挡被暂停的那个任务类型；已解除的暂停不再挡。
     /// </summary>
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     [InlineData(TaskTypeStationHoldSource.Manual)]
     [InlineData(TaskTypeStationHoldSource.CatalogChange)]
     public async Task AHeldTaskTypeIsRefusedWhateverRaisedTheHoldAndOnlyThatTaskType(string source)
@@ -144,6 +148,7 @@ public sealed class BoundFixedTaskStationResolverTests
 
     /// <summary>激活结果未知时整张图的绑定都不可信，本图每个任务类型都算暂停（REQ-0347）。</summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task AnActivationWhoseOutcomeIsUnknownHoldsEveryTaskTypeOfTheMap()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
@@ -164,6 +169,7 @@ public sealed class BoundFixedTaskStationResolverTests
     /// 顺序是缺绑定 → 绑定站点缺失 → 暂停：一个既暂停又缺绑定的任务类型报缺绑定，现场先要补的是绑定。
     /// </summary>
     [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     public async Task AMissingBindingIsNamedAheadOfAHold()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
@@ -182,6 +188,7 @@ public sealed class BoundFixedTaskStationResolverTests
     /// 更谈不上绑定。
     /// </summary>
     [Theory]
+    [Trait("IntegrationSlice", "FP-IS-10")]
     [InlineData(true)]
     [InlineData(false)]
     public async Task ATaskTypeTheRulesDoNotKnowIsOutOfScope(bool withRules)

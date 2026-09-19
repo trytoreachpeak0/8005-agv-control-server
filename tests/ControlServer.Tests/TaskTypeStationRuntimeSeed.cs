@@ -1,5 +1,6 @@
 using ControlServer.Application;
 using ControlServer.Domain;
+using ControlServer.Host.Runtime;
 using ControlServer.Host.Runtime.TaskTypeStations;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -59,4 +60,16 @@ internal static class TaskTypeStationRuntimeSeed
             new TaskTypeStationHoldStore(context),
             new DemandTaskTypeStationFreezeStore(context));
     }
+}
+
+/// <summary>
+/// A round's view in which every task type resolves to one station at the destination end, unversioned -- the
+/// stand-in for criterion tests that are not about bindings (it used to be the configured gate resolver's own view,
+/// which control-server#160 removed).
+/// </summary>
+internal sealed class SingleStationView(RiotMapStation station) : IFixedTaskStationView
+{
+    public FixedTaskStationResolution Resolve(string taskType) =>
+        FixedTaskStationResolution.Resolved(
+            taskType, FixedStationEnd.Destination, station);
 }
