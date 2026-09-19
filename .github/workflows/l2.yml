@@ -198,6 +198,10 @@ jobs:
               # Batch 6 (program#123). Each ticket adds its own scenario here from its own pull request, sorted by
               # name, so a batch-6 regression is caught before the next one merges; the batch-6 exit
               # (control-server#165) makes every line three runs.
+              # control-server#162, specification 8.3 batch-6 mechanism criterion 5: a dashboard hold on one Map +
+              # TASK_TYPE does not cascade; a catalog change holds only the task type bound to the changed station.
+              @{ Name = 'binding-hold-dashboard-not-cascading'; Runs = 1; BatchId = 'batch-6' }
+              @{ Name = 'catalog-change-binding-hold'; Runs = 1; BatchId = 'batch-6' }
               # control-server#159, specification 8.3 batch-6 mechanism criterion 4: one station bound to two task
               # types refuses start.
               @{ Name = 'task-type-binding-station-reused-refuses-start'; Runs = 1; BatchId = 'batch-6' }
