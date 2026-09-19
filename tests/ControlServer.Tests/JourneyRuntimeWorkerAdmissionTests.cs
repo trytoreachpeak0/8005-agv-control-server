@@ -235,8 +235,9 @@ public sealed class JourneyRuntimeWorkerAdmissionTests
         // policy, which this first round does because the tables start empty and which costs two
         // saves, and the occupancy claim on the accepted journey's first order. Batch 4 adds one more
         // (control-server#72): the area assignment freeze, written inside the acceptance transaction
-        // ahead of the acceptance rows.
-        Assert.InRange(fixture.SaveChanges.Count, 1, 16);
+        // ahead of the acceptance rows. Batch 6 adds one more (control-server#160): the task type station
+        // rule and binding set versions, frozen in the same transaction, again once per accepted journey.
+        Assert.InRange(fixture.SaveChanges.Count, 1, 17);
     }
 
     [Fact]
