@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index f63dece7..1b857433 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -302,7 +302,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
+         // This can only move a session from Ready to RecoveryRequired, never the other way.
+         // The operation's demand is found in its journey through the demand memberships (control-server#207): an
+         // operation of any demand the vehicle carries holds it, not only one of the journey row's anchor demand.
+-        bool operationNeedsRecovery = await OperationsOnJourneys()
++        bool operationNeedsRecovery = await OperationsOnJourneys().Where(pair => false)
+             .AnyAsync(
+                 pair => pair.Runtime.AgvId == agvId &&
+                         pair.Operation.Status == StationOperationStatus.RecoveryRequired,

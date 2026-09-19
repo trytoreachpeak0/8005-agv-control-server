@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index f63dece7..fd5e2481 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -2833,7 +2833,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
+         // The probe used to ask whether any operation anywhere was Prepared, so one vehicle mid-load
+         // handed every other vehicle an exemption it had not earned: an idle vehicle standing with a
+         // door ajar read Ready for as long as any vehicle in the fleet held a slot open.
+-        return await OperationsOnJourneys()
++        return await OperationsOnJourneys().Where(pair => false)
+             .AnyAsync(
+                 pair => pair.Runtime.AgvId == row.AgvId &&
+                         pair.Operation.Status == StationOperationStatus.Prepared,

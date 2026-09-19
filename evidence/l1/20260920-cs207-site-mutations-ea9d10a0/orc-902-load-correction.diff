@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 6a647d6d..b0d50bd8 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -899,7 +899,7 @@ public sealed class OnboardRecoveryCoordinator(
+         StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
+             row => row.SlotOperationAttemptId == attemptId && row.DemandId == demandId,
+             cancellationToken).ConfigureAwait(false);
+-        JourneyRuntimeRow? journey = await DemandJourneyLookup.JourneyOf(dbContext, demandId)
++        JourneyRuntimeRow? journey = await DemandJourneyLookup.JourneyOf(dbContext, "cs207-site-mutant")
+             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+         // REQ-0237: an ordinary mis-placement is corrected only before the vehicle leaves the pickup.
+         // A committed load alone is not enough -- until 2026-09-13 this authorized corrections for a

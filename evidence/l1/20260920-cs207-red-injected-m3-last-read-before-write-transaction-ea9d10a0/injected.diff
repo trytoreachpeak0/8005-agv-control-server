@@ -1,0 +1,24 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+index f63dece7..39838dcf 100644
+--- a/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
++++ b/src/ControlServer.Infrastructure/Persistence/WireToGateStore.cs
+@@ -1491,6 +1491,9 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
+         AcceptedDemandRow demand = await dbContext.AcceptedDemands
+             .SingleAsync(row => row.DemandId == demandId && row.TransportDemandKey == transportDemandKey, cancellationToken)
+             .ConfigureAwait(false);
++        string? injectedJourneyId = await DemandJourneyLookup.JourneyIdOf(dbContext, demandId).SingleOrDefaultAsync(cancellationToken);
++        bool injectedLast = injectedJourneyId is null ||
++            await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, injectedJourneyId, demandId, cancellationToken);
+         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+         dbContext.UnloadBatches.Add(new UnloadBatchRow
+         {
+@@ -1503,8 +1506,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
+         demand.Status = DemandExecutionStatus.Succeeded;
+         // The lease and the purpose claim go when the journey's last open demand ends (control-server#207), decided inside
+         // this write transaction; with one demand that is this one, in this save, as before.
+-        await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, demandId, completedAt, cancellationToken)
+-            .ConfigureAwait(false);
++        if (injectedLast) await JourneyLeaseRelease.StageAsync(dbContext, injectedJourneyId!, completedAt, cancellationToken);
+         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
+         {
+             TransportDemandKey = transportDemandKey,

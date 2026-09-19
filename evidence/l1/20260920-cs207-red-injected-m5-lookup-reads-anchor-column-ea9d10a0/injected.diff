@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Infrastructure/Persistence/DemandJourneyLookup.cs b/src/ControlServer.Infrastructure/Persistence/DemandJourneyLookup.cs
+index e30ad548..c18465ac 100644
+--- a/src/ControlServer.Infrastructure/Persistence/DemandJourneyLookup.cs
++++ b/src/ControlServer.Infrastructure/Persistence/DemandJourneyLookup.cs
+@@ -38,8 +38,7 @@ public static class DemandJourneyLookup
+         ArgumentNullException.ThrowIfNull(dbContext);
+         ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+         IQueryable<JourneyDemandRow> memberships = Memberships(dbContext);
+-        return dbContext.JourneyRuntimes.Where(journey => memberships.Any(
+-            membership => membership.JourneyId == journey.JourneyId && membership.DemandId == demandId));
++        return dbContext.JourneyRuntimes.Where(journey => journey.DemandId == demandId);
+     }
+ 
+     /// <summary>The id of the journey this demand currently belongs to: none, or one.</summary>

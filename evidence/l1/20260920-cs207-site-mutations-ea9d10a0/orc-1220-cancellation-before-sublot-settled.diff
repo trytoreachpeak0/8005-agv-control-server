@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 6a647d6d..eca86d77 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1217,7 +1217,7 @@ public sealed class OnboardRecoveryCoordinator(
+             // deadline ends it -- demand, lease, vehicle occupancy, the unanswered entry request and the
+             // journey in one staged change -- and differs only in why (control-server#83). Stamped with the
+             // server's receipt time, like the deadline: every fact it writes is the server's own.
+-            JourneyRuntimeRow stop = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
++            JourneyRuntimeRow stop = await DemandJourneyLookup.JourneyOf(dbContext, "cs207-site-mutant")
+                 .SingleAsync(cancellationToken).ConfigureAwait(false);
+             // Checked again here, inside the inbox's write transaction, because authorization and settlement
+             // are two messages and the stop may have moved on between them. A stop already ended -- by its

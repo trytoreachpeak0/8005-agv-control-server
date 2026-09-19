@@ -1,0 +1,88 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:27.65]     ControlServer.Tests.Batch7DemandJourneyLookupTests.ADemandAddedToAJourneyFindsThatJourneyThoughTheJourneyRowNamesAnotherDemand [FAIL]
+  Failed ControlServer.Tests.Batch7DemandJourneyLookupTests.ADemandAddedToAJourneyFindsThatJourneyThoughTheJourneyRowNamesAnotherDemand [2 s]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch7DemandJourneyLookupTests.ADemandAddedToAJourneyFindsThatJourneyThoughTheJourneyRowNamesAnotherDemand() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandJourneyLookupTests.cs:line 45
+   at ControlServer.Tests.Batch7DemandJourneyLookupTests.ADemandAddedToAJourneyFindsThatJourneyThoughTheJourneyRowNamesAnotherDemand() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandJourneyLookupTests.cs:line 51
+   at ControlServer.Tests.Batch7DemandJourneyLookupTests.ADemandAddedToAJourneyFindsThatJourneyThoughTheJourneyRowNamesAnotherDemand() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandJourneyLookupTests.cs:line 51
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:40.67]     ControlServer.Tests.Batch7DemandTerminationTests.EndingOneDemandOfTwoLeavesTheJourneyOpenItsOccupanciesHeldAndTheOtherDemandUntouched [FAIL]
+[xUnit.net 00:00:41.39]     ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "UNKNOWN") [FAIL]
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.EndingOneDemandOfTwoLeavesTheJourneyOpenItsOccupanciesHeldAndTheOtherDemandUntouched [547 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 322
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 326
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndingOneDemandOfTwoLeavesTheJourneyOpenItsOccupanciesHeldAndTheOtherDemandUntouched() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 41
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndingOneDemandOfTwoLeavesTheJourneyOpenItsOccupanciesHeldAndTheOtherDemandUntouched() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 46
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "UNKNOWN") [720 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 322
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 326
+   at ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(String overallOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 144
+   at ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(String overallOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 151
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:41.95]     ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "FAILED") [FAIL]
+[xUnit.net 00:00:42.53]     ControlServer.Tests.Batch7DemandTerminationTests.ARepeatedEndingNeitherEndsTheJourneyEarlyNorReleasesAnythingASecondTime [FAIL]
+[xUnit.net 00:00:42.94]     ControlServer.Tests.Batch7DemandTerminationTests.AnEndingOfADemandAlreadyCompletedIsRefusedBeforeAnythingIsStaged [FAIL]
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "FAILED") [554 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 322
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 326
+   at ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(String overallOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 144
+   at ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(String overallOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 151
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.ARepeatedEndingNeitherEndsTheJourneyEarlyNorReleasesAnythingASecondTime [571 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 322
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 326
+   at ControlServer.Tests.Batch7DemandTerminationTests.ARepeatedEndingNeitherEndsTheJourneyEarlyNorReleasesAnythingASecondTime() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 71
+   at ControlServer.Tests.Batch7DemandTerminationTests.ARepeatedEndingNeitherEndsTheJourneyEarlyNorReleasesAnythingASecondTime() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 79
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.AnEndingOfADemandAlreadyCompletedIsRefusedBeforeAnythingIsStaged [407 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch7DemandTerminationTests.AnEndingOfADemandAlreadyCompletedIsRefusedBeforeAnythingIsStaged() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 89
+   at ControlServer.Tests.Batch7DemandTerminationTests.AnEndingOfADemandAlreadyCompletedIsRefusedBeforeAnythingIsStaged() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 96
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:43.40]     ControlServer.Tests.Batch7DemandTerminationTests.EndingTheLastDemandClosesTheJourneyAndReleasesAllThreeOccupanciesTogether [FAIL]
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.EndingTheLastDemandClosesTheJourneyAndReleasesAllThreeOccupanciesTogether [462 ms]
+  Error Message:
+   System.InvalidOperationException : Sequence contains no elements.
+  Stack Trace:
+     at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Query.ShapedQueryCompilingExpressionVisitor.SingleAsync[TSource](IAsyncEnumerable`1 asyncEnumerable, CancellationToken cancellationToken)
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 322
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndAsync(ControlServerDbContext context, String demandId, DateTimeOffset at) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 326
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndingTheLastDemandClosesTheJourneyAndReleasesAllThreeOccupanciesTogether() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 54
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndingTheLastDemandClosesTheJourneyAndReleasesAllThreeOccupanciesTogether() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 58
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     7, Passed:    15, Skipped:     0, Total:    22, Duration: 38 s - ControlServer.Tests.dll (net8.0)

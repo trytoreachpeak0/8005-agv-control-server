@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 6a647d6d..8bef70a9 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -1253,7 +1253,7 @@ public sealed class OnboardRecoveryCoordinator(
+         // control-server#131 this wrote those facts by hand minus the vehicle occupancy, and the pickup
+         // order held the vehicle against every later claim. Stamped with the server's receipt time like the
+         // other endings, not the vehicle's observedAt: the release has to sort after the server's own claim.
+-        JourneyRuntimeRow runtime = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
++        JourneyRuntimeRow runtime = await DemandJourneyLookup.JourneyOf(dbContext, "cs207-site-mutant")
+             .SingleAsync(cancellationToken).ConfigureAwait(false);
+         if (workflow.SlotOperationAttemptId is not null)
+         {
