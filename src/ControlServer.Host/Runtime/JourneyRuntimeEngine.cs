@@ -518,19 +518,11 @@ public sealed class JourneyRuntimeEngine(
         }
 
         DateTimeOffset intakeAt = timeProvider.GetUtcNow();
+        // REQ-0305: both endpoints are frozen from the snapshot that was fresh when the demand was taken -- by the
+        // store, inside the transaction that accepts it (control-server#160). Frozen here, ahead of the intake, an
+        // acceptance refused at the last moment left them behind, and after a rebinding the next attempt was
+        // refused a rewrite and failed every round for every task type.
         JourneyExecutionPlan plan = new JourneyPlanBuilder(runtimeOptions).CreatePlan(fleetVehicle, selected, intakeAt);
-        // REQ-0305: the endpoints are taken from the snapshot that was fresh when the demand was
-        // taken, and frozen there. Both ends, because both are stations this task will be sent to
-        // and a later rename of either must not reach the task that already exists. The store
-        // refuses to rewrite an endpoint it already holds rather than silently moving a
-        // destination.
-        await catalogStore.FreezeDemandStationsAsync(
-            selected.Snapshot.DemandId,
-            selected.Snapshot.TransportDemandKey,
-            JourneyPlanBuilder.FrozenStations(plan),
-            selected.CatalogRevision,
-            intakeAt,
-            cancellationToken).ConfigureAwait(false);
         OrderIntent pickup = JourneyPlanBuilder.PickupIntent(plan, selected.Snapshot.DemandId, intakeAt);
         // Taken before the call rather than after it: a candidate this vehicle is committing to
         // must stop being a candidate for the vehicles behind it in this round whatever the intake

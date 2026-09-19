@@ -570,6 +570,11 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         // REQ-0344: the rule and binding set versions the demand's fixed station was resolved under, in the transaction
         // that accepts it, so an accepted demand is never without them. Whatever later happens to the rules, the
         // bindings or a station's name, this demand is not rewritten, migrated or resolved again.
+        if (journey is { StationCatalogRevision: long catalogRevision })
+        {
+            await FreezeEndpointsAsync(snapshot, journey, catalogRevision, cancellationToken).ConfigureAwait(false);
+        }
+
         if (journey is { TaskTypeStationRuleVersion: long ruleVersion, TaskTypeStationBindingSetVersion: long bindingSetVersion })
         {
             await new DemandTaskTypeStationFreezeStore(dbContext)
@@ -2270,6 +2275,38 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                 .SingleOrDefaultAsync(cancellationToken)
                 .ConfigureAwait(false);
         return string.Equals(frozenSlotPosition, journey.RequiredSlotPosition, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Freezes both endpoints of the plan (REQ-0305) inside the acceptance transaction, so an acceptance that does not
+    /// happen freezes nothing (control-server#160).
+    /// </summary>
+    /// <remarks>
+    /// Rows already there can only be what an earlier, refused attempt left behind before the freeze moved in here:
+    /// this branch runs only for a demand this server has not accepted, so they are no task's endpoints. They are
+    /// replaced rather than refused -- refusing them failed every round for every task type once the binding they
+    /// were taken under had changed.
+    /// </remarks>
+    private async Task FreezeEndpointsAsync(
+        AcceptedDemandSnapshot snapshot,
+        JourneyExecutionPlan journey,
+        long catalogRevision,
+        CancellationToken cancellationToken)
+    {
+        await dbContext.FrozenDemandStations
+            .Where(row => row.DemandId == snapshot.DemandId)
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await new CatalogAvailabilityStore(dbContext).FreezeDemandStationsAsync(
+            snapshot.DemandId,
+            snapshot.TransportDemandKey,
+            [
+                new FrozenStationFact(FrozenStationRole.Pickup, journey.MapId, journey.PickupStationRiotId, journey.PickupStationId),
+                new FrozenStationFact(FrozenStationRole.Dropoff, journey.MapId, journey.GateStationRiotId, journey.GateStationId),
+            ],
+            catalogRevision,
+            snapshot.AcceptedAt,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
