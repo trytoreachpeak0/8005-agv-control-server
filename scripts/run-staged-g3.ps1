@@ -1037,11 +1037,17 @@ public static class StagedG3TlsHarness
         // Killing the connection from the proxy leaves the server unwinding its single accept slot.
         await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
 
+        // Since control-server#187 (PR #190, merge c1252932) a second FORCED_MECHANICAL_RECOVERY in the same
+        // session while the first is CommandPending/AwaitingResult is refused with ACTION_NOT_ALLOWED_IN_STATE and
+        // does not advance the vehicle's forced generation. Until then this probe had the second one accepted as
+        // generation 2 and then sent a stale generation-1 result, to watch it become historical evidence; that
+        // path is no longer reachable here (see docs/defects/20260919-staged-g3-second-forced-submission-predates-cs187.md),
+        // so the probe now asserts the refusal and settles the first action with its own, current result.
         string firstActionId = StableGuid("recovery:forced-one-id");
         string secondActionId = StableGuid("recovery:forced-two-id");
-        string currentResultMessageId = StableGuid("recovery:forced-two-result");
+        string currentResultMessageId = StableGuid("recovery:forced-one-result");
         string? replayedCommand;
-        string staleResultAck;
+        string secondSubmissionResponse;
         string currentResultAck;
         string replayedResultAck;
         await using (Connection connection = await Connection.OpenAsync(
@@ -1073,37 +1079,46 @@ public static class StagedG3TlsHarness
                 ["responseSha256"] = replayedCommand is null ? null : Sha256(replayedCommand)
             });
 
-            await ExchangeAsync(
+            // control-server#187: the first action is still unsettled (its command was replayed, no result yet),
+            // so a second one in this session is refused, creates no workflow, sends no command and leaves the
+            // vehicle's forced generation at 1.
+            secondSubmissionResponse = await ExchangeAsync(
                 connection,
                 ActionSubmit(
                     agvId, StableGuid("recovery:forced-two"), generation, secondActionId, sessionId!,
                     "FORCED_MECHANICAL_RECOVERY", eventId, null, scope, administratorId),
-                "RecoveryActionAccepted", cancellationToken).ConfigureAwait(false);
+                "RecoveryActionRejected", cancellationToken).ConfigureAwait(false);
+            Log(transcriptPath, new Dictionary<string, object?>
+            {
+                ["case"] = "second-forced-recovery-while-first-unsettled-rejected",
+                ["status"] = NestedProperty(secondSubmissionResponse, "payload", "recoveryActionId") == secondActionId &&
+                    NestedProperty(secondSubmissionResponse, "payload", "problem", "reasonCode") ==
+                        "ACTION_NOT_ALLOWED_IN_STATE"
+                    ? "PASS" : "FAIL",
+                ["recoveryActionId"] = NestedProperty(secondSubmissionResponse, "payload", "recoveryActionId"),
+                ["observedReasonCode"] =
+                    NestedProperty(secondSubmissionResponse, "payload", "problem", "reasonCode"),
+                ["responseSha256"] = Sha256(secondSubmissionResponse)
+            });
 
-            staleResultAck = await ExchangeAsync(
-                connection,
-                ForcedResult(
-                    agvId, StableGuid("recovery:forced-one-result"), generation, sessionId!, firstActionId,
-                    1, scope, administratorId, "2026-08-26T12:00:00Z"),
-                "DurableAck", cancellationToken).ConfigureAwait(false);
             currentResultAck = await ExchangeAsync(
                 connection,
                 ForcedResult(
-                    agvId, currentResultMessageId, generation, sessionId!, secondActionId,
-                    2, scope, administratorId, "2026-08-26T12:00:01Z"),
+                    agvId, currentResultMessageId, generation, sessionId!, firstActionId,
+                    1, scope, administratorId, "2026-08-26T12:00:01Z"),
                 "DurableAck", cancellationToken).ConfigureAwait(false);
             replayedResultAck = await ExchangeAsync(
                 connection,
                 ForcedResult(
-                    agvId, currentResultMessageId, generation, sessionId!, secondActionId,
-                    2, scope, administratorId, "2026-08-26T12:00:01Z"),
+                    agvId, currentResultMessageId, generation, sessionId!, firstActionId,
+                    1, scope, administratorId, "2026-08-26T12:00:01Z"),
                 "DurableAck", cancellationToken).ConfigureAwait(false);
 
             string recorded = await ExchangeAsync(
                 connection,
                 HardwareRecord(
                     agvId, StableGuid("recovery:hardware-record"), generation,
-                    StableGuid("recovery:hardware-record-id"), sessionId!, secondActionId, scope, administratorId),
+                    StableGuid("recovery:hardware-record-id"), sessionId!, firstActionId, scope, administratorId),
                 "HardwareRecoveryRecordResult", cancellationToken).ConfigureAwait(false);
             hardwareCases.Add(Case(
                 transcriptPath, "hardware-recovery-record-recorded", recorded,
@@ -1114,7 +1129,7 @@ public static class StagedG3TlsHarness
                 connection,
                 HardwareRecord(
                     agvId, StableGuid("recovery:hardware-record-mismatch"), generation,
-                    StableGuid("recovery:hardware-record-mismatch-id"), sessionId!, secondActionId,
+                    StableGuid("recovery:hardware-record-mismatch-id"), sessionId!, firstActionId,
                     outOfScope, administratorId),
                 "HardwareRecoveryRecordResult", cancellationToken).ConfigureAwait(false);
             hardwareCases.Add(Case(
@@ -1137,8 +1152,8 @@ public static class StagedG3TlsHarness
                 .ConfigureAwait(false);
             await connection.WriteAsync(
                 ForcedResult(
-                    agvId, currentResultMessageId, generation, sessionId!, secondActionId,
-                    2, scope, administratorId, "2026-08-26T12:00:09Z"),
+                    agvId, currentResultMessageId, generation, sessionId!, firstActionId,
+                    1, scope, administratorId, "2026-08-26T12:00:09Z"),
                 cancellationToken).ConfigureAwait(false);
             resultConflictClosed = await connection
                 .ExpectClosedAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
@@ -1153,10 +1168,12 @@ public static class StagedG3TlsHarness
             replayedCommand is not null &&
             NestedProperty(replayedCommand, "payload", "recoveryActionId") == firstActionId &&
             NumberNestedProperty(replayedCommand, "payload", "forcedRecoveryGeneration") == 1;
-        bool staleResultPass =
-            NestedProperty(staleResultAck, "payload", "acceptedMessageType") == "ForcedMechanicalRecoveryResult" &&
-            NestedProperty(staleResultAck, "payload", "acceptedMessageId") == StableGuid("recovery:forced-one-result");
+        bool secondSubmissionRejectedPass =
+            Property(secondSubmissionResponse, "messageType") == "RecoveryActionRejected" &&
+            NestedProperty(secondSubmissionResponse, "payload", "recoveryActionId") == secondActionId &&
+            NestedProperty(secondSubmissionResponse, "payload", "problem", "reasonCode") == "ACTION_NOT_ALLOWED_IN_STATE";
         bool currentResultPass =
+            NestedProperty(currentResultAck, "payload", "acceptedMessageType") == "ForcedMechanicalRecoveryResult" &&
             NestedProperty(currentResultAck, "payload", "acceptedMessageId") == currentResultMessageId;
         bool resultReplayPass = currentResultAck == replayedResultAck && resultConflictClosed;
 
@@ -1164,7 +1181,7 @@ public static class StagedG3TlsHarness
         {
             ["schemaVersion"] = "1.0.0",
             ["status"] = authorisationPass && actionBoundaryPass && demandScopedPass && hardwarePass &&
-                disconnectPass && staleResultPass && currentResultPass && resultReplayPass
+                disconnectPass && secondSubmissionRejectedPass && currentResultPass && resultReplayPass
                 ? "PASS"
                 : "FAIL",
             ["agvId"] = agvId,
@@ -1188,10 +1205,13 @@ public static class StagedG3TlsHarness
             },
             ["forcedRecoveryGenerationBranches"] = new Dictionary<string, object?>
             {
-                ["status"] = staleResultPass && currentResultPass && resultReplayPass ? "PASS" : "FAIL",
+                ["status"] = secondSubmissionRejectedPass && currentResultPass && resultReplayPass ? "PASS" : "FAIL",
                 ["firstRecoveryActionId"] = firstActionId,
                 ["secondRecoveryActionId"] = secondActionId,
-                ["staleGenerationResultAcknowledged"] = staleResultPass,
+                ["secondSubmissionWhileFirstUnsettledRejected"] = secondSubmissionRejectedPass,
+                ["secondSubmissionObservedReasonCode"] =
+                    NestedProperty(secondSubmissionResponse, "payload", "problem", "reasonCode"),
+                ["secondSubmissionResponseSha256"] = Sha256(secondSubmissionResponse),
                 ["currentGenerationResultAcknowledged"] = currentResultPass,
                 ["resultReplayByteExact"] = currentResultAck == replayedResultAck,
                 ["resultContentConflictClosedConnection"] = resultConflictClosed,
@@ -3294,7 +3314,7 @@ $recoveryDisconnectPass = $null -ne $recoveryProbeResult -and
     $recoveryFaultObservation.droppedCommandSessionGeneration -lt
         ($recoveryFaultObservation.replayedCommandSessionGenerations | Measure-Object -Maximum).Maximum -and
     $null -ne $databaseObservation -and
-    @($databaseObservation.forcedMechanicalRecoveryCommandOutboxRows).Count -eq 2 -and
+    @($databaseObservation.forcedMechanicalRecoveryCommandOutboxRows).Count -eq 1 -and
     @($databaseObservation.forcedMechanicalRecoveryCommandOutboxRows | Where-Object { $_.rowCount -ne 1 }).Count -eq 0
 
 $firstRecoveryActionId = if ($null -ne $recoveryProbeResult) {
@@ -3305,51 +3325,55 @@ $secondRecoveryActionId = if ($null -ne $recoveryProbeResult) {
 } else { $null }
 # These rows are ordered dictionaries rather than the parsed JSON objects used elsewhere, so they are
 # filtered with a script block: the -Property form of Where-Object is not reliable on a dictionary.
-$staleWorkflow = @($databaseObservation.recoveryWorkflowRows | Where-Object { $_.workflowId -eq $firstRecoveryActionId })
-$currentWorkflow = @($databaseObservation.recoveryWorkflowRows | Where-Object { $_.workflowId -eq $secondRecoveryActionId })
-$staleEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Object { $_.workflowId -eq $firstRecoveryActionId })
-$currentEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Object { $_.workflowId -eq $secondRecoveryActionId })
+$firstWorkflow = @($databaseObservation.recoveryWorkflowRows | Where-Object { $_.workflowId -eq $firstRecoveryActionId })
+$secondWorkflow = @($databaseObservation.recoveryWorkflowRows | Where-Object { $_.workflowId -eq $secondRecoveryActionId })
+$firstEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Object { $_.workflowId -eq $firstRecoveryActionId })
+$secondEvidence = @($databaseObservation.recoveryResultEvidenceRows | Where-Object { $_.workflowId -eq $secondRecoveryActionId })
 
-# Monotonic advance, and a result that names the superseded generation may only become historical
-# evidence: it must not settle the workflow, close the session, or move the vehicle generation.
-# Two judgments, split by the control-server#60 review (2026-09-18); they used to share one boolean
-# under two names, so either half going red failed both.
+# Since control-server#187 (PR #190, merge c1252932) the probe's second FORCED_MECHANICAL_RECOVERY, submitted while
+# the first is still unsettled, is refused: no workflow, no command, no generation advance. Until the batch-6 exit
+# (control-server#165) these judgments had the second one accepted as generation 2 and a stale generation-1 result
+# arriving afterwards; that path is reachable now only through data written before #187, and is covered in L1 by
+# RecoveryStateMachineG2Tests.ALateForcedRecoveryOfAClosedSessionIsHistoricalAndSettlesNothing and the other cases
+# PR #190 moved onto ProcessAsBeforeCs187Async. See
+# docs/defects/20260919-staged-g3-second-forced-submission-predates-cs187.md. The judgment that used to be
+# supersededGenerationResultIsHistoricalEvidenceOnly is therefore renamed to what it now proves.
 #
-# Since control-server#137 (PR #140) a MECHANICALLY_ISOLATED result for the CURRENT generation settles
-# its workflow: Reconciled, with the result on file. Before it the workflow stayed RecoveryRequired
-# forever, which is what these judgments asserted until control-server#151 -- see
-# docs/defects/20260919-staged-g3-forced-recovery-criteria-predate-cs137.md.
+# Monotonic advance: exactly one advance for the one accepted action, none for the refused one. Its own result
+# (MECHANICALLY_ISOLATED, current generation) settles it: Reconciled with the result on file, as since
+# control-server#137 (docs/defects/20260919-staged-g3-forced-recovery-criteria-predate-cs137.md).
 $recoveryGenerationAdvancePass = $null -ne $recoveryProbeResult -and
     $recoveryProbeResult.forcedRecoveryGenerationBranches.status -eq 'PASS' -and
     $null -ne $databaseObservation -and
-    $databaseObservation.vehicleForcedRecoveryGeneration -eq 2 -and
-    $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'Reconciled' -and
-    $currentWorkflow[0].forcedRecoveryGeneration -eq 2 -and
-    -not [string]::IsNullOrEmpty($currentWorkflow[0].resultMessageId) -and
-    $currentEvidence.Count -eq 1 -and -not $currentEvidence[0].historicalOnly -and
-    $currentEvidence[0].forcedRecoveryGeneration -eq 2 -and
-    $currentEvidence[0].messageId -eq $currentWorkflow[0].resultMessageId
-# The stale result arrived first, so had it been allowed to settle anything, the session would carry
-# generation 1 and the first workflow would be Reconciled rather than HistoricalOnly.
-$recoverySupersededResultHistoricalPass = $null -ne $databaseObservation -and
-    $staleWorkflow.Count -eq 1 -and $staleWorkflow[0].state -eq 'HistoricalOnly' -and
-    $staleWorkflow[0].forcedRecoveryGeneration -eq 1 -and
-    $staleEvidence.Count -eq 1 -and $staleEvidence[0].historicalOnly -and
-    $staleEvidence[0].forcedRecoveryGeneration -eq 1 -and
-    $currentWorkflow.Count -eq 1 -and $currentWorkflow[0].state -eq 'Reconciled' -and
+    $databaseObservation.vehicleForcedRecoveryGeneration -eq 1 -and
+    $firstWorkflow.Count -eq 1 -and $firstWorkflow[0].state -eq 'Reconciled' -and
+    $firstWorkflow[0].forcedRecoveryGeneration -eq 1 -and
+    -not [string]::IsNullOrEmpty($firstWorkflow[0].resultMessageId) -and
+    $firstEvidence.Count -eq 1 -and -not $firstEvidence[0].historicalOnly -and
+    $firstEvidence[0].forcedRecoveryGeneration -eq 1 -and
+    $firstEvidence[0].messageId -eq $firstWorkflow[0].resultMessageId
+# The refusal leaves nothing behind: no workflow, no result evidence and no command for the second action, and the
+# session carries generation 1. The one forced command on file (the first action's, dropped and replayed) is also
+# what the disconnect judgment above counts.
+$recoverySecondForcedWhileFirstUnsettledRejectedPass = $null -ne $recoveryProbeResult -and
+    $recoveryProbeResult.forcedRecoveryGenerationBranches.secondSubmissionWhileFirstUnsettledRejected -eq $true -and
+    $recoveryProbeResult.forcedRecoveryGenerationBranches.secondSubmissionObservedReasonCode -eq 'ACTION_NOT_ALLOWED_IN_STATE' -and
+    $null -ne $databaseObservation -and
+    $secondWorkflow.Count -eq 0 -and $secondEvidence.Count -eq 0 -and
+    $databaseObservation.vehicleForcedRecoveryGeneration -eq 1 -and
     @($databaseObservation.exceptionRecoverySessionRows).Count -eq 1 -and
-    $databaseObservation.exceptionRecoverySessionRows[0].forcedRecoveryGeneration -eq 2 -and
-    @($databaseObservation.hardwareRecoveryRecordRows | Where-Object { $_.recoveryActionId -eq $firstRecoveryActionId }).Count -eq 0
+    $databaseObservation.exceptionRecoverySessionRows[0].forcedRecoveryGeneration -eq 1 -and
+    @($databaseObservation.forcedMechanicalRecoveryCommandOutboxRows).Count -eq 1
 
 # A forced mechanical recovery is an isolation, not a completion. Since control-server#137 it does end
 # the recovery session (CLOSED, so the vehicle can open another) and settles its workflow, but it proves
 # neither an empty vehicle nor a recovered one, so:
 #   - nothing in this plane creates an order, a demand or a station operation, and neither the session
-#     nor either workflow names a demand or a slot operation;
+#     nor the workflow names a demand or a slot operation;
 #   - the vehicle stays unready. What held it after the result is FORCED_RECOVERY_HARDWARE_RECOVERY_REQUIRED
 #     (WireToGateStore.DecideReadinessAsync): a settled, non-historical forced workflow with no
 #     HardwareRecoveryRecord naming it. The probe submits exactly one such record, after the result, so
-#     the only record on file must name the current workflow and its session -- a record against anything
+#     the only record on file must name that workflow and its session -- a record against anything
 #     else, or a second one, would mean the hold was lifted by something other than the record for it.
 # Coverage limit: the recovery probe's vehicle never completes its handshake (no capability or safety
 # snapshot), so its readiness reason is an earlier one (HANDSHAKE_INCOMPLETE, observed in
@@ -3357,6 +3381,7 @@ $recoverySupersededResultHistoricalPass = $null -ne $databaseObservation -and
 # forced hold alone flip readiness. RecoveryRequired below is therefore a floor, not that proof; the proof
 # is RecoveryStateMachineG2Tests.AfterAForcedRecoveryTheVehicleStaysUnreadyUntilAHardwareRecoveryRecordForItArrives
 # and G3-07-44 of the real-onboard scenario g3-forced-mechanical-recovery.
+# Since control-server#187 there is one workflow, not two, and the record names the first action.
 $recoveryNoFalseClosurePass = $null -ne $databaseObservation -and
     @($databaseObservation.exceptionRecoverySessionRows).Count -eq 1 -and
     $databaseObservation.exceptionRecoverySessionRows[0].agvId -eq $recoveryAgvId -and
@@ -3365,21 +3390,21 @@ $recoveryNoFalseClosurePass = $null -ne $databaseObservation -and
     $null -eq $databaseObservation.exceptionRecoverySessionRows[0].demandId -and
     $databaseObservation.closedExceptionRecoverySessionCount -eq 1 -and
     $databaseObservation.reconciledRecoveryWorkflowCount -eq 1 -and
-    @($databaseObservation.recoveryWorkflowRows).Count -eq 2 -and
+    @($databaseObservation.recoveryWorkflowRows).Count -eq 1 -and
     @($databaseObservation.recoveryWorkflowRows | Where-Object { $null -ne $_.demandId }).Count -eq 0 -and
     @($databaseObservation.recoveryWorkflowRows | Where-Object { $null -ne $_.slotOperationAttemptId }).Count -eq 0 -and
     $databaseObservation.orderIntentCount -eq 0 -and
     $databaseObservation.acceptedDemandCount -eq 0 -and
     $databaseObservation.stationOperationCount -eq 0 -and
     @($databaseObservation.hardwareRecoveryRecordRows).Count -eq 1 -and
-    $databaseObservation.hardwareRecoveryRecordRows[0].recoveryActionId -eq $secondRecoveryActionId -and
+    $databaseObservation.hardwareRecoveryRecordRows[0].recoveryActionId -eq $firstRecoveryActionId -and
     $databaseObservation.hardwareRecoveryRecordRows[0].exceptionRecoverySessionId -eq
         $databaseObservation.exceptionRecoverySessionRows[0].exceptionRecoverySessionId -and
     $databaseObservation.recoveryVehicleReadiness -eq 'RecoveryRequired'
 
 $recoveryPass = $recoveryProbePass -and $recoveryAuthorisationPass -and $recoveryActionBoundaryPass -and
     $recoveryHardwareRecordPass -and $recoveryDisconnectPass -and $recoveryGenerationAdvancePass -and
-    $recoverySupersededResultHistoricalPass -and
+    $recoverySecondForcedWhileFirstUnsettledRejectedPass -and
     $recoveryNoFalseClosurePass
 
 $status = if ($null -ne $runError) {
@@ -3480,7 +3505,7 @@ $assertionReport = [ordered]@{
     hardwareRecoveryRecordScopeEnforced = if ($recoveryHardwareRecordPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     recoveryCommandSurvivesMidFlightDisconnect = if ($recoveryDisconnectPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     forcedRecoveryGenerationAdvancesMonotonically = if ($recoveryGenerationAdvancePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
-    supersededGenerationResultIsHistoricalEvidenceOnly = if ($recoverySupersededResultHistoricalPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
+    secondForcedRecoveryWhileFirstUnsettledIsRejected = if ($recoverySecondForcedWhileFirstUnsettledRejectedPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     recoveryNeverReportsFalseCompletion = if ($recoveryNoFalseClosurePass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     slotConfigurationActivationCarriesOneMessageIdOnly = if ($activationCommandPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
     slotConfigurationActivationReplayedByteForByteAfterAMidFlightDrop = if ($activationReplayPass) { 'PASS' } else { 'FAIL_OR_INCONCLUSIVE' }
