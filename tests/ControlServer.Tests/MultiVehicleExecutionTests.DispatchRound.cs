@@ -31,6 +31,12 @@ namespace ControlServer.Tests;
 /// </remarks>
 public sealed partial class MultiVehicleExecutionTests
 {
+    /// <summary>
+    /// The budget of the vehicle a test cuts off. Only that vehicle gets it: the others keep the fixture's 30 seconds,
+    /// so a cold first intake -- JIT and EF query compilation -- cannot run them out as well and make the test flaky.
+    /// </summary>
+    private const int CutOffBudgetMilliseconds = 1000;
+
     // ---- round equivalence (control-server#209) -----------------------------------------------------------
 
     /// <summary>
@@ -49,14 +55,15 @@ public sealed partial class MultiVehicleExecutionTests
             FleetFixture.Demand(2, "N1-3", 1),
         ]);
 
+        fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
         await fixture.RunRoundAsync();
 
         await AssertTranscriptAsync(fixture, """
             journey V1 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
             journey V2 D2 AwaitingPickupArrival block=- pickup=14 slots=[1] baskets=1
-            backlog D0 ELIGIBLE first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=-
-            backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D2 ACCEPTED first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D0 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
+            backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D2 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D1,D2
               V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
               V2: D0=ELIGIBLE[1] D1=DEMAND_ALREADY_ACCEPTED D2=ELIGIBLE[1]
@@ -76,6 +83,7 @@ public sealed partial class MultiVehicleExecutionTests
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0)]);
 
+        fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
         await fixture.RunRoundAsync();
 
         DispatchRoundOutcome outcome = Assert.Single(fixture.RoundOutcomes.Outcomes);
@@ -86,7 +94,7 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Equal(2, fixture.Catalog.ReadCount);
         await AssertTranscriptAsync(fixture, """
             journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
-            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0
               V1: D0=ELIGIBLE[1]
               V2: D0=DEMAND_ALREADY_ACCEPTED
@@ -107,6 +115,7 @@ public sealed partial class MultiVehicleExecutionTests
         fixture.Catalog.Set([FleetFixture.Demand(0, "N1-1", 0), FleetFixture.Demand(1, "N1-2", 1)]);
         fixture.Catalog.GoneOnReread.Add(FleetFixture.Demand(0, "N1-1", 0).DemandId);
 
+        fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
         await fixture.RunRoundAsync();
 
         // Intake refused the first vehicle's pick, and the first vehicle takes nothing else this round.
@@ -123,8 +132,8 @@ public sealed partial class MultiVehicleExecutionTests
                     FleetFixture.Demand(0, "N1-1", 0).DemandId).ReasonCode));
         await AssertTranscriptAsync(fixture, """
             journey V2 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
-            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=-
-            backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
+            backlog D1 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             outcome accepted=D0,D1
               V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1]
               V2: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1]
@@ -141,17 +150,19 @@ public sealed partial class MultiVehicleExecutionTests
     [Fact]
     public async Task AVehicleCutOffInTheMiddleOfTheChainDecidesAsBeforeTheMove()
     {
-        await using FleetFixture fixture = await FleetFixture.CreateAsync(budgetMilliseconds: 1000);
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet[0].RoundTimeoutMilliseconds = CutOffBudgetMilliseconds);
         fixture.BoxCounts.HangOnCall = 2;
 
+        fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
         await fixture.RunRoundAsync();
 
         await AssertTranscriptAsync(fixture, """
             journey V2 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
             journey V3 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
-            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D1 ACCEPTED first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=-
+            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D1 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             outcome accepted=D0,D1
               V2: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
               V3: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1] D2=ELIGIBLE[1]
@@ -169,6 +180,7 @@ public sealed partial class MultiVehicleExecutionTests
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         fixture.Catalog.Unreachable = true;
 
+        fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
         await fixture.RunRoundAsync();
 
         Assert.Empty(fixture.RoundOutcomes.Outcomes);
@@ -192,7 +204,8 @@ public sealed partial class MultiVehicleExecutionTests
     [Fact]
     public async Task WhatAVehicleCutOffMidChainHadStagedIsNotSavedWithTheNextVehicle()
     {
-        await using FleetFixture fixture = await FleetFixture.CreateAsync(budgetMilliseconds: 1000);
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet[0].RoundTimeoutMilliseconds = CutOffBudgetMilliseconds);
         DateTimeOffset earlier = Now.AddMinutes(-30);
         foreach (AcceptedDemandSnapshot demand in (await fixture.Catalog.ReadCatalogAsync(
                      TestContext.Current.CancellationToken)).Items)
@@ -356,6 +369,7 @@ public sealed partial class MultiVehicleExecutionTests
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         fixture.Riot.FailOn = FleetFixture.VehicleKeys[1];
 
+        fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
         await Assert.ThrowsAsync<HttpRequestException>(() => fixture.RunRoundAsync());
 
         Assert.Equal(
@@ -365,9 +379,9 @@ public sealed partial class MultiVehicleExecutionTests
         Assert.Empty(fixture.RoundOutcomes.Outcomes);
         await AssertTranscriptAsync(fixture, """
             journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
-            backlog D0 ACCEPTED first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D1 ELIGIBLE first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=-
-            backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0000000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=-
+            backlog D0 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D1 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
+            backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
             catalog reads 2
             """);

@@ -1748,7 +1748,18 @@ public sealed partial class MultiVehicleExecutionTests
     {
         private DateTimeOffset _utcNow = utcNow;
 
-        public override DateTimeOffset GetUtcNow() => _utcNow;
+        /// <summary>
+        /// How far every read moves the clock on; zero, the default, keeps it still. A transcript test sets it so that
+        /// each read of the clock answers differently, and a timestamp shows which read it came from.
+        /// </summary>
+        public TimeSpan Tick { get; set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            DateTimeOffset now = _utcNow;
+            _utcNow += Tick;
+            return now;
+        }
 
         public void Advance(TimeSpan elapsed) => _utcNow += elapsed;
     }
