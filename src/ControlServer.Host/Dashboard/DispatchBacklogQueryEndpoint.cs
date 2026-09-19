@@ -43,6 +43,17 @@ internal sealed class DispatchBacklogQueryEndpoint : IDashboardQueryEndpoint
                 "车辆的生效仓位配置与已发布 IO 绑定都没有指明仓位模型，无法判断哪个仓位在哪一侧",
             [DispatchReasonCodes.AreaSlotGroupNotAssigned] =
                 "分区归属表没有为该需求的 AREA 指派仓位分组（开门侧）",
+            // 按任务类型准入（control-server#160）：都是配置造成的不投运，只挡该任务类型，不是故障。
+            [DispatchReasonCodes.OutOfScopeWorkType] =
+                "本服务不执行这个任务类型：部署的 AllowedWorkTypes 里没有它，或规则表不认识它",
+            [DispatchReasonCodes.TaskTypeBindingMissing] =
+                "本图没有为这个任务类型绑定固定站点（不在本图需求集里，或在需求集里却没绑定），只有这个任务类型不投运",
+            [TaskTypeStationReasonCodes.BindingStationNotInCatalog] =
+                "这个任务类型绑定的固定站点不在当前站点目录里（被删、改名或不是本图），只有这个任务类型不投运",
+            [DispatchReasonCodes.TaskTypeHeld] =
+                "本图这个任务类型处于暂停（人工暂停、站点目录变化或绑定激活结果未知），解除后才会派车",
+            [DispatchReasonCodes.TaskTypeNotYetExecutable] =
+                "这个任务类型已有绑定，但当前版本的服务端还不能执行它",
         };
 
     public string Path => DashboardQueryEndpointCatalog.QueryPrefix + "dispatch-backlog";

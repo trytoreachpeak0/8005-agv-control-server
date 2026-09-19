@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Dispatch.Criteria;
 using ControlServer.Host.Runtime.RouteGraph;
@@ -109,9 +110,24 @@ public static class StructuralDispatchClassification
             "This vehicle's identity; says nothing about the demand."),
 
         // ---- WorkTypeScopeCriterion (20) ----------------------------------------------------------------
-        Backlog("OUT_OF_SCOPE_WORK_TYPE", WorkTypeScope,
-            "A work type this server does not execute. Not in the ticket's structural list and not marked silent " +
-            "by #72; the catalog only carries WIRE_TO_GATE today. Doubtful, so backlog."),
+        Backlog(DispatchReasonCodes.OutOfScopeWorkType, WorkTypeScope,
+            "A task type the deployment does not allow or the rule table does not know. Configuration, not a " +
+            "fault; not in the ticket's structural list and not marked silent by #72. Doubtful, so backlog."),
+        Backlog(DispatchReasonCodes.TaskTypeBindingMissing, WorkTypeScope,
+            "control-server#160: this Map has no effective binding for the task type. A configured outcome, not a " +
+            "fault, so never a structural alarm; binding the task type clears it, and only this task type waits."),
+        Backlog(TaskTypeStationReasonCodes.BindingStationNotInCatalog, WorkTypeScope,
+            "control-server#160: the bound station is not in this round's catalog (gone, renamed, or another Map). " +
+            "A configured outcome, not a fault, so never a structural alarm; only this task type waits."),
+        Backlog(TaskTypeStationReasonCodes.BindingCatalogNotFresh, WorkTypeScope,
+            "control-server#160: defensive only -- the resolver checks a binding against the catalog the round just " +
+            "read whole, which is fresh by definition. Registered because #159's catalog check can return it."),
+        Backlog(DispatchReasonCodes.TaskTypeHeld, WorkTypeScope,
+            "control-server#160: the task type is held on this Map (operator, catalog change, or an activation of " +
+            "unknown outcome). A configured outcome, not a fault; releasing the hold clears it."),
+        Backlog(DispatchReasonCodes.TaskTypeNotYetExecutable, WorkTypeScope,
+            "control-server#160: bound, but this build cannot execute the task type yet (batch 10 for the four " +
+            "same-direction ones). A configured outcome, not a fault, so never a structural alarm."),
 
         // ---- VehicleTaskTypeAdmissionCriterion (25) -----------------------------------------------------
         Backlog(VehicleTaskTypeAdmissionCriterion.VehicleNotInPolicyReason, VehicleTaskType,
@@ -151,6 +167,9 @@ public static class StructuralDispatchClassification
         new("DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING", DispatchReasonClass.Structural, StationResolution,
             "The zone the AREA is assigned is not among this server's allowed dispatch zones. Configuration, " +
             "the same for every vehicle."),
+        Backlog(JourneyPlanBuilder.FixedStationAsOriginNotSupported, StationResolution,
+            "A fixed station at the origin end, which the plan builder cannot plan until control-server#163. " +
+            "Unreachable today: WorkTypeScopeCriterion refuses every task type this build cannot execute first."),
         Backlog("ROUTE_EVIDENCE_MISSING", StationResolution,
             "The route evidence id came out empty. It is derived from Map, stations, AREA and EQP and is not " +
             "expected to happen at all; not in the ticket's structural list. Doubtful, so backlog."),
