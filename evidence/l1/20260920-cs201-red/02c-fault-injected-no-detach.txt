@@ -1,0 +1,7 @@
+  Failed ControlServer.Tests.CatalogBindingHoldEngineHookTests.AConvergenceFailingOnABusyDatabaseDoesNotStopTheRoundAndTheHoldLandsOnTheNextOne [2 s]
+  Error Message:
+   Assert.Empty() Failure: Collection was not empty
+Collection: [TaskTypeStationHold { HoldId = 80b6a90fa1914da6a5dd2efc43f61195, MapId = 25, TaskType = WIRE_TO_GATE, Source = CATALOG_CHANGE, ReasonCode = STATION_RENAMED, DetailJson = {"mapId":25,"taskType":"WIRE_TO_GATE","source":"CATALOG_CHANGE","reasonCode":"STATION_RENAMED","classification":"RENAMED","catalogRevision":5534023222112865484,"bindingSetVersion":1,"before":{"stationRiotId":210,"stationName":"关卡"},"after":{"stationRiotId":210,"stationName":"关卡-临时堆放"},"sameNameStationIds":[],"inFlightDemands":1}, RaisedAt = 8/26/2026 1:00:00 AM +00:00, RaisedBy = deployment:8005-controlserver@test, ReleasedAt = , ReleasedBy =  }]
+  Stack Trace:
+--
+Failed!  - Failed:     1, Passed:     3, Skipped:     0, Total:     4, Duration: 10 s - ControlServer.Tests.dll (net8.0)
