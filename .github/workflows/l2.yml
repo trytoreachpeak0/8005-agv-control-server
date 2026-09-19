@@ -253,6 +253,11 @@ jobs:
               # control-server#159, specification 8.3 batch-6 mechanism criterion 4: one station bound to two task
               # types refuses start.
               @{ Name = 'task-type-binding-station-reused-refuses-start'; Runs = 3; BatchId = 'batch-6' }
+              # Batch 7 (program#127). Each ticket adds its own scenario here from its own pull request, sorted by
+              # name, one run each; the batch-7 exit (control-server#220) makes every line three runs.
+              # control-server#216: the five kinds of bad per-zone dispatch parameter table each rejected whole, and a
+              # good one taking effect as one new version without restarting the server.
+              @{ Name = 'dispatch-zone-parameters-import-rejects'; Runs = 1; BatchId = 'batch-7' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used
