@@ -1502,7 +1502,7 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         dbContext.StopClosures.Add(new StopClosureRow { DemandId = demandId, CommittedAt = completedAt });
         demand.Status = DemandExecutionStatus.Succeeded;
         // The lease and the purpose claim go when the journey's last open demand ends (control-server#207), decided inside
-        // this write transaction; with one demand that is this one, in this save, as before.
+        // the transaction opened just above; with one demand that is this one, in this save, as before.
         await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, demandId, completedAt, cancellationToken)
             .ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow
@@ -2066,8 +2066,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             CommittedAt = result.ObservedAt
         });
         demand.Status = DemandExecutionStatus.Succeeded;
-        // As in CompleteDemandAfterUnloadAsync: released only for the journey's last open demand (control-server#207). This
-        // runs inside the inbox's write transaction, which is where "the last" has to be read.
+        // Released only for the journey's last open demand (control-server#207). This method opens no transaction of its
+        // own: every inbound line is processed inside the one CaptureFirstResponseAsync opens before it calls the
+        // processor back (OnboardMessageProcessor.ProcessAsync -> ProcessCurrentSessionMessageAsync), so the read below
+        // is inside a write transaction on the path that reaches it. Batch7DemandTerminationTests
+        // .TheUnloadResultsReleaseDecisionIsReadInsideTheInboxWriteTransaction pins that, because it is the inbox's
+        // structure that provides it rather than anything here.
         await JourneyLeaseRelease.StageIfLastOpenDemandAsync(dbContext, result.DemandId, result.ObservedAt, cancellationToken)
             .ConfigureAwait(false);
         dbContext.TransportDemandCompletions.Add(new TransportDemandCompletionRow

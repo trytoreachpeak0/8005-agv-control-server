@@ -116,7 +116,7 @@ internal sealed class AreaAssignmentImportHarness : IAsyncDisposable
     /// <summary>让一条需求的旅程收尾，这样它不再算在途。</summary>
     public async Task CompleteJourneyAsync(string demandId)
     {
-        Context.Set<JourneyRuntimeRow>().Add(new JourneyRuntimeRow
+        JourneyRuntimeRow journey = new()
         {
             JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
             DemandId = demandId,
@@ -158,7 +158,10 @@ internal sealed class AreaAssignmentImportHarness : IAsyncDisposable
             UnloadSlotOperationAttemptId = $"unload-attempt-{demandId}",
             CreatedAt = Seeded,
             UpdatedAt = Seeded
-        });
+        };
+        Context.Set<JourneyRuntimeRow>().Add(journey);
+        // control-server#207: acceptance writes the demand's membership beside the journey row.
+        Context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(journey));
         await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
     }
 

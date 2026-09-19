@@ -1,11 +1,15 @@
 using System.Data.Common;
+using System.Security.Cryptography;
+using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
+using ControlServer.Host.Transport;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using static ControlServer.Tests.JourneyRuntimeWorkerTestKit;
 
 namespace ControlServer.Tests;
@@ -226,6 +230,42 @@ public sealed class Batch7DemandTerminationTests
         }
     }
 
+    /// <summary>
+    /// 生产路径上，「是不是最后一条」也是在写事务里读的：卸货结果从 <c>OnboardMessageProcessor</c> 进来，收件箱在处理这条报文之前
+    /// 就开了事务（<c>WireToGateStore.CaptureFirstResponseAsync</c>），所以 <c>ApplyOperationResultAsync</c> 自己不开事务也在事务里。
+    /// </summary>
+    /// <remarks>
+    /// 本票把释放的判据从「这条需求」改成「本旅程最后一条未终结的需求」，判据读得早一点就会让两个写者都以为对方还开着
+    /// （注入故障 m3）。判据在哪一层的事务里读，靠的是收件箱的结构，不是这个方法自己的代码——所以钉在这里，谁把收件箱的事务
+    /// 挪走或收窄，这条测试就红。
+    /// </remarks>
+    [Fact]
+    public async Task TheUnloadResultsReleaseDecisionIsReadInsideTheInboxWriteTransaction()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await fixture.RunToGateUnloadAsync();
+        StationOperationRow unload = await fixture.OperationAsync(SlotOperationType.Unload);
+
+        LastOpenDemandTransactionWatch watch = new();
+        await using ControlServerDbContext connection = new(
+            new DbContextOptionsBuilder<ControlServerDbContext>(fixture.DbOptionsForTests).AddInterceptors(watch).Options);
+        OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+            connection, new WireToGateStore(connection), fixture.Clock, new ConfigurationBuilder().Build(),
+            runtimeOptions: fixture.Options);
+        string response = await processor.ProcessAsync(
+            UnloadResultLine(fixture, unload), OnboardState(fixture), cancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Contains("DurableAck", response, StringComparison.Ordinal);
+        Assert.Equal(DemandExecutionStatus.Succeeded, (await fixture.DemandRowAsync()).Status);
+        Assert.NotNull((await fixture.LeaseAsync()).ReleasedAt);
+        Assert.Equal(1, watch.Reads);
+        Assert.Equal(0, watch.ReadsOutsideATransaction);
+    }
+
     // ---- Restart between the ending and the journey's closing, and the orphan check --------------------------------
 
     /// <summary>
@@ -436,6 +476,91 @@ public sealed class Batch7DemandTerminationTests
             builder.AddInterceptors(interceptors);
         }
         return new ControlServerDbContext(builder.Options);
+    }
+
+    private static OnboardConnectionState OnboardState(RuntimeFixture fixture) => new()
+    {
+        AgvId = fixture.Options.AgvId,
+        SessionGeneration = 1,
+        CapabilityRevision = 1,
+        SafetyRevision = 7,
+        Readiness = SessionReadiness.Ready,
+        HandshakeCompleted = true
+    };
+
+    /// <summary>The vehicle's OperationResult for the journey's unload, as it arrives on a connection.</summary>
+    private static string UnloadResultLine(RuntimeFixture fixture, StationOperationRow unload)
+    {
+        object[] slotResults = [.. (JsonSerializer.Deserialize<int[]>(unload.TargetSlotsJson) ?? []).Select(slot => new
+        {
+            slotNo = slot,
+            outcome = "COMPLETED",
+            finalPhysicalState = "EMPTY",
+            lockState = "LOCKED",
+            unlockOutputState = "RESET",
+            reasonCodes = Array.Empty<string>()
+        })];
+        var businessContent = new
+        {
+            demandId = unload.DemandId,
+            slotOperationAttemptId = unload.SlotOperationAttemptId,
+            operationType = "UNLOAD",
+            overallOutcome = "COMPLETED",
+            slotResults,
+            observedAt = fixture.Clock.GetUtcNow(),
+            journalCheckpoint = "UNLOAD_COMPLETED_RECORDED"
+        };
+        string resultContentSha256 = Convert.ToHexString(
+            SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(businessContent, SerializerOptions))).ToLowerInvariant();
+        return JsonSerializer.Serialize(new
+        {
+            protocolVersion = ProtocolCandidateIdentity.ProtocolVersion,
+            profileId = ProtocolCandidateIdentity.ProfileId,
+            protocolReleaseVersion = ProtocolCandidateIdentity.ReleaseVersion,
+            protocolReleaseManifestSha256 = ProtocolCandidateIdentity.ManifestSha256,
+            messageType = "OperationResult",
+            messageId = Guid.NewGuid().ToString("D"),
+            correlationId = (string?)null,
+            agvId = fixture.Options.AgvId,
+            sessionGeneration = 1L,
+            sentAt = fixture.Clock.GetUtcNow(),
+            payload = new
+            {
+                businessContent.demandId,
+                businessContent.slotOperationAttemptId,
+                businessContent.operationType,
+                businessContent.overallOutcome,
+                businessContent.slotResults,
+                businessContent.observedAt,
+                businessContent.journalCheckpoint,
+                resultContentSha256
+            }
+        }, SerializerOptions);
+    }
+
+    /// <summary>Counts the "is this the last open demand" reads, and how many of them ran outside a transaction.</summary>
+    private sealed class LastOpenDemandTransactionWatch : DbCommandInterceptor
+    {
+        public int Reads { get; private set; }
+
+        public int ReadsOutsideATransaction { get; private set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains(DemandJourneyLookup.LastOpenDemandTag, StringComparison.Ordinal))
+            {
+                Reads++;
+                if (command.Transaction is null)
+                {
+                    ReadsOutsideATransaction++;
+                }
+            }
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     /// <summary>Runs <paramref name="afterRead"/> once the "is this the last open demand" read has executed.</summary>
