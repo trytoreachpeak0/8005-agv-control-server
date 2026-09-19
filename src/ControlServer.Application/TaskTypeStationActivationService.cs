@@ -188,6 +188,14 @@ public sealed class TaskTypeStationActivationService(
             released, auditId, detail);
     }
 
+    /// <summary>Stub for the review's test commit.</summary>
+    public Task<TaskTypeStationManualCloseResult> CloseManuallyAsync(
+        int mapId,
+        TaskTypeStationChangeRequest request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken) =>
+        throw new NotImplementedException();
+
     public static string ConclusionName(TaskTypeStationReconciliationConclusion conclusion) => conclusion switch
     {
         TaskTypeStationReconciliationConclusion.TargetActive => "TARGET_ACTIVE",

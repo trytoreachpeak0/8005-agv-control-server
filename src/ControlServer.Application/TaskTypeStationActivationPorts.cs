@@ -28,6 +28,12 @@ public static class TaskTypeStationActivationReasonCodes
 
     /// <summary>激活第二步没有确认落地；该图停在暂停，等对账（REQ-0347）。</summary>
     public const string ActivationResultUnknown = "TASK_TYPE_ACTIVATION_RESULT_UNKNOWN";
+
+    public const string ActivationNotContradictory = "TASK_TYPE_ACTIVATION_NOT_CONTRADICTORY";
+
+    public const string NothingToClose = "TASK_TYPE_ACTIVATION_NOTHING_TO_CLOSE";
+
+    public const string NotCommitted = "TASK_TYPE_ACTIVATION_STEP_NOT_COMMITTED";
 }
 
 /// <summary>激活、回滚、解除暂停与对账写审计时用的动作名（REQ-0348）。</summary>
@@ -41,6 +47,8 @@ public static class TaskTypeStationActivationAuditActions
     public const string Reconciled = "TASK_TYPE_STATION_BINDING_SET_ACTIVATION_RECONCILED";
     public const string HoldReleased = "TASK_TYPE_STATION_HOLD_RELEASED";
     public const string HoldReleaseRejected = "TASK_TYPE_STATION_HOLD_RELEASE_REJECTED";
+    public const string ClosedManually = "TASK_TYPE_STATION_BINDING_SET_ACTIVATION_CLOSED_MANUALLY";
+    public const string CloseRejected = "TASK_TYPE_STATION_BINDING_SET_ACTIVATION_CLOSE_REJECTED";
 }
 
 /// <summary>请求类别，写进审计的 <c>requestCategory</c>。</summary>
@@ -132,8 +140,27 @@ public enum TaskTypeStationReconciliationConclusion
     Contradictory,
 
     /// <summary>该图没有未结的激活尝试。</summary>
-    NothingToReconcile
+    NothingToReconcile,
+
+    /// <summary>Stub for the review's test commit.</summary>
+    NotConcluded
 }
+
+public enum TaskTypeStationManualCloseOutcome
+{
+    Closed,
+    Rejected
+}
+
+public sealed record TaskTypeStationManualCloseResult(
+    TaskTypeStationManualCloseOutcome Outcome,
+    int MapId,
+    string? AttemptId,
+    long? ActiveVersionBefore,
+    IReadOnlyList<string> ReleasedHoldIds,
+    IReadOnlyList<TaskTypeStationViolation> Violations,
+    string? AuditRecordId,
+    string Detail);
 
 /// <summary>对账结果。</summary>
 public sealed record TaskTypeStationReconciliationResult(

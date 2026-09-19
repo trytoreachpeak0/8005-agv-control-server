@@ -434,8 +434,8 @@ public sealed class TaskTypeStationActivationTests
     }
 
     /// <summary>
-    /// 激活事务直接写的暂停行：重试、重启、重复对账都不会让同一任务类型出现第二条未解除的「激活结果未知」暂停；撤销按本次尝试的
-    /// HoldId 做，别的尝试留下的同来源暂停与人工暂停一条不碰。
+    /// 激活事务直接写的暂停行：重试、重启、重复对账都不会让同一任务类型出现第二条未解除的「激活结果未知」暂停。第二步按本次尝试的 HoldId
+    /// 撤；对账能下结论时撤该图全部「激活结果未知」暂停，连同别的尝试留下的孤儿（该图任何时候最多一次未结尝试，审查 S3）。人工暂停一条不碰。
     /// </summary>
     [Fact]
     public async Task ActivationHoldsAreNeverDuplicatedAndOnlyThisAttemptsHoldsAreReleased()
@@ -483,21 +483,22 @@ public sealed class TaskTypeStationActivationTests
         await restarted.Activations.MarkUnknownAsync(open, TaskTypeStationActivationHarness.Now, Token);
         await AssertOneOpenActivationHoldPerTaskTypeAsync();
 
-        // Reconciling twice releases exactly this attempt's two holds, the second run nothing more.
+        // Reconciling twice: the first run releases this attempt's two holds and the orphan, the second nothing more.
         TaskTypeStationReconciliationResult first = await restarted.Service.ReconcileAsync(
             25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
         TaskTypeStationReconciliationResult second = await harness.Default().Service.ReconcileAsync(
             25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
         Assert.Equal(TaskTypeStationReconciliationConclusion.TargetActive, first.Conclusion);
-        Assert.Equal(2, first.ReleasedHoldIds.Count);
+        Assert.Equal(3, first.ReleasedHoldIds.Count);
+        Assert.Contains("foreign-hold", first.ReleasedHoldIds);
         Assert.Equal(TaskTypeStationReconciliationConclusion.NothingToReconcile, second.Conclusion);
         Assert.Empty(second.ReleasedHoldIds);
 
         IReadOnlyList<TaskTypeStationHoldRow> holds = await harness.HoldsAsync();
-        Assert.Null(holds.Single(hold => hold.HoldId == "foreign-hold").ReleasedAt);
+        Assert.NotNull(holds.Single(hold => hold.HoldId == "foreign-hold").ReleasedAt);
         Assert.Null(holds.Single(hold => hold.HoldId == manual.HoldId).ReleasedAt);
         Assert.DoesNotContain(holds, hold => hold.ReleasedAt is null
-            && hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown && hold.HoldId != "foreign-hold");
+            && hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown);
         // Every activation hold this attempt ever raised names this attempt, and each release names it too.
         Assert.All(
             holds.Where(hold => hold.Source == TaskTypeStationHoldSource.ActivationResultUnknown && hold.HoldId != "foreign-hold"),
@@ -727,6 +728,322 @@ public sealed class TaskTypeStationActivationTests
             (TaskTypeStationActivationAuditActions.HoldReleaseRejected, GovernanceActionOutcome.Failed),
             (audit.Action, audit.Outcome));
     }
+
+    // ======== Review of PR #183 (issuecomment-5739636280): S1-S6 and O2 ========
+
+    /// <summary>
+    /// S1：激活 A 的第二步还在路上时，运维对账判「原版本在用」、撤了 A 的暂停；A 的第二步随后到达，不得再把新版本切成生效——
+    /// 对账写下的「没发生」必须仍然是真的。
+    /// </summary>
+    [Fact]
+    public async Task ASecondStepThatArrivesAfterReconciliationDoesNotSwitchThePointer()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationReconciliationResult? reconciled = null;
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
+            harness.NewContext(),
+            inner => new BeforeComplete(inner, async () => reconciled = await harness.Default().Service.ReconcileAsync(
+                25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token)));
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled!.Conclusion);
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
+        Assert.Equal("25|1|ACTIVE|<null>", await harness.PointerRowAsync());
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+        Assert.DoesNotContain(await harness.AuditAsync(), row => row.Action == TaskTypeStationActivationAuditActions.Activated);
+    }
+
+    /// <summary>S1：对账之后又开始了回滚 R；激活 A 迟到的第二步不得把 R 的「结果未知」改回 <c>ACTIVE</c>。</summary>
+    [Fact]
+    public async Task ASecondStepThatArrivesAfterANewerAttemptBeganLeavesThatAttemptAlone()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
+            harness.NewContext(),
+            inner => new BeforeComplete(inner, async () =>
+            {
+                await harness.Default().Service.ReconcileAsync(
+                    25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+                // Rollback R: its first step commits, then its process dies.
+                ControlServerDbContext dying = harness.NewContext();
+                await TaskTypeStationActivationHarness.StackOver(dying, rInner => new DieBeforeComplete(rInner, dying)).Service
+                    .RollbackAsync(25, 1, TaskTypeStationActivationHarness.Catalog, TaskTypeStationActivationHarness.Request,
+                        dryRun: false, TaskTypeStationActivationHarness.Now, Token);
+            }));
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
+        // R's target is version 3 (version 1's content written anew); A's late second step must not have touched it.
+        Assert.Equal("25|1|ACTIVATION_UNKNOWN|3", await harness.PointerRowAsync());
+    }
+
+    /// <summary>
+    /// S2：未结尝试从仍成立的暂停里取，不按审计时间戳。同一目标版本多出一条时间更晚的「开始」审计（时钟回拨、或版本复用）也不会选错。
+    /// </summary>
+    [Fact]
+    public async Task TheOpenAttemptIsTakenFromItsHoldsNotFromTheLatestAuditTimestamp()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying)).ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+        string attemptId = AttemptOf((await harness.HoldsAsync())[0]);
+        // A later-stamped started record for the same target version, naming some other attempt.
+        TaskTypeStationActivationHarness.Stack stack = harness.Default();
+        await stack.Governance.WriteBusinessAsync(
+            new GovernanceAuditEntry(
+                TaskTypeStationActivationAuditActions.Started, GovernedObjectKind.PublicStationBinding, "map-25", 2,
+                GovernanceActionOutcome.ResultUnknown,
+                """{"attemptId":"ghost","bindingSetVersion":{"previous":1},"heldTaskTypes":[]}"""),
+            TaskTypeStationActivationHarness.Now.AddHours(1),
+            Token);
+
+        TaskTypeStationReconciliationResult reconciled = await stack.Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled.Conclusion);
+        Assert.Equal(attemptId, reconciled.AttemptId);
+        Assert.Equal(2, reconciled.ReleasedHoldIds.Count);
+        Assert.Equal("25|1|ACTIVE|<null>", await harness.PointerRowAsync());
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+    }
+
+    /// <summary>S3：一条找不到尝试的孤儿「激活结果未知」暂停，在对账能下结论时被撤掉，不会把那个任务类型永远暂停。</summary>
+    [Fact]
+    public async Task ReconciliationReleasesAnOrphanActivationHoldWhenItCanConclude()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        await harness.ExecuteAsync(
+            "INSERT INTO TaskTypeStationHolds (HoldId, MapId, TaskType, Source, ReasonCode, DetailJson, RaisedAt, RaisedBy) VALUES "
+            + "('orphan', 25, 'WIRE_TO_GATE', 'ACTIVATION_RESULT_UNKNOWN', 'TASK_TYPE_ACTIVATION_RESULT_UNKNOWN', "
+            + "'{\"attemptId\":\"lost\",\"targetVersion\":7,\"previousVersion\":1}', '2026-09-19 07:00:00+00:00', 'fieldops:activation:lost')");
+        TaskTypeStationActivationHarness.Stack stack = harness.Default();
+        Assert.True(await stack.Holds.IsHeldAsync(25, TransportTaskTypes.WireToGate, Token));
+
+        TaskTypeStationReconciliationResult reconciled = await stack.Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.NothingToReconcile, reconciled.Conclusion);
+        Assert.Equal(["orphan"], reconciled.ReleasedHoldIds);
+        Assert.False(await harness.Default().Holds.IsHeldAsync(25, TransportTaskTypes.WireToGate, Token));
+        Assert.Equal("25|1|ACTIVE|<null>", await harness.PointerRowAsync());
+    }
+
+    /// <summary>
+    /// S3：「矛盾」时系统给不出结论，出口是一个带审计的人工收尾：该图回到「无生效版本」、撤全部「激活结果未知」暂停、记下理由与自报角色。
+    /// 不是矛盾时拒绝收尾，什么都不改。
+    /// </summary>
+    [Fact]
+    public async Task AContradictionIsClosedOnlyByAnAuditedManualClose()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying)).ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+        TaskTypeStationActivationHarness.Stack stack = harness.Default();
+        TaskTypeStationChangeRequest close = new("两个版本都读不回完整内容，放弃这次激活", "现场工程师");
+
+        // Not contradictory yet: version 1 still reads back whole, so this is the reconciliation's call, not a person's.
+        TaskTypeStationManualCloseResult refused = await stack.Service.CloseManuallyAsync(
+            25, close, TaskTypeStationActivationHarness.Now, Token);
+        Assert.Equal(TaskTypeStationManualCloseOutcome.Rejected, refused.Outcome);
+        Assert.Equal(
+            TaskTypeStationActivationReasonCodes.ActivationNotContradictory, Assert.Single(refused.Violations).ReasonCode);
+        Assert.Equal("25|1|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
+
+        await harness.ExecuteAsync("UPDATE TaskTypeStationBindings SET StationName = '关卡-改' WHERE MapId = 25 AND Version = 1");
+        Assert.Equal(
+            TaskTypeStationReconciliationConclusion.Contradictory,
+            (await stack.Service.ReconcileAsync(25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token)).Conclusion);
+
+        TaskTypeStationManualCloseResult closed = await harness.Default().Service.CloseManuallyAsync(
+            25, close, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationManualCloseOutcome.Closed, closed.Outcome);
+        Assert.Equal(1, closed.ActiveVersionBefore);
+        Assert.Equal(2, closed.ReleasedHoldIds.Count);
+        Assert.Equal(string.Empty, await harness.PointerRowAsync());
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+        BusinessAuditRecordRow[] records = [.. (await harness.AuditAsync())
+            .Where(row => row.Action is TaskTypeStationActivationAuditActions.ClosedManually or TaskTypeStationActivationAuditActions.CloseRejected)];
+        Assert.Equal(
+            [
+                (TaskTypeStationActivationAuditActions.CloseRejected, GovernanceActionOutcome.Failed),
+                (TaskTypeStationActivationAuditActions.ClosedManually, GovernanceActionOutcome.Succeeded)
+            ],
+            records.Select(row => (row.Action, row.Outcome)));
+        Assert.Contains("放弃这次激活", records[1].DetailJson, StringComparison.Ordinal);
+        Assert.Contains("现场工程师", records[1].DetailJson, StringComparison.Ordinal);
+        Assert.Equal(closed.AuditRecordId, records[1].AuditRecordId);
+    }
+
+    /// <summary>
+    /// S4：一张图的第一次激活没有完成，对账判「原版本在用」时，原版本是「没有」——指针回到「无生效版本」形态（没有指针行），
+    /// 而不是一个「生效却没有版本」的 <c>ACTIVE</c>。这样重启时预置文件仍能装为第一版（规格 21.2 第 4 条）。
+    /// </summary>
+    [Fact]
+    public async Task AFirstActivationThatNeverCompletedLeavesTheMapWithoutAnActiveVersion()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        RiotMapStationCatalogSnapshot map26 = TaskTypeStationCatalogEvidence.Supplied(
+            26, TaskTypeStationActivationHarness.CatalogStations, TaskTypeStationActivationHarness.Now);
+        await harness.ConfirmCatalogAsync(map26, TaskTypeStationActivationHarness.Now.AddSeconds(-30));
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying)).ActivateAsync(
+            new TaskTypeStationCandidate(26, 1, [TransportTaskTypes.WireToGate], [TaskTypeStationActivationHarness.Gate]),
+            catalog: map26);
+        Assert.Equal("25|1|ACTIVE|<null>\n26|<null>|ACTIVATION_UNKNOWN|1", await harness.PointerRowAsync());
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            26, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled.Conclusion);
+        Assert.Null(reconciled.ActiveVersion);
+        Assert.Equal("25|1|ACTIVE|<null>", await harness.PointerRowAsync());
+    }
+
+    /// <summary>S5：第一步提交没有返回（等锁超时），不崩溃：写一条超时审计、结论是结果未知，库里什么都没变。</summary>
+    [Fact]
+    public async Task AFirstStepThatFailsToCommitIsAuditedAsTimedOutAndChangesNothing()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        CommitFault fault = new(new TimeoutException("SQLite BEGIN IMMEDIATE waited past the busy timeout.")) { Remaining = 1 };
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
+            harness.NewContext(fault), inner => new FaultOnBegin(inner, fault));
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
+        Assert.Equal(1, fault.Thrown);
+        Assert.Equal("25|1|ACTIVE|<null>", await harness.PointerRowAsync());
+        Assert.Empty(await harness.HoldsAsync());
+        BusinessAuditRecordRow last = (await harness.AuditAsync())[^1];
+        Assert.Equal((TaskTypeStationActivationAuditActions.ResultUnknown, GovernanceActionOutcome.TimedOut), (last.Action, last.Outcome));
+        Assert.Contains(result.AttemptId, last.DetailJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>S5：第一步提交之后才抛出：该图已处在结果未知、暂停着，审计照写，对账接得上。</summary>
+    [Fact]
+    public async Task AFirstStepThatCommitsButThrowsIsAuditedAsUnknownAndReconcilable()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        CommitFault fault = new(new InvalidOperationException("The connection dropped after COMMIT was sent.")) { AfterCommit = true, Remaining = 1 };
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
+            harness.NewContext(fault), inner => new FaultOnBegin(inner, fault));
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
+        Assert.Equal("25|1|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
+        Assert.Equal(2, (await harness.HoldsAsync()).Count(hold => hold.ReleasedAt is null));
+        BusinessAuditRecordRow last = (await harness.AuditAsync())[^1];
+        Assert.Equal((TaskTypeStationActivationAuditActions.ResultUnknown, GovernanceActionOutcome.ResultUnknown), (last.Action, last.Outcome));
+        Assert.Equal(
+            TaskTypeStationReconciliationConclusion.PreviousActive,
+            (await harness.Default().Service.ReconcileAsync(25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token)).Conclusion);
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+    }
+
+    /// <summary>S5：对账自己的提交失败：不崩溃，结论是「没能对账」，暂停与指针原样，审计照写。</summary>
+    [Fact]
+    public async Task AReconciliationThatFailsToCommitIsAuditedAndChangesNothing()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying)).ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+        CommitFault fault = new(new TimeoutException("lock timeout")) { Armed = true, Remaining = 1 };
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(harness.NewContext(fault));
+
+        TaskTypeStationReconciliationResult result = await stack.Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.NotConcluded, result.Conclusion);
+        Assert.Equal(1, fault.Thrown);
+        Assert.Empty(result.ReleasedHoldIds);
+        Assert.Equal("25|1|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
+        Assert.Equal(2, (await harness.HoldsAsync()).Count(hold => hold.ReleasedAt is null));
+        BusinessAuditRecordRow last = (await harness.AuditAsync())[^1];
+        Assert.Equal((TaskTypeStationActivationAuditActions.Reconciled, GovernanceActionOutcome.TimedOut), (last.Action, last.Outcome));
+        Assert.Contains("\"conclusion\":\"NOT_CONCLUDED\"", last.DetailJson, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// S6：存储层自己挡非法值，不靠调用方记得先校验——直接调规则、绑定集、激活与暂停存储，传非法的 <c>FixedEnd</c>、站点、核对记录与
+    /// <c>Source</c>，一律被拒、什么都没写。指针 <c>State</c> 没有任何端口接受外来取值，只有存储内部的两个常量。
+    /// </summary>
+    [Fact]
+    public async Task StoresRefuseIllegalValuesEvenWhenCalledDirectly()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationActivationHarness.Stack stack = harness.Default();
+        IReadOnlyDictionary<string, long> before = await harness.CountRowsAsync();
+
+        await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(() => stack.Rules.WriteVersionAsync(
+            [.. TaskTypeStationTestData.SixRules.Where(rule => rule.TaskType != TransportTaskTypes.WireToGate),
+                new TaskTypeStationRule(TransportTaskTypes.WireToGate, "SIDEWAYS")],
+            "direct", TaskTypeStationActivationHarness.Now, Token));
+        await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(() => stack.Rules.WriteVersionAsync(
+            [.. TaskTypeStationTestData.SixRules, new TaskTypeStationRule("WIRE_TO_MOON", TaskTypeFixedEnd.Destination)],
+            "direct", TaskTypeStationActivationHarness.Now, Token));
+        await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(() => stack.Bindings.WriteVersionAsync(
+            25, 1, [TransportTaskTypes.WireToGate], [TaskTypeStationActivationHarness.Gate with { SiteVerificationRef = " " }],
+            null, "direct", TaskTypeStationActivationHarness.Now, Token));
+        await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(() => stack.Bindings.WriteVersionAsync(
+            25, 1, [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
+            [TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging with { StationRiotId = 210, StationName = "关卡" }],
+            null, "direct", TaskTypeStationActivationHarness.Now, Token));
+        await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(() => stack.Activations.BeginAsync(
+            new TaskTypeStationActivationStart(
+                "direct", new TaskTypeStationCandidate(25, 1, [TransportTaskTypes.WireToGate], [TaskTypeStationActivationHarness.Gate with { StationName = "" }]),
+                1, null, "direct", [TransportTaskTypes.WireToGate], TaskTypeStationActivationHarness.Now),
+            attempt => new GovernanceAuditEntry("DIRECT", GovernedObjectKind.PublicStationBinding, "map-25", attempt.TargetVersion,
+                GovernanceActionOutcome.ResultUnknown, "{}"),
+            Token));
+        await Assert.ThrowsAsync<ArgumentException>(() => stack.Holds.RaiseAsync(
+            25, TransportTaskTypes.WireToGate, "BOGUS", "X", "{}", "direct", TaskTypeStationActivationHarness.Now, Token));
+
+        Assert.Equal(before, await harness.CountRowsAsync());
+        Assert.Equal("25|1|ACTIVE|<null>", await harness.PointerRowAsync());
+        Assert.DoesNotContain(
+            new[] { typeof(ITaskTypeStationBindingStore), typeof(ITaskTypeStationActivationStore), typeof(ITaskTypeStationHoldStore) }
+                .SelectMany(port => port.GetMethods())
+                .SelectMany(method => method.GetParameters()),
+            parameter => string.Equals(parameter.Name, "state", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>O2：解除暂停与它的审计在同一个事务里——审计写不进去，暂停就不算解除。</summary>
+    [Fact]
+    public async Task AHoldReleaseWhoseAuditCannotBeWrittenReleasesNothing()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
+            harness.NewContext(), wrapAudit: inner => new FailingAudit(inner, TaskTypeStationActivationAuditActions.HoldReleased));
+        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+            25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+
+        TaskTypeStationHoldReleaseResult result = await stack.Service.ReleaseHoldAsync(
+            25, TransportTaskTypes.WireToGate, "SITE-RECHECK-0919", TaskTypeStationActivationHarness.Catalog,
+            TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationHoldReleaseOutcome.Rejected, result.Outcome);
+        Assert.Contains(result.Violations, violation => violation.ReasonCode == TaskTypeStationActivationReasonCodes.NotCommitted);
+        Assert.Null((await harness.HoldsAsync()).Single(hold => hold.HoldId == manual.HoldId).ReleasedAt);
+        Assert.True(await harness.Default().Holds.IsHeldAsync(25, TransportTaskTypes.WireToGate, Token));
+    }
+
+    private static string AttemptOf(TaskTypeStationHoldRow hold)
+    {
+        using System.Text.Json.JsonDocument detail = System.Text.Json.JsonDocument.Parse(hold.DetailJson);
+        return detail.RootElement.GetProperty("attemptId").GetString()!;
+    }
 }
 
 /// <summary>
@@ -774,12 +1091,59 @@ internal sealed class FaultOnComplete(ITaskTypeStationActivationStore inner, Com
     }
 }
 
+/// <summary>Runs <paramref name="beforeComplete"/> just before the real second step, as whatever overtook it would.</summary>
+internal sealed class BeforeComplete(ITaskTypeStationActivationStore inner, Func<Task> beforeComplete)
+    : DelegatingActivationStore(inner)
+{
+    public override async Task CompleteAsync(
+        TaskTypeStationActivationAttempt attempt, DateTimeOffset at, CancellationToken cancellationToken)
+    {
+        await beforeComplete();
+        await base.CompleteAsync(attempt, at, cancellationToken);
+    }
+}
+
+/// <summary>Arms <see cref="CommitFault"/> for exactly the first step.</summary>
+internal sealed class FaultOnBegin(ITaskTypeStationActivationStore inner, CommitFault fault) : DelegatingActivationStore(inner)
+{
+    public override async Task<TaskTypeStationActivationAttempt> BeginAsync(
+        TaskTypeStationActivationStart start,
+        Func<TaskTypeStationActivationAttempt, GovernanceAuditEntry> startedAudit,
+        CancellationToken cancellationToken)
+    {
+        fault.Armed = true;
+        try
+        {
+            return await base.BeginAsync(start, startedAudit, cancellationToken);
+        }
+        finally
+        {
+            fault.Armed = false;
+        }
+    }
+}
+
+/// <summary>An audit writer that cannot write one action, as a full disk or a lost connection would.</summary>
+internal sealed class FailingAudit(IGovernanceAuditWriter inner, string failingAction) : IGovernanceAuditWriter
+{
+    public Task<string> WriteBusinessAsync(GovernanceAuditEntry entry, DateTimeOffset recordedAt, CancellationToken cancellationToken) =>
+        entry.Action == failingAction
+            ? throw new IOException($"The audit record {failingAction} could not be written.")
+            : inner.WriteBusinessAsync(entry, recordedAt, cancellationToken);
+
+    public Task<string> WriteAdministratorAsync(GovernanceAuditEntry entry, DateTimeOffset recordedAt, CancellationToken cancellationToken) =>
+        inner.WriteAdministratorAsync(entry, recordedAt, cancellationToken);
+}
+
 /// <summary>Throws from the database's own commit, armed only while the second step runs.</summary>
 internal sealed class CommitFault(Exception toThrow) : Microsoft.EntityFrameworkCore.Diagnostics.DbTransactionInterceptor
 {
     public bool Armed { get; set; }
 
     public int Thrown { get; private set; }
+
+    /// <summary>How many more commits may be failed while armed; the default is every one.</summary>
+    public int Remaining { get; set; } = int.MaxValue;
 
     /// <summary>Throw once the commit has gone through, instead of before it.</summary>
     public bool AfterCommit { get; init; }
@@ -789,8 +1153,9 @@ internal sealed class CommitFault(Exception toThrow) : Microsoft.EntityFramework
         Microsoft.EntityFrameworkCore.Diagnostics.TransactionEndEventData eventData,
         CancellationToken cancellationToken = default)
     {
-        if (Armed && AfterCommit)
+        if (Armed && AfterCommit && Remaining > 0)
         {
+            Remaining--;
             Thrown++;
             throw toThrow;
         }
@@ -803,8 +1168,9 @@ internal sealed class CommitFault(Exception toThrow) : Microsoft.EntityFramework
         Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult result,
         CancellationToken cancellationToken = default)
     {
-        if (Armed && !AfterCommit)
+        if (Armed && !AfterCommit && Remaining > 0)
         {
+            Remaining--;
             Thrown++;
             throw toThrow;
         }

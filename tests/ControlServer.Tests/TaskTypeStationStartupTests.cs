@@ -196,6 +196,36 @@ public sealed class TaskTypeStationStartupTests
     }
 
     [Fact]
+    public async Task APointerThatIsActiveButNamesNoVersionStillLetsThePresetLoadAsTheFirstVersion()
+    {
+        // Review S4: what counts as "the map already has an active version" is an active version, or an activation whose
+        // result is unknown -- not merely a pointer row. A row that says ACTIVE and names nothing is a map without one.
+        await using Harness harness = await Harness.CreateAsync(Runtime());
+        await using (AsyncServiceScope scope = harness.Services.CreateAsyncScope())
+        {
+            ControlServerDbContext context = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
+            context.Set<TaskTypeStationActiveBindingSetRow>().Add(new TaskTypeStationActiveBindingSetRow
+            {
+                MapId = 25,
+                ActiveVersion = null,
+                State = TaskTypeStationActivationState.Active,
+                UpdatedAt = Now
+            });
+            await context.SaveChangesAsync(Token);
+        }
+        harness.WritePreset(Preset());
+
+        TaskTypeStationStartupResult result = Assert.IsType<TaskTypeStationStartupResult>(
+            await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        Assert.True(result.Bindings.Created);
+        await using AsyncServiceScope after = harness.Services.CreateAsyncScope();
+        TaskTypeStationActivePointer pointer = (await after.ServiceProvider.GetRequiredService<ITaskTypeStationBindingStore>()
+            .ReadActivePointerAsync(25, Token))!;
+        Assert.Equal((1L, TaskTypeStationActivationState.Active), (pointer.ActiveVersion!.Value, pointer.State));
+    }
+
+    [Fact]
     public async Task AMisconfiguredPresetRefusesStartNamingEveryViolationAndWritesNothing()
     {
         await using Harness harness = await Harness.CreateAsync(Runtime());

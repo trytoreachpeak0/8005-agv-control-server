@@ -88,20 +88,24 @@ internal sealed class TaskTypeStationActivationHarness : IAsyncDisposable
     }
 
     /// <summary>一个上下文上的全套：存储、审计与激活服务。</summary>
-    public static Stack StackOver(ControlServerDbContext context, Func<ITaskTypeStationActivationStore, ITaskTypeStationActivationStore>? wrap = null)
+    public static Stack StackOver(
+        ControlServerDbContext context,
+        Func<ITaskTypeStationActivationStore, ITaskTypeStationActivationStore>? wrap = null,
+        Func<IGovernanceAuditWriter, IGovernanceAuditWriter>? wrapAudit = null)
     {
         GovernanceStore governance = new(
             context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default);
+        IGovernanceAuditWriter audit = wrapAudit?.Invoke(governance) ?? governance;
         GovernedConfigurationPublisher publisher = new(governance, governance);
         TaskTypeStationRuleStore rules = new(context, publisher);
         TaskTypeStationBindingStore bindings = new(context, publisher);
-        ITaskTypeStationActivationStore activations = new TaskTypeStationActivationStore(context, bindings, governance);
+        ITaskTypeStationActivationStore activations = new TaskTypeStationActivationStore(context, bindings, audit);
         if (wrap is not null)
         {
             activations = wrap(activations);
         }
         TaskTypeStationActivationService service = new(
-            rules, bindings, activations, new CatalogAvailabilityStore(context), governance);
+            rules, bindings, activations, new CatalogAvailabilityStore(context), audit);
         return new Stack(context, governance, rules, bindings, new TaskTypeStationHoldStore(context), activations, service);
     }
 

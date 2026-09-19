@@ -137,6 +137,7 @@ public sealed class TaskTypeStationFieldOpsTests
     [InlineData("activate-task-type-stations", "--input", "candidate.json", "--catalog", "catalog.json")]
     [InlineData("rollback-task-type-stations", "--map", "25", "--version", "1")]
     [InlineData("reconcile-task-type-stations", "--map", "25", "--role", "x")]
+    [InlineData("close-task-type-station-activation", "--map", "25", "--role", "x")]
     public async Task AMissingReasonIsAUsageErrorAndWritesNothing(string command, string a, string b, string c, string d)
     {
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
@@ -146,6 +147,22 @@ public sealed class TaskTypeStationFieldOpsTests
 
         Assert.Equal(2, exit);
         Assert.Equal(before, await harness.CountRowsAsync());
+    }
+
+    [Fact]
+    public async Task ManualCloseOnAMapWithNothingOpenIsRefusedWithExitOne()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+
+        (int exit, JsonElement refused) = await RunAsync(
+            "close-task-type-station-activation", "--database", harness.DatabasePath, "--map", "25", "--reason", "试一下");
+
+        Assert.Equal(1, exit);
+        Assert.Equal("REJECTED", refused.GetProperty("outcome").GetString());
+        Assert.Equal(
+            TaskTypeStationActivationReasonCodes.NothingToClose,
+            Assert.Single(refused.GetProperty("violations").EnumerateArray()).GetProperty("reasonCode").GetString());
+        Assert.Equal("25|1|ACTIVE|<null>", await harness.PointerRowAsync());
     }
 
     [Fact]
