@@ -1,0 +1,16 @@
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.WithNoLocalAddressOnlyLoopbackIsThisMachine(remote: "::ffff:172.19.205.30", expected: False) [11 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: False
+--
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.WithNoLocalAddressOnlyLoopbackIsThisMachine(remote: "172.19.205.30", expected: False) [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: False
+--
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromAnotherMachineOnAConnectionWithNoLocalAddressIsForbidden [781 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 403
+--
+Failed!  - Failed:     3, Passed:    18, Skipped:     0, Total:    21, Duration: 21 s - ControlServer.Tests.dll (net8.0)

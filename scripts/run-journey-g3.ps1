@@ -56,7 +56,10 @@ param(
     [string]$OnboardRemoteRef = 'origin/w2g/fp-v2-impl',
     [string]$SharedRunnerSource = (Join-Path $PSScriptRoot 'run-staged-g3.ps1'),
     [string]$CommitBindingFunctionSource = (Join-Path $PSScriptRoot 'run-staged-g3-restart.ps1'),
-    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit
+    [ValidatePattern('^[0-9a-f]{40}$')][string]$SelfCheckControlServerCommit,
+    # Which batch's exit this run is evidence for, passed through to every scenario's assertions.json
+    # (control-server#201). Left out it says 'unspecified' -- it used to be a literal 'batch-2'.
+    [string]$BatchId = 'unspecified'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -410,7 +413,7 @@ try {
                 '-OnboardRepository', $onboardSource,
                 '-SimulatorRepository', $simulatorSource,
                 '-PeerCacheRoot', $peerCacheRoot,
-                '-BatchId', 'batch-2') `
+                '-BatchId', $BatchId) `
             -LogPath (Join-Path $logsRoot "scenario-$scenario.log") -AllowNonZeroExit
         $assertionsPath = Join-Path $scenarioEvidence 'assertions.json'
         $document = if (Test-Path -LiteralPath $assertionsPath) {

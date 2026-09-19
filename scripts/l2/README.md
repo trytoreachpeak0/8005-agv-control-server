@@ -42,6 +42,7 @@ pwsh .\scripts\l2\Invoke-L2Scenario.ps1 -Scenario normal-load -EvidenceRoot .\ev
 | `real-onboard-restart-while-waiting-operator` | **真的** | **批次 5（control-server#88，program#61 ②：onboard-hmi#70，ADR-cross-0058 决策 2）**：等人时杀车载端、它不在时货放好门关上 → 重启后按实时 IO 补交 `COMPLETED` → 装货提交、会话回 `Ready`、不进恢复，旅程走完；出厂配置 | 同上 |
 | `real-onboard-cancellation-authorization-lost` | **真的**＋协议故障代理 | **批次 5（control-server#88，program#61 ③：onboard-hmi#71＋onboard-hmi#78）**：出厂配置下两仓装货、第一仓装好锁上、第二仓开着时按取消 → 丢掉授权应答、车载端报失败 → 再按一次，新 `messageId`、payload 与首发相同 → 取消 `ALL_EMPTY`、需求 `Cancelled`，全程不重连、不替原 attempt 报结果，取货单的车辆占用释放（`L2-CAL-09`，control-server#131 修复前红）；取消先收尾接手的开门再开已装货的仓，模拟器采样里任一时刻至多一仓未锁闭（`L2-CAL-10`，REQ-0357，onboard-hmi#106） | 同上 |
 | `real-onboard-expected-action-overdue` | **真的**＋协议故障代理＋看板 | **control-server#167（REQ-0358，CP-0005 实现票 1、2 的联调，批次 5 出口剩余风险第一条）**：门槛压到 20 秒（`ExpectedActionOverdueThreshold`）。装货开门后空关一次、车重开，计时不清零 → 门槛前什么都没有 → 越过门槛车载端报 `SLOT_EXPECTED_ACTION_OVERDUE`（`raisedAt` = 第一次开锁 + 门槛）→ 服务端在同一连接上发 `SafetyStateSnapshotRequested`、车回中途快照、会话不回握手 → 看板端点与看板页一行、读数取中途快照且与模拟器一致 → HMI 说「已上报」；上报不改行为；门槛后再空关、重开，端点仍一行、`raisedAt` 不变；期限过后合成同一行；放货关门后撤下。在途装货断链重连不在本场景（control-server#189） | `evidence/l2/20260919-cs167-pass-7ded1b70-001`～`003`（红证据同目录前缀 `20260919-cs167-red-*`） |
+| `catalog-change-binding-hold` | 合成 | **批次 6（control-server#162，REQ-0341、REQ-0342、REQ-0345；判据 control-server#201 收紧）**：绑定站改名、删除只暂停绑在它上面的任务类型；删掉的关卡让新需求以 `TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG` 被拒（`L2-CC-07`）；同一变化只记一行（`L2-CC-08`）；关卡以原名放回之后新需求仍以 `TASK_TYPE_HELD` 被拒、暂停不自动解除（`L2-CC-11`） | `evidence/l2/20260920-cs201-catalog-change-binding-hold-003` |
 
 编号更小的目录是同一批里更早的跑次，多数是稳定性复跑。三个是**红的**，各自的原因见文末：
 `load-result-requires-recovery-001`（第 6 条）、`real-onboard-clock-skew-001`（第 8 条）与
@@ -325,8 +326,12 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
 - `protocolReleaseIdentity` —— 从跑起来的服务端 `/version` **读回**，不在脚本里复述。能按协议
   换代作废 L2 证据的只有 build 真的在线上强制的那一份身份；复述一遍只会让证据与脚本自洽而与
   服务端无关。今天读回的是 `protocol-v1.0.0` 候选的九个字段加 `approvalStatus`（`SUPERSEDING_CANDIDATE`）。
-- `batchId` —— `Invoke-L2Scenario.ps1` 的 `-BatchId` 参数，默认 `batch-2`。批次是计划，仓库里
-  推不出来，所以它是参数而不是常量；CI 显式传，换批次改一个实参。
+- `batchId` —— `Invoke-L2Scenario.ps1` 的 `-BatchId` 参数，不传时记 `unspecified`（明确的「未指定」，
+  control-server#201 起；此前默认 `batch-2`，所以更早的本机证据里的 `batch-2` 不可信）。批次是计划，
+  仓库里推不出来，所以它是参数而不是常量；CI 显式传，换批次改一个实参。`l2.yml` 的合成场景清单
+  没写 `BatchId` 的行仍由 workflow 自己补 `batch-2` 显式传入；记 `unspecified` 的是本机运行、
+  `L2Lanes.psm1` 收到没带 `BatchId` 的清单项，以及 `rig=real` 没给 `batch_id` 的真装置作业。
+  `run-journey-g3.ps1` 也收 `-BatchId` 并原样往下传。
 
 时间线的形状抄自 `remote-ops/status/Get-WireToGateStatus.ps1`——2026-09-03 定位缺陷时，就是靠
 它把「12:56:49 STOPPED → 12:57:15 UNKNOWN」精确卡到秒。

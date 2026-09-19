@@ -1,0 +1,15 @@
+  Failed ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARenameBackToAnEarlierNameIsRecordedAgainBecauseOnlyTheLatestRecordIsCompared [655 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                                                                                                                           ↓ (pos 2)
+Expected: <>z__ReadOnlyArray<ValueTuple<long, string>>                                [Tuple (1000, "派工待送取货-X"), Tuple (2000, "派工待送取货-Y"), Tuple (3000, "派工待送取货-X")]
+Actual:   SelectIListIterator<TaskTypeStationCatalogChange, ValueTuple<long, string>> [Tuple (1000, "派工待送取货-X"), Tuple (2000, "派工待送取货-Y")]
+--
+  Failed ControlServer.Tests.CatalogBindingHoldConvergenceTests.AChangeThatItselfMovedOnIsRecordedAgainUnderTheSameHold [454 ms]
+  Error Message:
+   Assert.Equal() Failure: Strings differ
+           ↓ (pos 0)
+Expected: "e2eea73442f9451aa926ab96a81ec6d3"
+Actual:   "9253f1e8d3f146aab7ec678d28d6dfd8"
+--
+Failed!  - Failed:     2, Passed:     9, Skipped:     0, Total:    11, Duration: 10 s - ControlServer.Tests.dll (net8.0)

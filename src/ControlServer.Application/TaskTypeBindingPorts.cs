@@ -334,7 +334,10 @@ public sealed record TaskTypeStationCatalogChange(
 /// <summary>目录变化记录，按 <c>(MapId, StationRiotId, CatalogRevision)</c> 去重。</summary>
 public interface ITaskTypeStationCatalogChangeStore
 {
-    /// <summary>记一条。同一 <c>(MapId, StationRiotId, CatalogRevision)</c> 已记过时不再写，返回已有的那条。</summary>
+    /// <summary>
+    /// 记一条。同一 <c>(MapId, StationRiotId, CatalogRevision)</c> 已记过，或该站在同一条暂停下最近一条记录已是同一变化
+    /// （种类与现名称相同）时不再写，返回已有的那条。
+    /// </summary>
     Task<TaskTypeStationCatalogChange> RecordAsync(
         TaskTypeStationCatalogChange change,
         CancellationToken cancellationToken);

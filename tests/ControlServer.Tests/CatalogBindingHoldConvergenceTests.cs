@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -129,6 +130,106 @@ public sealed class CatalogBindingHoldConvergenceTests
     }
 
     [Fact]
+    public async Task TheSameChangeUnderANewCatalogRevisionFromAnUnrelatedEditIsStillOneChangeRecord()
+    {
+        // control-server#201 (review C of #162): the revision is the whole Map's content hash, so an edit to a station no
+        // binding names changes it too. 305 is still renamed to the same name, under the same hold -- one change, one row.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+
+        await TaskTypeHoldTestKit.Convergence(fixture).ApplyAsync(
+            TaskTypeHoldTestKit.Catalog25((210, "关卡"), (305, "派工待送取货-改"), (211, "B-WB-01")), Token);
+        await TaskTypeHoldTestKit.Convergence(fixture).ApplyAsync(
+            TaskTypeHoldTestKit.Catalog25At(2000, (210, "关卡"), (305, "派工待送取货-改"), (211, "B-WB-99")), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        TaskTypeStationCatalogChange change = Assert.Single(await fixture.CatalogChanges.ListAsync(25, Token));
+        Assert.Equal(TaskTypeHoldTestKit.Revision25, change.CatalogRevision);
+        Assert.Single(await fixture.Holds.ListUnreleasedAsync(25, Token));
+        Assert.Single(await fixture.Context.Set<BusinessAuditRecordRow>()
+            .Where(row => row.Action == CatalogBindingHoldConvergence.HoldRaisedAction)
+            .ToArrayAsync(Token));
+    }
+
+    [Fact]
+    public async Task AChangeThatItselfMovedOnIsRecordedAgainUnderTheSameHold()
+    {
+        // Renamed, renamed again, then removed: three different changes. The rename-to-rename stays under the one hold;
+        // the removal raises its own (another reason code), and each gets its own row.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+
+        await TaskTypeHoldTestKit.Convergence(fixture).ApplyAsync(
+            TaskTypeHoldTestKit.Catalog25((210, "关卡"), (305, "派工待送取货-改")), Token);
+        await TaskTypeHoldTestKit.Convergence(fixture).ApplyAsync(
+            TaskTypeHoldTestKit.Catalog25At(2000, (210, "关卡"), (305, "派工待送取货-再改")), Token);
+        await TaskTypeHoldTestKit.Convergence(fixture).ApplyAsync(
+            TaskTypeHoldTestKit.Catalog25At(3000, (210, "关卡"), (305, "派工待送取货-再改"), (211, "B-WB-99")), Token);
+        await TaskTypeHoldTestKit.Convergence(fixture).ApplyAsync(
+            TaskTypeHoldTestKit.Catalog25At(4000, (210, "关卡")), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        IReadOnlyList<TaskTypeStationCatalogChange> changes = await fixture.CatalogChanges.ListAsync(25, Token);
+        Assert.Equal(
+            [("RENAMED", "派工待送取货-改", 1000L), ("RENAMED", "派工待送取货-再改", 2000L), ("REMOVED", (string?)null, 4000L)],
+            changes.Select(change => (change.ChangeKind, change.CurrentStationName, change.CatalogRevision))
+                .OrderBy(change => change.CatalogRevision));
+        // Picked by revision: under the fixed clock every row has the same ObservedAt, so the listing order among them is
+        // the random ChangeId's.
+        string? renameHold = changes.Single(change => change.CatalogRevision == 1000).HoldId;
+        Assert.Equal(renameHold, changes.Single(change => change.CatalogRevision == 2000).HoldId);
+        Assert.NotEqual(renameHold, changes.Single(change => change.CatalogRevision == 4000).HoldId);
+    }
+
+    [Fact]
+    public async Task ARenameBackToAnEarlierNameIsRecordedAgainBecauseOnlyTheLatestRecordIsCompared()
+    {
+        // X, then Y, then X again under the same hold, each round later than the one before: the third is a change from
+        // Y, so it is a row, although an earlier row already says X.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        (long Revision, string Name, int Minutes)[] rounds = [(1000, "派工待送取货-X", 0), (2000, "派工待送取货-Y", 1), (3000, "派工待送取货-X", 2)];
+        foreach ((long revision, string name, int minutes) in rounds)
+        {
+            await TaskTypeHoldTestKit.Convergence(fixture.Context, new AtClock(Now.AddMinutes(minutes)))
+                .ApplyAsync(TaskTypeHoldTestKit.Catalog25At(revision, (210, "关卡"), (305, name)), Token);
+        }
+        fixture.Context.ChangeTracker.Clear();
+
+        IReadOnlyList<TaskTypeStationCatalogChange> changes = await fixture.CatalogChanges.ListAsync(25, Token);
+        Assert.Equal(
+            [(1000L, "派工待送取货-X"), (2000L, "派工待送取货-Y"), (3000L, "派工待送取货-X")],
+            changes.Select(change => (change.CatalogRevision, change.CurrentStationName)));
+        Assert.Single(changes.Select(change => change.HoldId).Distinct());
+    }
+
+    [Fact]
+    public async Task TheSameChangeUnderANewHoldAfterFieldOpsReleasedTheOldOneIsRecordedAgain()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        RiotMapStationCatalogSnapshot renamed = TaskTypeHoldTestKit.Catalog25((210, "关卡"), (305, "派工待送取货-改"));
+        CatalogBindingHoldOutcome first = Assert.Single(
+            await TaskTypeHoldTestKit.Convergence(fixture).ApplyAsync(renamed, Token));
+        Assert.True(await fixture.Holds.ReleaseAsync(first.Hold.HoldId, "fieldops:test", Now.AddMinutes(1), Token));
+
+        CatalogBindingHoldOutcome second = Assert.Single(await TaskTypeHoldTestKit.Convergence(fixture).ApplyAsync(
+            TaskTypeHoldTestKit.Catalog25At(2000, (210, "关卡"), (305, "派工待送取货-改")), Token));
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.True(second.HoldCreated);
+        IReadOnlyList<TaskTypeStationCatalogChange> changes = await fixture.CatalogChanges.ListAsync(25, Token);
+        Assert.Equal(
+            [first.Hold.HoldId, second.Hold.HoldId],
+            changes.OrderBy(change => change.CatalogRevision).Select(change => change.HoldId));
+    }
+
+    private sealed class AtClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    [Fact]
     public async Task AChangeMadeWhileTheServiceWasDownIsJudgedOnTheFirstRoundAfterTheRestart()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
@@ -202,6 +303,10 @@ internal static class TaskTypeHoldTestKit
     public static RiotMapStationCatalogSnapshot Catalog25(params (int Id, string Name)[] stations) =>
         new(25, Now, Sha25, [.. stations.Select(station => new RiotMapStation(station.Id, station.Name))]);
 
+    /// <summary>The same Map under another content hash, whose revision is <paramref name="revision"/>.</summary>
+    public static RiotMapStationCatalogSnapshot Catalog25At(long revision, params (int Id, string Name)[] stations) =>
+        Catalog25(stations) with { ContentSha256 = revision.ToString("x16", CultureInfo.InvariantCulture) + Sha25[16..] };
+
     public static async Task<long> ActivateAsync(
         TaskTypeStationPersistenceFixture fixture,
         int mapId,
@@ -226,7 +331,10 @@ internal static class TaskTypeHoldTestKit
     public static CatalogBindingHoldConvergence Convergence(TaskTypeStationPersistenceFixture fixture) =>
         Convergence(fixture.Context);
 
-    public static CatalogBindingHoldConvergence Convergence(ControlServerDbContext context)
+    public static CatalogBindingHoldConvergence Convergence(ControlServerDbContext context) =>
+        Convergence(context, new FixedClock());
+
+    public static CatalogBindingHoldConvergence Convergence(ControlServerDbContext context, TimeProvider clock)
     {
         GovernanceStore governance = new(
             context,
@@ -239,7 +347,7 @@ internal static class TaskTypeHoldTestKit
             new TaskTypeStationCatalogChangeStore(context),
             governance,
             new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
-            new FixedClock());
+            clock);
     }
 
     /// <summary>A demand of this task type accepted, its journey heading for the gate, and its RIoT order created.</summary>
