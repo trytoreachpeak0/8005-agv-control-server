@@ -38,6 +38,8 @@ public sealed class RecoveryStateMachineG2Tests
     // 取消面不开异常恢复会话，走不到 RecoveryProofAccepted；这个名字只是为了让 Processor
     // 拿到一个确定不会命中的变量名，而不是让某个别处设过的环境变量意外生效。
     private const string CancellationProofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_CANCELLATION";
+    // A fault cargo result that concludes HANDED_OFF while one slot still reports OCCUPIED (control-server#169).
+    private const string HandedOffOverAnOccupiedSlot = "HANDED_OFF_OVER_AN_OCCUPIED_SLOT";
 
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-05")]
@@ -1136,6 +1138,88 @@ public sealed class RecoveryStateMachineG2Tests
             await context.SaveChangesAsync(token);
 
             Assert.Equal(SessionReadiness.Ready, (await store.DecideReadinessAsync(AgvId, 3, token)).Readiness);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
+    /// control-server#169, decided by the user on 2026-09-19. A recovery action whose result does not
+    /// reconcile -- FAILED, UNKNOWN, or a success conclusion the per-slot results do not bear out -- leaves the
+    /// business exactly where it was: the demand in RecoveryRequired, the journey Blocked under
+    /// <c>&lt;messageType&gt;_NOT_RECONCILED</c>, the lease and the vehicle held, nothing ended. What it must not
+    /// leave is the session in EXECUTING. The result has arrived, so there is nothing left to execute, and until
+    /// #169 that state refused every way out: a second action in the session, a new session on the vehicle, and
+    /// a snapshot that told the vehicle to wait for a result it had already sent. The session closes under
+    /// <c>RECOVERY_ACTION_RESULT_NOT_RECONCILED</c> -- which is not "handled" -- and the administrator opens a new
+    /// one on the same demand, on the same attempt.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [InlineData("LoadCompensationResult", "FAILED")]
+    [InlineData("LoadCompensationResult", "UNKNOWN")]
+    [InlineData("FaultCargoRecoveryResult", "FAILED")]
+    [InlineData("FaultCargoRecoveryResult", "UNKNOWN")]
+    [InlineData("FaultCargoRecoveryResult", HandedOffOverAnOccupiedSlot)]
+    [InlineData("ForcedMechanicalRecoveryResult", "FAILED")]
+    [InlineData("ForcedMechanicalRecoveryResult", "UNKNOWN")]
+    public async Task AnUnreconciledRecoveryResultClosesTheSessionSoTheVehicleCanOpenAnotherWhileTheDemandStaysBlocked(
+        string messageType,
+        string outcome)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_UNRECONCILED_CLOSES";
+        const string proof = "unreconciled-closes-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OrderIntentRow pickup = await context.OrderIntents.SingleAsync(row => row.UpperId == "UPPER-PICKUP", token);
+            pickup.VehicleOccupancyClaimedAt = Now.AddMinutes(-8);
+            await context.SaveChangesAsync(token);
+            RecordingLogger<OnboardRecoveryCoordinator> log = new();
+            OnboardMessageProcessor processor = TestOnboardProcessorFactory.Create(
+                context, new WireToGateStore(context), new FixedTimeProvider(Now), Configuration(proofVariable),
+                new RecordingPeer(context), recoveryLogger: log);
+            OnboardConnectionState state = CurrentState();
+            string result = await ReachUnreconciledResultAsync(messageType, outcome, processor, state, proof);
+
+            Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(result, state, token)));
+
+            ExceptionRecoverySessionRow closed = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal("CLOSED", closed.State);
+            JsonElement snapshot = await LatestSessionSnapshotAsync(context, closed.ExceptionRecoverySessionId);
+            Assert.Equal("CLOSED", snapshot.GetProperty("state").GetString());
+            Assert.Equal(closed.Revision, snapshot.GetProperty("recoverySessionRevision").GetInt64());
+            Assert.Empty(snapshot.GetProperty("allowedActions").EnumerateArray());
+            Assert.Empty(snapshot.GetProperty("blockingFacts").EnumerateArray());
+            Assert.Contains(log.Entries, entry => entry.Level == LogLevel.Warning &&
+                entry.Message.Contains("RECOVERY_ACTION_RESULT_NOT_RECONCILED", StringComparison.Ordinal) &&
+                entry.Message.Contains(closed.ExceptionRecoverySessionId, StringComparison.Ordinal));
+
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, (await context.RecoveryWorkflows.SingleAsync(token)).State);
+            Assert.Equal(DemandExecutionStatus.RecoveryRequired, (await context.AcceptedDemands.SingleAsync(token)).Status);
+            JourneyRuntimeRow runtime = await context.JourneyRuntimes.SingleAsync(token);
+            Assert.Equal(JourneyRuntimeStage.Blocked, runtime.Stage);
+            Assert.Equal(messageType + "_NOT_RECONCILED", runtime.BlockReasonCode);
+            Assert.Null((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+            Assert.Null((await context.OrderIntents.AsNoTracking()
+                .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            Assert.Equal(StationOperationStatus.RecoveryRequired, (await context.StationOperations.SingleAsync(token)).Status);
+            Assert.Empty(await context.TransportDemandCompletions.ToArrayAsync(token));
+
+            string opened = await processor.ProcessAsync(NextSessionRequest(proof), state, token);
+
+            Assert.Equal("ExceptionRecoverySessionOpened", MessageType(opened));
+            Assert.Equal(AttemptId, PayloadAttempt(opened));
+            Assert.Equal(2, await context.ExceptionRecoverySessions.CountAsync(token));
+            Assert.Equal(JourneyRuntimeStage.Blocked, (await context.JourneyRuntimes.SingleAsync(token)).Stage);
         }
         finally
         {
@@ -2266,6 +2350,85 @@ public sealed class RecoveryStateMachineG2Tests
                 throw new ArgumentOutOfRangeException(nameof(messageType), messageType, null);
         }
     }
+
+    /// <summary>
+    /// Drives the seeded journey through a session and the action that produces <paramref name="messageType"/>,
+    /// and returns, unsent, a result of that type that does not reconcile: <paramref name="outcome"/> as its
+    /// conclusion, or <see cref="HandedOffOverAnOccupiedSlot"/> for a handoff whose second slot is not empty.
+    /// </summary>
+    private static async Task<string> ReachUnreconciledResultAsync(
+        string messageType,
+        string outcome,
+        OnboardMessageProcessor processor,
+        OnboardConnectionState state,
+        string proof)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        switch (messageType)
+        {
+            case "LoadCompensationResult":
+                JsonNode compensation = JsonNode.Parse(await ReachCompensationResultAsync(processor, state, proof))!;
+                compensation["payload"]!["overallOutcome"] = outcome;
+                return compensation.ToJsonString();
+            case "FaultCargoRecoveryResult":
+                await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+                await processor.ProcessAsync(RecoveryAction("FAULT_CARGO_HANDOFF"), state, token);
+                bool occupied = outcome == HandedOffOverAnOccupiedSlot;
+                return Envelope(
+                    "b3200000-0000-4000-8000-000000000001",
+                    "FaultCargoRecoveryResult",
+                    new
+                    {
+                        exceptionRecoverySessionId = StableGuid(RequestId, "exception-recovery-session"),
+                        recoveryActionId = ActionId,
+                        demandId = DemandId,
+                        handoffId = StableGuid(ActionId, "fault-cargo-handoff"),
+                        overallOutcome = occupied ? "HANDED_OFF" : outcome,
+                        slotResults = RecoverySlots.Select(slot => new
+                        {
+                            slotNo = slot,
+                            outcome = occupied ? "COMPLETED" : outcome,
+                            finalPhysicalState = occupied && slot == 2 ? "OCCUPIED" : occupied ? "EMPTY" : "UNKNOWN",
+                            lockState = "LOCKED",
+                            unlockOutputState = "RESET",
+                            reasonCodes = occupied ? Array.Empty<string>() : UnknownReasonCodes
+                        }).ToArray(),
+                        @operator = Operator(),
+                        observedAt = Now.AddSeconds(5)
+                    });
+            case "ForcedMechanicalRecoveryResult":
+                await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+                await processor.ProcessAsync(RecoveryAction("FORCED_MECHANICAL_RECOVERY"), state, token);
+                return MechanicallyIsolatedResult(generation: 1, outcome: outcome);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(messageType), messageType, null);
+        }
+    }
+
+    /// <summary>
+    /// A second session request on the seeded demand and slots, as the administrator makes it after the first
+    /// session closed: a new press, so a new request and a new message.
+    /// </summary>
+    private static string NextSessionRequest(string proof)
+    {
+        JsonNode next = JsonNode.Parse(RecoverySessionRequest(
+            proof, messageId: "e0000000-0000-4000-8000-000000000169"))!;
+        next["payload"]!["requestId"] = "41000000-0000-4000-8000-000000000169";
+        return next.ToJsonString();
+    }
+
+    /// <summary>
+    /// The payload of the newest ExceptionRecoverySessionSnapshot queued for the given session.
+    /// </summary>
+    private static async Task<JsonElement> LatestSessionSnapshotAsync(
+        ControlServerDbContext context,
+        string exceptionRecoverySessionId) =>
+        (await context.ProtocolOutbox.AsNoTracking()
+                .Where(row => row.MessageType == "ExceptionRecoverySessionSnapshot")
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .Select(row => FirstPayload(row.PayloadJson))
+            .Where(payload => payload.GetProperty("exceptionRecoverySessionId").GetString() == exceptionRecoverySessionId)
+            .MaxBy(payload => payload.GetProperty("recoverySessionRevision").GetInt64());
 
     /// <summary>
     /// What the given recovery message said: the response line for the two answers, every queued

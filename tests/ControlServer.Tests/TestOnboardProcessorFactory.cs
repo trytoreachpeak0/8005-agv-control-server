@@ -19,12 +19,13 @@ internal static class TestOnboardProcessorFactory
         IConfiguration configuration,
         IOnboardPeer? peer = null,
         JourneyRuntimeOptions? runtimeOptions = null,
-        ILogger<OnboardMessageProcessor>? logger = null)
+        ILogger<OnboardMessageProcessor>? logger = null,
+        ILogger<OnboardRecoveryCoordinator>? recoveryLogger = null)
     {
         OnboardJourneyPublisher publisher = new(store, peer ?? new SilentPeer(), timeProvider);
         SlotConfigurationActivationDispatcher activationDispatcher = ActivationDispatcher(context, publisher);
         OnboardRecoveryCoordinator coordinator = new(
-            context, store, publisher, activationDispatcher, timeProvider, configuration);
+            context, store, publisher, activationDispatcher, timeProvider, configuration, recoveryLogger);
         return new OnboardMessageProcessor(
             context,
             store,
