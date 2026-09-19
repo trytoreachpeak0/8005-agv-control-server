@@ -172,7 +172,7 @@ The second leg's order is found as "the demand's other confirmed intent", not by
 driven by the same code whatever the server calls that intent.
 
 Returns every reading and every id the scenario needs: StopFacts (en-route-to-origin, at-origin, at-destination,
-completed), Load, Unload, OriginIntent, DestinationIntent, Stage.
+completed), Load, Unload, OriginIntent, DestinationIntent, Stage, and the instants the vehicle was put at each stop.
 #>
 function Invoke-L2TaskTypeJourney {
     param(
@@ -201,6 +201,7 @@ function Invoke-L2TaskTypeJourney {
         -Description 'the HMI shows the planned direction before the first arrival' -Until { param($f) $f.Direction -ne '' -and $null -ne $f.Direction }
 
     Move-L2RealVehicleTo $Context $originIntent $OriginRiotId "the first stop ($OriginRiotId)"
+    $originArrivedAt = [DateTimeOffset]::UtcNow
     $null = Wait-L2Condition -Description 'the server adopted the arrival and asks for the sublot' `
         -Journal $journal -Criterion 'journey-stage' -TimeoutSeconds 120 `
         -Probe { Get-L2RealStage $connection $DemandId }.GetNewClosure() -Until { param($v) $v -eq 'AwaitingSublot' }
@@ -235,7 +236,9 @@ function Invoke-L2TaskTypeJourney {
             if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
         }.GetNewClosure() -Until { param($v) $null -ne $v }
 
+    $destinationDepartedAt = [DateTimeOffset]::UtcNow
     Move-L2RealVehicleTo $Context $destinationIntent $DestinationRiotId "the second stop ($DestinationRiotId)"
+    $destinationArrivedAt = [DateTimeOffset]::UtcNow
     # Read while the onboard waits for the operator at the second stop, before the door closes: that is the stop line the
     # operator unloads by, and once the unload commits the server moves the worklist on.
     $originDirection = $readings['at-origin'].Direction
@@ -259,6 +262,11 @@ function Invoke-L2TaskTypeJourney {
         OriginIntent      = $originIntent
         DestinationIntent = $destinationIntent
         Stage             = $stage
+        # When the fake RIoT put the vehicle at each stop, on this machine's clock -- the one the server stamps its
+        # rows with. What happened between two of these happened at that stop.
+        OriginArrivedAt       = $originArrivedAt
+        DestinationDepartedAt = $destinationDepartedAt
+        DestinationArrivedAt  = $destinationArrivedAt
     }
 }
 
