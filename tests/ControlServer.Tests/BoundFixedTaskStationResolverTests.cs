@@ -43,6 +43,38 @@ public sealed class BoundFixedTaskStationResolverTests
         Assert.Equal(2, bindingSetVersion);
     }
 
+    /// <summary>
+    /// 缺绑定的三种样子都是 <c>TASK_TYPE_BINDING_MISSING</c>：该图没有生效绑定集、任务类型不在需求集、在需求集却没绑定
+    /// （最后一种静态校验会拒绝，这里防的是读到这种数据时不猜）。地图上明明有站点 210「关卡」，也不回落到它。
+    /// </summary>
+    [Theory]
+    [InlineData("no-active-set")]
+    [InlineData("not-required")]
+    [InlineData("required-but-unbound")]
+    public async Task ATaskTypeWithoutAnEffectiveBindingIsRefusedAndNeverFallsBackToADefaultStation(string shape)
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        switch (shape)
+        {
+            case "no-active-set":
+                await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+                fixture.Context.ChangeTracker.Clear();
+                break;
+            case "not-required":
+                await ActivateAsync(fixture, [TransportTaskTypes.StagingToWire], [StagingBinding]);
+                break;
+            default:
+                await ActivateAsync(fixture, [TransportTaskTypes.WireToGate], []);
+                break;
+        }
+
+        FixedTaskStationResolution resolution = (await ReadAsync(fixture, Map)).Resolve(TransportTaskTypes.WireToGate);
+
+        Assert.Equal(DispatchReasonCodes.TaskTypeBindingMissing, resolution.RefusalReasonCode);
+        Assert.Null(resolution.Station);
+        Assert.Equal(FixedStationEnd.Destination, resolution.FixedEnd);
+    }
+
     internal static async Task<(long RuleVersion, long BindingSetVersion)> ActivateAsync(
         TaskTypeStationPersistenceFixture fixture,
         IReadOnlyList<string> required,
