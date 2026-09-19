@@ -51,7 +51,8 @@ public sealed class MapStationResolver
     /// <remarks>
     /// The origin is hashed first and the destination second. For WIRE_TO_GATE that is the AREA
     /// pickup station and then the gate, which is the order this hash has always had, so the ids of
-    /// journeys already under way do not move.
+    /// journeys already under way do not move. For STAGING_TO_WIRE it is the staging station bound to
+    /// the task type and then the AREA machine station (control-server#163).
     /// </remarks>
     public static string BuildRouteEvidenceId(
         RiotMapStationCatalogSnapshot catalog,

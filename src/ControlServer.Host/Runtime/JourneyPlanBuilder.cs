@@ -16,7 +16,7 @@ namespace ControlServer.Host.Runtime;
 /// <para>
 /// Every decision about the shape of a journey -- which end is the pickup, which leg runs first,
 /// where the vehicle loads -- belongs here rather than in a dispatch criterion or in the engine. That
-/// is what lets a new journey shape (control-server#163, STAGING_TO_WIRE) be one change to this file
+/// is what let the reverse journey shape (control-server#163, STAGING_TO_WIRE) be one change to this file
 /// instead of a change threaded through the criterion chain and the engine's 2800 lines.
 /// </para>
 /// <para>
@@ -27,12 +27,6 @@ namespace ControlServer.Host.Runtime;
 /// </remarks>
 public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
 {
-    /// <summary>
-    /// A fixed station at the origin end is a reverse journey, which this builder cannot plan yet
-    /// (control-server#163).
-    /// </summary>
-    public const string FixedStationAsOriginNotSupported = "FIXED_STATION_AS_ORIGIN_NOT_SUPPORTED";
-
     // Every leg this runtime plans is BUSINESS: it moves a demand from a pickup station to a
     // dropoff station and does nothing else. WAITING_POINT is FP-C4, batch 5, and CHARGER is
     // FP-C1, batch 8 -- neither exists here to be reported, so the constant is a fact about this
@@ -44,9 +38,18 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
     /// why it cannot.
     /// </summary>
     /// <remarks>
-    /// The fixed end decides which station is which: at <see cref="FixedStationEnd.Destination"/> the
-    /// route runs from the AREA station to the fixed station, and that is the pickup and the dropoff.
-    /// A fixed station at the origin is refused until control-server#163 plans it here.
+    /// <para>
+    /// The fixed end decides which station is which, and nothing else does: at
+    /// <see cref="FixedStationEnd.Destination"/> (WIRE_TO_GATE) the route runs from the AREA station to the
+    /// fixed station; at <see cref="FixedStationEnd.Origin"/> (STAGING_TO_WIRE) from the fixed station to the
+    /// AREA station (REQ-0184). The origin is always the pickup and the destination the drop-off, so the legs
+    /// keep their order -- TO_PICKUP first, TO_DROPOFF second -- and only the stations at their ends change.
+    /// </para>
+    /// <para>
+    /// The direction is not stored anywhere: it is the task type's rule, which the demand freezes with its
+    /// rule version, and <see cref="MapStationResolver.BuildRouteEvidenceId"/> takes the two ends by name
+    /// so that a swapped route cannot pass for this one on replay (scope specification 5.3).
+    /// </para>
     /// </remarks>
     public static JourneyRouteDecision ResolveRoute(
         RiotMapStationCatalogSnapshot map,
@@ -62,12 +65,13 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             return JourneyRouteDecision.Refused(fixedStation.RefusalReasonCode!);
         }
 
-        if (fixedStation.FixedEnd != FixedStationEnd.Destination)
+        RouteEndpoints endpoints = fixedStation.FixedEnd switch
         {
-            return JourneyRouteDecision.Refused(FixedStationAsOriginNotSupported);
-        }
-
-        RouteEndpoints endpoints = new() { Origin = areaStation, Destination = fixedEnd };
+            FixedStationEnd.Destination => new() { Origin = areaStation, Destination = fixedEnd },
+            FixedStationEnd.Origin => new() { Origin = fixedEnd, Destination = areaStation },
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(fixedStation), fixedStation.FixedEnd, "A fixed station is at the origin or the destination."),
+        };
         return JourneyRouteDecision.Resolved(new ResolvedJourneyRoute(
             dispatchZone,
             MapStationResolver.BuildRouteEvidenceId(map, endpoints, area, eqp),
