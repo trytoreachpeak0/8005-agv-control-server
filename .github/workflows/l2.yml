@@ -4,26 +4,35 @@ name: l2
 # asserted against the server's own database. It sits between the unit suite (one process) and the
 # gates (expensive, human-scheduled), and it is the only automated layer that sees cross-end timing.
 #
-# Only the SYNTHETIC scenarios run here. The three real-onboard ones are deliberately absent,
-# for two independent reasons:
+# Two jobs, two rigs.
 #
-#   1. They need an interactive desktop session -- two WPF windows appear -- so they cannot run on
-#      this session-0 service runner at all. Unchanged, and sufficient on its own.
-#   2. Putting them on the interactive `golden-renderer` runner instead would break the desktop
-#      exclusivity contract. GitHub's `concurrency` only applies within one repository, so a job
-#      here cannot serialise against 8005-mes-ingest's desktop suite on the same machine, and that
-#      machine is also the golden WPF renderer.
+# `scenarios` runs the SYNTHETIC scenarios, on every push and pull request and on demand. They need
+# nothing from the peer repositories: Get-L2PeerPublish is only called when a scenario's setup file
+# says Onboard = 'Real'. So that job is independent of the other side's progress.
 #
-#      **This second reason expired on 2026-09-08.** Invoke-L2Scenario.ps1 now takes the
-#      machine-wide mutex `Global\W2G-InteractiveDesktop` for real-onboard scenarios, and
-#      8005-mes-ingest's two desktop workflows take the same name and queue for it rather than
-#      failing fast; see scripts/DesktopLock.psm1. Exclusivity is no longer the blocker. Whether
-#      these scenarios move onto the `golden-renderer` runner is now a scheduling and capacity
-#      decision, not a missing mechanism.
+# `real-rig` runs the REAL-ONBOARD scenarios, on demand only (`-f rig=real`), since 2026-09-19: the
+# shipped onboard WPF from 8005-agv-onboard-hmi driven through UI Automation, plus the real
+# slots-simulator over Modbus. It moves no vehicle. Until that day they ran only on the control
+# laptop's desktop under a manually scheduled slot; the user approved moving batch exits, tip
+# backstops and onboard UI regressions here (the v2 workspace's ci-research/real-rig-bottleneck.md,
+# plan b). Debugging a scenario while watching it stays on the laptop.
 #
-# The synthetic ones need nothing from the two read-only peer repositories: Get-L2PeerPublish is
-# only called when a scenario's setup file says Onboard = 'Real'. So this workflow is independent
-# of the other side's progress.
+#   - It needs an interactive desktop (two WPF windows appear), so it runs on
+#     win11-01-control-server-desktop, the only runner labelled `cs-desktop`: an interactive runner in
+#     the autologon session 1, installed by the workspace's
+#     remote-ops/factory-server/scripts/18-install-control-server-desktop-runner.ps1. The two service
+#     runners in session 0 cannot run it at all.
+#   - That desktop is also win11-01's golden WPF renderer and 8005-mes-ingest's desktop test host.
+#     `concurrency` cannot see across repositories, so the exclusion is the machine-wide mutex
+#     `Global\W2G-InteractiveDesktop`: Invoke-L2Scenario.ps1 takes it per real-onboard scenario and
+#     queues up to 30 minutes (scripts/DesktopLock.psm1), and since 8005-mes-ingest#8 that
+#     repository's two workflows queue for it too instead of failing fast. A collision with the
+#     nightly golden-renderer verify (03:00 CST, in practice starting nearer 05:30) costs a wait,
+#     not a red run; still, prefer not to start a long round in that window.
+#   - Port slot 0, the one every real rig has always used; the synthetic lanes use 1..4.
+#   - It pairs the server with explicit peer commits, each checked out into its own subdirectory:
+#       gh workflow run l2.yml --ref <branch> -f rig=real -f onboard_ref=<sha> -f simulator_ref=<sha> \
+#           [-f mode=consecutive] [-f scenarios=a,b]
 on:
   push:
     branches: [ControlServer_MVP, main]
@@ -36,6 +45,23 @@ on:
   #   gh workflow run l2.yml --ref <branch> -f mode=consecutive [-f scenarios=a,b]
   workflow_dispatch:
     inputs:
+      rig:
+        description: 'synthetic = the scenarios job below; real = the real-onboard rig on the interactive cs-desktop runner'
+        type: choice
+        options: [synthetic, real]
+        default: synthetic
+      onboard_ref:
+        description: 'rig=real only: 8005-agv-onboard-hmi commit (40-hex SHA) or branch to pair with'
+        type: string
+        default: 'w2g/fp-v2-impl'
+      simulator_ref:
+        description: 'rig=real only: slots-simulator commit (40-hex SHA) or branch to pair with'
+        type: string
+        default: 'main'
+      batch_id:
+        description: 'rig=real only: identity.batchId written into each assertions.json (a label; empty keeps the orchestrator default)'
+        type: string
+        default: ''
       mode:
         description: 'consecutive = each scenario its registered Runs; consecutive-all = every scenario at least three; default = what a pull request runs'
         type: choice
@@ -46,6 +72,11 @@ on:
         type: string
         default: ''
 
+# The real-onboard job shares this group, so on one ref a real-rig round and a synthetic round never
+# overlap. Across refs the guard is the real-rig job's own whole-machine commit check (below), because
+# a repository-wide group would let pull request rounds of different tickets replace each other while
+# pending.
+#
 # Never cancel a running job here. Cancelling one on a self-hosted runner also cancels the runner's
 # broker long-poll; the backoff retries exhaust and the session wedges without self-healing.
 # Measured on 2026-09-03: 4 hours 14 minutes of dead CI. Only one runner may take this job, so a
@@ -57,7 +88,7 @@ concurrency:
 jobs:
   scenarios:
     # Skipped, not cancelled: GitHub decides this before any runner is involved.
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && inputs.rig != 'real'
     # `headless` matters: win11-01 also hosts an interactive runner, and a job that only asked for
     # [self-hosted] could be taken by either. This one must NOT land on the golden-renderer runner.
     # It also keeps l2 off win11-01-control-server-2, which carries 'cs-test' and not 'headless':
@@ -385,3 +416,251 @@ jobs:
         continue-on-error: true
         shell: pwsh
         run: Remove-Item -LiteralPath $env:L2_EVIDENCE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
+
+  # The real-onboard rig, since 2026-09-19. A job of this workflow rather than a workflow of its own
+  # because workflow_dispatch only reaches workflows that exist on the default branch (main), which
+  # this line does not merge into; and so that it shares the synthetic job's concurrency group.
+  # Everything specific to it is in the comment at the top of this file.
+  real-rig:
+    if: github.event_name == 'workflow_dispatch' && inputs.rig == 'real'
+    runs-on: [self-hosted, cs-desktop]
+    # A timeout ends the job by cancelling it, which may take the path that wedges a runner, so it
+    # must never be what ends a round. consecutive-all over the whole list is 33 runs of 25 to 400
+    # seconds (laptop median 69 s), plus up to 30 minutes queued per scenario for the desktop lock
+    # when a golden-renderer run holds it.
+    timeout-minutes: 300
+    env:
+      # Same reason as the scenarios job: NuGet's audit fetch failing is a red run that says nothing about code.
+      NuGetAudit: 'false'
+      RIG_MODE: ${{ inputs.mode }}
+      RIG_ONLY: ${{ inputs.scenarios }}
+      RIG_BATCH_ID: ${{ inputs.batch_id }}
+      # Whole-machine commit guard (see the run step). win11-01's commit limit is 16 GiB since
+      # 2026-09-19 (8 GB page file). A scenario starts only while at most this much is committed, so
+      # that its own increment, measured on the first CI round and recorded in scripts/l2/README.md,
+      # fits under the limit with a margin.
+      RIG_COMMIT_START_CEILING_GIB: '12'
+      RIG_COMMIT_WAIT_MINUTES: '30'
+
+    steps:
+      # Each repository in its own subdirectory. A peer checked out into the server's work tree would
+      # sit inside it, and a peer's clean-tree check is what Get-L2PeerPublish relies on.
+      - uses: actions/checkout@v7
+        with:
+          path: control-server
+
+      - uses: actions/checkout@v7
+        with:
+          repository: trytoreachpeak0/8005-agv-onboard-hmi
+          ref: ${{ inputs.onboard_ref }}
+          path: peers/8005-agv-onboard-hmi
+
+      - uses: actions/checkout@v7
+        with:
+          repository: trytoreachpeak0/slots-simulator
+          ref: ${{ inputs.simulator_ref }}
+          path: peers/slots-simulator
+
+      # Exit code is the contract, as in the scenarios job: the guest is zh-CN, so nothing here matches on
+      # English console text. Invoke-L2Scenario.ps1 exits non-zero on FAIL.
+      - name: Run real-onboard L2 scenarios
+        shell: pwsh
+        working-directory: control-server
+        run: |
+          # Runs is each scenario's consecutive count, as in the scenarios job. Batch 6's exit (control-server#165)
+          # ran real-onboard-expected-action-overdue and real-onboard-durable-ack-lost three times and the
+          # rest once; that is what `consecutive` reproduces. Adding a real-onboard scenario: one line.
+          #
+          # real-onboard-recovery-entry-missing is absent on purpose: it is red by design until the
+          # recovery entry it asserts exists (scripts/l2/README.md), and a round that is always red
+          # reads as noise and trains nobody to look.
+          $scenarios = @(
+              @{ Name = 'real-onboard-normal-load';                           Runs = 1 }
+              @{ Name = 'real-onboard-clock-skew';                            Runs = 1 }
+              @{ Name = 'real-onboard-restart-with-open-recovery-session';    Runs = 1 }
+              @{ Name = 'real-onboard-load-door-closed-empty-reopens';        Runs = 1 }
+              @{ Name = 'real-onboard-station-timeout-door-open';             Runs = 1 }
+              @{ Name = 'real-onboard-unload-not-emptied';                    Runs = 1 }
+              @{ Name = 'real-onboard-compensate-then-reconnect';             Runs = 1 }
+              @{ Name = 'real-onboard-restart-while-waiting-operator';        Runs = 1 }
+              @{ Name = 'real-onboard-cancellation-authorization-lost';       Runs = 1 }
+              @{ Name = 'real-onboard-durable-ack-lost';                      Runs = 3 }
+              @{ Name = 'real-onboard-expected-action-overdue';               Runs = 3 }
+          )
+
+          # Registered before anything can fail, so the upload step always has a path.
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP "real-rig-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $null = New-Item -ItemType Directory -Path $evidenceRoot -Force
+          "RIG_EVIDENCE_ROOT=$evidenceRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          function Stop-RigSetup([string]$Message) {
+              Write-Host "::error title=Real-rig setup::$Message"
+              throw $Message
+          }
+
+          $only = @($env:RIG_ONLY -split ',' | ForEach-Object Trim | Where-Object { $_ })
+          $unknown = @($only | Where-Object { $_ -notin $scenarios.Name })
+          if ($unknown.Count -gt 0) { Stop-RigSetup "Not in this workflow's scenario list: $($unknown -join ', ')" }
+
+          $runList = @(foreach ($scenario in $scenarios) {
+              if ($only.Count -gt 0 -and $scenario.Name -notin $only) { continue }
+              $runs = switch ($env:RIG_MODE) {
+                  'consecutive'     { $scenario.Runs }
+                  'consecutive-all' { [Math]::Max(3, $scenario.Runs) }
+                  default           { 1 }
+              }
+              [pscustomobject]@{ Name = $scenario.Name; Runs = $runs }
+          })
+
+          $onboardRepository = (Resolve-Path ../peers/8005-agv-onboard-hmi).Path
+          $simulatorRepository = (Resolve-Path ../peers/slots-simulator).Path
+          $commits = [ordered]@{
+              'control-server'       = (git rev-parse HEAD).Trim()
+              '8005-agv-onboard-hmi' = (git -C $onboardRepository rev-parse HEAD).Trim()
+              'slots-simulator'      = (git -C $simulatorRepository rev-parse HEAD).Trim()
+          }
+          $commits | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidenceRoot 'commits.json') -Encoding utf8NoBOM
+          Write-Host "Mode $env:RIG_MODE; $(($runList | ForEach-Object { if ($_.Runs -eq 1) { $_.Name } else { "$($_.Name) x$($_.Runs)" } }) -join ', ')"
+          $commits.GetEnumerator() | ForEach-Object { Write-Host "  $($_.Key) @ $($_.Value)" }
+
+          # Whole-machine committed memory, sampled every 2 seconds for the whole step into
+          # commit-samples.csv. Committed bytes, not the process tree: what fails an allocation on this
+          # guest is the machine reaching its commit limit, whoever holds the rest.
+          function Get-CommitGiB {
+              $m = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
+              [pscustomobject]@{ Committed = [Math]::Round($m.CommittedBytes / 1GB, 2); Limit = [Math]::Round($m.CommitLimit / 1GB, 2) }
+          }
+          $samplesPath = Join-Path $evidenceRoot 'commit-samples.csv'
+          $sampler = Start-ThreadJob -ArgumentList $samplesPath -ScriptBlock {
+              param($path)
+              'utc,committedGiB,limitGiB' | Set-Content -LiteralPath $path -Encoding utf8NoBOM
+              while ($true) {
+                  $m = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory
+                  [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:o},{1:F2},{2:F2}', [DateTime]::UtcNow, ($m.CommittedBytes / 1GB), ($m.CommitLimit / 1GB)) |
+                      Add-Content -LiteralPath $path -Encoding utf8NoBOM
+                  Start-Sleep -Seconds 2
+              }
+          }
+
+          # Crash dialogs present before the round, so the check at the end only blames this one.
+          $werBefore = @(Get-Process WerFault -ErrorAction SilentlyContinue | ForEach-Object Id)
+
+          # Build once for every run: -SkipBuild then, as in the scenarios job. From the repository root so
+          # global.json picks the SDK.
+          Write-Host '::group::Build'
+          & dotnet build ./ControlServer.sln -c Release --nologo
+          $buildCode = $LASTEXITCODE
+          Write-Host '::endgroup::'
+          if ($buildCode -ne 0) { Stop-RigSetup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
+
+          # Each run's stage root goes inside the evidence root, as in the scenarios job.
+          $stageTemp = Join-Path $evidenceRoot '_stage'
+          $null = New-Item -ItemType Directory -Path $stageTemp -Force
+          $env:TEMP = $stageTemp
+          $env:TMP = $stageTemp
+
+          $ceiling = [double]$env:RIG_COMMIT_START_CEILING_GIB
+          $records = [Collections.Generic.List[object]]::new()
+          foreach ($item in $runList) {
+              for ($run = 1; $run -le $item.Runs; $run++) {
+                  $label = '{0}-{1:D2}' -f $item.Name, $run
+
+                  # The commit guard. Waits rather than fails: whatever holds the memory (the synthetic job's
+                  # four lanes, test.yml, the onboard HMI's CI) finishes in minutes.
+                  $waitClock = [Diagnostics.Stopwatch]::StartNew()
+                  $commit = Get-CommitGiB
+                  while ($commit.Committed -gt $ceiling -and $waitClock.Elapsed.TotalMinutes -lt [double]$env:RIG_COMMIT_WAIT_MINUTES) {
+                      Write-Host "RIG_COMMIT_WAITING: $($commit.Committed)/$($commit.Limit) GiB committed, starting at or below $ceiling"
+                      Start-Sleep -Seconds 30
+                      $commit = Get-CommitGiB
+                  }
+                  if ($commit.Committed -gt $ceiling) {
+                      Write-Host "::warning title=Commit guard::$label starts at $($commit.Committed) GiB after waiting $env:RIG_COMMIT_WAIT_MINUTES minutes"
+                  }
+
+                  $runRoot = Join-Path $evidenceRoot $label
+                  $log = "$runRoot.log"
+                  $arguments = @('-Scenario', $item.Name, '-EvidenceRoot', $runRoot,
+                      '-OnboardRepository', $onboardRepository, '-SimulatorRepository', $simulatorRepository, '-SkipBuild')
+                  if ($env:RIG_BATCH_ID) { $arguments += '-BatchId', $env:RIG_BATCH_ID }
+
+                  Write-Host "$label starting at $($commit.Committed) GiB committed"
+                  $clock = [Diagnostics.Stopwatch]::StartNew()
+                  # A child pwsh per run, so one scenario's modules and state never leak into the next.
+                  & pwsh -NoProfile -File ./scripts/l2/Invoke-L2Scenario.ps1 @arguments *>&1 |
+                      Tee-Object -FilePath $log | Out-Null
+                  $exitCode = $LASTEXITCODE
+                  $seconds = [Math]::Round($clock.Elapsed.TotalSeconds)
+                  $records.Add([pscustomobject]@{
+                      Label = $label; Scenario = $item.Name; Run = $run; Runs = $item.Runs
+                      ExitCode = $exitCode; Seconds = $seconds; CommittedAtStartGiB = $commit.Committed
+                  })
+                  Write-Host "$label $(if ($exitCode -eq 0) { 'PASS' } else { "FAIL ($exitCode)" }) in ${seconds}s"
+              }
+          }
+
+          Stop-Job $sampler; Remove-Job $sampler -Force
+
+          foreach ($record in $records) {
+              Write-Host "::group::$($record.Label) -- $(if ($record.ExitCode -eq 0) { 'PASS' } else { "FAIL ($($record.ExitCode))" }), $($record.Seconds)s"
+              $log = Join-Path $evidenceRoot "$($record.Label).log"
+              if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log | ForEach-Object { Write-Host $_ } }
+              Write-Host '::endgroup::'
+          }
+
+          # What the round left behind. This desktop renders golden baselines, so a leftover onboard or
+          # simulator window, an orphaned server or double, or a crash dialog is a defect here: listed,
+          # closed, and the round fails. Only processes started from this round's own directories (the
+          # checkouts, the evidence and stage roots, the peer publish cache) and crash dialogs that
+          # appeared during it -- 8005-mes-ingest's desktop jobs may be running windows of their own
+          # between our scenarios, and those are not ours to close.
+          $ownRoots = @((Resolve-Path ..).Path, $evidenceRoot, (Join-Path $env:LOCALAPPDATA '8005-l2-peers'))
+          $leftovers = @(Get-Process | Where-Object {
+                  $path = $_.Path
+                  ($path -and @($ownRoots | Where-Object { $path.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) -or
+                  ($_.ProcessName -eq 'WerFault' -and $_.Id -notin $werBefore)
+              })
+          foreach ($process in $leftovers) {
+              Write-Host "::error title=Leftover process::$($process.ProcessName) (pid $($process.Id)) $($process.Path) window '$($process.MainWindowTitle)'"
+              Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
+
+          $samples = @(Import-Csv -LiteralPath $samplesPath)
+          $values = @($samples | ForEach-Object { [double]::Parse($_.committedGiB, [Globalization.CultureInfo]::InvariantCulture) })
+          $peak = ($values | Measure-Object -Maximum).Maximum
+          $floor = ($values | Measure-Object -Minimum).Minimum
+          $failed = @($records | Where-Object ExitCode -ne 0)
+
+          $summary = @(
+              "### Real-onboard L2 ($env:RIG_MODE, $($records.Count) runs)", '',
+              "control-server $($commits['control-server']), onboard $($commits['8005-agv-onboard-hmi']), simulator $($commits['slots-simulator'])", '',
+              "Whole-machine committed memory during the step: min $floor GiB, peak $peak GiB ($($samples.Count) samples, commit-samples.csv in the evidence).", '',
+              '| Run | Result | Seconds | Committed at start (GiB) |', '| --- | --- | --- | --- |'
+          )
+          foreach ($record in $records) {
+              $result = if ($record.ExitCode -eq 0) { 'PASS' } else { "FAIL ($($record.ExitCode))" }
+              $summary += "| $($record.Label) | $result | $($record.Seconds) | $($record.CommittedAtStartGiB) |"
+          }
+          if ($leftovers.Count -gt 0) { $summary += '', "Leftover processes closed: $(($leftovers | ForEach-Object ProcessName) -join ', ')" }
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $summary | Set-Content -LiteralPath (Join-Path $evidenceRoot 'SUMMARY.md') -Encoding utf8NoBOM
+          $summary | ForEach-Object { Write-Host $_ }
+
+          if ($failed.Count -gt 0) { throw "Real-onboard scenarios failed: $(($failed | ForEach-Object Label) -join ', ')" }
+          if ($leftovers.Count -gt 0) { throw "The round left $($leftovers.Count) process(es) behind." }
+
+      # Diagnostics, not a deliverable: the verdict is the step above. Same reasoning as the scenarios job.
+      - name: Upload real-rig evidence
+        if: always() && env.RIG_EVIDENCE_ROOT != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: real-rig-evidence
+          path: ${{ env.RIG_EVIDENCE_ROOT }}
+          if-no-files-found: warn
+
+      - name: Remove real-rig evidence and stage roots
+        if: always() && env.RIG_EVIDENCE_ROOT != ''
+        continue-on-error: true
+        shell: pwsh
+        run: Remove-Item -LiteralPath $env:RIG_EVIDENCE_ROOT -Recurse -Force -ErrorAction SilentlyContinue
