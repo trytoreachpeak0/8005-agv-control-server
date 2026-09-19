@@ -1,0 +1,107 @@
+commit: 3dad6fc396533f7e691471093c3e231468676d6a (test commit rebased onto fp/v2-impl c9752b90; product code identical to fp/v2-impl)
+command: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --filter "FullyQualifiedName~ALateResultOfAClosedSession|FullyQualifiedName~ALateSuccessOfAClosedSession|FullyQualifiedName~AResentLateResultOfAClosedSession|FullyQualifiedName~ALateForcedRecoveryOfAClosedSession|FullyQualifiedName~AFurtherReplacementResultAfterAResumeClosedItsSession"
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:07.29]     ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "COMPENSATE_LOAD_ALL_EMPTY", lateOutcome: "ALL_EMPTY") [FAIL]
+[xUnit.net 00:00:07.47]     ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "FAULT_CARGO_HANDOFF", lateOutcome: "FAILED") [FAIL]
+[xUnit.net 00:00:07.66]     ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "FAULT_CARGO_HANDOFF", lateOutcome: "HANDED_OFF") [FAIL]
+[xUnit.net 00:00:07.84]     ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionDoesNotRewriteTheEndingTheNextSessionGaveTheDemand [FAIL]
+[xUnit.net 00:00:08.00]     ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionBeforeTheNextOneOpensLeavesTheDemandToIt [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "COMPENSATE_LOAD_ALL_EMPTY", lateOutcome: "ALL_EMPTY") [295 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: BusinessPicture { Demand = RecoveryRequired, Stage = Blocked, BlockReasonCode = LoadCompensationResult_NOT_RECONCILED, BlockReasonSince = 8/26/2026 10:00:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:00:00 AM +00:00, LeaseReleasedAt = , OccupancyReleasedAt = , Operation = RecoveryRequired, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:6:COMPENSATE_LOAD_ALL_EMPTY;e52d8b2f-6609-fa55-834a-f75a0ab51936:EXECUTING:2:FAULT_CARGO_HANDOFF, Snapshots = 8, Completions = 0 }
+Actual:   BusinessPicture { Demand = Cancelled, Stage = Completed, BlockReasonCode = CANCELLED_BY_LOAD_COMPENSATION, BlockReasonSince = 8/26/2026 10:02:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:02:00 AM +00:00, LeaseReleasedAt = 8/26/2026 10:02:00 AM +00:00, OccupancyReleasedAt = 8/26/2026 10:02:00 AM +00:00, Operation = Cancelled, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:6:COMPENSATE_LOAD_ALL_EMPTY;e52d8b2f-6609-fa55-834a-f75a0ab51936:EXECUTING:2:FAULT_CARGO_HANDOFF, Snapshots = 8, Completions = 0 }
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1830
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1834
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1834
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "FAULT_CARGO_HANDOFF", lateOutcome: "FAILED") [184 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2
+Actual:   1
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1833
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1834
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1834
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(action: "FAULT_CARGO_HANDOFF", lateOutcome: "HANDED_OFF") [179 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: BusinessPicture { Demand = RecoveryRequired, Stage = Blocked, BlockReasonCode = FaultCargoRecoveryResult_NOT_RECONCILED, BlockReasonSince = 8/26/2026 10:00:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:00:00 AM +00:00, LeaseReleasedAt = , OccupancyReleasedAt = , Operation = RecoveryRequired, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:4:FAULT_CARGO_HANDOFF;e52d8b2f-6609-fa55-834a-f75a0ab51936:EXECUTING:2:FAULT_CARGO_HANDOFF, Snapshots = 6, Completions = 0 }
+Actual:   BusinessPicture { Demand = Cancelled, Stage = Completed, BlockReasonCode = TERMINATED_BY_FAULT_CARGO_HANDOFF, BlockReasonSince = 8/26/2026 10:02:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:02:00 AM +00:00, LeaseReleasedAt = 8/26/2026 10:02:00 AM +00:00, OccupancyReleasedAt = 8/26/2026 10:02:00 AM +00:00, Operation = Cancelled, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:4:FAULT_CARGO_HANDOFF;e52d8b2f-6609-fa55-834a-f75a0ab51936:EXECUTING:2:FAULT_CARGO_HANDOFF, Snapshots = 6, Completions = 0 }
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1830
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1834
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateResultOfAClosedSessionIsOnlyRecordedWhileTheNextSessionIsExecuting(String action, String lateOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1834
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionDoesNotRewriteTheEndingTheNextSessionGaveTheDemand [173 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: BusinessPicture { Demand = Cancelled, Stage = Completed, BlockReasonCode = CANCELLED_BY_LOAD_COMPENSATION, BlockReasonSince = 8/26/2026 10:01:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:01:00 AM +00:00, LeaseReleasedAt = 8/26/2026 10:01:00 AM +00:00, OccupancyReleasedAt = 8/26/2026 10:01:00 AM +00:00, Operation = Cancelled, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:4:FAULT_CARGO_HANDOFF;e52d8b2f-6609-fa55-834a-f75a0ab51936:CLOSED:4:COMPENSATE_LOAD_ALL_EMPTY, Snapshots = 8, Completions = 0 }
+Actual:   BusinessPicture { Demand = Cancelled, Stage = Completed, BlockReasonCode = TERMINATED_BY_FAULT_CARGO_HANDOFF, BlockReasonSince = 8/26/2026 10:02:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:02:00 AM +00:00, LeaseReleasedAt = 8/26/2026 10:01:00 AM +00:00, OccupancyReleasedAt = 8/26/2026 10:01:00 AM +00:00, Operation = Cancelled, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:4:FAULT_CARGO_HANDOFF;e52d8b2f-6609-fa55-834a-f75a0ab51936:CLOSED:4:COMPENSATE_LOAD_ALL_EMPTY, Snapshots = 8, Completions = 0 }
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionDoesNotRewriteTheEndingTheNextSessionGaveTheDemand() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1938
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionDoesNotRewriteTheEndingTheNextSessionGaveTheDemand() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1940
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionDoesNotRewriteTheEndingTheNextSessionGaveTheDemand() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1940
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionBeforeTheNextOneOpensLeavesTheDemandToIt [162 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: BusinessPicture { Demand = RecoveryRequired, Stage = Blocked, BlockReasonCode = LoadCompensationResult_NOT_RECONCILED, BlockReasonSince = 8/26/2026 10:00:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:00:00 AM +00:00, LeaseReleasedAt = , OccupancyReleasedAt = , Operation = RecoveryRequired, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:6:COMPENSATE_LOAD_ALL_EMPTY, Snapshots = 6, Completions = 0 }
+Actual:   BusinessPicture { Demand = Cancelled, Stage = Completed, BlockReasonCode = CANCELLED_BY_LOAD_COMPENSATION, BlockReasonSince = 8/26/2026 10:01:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:01:00 AM +00:00, LeaseReleasedAt = 8/26/2026 10:01:00 AM +00:00, OccupancyReleasedAt = 8/26/2026 10:01:00 AM +00:00, Operation = Cancelled, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:6:COMPENSATE_LOAD_ALL_EMPTY, Snapshots = 6, Completions = 0 }
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionBeforeTheNextOneOpensLeavesTheDemandToIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1879
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionBeforeTheNextOneOpensLeavesTheDemandToIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1884
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionBeforeTheNextOneOpensLeavesTheDemandToIt() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 1884
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:08.42]     ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionIsAcknowledgedAfterTheDemandWasDelivered [FAIL]
+[xUnit.net 00:00:08.59]     ControlServer.Tests.RecoveryStateMachineG2Tests.AResentLateResultOfAClosedSessionIsAnsweredFromTheFirstAcrossRestartAndReconnect [FAIL]
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionIsAcknowledgedAfterTheDemandWasDelivered [185 ms]
+  Error Message:
+   ControlServer.Domain.BusinessIdentityConflictException : A completed demand cannot be terminated at its pickup stop.
+  Stack Trace:
+     at ControlServer.Host.Runtime.PickupStopTermination.StageAsync(JourneyRuntimeRow runtime, String reasonCode, DateTimeOffset endedAt, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Host\Runtime\PickupStopTermination.cs:line 61
+   at ControlServer.Host.Transport.OnboardRecoveryCoordinator.ApplyCurrentResultAsync(String messageType, JsonElement payload, RecoveryWorkflowRow workflow, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardRecoveryCoordinator.cs:line 1140
+   at ControlServer.Host.Transport.OnboardRecoveryCoordinator.ProcessResultAsync(JsonElement root, String contentHash, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardRecoveryCoordinator.cs:line 174
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessCurrentSessionMessageAsync(JsonElement root, OnboardConnectionState state, String messageType, String messageId, String contentHash, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 536
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.CaptureFirstResponseAsync(String messageId, String messageType, String requestJson, String contentHash, Func`1 responseFactory, DateTimeOffset receivedAt, CancellationToken cancellationToken, Func`2 replayEquivalenceHash, Action`1 equivalentReplayObserved, Func`2 equivalentReplayResponse) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 1411
+   at ControlServer.Infrastructure.Persistence.WireToGateStore.CaptureFirstResponseAsync(String messageId, String messageType, String requestJson, String contentHash, Func`1 responseFactory, DateTimeOffset receivedAt, CancellationToken cancellationToken, Func`2 replayEquivalenceHash, Action`1 equivalentReplayObserved, Func`2 equivalentReplayResponse) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 1423
+   at ControlServer.Host.Transport.OnboardMessageProcessor.ProcessAsync(String line, OnboardConnectionState state, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\src\ControlServer.Host\Transport\OnboardMessageProcessor.cs:line 135
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionIsAcknowledgedAfterTheDemandWasDelivered() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2036
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionIsAcknowledgedAfterTheDemandWasDelivered() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2044
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.ALateSuccessOfAClosedSessionIsAcknowledgedAfterTheDemandWasDelivered() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2044
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.RecoveryStateMachineG2Tests.AResentLateResultOfAClosedSessionIsAnsweredFromTheFirstAcrossRestartAndReconnect [175 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: BusinessPicture { Demand = RecoveryRequired, Stage = Blocked, BlockReasonCode = LoadCompensationResult_NOT_RECONCILED, BlockReasonSince = 8/26/2026 10:00:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:00:00 AM +00:00, LeaseReleasedAt = , OccupancyReleasedAt = , Operation = RecoveryRequired, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:6:COMPENSATE_LOAD_ALL_EMPTY;e52d8b2f-6609-fa55-834a-f75a0ab51936:EXECUTING:2:FAULT_CARGO_HANDOFF, Snapshots = 8, Completions = 0 }
+Actual:   BusinessPicture { Demand = Cancelled, Stage = Completed, BlockReasonCode = CANCELLED_BY_LOAD_COMPENSATION, BlockReasonSince = 8/26/2026 10:02:00 AM +00:00, RuntimeUpdatedAt = 8/26/2026 10:02:00 AM +00:00, LeaseReleasedAt = 8/26/2026 10:02:00 AM +00:00, OccupancyReleasedAt = 8/26/2026 10:02:00 AM +00:00, Operation = Cancelled, Sessions = dad21c24-9c1a-8259-997a-044223141685:CLOSED:6:COMPENSATE_LOAD_ALL_EMPTY;e52d8b2f-6609-fa55-834a-f75a0ab51936:EXECUTING:2:FAULT_CARGO_HANDOFF, Snapshots = 8, Completions = 0 }
+  Stack Trace:
+     at ControlServer.Tests.RecoveryStateMachineG2Tests.AResentLateResultOfAClosedSessionIsAnsweredFromTheFirstAcrossRestartAndReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2108
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AResentLateResultOfAClosedSessionIsAnsweredFromTheFirstAcrossRestartAndReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2111
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AResentLateResultOfAClosedSessionIsAnsweredFromTheFirstAcrossRestartAndReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2111
+   at ControlServer.Tests.RecoveryStateMachineG2Tests.AResentLateResultOfAClosedSessionIsAnsweredFromTheFirstAcrossRestartAndReconnect() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-cs175-8005-agv-control-server\tests\ControlServer.Tests\RecoveryStateMachineG2Tests.cs:line 2111
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     7, Passed:     3, Skipped:     0, Total:    10, Duration: 5 s - ControlServer.Tests.dll (net8.0)
