@@ -1,0 +1,58 @@
+{"at":"2026-09-19T09:25:06.0648691+00:00","note":"L2 run 20260919T092506011Z starting for scenario 'emergency-stop-operator-release'."}
+{"at":"2026-09-19T09:25:06.1137441+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-19T09:25:06.1173450+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T09:25:09.9987400+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T09:25:10.3040088+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T09:25:10.4146697+00:00","note":"RIoT command options for this scenario: EmergencyRetryInitialDelay=00:00:20"}
+{"at":"2026-09-19T09:25:10.4538132+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T09:25:13.9181173+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T09:25:15.9875232+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T09:25:16.4169724+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T09:25:16.6154197+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T09:25:17.5021846+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T09:25:18.2493073+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T09:25:18.4397887+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T09:25:18.5883685+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T092506011Z\\controlserver.db"}
+{"at":"2026-09-19T09:25:23.8308239+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"c7302afba197410ca31a250d16fe0930","version":1,"slotCount":8}}}
+{"at":"2026-09-19T09:25:23.8524302+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T092506011Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T09:25:29.4210621+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"c7302afba197410ca31a250d16fe0930","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T09:25:29.7286280+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T09:25:29.7373971+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T092506011Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-193-8005-agv-control-server\\evidence\\l2\\20260919-cs193-emergency-stop-operator-release-001\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T09:25:37.2501298+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\b6-193-8005-agv-control-server\\evidence\\l2\\20260919-cs193-emergency-stop-operator-release-001\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"204c32792e454db2897ec720b2a06209","importedAt":"2026-09-19T17:25:31.5518515+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T09:25:37.2647825+00:00","note":"Environment is up; entering scenario 'emergency-stop-operator-release'."}
+{"at":"2026-09-19T09:25:37.3641188+00:00","note":"Publishing demand 5651cea9d0d747cfbf6aaee5f322b712."}
+{"at":"2026-09-19T09:25:37.4587506+00:00","criterion":"journey-dispatched","value":"(null)"}
+{"at":"2026-09-19T09:25:39.6080705+00:00","criterion":"journey-dispatched","value":"@{DemandId=5651cea9-d0d7-47cf-bf6a-aee5f322b712}"}
+{"at":"2026-09-19T09:25:39.6389802+00:00","criterion":"pickup-intent","value":"(null)"}
+{"at":"2026-09-19T09:25:40.1559289+00:00","criterion":"pickup-intent","value":"@{UpperId=W2G-5651cea9-d0d7-47cf-bf6a-aee5f322b712-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-19T09:25:40.1642213+00:00","note":"AGV-L2-001 drives between stations; RIoT reports W2G-5651cea9-d0d7-47cf-bf6a-aee5f322b712-PICKUP-1 FAILED."}
+{"at":"2026-09-19T09:25:40.2420146+00:00","criterion":"trigger-issued","value":"0"}
+{"at":"2026-09-19T09:25:41.5654403+00:00","criterion":"trigger-issued","value":"1"}
+{"at":"2026-09-19T09:25:41.5671442+00:00","note":"The latch engages; the vehicle keeps reporting MT_RUNNING at speed 0 between stations."}
+{"at":"2026-09-19T09:25:41.5815671+00:00","criterion":"trigger-confirmed","value":"Pending"}
+{"at":"2026-09-19T09:25:42.3661946+00:00","criterion":"trigger-confirmed","value":"Confirmed"}
+{"at":"2026-09-19T09:25:42.4051067+00:00","criterion":"runtime-iterations","value":"27"}
+{"at":"2026-09-19T09:25:43.2027602+00:00","criterion":"runtime-iterations","value":"28"}
+{"at":"2026-09-19T09:25:44.2518157+00:00","criterion":"runtime-iterations","value":"29"}
+{"at":"2026-09-19T09:25:45.3150238+00:00","criterion":"runtime-iterations","value":"30"}
+{"at":"2026-09-19T09:25:46.1001391+00:00","criterion":"runtime-iterations","value":"31"}
+{"at":"2026-09-19T09:25:46.2588386+00:00","note":"Release request (vehicleEmpty) -> 409: {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.10\",\"title\":\"Emergency stop release refused\",\"status\":409,\"detail\":\"EMERGENCY_VEHICLE_EMPTY_NOT_CONFIRMED\",\"agvId\":\"AGV-L2-001\",\"emergencyState\":\"CAN_RECOVER\",\"reasons\":[\"EMERGENCY_VEHICLE_EMPTY_NOT_CONFIRMED\"],\"alarmCode\":null}"}
+{"at":"2026-09-19T09:25:46.3155602+00:00","note":"Release request () -> 409: {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.10\",\"title\":\"Emergency stop release refused\",\"status\":409,\"detail\":\"EMERGENCY_VEHICLE_ORDER_NOT_FINISHED\",\"agvId\":\"AGV-L2-001\",\"emergencyState\":\"CAN_RECOVER\",\"reasons\":[\"EMERGENCY_VEHICLE_ORDER_NOT_FINISHED\"],\"alarmCode\":null}"}
+{"at":"2026-09-19T09:25:46.3749579+00:00","note":"Release request () -> 202: {\"agvId\":\"AGV-L2-001\",\"action\":\"RecoveryUnconfirmed\",\"emergencyState\":\"CAN_RECOVER\",\"reasons\":[\"EMERGENCY_RELEASE_NOT_CONFIRMED\"],\"alarmCode\":\"EMERGENCY_RELEASE_UNCONFIRMED\",\"commandAuditId\":\"0528d40de9b84ab6935b18bdf44a6d66\",\"outcome\":\"Pending\"}"}
+{"at":"2026-09-19T09:25:46.3863862+00:00","note":"RIoT clears the latch a few seconds later; the vehicle stands between stations, its order FAILED."}
+{"at":"2026-09-19T09:25:46.4208230+00:00","criterion":"release-confirmed","value":"Pending"}
+{"at":"2026-09-19T09:25:47.2068468+00:00","criterion":"release-confirmed","value":"Confirmed"}
+{"at":"2026-09-19T09:25:47.2210744+00:00","criterion":"runtime-iterations","value":"32"}
+{"at":"2026-09-19T09:25:48.2733379+00:00","criterion":"runtime-iterations","value":"33"}
+{"at":"2026-09-19T09:25:49.0631621+00:00","criterion":"runtime-iterations","value":"34"}
+{"at":"2026-09-19T09:25:50.1066635+00:00","criterion":"runtime-iterations","value":"35"}
+{"at":"2026-09-19T09:25:51.1594946+00:00","criterion":"runtime-iterations","value":"36"}
+{"at":"2026-09-19T09:25:52.2102953+00:00","criterion":"runtime-iterations","value":"37"}
+{"at":"2026-09-19T09:25:53.2681470+00:00","criterion":"runtime-iterations","value":"38"}
+{"at":"2026-09-19T09:25:53.3426771+00:00","note":"Release request () -> 409: {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.10\",\"title\":\"Emergency stop release refused\",\"status\":409,\"detail\":\"EMERGENCY_NOT_CAN_RECOVER,EMERGENCY_NOT_RAISED_BY_8005\",\"agvId\":\"AGV-L2-001\",\"emergencyState\":\"OK\",\"reasons\":[\"EMERGENCY_NOT_CAN_RECOVER\",\"EMERGENCY_NOT_RAISED_BY_8005\"],\"alarmCode\":null}"}
+{"at":"2026-09-19T09:25:53.5062054+00:00","note":"The vehicle starts moving again."}
+{"at":"2026-09-19T09:25:53.5827038+00:00","criterion":"new-trigger-issued","value":"1"}
+{"at":"2026-09-19T09:25:54.3729867+00:00","criterion":"new-trigger-issued","value":"2"}
+{"at":"2026-09-19T09:25:54.3847891+00:00","criterion":"new-trigger-settled","value":"@{CommandType=triggerEmergency; AgvId=AGV-L2-001; TargetUpperId=vehicle:BROKERX-L2-0001; AttemptNumber=2; Outcome=Pending; FaultGeneration=1; ReceiptJson={\"source\":\"Automatic\",\"requesterIdentity\":null,\"agvId\":\"AGV-L2-001\",\"deviceKey\":\"BROKERX-L2-0001\",\"Reason\":\"STOP_PROOF_MOTION_OBSERVED,STOP_PROOF_POSITION_UNKNOWN\",\"call\":{\"disposition\":\"Accepted\",\"Operation\":\"triggerEmergency\",\"Classification\":\"SdkAccepted\",\"HttpStatusCode\":null,\"BusinessCode\":null,\"FailureCategory\":null,\"observedAt\":\"2026-09-19T09:25:54.1480461\\u002B00:00\"},\"emergencyState\":\"OK\"}}"}
+{"at":"2026-09-19T09:25:54.3982419+00:00","note":"人工确认解除：锁住即停稳；确认不全或订单未结束就拒绝；确认齐全服务端自己解除、稍后读到 OK 结算；解除后不重触发；车再动按新急停处理。"}
+{"at":"2026-09-19T09:25:54.9532324+00:00","note":"L2 port block lock released."}
