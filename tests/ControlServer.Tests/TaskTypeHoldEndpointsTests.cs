@@ -40,6 +40,42 @@ public sealed class TaskTypeHoldEndpointsTests
         Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
     }
 
+    [Fact]
+    public async Task ARequestFromAnotherMachineOnAConnectionWithNoLocalAddressIsForbidden()
+    {
+        // control-server#201 (#162 re-review): with no local address, only loopback is this machine. The helper used to
+        // fill in loopback for a missing local address, so this case was never exercised.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+
+        IResult result = await Post(
+            fixture, ValidRequest() with { ClaimedRole = "厂长" }, IPAddress.Parse("172.19.205.30"), noLocalAddress: true);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(StatusCodes.Status403Forbidden, StatusOf(result));
+        Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+        Assert.Null(audit.ClaimedAdministratorRole);
+        using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
+        Assert.Equal("172.19.205.30", detail.RootElement.GetProperty("remoteAddress").GetString());
+        Assert.Equal(JsonValueKind.Null, detail.RootElement.GetProperty("localAddress").ValueKind);
+        Assert.Equal("FORBIDDEN_NOT_LOCAL", detail.RootElement.GetProperty("result").GetString());
+        Assert.False(detail.RootElement.TryGetProperty("reason", out _));
+        Assert.False(detail.RootElement.TryGetProperty("claimedRole", out _));
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1", true)]
+    [InlineData("::1", true)]
+    [InlineData("::ffff:127.0.0.1", true)]
+    [InlineData("172.19.205.30", false)]
+    [InlineData("::ffff:172.19.205.30", false)]
+    public void WithNoLocalAddressOnlyLoopbackIsThisMachine(string remote, bool expected) =>
+        Assert.Equal(expected, TaskTypeHoldEndpoints.IsFromThisMachine(IPAddress.Parse(remote), local: null));
+
     [Theory]
     [InlineData("172.19.205.222", "172.19.205.222")]
     [InlineData("::ffff:172.19.205.222", "172.19.205.222")]
@@ -308,11 +344,12 @@ public sealed class TaskTypeHoldEndpointsTests
         TaskTypeStationPersistenceFixture fixture,
         TaskTypeHoldRequest request,
         IPAddress remote,
-        IPAddress? local = null)
+        IPAddress? local = null,
+        bool noLocalAddress = false)
     {
         DefaultHttpContext context = new();
         context.Connection.RemoteIpAddress = remote;
-        context.Connection.LocalIpAddress = local ?? IPAddress.Loopback;
+        context.Connection.LocalIpAddress = noLocalAddress ? null : local ?? IPAddress.Loopback;
         IResult result = await TaskTypeHoldEndpoints.HandleAsync(
             context,
             request,
