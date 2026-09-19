@@ -92,7 +92,8 @@ function Get-OverdueReports([int]$slot) {
 
 # 最新一份告警快照里有没有这个码（任一仓）。
 function Get-LatestOverdueCount {
-    $latest = @(Get-L2RealInbound $connection 'OnboardAlarmSnapshot') | Select-Object -Last 1
+    # Get-L2RealInbound already returns one array; wrapping it in @() again would make -Last 1 pick the whole list.
+    $latest = (Get-L2RealInbound $connection 'OnboardAlarmSnapshot') | Select-Object -Last 1
     if ($null -eq $latest) { return 0 }
     return @(@($latest.Payload.alarms) | Where-Object { $null -ne $_ -and [string]$_.code -eq $code }).Count
 }
