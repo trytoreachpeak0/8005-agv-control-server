@@ -24,7 +24,7 @@ namespace ControlServer.Tests;
 /// B2: the server drives a fleet. Sessions, journeys and dispatch decisions stay per vehicle, the
 /// round stays one worker serving vehicles in series, and one vehicle's trouble stays its own.
 /// </summary>
-public sealed class MultiVehicleExecutionTests
+public sealed partial class MultiVehicleExecutionTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 8, 6, 0, 0, TimeSpan.Zero);
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -916,6 +916,8 @@ public sealed class MultiVehicleExecutionTests
         public CountingSlotPositions SlotPositions { get; } = new();
         public RecordingRoundOutcomes RoundOutcomes { get; } = new();
         public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
+        public FleetBoxCounts BoxCounts { get; } = new();
+        public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
         public JourneyRuntimeEngine Engine { get; private set; }
 
         public static async Task<FleetFixture> CreateAsync(
@@ -1013,6 +1015,30 @@ public sealed class MultiVehicleExecutionTests
             Context.ChangeTracker.Clear();
         }
 
+        /// <summary>
+        /// Accepts a demand no journey was built for -- what the orphan check refuses whenever it runs.
+        /// </summary>
+        public async Task AcceptOrphanAsync()
+        {
+            AcceptedDemandSnapshot orphan = Demand(9, "N1-1", 0);
+            await new WireToGateStore(Context).AcceptWithOrderIntentAsync(
+                orphan,
+                new OrderIntent(
+                    "ORPHAN-PICKUP-LEG",
+                    orphan.DemandId,
+                    "W2G-ORPHAN-PICKUP-1",
+                    "TO_PICKUP",
+                    "N1-1",
+                    Now,
+                    "BROKERX-ORPHAN",
+                    Options.MapId,
+                    12,
+                    1,
+                    Options.DispatchGeneration),
+                TestContext.Current.CancellationToken);
+            Context.ChangeTracker.Clear();
+        }
+
         /// <summary>Adds another in-flight order intent for one vehicle and returns its upperId.</summary>
         public async Task<string> AddSecondIntentAsync(string vehicleKey)
         {
@@ -1075,7 +1101,7 @@ public sealed class MultiVehicleExecutionTests
                 movement,
                 store,
                 new OnboardJourneyPublisher(store, new SilentPeer(), Clock),
-                new FleetBoxCounts(),
+                BoxCounts,
                 new PackageCapacityStore(Context),
                 new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
                     options,
@@ -1083,7 +1109,7 @@ public sealed class MultiVehicleExecutionTests
                     new PackageCapacityStore(Context),
                     store,
                     new VehicleFaultStore(Context),
-                    new FleetBoxCounts(),
+                    BoxCounts,
                     NullLogger<SlotCapacityCriterion>.Instance,
                     routeGraph: null,
                     catalog: catalogAccess,
@@ -1102,7 +1128,7 @@ public sealed class MultiVehicleExecutionTests
                 RoundOutcomes,
                 options,
                 Clock,
-                NullLogger<JourneyRuntimeEngine>.Instance);
+                EngineLog);
         }
 
         private VehicleFaultCoordinator CreateFaultCoordinator()
@@ -1172,7 +1198,13 @@ public sealed class MultiVehicleExecutionTests
             Catalog.Set([.. Enumerable.Range(0, AgvIds.Length).Select(Demand)]);
         }
 
-        private static AcceptedDemandSnapshot Demand(int index) => new(
+        private static AcceptedDemandSnapshot Demand(int index) => Demand(index, Areas[index], index);
+
+        /// <summary>
+        /// A demand like the seeded ones, in any AREA and at any age: <paramref name="age"/> moves its
+        /// creation time, so a round's ranking can be arranged.
+        /// </summary>
+        public static AcceptedDemandSnapshot Demand(int index, string area, int age) => new(
             $"1000000{index}-0000-4000-8000-00000000000{index}",
             $"SUBLOT-00{index}|WIRE_TO_GATE",
             7,
@@ -1183,11 +1215,11 @@ public sealed class MultiVehicleExecutionTests
             "WIRE_TO_GATE",
             $"SUBLOT-00{index}",
             1,
-            Now.AddMinutes(-10 + index),
-            Now.AddMinutes(-9 + index),
+            Now.AddMinutes(-10 + age),
+            Now.AddMinutes(-9 + age),
             $"TRACE-{index}",
             $"COMMIT-{index}",
-            new LiveMesFieldSet(Areas[index], $"EQP-0{index}", "STEP-01", Now, "PDFN5×6-8L(12R)"));
+            new LiveMesFieldSet(area, $"EQP-0{index}", "STEP-01", Now, "PDFN5×6-8L(12R)"));
 
         private Task AddCapabilitySnapshotAsync(string agvId, long generation) => AddInboxAsync(
             agvId,
@@ -1313,6 +1345,15 @@ public sealed class MultiVehicleExecutionTests
         /// <summary>The read, counted from 1, that never comes back; null when every read answers.</summary>
         public int? HangOnRead { get; set; }
 
+        /// <summary>Whether every catalog read fails the way an unreachable MesIngest does.</summary>
+        public bool Unreachable { get; set; }
+
+        /// <summary>
+        /// Demands every read after the round's first no longer lists -- what intake's final re-read meets when MES
+        /// closed the demand while the round was deciding.
+        /// </summary>
+        public HashSet<string> GoneOnReread { get; } = new(StringComparer.Ordinal);
+
         public void Set(AcceptedDemandSnapshot[] items) => _items = items;
 
         public async Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken)
@@ -1323,10 +1364,18 @@ public sealed class MultiVehicleExecutionTests
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             }
 
+            if (Unreachable)
+            {
+                throw new HttpRequestException("MesIngest is unreachable.");
+            }
+
+            AcceptedDemandSnapshot[] items = ReadCount == 1
+                ? _items
+                : [.. _items.Where(item => !GoneOnReread.Contains(item.DemandId))];
             return new DemandCatalogSnapshot(
                 _items.FirstOrDefault()?.HistoryEpoch ?? "11111111-1111-4111-8111-111111111111",
                 21,
-                _items);
+                items);
         }
 
         public Task<AcceptedDemandSnapshot?> ReadCurrentAsync(string demandId, CancellationToken cancellationToken)
@@ -1338,11 +1387,25 @@ public sealed class MultiVehicleExecutionTests
 
     private sealed class FleetBoxCounts : ISublotBoxCountReader
     {
-        public Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken)
+        public int Calls { get; private set; }
+
+        /// <summary>The call, counted from 1, that never comes back; null when every call answers.</summary>
+        public int? HangOnCall { get; set; }
+
+        /// <summary>Runs just before the hanging call starts to wait, so a test can see the state it hangs in.</summary>
+        public Action? OnHang { get; set; }
+
+        public async Task<int?> ReadMaxBoxCountAsync(string sublot, CancellationToken cancellationToken)
         {
             _ = sublot;
-            _ = cancellationToken;
-            return Task.FromResult<int?>(4);
+            Calls++;
+            if (Calls == HangOnCall)
+            {
+                OnHang?.Invoke();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+
+            return 4;
         }
     }
 
@@ -1466,8 +1529,14 @@ public sealed class MultiVehicleExecutionTests
         /// <summary>What RIoT reports in movementState; null reads as Unknown.</summary>
         public string? MovementState { get; set; }
 
+        /// <summary>The vehicle key whose reads fail the way an unreachable RIoT does, or null.</summary>
+        public string? FailOn { get; set; }
+
         /// <summary>Every vehicle read, in the order it was asked, so a test can see the segments.</summary>
         public List<string> VehicleReads { get; } = [];
+
+        /// <summary>Every order created, oldest first, as (vehicleKey, upperId, destination station).</summary>
+        public List<(string VehicleKey, string UpperId, int DestinationStationId)> Creates { get; } = [];
 
         public async Task<RiotVehicleObservation> ReadVehicleAsync(
             string vehicleKey,
@@ -1477,6 +1546,11 @@ public sealed class MultiVehicleExecutionTests
             if (string.Equals(HangOn, vehicleKey, StringComparison.Ordinal))
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (string.Equals(FailOn, vehicleKey, StringComparison.Ordinal))
+            {
+                throw new HttpRequestException($"RIoT did not answer for {vehicleKey}.");
             }
 
             return new RiotVehicleObservation(
@@ -1537,6 +1611,7 @@ public sealed class MultiVehicleExecutionTests
         public Task<RiotOrderObservation> CreateAsync(OrderIntent intent, CancellationToken cancellationToken)
         {
             _ = cancellationToken;
+            Creates.Add((intent.VehicleKey, intent.UpperId, intent.DestinationStationId));
             RiotOrderObservation active = new(
                 intent.UpperId,
                 RiotOrderObservationKind.Active,
