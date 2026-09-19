@@ -169,7 +169,10 @@ $assertions.Add(
 # station simply being gone. With 210 back under its bound name the catalog check passes again, so what still refuses
 # the demand can only be the hold -- which only FieldOps releases (control-server#201, review F of #162).
 
-$gateHold = @(Get-L2TaskTypeHolds -Context $Context | Where-Object { $_.TaskType -eq 'WIRE_TO_GATE' })
+# Assigned before filtering: Get-L2TaskTypeHolds returns its rows wrapped once, and piping the call straight into
+# Where-Object would hand the filter the whole list as one object.
+$holdsBeforeReturn = Get-L2TaskTypeHolds -Context $Context
+$gateHold = @($holdsBeforeReturn | Where-Object { $_.TaskType -eq 'WIRE_TO_GATE' })
 Set-Stations @{ '210' = '关卡'; '12' = 'N1-3_N1-7'; '11' = 'C15-13'; '230' = '派工待送取货-临时堆放' }
 $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
 $third = New-L2WireToGateDemand -Context $Context -Label 'third'
@@ -180,7 +183,8 @@ $null = Wait-L2ConditionOrLast -Description 'the third demand is kept back by th
 $null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
 $thirdStage = Get-L2JourneyStage -Context $Context -Demand $third
 $thirdReason = Get-L2BacklogReason -Context $Context -Demand $third
-$gateHoldAfter = @(Get-L2TaskTypeHolds -Context $Context | Where-Object { $_.TaskType -eq 'WIRE_TO_GATE' })
+$holdsAfterReturn = Get-L2TaskTypeHolds -Context $Context
+$gateHoldAfter = @($holdsAfterReturn | Where-Object { $_.TaskType -eq 'WIRE_TO_GATE' })
 $assertions.Add(
     'L2-CC-11', '210 以原名称放回目录、确认过几轮之后，新的 WIRE_TO_GATE 需求仍不受理，原因码 TASK_TYPE_HELD，那条暂停仍未解除（站点恢复不自动解暂停）',
     ($null -eq $thirdStage -and $thirdReason -eq 'TASK_TYPE_HELD' -and $gateHold.Count -eq 1 -and $gateHoldAfter.Count -eq 1 -and
