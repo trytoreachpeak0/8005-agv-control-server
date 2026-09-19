@@ -124,6 +124,13 @@ public sealed class StructuralDispatchBlockTests
         written.UnionWith(code.Matches(File.ReadAllText(Path.Combine(runtime, "MapStationResolver.cs")))
             .Select(match => match.Groups[1].Value)
             .Where(value => value != "FIXED_STATION_BINDING_INVALID"));
+        // StationResolutionCriterion returns whatever the plan builder refuses a route with, through a variable
+        // this scan cannot follow, so the plan builder's own literals are read here (control-server#163).
+        // Its leg types and order purposes have a reason code's shape and are not one.
+        string[] legTypes = ["TO_PICKUP", "TO_DROPOFF", "TO_GATE"];
+        written.UnionWith(code.Matches(File.ReadAllText(Path.Combine(runtime, "JourneyPlanBuilder.cs")))
+            .Select(match => match.Groups[1].Value)
+            .Except(legTypes, StringComparer.Ordinal));
         written.UnionWith(Regex.Matches(
                 File.ReadAllText(Path.Combine(runtime, "JourneyRuntimeEngine.cs")),
                 "\"((?:FINAL|DEMAND)_[A-Z_]+)\"")
