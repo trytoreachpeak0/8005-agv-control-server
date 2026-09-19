@@ -1,5 +1,7 @@
 using ControlServer.Application;
+using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace ControlServer.Tests;
 
@@ -42,5 +44,43 @@ internal static class JourneyMembershipSeed
             Status = JourneyDemandStatuses.PendingLoad,
             AddedAt = journey.CreatedAt
         };
+    }
+
+    /// <summary>
+    /// Makes <paramref name="journey"/> a two-demand journey: a further accepted demand, a copy of the anchor's with its own
+    /// id, business key and sublot, in <paramref name="status"/>, and its membership. Saved.
+    /// </summary>
+    internal static async Task<AcceptedDemandRow> AddFurtherDemandAsync(
+        ControlServerDbContext context,
+        JourneyRuntimeRow journey,
+        string demandId,
+        DemandExecutionStatus status = DemandExecutionStatus.Accepted)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        AcceptedDemandRow anchor = await context.AcceptedDemands.AsNoTracking()
+            .SingleAsync(row => row.DemandId == journey.DemandId, cancellationToken);
+        AcceptedDemandRow further = new()
+        {
+            DemandId = demandId,
+            SeriesId = $"SERIES-{demandId}",
+            TransportDemandKey = $"SUBLOT-{demandId}|{anchor.WorkType}",
+            WorkType = anchor.WorkType,
+            Sublot = $"SUBLOT-{demandId}",
+            Generation = anchor.Generation,
+            DemandRevision = anchor.DemandRevision,
+            HistoryEpoch = anchor.HistoryEpoch,
+            CatalogRevision = anchor.CatalogRevision,
+            CreatedAt = anchor.CreatedAt,
+            ValueObservedAt = anchor.ValueObservedAt,
+            ValuePollTraceId = $"TRACE-{demandId}",
+            ValueProjectionCommitId = $"COMMIT-{demandId}",
+            LiveMesFieldsJson = anchor.LiveMesFieldsJson,
+            AcceptedAt = anchor.AcceptedAt,
+            Status = status
+        };
+        context.AcceptedDemands.Add(further);
+        context.Set<JourneyDemandRow>().Add(Member(journey, demandId));
+        await context.SaveChangesAsync(cancellationToken);
+        return further;
     }
 }
