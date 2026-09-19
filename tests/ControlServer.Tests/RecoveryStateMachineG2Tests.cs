@@ -1422,6 +1422,10 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal("CANCELLED_BY_LOAD_COMPENSATION", runtime.BlockReasonCode);
             Assert.Equal(DemandExecutionStatus.Cancelled, (await context.AcceptedDemands.SingleAsync(token)).Status);
             Assert.NotNull((await context.VehicleDispatchLeases.SingleAsync(token)).ReleasedAt);
+            Dictionary<string, (string Reason, string? Outcome)> reasons = await ClosingReasonsAsync(context);
+            Assert.Equal(("RECOVERY_ACTION_RESULT_NOT_RECONCILED", "FAILED"),
+                reasons[StableGuid(RequestId, "exception-recovery-session")]);
+            Assert.Equal(("RECONCILED", "ALL_EMPTY"), reasons[nextSessionId]);
         }
         finally
         {
@@ -1507,18 +1511,10 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal("a0000000-0000-4000-8000-000000000021", compensation.ResultMessageId);
             Assert.Equal(firstClosedRevision, (await context.ExceptionRecoverySessions.AsNoTracking()
                 .SingleAsync(row => row.ExceptionRecoverySessionId == firstSessionId, token)).Revision);
-            // The derivation itself, the way an operator's query would read it.
-            ExceptionRecoverySessionRow[] closedSessions = await context.ExceptionRecoverySessions.AsNoTracking()
-                .Where(row => row.State == "CLOSED").ToArrayAsync(token);
-            RecoveryWorkflowRow[] workflows = await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token);
-            Dictionary<string, string?> closedUnreconciled = closedSessions.ToDictionary(
-                session => session.ExceptionRecoverySessionId,
-                session => workflows.Single(workflow =>
-                    workflow.ExceptionRecoverySessionId == session.ExceptionRecoverySessionId &&
-                    workflow.State == RecoveryWorkflowState.RecoveryRequired).Outcome);
-            Assert.Equal(2, closedUnreconciled.Count);
-            Assert.Equal(outcome, closedUnreconciled[firstSessionId]);
-            Assert.Equal("FAILED", closedUnreconciled[nextSessionId]);
+            Dictionary<string, (string Reason, string? Outcome)> reasons = await ClosingReasonsAsync(context);
+            Assert.Equal(2, reasons.Count);
+            Assert.Equal(("RECOVERY_ACTION_RESULT_NOT_RECONCILED", outcome), reasons[firstSessionId]);
+            Assert.Equal(("RECOVERY_ACTION_RESULT_NOT_RECONCILED", "FAILED"), reasons[nextSessionId]);
         }
         finally
         {
@@ -1769,6 +1765,10 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal(firstResume.Outcome, firstAfter.Outcome);
             Assert.Equal(firstResume.UpdatedAt, firstAfter.UpdatedAt);
             Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.SingleAsync(token)).Status);
+            Dictionary<string, (string Reason, string? Outcome)> reasons = await ClosingReasonsAsync(context);
+            Assert.Equal("RECOVERY_ACTION_RESULT_NOT_RECONCILED",
+                reasons[StableGuid(RequestId, "exception-recovery-session")].Reason);
+            Assert.Equal("RECONCILED", reasons[nextSessionId].Reason);
         }
         finally
         {
@@ -2952,6 +2952,38 @@ public sealed class RecoveryStateMachineG2Tests
             default:
                 throw new ArgumentOutOfRangeException(nameof(messageType), messageType, null);
         }
+    }
+
+    /// <summary>
+    /// Why each CLOSED session closed, read from the store the way control-server#169 leaves it -- there is no
+    /// column for it. The closing result is the first one judged for the session: of its workflows that a result
+    /// has settled (Reconciled or RecoveryRequired; HistoricalOnly never touches a session), the one judged
+    /// earliest by the server's clock (<c>UpdatedAt</c>, written when the result was judged and never after).
+    /// RecoveryRequired reads as RECOVERY_ACTION_RESULT_NOT_RECONCILED. The outcome is the recovery result's
+    /// own; a resume's is null, and its account is the OperationResults row for the attempt.
+    /// </summary>
+    private static async Task<Dictionary<string, (string Reason, string? Outcome)>> ClosingReasonsAsync(
+        ControlServerDbContext context)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        ExceptionRecoverySessionRow[] closed = await context.ExceptionRecoverySessions.AsNoTracking()
+            .Where(row => row.State == "CLOSED").ToArrayAsync(token);
+        RecoveryWorkflowRow[] workflows = await context.RecoveryWorkflows.AsNoTracking()
+            .Where(row => row.State == RecoveryWorkflowState.Reconciled ||
+                          row.State == RecoveryWorkflowState.RecoveryRequired)
+            .ToArrayAsync(token);
+        return closed.ToDictionary(
+            session => session.ExceptionRecoverySessionId,
+            session =>
+            {
+                RecoveryWorkflowRow closing = workflows
+                    .Where(row => row.ExceptionRecoverySessionId == session.ExceptionRecoverySessionId)
+                    .OrderBy(row => row.UpdatedAt)
+                    .First();
+                return (closing.State == RecoveryWorkflowState.Reconciled
+                    ? "RECONCILED"
+                    : "RECOVERY_ACTION_RESULT_NOT_RECONCILED", closing.Outcome);
+            });
     }
 
     /// <summary>
