@@ -1603,6 +1603,83 @@ public sealed class RecoveryStateMachineG2Tests
         }
     }
 
+    /// <summary>
+    /// control-server#169, review of PR #173. Once a resume that did not reconcile has closed its session, the
+    /// operation still needs recovery, so the next session offers RESUME_AFTER_REPAIR again and a second resume
+    /// names the same attempt. The replacement result that follows belongs to the resume still waiting for it
+    /// only: the first one was judged, its session closed on it, and it is not judged a second time -- which is
+    /// also what keeps the first session's reason readable.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-00")]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-RESUME")]
+    public async Task ASecondResumeAfterOneThatDidNotReconcileIsJudgedOnItsOwnAndClosesItsOwnSession()
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_SECOND_RESUME";
+        const string proof = "second-resume-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState(deferOutbound: true);
+            await AuthorizeResumeAfterFailedResultAsync(processor, context, state, proof);
+            await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001720",
+                    "OperationResult",
+                    OperationResultPayload(completed: false, journalCheckpoint: "RESUME_RESULT_UNKNOWN_RECORDED")),
+                state,
+                token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+            RecoveryWorkflowRow firstResume = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, firstResume.State);
+
+            const string nextRequestId = "41000000-0000-4000-8000-000000000169";
+            const string secondResumeId = "51000000-0000-4000-8000-000000000172";
+            string nextSessionId = StableGuid(nextRequestId, "exception-recovery-session");
+            Assert.Equal("ExceptionRecoverySessionOpened",
+                MessageType(await processor.ProcessAsync(NextSessionRequest(proof), state, token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+            JsonNode resume = JsonNode.Parse(RecoveryAction(
+                "RESUME_AFTER_REPAIR", messageId: "e0000000-0000-4000-8000-000000001721", actionId: secondResumeId))!;
+            resume["payload"]!["exceptionRecoverySessionId"] = nextSessionId;
+            Assert.Equal("RecoveryActionAccepted",
+                MessageType(await processor.ProcessAsync(resume.ToJsonString(), state, token)));
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            string ack = await processor.ProcessAsync(
+                Envelope(
+                    "e0000000-0000-4000-8000-000000001722",
+                    "OperationResult",
+                    OperationResultPayload(journalCheckpoint: "SECOND_RESUME_RESULT_RECORDED")),
+                state,
+                token);
+            await processor.FlushDeferredOutboundAsync(state, token);
+
+            Assert.Equal("DurableAck", MessageType(ack));
+            Assert.Equal(RecoveryWorkflowState.Reconciled, (await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == secondResumeId, token)).State);
+            Assert.Equal("CLOSED", (await context.ExceptionRecoverySessions.AsNoTracking()
+                .SingleAsync(row => row.ExceptionRecoverySessionId == nextSessionId, token)).State);
+            RecoveryWorkflowRow firstAfter = await context.RecoveryWorkflows.AsNoTracking()
+                .SingleAsync(row => row.WorkflowId == ActionId, token);
+            Assert.Equal(RecoveryWorkflowState.RecoveryRequired, firstAfter.State);
+            Assert.Equal(firstResume.Outcome, firstAfter.Outcome);
+            Assert.Equal(firstResume.UpdatedAt, firstAfter.UpdatedAt);
+            Assert.Equal(StationOperationStatus.Committed, (await context.StationOperations.SingleAsync(token)).Status);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-02")]
     [Trait("IntegrationSlice", "FP-IS-05")]
