@@ -260,7 +260,9 @@ public sealed class ReversedDirectionJourneyRuntimeTests
     /// the machine stopped admitting STAGING_TO_WIRE has the goods on board and was held there silently for ever. Past
     /// the threshold -- ten minutes by default -- it is blocked under its own code, shows on the dashboard's blocked
     /// journeys, and is Blocked, which is the stage an administrator opens a recovery session on. The count is from the
-    /// first round that held it, and a later round neither restarts it nor escalates it twice.
+    /// first round that held it, and a later round neither restarts it nor escalates it twice. The block keeps the start
+    /// time of the first hold: the dashboard's own ladder (shift leader at 10 minutes, maintenance at 30) is measured from
+    /// it, and restarting it at the escalation would send the card back to its lowest tier.
     /// </summary>
     [Fact]
     [Trait("IntegrationSlice", "FP-IS-11")]
@@ -284,18 +286,18 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
 
-        DateTimeOffset escalatedAt = fixture.Clock.GetUtcNow();
         Assert.Equal(
-            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)escalatedAt),
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
             await StateAsync(fixture));
         using JsonDocument dashboard = JsonDocument.Parse(JsonSerializer.Serialize(
             await new BlockedJourneysQueryEndpoint(BlockedJourneyEscalationOptions.Default, fixture.Clock)
                 .ReadAsync(fixture.Context, Token)));
         JsonElement card = Assert.Single(dashboard.RootElement.GetProperty("journeys").EnumerateArray());
         Assert.Equal(
-            (ReverseDemand, "Blocked", "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", "N1-1"),
+            (ReverseDemand, "Blocked", "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", "N1-1", 600L, "ShiftLeader"),
             (card.GetProperty("demandId").GetString(), card.GetProperty("stage").GetString(),
-                card.GetProperty("blockReasonCode").GetString(), card.GetProperty("stationId").GetString()));
+                card.GetProperty("blockReasonCode").GetString(), card.GetProperty("stationId").GetString(),
+                card.GetProperty("blockedSeconds").GetInt64(), card.GetProperty("escalationLevel").GetString()));
         Assert.False(await fixture.Context.StationOperations.AnyAsync(
             row => row.OperationType == SlotOperationType.Unload, Token));
 
@@ -306,7 +308,7 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         fixture.Context.ChangeTracker.Clear();
         await fixture.Engine.ExecuteOnceAsync(Token);
         Assert.Equal(
-            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)escalatedAt),
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
             await StateAsync(fixture));
     }
 
