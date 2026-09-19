@@ -76,9 +76,9 @@ resume 是设计不是缺陷。
 在 `docs/defects/20260904-recovery-required-never-reaches-session-state.md`。红证据：
 `evidence/l2/20260904-real-onboard-resume-after-repair-f0465d9-001`（改名前的最后一次运行）。
 
-## CI 只跑合成场景
+## CI：合成场景每次跑，真装置按需跑
 
-`.github/workflows/l2.yml`，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。证据当作 artifact 传上去
+`.github/workflows/l2.yml` 有两个作业。合成场景在 `scenarios` 作业里，跑在本仓自己的 `headless` runner 上，每次 push 与 PR。真装置场景在 `real-rig` 作业里，只能手动触发，见本节末尾「真装置（`rig=real`）」。证据当作 artifact 传上去
 （失败时也传——失败那次的证据才是唯一说明原因的东西）。
 
 **PR 上默认每个场景跑一遍，三连按需手动跑**（2026-09-17 起）。清单里每行的 `Runs` 是这个场景的**三连次数**，
@@ -177,19 +177,51 @@ pwsh -NoProfile -File .\scripts\l2\Test-L2Lanes.ps1
 - 转正式之后再推送照常每次都跑（`synchronize`），PR 头已换的旧运行照样自己跳过。已经不是草稿的 PR 不受这套流程影响。
 - `workflow_dispatch` 的 `consecutive`、`consecutive-all` 不变，不读 PR 正文。
 
-**真装置那三条刻意不进 CI，两个各自独立的原因：**
-
-1. 它们要交互式桌面会话（会弹两个 WPF 窗口），session 0 的服务模式 runner 根本跑不了。
-2. 改挂到交互式的 `golden-renderer` runner 也不行——那会破坏桌面独占。GitHub 的 `concurrency`
-   只在单个仓库内生效，所以这里的作业没办法和 `8005-mes-ingest` 的桌面测试在同一台机器上排队，
-   而那台机器同时是黄金渲染机。**跨仓库桌面互斥目前没有解**，见工作区根 `CLAUDE.md`。
-
 合成场景不需要对方两个只读仓：`Get-L2PeerPublish` 只在场景 setup 写了 `Onboard = 'Real'` 时才调用。
 所以这条流水线不受对方进度影响。
 
 **新写的合成场景记得加进 `l2.yml` 的清单**——那是一份手写数组，不是扫目录得来的。扫目录会把真装置
-那几条也一起领进来，而它们在服务 runner 上跑不了。加一行即可：`@{ Name = '<名字>'; Runs = 1 }`，要三连就写
+那几条也一起领进来，而它们在服务 runner 上跑不了（真装置有自己的清单，在 `real-rig` 作业里）。加一行即可：`@{ Name = '<名字>'; Runs = 1 }`，要三连就写
 `Runs = 3`（PR 上仍只跑一遍）。`DefaultRuns = 3` 只给 CI 上真红过的竞态用，不要顺手加。
+
+
+### 真装置（`rig=real`，2026-09-19 起）
+
+真装置场景（场景 setup 写 `Onboard = 'Real'`：真的车载端 WPF 加真的槽位模拟器）以前只在控制端笔记本的桌面上跑，
+要在调度那里排「真装置时段」。2026-09-19 用户批准把批次出口的三连、顶端兜底、车载端界面改动的回归搬到 CI
+（工作区 `ci-research/real-rig-bottleneck.md` 方案 b）。**边看边改的复现调试仍在本机跑**：CI 往返一趟又看不到窗口，那种活更慢。
+
+```powershell
+gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<车载端提交> -f simulator_ref=<模拟器提交>
+gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simulator_ref=<...> -f mode=consecutive -f scenarios=a,b
+```
+
+- **跑在哪里。** vm01（win11-01）上的交互式 runner `win11-01-control-server-desktop`，唯一带 `cs-desktop` 标签的那个，
+  在自动登录的 session 1 里由登录触发的计划任务拉起；服务模式的两个 runner 在 session 0，没有桌面，起不了 WPF 窗口。
+  安装脚本是工作区的 `remote-ops/factory-server/scripts/18-install-control-server-desktop-runner.ps1`。
+- **为什么放进 `l2.yml` 而不是新文件。** `workflow_dispatch` 只认默认分支（`main`）上存在的 workflow 文件，而 v2
+  这条线不合入 `main`，新文件根本触发不了。放在这里还顺带与合成作业共用同一个 `concurrency` 分组（按 ref）。
+- **对端。** 车载端和模拟器按输入的提交（或分支）各自 checkout 到 `peers/` 下的独立子目录，服务端在 `control-server/`，
+  三者都不在 `$GITHUB_WORKSPACE` 根上；显式传 `-OnboardRepository`／`-SimulatorRepository`。对端发布按提交缓存在
+  vm01 `agvops` 的 `%LOCALAPPDATA%\8005-l2-peers`，同一对提交第二次起不再构建。
+- **清单与遍数。** `real-rig` 作业里有自己的手写清单，`Runs` 的含义与合成清单相同（三连次数）；模式 `default` 每个一遍、
+  `consecutive` 按 `Runs`、`consecutive-all` 至少三遍。`real-onboard-recovery-entry-missing` 不在清单里：它按设计是红的。
+- **桌面。** 这个桌面同时是黄金渲染机，也跑 `8005-mes-ingest` 的桌面测试。跨仓库互斥靠机器级互斥体
+  `Global\W2G-InteractiveDesktop`：本仓每个真装置场景拿一次、排队最多 30 分钟；mes-ingest 那边同日改成排队
+  （`8005-mes-ingest#8`）。撞上夜里的黄金渲染 verify（北京时间 03:00 触发，实际多在 05:30 前后开跑）只是多等，
+  不会变红，但长的连跑别挑那个时段。作业收尾检查本轮目录里起的残留进程和新出现的崩溃对话框，有就关掉并判红。
+- **端口。** 槽位 0，与本机真装置一样；合成作业用 1～4，两边互不排队。
+- **内存。** 看整机已提交内存，不看进程树。每个场景开跑前若整机已提交超过 12 GiB 就等（最多 30 分钟），整轮每 2 秒
+  采样一次，写进证据的 `commit-samples.csv`，作业摘要给出最低与峰值。实测见下表。
+- **不取消、超时给足。** 作业超时 300 分钟；手动取消与超时取消都可能卡死 runner 会话。
+- **证据。** artifact `real-rig-evidence`：每一遍一个目录加同名 `.log`、`commits.json`（三端提交）、`SUMMARY.md`、
+  `commit-samples.csv`。
+
+实测（vm01 提交上限 16 GiB，空闲时整机已提交约 3.45 GiB）：
+
+| run | 内容 | 结果 | 整机已提交 |
+| --- | --- | --- | --- |
+| `35449244079` | `real-onboard-compensate-then-reconnect`、`real-onboard-expected-action-overdue` 各一遍 | 2/2 PASS（64／88 秒） | 峰值 8.08 GiB；其中两个场景本身约 1.7 GiB，其余是构建留下的 MSBuild 节点与 VBCSCompiler，此后作业关掉了构建服务器 |
 
 ## 两套装置
 

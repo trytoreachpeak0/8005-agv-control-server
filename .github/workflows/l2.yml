@@ -572,11 +572,13 @@ jobs:
 
           $ceiling = [double]$env:RIG_COMMIT_START_CEILING_GIB
           $records = [Collections.Generic.List[object]]::new()
+          $commitGuardTripped = $false
           foreach ($item in $runList) {
+              if ($commitGuardTripped) { break }
               for ($run = 1; $run -le $item.Runs; $run++) {
                   $label = '{0}-{1:D2}' -f $item.Name, $run
 
-                  # The commit guard. Waits rather than fails: whatever holds the memory (the synthetic job's
+                  # The commit guard. Waits first: whatever holds the memory (the synthetic job's
                   # four lanes, test.yml, the onboard HMI's CI) finishes in minutes.
                   $waitClock = [Diagnostics.Stopwatch]::StartNew()
                   $commit = Get-CommitGiB
@@ -585,8 +587,17 @@ jobs:
                       Start-Sleep -Seconds 30
                       $commit = Get-CommitGiB
                   }
+                  # Still above after the whole wait: stop the round with a verdict of its own. Starting
+                  # anyway risks an allocation failure that reads as a product defect, and letting the
+                  # job timeout end it would cancel the job, which can wedge the runner.
                   if ($commit.Committed -gt $ceiling) {
-                      Write-Host "::warning title=Commit guard::$label starts at $($commit.Committed) GiB after waiting $env:RIG_COMMIT_WAIT_MINUTES minutes"
+                      Write-Host "::error title=Commit guard::$label not started: $($commit.Committed)/$($commit.Limit) GiB committed after waiting $env:RIG_COMMIT_WAIT_MINUTES minutes (ceiling $ceiling)"
+                      $records.Add([pscustomobject]@{
+                          Label = $label; Scenario = $item.Name; Run = $run; Runs = $item.Runs
+                          ExitCode = 'NOT_STARTED_COMMIT_GUARD'; Seconds = 0; CommittedAtStartGiB = $commit.Committed
+                      })
+                      $commitGuardTripped = $true
+                      break
                   }
 
                   $runRoot = Join-Path $evidenceRoot $label
@@ -657,6 +668,7 @@ jobs:
           $summary | Set-Content -LiteralPath (Join-Path $evidenceRoot 'SUMMARY.md') -Encoding utf8NoBOM
           $summary | ForEach-Object { Write-Host $_ }
 
+          if ($commitGuardTripped) { throw "RIG_COMMIT_GUARD: the round stopped before $(($records | Select-Object -Last 1).Label); the machine stayed above $ceiling GiB committed for $env:RIG_COMMIT_WAIT_MINUTES minutes." }
           if ($failed.Count -gt 0) { throw "Real-onboard scenarios failed: $(($failed | ForEach-Object Label) -join ', ')" }
           if ($leftovers.Count -gt 0) { throw "The round left $($leftovers.Count) process(es) behind." }
 
