@@ -1,10 +1,15 @@
 name: test
 
-# Runs on the self-hosted runner on win11-01 (factory server Hyper-V guest).
-# This workspace does not use GitHub-hosted runners; see the workspace root
-# CLAUDE.md for why. The 'headless' label matters — win11-01 also hosts an
-# interactive runner for WPF suites, and a job that only asked for
-# [self-hosted, win11-01] could be taken by either.
+# Runs on win11-01 (factory server Hyper-V guest), on this repository's second
+# runner, win11-01-control-server-2. This workspace does not use GitHub-hosted
+# runners; see the workspace root CLAUDE.md for why.
+#
+# The labels split the work so that test and l2 run side by side and two l2 jobs
+# never do: only the second runner carries 'cs-test', and it does NOT carry
+# 'headless', which l2.yml and release.yml ask for. Two l2 jobs at once would
+# queue on the same four port slots (Global\W2G-L2PortBlock-slotN) and neither
+# would finish sooner. If the second runner is ever gone or wedged, switching the
+# runs-on line below back to [self-hosted, headless] restores the old setup.
 on:
   push:
     branches: [ControlServer_MVP, main]
@@ -17,8 +22,8 @@ on:
 # cancels the runner's broker long-poll; the backoff retries exhaust and the
 # session wedges without self-healing. Measured on 2026-09-03: 4 hours 14 minutes
 # of dead CI, recovered only when GitHub pushed a RunnerRefreshConfigMessage.
-# Each repository has exactly one runner, so a wedged session is that
-# repository's entire CI. A duplicate two-minute run is the cheaper outcome.
+# test has exactly one runner that may take it, so a wedged session stops every
+# test run in this repository. A duplicate two-minute run is the cheaper outcome.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -27,13 +32,17 @@ jobs:
   test:
     # Skipped, not cancelled: GitHub decides this before any runner is involved.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: [self-hosted, headless]
+    runs-on: [self-hosted, cs-test]
     timeout-minutes: 30
     env:
       # NuGet's vulnerability audit fetches its data from nuget.org during every restore, and with
       # TreatWarningsAsErrors a failed fetch (NU1900) is a red run that says nothing about the code:
       # runs 34807639494 and 35118544313. Off in CI only; release.yml keeps it.
       NuGetAudit: 'false'
+      # Two jobs of this repository now build on the same machine under the same account. Without
+      # this, one build may attach to MSBuild nodes the other left behind, and the runner's
+      # end-of-job cleanup could kill a node the other job is still using.
+      MSBUILDDISABLENODEREUSE: '1'
 
     steps:
       - uses: actions/checkout@v7
@@ -46,7 +55,12 @@ jobs:
       # Passed!, so no step here may match on English console text.
       - name: Test
         shell: pwsh
-        run: dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
+        # BelowNormal is inherited by every process this step starts (dotnet, MSBuild nodes, the
+        # test host), so while an l2 job runs next to it, the scenarios get the CPU first. l2 is on
+        # the critical path and has timing-sensitive scenarios; a slower test run costs nothing.
+        run: |
+          [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass = 'BelowNormal'
+          dotnet test tests/ControlServer.Tests/ControlServer.Tests.csproj -c Release --logger 'trx;LogFileName=test-results.trx'
 
       # continue-on-error, because the .trx is diagnostics, not a deliverable: the verdict is the
       # `dotnet test` exit code in the step above, already reached by the time this runs. A
