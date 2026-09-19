@@ -1,0 +1,22 @@
+2026-09-19T22:48:52.9832297+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+4d716340982de4e39339c2151c291efe1a21e1d1。
+2026-09-19T22:48:53.6306311+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T22:48:53.6565395+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T22:48:53.6577325+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T22:48:54.4681290+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-19T22:49:02.2213405+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=L2-CR-20260919T144841870Z。 
+2026-09-19T22:49:02.9958525+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=L2-CR-20260919T144841870Z。 
+2026-09-19T22:49:03.2731790+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-19T22:49:03.3667137+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-19T22:49:03.4942547+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-19T22:49:03.8175483+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=922b1f40-396a-0650-b44c-7da9c68c3410。
+2026-09-19T22:49:03.8421321+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-19T22:49:05.2188143+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+4d716340982de4e39339c2151c291efe1a21e1d1。
+2026-09-19T22:49:05.6300335+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T22:49:05.6405040+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T22:49:05.6430344+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T22:49:06.0594824+08:00	Warning	WireToGateBusinessService	上次仓位操作在执行中中断，未再输出开锁，按实时IO结算：attempt=922b1f40-396a-0650-b44c-7da9c68c3410，outcome=UNKNOWN，checkpoint=SAFE_FINISH_REACHED。
+2026-09-19T22:49:06.1162942+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
+2026-09-19T22:49:11.1272206+08:00	Warning	WireToGateSessionService	上层会话不可用：WIRE_TO_GATE会话尚未建立。。将在2秒后重连。
+2026-09-19T22:49:13.2705199+08:00	Information	WireToGateSessionService	上层会话已建立：generation=3，readiness=Ready。
+2026-09-19T22:49:20.3737968+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=3，expectedSublots=L2-CR-20260919T144841870Z-NEXT。 
+2026-09-19T22:49:20.8082913+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=3，expectedSublots=L2-CR-20260919T144841870Z-NEXT。 
