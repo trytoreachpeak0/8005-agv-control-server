@@ -429,6 +429,21 @@ function Get-G3RunnerClaim {
                     'manualChargingReturnRequiresVerifiedAdministrator',
                     'eligibilityReevaluatedAfterReturn',
                     'manualChargingReturnHasNoSideEffects')
+                # CV-TASK-TYPE-ADMISSION-FAIL-CLOSED (batch 6, control-server#164): under the factory preset
+                # STAGING_TO_WIRE has no binding, so its demand is never admitted while a WIRE_TO_GATE demand in
+                # the same rounds runs to completion. The onboard half is NEVER_INFER_UNBOUND_TASK_TYPE, read
+                # through UI Automation. DISPLAY_ADMISSION_BLOCK_REASON is deliberately unclaimed: specification
+                # 5.3 keeps the reason on the server and the dashboard, so no v2 producer exists (program#125).
+                'FP-IS-10' = @(
+                    'unboundTaskTypeDemandNeverAccepted',
+                    'unboundTaskTypeNeverPlannedListedOrOrdered',
+                    'missingBindingReasonKeptOnTheServer',
+                    'admissionReasonNeverSentToTheVehicle',
+                    'boundTaskTypeAdmittedAndCompletedAlongside',
+                    'admissionSequenceMatchesVector',
+                    'onboardShowsNoTaskTypeBeforeAWorklistItem',
+                    'onboardShowsOnlyTheBoundTaskType',
+                    'admissionFinalStateNoDuplicateCommit')
             }
         }
     }

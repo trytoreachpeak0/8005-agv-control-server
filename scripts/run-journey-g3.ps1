@@ -186,6 +186,20 @@ $scenarioAssertions = [ordered]@{
         'G3-07-53' = 'eligibilityReevaluatedAfterReturn'
         'G3-07-54' = 'manualChargingReturnHasNoSideEffects'
     }
+    # Batch 6 (control-server#164): CV-TASK-TYPE-ADMISSION-FAIL-CLOSED under the factory preset, where
+    # STAGING_TO_WIRE is in no demand set and has no binding. DISPLAY_ADMISSION_BLOCK_REASON is not claimed:
+    # specification 5.3 keeps the reason on the server, so v2 has no producer for it (program#125).
+    'g3-task-type-admission-fail-closed' = [ordered]@{
+        'G3-10-01' = 'unboundTaskTypeDemandNeverAccepted'
+        'G3-10-02' = 'unboundTaskTypeNeverPlannedListedOrOrdered'
+        'G3-10-03' = 'missingBindingReasonKeptOnTheServer'
+        'G3-10-04' = 'admissionReasonNeverSentToTheVehicle'
+        'G3-10-05' = 'boundTaskTypeAdmittedAndCompletedAlongside'
+        'G3-10-06' = 'admissionSequenceMatchesVector'
+        'G3-10-07' = 'onboardShowsNoTaskTypeBeforeAWorklistItem'
+        'G3-10-08' = 'onboardShowsOnlyTheBoundTaskType'
+        'G3-10-09' = 'admissionFinalStateNoDuplicateCommit'
+    }
 }
 
 function Get-ScriptFunction {
