@@ -94,8 +94,9 @@ public static class TaskTypeHoldEndpoints
     public static void MapTaskTypeHolds(this WebApplication app)
     {
         ArgumentNullException.ThrowIfNull(app);
+        // No Accepts<TaskTypeHoldRequest>(): that metadata makes routing match on the content type and answer 415 before
+        // the handler runs -- before the source is judged and without an audit record (control-server#201).
         app.MapPost(Route, HandleAsync)
-            .Accepts<TaskTypeHoldRequest>("application/json")
             .WithName("HoldTaskTypeOnMap")
             .WithSummary("Hold one Map + TASK_TYPE at once on a person's word (REQ-0340, tightening only)")
             .Produces<TaskTypeHoldResponse>(StatusCodes.Status201Created)
