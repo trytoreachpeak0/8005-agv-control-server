@@ -134,6 +134,9 @@ function Write-RosOnboardRecoveryState([string]$When) {
 # --- 1. 装载以 UNKNOWN 结束 ---------------------------------------------------------------------------
 
 $load = Invoke-G3UnknownLoad $Context 'ROS'
+# 前置会重启一次车载端（control-server#128），Context.Onboard 换成了新进程的驱动；脚本开头取的那个指向已关掉的窗口，
+# 什么按钮都找不到，「申请恢复」因此永远等不到（control-server#222）。
+$onboard = $Context.Onboard
 $demandId = $load.DemandId
 $attemptId = $load.AttemptId
 $loadStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
