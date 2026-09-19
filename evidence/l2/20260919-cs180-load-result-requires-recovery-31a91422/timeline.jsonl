@@ -1,0 +1,54 @@
+{"at":"2026-09-19T05:14:22.4538421+00:00","note":"L2 run 20260919T051422327Z starting for scenario 'load-result-requires-recovery'."}
+{"at":"2026-09-19T05:14:46.2488584+00:00","note":"L2 port block lock acquired (slot 0, Global\\W2G-L2PortBlock)."}
+{"at":"2026-09-19T05:14:46.2548843+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T05:14:51.9279292+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T05:14:52.2363391+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T05:14:52.3618021+00:00","note":"Task type station preset: default (map 25, WIRE_TO_GATE -> 关卡/210)"}
+{"at":"2026-09-19T05:14:55.4335228+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T05:14:57.5781842+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T05:14:57.7587150+00:00","note":"Protocol release identity: protocol-v2.0.0 (profileId AGV_FULL_PRODUCT, protocolVersion 3, APPROVED_RELEASE)."}
+{"at":"2026-09-19T05:14:58.4719931+00:00","criterion":"onboard-readiness","value":"DISCONNECTED"}
+{"at":"2026-09-19T05:14:58.7578336+00:00","criterion":"onboard-readiness","value":"READY"}
+{"at":"2026-09-19T05:14:58.8379275+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T05:14:58.8943936+00:00","note":"FieldOps: seed-approved-facts --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T051422327Z\\controlserver.db"}
+{"at":"2026-09-19T05:15:00.8428880+00:00","criterion":"slot-model-preseed:seed-approved-facts","value":"OK","detail":{"output":{"command":"seed-approved-facts","outcome":"OK","modelKey":"8005-eight-slot","slotModelVersionId":"3d7986a5a27e4e0fb5dd2fe66963d2a0","version":1,"slotCount":8}}}
+{"at":"2026-09-19T05:15:00.8593381+00:00","note":"FieldOps: bind-io --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T051422327Z\\controlserver.db --agv AGV-L2-001"}
+{"at":"2026-09-19T05:15:03.1260712+00:00","criterion":"slot-model-preseed:bind-io:AGV-L2-001","value":"OK","detail":{"output":{"command":"bind-io","outcome":"OK","agvId":"AGV-L2-001","slotModelVersionId":"3d7986a5a27e4e0fb5dd2fe66963d2a0","boundSlots":8,"version":1}}}
+{"at":"2026-09-19T05:15:03.2327329+00:00","criterion":"slot-model-preseed:dispatch-zones","value":"0"}
+{"at":"2026-09-19T05:15:03.2367126+00:00","note":"FieldOps: import-area-assignments --database C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T051422327Z\\controlserver.db --input C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs180-8005-agv-control-server\\evidence\\l2\\20260919-cs180-load-result-requires-recovery-31a91422\\snapshots\\preseed-area-assignments.csv"}
+{"at":"2026-09-19T05:15:05.1812259+00:00","criterion":"slot-model-preseed:import-area-assignments","value":"OK","detail":{"output":{"command":"import-area-assignments","outcome":"OK","dryRun":false,"input":"C:\\Users\\szy\\Desktop\\8005-workspace-v2\\worktrees\\cs180-8005-agv-control-server\\evidence\\l2\\20260919-cs180-load-result-requires-recovery-31a91422\\snapshots\\preseed-area-assignments.csv","entryCount":3,"version":1,"contentSha256":"4291a509c2c0b75ea4bde0ac4dcde04b6e8632b54a21a67eee2772a6f8d0ff8e","snapshotId":"f68fb9bfdf0d4f8f8e8263e0a625b20f","importedAt":"2026-09-19T13:15:03.5001789+08:00","errorCount":0,"errors":[],"preview":[]}}}
+{"at":"2026-09-19T05:15:05.1911977+00:00","note":"Environment is up; entering scenario 'load-result-requires-recovery'."}
+{"at":"2026-09-19T05:15:05.2658737+00:00","note":"Publishing demand 37b4241bef7d4e8b89942958865f6ecf (sublot L2-SUBLOT-20260919T051422327Z)."}
+{"at":"2026-09-19T05:15:05.3198652+00:00","criterion":"journey-stage","value":"(null)"}
+{"at":"2026-09-19T05:15:06.1134642+00:00","criterion":"journey-stage","value":"AwaitingPickupArrival"}
+{"at":"2026-09-19T05:15:06.1258450+00:00","criterion":"to-pickup-intent","value":"(null)"}
+{"at":"2026-09-19T05:15:06.3924110+00:00","criterion":"to-pickup-intent","value":"@{UpperId=W2G-37b4241b-ef7d-4e8b-8994-2958865f6ecf-PICKUP-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-19T05:15:06.3978579+00:00","note":"Vehicle departs for the pickup station."}
+{"at":"2026-09-19T05:15:06.4484465+00:00","note":"Vehicle arrives at the pickup station and comes to rest."}
+{"at":"2026-09-19T05:15:06.4721066+00:00","criterion":"pending-operation","value":"(null)"}
+{"at":"2026-09-19T05:15:08.5755595+00:00","criterion":"pending-operation","value":"operation:f183b1cd-efe4-f453-90d4-a6f494f8734c"}
+{"at":"2026-09-19T05:15:08.5815755+00:00","criterion":"journey-stage","value":"AwaitingLoadResult"}
+{"at":"2026-09-19T05:15:08.5957988+00:00","note":"Operator timeout ran out on the peer; it reports an incomplete OperationResult (operation:f183b1cd-efe4-f453-90d4-a6f494f8734c)."}
+{"at":"2026-09-19T05:15:09.4015040+00:00","criterion":"journey-stage","value":"Blocked"}
+{"at":"2026-09-19T05:15:09.4969699+00:00","note":"The failed load left the unlock output unreset; the peer reports it."}
+{"at":"2026-09-19T05:15:09.5454624+00:00","criterion":"session-departure-safe","value":"1"}
+{"at":"2026-09-19T05:15:09.8145154+00:00","criterion":"session-departure-safe","value":"0"}
+{"at":"2026-09-19T05:15:09.8212859+00:00","criterion":"session-readiness","value":"RecoveryRequired / DEPARTURE_SAFETY_NOT_READY"}
+{"at":"2026-09-19T05:15:09.8488727+00:00","criterion":"runtime-iterations","value":"13"}
+{"at":"2026-09-19T05:15:10.3719735+00:00","criterion":"runtime-iterations","value":"14"}
+{"at":"2026-09-19T05:15:11.4277238+00:00","criterion":"runtime-iterations","value":"15"}
+{"at":"2026-09-19T05:15:12.4794015+00:00","criterion":"runtime-iterations","value":"16"}
+{"at":"2026-09-19T05:15:13.5472759+00:00","criterion":"runtime-iterations","value":"17"}
+{"at":"2026-09-19T05:15:13.6019565+00:00","note":"Vehicle is powered down for the repair, as it is on site."}
+{"at":"2026-09-19T05:15:13.6178609+00:00","note":"Stopping component 'fake-onboard'."}
+{"at":"2026-09-19T05:15:14.5855778+00:00","criterion":"runtime-iterations","value":"18"}
+{"at":"2026-09-19T05:15:15.3743571+00:00","criterion":"runtime-iterations","value":"19"}
+{"at":"2026-09-19T05:15:16.4253766+00:00","criterion":"runtime-iterations","value":"20"}
+{"at":"2026-09-19T05:15:17.4646373+00:00","criterion":"runtime-iterations","value":"21"}
+{"at":"2026-09-19T05:15:17.4664195+00:00","note":"Publishing a second demand ae8152c4cc794b389fe00f042b47569d (sublot L2-SUBLOT-NEXT-20260919T051422327Z) while the vehicle is blocked."}
+{"at":"2026-09-19T05:15:18.5297711+00:00","criterion":"runtime-iterations","value":"22"}
+{"at":"2026-09-19T05:15:19.5842051+00:00","criterion":"runtime-iterations","value":"23"}
+{"at":"2026-09-19T05:15:20.3746023+00:00","criterion":"runtime-iterations","value":"24"}
+{"at":"2026-09-19T05:15:21.4225825+00:00","criterion":"runtime-iterations","value":"25"}
+{"at":"2026-09-19T05:15:21.4261045+00:00","note":"Scenario finished at Blocked; the recovery exit needs a real-onboard scenario."}
+{"at":"2026-09-19T05:15:23.7416292+00:00","note":"L2 port block lock released."}

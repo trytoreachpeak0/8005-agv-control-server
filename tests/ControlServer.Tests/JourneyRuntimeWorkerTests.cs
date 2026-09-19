@@ -132,8 +132,8 @@ public sealed class JourneyRuntimeWorkerTests
         Assert.Equal("CONFIRMED", await fixture.IntentStatusAsync("TO_GATE"));
         Assert.Equal(1, fixture.Riot.CreateCount("TO_GATE"));
 
-        fixture.Riot.SetSuccessfulArrival("TO_GATE", fixture.Options.GateStationRiotId);
-        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = fixture.Options.GateStationRiotId };
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", TaskTypeStationRuntimeSeed.GateStationRiotId);
+        fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = TaskTypeStationRuntimeSeed.GateStationRiotId };
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
         runtime = await fixture.RuntimeAsync();
         Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, runtime.Stage);
