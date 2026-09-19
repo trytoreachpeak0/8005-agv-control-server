@@ -31,10 +31,16 @@ public sealed record TaskTypeStationStartupResult(
 /// </remarks>
 public static class TaskTypeStationStartup
 {
-    private static readonly Action<ILogger, string, Exception?> NoPreset = LoggerMessage.Define<string>(
+    private static readonly Action<ILogger, string, int, Exception?> NoPreset = LoggerMessage.Define<string, int>(
         LogLevel.Warning,
         new EventId(9300, "TaskTypeStationPresetAbsent"),
-        "No {Section} preset was found; no task type station rule or binding is loaded, so no task type is enabled.");
+        "No {Section} preset was found and Map {MapId} has no active binding set version, so no task type is enabled.");
+
+    private static readonly Action<ILogger, string, int, long, Exception?> NoPresetActiveKept =
+        LoggerMessage.Define<string, int, long>(
+            LogLevel.Warning,
+            new EventId(9303, "TaskTypeStationPresetAbsentActiveKept"),
+            "No {Section} preset was found; nothing is loaded, and Map {MapId} binding set version {ActiveVersion} stays active as it was.");
 
     private static readonly Action<ILogger, string, string, string, Exception?> Refused =
         LoggerMessage.Define<string, string, string>(
@@ -69,7 +75,18 @@ public static class TaskTypeStationStartup
             provider.GetRequiredService<IConfiguration>()[TaskTypeStationPreset.SettingsFileKey]);
         if (preset is null)
         {
-            NoPreset(logger, TaskTypeStationPreset.SectionName, null);
+            // The pointer is left alone (specification 21.2 item 4: a restart does not take away a version that is
+            // active), so what the log says is whichever of the two actually holds.
+            TaskTypeStationActivePointer? kept = await provider.GetRequiredService<ITaskTypeStationBindingStore>()
+                .ReadActivePointerAsync(runtime.MapId, cancellationToken);
+            if (kept?.ActiveVersion is long activeVersion)
+            {
+                NoPresetActiveKept(logger, TaskTypeStationPreset.SectionName, runtime.MapId, activeVersion, null);
+            }
+            else
+            {
+                NoPreset(logger, TaskTypeStationPreset.SectionName, runtime.MapId, null);
+            }
             return null;
         }
 

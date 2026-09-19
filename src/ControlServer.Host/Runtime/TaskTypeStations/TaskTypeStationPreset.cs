@@ -13,7 +13,8 @@ namespace ControlServer.Host.Runtime.TaskTypeStations;
 /// 给每次运行装它自己的一份；点名的文件不存在时拒绝启动，而不是悄悄当成没配。
 /// </para>
 /// <para>
-/// 文件里没有 <see cref="SectionName"/> 这一节时返回 <c>null</c>：不装载、不拒绝启动，此后由批次6-04 让所有任务类型都「未启用」。
+/// 文件里没有 <see cref="SectionName"/> 这一节时返回 <c>null</c>：不装载、不拒绝启动、不动生效指针。已有生效版本的图照旧用它
+/// （规格 21.2 第 4 条）；从没有生效版本的图，批次6-04 让它所有任务类型都「未启用」。
 /// 字段类型错（例如 <c>stationRiotId</c> 不是整数）时抛 <see cref="InvalidDataException"/> 并点名字段；内容是否合规由
 /// <see cref="TaskTypeStationConfigurationValidator"/> 判，这里只负责读出来。
 /// </para>

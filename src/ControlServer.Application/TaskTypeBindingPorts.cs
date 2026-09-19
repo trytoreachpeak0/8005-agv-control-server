@@ -227,7 +227,8 @@ public interface ITaskTypeStationBindingStore
 
     /// <summary>
     /// 写入该图的新版本。内容（需求集、绑定与所依赖的规则版本）与该图最新一版相同时不产生新版本；目录修订、来源与时间
-    /// 不算内容。不动生效指针。
+    /// 不算内容。不动生效指针。<paramref name="ruleVersion"/> 不存在时抛 <see cref="InvalidOperationException"/>。
+    /// 不做业务校验：写入前调用方须先过 <see cref="TaskTypeStationConfigurationValidator.ValidateStatic"/>。
     /// </summary>
     Task<TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion>> WriteVersionAsync(
         int mapId,
@@ -358,7 +359,8 @@ public interface IDemandTaskTypeStationFreeze
 {
     /// <summary>
     /// 冻结。同一需求再冻结同一对版本是幂等的，返回第一次冻结的记录；任一版本不同抛
-    /// <see cref="DemandTaskTypeStationFreezeConflictException"/>。版本不存在时抛 <see cref="InvalidOperationException"/>。
+    /// <see cref="DemandTaskTypeStationFreezeConflictException"/>。版本不存在、或绑定集不是基于这一版规则时抛
+    /// <see cref="InvalidOperationException"/>。
     /// </summary>
     Task<DemandTaskTypeStationFreeze> FreezeAsync(
         string demandId,

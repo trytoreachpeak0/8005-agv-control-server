@@ -231,6 +231,16 @@ public sealed class TaskTypeStationBindingStore(
             ? await _context.Database.BeginTransactionAsync(cancellationToken)
             : null;
 
+        // A binding set names the rule version it was validated against; one naming a version nobody can read back has no
+        // rules behind it. Checked inside the transaction, so it is the same database state the version lands in.
+        if (!await _context.Set<TaskTypeStationRuleVersionRow>()
+                .AnyAsync(row => row.Version == ruleVersion, cancellationToken))
+        {
+            throw new InvalidOperationException(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Task type rule version {ruleVersion} does not exist, so Map {mapId} cannot have a binding set version built on it."));
+        }
+
         TaskTypeStationBindingSetVersionRow? latest = await _context.Set<TaskTypeStationBindingSetVersionRow>()
             .AsNoTracking()
             .Where(row => row.MapId == mapId)
@@ -563,6 +573,14 @@ public sealed class DemandTaskTypeStationFreezeStore(ControlServerDbContext cont
             ?? throw new InvalidOperationException(string.Create(
                 CultureInfo.InvariantCulture,
                 $"Map {mapId} has no binding set version {bindingSetVersion}, so demand {demandId} cannot freeze it."));
+        if (bindings.RuleVersion != rules.Version)
+        {
+            // The pair must be one that held together: a binding set is validated against exactly one rule version, and a
+            // demand frozen against another would replay under rules its bindings were never checked with (REQ-0344).
+            throw new InvalidOperationException(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Map {mapId} binding set version {bindingSetVersion} was built on rule version {bindings.RuleVersion}, not rule version {ruleVersion}; demand {demandId} cannot freeze the two together."));
+        }
 
         ConfigurationConsumerBindingRow ruleRow = new()
         {
