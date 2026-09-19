@@ -137,8 +137,8 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 2. 批次 6 期间车载端恢复与会话路径改过多次（onboard-hmi#115、#119、#120、#124，以及待合入的 #123、#127），规格 21.2 节第 7 条要求
    改视图模型或恢复入口的改动在真装置上跑恢复场景。
 
-计划清单〔申请时段时定稿〕：`real-onboard-expected-action-overdue` × 3；批次 5 出口的七条（control-server#86 三条、#88 四条）各 × 1 作回归；
-`real-onboard-durable-ack-lost`（含 control-server#196 新加的 `L2-DA-09`）× 3；onboard-hmi#127 若新增真装置场景，一并 × 3。
+计划清单（调度 2026-09-19 认可）：`real-onboard-expected-action-overdue` × 3；`real-onboard-durable-ack-lost`（含 control-server#196 新加的 `L2-DA-09`）× 3；`real-onboard-inflight-load-reconnect` × 1；批次 5 出口的其余六条（control-server#86 三条、#88 除 `durable-ack-lost` 外三条）各 × 1 作回归。
+`real-onboard-inflight-load-reconnect` 是 control-server#189 第二步（onboard-hmi#127）唯一的真装置证明，**不是 `scripts/l2/scenarios/` 里的正式场景**：它是 onboard-hmi PR #131 的一次性副本（车载端仓 `evidence/hmi-127/green/rig-inflight-load-reconnect-d21b3e8-001/scenario/`），出口按那份副本在最终顶端上跑一次，副本随证据入库；转成正式场景留给后续。
 真装置只实测一个管理员恢复入口（「补偿清空」），其余三个入口由 G2 覆盖（onboard-hmi#126 审查，调度要求写明）。
 
 ## 三、门禁
