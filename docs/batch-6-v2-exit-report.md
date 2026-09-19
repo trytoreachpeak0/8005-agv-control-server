@@ -260,7 +260,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 | program#125 | `DISPLAY_ADMISSION_BLOCK_REASON` 契约措辞（随 `protocol-v3.0.0`，program#115） | open |
 | onboard-hmi#61 | 清单项数与腿数两处收窄 | open，批次 7 |
 
-审查里提出、**还没有开成票**的（交调度决定开不开、挂哪一批）：
+审查里提出、当时还没有开成票的。调度 2026-09-19 决定全部开票、挂批次 7，由分票会话按模块合并开；票号〔待填〕：
 
 - control-server#159：迁移 `Down()` 没有「迁下去再迁回」的测试。
 - control-server#160（PR #188 审查 ①～④）：目录码守卫只探得到已知五种形状；计划 `StationCatalogRevision` 为空时静默跳过落点冻结；
