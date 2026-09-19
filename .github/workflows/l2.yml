@@ -195,6 +195,12 @@ jobs:
               # three runs.
               @{ Name = 'area-assignment-version-freeze';    Runs = 3; BatchId = 'batch-4' }
               @{ Name = 'mixed-side-station-two-trips';      Runs = 3; BatchId = 'batch-4' }
+              # Batch 6 (program#123). Each ticket adds its own scenario here from its own pull request, sorted by
+              # name, so a batch-6 regression is caught before the next one merges; the batch-6 exit
+              # (control-server#165) makes every line three runs.
+              # control-server#159, specification 8.3 batch-6 mechanism criterion 4: one station bound to two task
+              # types refuses start.
+              @{ Name = 'task-type-binding-station-reused-refuses-start'; Runs = 1; BatchId = 'batch-6' }
           )
           # One run's usual length in seconds, for dealing scenarios out to lanes longest first. Medians of 31
           # CI jobs from 2026-09-17 (ci-research, control-server#130); normal-load's excludes the build it used

@@ -63,6 +63,9 @@ internal static class PublishedVersionImmutabilityGuard
         SlotModelSlotRow => IsSlotOfPublishedModel(entry),
         // 分区归属表没有草稿态：一个版本写入的那一刻就已发布，回滚是把旧内容再导入成新版本（REQ-0350）。
         DispatchZoneAreaAssignmentVersionRow or DispatchZoneAreaAssignmentRow => true,
+        // 任务类型规则与按图绑定集同样没有草稿态（REQ-0337、REQ-0343），版本行与其子行写入即发布；换内容是写一个新版本。
+        TaskTypeStationRuleVersionRow or TaskTypeStationRuleRow
+            or TaskTypeStationBindingSetVersionRow or TaskTypeStationBindingRow or TaskTypeStationRequirementRow => true,
         _ => false,
     };
 

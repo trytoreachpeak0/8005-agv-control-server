@@ -45,7 +45,10 @@ public sealed class Batch3MigrationDisciplineTests
         "20260915135043_Batch4AreaAssignmentAndStructuralDispatchBlock",
         // 批次 5 唯一建表票 control-server#80：JourneyRuntimes 加 BlockReasonSince，阻断码从何时起挂上。
         // 在 #66 合入之后的 fp/v2-impl 上生成，排在它后面。批次 5 自己的断言在 Batch5MigrationDisciplineTests。
-        "20260917015519_Batch5JourneyBlockReasonSince"
+        "20260917015519_Batch5JourneyBlockReasonSince",
+        // 批次 6 唯一建表票 control-server#159：任务类型规则、按图绑定集、暂停、目录变化记录，只建新表。
+        // 在 #80 合入之后的 fp/v2-impl 上生成，排在它后面。批次 6 自己的断言在 Batch6MigrationDisciplineTests。
+        "20260919021150_Batch6TaskTypeStationBindings"
     ];
 
     private static readonly string[] Batch3Tables =
