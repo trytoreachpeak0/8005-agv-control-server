@@ -327,8 +327,10 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
   服务端无关。今天读回的是 `protocol-v1.0.0` 候选的九个字段加 `approvalStatus`（`SUPERSEDING_CANDIDATE`）。
 - `batchId` —— `Invoke-L2Scenario.ps1` 的 `-BatchId` 参数，不传时记 `unspecified`（明确的「未指定」，
   control-server#201 起；此前默认 `batch-2`，所以更早的本机证据里的 `batch-2` 不可信）。批次是计划，
-  仓库里推不出来，所以它是参数而不是常量；CI 显式传，换批次改一个实参，`l2.yml` 清单里没写
-  `BatchId` 的行同样记 `unspecified`。`run-journey-g3.ps1` 也收 `-BatchId` 并原样往下传。
+  仓库里推不出来，所以它是参数而不是常量；CI 显式传，换批次改一个实参。`l2.yml` 的合成场景清单
+  没写 `BatchId` 的行仍由 workflow 自己补 `batch-2` 显式传入；记 `unspecified` 的是本机运行、
+  `L2Lanes.psm1` 收到没带 `BatchId` 的清单项，以及 `rig=real` 没给 `batch_id` 的真装置作业。
+  `run-journey-g3.ps1` 也收 `-BatchId` 并原样往下传。
 
 时间线的形状抄自 `remote-ops/status/Get-WireToGateStatus.ps1`——2026-09-03 定位缺陷时，就是靠
 它把「12:56:49 STOPPED → 12:57:15 UNKNOWN」精确卡到秒。
