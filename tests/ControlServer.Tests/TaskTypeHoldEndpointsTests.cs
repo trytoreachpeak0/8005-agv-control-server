@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using ControlServer.Application;
 using ControlServer.Domain;
@@ -39,6 +40,42 @@ public sealed class TaskTypeHoldEndpointsTests
         Assert.Equal(StatusCodes.Status403Forbidden, StatusOf(listeningOnThePlantInterface));
         Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
     }
+
+    [Fact]
+    public async Task ARequestFromAnotherMachineOnAConnectionWithNoLocalAddressIsForbidden()
+    {
+        // control-server#201 (#162 re-review): with no local address, only loopback is this machine. The helper used to
+        // fill in loopback for a missing local address, so this case was never exercised.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+
+        IResult result = await Post(
+            fixture, ValidRequest() with { ClaimedRole = "厂长" }, IPAddress.Parse("172.19.205.30"), noLocalAddress: true);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(StatusCodes.Status403Forbidden, StatusOf(result));
+        Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+        Assert.Null(audit.ClaimedAdministratorRole);
+        using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
+        Assert.Equal("172.19.205.30", detail.RootElement.GetProperty("remoteAddress").GetString());
+        Assert.Equal(JsonValueKind.Null, detail.RootElement.GetProperty("localAddress").ValueKind);
+        Assert.Equal("FORBIDDEN_NOT_LOCAL", detail.RootElement.GetProperty("result").GetString());
+        Assert.False(detail.RootElement.TryGetProperty("reason", out _));
+        Assert.False(detail.RootElement.TryGetProperty("claimedRole", out _));
+    }
+
+    [Theory]
+    [InlineData("127.0.0.1", true)]
+    [InlineData("::1", true)]
+    [InlineData("::ffff:127.0.0.1", true)]
+    [InlineData("172.19.205.30", false)]
+    [InlineData("::ffff:172.19.205.30", false)]
+    public void WithNoLocalAddressOnlyLoopbackIsThisMachine(string remote, bool expected) =>
+        Assert.Equal(expected, TaskTypeHoldEndpoints.IsFromThisMachine(IPAddress.Parse(remote), local: null));
 
     [Theory]
     [InlineData("172.19.205.222", "172.19.205.222")]
@@ -291,6 +328,92 @@ public sealed class TaskTypeHoldEndpointsTests
         Assert.Single(await fixture.Holds.ListUnreleasedAsync(25, Token));
     }
 
+    /// <summary>
+    /// control-server#201 (#162 re-review): the source is judged before the body is read. Through the real pipeline,
+    /// because only the framework shows whether binding ran first: a body the framework cannot bind used to answer 400
+    /// before the handler ever saw where the request came from.
+    /// </summary>
+    [Theory]
+    [InlineData("malformed")]
+    [InlineData("oversized")]
+    public async Task ARequestFromAnotherMachineIsRefusedBeforeItsBodyIsReadAndAuditedByAddressAlone(string body)
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        await using PipelineHost host = await PipelineHost.StartAsync(fixture, IPAddress.Parse("172.19.205.30"));
+
+        using HttpResponseMessage response = await host.PostAsync(body switch
+        {
+            "malformed" => "{\"mapId\": 25, \"taskType\": ",
+            _ => JsonSerializer.Serialize(ValidRequest() with { Reason = new string('x', 256 * 1024) })
+        });
+        await host.StopAsync();
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(0, host.BodyBytesRead);
+        Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+        Assert.Equal(TaskTypeHoldEndpoints.UnknownMapObjectId, audit.ObjectId);
+        using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
+        Assert.Equal(
+            ["localAddress", "remoteAddress", "result"],
+            detail.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+        Assert.Equal("172.19.205.30", detail.RootElement.GetProperty("remoteAddress").GetString());
+        Assert.Equal("FORBIDDEN_NOT_LOCAL", detail.RootElement.GetProperty("result").GetString());
+    }
+
+    [Fact]
+    public async Task AnOversizedBodyFromThisMachineIsRefusedInTheExisting422ShapeWithoutBeingReadWhole()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        await using PipelineHost host = await PipelineHost.StartAsync(fixture, remoteOverride: null);
+
+        using HttpResponseMessage response = await host.PostAsync(
+            JsonSerializer.Serialize(ValidRequest() with { Reason = new string('x', 256 * 1024) }));
+        string text = await response.Content.ReadAsStringAsync(Token);
+        await host.StopAsync();
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        using JsonDocument problem = JsonDocument.Parse(text);
+        Assert.Equal(
+            ["REQUEST_BODY_TOO_LARGE"],
+            problem.RootElement.GetProperty("codes").EnumerateArray().Select(code => code.GetString()));
+        Assert.True(
+            host.BodyBytesRead <= TaskTypeHoldEndpoints.MaxRequestBodyBytes + 1,
+            $"{host.BodyBytesRead} bytes of the body were read");
+        Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+        Assert.True(audit.DetailJson.Length < 2000, $"audit detail is {audit.DetailJson.Length} characters");
+    }
+
+    [Fact]
+    public async Task ABodyAtTheFieldLimitsFromThisMachineIsStillTakenThroughThePipeline()
+    {
+        // The size limit is sized to the field limits: the longest reason and role, written as escaped JSON, fit.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+        await using PipelineHost host = await PipelineHost.StartAsync(fixture, remoteOverride: null);
+
+        using HttpResponseMessage response = await host.PostAsync(JsonSerializer.Serialize(ValidRequest() with
+        {
+            Reason = new string('\u5173', TaskTypeHoldEndpoints.MaxReasonLength),
+            ClaimedRole = new string('\u957f', TaskTypeHoldEndpoints.MaxClaimedRoleLength)
+        }));
+        await host.StopAsync();
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Single(await fixture.Holds.ListUnreleasedAsync(25, Token));
+    }
+
     private static TaskTypeHoldRequest ValidRequest() =>
         new(25, TransportTaskTypes.WireToGate, "关卡门口堆了料车", null);
 
@@ -308,14 +431,16 @@ public sealed class TaskTypeHoldEndpointsTests
         TaskTypeStationPersistenceFixture fixture,
         TaskTypeHoldRequest request,
         IPAddress remote,
-        IPAddress? local = null)
+        IPAddress? local = null,
+        bool noLocalAddress = false)
     {
         DefaultHttpContext context = new();
         context.Connection.RemoteIpAddress = remote;
-        context.Connection.LocalIpAddress = local ?? IPAddress.Loopback;
+        context.Connection.LocalIpAddress = noLocalAddress ? null : local ?? IPAddress.Loopback;
+        context.Request.ContentType = "application/json";
+        context.Request.Body = new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(request, JsonSerializerOptions.Default));
         IResult result = await TaskTypeHoldEndpoints.HandleAsync(
             context,
-            request,
             fixture.Context,
             fixture.Rules,
             fixture.Bindings,
@@ -325,6 +450,133 @@ public sealed class TaskTypeHoldEndpointsTests
             TimeProvider.System,
             Token);
         return result;
+    }
+
+    /// <summary>
+    /// The hold route on a real Kestrel pipeline. A middleware ahead of the endpoint can stand in for a caller on another
+    /// machine, and counts every byte read from the request body.
+    /// </summary>
+    private sealed class PipelineHost : IAsyncDisposable
+    {
+        private readonly WebApplication _app;
+        private readonly HttpClient _client;
+        private readonly List<CountingStream> _bodies;
+
+        private PipelineHost(WebApplication app, HttpClient client, List<CountingStream> bodies)
+        {
+            _app = app;
+            _client = client;
+            _bodies = bodies;
+        }
+
+        public long BodyBytesRead
+        {
+            get
+            {
+                lock (_bodies)
+                {
+                    return _bodies.Sum(body => body.BytesRead);
+                }
+            }
+        }
+
+        public static async Task<PipelineHost> StartAsync(TaskTypeStationPersistenceFixture fixture, IPAddress? remoteOverride)
+        {
+            WebApplicationBuilder builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseUrls("http://127.0.0.1:0");
+            builder.Logging.ClearProviders();
+            builder.Services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(fixture.Connection));
+            builder.Services.AddSingleton(new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"));
+            builder.Services.AddSingleton(AuditRetentionPolicy.Default);
+            builder.Services.AddSingleton(TimeProvider.System);
+            builder.Services.AddScoped<GovernanceStore>();
+            builder.Services.AddScoped<IGovernanceAuditWriter>(services => services.GetRequiredService<GovernanceStore>());
+            builder.Services.AddScoped(services => new GovernedConfigurationPublisher(
+                services.GetRequiredService<GovernanceStore>(), services.GetRequiredService<GovernanceStore>()));
+            builder.Services.AddScoped<ITaskTypeStationRuleStore, TaskTypeStationRuleStore>();
+            builder.Services.AddScoped<ITaskTypeStationBindingStore, TaskTypeStationBindingStore>();
+            builder.Services.AddScoped<ITaskTypeStationHoldStore, TaskTypeStationHoldStore>();
+            WebApplication app = builder.Build();
+            List<CountingStream> bodies = [];
+            app.Use((context, next) =>
+            {
+                if (remoteOverride is not null)
+                {
+                    context.Connection.RemoteIpAddress = remoteOverride;
+                }
+                CountingStream body = new(context.Request.Body);
+                lock (bodies)
+                {
+                    bodies.Add(body);
+                }
+                context.Request.Body = body;
+                return next(context);
+            });
+            app.MapTaskTypeHolds();
+            await app.StartAsync(Token);
+            string address = app.Services.GetRequiredService<IServer>()
+                .Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+            return new PipelineHost(app, new HttpClient { BaseAddress = new Uri(address) }, bodies);
+        }
+
+        public Task<HttpResponseMessage> PostAsync(string json) =>
+            _client.PostAsync(
+                TaskTypeHoldEndpoints.Route,
+                new StringContent(json, Encoding.UTF8, "application/json"),
+                Token);
+
+        public Task StopAsync() => _app.StopAsync(Token);
+
+        public async ValueTask DisposeAsync()
+        {
+            _client.Dispose();
+            await _app.DisposeAsync();
+        }
+    }
+
+    private sealed class CountingStream(Stream inner) : Stream
+    {
+        private long _bytesRead;
+
+        public long BytesRead => Interlocked.Read(ref _bytesRead);
+
+        public override bool CanRead => inner.CanRead;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Count(inner.Read(buffer, offset, count));
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            Count(await inner.ReadAsync(buffer, cancellationToken));
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        private int Count(int read)
+        {
+            Interlocked.Add(ref _bytesRead, read);
+            return read;
+        }
     }
 
     private static int StatusOf(IResult result) =>

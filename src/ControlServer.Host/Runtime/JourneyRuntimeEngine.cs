@@ -121,6 +121,13 @@ public sealed class JourneyRuntimeEngine(
             "under way continue on the bound policy; no further demand is taken on until " +
             "admissionPolicyVersion is raised.");
 
+    private static readonly Action<ILogger, int, Exception?> LogCatalogBindingHoldConvergenceFailed =
+        LoggerMessage.Define<int>(
+            LogLevel.Warning,
+            new EventId(2117, nameof(LogCatalogBindingHoldConvergenceFailed)),
+            "The catalog change convergence for map {MapId} failed; this round goes on without it and the next " +
+            "complete catalog confirmation converges again.");
+
     /// <summary>
     /// The terminal reason of a demand whose pickup stop ran out its station departure deadline
     /// (ADR-cross-0055).
@@ -142,6 +149,44 @@ public sealed class JourneyRuntimeEngine(
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
     private readonly TaskTypeStationAccess _taskTypeStations = taskTypeStations;
+
+    /// <summary>
+    /// Runs the catalog change convergence without letting its failure end the round (control-server#201, review D of
+    /// #162). A busy database or a constraint conflict here used to escape <see cref="ExecuteOnceAsync"/>, so the
+    /// admission policy and every journey under way sat out the round.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Carrying on opens nothing: a demand bound to a renamed or removed station is already refused this round by the
+    /// fixed station view, which judges every binding against this very catalog before it looks at holds. The hold
+    /// arriving a round late only delays what it adds on top -- staying in force once the station is back.
+    /// </para>
+    /// <para>
+    /// The convergence's transaction rolls back on its own, but whatever it added or changed stays tracked on the
+    /// shared context, and the round's next save would write it after all: a hold without its change record or its
+    /// audit. Every pending entry is detached; nothing else in the round leaves one pending at this point, because
+    /// every step before this one saved. A shutdown cancellation still ends the round.
+    /// </para>
+    /// </remarks>
+    private async Task ConvergeCatalogBindingHoldsAsync(
+        RiotMapStationCatalogSnapshot currentMap,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await catalogBindingHolds.ApplyAsync(currentMap, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            foreach (EntityEntry pending in dbContext.ChangeTracker.Entries()
+                .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .ToArray())
+            {
+                pending.State = EntityState.Detached;
+            }
+            LogCatalogBindingHoldConvergenceFailed(logger, currentMap.MapId, error);
+        }
+    }
 
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
     {
@@ -190,7 +235,7 @@ public sealed class JourneyRuntimeEngine(
         await catalogAvailability.RecordConfirmationAsync(currentMap, cancellationToken)
             .ConfigureAwait(false);
         // control-server#162: a bound station renamed or gone holds its own Map + TASK_TYPE, read from the next round on.
-        await catalogBindingHolds.ApplyAsync(currentMap, cancellationToken).ConfigureAwait(false);
+        await ConvergeCatalogBindingHoldsAsync(currentMap, cancellationToken).ConfigureAwait(false);
 
         // The policy is re-derived from the live map every iteration, and map 25 is shared: RIoT's
         // other users add, rename and remove stations on it. Any such edit to an area-named station

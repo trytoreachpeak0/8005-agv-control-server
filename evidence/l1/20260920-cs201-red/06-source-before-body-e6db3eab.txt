@@ -1,0 +1,22 @@
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromAnotherMachineIsRefusedBeforeItsBodyIsReadAndAuditedByAddressAlone(body: "oversized") [1 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 0
+Actual:   262213
+  Stack Trace:
+--
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromAnotherMachineIsRefusedBeforeItsBodyIsReadAndAuditedByAddressAlone(body: "malformed") [483 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Forbidden
+Actual:   BadRequest
+  Stack Trace:
+--
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOversizedBodyFromThisMachineIsRefusedInTheExisting422ShapeWithoutBeingReadWhole [705 ms]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+             ↓ (pos 2)
+Expected: "REQUEST_BODY_TOO_LARGE"
+Actual:   "REASON_TOO_LONG"
+--
+Failed!  - Failed:     3, Passed:    22, Skipped:     0, Total:    25, Duration: 20 s - ControlServer.Tests.dll (net8.0)
