@@ -17,6 +17,7 @@ using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.TaskTypeStations;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(options => options.ServiceName = "8005 AGV ControlServer");
@@ -151,6 +152,8 @@ builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>(
 });
 // 批次 3 的治理机制：版本化快照、两条不可改写审计流，以及吃它们的那几个 store。
 builder.Services.AddGovernance(builder.Configuration);
+// 批次 6 建表票 control-server#159：任务类型规则、按图绑定集、暂停、目录变化与需求冻结的端口。
+builder.Services.AddTaskTypeStations();
 
 WebApplication app = builder.Build();
 app.UseSerilogRequestLogging();
@@ -166,6 +169,8 @@ if (PackageCapacityImportCommand.IsRequested(args))
 
 // control-server#72：当前分区归属版本把 AREA 归进了未允许的调度区时拒绝启动，并列出是哪几条。
 await AreaAssignmentDispatchZoneStartupCheck.EnsureAsync(app.Services, CancellationToken.None);
+// control-server#159：旅程运行时开着时装载任务类型规则与按图绑定的预置配置，配错拒绝启动并列出全部违规。
+await TaskTypeStationStartup.EnsureAsync(app.Services, CancellationToken.None);
 
 app.MapGet("/health/live", () => Results.Ok(new { status = "live" }));
 app.MapGet("/health/ready", async (ControlServerDbContext dbContext, CancellationToken cancellationToken) =>

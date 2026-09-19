@@ -17,7 +17,10 @@ public enum GovernedObjectKind
     AuditRetention,
 
     /// <summary>分区归属表（含开门侧列），整张表一个版本（REQ-0350，program#68 决议 2）。</summary>
-    DispatchZoneAreaAssignment
+    DispatchZoneAreaAssignment,
+
+    /// <summary>任务类型规则表，整张表一个版本（REQ-0343）。按图的绑定集沿用 <see cref="PublicStationBinding"/>。</summary>
+    TaskTypeStationRule
 }
 
 /// <summary>

@@ -100,6 +100,8 @@ Import-Module (Join-Path $PSScriptRoot 'L2.psm1') -Force
 # Every rig takes the port lock. L2PortLock.psm1 also states the order it is taken in relative to the
 # desktop lock, which is what keeps the two from deadlocking.
 Import-Module (Join-Path $PSScriptRoot 'L2PortLock.psm1') -Force
+# Batch 6's task type station preset and the "server refuses to start" scenario shape (control-server#159).
+Import-Module (Join-Path $PSScriptRoot 'L2TaskTypeStations.psm1') -Force
 # Only the real-onboard rig ever takes the desktop lock, but the import stays unconditional so the
 # dependency is visible at the top rather than buried in a branch 150 lines down.
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'DesktopLock.psm1') -Force
@@ -182,6 +184,14 @@ if ($protocolFaultProxy -and -not $realOnboard) {
 # starting it changes nothing about the server under test.
 $dashboard = ($setup.ContainsKey('Dashboard') -and $setup.Dashboard)
 
+# Batch 6 (control-server#159): every rig's server loads a task type station preset at startup and refuses to start
+# on a misconfigured one. $null installs the default preset for this rig, $false none, anything else the scenario's
+# own; a reason code in ExpectServerStartupRefusal turns the run into one that waits for the server to refuse.
+# Both are checked here, before anything starts. See L2TaskTypeStations.psm1.
+$taskTypeStationsSetting = Resolve-L2TaskTypeStationsSetting -Setup $setup -Where "$Scenario.setup.psd1"
+$expectedStartupRefusal = Resolve-L2ExpectedStartupRefusal -Setup $setup -Where "$Scenario.setup.psd1" `
+    -RealOnboard $realOnboard
+
 # Batch 4's slot groups (control-server#71). Once dispatch requires the demand's AREA to be in the area
 # assignment table and the vehicle to have a server-side slot model, a rig that has neither dispatches
 # nothing -- so every rig whose journey runtime is on gets both by default, after the server is up (see the
@@ -220,6 +230,11 @@ if ($setup.ContainsKey('AreaAssignments')) {
 # seeds its own model imports its own table too, and has to say so.
 if (-not $slotModelPreseed -and $areaAssignmentsSetting -isnot [bool]) {
     throw "SlotModelPreseed = `$false in $Scenario.setup.psd1 needs AreaAssignments = `$false as well: the table import is validated against the slot model this scenario says it seeds itself."
+}
+# A server expected to refuse to start never runs the FieldOps verbs' prerequisites, so there is nothing to preseed.
+if ($expectedStartupRefusal) {
+    $slotModelPreseed = $false
+    $areaAssignmentsSetting = $false
 }
 # The synthetic peer's handshake slot states. Only the fields a vehicle's own state decides; lockState and
 # unlockOutputState stay what an idle vehicle reports, and slotNo is how an entry names its slot.
@@ -656,6 +671,19 @@ try {
             (($setup.RiotCommands.Keys | Sort-Object | ForEach-Object { "$_=$($setup.RiotCommands[$_])" }) -join ', '))
     }
 
+    # The task type station preset (control-server#159), written into the stage and named to the server, so the run
+    # never reads the preset that happens to sit next to the built host. Into the evidence too: what was installed is
+    # part of what the run proves.
+    $taskTypeStationPreset = New-L2TaskTypeStationPreset -Setting $taskTypeStationsSetting -MapId $mapId `
+        -GateStationId $gateStationId -GateStationRiotId $gateStationRiotId `
+        -Path (Join-Path $stageRoot 'task-type-stations.settings.json')
+    $serverEnvironment['TaskTypeStations__settingsFile'] = $taskTypeStationPreset
+    Copy-Item -LiteralPath $taskTypeStationPreset -Destination (Join-Path $snapshotRoot 'task-type-stations.settings.json')
+    $journal.Note('Task type station preset: ' + $(if ($null -eq $taskTypeStationsSetting) {
+                "default (map $mapId, WIRE_TO_GATE -> $gateStationId/$gateStationRiotId)"
+            } elseif ($taskTypeStationsSetting -is [bool]) { 'none (TaskTypeStations = $false)' }
+            else { "the scenario's own ($(@($taskTypeStationsSetting.Bindings).Count) binding(s))" }))
+
     $importEnvironment = @{}
     foreach ($key in $serverEnvironment.Keys) { $importEnvironment[$key] = $serverEnvironment[$key] }
     $importEnvironment['JourneyRuntime__enabled'] = 'false'
@@ -676,29 +704,42 @@ try {
         ForEach-Object { $_ | Add-Member -NotePropertyName Order -NotePropertyValue 4 -PassThru }
     $handles += $serverHandle
 
-    # /health/live, not /health/ready: readiness means a peer has completed the recovery handshake,
-    # and the peer cannot connect until the server is listening. Waiting on readiness here would
-    # deadlock the startup order against itself.
-    $null = Wait-L2Condition -Description 'ControlServer is listening' -Journal $journal -Criterion 'control-server-live' `
-        -TimeoutSeconds 120 -Component $serverHandle -Port @($HealthPort, $ControlPort) `
-        -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
-        -Until { param($v) $v -eq 'live' }
+    # A scenario that expects the server to refuse to start (control-server#159) waits for its process to exit instead,
+    # and nothing below that needs a running server is started. The protocol identity comes from the host's own
+    # appsettings.json then, because a server that never listens never answers /version.
+    $serverRefusal = $null
+    if ($expectedStartupRefusal) {
+        $serverRefusal = Wait-L2ServerStartupRefusal -Server $serverHandle -HealthPort $HealthPort
+        $journal.Observe('control-server-refused', $serverRefusal.ExitCode, @{ everLive = $serverRefusal.EverLive })
+        $protocolReleaseIdentity = Read-L2ProtocolCandidateIdentity -HostDirectory $hostDirectory
+        $journal.Note("Server exited with $($serverRefusal.ExitCode) as expected for $expectedStartupRefusal " +
+            "(log read as $($serverRefusal.Encoding)); " +
+            "protocol release identity $($protocolReleaseIdentity.tag) read from the host's appsettings.json.")
+    } else {
+        # /health/live, not /health/ready: readiness means a peer has completed the recovery handshake,
+        # and the peer cannot connect until the server is listening. Waiting on readiness here would
+        # deadlock the startup order against itself.
+        $null = Wait-L2Condition -Description 'ControlServer is listening' -Journal $journal -Criterion 'control-server-live' `
+            -TimeoutSeconds 120 -Component $serverHandle -Port @($HealthPort, $ControlPort) `
+            -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/live" -TimeoutSec 5).status } `
+            -Until { param($v) $v -eq 'live' }
 
-    $version = Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/version" -TimeoutSec 5
-    $protocolReleaseIdentity = [ordered]@{
-        repository         = '8005-agv-protocol'
-        releaseVersion     = $version.protocolReleaseVersion
-        tag                = $version.protocolTag
-        commit             = $version.protocolCommit
-        protocolVersion    = $version.protocolVersion
-        profileId          = $version.profileId
-        manifestSha256     = $version.manifestSha256
-        schemaBundleSha256 = $version.schemaBundleSha256
-        vectorsSha256      = $version.vectorsSha256
-        approvalStatus     = $version.approvalStatus
+        $version = Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/version" -TimeoutSec 5
+        $protocolReleaseIdentity = [ordered]@{
+            repository         = '8005-agv-protocol'
+            releaseVersion     = $version.protocolReleaseVersion
+            tag                = $version.protocolTag
+            commit             = $version.protocolCommit
+            protocolVersion    = $version.protocolVersion
+            profileId          = $version.profileId
+            manifestSha256     = $version.manifestSha256
+            schemaBundleSha256 = $version.schemaBundleSha256
+            vectorsSha256      = $version.vectorsSha256
+            approvalStatus     = $version.approvalStatus
+        }
+        $journal.Note("Protocol release identity: $($version.protocolTag) " +
+            "(profileId $($version.profileId), protocolVersion $($version.protocolVersion), $($version.approvalStatus)).")
     }
-    $journal.Note("Protocol release identity: $($version.protocolTag) " +
-        "(profileId $($version.profileId), protocolVersion $($version.protocolVersion), $($version.approvalStatus)).")
 
     # 4b. The skew proxy, when a scenario asked for one. After the server (it forwards to it) and
     #     before the onboard (which must find it listening on its first poll).
@@ -815,6 +856,8 @@ try {
         $null = Wait-L2Condition -Description 'the onboard connected to the simulator over Modbus' `
             -Journal $journal -Criterion 'onboard-modbus' -TimeoutSeconds 60 -Component $onboardHandle `
             -Probe { [int]$simulator.Health().modbus.clientCount } -Until { param($v) $v -ge 1 }
+    } elseif ($expectedStartupRefusal) {
+        $journal.Note('No onboard peer started: the server was expected to refuse to start.')
     } else {
         # One synthetic peer per configured vehicle. A scenario that says nothing gets exactly one,
         # on the same port and instance id every existing scenario was written against, so the
@@ -900,10 +943,12 @@ try {
     }
 
     # Now readiness is meaningful: the peer finished the handshake and the server granted it.
-    $null = Wait-L2Condition -Description 'ControlServer reports the vehicle ready' -Journal $journal `
-        -Criterion 'control-server-ready' -TimeoutSeconds 60 -Component $serverHandle `
-        -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/ready" -TimeoutSec 5).status } `
-        -Until { param($v) $v -eq 'ready' }
+    if (-not $expectedStartupRefusal) {
+        $null = Wait-L2Condition -Description 'ControlServer reports the vehicle ready' -Journal $journal `
+            -Criterion 'control-server-ready' -TimeoutSeconds 60 -Component $serverHandle `
+            -Probe { (Invoke-RestMethod -Uri "http://127.0.0.1:$HealthPort/health/ready" -TimeoutSec 5).status } `
+            -Until { param($v) $v -eq 'ready' }
+    }
 
     # 6. The dashboard, when the scenario asked for it. Last, and after readiness: it fetches from the
     #    server on every render, so starting it any earlier only gives it a server that is not ready
@@ -1074,6 +1119,9 @@ try {
         EmergencyReleaseCredential = if ($emergencyStopRelease) { $emergencyReleaseCredential } else { $null }
         # Null unless the setup file asked for the dashboard.
         DashboardUrl        = $dashboardUrl
+        # Null unless the setup file declared ExpectServerStartupRefusal: the refusing server's exit code, whether
+        # /health/live ever answered, and its stdout and stderr (L2TaskTypeStations.psm1).
+        ServerRefusal       = $serverRefusal
         # ControlServer.FieldOps against the SQLite file the server is using; see $invokeFieldOps above.
         InvokeFieldOps      = $invokeFieldOps
         # A new version of the package capacity table while the server runs, through the same import
@@ -1151,7 +1199,8 @@ try {
     # Everything started above must still be running before the scenario starts. Each startup wait
     # watches only its own component, and only while its probe is failing, so a double that died
     # after its own wait passed would otherwise surface minutes into the scenario as something else.
-    foreach ($handle in $handles) {
+    # Except a server that was expected to refuse to start: its exit is the thing the scenario judges.
+    foreach ($handle in @($handles | Where-Object { -not ($expectedStartupRefusal -and $_.Name -eq 'control-server') })) {
         Assert-L2ComponentAlive -Component $handle -Description 'the environment to come up'
     }
     $journal.Note("Environment is up; entering scenario '$Scenario'.")
@@ -1219,7 +1268,10 @@ try {
                              'OnboardAlarmSnapshots', 'BusinessAuditRecords',
                              # What the slot model preseed wrote, and what batch 4's dispatch reads off it.
                              'SlotModelVersions', 'SlotIoBindings', 'DispatchZoneAreaAssignmentVersions',
-                             'DispatchZoneAreaAssignments', 'StructuralDispatchBlocks')) {
+                             'DispatchZoneAreaAssignments', 'StructuralDispatchBlocks',
+                             # What the task type station preset loaded at startup (control-server#159).
+                             'TaskTypeStationRuleVersions', 'TaskTypeStationBindingSetVersions',
+                             'TaskTypeStationBindings', 'TaskTypeStationActiveBindingSets')) {
             try {
                 $rows = Invoke-L2Query -Connection $connection -Sql "SELECT * FROM $table"
                 [IO.File]::WriteAllText(
