@@ -170,6 +170,81 @@ public sealed class TaskTypeStationActivationFollowUpTests
         Assert.Equal(3, (await harness.Default().Bindings.ReadActiveAsync(25, Token))?.Version);
     }
 
+    // ======== d: an audit write the database refuses leaves nothing behind in the context ========
+
+    /// <summary>
+    /// cs#200 d：业务审计的插入被数据库拒绝（等锁超时），调用方在同一个上下文上接着保存别的东西——被拒的那行不能被顺带补交，
+    /// 第二次保存照常成功。
+    /// </summary>
+    [Fact]
+    public async Task ABusinessAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        RefuseOnce<BusinessAuditRecordRow> fault = new(row => row.Action == "CS200_REFUSED");
+        GovernanceStore store = Governance(harness.NewContext(fault));
+
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => store.WriteBusinessAsync(
+            Entry("CS200_REFUSED"), TaskTypeStationActivationHarness.Now, Token));
+        string next = await store.WriteBusinessAsync(Entry("CS200_NEXT"), TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(1, fault.Thrown);
+        await using ControlServerDbContext reader = harness.NewContext();
+        string[] written = await reader.Set<BusinessAuditRecordRow>().AsNoTracking()
+            .Where(row => row.Action.StartsWith("CS200_"))
+            .Select(row => row.AuditRecordId + "|" + row.Action)
+            .ToArrayAsync(Token);
+        Assert.Equal([next + "|CS200_NEXT"], written);
+    }
+
+    /// <summary>cs#200 d：同上，管理员审计。</summary>
+    [Fact]
+    public async Task AnAdministratorAuditTheDatabaseRefusesIsNotCommittedByTheNextSaveOnTheSameContext()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        RefuseOnce<AdministratorAuditRecordRow> fault = new(row => row.Action == "CS200_REFUSED");
+        GovernanceStore store = Governance(harness.NewContext(fault));
+
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => store.WriteAdministratorAsync(
+            Entry("CS200_REFUSED"), TaskTypeStationActivationHarness.Now, Token));
+        string next = await store.WriteAdministratorAsync(Entry("CS200_NEXT"), TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(1, fault.Thrown);
+        await using ControlServerDbContext reader = harness.NewContext();
+        string[] written = await reader.Set<AdministratorAuditRecordRow>().AsNoTracking()
+            .Where(row => row.Action.StartsWith("CS200_"))
+            .Select(row => row.AuditRecordId + "|" + row.Action)
+            .ToArrayAsync(Token);
+        Assert.Equal([next + "|CS200_NEXT"], written);
+    }
+
+    /// <summary>
+    /// cs#200 d：审计写失败只摘掉审计自己那一行，调用方在同一个上下文里先前跟踪、尚未保存的改动原样留着——那是调用方的工作单元，
+    /// 不归审计写入器清。
+    /// </summary>
+    [Fact]
+    public async Task ARefusedAuditLeavesTheCallersOwnPendingChangesTracked()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        RefuseOnce<BusinessAuditRecordRow> fault = new(row => row.Action == "CS200_REFUSED");
+        ControlServerDbContext context = harness.NewContext(fault);
+        GovernanceStore store = Governance(context);
+        TaskTypeStationActiveBindingSetRow pointer = await context.Set<TaskTypeStationActiveBindingSetRow>()
+            .SingleAsync(row => row.MapId == 25, Token);
+        pointer.UpdatedAt = TaskTypeStationActivationHarness.Now.AddMinutes(5);
+
+        await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(() => store.WriteBusinessAsync(
+            Entry("CS200_REFUSED"), TaskTypeStationActivationHarness.Now, Token));
+
+        Assert.Equal(EntityState.Modified, context.Entry(pointer).State);
+        Assert.DoesNotContain(context.ChangeTracker.Entries<BusinessAuditRecordRow>(), entry => entry.State == EntityState.Added);
+    }
+
+    private static GovernanceStore Governance(ControlServerDbContext context) =>
+        new(context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default);
+
+    private static GovernanceAuditEntry Entry(string action) =>
+        new(action, GovernedObjectKind.PublicStationBinding, "cs200", null, GovernanceActionOutcome.Succeeded, "{}");
+
     /// <summary>
     /// A second version with an empty requirement set, different from the first: the gate stays bound but nothing on the
     /// map requires it, so an activation of it from the first holds no task type.
@@ -215,4 +290,28 @@ public sealed class TaskTypeStationActivationFollowUpTests
 
     private static string Value(JsonElement value) =>
         value.ValueKind == JsonValueKind.Null ? "<null>" : value.GetInt64().ToString(System.Globalization.CultureInfo.InvariantCulture);
+}
+
+/// <summary>
+/// The database refuses the insert of one <typeparamref name="TRow"/>, once, from inside SaveChanges -- after the row was
+/// added to the context, as a lock wait past the busy timeout would.
+/// </summary>
+internal sealed class RefuseOnce<TRow>(Func<TRow, bool> refuses) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+    where TRow : class
+{
+    public int Thrown { get; private set; }
+
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+        Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+        Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (Thrown == 0 && eventData.Context!.ChangeTracker.Entries<TRow>().Any(entry =>
+                entry.State == EntityState.Added && refuses(entry.Entity)))
+        {
+            Thrown++;
+            throw new Microsoft.Data.Sqlite.SqliteException("database is locked", 5);
+        }
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
+    }
 }
