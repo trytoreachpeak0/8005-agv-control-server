@@ -1,0 +1,181 @@
+{"at":"2026-09-19T02:25:51.3345447+00:00","note":"L2 run 20260919T022551141Z starting for scenario 'real-onboard-partial-load-and-occupied-slot'."}
+{"at":"2026-09-19T02:25:51.4027721+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T02:25:52.6766809+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-19T02:26:15.0982990+00:00","note":"Reusing cached onboard-hmi publish for a1a54dbd7217dd64f1ae93648a4cfbd8659bc51c."}
+{"at":"2026-09-19T02:26:15.3061808+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-19T02:26:15.3125948+00:00","note":"Peers: onboard-hmi@a1a54dbd7217dd64f1ae93648a4cfbd8659bc51c, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-19T02:26:17.0970161+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T02:26:17.3575520+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T02:26:19.9927129+00:00","criterion":"simulator-ready","value":"(null)"}
+{"at":"2026-09-19T02:26:20.5198459+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-19T02:26:20.5576749+00:00","note":"Server settings from real-onboard-partial-load-and-occupied-slot.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:01:00"}
+{"at":"2026-09-19T02:26:26.0778526+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T02:26:28.1517496+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T02:26:28.6281281+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T02:26:31.2649471+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-19T02:26:31.2838859+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-19T02:26:31.3600538+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-19T02:26:31.6427510+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T02:26:31.7406441+00:00","note":"Environment is up; entering scenario 'real-onboard-partial-load-and-occupied-slot'."}
+{"at":"2026-09-19T02:26:32.1485079+00:00","note":"Publishing demand A 19615af29d2f49bdb4dc4f783dac2ead (sublot L2-POS-20260919T022551141Z-A, 4 boxes)."}
+{"at":"2026-09-19T02:26:32.2731246+00:00","criterion":"to-pickup-intent-A","value":"(null)"}
+{"at":"2026-09-19T02:26:33.8620253+00:00","criterion":"to-pickup-intent-A","value":"@{UpperId=W2G-794207b8-83b8-975e-a25e-fd9e4e2c2865-S1-1; OrderId=; Status=CREATE_ATTEMPTED}"}
+{"at":"2026-09-19T02:26:34.1191156+00:00","criterion":"to-pickup-intent-A","value":"@{UpperId=W2G-794207b8-83b8-975e-a25e-fd9e4e2c2865-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-19T02:26:34.1580017+00:00","note":"Vehicle drives to the pickup station for demand A."}
+{"at":"2026-09-19T02:26:36.6923888+00:00","note":"Slot 1 reads light curtain 1 when empty; pinning it to 0 -- someone else's basket."}
+{"at":"2026-09-19T02:26:36.7604426+00:00","criterion":"occupied-override","value":"0"}
+{"at":"2026-09-19T02:26:39.8515879+00:00","note":"Submitted sublot L2-POS-20260919T022551141Z-A."}
+{"at":"2026-09-19T02:26:39.8568639+00:00","criterion":"load-a-settled","value":"(null)"}
+{"at":"2026-09-19T02:26:40.1191515+00:00","criterion":"load-a-settled","value":"@{SlotOperationAttemptId=34fdd361-8a8a-8b51-a1fd-ca15f6e2abdf; Status=Prepared}"}
+{"at":"2026-09-19T02:26:40.3847406+00:00","criterion":"load-a-settled","value":"@{SlotOperationAttemptId=34fdd361-8a8a-8b51-a1fd-ca15f6e2abdf; Status=RecoveryRequired}"}
+{"at":"2026-09-19T02:26:40.4480328+00:00","criterion":"journey-a-blocked","value":"AwaitingLoadResult / "}
+{"at":"2026-09-19T02:26:40.9795996+00:00","criterion":"journey-a-blocked","value":"Blocked / LOAD_RESULT_REQUIRES_RECOVERY"}
+{"at":"2026-09-19T02:26:41.3371850+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY accepted for demand 19615af2-9d2f-49bd-b4dc-4f783dac2ead (command fa2f27cd-6d4a-4b9b-877f-1382b0f1679d)"}
+{"at":"2026-09-19T02:26:42.9152713+00:00","note":"field-operator: compensation: vehicle waits on slot 1; maintenance takes the cargo out"}
+{"at":"2026-09-19T02:26:42.9783457+00:00","note":"field-operator: slot 1: door closed with cargo EMPTY"}
+{"at":"2026-09-19T02:26:43.8051142+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY reconciled; demand 19615af2-9d2f-49bd-b4dc-4f783dac2ead Cancelled"}
+{"at":"2026-09-19T02:26:43.8294023+00:00","note":"maintenance: override removed at 2026-09-19T02:26:41.5624483+00:00"}
+{"at":"2026-09-19T02:26:43.8485815+00:00","criterion":"act-a-closed","value":"Completed / CANCELLED_BY_LOAD_COMPENSATION | Ready / READY"}
+{"at":"2026-09-19T02:26:43.8744169+00:00","note":"Publishing demand B a9126e209d464014bf6f741dfbc1404b (sublot L2-POS-20260919T022551141Z-B, 12 boxes)."}
+{"at":"2026-09-19T02:26:43.8996643+00:00","criterion":"to-pickup-intent-B","value":"(null)"}
+{"at":"2026-09-19T02:26:44.1582155+00:00","criterion":"to-pickup-intent-B","value":"@{UpperId=W2G-e1f4d200-ff2b-1752-9b66-21032fc21835-S1-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-19T02:26:44.1741637+00:00","note":"Vehicle drives to the pickup station for demand B."}
+{"at":"2026-09-19T02:26:46.3132040+00:00","note":"field-operator: stop 1: submitted sublot L2-POS-20260919T022551141Z-B (demand a9126e20-9d46-4014-bf6f-741dfbc1404b)"}
+{"at":"2026-09-19T02:26:48.1757396+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt b6aac21e-0deb-0d5c-90e6-1ec738e5b509)"}
+{"at":"2026-09-19T02:26:48.1885978+00:00","criterion":"load-b-waiting-0","value":"@{Unlocking=1; Waiting=1; WaitingSlot=1; Events=System.Object[]}"}
+{"at":"2026-09-19T02:26:48.1938396+00:00","note":"Operator puts a basket into slot 1 and closes it."}
+{"at":"2026-09-19T02:26:48.4999826+00:00","note":"field-operator: slot 1: door closed with cargo OCCUPIED"}
+{"at":"2026-09-19T02:26:48.7761174+00:00","criterion":"load-b-waiting-1","value":"@{Unlocking=1; Waiting=1; WaitingSlot=1; Events=System.Object[]}"}
+{"at":"2026-09-19T02:26:49.0358880+00:00","criterion":"load-b-waiting-1","value":"@{Unlocking=2; Waiting=1; WaitingSlot=1; Events=System.Object[]}"}
+{"at":"2026-09-19T02:26:50.0869956+00:00","criterion":"load-b-waiting-1","value":"@{Unlocking=2; Waiting=2; WaitingSlot=2; Events=System.Object[]}"}
+{"at":"2026-09-19T02:26:50.0886377+00:00","note":"Operator puts a basket into slot 2 and closes it."}
+{"at":"2026-09-19T02:26:50.3780736+00:00","note":"field-operator: slot 2: door closed with cargo OCCUPIED"}
+{"at":"2026-09-19T02:26:50.6456891+00:00","criterion":"load-b-waiting-2","value":"@{Unlocking=2; Waiting=2; WaitingSlot=2; Events=System.Object[]}"}
+{"at":"2026-09-19T02:26:50.9020285+00:00","criterion":"load-b-waiting-2","value":"@{Unlocking=3; Waiting=2; WaitingSlot=2; Events=System.Object[]}"}
+{"at":"2026-09-19T02:26:51.9660336+00:00","criterion":"load-b-waiting-2","value":"@{Unlocking=3; Waiting=3; WaitingSlot=3; Events=System.Object[]}"}
+{"at":"2026-09-19T02:26:51.9833530+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:26:52.0190059+00:00","criterion":"empty-close-1","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:26:53.6523347+00:00","criterion":"empty-close-1","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:26:53.6647772+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:26:53.6772175+00:00","criterion":"empty-close-2","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:26:55.2929651+00:00","criterion":"empty-close-2","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:26:55.3047582+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:26:55.3139660+00:00","criterion":"empty-close-3","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:26:56.9131840+00:00","criterion":"empty-close-3","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:26:56.9252148+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:26:56.9365519+00:00","criterion":"empty-close-4","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:26:58.5388018+00:00","criterion":"empty-close-4","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:26:58.5491556+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:26:58.5598804+00:00","criterion":"empty-close-5","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:00.1587411+00:00","criterion":"empty-close-5","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:00.1729459+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:00.1831463+00:00","criterion":"empty-close-6","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:01.7982462+00:00","criterion":"empty-close-6","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:01.8253210+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:01.8493220+00:00","criterion":"empty-close-7","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:03.5094993+00:00","criterion":"empty-close-7","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:03.5253274+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:03.5366957+00:00","criterion":"empty-close-8","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:05.1660782+00:00","criterion":"empty-close-8","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:05.1854344+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:05.1988297+00:00","criterion":"empty-close-9","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:06.8514401+00:00","criterion":"empty-close-9","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:06.8650981+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:06.8790410+00:00","criterion":"empty-close-10","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:08.5702509+00:00","criterion":"empty-close-10","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:08.5900583+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:08.6019678+00:00","criterion":"empty-close-11","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:10.3328690+00:00","criterion":"empty-close-11","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:10.3531126+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:10.3697731+00:00","criterion":"empty-close-12","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:12.0154507+00:00","criterion":"empty-close-12","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:12.1135395+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:12.1839856+00:00","criterion":"empty-close-13","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:13.8097552+00:00","criterion":"empty-close-13","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:13.8263957+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:13.8420326+00:00","criterion":"empty-close-14","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:15.4512234+00:00","criterion":"empty-close-14","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:15.4750633+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:15.4930028+00:00","criterion":"empty-close-15","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:17.1094895+00:00","criterion":"empty-close-15","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:17.1334089+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:17.1519658+00:00","criterion":"empty-close-16","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:18.7745405+00:00","criterion":"empty-close-16","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:18.7997800+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:18.8207419+00:00","criterion":"empty-close-17","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:20.4801079+00:00","criterion":"empty-close-17","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:20.5059084+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:20.5326496+00:00","criterion":"empty-close-18","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:22.2455694+00:00","criterion":"empty-close-18","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:22.2674797+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:22.2911445+00:00","criterion":"empty-close-19","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:23.8109893+00:00","criterion":"empty-close-19","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:23.8494696+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:23.8744410+00:00","criterion":"empty-close-20","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:25.5206890+00:00","criterion":"empty-close-20","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:25.5457531+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:25.5690792+00:00","criterion":"empty-close-21","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:27.2467925+00:00","criterion":"empty-close-21","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:27.2637437+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:27.2857274+00:00","criterion":"empty-close-22","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:28.9557591+00:00","criterion":"empty-close-22","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:28.9784393+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:28.9957821+00:00","criterion":"empty-close-23","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:30.7789589+00:00","criterion":"empty-close-23","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:30.7974096+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:30.8230044+00:00","criterion":"empty-close-24","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:32.4423159+00:00","criterion":"empty-close-24","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:32.4742273+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:32.5044780+00:00","criterion":"empty-close-25","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:34.1812821+00:00","criterion":"empty-close-25","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:34.2066956+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:34.2301507+00:00","criterion":"empty-close-26","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:35.8968713+00:00","criterion":"empty-close-26","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:35.9195441+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:35.9479102+00:00","criterion":"empty-close-27","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:37.4710115+00:00","criterion":"empty-close-27","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:37.5073047+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:37.5378999+00:00","criterion":"empty-close-28","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:39.2231927+00:00","criterion":"empty-close-28","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:39.2519235+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:39.2782476+00:00","criterion":"empty-close-29","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:41.0243856+00:00","criterion":"empty-close-29","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:41.0599520+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:41.0980396+00:00","criterion":"empty-close-30","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:42.7730469+00:00","criterion":"empty-close-30","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:42.7995478+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:42.8186026+00:00","criterion":"empty-close-31","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:44.4920370+00:00","criterion":"empty-close-31","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:44.5217008+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:44.5493523+00:00","criterion":"empty-close-32","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:46.2498600+00:00","criterion":"empty-close-32","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:46.2732930+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:46.2934478+00:00","criterion":"empty-close-33","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:48.0072658+00:00","criterion":"empty-close-33","value":"@{Status=Prepared; Reopened=True}"}
+{"at":"2026-09-19T02:27:48.0514996+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:27:48.0918417+00:00","criterion":"empty-close-34","value":"@{Status=Prepared; Reopened=False}"}
+{"at":"2026-09-19T02:27:48.6973151+00:00","criterion":"empty-close-34","value":"@{Status=RecoveryRequired; Reopened=False}"}
+{"at":"2026-09-19T02:27:48.6991256+00:00","note":"Load B settled as RecoveryRequired after 34 empty close(s) of slot 3."}
+{"at":"2026-09-19T02:27:48.8113472+00:00","criterion":"journey-b-blocked","value":"AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED"}
+{"at":"2026-09-19T02:27:49.0764112+00:00","criterion":"journey-b-blocked","value":"Blocked / LOAD_RESULT_REQUIRES_RECOVERY"}
+{"at":"2026-09-19T02:27:49.2769528+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY accepted for demand a9126e20-9d46-4014-bf6f-741dfbc1404b (command 9cf27461-4956-4e3d-9336-9c4b3a2ef6dc)"}
+{"at":"2026-09-19T02:27:50.4085794+00:00","note":"field-operator: compensation: vehicle waits on slot 1; maintenance takes the cargo out"}
+{"at":"2026-09-19T02:27:50.7036830+00:00","note":"field-operator: slot 1: door closed with cargo EMPTY"}
+{"at":"2026-09-19T02:27:52.9077784+00:00","note":"field-operator: compensation: vehicle waits on slot 2; maintenance takes the cargo out"}
+{"at":"2026-09-19T02:27:53.2434966+00:00","note":"field-operator: slot 2: door closed with cargo EMPTY"}
+{"at":"2026-09-19T02:27:54.0595657+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY reconciled; demand a9126e20-9d46-4014-bf6f-741dfbc1404b Cancelled"}
+{"at":"2026-09-19T02:27:54.0789351+00:00","criterion":"act-b-closed","value":"Completed / CANCELLED_BY_LOAD_COMPENSATION | Ready / READY"}
+{"at":"2026-09-19T02:27:54.0816477+00:00","note":"Publishing demand C 1e916f3bfccf4d2d986d3e2e2593c757 (sublot L2-POS-20260919T022551141Z-C, 8 boxes)."}
+{"at":"2026-09-19T02:27:54.1015118+00:00","criterion":"to-pickup-intent-C","value":"(null)"}
+{"at":"2026-09-19T02:27:55.1495991+00:00","criterion":"to-pickup-intent-C","value":"@{UpperId=W2G-2dea3c78-c3cd-c65c-9935-df4ac1ab75e3-S1-1; OrderId=ORDER-000003; Status=CONFIRMED}"}
+{"at":"2026-09-19T02:27:55.1545220+00:00","note":"Vehicle drives to the pickup station for demand C."}
+{"at":"2026-09-19T02:27:57.1597490+00:00","note":"field-operator: stop 1: submitted sublot L2-POS-20260919T022551141Z-C (demand 1e916f3b-fccf-4d2d-986d-3e2e2593c757)"}
+{"at":"2026-09-19T02:27:59.0164120+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt c10b4477-9c1c-6f5f-9215-07df60ac9183)"}
+{"at":"2026-09-19T02:27:59.0773248+00:00","note":"field-operator: Load c10b4477-9c1c-6f5f-9215-07df60ac9183: vehicle waits on slot 1; serving it with OCCUPIED"}
+{"at":"2026-09-19T02:27:59.4189089+00:00","note":"field-operator: slot 1: door closed with cargo OCCUPIED"}
+{"at":"2026-09-19T02:28:01.2222107+00:00","note":"field-operator: Load c10b4477-9c1c-6f5f-9215-07df60ac9183: vehicle waits on slot 2; serving it with OCCUPIED"}
+{"at":"2026-09-19T02:28:01.4900585+00:00","note":"field-operator: slot 2: door closed with cargo OCCUPIED"}
+{"at":"2026-09-19T02:28:02.2692438+00:00","note":"field-operator: Load c10b4477-9c1c-6f5f-9215-07df60ac9183 settled as Committed"}
+{"at":"2026-09-19T02:28:02.2711592+00:00","note":"Scenario finished."}
+{"at":"2026-09-19T02:28:02.5383735+00:00","note":"Exported 323 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-19T02:28:44.6531482+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 323 lines, 323 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 38622 ms."}

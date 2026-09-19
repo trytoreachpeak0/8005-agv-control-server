@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-partial-load-and-occupied-slot",
+  "runId": "20260919T022551141Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "rig": "RealOnboard",
+    "agvId": "AGV-L2-001",
+    "vehicleKey": "BROKERX-L2-0001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "batchId": "BATCH-3",
+    "onboardHmiCommit": "a1a54dbd7217dd64f1ae93648a4cfbd8659bc51c",
+    "controlServerCommit": "665101a48f9894d82fe856fc97de207d757d51a1",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T022551141Z"
+  },
+  "assertions": [
+    {
+      "id": "L2-POS-01",
+      "description": "车没有开门：目标仓已经有货，车照实报 FAILED，那一仓 NOT_STARTED / OCCUPIED / LOCKED / RESET 并挂 SLOT_OPERATION_CONFLICT",
+      "outcome": "PASS",
+      "expected": "FAILED / NOT_STARTED / OCCUPIED / LOCKED / RESET / [SLOT_OPERATION_CONFLICT]",
+      "actual": "FAILED / NOT_STARTED / OCCUPIED / LOCKED / RESET / [SLOT_OPERATION_CONFLICT]"
+    },
+    {
+      "id": "L2-POS-02",
+      "description": "整个装货过程一次开锁都没有，门一直关着",
+      "outcome": "PASS",
+      "expected": "0 次 UNLOCKING / CLOSED",
+      "actual": "0 次 UNLOCKING / CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-POS-03",
+      "description": "服务端判 RecoveryRequired、旅程停下：仓里那箱货要先取出来，不能悄悄作废需求",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired / Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "RecoveryRequired / Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-POS-04",
+      "description": "被拒的这一单能走补偿清空：车打开了那一仓、维护人员取出，对账 Reconciled / ALL_EMPTY，需求 Cancelled",
+      "outcome": "PASS",
+      "expected": "Reconciled / ALL_EMPTY / Cancelled / 开过 [1]",
+      "actual": "Reconciled / ALL_EMPTY / Cancelled / 开过 [1]"
+    },
+    {
+      "id": "L2-POS-05",
+      "description": "现场收在安全状态：1 号仓门关、仓空、已锁、开锁输出复位",
+      "outcome": "PASS",
+      "expected": "CLOSED/EMPTY/1/0",
+      "actual": "CLOSED/EMPTY/1/0"
+    },
+    {
+      "id": "L2-POS-06",
+      "description": "第二单要装三篮，服务端给了三个仓",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-POS-07",
+      "description": "车照实报了部分装上：两仓 COMPLETED / OCCUPIED，空关的那一仓 FAILED / EMPTY，整体 FAILED",
+      "outcome": "PASS",
+      "expected": "FAILED | 1:COMPLETED/OCCUPIED 2:COMPLETED/OCCUPIED 3:FAILED/EMPTY",
+      "actual": "FAILED | 1:COMPLETED/OCCUPIED 2:COMPLETED/OCCUPIED 3:FAILED/EMPTY"
+    },
+    {
+      "id": "L2-POS-08",
+      "description": "部分装上不再是确定失败：装货 RecoveryRequired、旅程停下、需求留着不作废（#170 的那一处）",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired / Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired",
+      "actual": "RecoveryRequired / Blocked / LOAD_RESULT_REQUIRES_RECOVERY / RecoveryRequired"
+    },
+    {
+      "id": "L2-POS-09",
+      "description": "那两篮确实在车上：两仓门关、有货、已锁",
+      "outcome": "PASS",
+      "expected": "CLOSED/OCCUPIED/1/0 ×2",
+      "actual": "1=CLOSED/OCCUPIED/1/0 2=CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-POS-10",
+      "description": "补偿清空只开了有货的那两仓，取出后对账 Reconciled / ALL_EMPTY，需求 Cancelled",
+      "outcome": "PASS",
+      "expected": "Reconciled / ALL_EMPTY / Cancelled / 开过 [1,2]",
+      "actual": "Reconciled / ALL_EMPTY / Cancelled / 开过 [1,2]"
+    },
+    {
+      "id": "L2-POS-11",
+      "description": "下一单分到的每一仓此刻确实是空的——即便它们正是刚才出过事的那几个",
+      "outcome": "PASS",
+      "expected": "全部 EMPTY",
+      "actual": "1=EMPTY 2=EMPTY"
+    },
+    {
+      "id": "L2-POS-12",
+      "description": "下一单照常装货并提交",
+      "outcome": "PASS",
+      "expected": "Committed",
+      "actual": "Committed"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（真车载端包写进 `ProtocolInbox.RequestJson` 的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 323 lines, 323 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 38622 ms."
+    }
+  ]
+}

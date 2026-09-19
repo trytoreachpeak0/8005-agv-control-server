@@ -1,0 +1,59 @@
+{"at":"2026-09-19T02:21:00.0878338+00:00","note":"L2 run 20260919T022059777Z starting for scenario 'real-onboard-partial-load-and-occupied-slot'."}
+{"at":"2026-09-19T02:21:00.2243996+00:00","note":"Building ControlServer and the test doubles."}
+{"at":"2026-09-19T02:21:02.2193911+00:00","note":"dotnet SDK resolved for the build: 8.0.425"}
+{"at":"2026-09-19T02:21:30.1442141+00:00","note":"Building onboard-hmi at a1a54dbd7217dd64f1ae93648a4cfbd8659bc51c from a throwaway clone."}
+{"at":"2026-09-19T02:21:33.0359602+00:00","note":"dotnet SDK resolved for onboard-hmi publish: 8.0.425"}
+{"at":"2026-09-19T02:21:50.7505069+00:00","note":"Reusing cached slots-simulator publish for fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-19T02:21:50.7639593+00:00","note":"Peers: onboard-hmi@a1a54dbd7217dd64f1ae93648a4cfbd8659bc51c, slots-simulator@fb5f7c593742bf98bc3957b8729a38aad5321f28."}
+{"at":"2026-09-19T02:21:52.9809381+00:00","criterion":"fake-riot-live","value":"live"}
+{"at":"2026-09-19T02:21:53.5179104+00:00","criterion":"fake-mes-live","value":"live"}
+{"at":"2026-09-19T02:21:57.2417914+00:00","criterion":"simulator-ready","value":"(null)"}
+{"at":"2026-09-19T02:22:00.3967229+00:00","criterion":"simulator-ready","value":"READY/True"}
+{"at":"2026-09-19T02:22:00.6011828+00:00","note":"Server settings from real-onboard-partial-load-and-occupied-slot.setup.psd1: JourneyRuntime__sublotWaitTimeout=00:01:00"}
+{"at":"2026-09-19T02:22:09.9682657+00:00","note":"Package capacity rules imported."}
+{"at":"2026-09-19T02:22:12.0748569+00:00","criterion":"control-server-live","value":"(null)"}
+{"at":"2026-09-19T02:22:14.6982483+00:00","criterion":"control-server-live","value":"live"}
+{"at":"2026-09-19T02:22:26.6930433+00:00","note":"Onboard window: 8005 多仓位AGV车载端"}
+{"at":"2026-09-19T02:22:26.7355411+00:00","criterion":"onboard-modbus","value":"1"}
+{"at":"2026-09-19T02:22:26.8419398+00:00","criterion":"control-server-ready","value":"(null)"}
+{"at":"2026-09-19T02:22:27.1322859+00:00","criterion":"control-server-ready","value":"ready"}
+{"at":"2026-09-19T02:22:27.2366445+00:00","note":"Environment is up; entering scenario 'real-onboard-partial-load-and-occupied-slot'."}
+{"at":"2026-09-19T02:22:27.5978326+00:00","note":"Publishing demand A 8e11c37aa50e4cb2a91297b9f4f17feb (sublot L2-POS-20260919T022059777Z-A, 4 boxes)."}
+{"at":"2026-09-19T02:22:27.7580866+00:00","criterion":"to-pickup-intent-A","value":"(null)"}
+{"at":"2026-09-19T02:22:29.3668994+00:00","criterion":"to-pickup-intent-A","value":"@{UpperId=W2G-07f55af3-c917-d057-9088-d31dabd8c33f-S1-1; OrderId=; Status=PENDING_RECONCILIATION}"}
+{"at":"2026-09-19T02:22:29.6512531+00:00","criterion":"to-pickup-intent-A","value":"@{UpperId=W2G-07f55af3-c917-d057-9088-d31dabd8c33f-S1-1; OrderId=ORDER-000001; Status=CONFIRMED}"}
+{"at":"2026-09-19T02:22:29.7112154+00:00","note":"Vehicle drives to the pickup station for demand A."}
+{"at":"2026-09-19T02:22:32.6912930+00:00","note":"Slot 1 reads light curtain 1 when empty; pinning it to 0 -- someone else's basket."}
+{"at":"2026-09-19T02:22:32.9000856+00:00","criterion":"occupied-override","value":"0"}
+{"at":"2026-09-19T02:22:36.0892636+00:00","note":"Submitted sublot L2-POS-20260919T022059777Z-A."}
+{"at":"2026-09-19T02:22:36.1269032+00:00","criterion":"load-a-settled","value":"(null)"}
+{"at":"2026-09-19T02:22:37.2267153+00:00","criterion":"load-a-settled","value":"@{SlotOperationAttemptId=f6f4c864-8a79-9d5b-a108-49f5103e82f1; Status=Prepared}"}
+{"at":"2026-09-19T02:22:37.5213049+00:00","criterion":"load-a-settled","value":"@{SlotOperationAttemptId=f6f4c864-8a79-9d5b-a108-49f5103e82f1; Status=RecoveryRequired}"}
+{"at":"2026-09-19T02:22:37.7804020+00:00","criterion":"journey-a-blocked","value":"Blocked / LOAD_RESULT_REQUIRES_RECOVERY"}
+{"at":"2026-09-19T02:22:39.5299690+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY accepted for demand 8e11c37a-a50e-4cb2-a912-97b9f4f17feb (command 1134e88e-23f3-4713-985e-4aba8eef1508)"}
+{"at":"2026-09-19T02:22:40.8317171+00:00","note":"field-operator: compensation: vehicle waits on slot 1; maintenance takes the cargo out"}
+{"at":"2026-09-19T02:22:41.0034532+00:00","note":"field-operator: slot 1: door closed with cargo EMPTY"}
+{"at":"2026-09-19T02:22:42.1389661+00:00","note":"field-operator: COMPENSATE_LOAD_ALL_EMPTY reconciled; demand 8e11c37a-a50e-4cb2-a912-97b9f4f17feb Cancelled"}
+{"at":"2026-09-19T02:22:42.1745731+00:00","note":"maintenance: override removed at 2026-09-19T02:22:39.8189057+00:00"}
+{"at":"2026-09-19T02:22:42.2670043+00:00","criterion":"act-a-closed","value":"Completed / CANCELLED_BY_LOAD_COMPENSATION | Ready / READY"}
+{"at":"2026-09-19T02:22:42.4759063+00:00","note":"Publishing demand B bbe2e6a0d1f84e2a89597f68241cf370 (sublot L2-POS-20260919T022059777Z-B, 12 boxes)."}
+{"at":"2026-09-19T02:22:42.6720533+00:00","criterion":"to-pickup-intent-B","value":"(null)"}
+{"at":"2026-09-19T02:22:42.9409677+00:00","criterion":"to-pickup-intent-B","value":"@{UpperId=W2G-2ae0eb22-c697-0e50-aef1-724b256e8688-S1-1; OrderId=ORDER-000002; Status=CONFIRMED}"}
+{"at":"2026-09-19T02:22:42.9826485+00:00","note":"Vehicle drives to the pickup station for demand B."}
+{"at":"2026-09-19T02:22:45.1218985+00:00","note":"field-operator: stop 1: submitted sublot L2-POS-20260919T022059777Z-B (demand bbe2e6a0-d1f8-4e2a-8959-7f68241cf370)"}
+{"at":"2026-09-19T02:22:46.9194015+00:00","note":"field-operator: stop 1: vehicle waits on slot 1 (attempt d6172e27-c083-1658-9832-a8d5fcdafc86)"}
+{"at":"2026-09-19T02:22:47.0091181+00:00","criterion":"load-b-waiting-0","value":"@{Unlocking=1; Waiting=1; WaitingSlot=1; Events=System.Object[]}"}
+{"at":"2026-09-19T02:22:47.0401935+00:00","note":"Operator puts a basket into slot 1 and closes it."}
+{"at":"2026-09-19T02:22:47.4174052+00:00","note":"field-operator: slot 1: door closed with cargo OCCUPIED"}
+{"at":"2026-09-19T02:22:47.7461767+00:00","criterion":"load-b-waiting-1","value":"@{Unlocking=1; Waiting=1; WaitingSlot=1; Events=System.Object[]}"}
+{"at":"2026-09-19T02:22:48.0245979+00:00","criterion":"load-b-waiting-1","value":"@{Unlocking=2; Waiting=1; WaitingSlot=1; Events=System.Object[]}"}
+{"at":"2026-09-19T02:22:49.1332114+00:00","criterion":"load-b-waiting-1","value":"@{Unlocking=2; Waiting=2; WaitingSlot=2; Events=System.Object[]}"}
+{"at":"2026-09-19T02:22:49.1352838+00:00","note":"Operator puts a basket into slot 2 and closes it."}
+{"at":"2026-09-19T02:22:49.5923152+00:00","note":"field-operator: slot 2: door closed with cargo OCCUPIED"}
+{"at":"2026-09-19T02:22:49.8822982+00:00","criterion":"load-b-waiting-2","value":"@{Unlocking=2; Waiting=2; WaitingSlot=2; Events=System.Object[]}"}
+{"at":"2026-09-19T02:22:50.4357682+00:00","criterion":"load-b-waiting-2","value":"@{Unlocking=3; Waiting=2; WaitingSlot=2; Events=System.Object[]}"}
+{"at":"2026-09-19T02:22:51.2913940+00:00","criterion":"load-b-waiting-2","value":"@{Unlocking=3; Waiting=3; WaitingSlot=3; Events=System.Object[]}"}
+{"at":"2026-09-19T02:22:51.3501754+00:00","note":"field-operator: slot 3: door closed"}
+{"at":"2026-09-19T02:22:51.5000186+00:00","note":"Run failed: The term 'Wait-FieldCloseAnswer' is not recognized as a name of a cmdlet, function, script file, or executable program.\r\nCheck the spelling of the name, or if a path was included, verify that the path is correct and try again."}
+{"at":"2026-09-19T02:22:51.7995814+00:00","note":"Exported 60 ProtocolInbox rows for the schema check."}
+{"at":"2026-09-19T02:24:41.8621044+00:00","note":"Schema conformance, exit 0: Schema conformance (protocol-v0.3.0): 60 lines, 60 distinct, 14 message types, 0 distinct violations, 0 known; schema compilation 94698 ms."}

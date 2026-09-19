@@ -1117,6 +1117,59 @@ public sealed class JourneyRuntimeWorkerTests
     /// demand, and the cargo already aboard from the first stop still reaches the gate. Before the
     /// fix the journey stayed at stop 2 in AwaitingLoadResult with nothing left to move it.
     /// </summary>
+    /// <summary>
+    /// 8005-agv-control-server#170. The same station deadline, but the first slot did take its basket
+    /// before it ran out. That basket is on the vehicle, so the stop does not close and the demand is
+    /// not cancelled: the journey blocks for the recovery that gets the basket out. Ending it here is
+    /// what left two baskets of a cancelled demand locked in agv01 on 2026-09-19.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task APartlyLoadedFailureBlocksTheJourneyInsteadOfEndingTheDemand()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(
+            "10000000-0000-4000-8000-000000000001",
+            "SUBLOT-001",
+            Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 8);
+        await fixture.AdvanceToLoadResultAsync();
+        StationOperationRow load = await fixture.OperationAsync(SlotOperationType.Load);
+        int[] slots = JsonSerializer.Deserialize<int[]>(load.TargetSlotsJson) ?? [];
+        Assert.Equal(2, slots.Length);
+        await new WireToGateStore(fixture.Context).ApplyOperationResultAsync(
+            new StationOperationResult(
+                Guid.NewGuid().ToString("D"),
+                load.SlotOperationAttemptId,
+                load.DemandId,
+                SlotOperationType.Load,
+                "FAILED",
+                [
+                    new SlotPhysicalEvidence(slots[0], SlotBusinessState.Occupied, true, true),
+                    new SlotPhysicalEvidence(slots[1], SlotBusinessState.Empty, true, true)
+                ],
+                false,
+                fixture.Clock.GetUtcNow(),
+                new string('8', 64),
+                new string('9', 64)),
+            fixture.Options.AgvId,
+            0,
+            TestContext.Current.CancellationToken);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyRuntimeRow journey = await fixture.JourneyRowAsync();
+        Assert.Equal(JourneyRuntimeStage.Blocked, journey.Stage);
+        Assert.Equal("LOAD_RESULT_REQUIRES_RECOVERY", journey.BlockReasonCode);
+        Assert.Equal(
+            DemandExecutionStatus.RecoveryRequired,
+            (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(
+                TestContext.Current.CancellationToken)).Status);
+        Assert.Empty(await fixture.Context.TransportDemandSuppressions.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-07")]
@@ -2476,6 +2529,80 @@ public sealed class JourneyRuntimeWorkerTests
             JourneyStopState.Planned,
             (await fixture.StopRowsAsync()).Single(row => row.Sequence == 2).State);
     }
+
+    /// <summary>
+    /// 8005-agv-control-server#170. The session baseline said all eight slots were empty, but since
+    /// then the vehicle reported slots 1 and 2 closed on cargo -- a load whose demand is gone, so no
+    /// journey reserves them. The next load must not be sent there.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task AllocationSkipsSlotsLastReportedOccupied()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "OperationResult",
+            SlotReadings(("OCCUPIED", [1, 2]), ("EMPTY", [3])));
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+
+        JourneyDemandRow demand = (await fixture.DemandRowsAsync()).Single();
+        Assert.Equal([3], JsonSerializer.Deserialize<int[]>(demand.TargetSlotsJson) ?? []);
+    }
+
+    /// <summary>
+    /// The newest reading wins, not the first: once a compensation reports slot 1 empty again, it is
+    /// free again. Slot 2, never cleared, stays out.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-01")]
+    public async Task ALaterEmptyReadingReleasesASlot()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "OperationResult",
+            SlotReadings(("OCCUPIED", [1, 2])));
+        fixture.Clock.Advance(TimeSpan.FromSeconds(1));
+        await fixture.AddInboxAsync(
+            Guid.NewGuid().ToString("D"),
+            "LoadCompensationResult",
+            SlotReadings(("EMPTY", [1])),
+            receivedAt: fixture.Clock.GetUtcNow());
+        fixture.Catalog.Set(
+            fixture.Demand("10000000-0000-4000-8000-000000000001", "SUBLOT-001", createdAt: Now.AddMinutes(-10)),
+            fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        fixture.BoxCounts.Set("SUBLOT-002", 4);
+
+        await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
+        await fixture.ArriveAtCurrentStopAsync();
+
+        int[] targets = (await fixture.DemandRowsAsync())
+            .SelectMany(row => JsonSerializer.Deserialize<int[]>(row.TargetSlotsJson) ?? [])
+            .Order()
+            .ToArray();
+        Assert.Equal([1, 3], targets);
+    }
+
+    private static object SlotReadings(params (string State, int[] Slots)[] readings) => new
+    {
+        slotResults = readings
+            .SelectMany(reading => reading.Slots.Select(slot => new
+            {
+                slotNo = slot,
+                outcome = "COMPLETED",
+                finalPhysicalState = reading.State,
+                lockState = "LOCKED",
+                unlockOutputState = "RESET",
+                reasonCodes = Array.Empty<string>()
+            }))
+            .ToArray()
+    };
 
     /// <summary>
     /// "Full" is not every slot occupied: it is too few free to take the next candidate whole, since
@@ -4507,7 +4634,8 @@ public sealed class JourneyRuntimeWorkerTests
             string messageId,
             string messageType,
             object payload,
-            string? correlationId = null)
+            string? correlationId = null,
+            DateTimeOffset? receivedAt = null)
         {
             string json = JsonSerializer.Serialize(new
             {
@@ -4530,7 +4658,7 @@ public sealed class JourneyRuntimeWorkerTests
                 RequestJson = json,
                 ContentHash = new string('a', 64),
                 FirstResponseJson = "{}",
-                ReceivedAt = Now
+                ReceivedAt = receivedAt ?? Now
             });
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);
         }

@@ -1861,13 +1861,24 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             // Unload is deliberately excluded. ADR-cross-0015 gives it UnloadCompletionRequired with
             // no cancellation branch, so an unload that misses its target keeps closing the loop
             // until the slots are empty; it has no determinate-failure exit to take.
+            //
+            // And "nobody handed the cargo over" has to be literally true: every slot empty. A load
+            // that came back FAILED with some slots occupied is not that. Either those slots took
+            // cargo before the station deadline ran out (the 2026-09-19 agv01 load [3,4,5], where 3
+            // and 4 filled and 5 never did), or the vehicle refused because a slot already held
+            // someone else's cargo (8005-agv-onboard-hmi#116). Cancelling the demand here dropped the
+            // only record pointing at that cargo: the slots went back to looking free, the next
+            // journey was assigned slot 3, and the gate never unloaded them
+            // (8005-agv-control-server#170). Such a result is RecoveryRequired instead: the journey
+            // blocks, and the recovery that settles it -- COMPENSATE_LOAD_ALL_EMPTY opens exactly the
+            // occupied slots -- is also the only product path that gets the cargo out of a locked slot.
             bool determinateFailure =
                 operation.OperationType == SlotOperationType.Load &&
                 result.OverallOutcome == "FAILED" &&
                 result.SlotEvidence.Count == expectedSlots.Length &&
                 actualSlots.SequenceEqual(expectedSlots) &&
                 result.SlotEvidence.All(item =>
-                    item.State != SlotBusinessState.Unknown && item.DoorLocked && item.UnlockOutputReset);
+                    item.State == SlotBusinessState.Empty && item.DoorLocked && item.UnlockOutputReset);
             operation.Status = determinateFailure
                 ? StationOperationStatus.Failed
                 : StationOperationStatus.RecoveryRequired;

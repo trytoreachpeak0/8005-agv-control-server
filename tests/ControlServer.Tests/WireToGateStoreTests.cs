@@ -369,6 +369,120 @@ public sealed class WireToGateStoreTests
         Assert.False((await fixture.Context.OperationResults.SingleAsync(fixture.CancellationToken)).HistoricalOnly);
     }
 
+    /// <summary>
+    /// 8005-agv-control-server#170. The 2026-09-19 agv01 load [3,4,5]: 3 and 4 took cargo, 5 never
+    /// did, and the station deadline ran out. Every field is known, every door locked -- but the cargo
+    /// in 3 and 4 is on the vehicle. Settling that as "nobody handed anything over" cancelled the
+    /// demand and forgot the baskets. It needs recovery, which is what gets them out.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task APartlyLoadedFailureNeedsRecoveryInsteadOfCancellingTheDemand()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await PrepareLoadAsync(fixture, [3, 4, 5]);
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-001",
+                "ATTEMPT-001",
+                "D-001",
+                SlotOperationType.Load,
+                "FAILED",
+                [
+                    new SlotPhysicalEvidence(3, SlotBusinessState.Occupied, true, true),
+                    new SlotPhysicalEvidence(4, SlotBusinessState.Occupied, true, true),
+                    new SlotPhysicalEvidence(5, SlotBusinessState.Empty, true, true)
+                ],
+                false,
+                fixture.Now.AddSeconds(1),
+                "result-hash",
+                "wire-hash"),
+            "AGV-001",
+            0,
+            fixture.CancellationToken);
+
+        Assert.Equal(OperationResultDisposition.RecoveryRequired, disposition);
+        Assert.Equal(
+            StationOperationStatus.RecoveryRequired,
+            (await fixture.Context.StationOperations.SingleAsync(fixture.CancellationToken)).Status);
+        Assert.Equal(
+            DemandExecutionStatus.RecoveryRequired,
+            (await fixture.Context.AcceptedDemands.SingleAsync(fixture.CancellationToken)).Status);
+    }
+
+    /// <summary>
+    /// 8005-agv-onboard-hmi#116. The vehicle refused the load because slot 3 already held someone
+    /// else's cargo: nothing opened, every reading real, slot 3 OCCUPIED. That cargo has to come out
+    /// before anything else goes in, so this is a recovery too, not a quiet cancellation.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "W2G-IS-02")]
+    [Trait("IntegrationSlice", "W2G-IS-07")]
+    public async Task ALoadRefusedOverAnOccupiedSlotNeedsRecovery()
+    {
+        await using StoreFixture fixture = await StoreFixture.CreateAsync();
+        await PrepareLoadAsync(fixture, [3, 4]);
+
+        OperationResultDisposition disposition = await fixture.Store.ApplyOperationResultAsync(
+            new StationOperationResult(
+                "RESULT-001",
+                "ATTEMPT-001",
+                "D-001",
+                SlotOperationType.Load,
+                "FAILED",
+                [
+                    new SlotPhysicalEvidence(3, SlotBusinessState.Occupied, true, true),
+                    new SlotPhysicalEvidence(4, SlotBusinessState.Empty, true, true)
+                ],
+                false,
+                fixture.Now.AddSeconds(1),
+                "result-hash",
+                "wire-hash"),
+            "AGV-001",
+            0,
+            fixture.CancellationToken);
+
+        Assert.Equal(OperationResultDisposition.RecoveryRequired, disposition);
+        Assert.Equal(
+            DemandExecutionStatus.RecoveryRequired,
+            (await fixture.Context.AcceptedDemands.SingleAsync(fixture.CancellationToken)).Status);
+    }
+
+    private static async Task PrepareLoadAsync(StoreFixture fixture, int[] slots)
+    {
+        await fixture.Store.AcceptWithOrderIntentAsync(
+            new AcceptedDemandSnapshot(
+                "D-001",
+                "SUBLOT-001|WIRE_TO_GATE",
+                7,
+                "history-1",
+                21,
+                fixture.Now),
+            new OrderIntent(
+                "LEG-001",
+                "D-001",
+                "W2G-D-001-PICKUP-1",
+                "TO_PICKUP",
+                "ST-PICKUP",
+                fixture.Now),
+            fixture.CancellationToken);
+        await fixture.Store.PrepareSlotOperationAsync(
+            new StationOperationPlan(
+                "ATTEMPT-001",
+                "D-001",
+                "SUBLOT-001",
+                slots,
+                SlotOperationType.Load,
+                0,
+                "plan-hash",
+                fixture.Now),
+            "MSG-CMD-001",
+            "command-json",
+            fixture.CancellationToken);
+    }
+
     [Fact]
     [Trait("IntegrationSlice", "W2G-IS-02")]
     [Trait("IntegrationSlice", "W2G-IS-07")]

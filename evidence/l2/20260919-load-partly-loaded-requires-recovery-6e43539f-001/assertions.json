@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "scenario": "load-partly-loaded-requires-recovery",
+  "runId": "20260919T021457999Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "controlServerCommit": "6e43539f19d3e773ef0e4395f30bfe5ea8231c7b",
+    "rig": "SyntheticOnboard",
+    "vehicleKey": "BROKERX-L2-0001",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T021457999Z",
+    "batchId": "BATCH-3",
+    "protocolReleaseIdentity": {
+      "tag": "protocol-v0.3.0",
+      "repositoryCommit": "345c53c58517968192c87c3e7777ed08ddb48726",
+      "manifestSha256": "b6c81ca9bb482986249411fcfc9169ac6b70b77388c63e43d581295eb02ba138"
+    },
+    "agvId": "AGV-L2-001"
+  },
+  "assertions": [
+    {
+      "id": "L2-PL-01",
+      "description": "装载指令针对三个仓位，与现场那一单同形",
+      "outcome": "PASS",
+      "expected": 3,
+      "actual": 3
+    },
+    {
+      "id": "L2-PL-02",
+      "description": "旅程停下等恢复，而不是作废需求继续走",
+      "outcome": "PASS",
+      "expected": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY",
+      "actual": "Blocked / LOAD_RESULT_REQUIRES_RECOVERY"
+    },
+    {
+      "id": "L2-PL-03",
+      "description": "装载操作判 RecoveryRequired，不是确定失败 Failed",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired",
+      "actual": "RecoveryRequired"
+    },
+    {
+      "id": "L2-PL-04",
+      "description": "需求留着（RecoveryRequired），没有被判 Cancelled，也没有被永久抑制——车上那两篮还有记录指向它",
+      "outcome": "PASS",
+      "expected": "RecoveryRequired / 抑制 0 条",
+      "actual": "RecoveryRequired / 抑制 0 条"
+    },
+    {
+      "id": "L2-PL-05",
+      "description": "又跑了几轮之后旅程仍然停着，没有派车去关卡",
+      "outcome": "PASS",
+      "expected": "Blocked / RIoT 单 1 条",
+      "actual": "Blocked / RIoT 单 1 条"
+    },
+    {
+      "id": "L2-SC-01",
+      "description": "车载端报文逐条符合 protocol-v0.3.0 的 JSON Schema（合成对端发出的每一行）",
+      "outcome": "PASS",
+      "expected": "退出码 0，校验行数 > 0，未登记违约 0",
+      "actual": "退出码 0：Schema conformance (protocol-v0.3.0): 13 lines, 13 distinct, 8 message types, 0 distinct violations, 0 known; schema compilation 45297 ms."
+    }
+  ]
+}
