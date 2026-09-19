@@ -127,8 +127,12 @@ public sealed class ConfiguredGateStationResolver(
 
     public Task<IFixedTaskStationView> ReadForRoundAsync(
         RiotMapStationCatalogSnapshot map,
-        CancellationToken cancellationToken) =>
-        throw new NotImplementedException();
+        CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        return Task.FromResult<IFixedTaskStationView>(new ConfiguredGateStationView(
+            _stationResolver.RequireFixedStation(map, _options.GateStationRiotId, _options.GateStationId)));
+    }
 }
 
 /// <summary>A round's view in which every task type resolves to the one configured gate station.</summary>
@@ -136,5 +140,6 @@ public sealed class ConfiguredGateStationView(RiotMapStation gate) : IFixedTaskS
 {
     public RiotMapStation Gate { get; } = gate;
 
-    public FixedTaskStationResolution Resolve(string taskType) => throw new NotImplementedException();
+    public FixedTaskStationResolution Resolve(string taskType) =>
+        FixedTaskStationResolution.Resolved(taskType, FixedStationEnd.Destination, Gate);
 }

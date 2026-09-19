@@ -136,6 +136,8 @@ builder.Services.AddOptions<EmergencyStopReleaseOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<EmergencyStopReleaseOptions>, EmergencyStopReleaseOptionsValidator>();
 builder.Services.AddSingleton<MapStationResolver>();
+// 固定站按任务类型取得；批次6-04（control-server#160）换注册，不改接口。
+builder.Services.AddScoped<IFixedTaskStationResolver, ConfiguredGateStationResolver>();
 builder.Services.AddHttpClient<ISublotBoxCountReader, HttpSublotBoxCountReader>((services, client) =>
 {
     IConfiguration configuration = services.GetRequiredService<IConfiguration>();

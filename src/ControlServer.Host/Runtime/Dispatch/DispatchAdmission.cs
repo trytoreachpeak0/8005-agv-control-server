@@ -14,7 +14,10 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// </remarks>
 /// <param name="Catalog">MesIngest's open transport demands.</param>
 /// <param name="Map">The current Map/Station catalog snapshot.</param>
-/// <param name="Gate">The gate station this journey family ends at.</param>
+/// <param name="FixedStations">
+/// This round's fixed stations, answered per task type. Read once for the same reason as everything
+/// else here: every candidate of the round is judged against the same bindings.
+/// </param>
 /// <param name="AcceptedDemandIds">
 /// Demands this server has already accepted. A demand it has accepted is bound to its one journey
 /// permanently and is never a candidate again, whatever stage that journey reached.
@@ -46,13 +49,12 @@ namespace ControlServer.Host.Runtime.Dispatch;
 public sealed record DispatchRoundFacts(
     DemandCatalogSnapshot Catalog,
     RiotMapStationCatalogSnapshot Map,
-    RiotMapStation Gate,
+    IFixedTaskStationView FixedStations,
     IReadOnlySet<string> AcceptedDemandIds,
     DateTimeOffset Now,
     VehicleDispatchPolicy Policy,
     AreaAssignmentTableVersion? AreaAssignments = null,
-    bool AdmissionPolicyDrifted = false,
-    IFixedTaskStationView? FixedStations = null);
+    bool AdmissionPolicyDrifted = false);
 
 /// <summary>
 /// One vehicle's facts for this round, plus the configuration slice that applies to it.
@@ -98,11 +100,22 @@ public sealed record OnboardDispatchFacts(
     bool UnknownPresent);
 
 /// <summary>The route a candidate resolved to.</summary>
+/// <remarks>
+/// Built by <see cref="JourneyPlanBuilder.ResolveRoute"/>, which decides which end is the pickup and
+/// which the dropoff; the plan takes both ends from here and nowhere else.
+/// </remarks>
+/// <param name="FixedStation">
+/// The fixed station this route was built from, with the versions it was resolved under -- what an
+/// acceptance freezes alongside the route.
+/// </param>
 public sealed record ResolvedJourneyRoute(
     string DispatchZone,
     string RouteEvidenceId,
     string PickupStationId,
-    int PickupStationRiotId);
+    int PickupStationRiotId,
+    string DropoffStationId,
+    int DropoffStationRiotId,
+    FixedTaskStationResolution FixedStation);
 
 /// <summary>
 /// One candidate's evaluation as it moves down the criterion chain.

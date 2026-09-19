@@ -530,7 +530,7 @@ public sealed class StructuralDispatchBlockTests
         params AcceptedDemandSnapshot[] catalog) => new(
         new DemandCatalogSnapshot("11111111-1111-4111-8111-111111111111", 21, catalog),
         new RiotMapStationCatalogSnapshot(25, now, new string('c', 64), []),
-        new RiotMapStation(210, "关卡"),
+        new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
         accepted.ToHashSet(StringComparer.Ordinal),
         now,
         new VehicleDispatchPolicy([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY"),

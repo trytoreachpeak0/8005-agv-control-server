@@ -141,11 +141,10 @@ public sealed class FixedTaskStationResolverTests
     private static DispatchRoundFacts Round(IFixedTaskStationView view) => new(
         new DemandCatalogSnapshot("11111111-1111-4111-8111-111111111111", 21, []),
         Map,
-        Gate,
+        view,
         new HashSet<string>(StringComparer.Ordinal),
         Now,
-        new VehicleDispatchPolicy([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY"),
-        FixedStations: view);
+        new VehicleDispatchPolicy([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY"));
 
     private static DispatchCandidateEvaluation Evaluation(DispatchRoundFacts round, string workType)
     {

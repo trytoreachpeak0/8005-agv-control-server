@@ -73,7 +73,7 @@ public sealed class JourneyPlanCharacterizationTests
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot(candidate.HistoryEpoch, 21, [candidate]),
                 map,
-                new RiotMapStation(210, "关卡"),
+                new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
                 new HashSet<string>(StringComparer.Ordinal),
                 Now,
                 new VehicleDispatchPolicy(
