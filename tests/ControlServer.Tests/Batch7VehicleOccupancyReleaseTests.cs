@@ -31,6 +31,7 @@ public sealed class Batch7VehicleOccupancyReleaseTests
         await fixture.RunToCompletionAsync();
         Assert.Equal(DemandExecutionStatus.Succeeded, (await fixture.DemandRowAsync()).Status);
         await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
+        await ZeroChangePin.AssertMatchesAsync(fixture.Context, "unload");
 
         fixture.Catalog.Set(fixture.Demand("10000000-0000-4000-8000-000000000002", "SUBLOT-002", Now.AddMinutes(-5)));
         fixture.BoxCounts.Set("SUBLOT-002", 4);

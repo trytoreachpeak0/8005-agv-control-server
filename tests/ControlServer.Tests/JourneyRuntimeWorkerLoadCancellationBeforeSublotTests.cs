@@ -934,6 +934,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
         OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
             .SingleAsync(row => row.Purpose == "TO_PICKUP", token);
         Assert.Equal(receivedAt, pickup.VehicleOccupancyReleasedAt);
+        await ZeroChangePin.AssertMatchesAsync(fixture.Context, "in-flight-cancellation");
 
         await AssertTheVehicleTakesTheNextDemandAsync(fixture, cancelled);
     }
@@ -963,6 +964,7 @@ public sealed class JourneyRuntimeWorkerLoadCancellationBeforeSublotTests
             state,
             token);
         await AssertStopEndedByOperatorAsync(fixture, waiting, receivedAt);
+        await ZeroChangePin.AssertMatchesAsync(fixture.Context, "cancellation-before-sublot");
 
         await AssertTheVehicleTakesTheNextDemandAsync(fixture, cancelled);
     }
