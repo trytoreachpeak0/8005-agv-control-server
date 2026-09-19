@@ -15,6 +15,7 @@ using ControlServer.Host.Runtime.Commands;
 using ControlServer.Host.Runtime.CreateGate;
 using ControlServer.Host.Runtime.Faults;
 using ControlServer.Host.Runtime.Fleet;
+using ControlServer.Host.Runtime.TaskTypeStations;
 
 namespace ControlServer.Host.Runtime;
 
@@ -25,6 +26,7 @@ public sealed class JourneyRuntimeEngine(
     IRiotMapStationCatalog mapStationCatalog,
     MapStationResolver stationResolver,
     IFixedTaskStationResolver fixedStationResolver,
+    TaskTypeStationAccess taskTypeStations,
     JourneyIntakeCoordinator intakeCoordinator,
     MovementDispatchService movementDispatch,
     WireToGateStore store,
@@ -137,6 +139,8 @@ public sealed class JourneyRuntimeEngine(
     public const string CheckpointWaitExceededReason = "VEHICLE_CHECKPOINT_WAIT_EXCEEDED";
 
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
+
+    private readonly TaskTypeStationAccess _taskTypeStations = taskTypeStations;
 
     public async Task ExecuteOnceAsync(CancellationToken cancellationToken)
     {

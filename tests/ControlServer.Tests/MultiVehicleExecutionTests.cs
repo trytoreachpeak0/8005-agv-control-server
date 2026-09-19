@@ -923,9 +923,11 @@ public sealed class MultiVehicleExecutionTests
         {
             SqliteConnection connection = new("Data Source=:memory:");
             await connection.OpenAsync(TestContext.Current.CancellationToken);
-            ControlServerDbContext context = new(
-                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options);
+            DbContextOptions<ControlServerDbContext> dbOptions =
+                new DbContextOptionsBuilder<ControlServerDbContext>().UseSqlite(connection).Options;
+            ControlServerDbContext context = new(dbOptions);
             await context.Database.MigrateAsync(TestContext.Current.CancellationToken);
+            await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);
             JourneyRuntimeOptions options = FleetOptions(budgetMilliseconds);
             configure?.Invoke(options);
             FleetFixture fixture = new(connection, context, options, new MovableClock(Now));
@@ -1064,6 +1066,7 @@ public sealed class MultiVehicleExecutionTests
                 Riot,
                 new MapStationResolver(),
                 new ConfiguredGateStationResolver(new MapStationResolver(), options),
+                TaskTypeStationRuntimeSeed.Access(Context),
                 new JourneyIntakeCoordinator(
                     new DemandIntakeService(Catalog, new RecordingAcceptances(store, AcceptedPlans)),
                     movement),

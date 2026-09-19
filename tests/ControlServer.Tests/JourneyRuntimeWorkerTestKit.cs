@@ -163,6 +163,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 await fixture.BindApprovedSlotModelAsync();
             }
 
+            await TaskTypeStationRuntimeSeed.ActivateAsync(dbOptions, Now);
             await fixture.SeedRecoveredPeerAsync();
             await fixture.ImportAreaAssignmentsAsync(
                 [.. DefaultAssignedAreas.Select(area => new AreaAssignment(area, options.DispatchZone, "FRONT"))]);
@@ -908,6 +909,7 @@ internal static class JourneyRuntimeWorkerTestKit
                 Riot,
                 new MapStationResolver(),
                 new ConfiguredGateStationResolver(new MapStationResolver(), options),
+                TaskTypeStationRuntimeSeed.Access(Context),
                 intake,
                 new MovementDispatchService(store, Riot),
                 store,
