@@ -57,6 +57,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["AreaAssignmentDispatchTests"] = "batch 4 FP-C15 REQ-0191/REQ-0350 area assignment whitelist, route dispatch zone, startup check and acceptance freeze (control-server#72); server-internal, no wire message",
             ["AreaAssignmentImportTests"] = "batch 4 FP-C15 REQ-0350 FieldOps whole-table import of the area assignment table; a controlled operations entry point, no wire message",
             ["AreaAssignmentStoreTests"] = "batch 4 FP-C15 REQ-0350 area assignment table versions; the side is decided on the server only (spec 5.1 #10), no wire message",
+            ["AreaEndAdmissionRevokedSinceMigrationTests"] = "cross-cutting migration guard for control-server#228's one-column migration and its back-fill of stops already held at their AREA machine; hanging it off a slice would defer the guard with the slice",
             ["AuditExportTests"] = "batch 3 FP-C14 REQ-0271 audit query and export; server-internal, no wire message",
             ["Batch2CapabilityStoresTests"] = "batch 2 track B persistence foundation; server-internal, no wire message",
             ["Batch3MigrationDisciplineTests"] = "cross-cutting migration and startup guard; hanging it off a slice would defer the guard with the slice",

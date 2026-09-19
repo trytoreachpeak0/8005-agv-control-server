@@ -353,6 +353,162 @@ public sealed class ReversedDirectionJourneyRuntimeTests
     }
 
     /// <summary>
+    /// control-server#228 (control-server#198 review S1): the onboard process hangs while the stop is held, so its session
+    /// stays Ready but nothing is heard from it any more, and every later round finds the arrival untrusted. The count
+    /// is still judged every round, ahead of the arrival check: past the threshold the journey is Blocked under the
+    /// admission timeout from the first hold, instead of standing at AwaitingGateArrival for ever.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AHeldStopWhoseOnboardStopsHeartbeatingIsStillEscalatedOnTime()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await ArriveAtTheMachineAsync(fixture);
+        await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+
+        // Nothing is heard from the peer from here on: the arrival is no longer trusted, the session is still Ready.
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingGateArrival, "TASK_TYPE_NOT_ALLOWED_AT_STATION", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+        Assert.Equal(SessionReadiness.Ready, (await fixture.Context.SessionRecoveries.AsNoTracking().SingleAsync(Token)).Readiness);
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(5));
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+        Assert.False(await fixture.Context.StationOperations.AnyAsync(
+            row => row.OperationType == SlotOperationType.Unload, Token));
+    }
+
+    /// <summary>
+    /// control-server#228 (control-server#198 review S1): RIoT reports the order the vehicle rode to the machine on as
+    /// FAILED partway through the wait, so the journey names VEHICLE_ORDER_FAILED for a round and then comes back to the
+    /// admission hold. Overwriting the block code does not restart the count: the threshold is measured from the first
+    /// hold, and the escalated block carries that start for the dashboard's ladder.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AnOrderFailureInTheMiddleOfTheWaitDoesNotRestartTheCount()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        JourneyRuntimeRow arrived = await ArriveAtTheMachineAsync(fixture);
+        await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(3));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.FailOrder(arrived.GateUpperId);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingGateArrival, "VEHICLE_ORDER_FAILED"),
+            ((await StateAsync(fixture)).Stage, (await StateAsync(fixture)).Code));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(3));
+        await fixture.HearFromPeerAsync();
+        fixture.Riot.SetSuccessfulArrival("TO_GATE", arrived.GateStationRiotId);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingGateArrival, "TASK_TYPE_NOT_ALLOWED_AT_STATION"),
+            ((await StateAsync(fixture)).Stage, (await StateAsync(fixture)).Code));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(4));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+    }
+
+    /// <summary>
+    /// control-server#228: the start of the wait is stored with the first hold, in the same save as the hold itself, and a
+    /// server restart followed by the vehicle reconnecting on a new session generation does not reset it -- the first
+    /// round after both still counts from the first hold.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task ARestartAndAReconnectWhileHeldDoNotRestartTheCount()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await ArriveAtTheMachineAsync(fixture);
+        await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+        Assert.Equal(
+            ("TASK_TYPE_NOT_ALLOWED_AT_STATION", RevokedSinceText(heldSince)),
+            ((await StateAsync(fixture)).Code, await StoredRevokedSinceAsync(fixture)));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(6));
+        await fixture.RecreateEngineAsync();
+        await fixture.AdvanceSessionAsync(2);
+        await fixture.HearFromPeerAsync();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            (JourneyRuntimeStage.AwaitingGateArrival, "TASK_TYPE_NOT_ALLOWED_AT_STATION", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+        Assert.Equal(RevokedSinceText(heldSince), await StoredRevokedSinceAsync(fixture));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(4));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(
+            (JourneyRuntimeStage.Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", (DateTimeOffset?)heldSince),
+            await StateAsync(fixture));
+    }
+
+    /// <summary>
+    /// control-server#228: admitted again, the stop leaves AwaitingGateArrival and the stored start of the wait goes with
+    /// it -- the one way it is ever cleared. A journey cannot come back to AwaitingGateArrival, so a later hold is always a
+    /// new journey's, and starts from nothing.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AnAdmissionRestoredClearsTheStoredStartOfTheWait()
+    {
+        await using RuntimeFixture fixture = await WithStagingToWireBoundAsync();
+        fixture.Catalog.Set(Reverse(fixture, ReverseDemand, "SUBLOT-001"));
+        fixture.BoxCounts.Set("SUBLOT-001", 4);
+        await ArriveAtTheMachineAsync(fixture);
+        StationTaskTypeAdmissionRow[] revoked = await RevokeStagingToWireAsync(fixture);
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        DateTimeOffset heldSince = fixture.Clock.GetUtcNow();
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(2));
+        await fixture.HearFromPeerAsync();
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(RevokedSinceText(heldSince), await StoredRevokedSinceAsync(fixture));
+
+        fixture.Context.StationTaskTypeAdmissions.AddRange(revoked);
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, (await StateAsync(fixture)).Stage);
+        Assert.Null(await StoredRevokedSinceAsync(fixture));
+    }
+
+    /// <summary>
     /// control-server#198 item 8: admitted again inside the threshold, the journey goes on as it always did -- the unload
     /// is commanded and frozen under the admission -- and the count is gone with the hold. Up to the threshold nothing
     /// is escalated: a second short of it the journey is still waiting at the machine.
@@ -509,6 +665,19 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         JourneyRuntimeRow runtime = await fixture.RuntimeAsync();
         return (runtime.Stage, runtime.BlockReasonCode, runtime.BlockReasonSince);
     }
+
+    /// <summary>The stored start of the admission wait, read from the database as SQLite holds it.</summary>
+    private static async Task<string?> StoredRevokedSinceAsync(RuntimeFixture fixture)
+    {
+        await using ControlServerDbContext read = fixture.OpenConnectionContext();
+        return await read.Database
+            .SqlQueryRaw<string?>("SELECT AreaEndAdmissionRevokedSince AS \"Value\" FROM JourneyRuntimes")
+            .SingleAsync(Token);
+    }
+
+    /// <summary>A time the way EF Core's SQLite provider stores a <see cref="DateTimeOffset"/>.</summary>
+    private static string RevokedSinceText(DateTimeOffset value) =>
+        value.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz", System.Globalization.CultureInfo.InvariantCulture);
 
     private static async Task<OrderIntentRow[]> OrdersAsync(RuntimeFixture fixture) =>
         await fixture.Context.OrderIntents.AsNoTracking()
