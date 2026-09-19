@@ -63,6 +63,10 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["Batch4MigrationDisciplineTests"] = "cross-cutting migration guard for batch 4's one migration; hanging it off a slice would defer the guard with the slice",
             ["Batch5MigrationDisciplineTests"] = "cross-cutting migration guard for batch 5's one migration (control-server#80); hanging it off a slice would defer the guard with the slice",
             ["Batch6MigrationDisciplineTests"] = "cross-cutting migration guard for batch 6's one migration (control-server#159); hanging it off a slice would defer the guard with the slice",
+            ["Batch7JourneyAcceptanceTests"] = "batch 7 schema ticket control-server#206: the acceptance transaction writes stops, demand membership, purpose claim and revision counter in its one save, with every id and revision the peer sees unchanged; server-internal persistence, no wire message changes",
+            ["Batch7MigrationDisciplineTests"] = "cross-cutting migration guard for batch 7's one migration (control-server#206), including its back-fill of journeys in flight; hanging it off a slice would defer the guard with the slice",
+            ["Batch7PersistencePortTests"] = "batch 7 schema ticket control-server#206: the five persistence ports later batch 7 tickets consume; server-internal, no wire message",
+            ["Batch7VehicleOccupancyReleaseTests"] = "batch 7 schema ticket control-server#206: the purpose claim is released wherever the lease is, so the vehicle takes its next journey after every ending; server-internal occupancy, no wire message",
             ["BlockedJourneyDashboardTests"] = "batch 5 control-server#80 blocked-journey start time and dashboard card; server and dashboard only, the dashboard is disjoint from the protocol and nothing is pushed (REQ-0270)",
             ["CatalogBindingChangeClassifierTests"] = "batch 6 FP-C9a REQ-0341/REQ-0342 catalog change classification by stable station identity (control-server#162); server-internal, no wire message",
             ["CatalogBindingHoldEngineHookTests"] = "batch 6 FP-C9a REQ-0342 the engine runs catalog change convergence after each complete catalog confirmation (control-server#162); server-internal, no wire message",
@@ -156,7 +160,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
         {
             ["FakeRiotTests"] = (8, "the fake's own control plane and conflict behaviour; the traited tests are the shapes the production adapter parses"),
             ["HttpRiotMovementGatewayTests"] = (23, "RIoT adapter fail-closed and sanitisation behaviour; the traited tests are the ones a wire message depends on"),
-            ["JourneyRuntimeOptionsTests"] = (2, "option defaults; the traited tests are the validations that fail a deployment closed"),
+            ["JourneyRuntimeOptionsTests"] = (4, "option defaults, and the cargo holding timeout that has no reader yet (control-server#206); the traited tests are the validations that fail a deployment closed"),
             ["OnboardAlarmProjectionTests"] = (1, "the dashboard self-registration convention #12 set up; the traited tests are the ones standing behind OnboardAlarmSnapshot")
         };
 

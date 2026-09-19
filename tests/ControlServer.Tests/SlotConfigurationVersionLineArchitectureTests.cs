@@ -118,6 +118,8 @@ public sealed class SlotConfigurationVersionLineArchitectureTests
         {
             ["ControlServer.Application.GovernedConfigurationPublisher"] = LineRole.TheMechanismItself,
             ["ControlServer.Infrastructure.Persistence.AreaAssignmentStore"] = LineRole.AnotherLine,
+            // control-server#206: the per-zone dispatch parameter table, one line.
+            ["ControlServer.Infrastructure.Persistence.DispatchZoneParameterStore"] = LineRole.AnotherLine,
             ["ControlServer.Infrastructure.Persistence.GovernedActivationStore"] = LineRole.SlotConfiguration,
             ["ControlServer.Infrastructure.Persistence.SlotConfigurationActivationCoordinator"] = LineRole.SlotConfiguration,
             ["ControlServer.Infrastructure.Persistence.SlotConfigurationAuthorityStore"] = LineRole.SlotConfiguration,

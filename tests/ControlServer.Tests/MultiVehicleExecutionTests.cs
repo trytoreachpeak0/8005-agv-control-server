@@ -1010,6 +1010,7 @@ public sealed partial class MultiVehicleExecutionTests
                 .SingleAsync(row => row.AgvId == agvId, TestContext.Current.CancellationToken);
             JourneyRuntimeRow copy = existing;
             copy.DemandId = existing.DemandId + "-SECOND";
+            copy.JourneyId = ControlServer.Application.JourneyIdentity.ForAnchorDemand(copy.DemandId);
             copy.CreatedAt = existing.CreatedAt.AddSeconds(1);
             Context.JourneyRuntimes.Add(copy);
             await Context.SaveChangesAsync(TestContext.Current.CancellationToken);

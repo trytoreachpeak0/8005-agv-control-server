@@ -50,6 +50,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         OrderIntentRow pickup = await fixture.Context.OrderIntents.AsNoTracking()
             .SingleAsync(row => row.Purpose == "TO_PICKUP", TestContext.Current.CancellationToken);
         Assert.Equal(settledAt, pickup.VehicleOccupancyReleasedAt);
+        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
         ProtocolOutboxRow loadCommand = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .SingleAsync(row => row.MessageId == runtime.LoadCommandMessageId, TestContext.Current.CancellationToken);
         Assert.Equal(settledAt, loadCommand.AcknowledgedAt);

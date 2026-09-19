@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using System.Text.Json;
 using ControlServer.Dashboard;
 using ControlServer.Domain;
@@ -677,6 +678,7 @@ public sealed class BlockedJourneyDashboardTests
 
     private static JourneyRuntimeRow Runtime(string demandId, string agvId) => new()
     {
+        JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
         DemandId = demandId,
         Stage = JourneyRuntimeStage.AwaitingSublot,
         AgvId = agvId,
