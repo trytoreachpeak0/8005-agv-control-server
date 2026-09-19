@@ -120,7 +120,10 @@ public sealed class SlotConfigurationVersionLineArchitectureTests
             ["ControlServer.Infrastructure.Persistence.AreaAssignmentStore"] = LineRole.AnotherLine,
             ["ControlServer.Infrastructure.Persistence.GovernedActivationStore"] = LineRole.SlotConfiguration,
             ["ControlServer.Infrastructure.Persistence.SlotConfigurationActivationCoordinator"] = LineRole.SlotConfiguration,
-            ["ControlServer.Infrastructure.Persistence.SlotConfigurationAuthorityStore"] = LineRole.SlotConfiguration
+            ["ControlServer.Infrastructure.Persistence.SlotConfigurationAuthorityStore"] = LineRole.SlotConfiguration,
+            // control-server#159: the task type rule table (one line) and each map's binding set (one line per map).
+            ["ControlServer.Infrastructure.Persistence.TaskTypeStationBindingStore"] = LineRole.AnotherLine,
+            ["ControlServer.Infrastructure.Persistence.TaskTypeStationRuleStore"] = LineRole.AnotherLine
         };
 
     private enum LineRole
