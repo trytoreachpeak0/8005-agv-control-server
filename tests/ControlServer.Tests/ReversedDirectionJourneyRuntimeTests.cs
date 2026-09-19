@@ -213,12 +213,14 @@ public sealed class ReversedDirectionJourneyRuntimeTests
         fixture.BoxCounts.Set("SUBLOT-001", 4);
         await ArriveAtTheMachineAsync(fixture);
         await fixture.Engine.ExecuteOnceAsync(Token);
-        JourneyRuntimeRow unloading = await fixture.RuntimeAsync();
+        fixture.Context.ChangeTracker.Clear();
+        JourneyRuntimeRow unloading = await fixture.Context.JourneyRuntimes.SingleAsync(Token);
         Assert.Equal(JourneyRuntimeStage.AwaitingUnloadResult, unloading.Stage);
 
         // The stage save is lost to a restart, and meanwhile the machine stops admitting the task type.
         unloading.Stage = JourneyRuntimeStage.AwaitingGateArrival;
         await fixture.Context.SaveChangesAsync(Token);
+        Assert.Equal(JourneyRuntimeStage.AwaitingGateArrival, (await fixture.RuntimeAsync()).Stage);
         await RevokeStagingToWireAsync(fixture);
         await fixture.RecreateEngineAsync();
         await fixture.Engine.ExecuteOnceAsync(Token);
