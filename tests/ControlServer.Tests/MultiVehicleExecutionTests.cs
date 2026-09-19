@@ -902,6 +902,7 @@ public sealed partial class MultiVehicleExecutionTests
             Options = options;
             Clock = clock;
             Riot = new FleetRiot(clock, options);
+            Acceptances = new RecordingAcceptances(new WireToGateStore(context), AcceptedPlans);
             GovernanceStore governance = new(
                 context,
                 new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"),
@@ -921,6 +922,7 @@ public sealed partial class MultiVehicleExecutionTests
         public CountingSlotPositions SlotPositions { get; } = new();
         public RecordingRoundOutcomes RoundOutcomes { get; } = new();
         public List<JourneyExecutionPlan> AcceptedPlans { get; } = [];
+        public RecordingAcceptances Acceptances { get; }
         public FleetBoxCounts BoxCounts { get; } = new();
         public RecordingInTransitQualification InTransit { get; } = new();
         public EventRecordingLogger<JourneyRuntimeEngine> EngineLog { get; } = new();
@@ -1103,7 +1105,7 @@ public sealed partial class MultiVehicleExecutionTests
                 Catalog,
                 Riot,
                 new JourneyIntakeCoordinator(
-                    new DemandIntakeService(Catalog, new RecordingAcceptances(store, AcceptedPlans)),
+                    new DemandIntakeService(Catalog, Acceptances),
                     movement),
                 new DispatchAdmissionChain(
                 [
@@ -1552,6 +1554,12 @@ public sealed partial class MultiVehicleExecutionTests
     private sealed class RecordingAcceptances(WireToGateStore inner, List<JourneyExecutionPlan> plans)
         : IJourneyAcceptanceStore
     {
+        /// <summary>
+        /// Thrown instead of the first acceptance, and only that one, the way the real store refuses one it cannot
+        /// make good on. Nothing is written when it throws, so the round claimed a demand it never accepted.
+        /// </summary>
+        public Exception? ThrowOnFirstAccept { get; set; }
+
         public Task AcceptWithOrderIntentAsync(
             AcceptedDemandSnapshot snapshot,
             OrderIntent orderIntent,
@@ -1564,6 +1572,12 @@ public sealed partial class MultiVehicleExecutionTests
             JourneyExecutionPlan journey,
             CancellationToken cancellationToken)
         {
+            if (ThrowOnFirstAccept is Exception refusal)
+            {
+                ThrowOnFirstAccept = null;
+                throw refusal;
+            }
+
             plans.Add(journey);
             return inner.AcceptWithOrderIntentAsync(snapshot, orderIntent, journey, cancellationToken);
         }
@@ -1601,6 +1615,12 @@ public sealed partial class MultiVehicleExecutionTests
         /// <summary>Runs just before the failing read throws, so a test can stage what the segment leaves behind.</summary>
         public Action? OnFail { get; set; }
 
+        /// <summary>
+        /// The vehicle key whose reads end in a cancellation that is not the host's, the way a store's own
+        /// write timeout does, or null.
+        /// </summary>
+        public string? CancelOn { get; set; }
+
         /// <summary>Every vehicle read, in the order it was asked, so a test can see the segments.</summary>
         public List<string> VehicleReads { get; } = [];
 
@@ -1621,6 +1641,13 @@ public sealed partial class MultiVehicleExecutionTests
             {
                 OnFail?.Invoke();
                 throw new HttpRequestException($"RIoT did not answer for {vehicleKey}.");
+            }
+
+            if (string.Equals(CancelOn, vehicleKey, StringComparison.Ordinal))
+            {
+                // A token of its own, already cancelled: neither the round's budget nor the host's shutdown.
+                throw new OperationCanceledException(
+                    $"A deadline of this vehicle's own fired for {vehicleKey}.", new CancellationToken(true));
             }
 
             return new RiotVehicleObservation(

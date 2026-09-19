@@ -599,8 +599,124 @@ public sealed partial class MultiVehicleExecutionTests
             Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles
                 .Select(vehicle => vehicle.AgvId).ToArray());
         EventRecordingLogger<JourneyRuntimeEngine>.Entry warning =
+            Assert.Single(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2125);
+        Assert.Contains(FleetFixture.AgvIds[0], warning.Message, StringComparison.Ordinal);
+        // Its own event id rather than the idle vehicles' 2123: nothing was dispatched for this vehicle and
+        // nothing could have been, so "could not be served this round" would say the wrong thing about it.
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2123);
+    }
+
+    /// <summary>
+    /// A cancellation that is not the host shutting down belongs to the vehicle, not to the round: a store's own
+    /// write deadline firing mid-segment skips that vehicle, and the ones behind it are still served.
+    /// </summary>
+    /// <remarks>
+    /// The real one is <c>WireToGateOrchestration</c>'s five-second evidence write timeout, which runs a
+    /// <see cref="CancellationTokenSource"/> of its own inside the segment. Its <see cref="OperationCanceledException"/>
+    /// answers to neither the budget (that source did not fire) nor the host token (nobody is shutting down), so a
+    /// catch written against the exception's type rather than against the host's token would let it end the round —
+    /// exactly the failure control-server#231 removes. The fake stands in for it with an already-cancelled token.
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleWhoseOwnDeadlineFiresIsSkippedRatherThanEndingTheRound()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Riot.CancelOn = FleetFixture.VehicleKeys[0];
+
+        await fixture.RunRoundAsync();
+
+        Assert.Equal(
+            [FleetFixture.AgvIds[1], FleetFixture.AgvIds[2]],
+            await fixture.Context.JourneyRuntimes.Select(row => row.AgvId)
+                .OrderBy(agvId => agvId)
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(
+            [FleetFixture.AgvIds[1], FleetFixture.AgvIds[2]],
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles
+                .Select(vehicle => vehicle.AgvId).ToArray());
+        EventRecordingLogger<JourneyRuntimeEngine>.Entry warning =
             Assert.Single(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2123);
         Assert.Contains(FleetFixture.AgvIds[0], warning.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(OperationCanceledException), warning.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// One of this server's own invariants breaking is reported as the defect it is — Error, under its own event
+    /// id — rather than as the weather the isolation was built for.
+    /// </summary>
+    /// <remarks>
+    /// Isolating the vehicle keeps the fleet moving, which is the point of control-server#231, but a
+    /// <see cref="BusinessIdentityConflictException"/> or a REQ-0305 freeze that came out incomplete is not an
+    /// unreachable peer: it will be there again next round, and every round after. Logged at Warning beside the
+    /// unreachable peers, it would be one line a day nobody reads.
+    /// </remarks>
+    [Fact]
+    public async Task AVehicleThatBreaksOneOfTheServersOwnInvariantsIsReportedAsADefect()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        fixture.Acceptances.ThrowOnFirstAccept =
+            new BusinessIdentityConflictException("DemandId is already bound to different content.");
+
+        await fixture.RunRoundAsync();
+
+        EventRecordingLogger<JourneyRuntimeEngine>.Entry fault =
+            Assert.Single(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2124);
+        Assert.Equal(LogLevel.Error, fault.Level);
+        Assert.Contains(FleetFixture.AgvIds[0], fault.Message, StringComparison.Ordinal);
+        Assert.Contains(nameof(BusinessIdentityConflictException), fault.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(fixture.EngineLog.Entries, entry => entry.EventId.Id == 2123);
+        // Still isolated: the vehicles behind it are served, and the round reports.
+        Assert.Equal(
+            [FleetFixture.AgvIds[1], FleetFixture.AgvIds[2]],
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles
+                .Select(vehicle => vehicle.AgvId).ToArray());
+    }
+
+    /// <summary>
+    /// A demand claimed by a segment that then threw before the acceptance was committed does not count as
+    /// accepted at the round's end: the structural block standing against it survives the round.
+    /// </summary>
+    /// <remarks>
+    /// The claim is taken before intake on purpose, so the vehicles behind cannot pick the same demand. When the
+    /// segment throws instead of reporting, that claim would otherwise outlive the attempt it stood for, and
+    /// <see cref="StructuralDispatchBlockSink"/> clears a block for every demand the round says was accepted — so
+    /// an alarm that nothing had disproved would be cleared, then raised again as new next round. Whether the
+    /// claim was made good on is read from the database rather than guessed from where the exception came from.
+    /// </remarks>
+    [Fact]
+    public async Task AClaimTheSegmentNeverMadeGoodOnDoesNotClearAStructuralBlock()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync(
+            configure: options => options.Fleet = options.Fleet[..1]);
+        AcceptedDemandSnapshot only = FleetFixture.Demand(0, "N1-1", 0);
+        fixture.Catalog.Set([only]);
+        StructuralDispatchBlockStore blocks = new(fixture.Context);
+        fixture.RoundOutcomes.Inner = new StructuralDispatchBlockSink(
+            blocks,
+            fixture.SlotPositions,
+            new VehicleRoster(Microsoft.Extensions.Options.Options.Create(fixture.Options)),
+            NullLogger<StructuralDispatchBlockSink>.Instance);
+        DateTimeOffset raisedAt = Now.AddMinutes(-30);
+        await blocks.RaiseOrRefreshAsync(
+            only.DemandId,
+            "ROUTE_GRAPH_PICKUP_UNREACHABLE",
+            only.TransportDemandKey,
+            "{}",
+            raisedAt,
+            TestContext.Current.CancellationToken);
+        fixture.Context.ChangeTracker.Clear();
+        fixture.Acceptances.ThrowOnFirstAccept = new HttpRequestException("The acceptance could not be written.");
+
+        await fixture.RunRoundAsync();
+
+        Assert.Empty(await fixture.Context.AcceptedDemands.AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+        fixture.Context.ChangeTracker.Clear();
+        StructuralDispatchBlockRow row = Assert.Single(
+            await fixture.Context.Set<StructuralDispatchBlockRow>().AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken));
+        Assert.Null(row.ClearedAt);
+        Assert.Equal(raisedAt, row.LastSeenAt);
     }
 
     /// <summary>Refuses every candidate for every vehicle with the reason only a whole roster can make structural.</summary>
