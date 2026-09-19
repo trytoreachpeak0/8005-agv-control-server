@@ -43,5 +43,11 @@
       <_Parameter1>ControlServer.SchemaConformance.Path</_Parameter1>
       <_Parameter2>$(MSBuildProjectDirectory)\..\..\tools\ControlServer.SchemaConformance\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ControlServer.SchemaConformance.dll</_Parameter2>
     </AssemblyAttribute>
+    <!-- TaskTypeStationFieldOpsTests runs FieldOps as its own process from its own output: the copy next to this
+         assembly carries this project's dependency set, not the tool's, and does not start. -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>ControlServer.FieldOps.Path</_Parameter1>
+      <_Parameter2>$(MSBuildProjectDirectory)\..\..\tools\ControlServer.FieldOps\bin\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifier)\ControlServer.FieldOps.exe</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 </Project>
