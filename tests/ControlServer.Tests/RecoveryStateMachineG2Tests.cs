@@ -2029,6 +2029,72 @@ public sealed class RecoveryStateMachineG2Tests
     }
 
     /// <summary>
+    /// control-server#187, decided by the user on 2026-09-19. A compensation, a fault cargo handoff or a forced
+    /// recovery submitted a second time in one session, under a new recoveryActionId while the first of that kind
+    /// still waits for its outcome, is refused as ActionNotAllowedInState before anything is written: no second
+    /// workflow, no second command for the vehicle to carry out, no forced generation advanced (which would fence
+    /// the first command and make its result historical while the vehicle may already be executing it), and the
+    /// session exactly as it was. Before the fix every one of them was accepted and the vehicle did it twice.
+    /// </summary>
+    [Theory]
+    [Trait("IntegrationSlice", "FP-IS-07")]
+    [Trait("ProtocolVector", "CV-EXCEPTION-COMPENSATE")]
+    [Trait("ProtocolVector", "CV-FAULT-CARGO-HANDOFF")]
+    [Trait("ProtocolVector", "CV-FORCED-MECHANICAL-RECOVERY")]
+    [InlineData("COMPENSATE_LOAD_ALL_EMPTY")]
+    [InlineData("FAULT_CARGO_HANDOFF")]
+    [InlineData("FORCED_MECHANICAL_RECOVERY")]
+    public async Task ASecondSubmissionOfAnActionStillAwaitingItsOutcomeIsRefusedAndChangesNothing(string action)
+    {
+        const string proofVariable = "CONTROL_SERVER_TEST_RECOVERY_PROOF_ACTION_TWICE";
+        const string proof = "action-twice-proof-not-a-production-secret";
+        Environment.SetEnvironmentVariable(proofVariable, proof);
+        try
+        {
+            CancellationToken token = TestContext.Current.CancellationToken;
+            await using SqliteConnection connection = new("Data Source=:memory:");
+            await connection.OpenAsync(token);
+            await using ControlServerDbContext context = await CreateContextAsync(connection);
+            await SeedBlockedJourneyAsync(context);
+            OnboardMessageProcessor processor = Processor(context, new RecordingPeer(context), proofVariable);
+            OnboardConnectionState state = CurrentState();
+            await SubmitFirstActionAwaitingItsOutcomeAsync(action, processor, context, state, proof);
+            ExceptionRecoverySessionRow before = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            BusinessPicture pictureBefore = await BusinessPictureAsync(context);
+            string outboxBefore = await OutboxAccountAsync(context);
+            long generationBefore = (await context.SessionRecoveries.AsNoTracking().SingleAsync(token))
+                .ForcedRecoveryGeneration;
+
+            const string secondId = "51000000-0000-4000-8000-000000000187";
+            string refused = await processor.ProcessAsync(
+                RecoveryAction(action, messageId: "e0000000-0000-4000-8000-000000001870", actionId: secondId),
+                state,
+                token);
+
+            Assert.Equal("RecoveryActionRejected", MessageType(refused));
+            JsonElement payload = FirstPayload(refused);
+            Assert.Equal(secondId, payload.GetProperty("recoveryActionId").GetString());
+            Assert.Equal(before.Revision, payload.GetProperty("recoverySessionRevision").GetInt64());
+            Assert.Equal(ServerReasonCodes.ActionNotAllowedInState,
+                payload.GetProperty("problem").GetProperty("reasonCode").GetString());
+            RecoveryWorkflowRow first = Assert.Single(await context.RecoveryWorkflows.AsNoTracking().ToArrayAsync(token));
+            Assert.Equal((ActionId, RecoveryWorkflowState.AwaitingResult), (first.WorkflowId, first.State));
+            ExceptionRecoverySessionRow after = await context.ExceptionRecoverySessions.AsNoTracking().SingleAsync(token);
+            Assert.Equal((before.State, before.Revision, before.UpdatedAt, before.SelectedAction),
+                (after.State, after.Revision, after.UpdatedAt, after.SelectedAction));
+            Assert.Equal(before.ForcedRecoveryGeneration, after.ForcedRecoveryGeneration);
+            Assert.Equal(generationBefore, (await context.SessionRecoveries.AsNoTracking().SingleAsync(token))
+                .ForcedRecoveryGeneration);
+            Assert.Equal(pictureBefore, await BusinessPictureAsync(context));
+            Assert.Equal(outboxBefore, await OutboxAccountAsync(context));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(proofVariable, null);
+        }
+    }
+
+    /// <summary>
     /// control-server#175. Session A took the same action twice; the first result did not reconcile and closed A,
     /// and the administrator is now working the demand in session B. The second result of A then arrives. Whether
     /// it concludes success or not, it is the record of A's own attempt and nothing more: it is acknowledged and
@@ -3946,6 +4012,53 @@ public sealed class RecoveryStateMachineG2Tests
         }
         return (first, second.ToJsonString());
     }
+
+    /// <summary>
+    /// Opens the seeded session and takes <paramref name="action"/> in it under <see cref="ActionId"/>, as far as its
+    /// command going out: a compensation is also authorized, the other two send their command on acceptance. The
+    /// recording peer acknowledges the command, so the workflow is then AwaitingResult, waiting for the vehicle's
+    /// outcome.
+    /// </summary>
+    private static async Task SubmitFirstActionAwaitingItsOutcomeAsync(
+        string action,
+        OnboardMessageProcessor processor,
+        ControlServerDbContext context,
+        OnboardConnectionState state,
+        string proof)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        if (action == "COMPENSATE_LOAD_ALL_EMPTY")
+        {
+            await ReachCompensationResultAsync(processor, state, proof);
+        }
+        else
+        {
+            await processor.ProcessAsync(RecoverySessionRequest(proof), state, token);
+            Assert.Equal("RecoveryActionAccepted",
+                MessageType(await processor.ProcessAsync(RecoveryAction(action), state, token)));
+        }
+        if (action == "FORCED_MECHANICAL_RECOVERY")
+        {
+            // The vehicle takes up the generation the command carries and reports it; until then every action is
+            // refused as FORCED_RECOVERY_GENERATION_STALE, so this is where a second forced submission can come in.
+            await new WireToGateStore(context).ApplyRecoveryReportAsync(
+                AgvId, 3, "f0000000-0000-4000-8000-000000000187", forcedRecoveryGeneration: 1,
+                AttemptId, "PREPARED", [], [AttemptId], [], token);
+        }
+        RecoveryWorkflowRow first = await context.RecoveryWorkflows.AsNoTracking().SingleAsync(token);
+        Assert.Equal((action, RecoveryWorkflowState.AwaitingResult), (first.WorkflowType, first.State));
+        Assert.NotNull(first.CommandMessageId);
+    }
+
+    /// <summary>
+    /// Every outbound message the server holds and whether it is still to be sent: a refusal that wrote nothing
+    /// leaves it unchanged -- no new command or snapshot, and no earlier command fenced.
+    /// </summary>
+    private static async Task<string> OutboxAccountAsync(ControlServerDbContext context) =>
+        string.Join(';', (await context.ProtocolOutbox.AsNoTracking()
+                .ToArrayAsync(TestContext.Current.CancellationToken))
+            .OrderBy(row => row.MessageId, StringComparer.Ordinal)
+            .Select(row => $"{row.MessageId}:{row.MessageType}:{row.FencedAt}:{row.AcknowledgedAt}"));
 
     /// <summary>
     /// Opens session B on the seeded demand after A closed, and takes it into EXECUTING with a fault cargo handoff
