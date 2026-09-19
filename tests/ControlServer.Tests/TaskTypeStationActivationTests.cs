@@ -450,9 +450,9 @@ public sealed class TaskTypeStationActivationTests
             "INSERT INTO TaskTypeStationHolds (HoldId, MapId, TaskType, Source, ReasonCode, DetailJson, RaisedAt, RaisedBy) VALUES "
             + "('foreign-hold', 25, 'WIRE_TO_OPTICAL', 'ACTIVATION_RESULT_UNKNOWN', 'TASK_TYPE_ACTIVATION_RESULT_UNKNOWN', "
             + "'{\"attemptId\":\"another-attempt\",\"targetVersion\":9,\"previousVersion\":8}', '2026-09-19 07:00:00+00:00', 'fieldops:activation:another-attempt')");
-        TaskTypeStationHold manual = await harness.Default().Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await harness.Default().Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
 
         async Task AssertOneOpenActivationHoldPerTaskTypeAsync()
         {
@@ -516,12 +516,12 @@ public sealed class TaskTypeStationActivationTests
     {
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = harness.Default();
-        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
-        TaskTypeStationHold catalog = await stack.Holds.RaiseAsync(
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
+        TaskTypeStationHold catalog = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.CatalogChange, "CATALOG_RENAMED", "{}", "server",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
 
         TaskTypeStationActivationResult result = await stack.ActivateAsync(
             TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
@@ -540,12 +540,12 @@ public sealed class TaskTypeStationActivationTests
     {
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = harness.Default();
-        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
-        TaskTypeStationHold catalog = await stack.Holds.RaiseAsync(
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
+        TaskTypeStationHold catalog = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.CatalogChange, "CATALOG_RENAMED", "{}", "server",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
 
         TaskTypeStationHoldReleaseResult result = await stack.Service.ReleaseHoldAsync(
             25, TransportTaskTypes.WireToGate, "SITE-RECHECK-0919", TaskTypeStationActivationHarness.Catalog,
@@ -685,9 +685,9 @@ public sealed class TaskTypeStationActivationTests
     {
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = harness.Default();
-        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
         RiotMapStationCatalogSnapshot catalog = TaskTypeStationActivationHarness.Catalog;
         string? siteVerification = "SITE-RECHECK-0919";
         switch (scenario)
@@ -1029,9 +1029,9 @@ public sealed class TaskTypeStationActivationTests
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
             harness.NewContext(), wrapAudit: inner => new FailingAudit(inner, TaskTypeStationActivationAuditActions.HoldReleased));
-        TaskTypeStationHold manual = await stack.Holds.RaiseAsync(
+        TaskTypeStationHold manual = (await stack.Holds.RaiseAsync(
             25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
-            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token)).Hold;
 
         TaskTypeStationHoldReleaseResult result = await stack.Service.ReleaseHoldAsync(
             25, TransportTaskTypes.WireToGate, "SITE-RECHECK-0919", TaskTypeStationActivationHarness.Catalog,

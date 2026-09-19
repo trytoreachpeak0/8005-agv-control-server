@@ -1,0 +1,82 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:13.83]     ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(reasonLength: 1, roleLength: 65, code: "CLAIMED_ROLE_TOO_LONG") [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(reasonLength: 1, roleLength: 65, code: "CLAIMED_ROLE_TOO_LONG") [8 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 422
+Actual:   201
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(Int32 reasonLength, Int32 roleLength, String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 106
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(Int32 reasonLength, Int32 roleLength, String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 115
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:15.98]     ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(reasonLength: 501, roleLength: 1, code: "REASON_TOO_LONG") [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(reasonLength: 501, roleLength: 1, code: "REASON_TOO_LONG") [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 422
+Actual:   201
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(Int32 reasonLength, Int32 roleLength, String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 106
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(Int32 reasonLength, Int32 roleLength, String code) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 115
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:19.17]     ControlServer.Tests.TaskTypeHoldEndpointsTests.AForbiddenRequestIsAuditedByAddressAloneAndNoneOfWhatItClaimedIsKept [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.AForbiddenRequestIsAuditedByAddressAloneAndNoneOfWhatItClaimedIsKept [1 s]
+  Error Message:
+   Assert.Null() Failure: Value is not null
+Expected: null
+Actual:   "厂长"
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.AForbiddenRequestIsAuditedByAddressAloneAndNoneOfWhatItClaimedIsKept() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 82
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.AForbiddenRequestIsAuditedByAddressAloneAndNoneOfWhatItClaimedIsKept() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 88
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:20.12]     ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(remote: "172.19.205.222", local: "172.19.205.222") [FAIL]
+[xUnit.net 00:00:20.94]     ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(remote: "::ffff:172.19.205.222", local: "172.19.205.222") [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(remote: "172.19.205.222", local: "172.19.205.222") [948 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 201
+Actual:   403
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(String remote, String local) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 58
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(String remote, String local) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 59
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(remote: "::ffff:172.19.205.222", local: "172.19.205.222") [805 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 201
+Actual:   403
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(String remote, String local) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 58
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(String remote, String local) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 59
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:21.55]     ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(remote: "172.19.205.222", local: "::ffff:172.19.205.222") [FAIL]
+  Failed ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(remote: "172.19.205.222", local: "::ffff:172.19.205.222") [603 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 201
+Actual:   403
+  Stack Trace:
+     at ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(String remote, String local) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 58
+   at ControlServer.Tests.TaskTypeHoldEndpointsTests.ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(String remote, String local) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\TaskTypeHoldEndpointsTests.cs:line 59
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     6, Passed:     9, Skipped:     0, Total:    15, Duration: 27 s - ControlServer.Tests.dll (net8.0)

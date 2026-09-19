@@ -97,8 +97,8 @@ public sealed class TaskTypeHoldGateLegTests
 
     private static async Task<TaskTypeStationHold> RaiseHoldAsync(RuntimeFixture fixture)
     {
-        TaskTypeStationHold hold = await TaskTypeStationRuntimeSeed.Access(fixture.Context).Holds.RaiseAsync(
-            25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "TEST_HOLD", "{}", "test", Now, Token);
+        TaskTypeStationHold hold = (await TaskTypeStationRuntimeSeed.Access(fixture.Context).Holds.RaiseAsync(
+            25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "TEST_HOLD", "{}", "test", Now, Token)).Hold;
         fixture.Context.ChangeTracker.Clear();
         return hold;
     }

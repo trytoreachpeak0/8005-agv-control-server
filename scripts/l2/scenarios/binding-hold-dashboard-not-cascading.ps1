@@ -1,0 +1,200 @@
+#Requires -Version 7
+
+<#
+看板按 Map + TASK_TYPE 暂停，只停该任务类型、不连带其它（批次6-06，control-server#162；规格 8.3 批次 6 机制判据 ⑤）。
+
+  1. 经看板应用的确认页提交，暂停 STAGING_TO_WIRE。确认页不带自动刷新；提交之后回到看板主页。
+  2. 随后一条 WIRE_TO_GATE 需求照常受理并走完两段——暂停没有连带到同图的另一个任务类型。看板主页 STAGING_TO_WIRE
+     那一行显示「已暂停」、来源「看板人工」。
+  3. 两台车：second 已建关卡单，pending 刚派去取货点、关卡腿尚未建单。此时经看板暂停 WIRE_TO_GATE。second 照常走完
+     （已建单的 RIoT 订单不改单、不换站、不取消）；pending 到站装货后关卡腿不建，旅程阻断原因为已暂停（批次6-04 的
+     建单前检查）——票面合入前置写的「尚未建单的腿不建」。
+  4. 有空车时，第三条 WIRE_TO_GATE 需求不受理，JourneyBacklog 的原因是已暂停（批次6-04 的准入判据）。
+  5. 看板页面与服务端都没有解除入口，两条暂停到场景结束仍然成立。
+
+红证据取法（缺陷版本，本地临时提交，不推送）：
+  a) 暂停只按 mapId 落（整图全停）→ 第 2 步「WIRE_TO_GATE 被受理」（L2-BH-03）变红；
+  b) 暂停不进建单门（GateLegAsync 不查暂停）→ 第 3 步「尚未建单的关卡腿不建」（L2-BH-12）变红。
+#>
+[CmdletBinding()]
+param([Parameter(Mandatory)][object]$Context)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2TaskTypeHolds.psm1') -Force
+
+$journal = $Context.Journal
+$assertions = $Context.Assertions
+$riot = $Context.Riot
+$serverBase = "http://127.0.0.1:$($Context.HealthPort)"
+# The admission reason for a held task type: DispatchReasonCodes.TaskTypeHeld, registered by batch 6-04
+# (control-server#160) as ordinary backlog, criterion order 20. A script cannot name the C# constant, so the value is
+# written out; DispatchReasonCodes.cs is where it is defined.
+$heldReasonCode = 'TASK_TYPE_HELD'
+
+function Format-Holds([object[]]$Holds) {
+    if (@($Holds).Count -eq 0) { return '(none)' }
+    return (@($Holds) | ForEach-Object { "$($_.TaskType)/$($_.Source)/$($_.ReasonCode)" }) -join ', '
+}
+
+# --- 1. 看板人工暂停 STAGING_TO_WIRE ----------------------------------------------------------------
+
+$bindingsBefore = Get-L2ActiveBindings -Context $Context
+$staging = Submit-L2DashboardHold -Context $Context -TaskType 'STAGING_TO_WIRE' -Reason '派工待送取货点被料车占住'
+$assertions.Add(
+    'L2-BH-01', '确认页不自动刷新，带着这一行的 Map 与任务类型；提交后 303 回到看板主页',
+    (-not $staging.ConfirmationPage.Contains('http-equiv="refresh"') -and
+        $staging.ConfirmationPage.Contains('name="taskType" value="STAGING_TO_WIRE"') -and
+        $staging.StatusCode -eq 303 -and $staging.Location -eq '/'),
+    'no refresh, taskType=STAGING_TO_WIRE, 303 → /',
+    "refresh=$($staging.ConfirmationPage.Contains('http-equiv=""refresh""')), $($staging.StatusCode) → $($staging.Location)")
+
+$holds = Wait-L2Condition -Description 'the STAGING_TO_WIRE hold is standing' `
+    -Journal $journal -Criterion 'hold-staging' -TimeoutSeconds 30 `
+    -Probe { $rows = Get-L2TaskTypeHolds -Context $Context; , $rows } `
+    -Until { param($v) @($v | Where-Object { $_.TaskType -eq 'STAGING_TO_WIRE' }).Count -eq 1 }
+$assertions.Add(
+    'L2-BH-02', '暂停只落在 Map 25 的 STAGING_TO_WIRE 上，来源看板人工；WIRE_TO_GATE 没有暂停',
+    (@($holds).Count -eq 1 -and $holds[0].TaskType -eq 'STAGING_TO_WIRE' -and $holds[0].Source -eq 'MANUAL'),
+    'STAGING_TO_WIRE/MANUAL/DASHBOARD_MANUAL_HOLD', (Format-Holds $holds))
+
+# --- 2. 同图的 WIRE_TO_GATE 不受连带：受理并走完两段 -----------------------------------------------------
+
+$first = New-L2WireToGateDemand -Context $Context -Label 'first'
+$firstGate = Invoke-L2JourneyToGateLeg -Context $Context -Demand $first
+$firstStage = Complete-L2JourneyAtGate -Context $Context -Demand $first -GateIntent $firstGate
+$firstReason = Get-L2BacklogReason -Context $Context -Demand $first
+# A demand accepted by an earlier round reads DEMAND_ALREADY_ACCEPTED on later rounds (the other vehicle is still being
+# served), so "accepted" is either code; what matters is that the journey exists and ran.
+$assertions.Add(
+    'L2-BH-03', 'STAGING_TO_WIRE 暂停期间，WIRE_TO_GATE 需求照常受理并走完两段（不连带）',
+    ($firstReason -in @('ACCEPTED', 'DEMAND_ALREADY_ACCEPTED') -and $firstStage -eq 'Completed'),
+    'ACCEPTED or DEMAND_ALREADY_ACCEPTED → Completed', "$firstReason → $firstStage")
+
+$stagingRow = Wait-L2Condition -Description 'the dashboard shows STAGING_TO_WIRE held by a person' `
+    -Journal $journal -Criterion 'dashboard-staging-row' -TimeoutSeconds 30 `
+    -Probe { Get-L2DashboardBindingRow -Context $Context -TaskType 'STAGING_TO_WIRE' } `
+    -Until { param($v) $null -ne $v -and $v.Contains('已暂停') }
+$gateRowBefore = Get-L2DashboardBindingRow -Context $Context -TaskType 'WIRE_TO_GATE'
+$assertions.Add(
+    'L2-BH-04', '看板主页 STAGING_TO_WIRE 那一行显示已暂停、来源看板人工与理由；WIRE_TO_GATE 那一行正常',
+    ($stagingRow.Contains('已暂停') -and $stagingRow.Contains('看板人工') -and $stagingRow.Contains('派工待送取货点被料车占住') -and
+        $null -ne $gateRowBefore -and $gateRowBefore.Contains('正常')),
+    'STAGING_TO_WIRE: 已暂停 看板人工 …；WIRE_TO_GATE: 正常', "$stagingRow | $gateRowBefore")
+
+# --- 3. 暂停 WIRE_TO_GATE 的那一刻，两台车各在一处 ------------------------------------------------------------
+#
+# 第一台车的「second」已建出关卡单；第二台车的「pending」刚派去取货点、还在路上，它的关卡腿尚未建单。
+# 暂停落下之后：已建的关卡单不改单、不换站、不取消，照常走完；尚未建单的关卡腿不建，旅程停在建单门前，
+# 阻断原因是已暂停（批次6-04 的建单前检查 GateLegAsync）。这正是票面合入前置写的「尚未建单的腿不建」。
+
+$second = New-L2WireToGateDemand -Context $Context -Label 'second'
+$secondGate = Invoke-L2JourneyToGateLeg -Context $Context -Demand $second
+$ordersBefore = @($riot.Snapshot().body.orders | Where-Object { $_.upperId -eq $secondGate.UpperId })
+
+$pending = New-L2WireToGateDemand -Context $Context -Label 'pending'
+$pendingStarted = Start-L2JourneyToPickup -Context $Context -Demand $pending
+$secondJourney = Get-L2Journey -Context $Context -Demand $second
+$assertions.Add(
+    'L2-BH-11', '暂停之前两趟都已受理、在两台不同的车上：second 已建关卡单，pending 在去取货点的路上、还没有关卡单',
+    ([string]$secondJourney.AgvId -ne [string]$pendingStarted.Journey.AgvId -and
+        $null -eq (Get-L2Intent -Context $Context -Demand $pending -Purpose 'TO_GATE')),
+    'two vehicles; pending has no TO_GATE intent',
+    "second on $($secondJourney.AgvId), pending on $($pendingStarted.Journey.AgvId); pending TO_GATE: " +
+        "$(if (Get-L2Intent -Context $Context -Demand $pending -Purpose 'TO_GATE') { 'present' } else { 'none' })")
+
+$gate = Submit-L2DashboardHold -Context $Context -TaskType 'WIRE_TO_GATE' -Reason '关卡门口在施工'
+$holds = Wait-L2Condition -Description 'the WIRE_TO_GATE hold is standing' `
+    -Journal $journal -Criterion 'hold-gate' -TimeoutSeconds 30 `
+    -Probe { $rows = Get-L2TaskTypeHolds -Context $Context; , $rows } `
+    -Until { param($v) @($v | Where-Object { $_.TaskType -eq 'WIRE_TO_GATE' }).Count -eq 1 }
+$assertions.Add(
+    'L2-BH-05', '经看板再暂停 WIRE_TO_GATE：提交 303，两条人工暂停各落在自己的任务类型上',
+    ($gate.StatusCode -eq 303 -and @($holds).Count -eq 2 -and
+        @($holds | Where-Object { $_.Source -ne 'MANUAL' }).Count -eq 0),
+    '303; STAGING_TO_WIRE/MANUAL, WIRE_TO_GATE/MANUAL', "$($gate.StatusCode); $(Format-Holds $holds)")
+
+$null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
+$secondGateAfter = Get-L2Intent -Context $Context -Demand $second -Purpose 'TO_GATE'
+$assertions.Add(
+    'L2-BH-06', '暂停之后已建的关卡单不改单、不换站、不取消：同一个 UpperId 与 OrderId，仍是 CONFIRMED',
+    ($secondGateAfter.UpperId -eq $secondGate.UpperId -and $secondGateAfter.OrderId -eq $secondGate.OrderId -and
+        $secondGateAfter.Status -eq 'CONFIRMED' -and $ordersBefore.Count -eq 1),
+    "$($secondGate.UpperId) / $($secondGate.OrderId) / CONFIRMED",
+    "$($secondGateAfter.UpperId) / $($secondGateAfter.OrderId) / $($secondGateAfter.Status)")
+
+$secondStage = Complete-L2JourneyAtGate -Context $Context -Demand $second -GateIntent $secondGate
+$assertions.Add(
+    'L2-BH-07', '暂停前已建关卡单的那一趟照常走完',
+    ($secondStage -eq 'Completed'), 'Completed', $secondStage)
+
+# pending 那台车到站、装货；合成对端自动应答，所以若没有暂停它会一路走到建关卡单。
+Complete-L2PickupArrival -Context $Context -Demand $pending -Started $pendingStarted
+$pendingBlocked = Wait-L2Condition -Description 'the pending journey stops before its gate leg because WIRE_TO_GATE is held' `
+    -Journal $journal -Criterion 'pending-gate-leg-held' -TimeoutSeconds 180 `
+    -Probe { Get-L2Journey -Context $Context -Demand $pending } `
+    -Until { param($v) $null -ne $v -and [string]$v.BlockReasonCode -eq $heldReasonCode }
+$null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
+$pendingJourney = Get-L2Journey -Context $Context -Demand $pending
+$pendingGate = Get-L2Intent -Context $Context -Demand $pending -Purpose 'TO_GATE'
+$pendingOrders = @($riot.Snapshot().body.orders | Where-Object {
+    $_.upperId -eq $pendingStarted.Pickup.UpperId -or $_.upperId -eq [string]$pendingJourney.GateUpperId })
+$assertions.Add(
+    'L2-BH-12', '暂停时尚未建单的关卡腿不建：没有 TO_GATE 单，旅程阻断原因为已暂停，这趟只在 RIoT 上建过取货单',
+    ([string]$pendingJourney.BlockReasonCode -eq $heldReasonCode -and $null -eq $pendingGate -and
+        [string]$pendingJourney.Stage -ne 'AwaitingGateArrival' -and [string]$pendingJourney.Stage -ne 'Completed' -and
+        $pendingOrders.Count -eq 1),
+    "block $heldReasonCode, no TO_GATE intent, 1 RIoT order",
+    "block '$($pendingJourney.BlockReasonCode)' at $($pendingJourney.Stage), TO_GATE: " +
+        "$(if ($pendingGate) { $pendingGate.Status } else { 'none' }), RIoT orders: $($pendingOrders.Count)")
+
+# --- 4. 暂停之后的新 WIRE_TO_GATE 需求不受理 ----------------------------------------------------------------
+
+# second 那台车已空出来（pending 那台仍停在取货点），所以这里判的是暂停，不是没有空车。
+$third = New-L2WireToGateDemand -Context $Context -Label 'third'
+$thirdReason = Wait-L2Condition -Description 'the third demand is kept back because its task type is held' `
+    -Journal $journal -Criterion 'backlog-third' -TimeoutSeconds 60 `
+    -Probe { Get-L2BacklogReason -Context $Context -Demand $third } `
+    -Until { param($v) $null -ne $v -and $v -ne 'ACCEPTED' }
+$null = Wait-L2Iterations -Riot $riot -Count 3 -Journal $journal
+$thirdStage = Get-L2JourneyStage -Context $Context -Demand $third
+$thirdReason = Get-L2BacklogReason -Context $Context -Demand $third
+$assertions.Add(
+    'L2-BH-08', '有空车时，WIRE_TO_GATE 暂停后的新需求不受理，JourneyBacklog 原因为已暂停',
+    ($null -eq $thirdStage -and $thirdReason -eq $heldReasonCode),
+    "no journey / $heldReasonCode", "$(if ($thirdStage) { $thirdStage } else { 'no journey' }) / $thirdReason")
+
+# --- 5. 没有解除入口 -------------------------------------------------------------------------------
+
+$page = Get-L2DashboardPage -Context $Context
+# The page may say 「解除」 in prose -- batch 6-04's backlog card explains a held task type as 「解除后才会派车」 --
+# so the criterion is about entries: no form on the main page, no link whose target lifts a hold, and none of that
+# wording inside this ticket's own card.
+$bindingCard = Get-L2DashboardBindingRow -Context $Context -TaskType 'WIRE_TO_GATE'
+$liftLinks = @([regex]::Matches($page, 'href="([^"]*)"') | ForEach-Object { $_.Groups[1].Value } |
+    Where-Object { $_ -match 'release|lift|unhold|解除' })
+$dashboardRelease = Send-L2FormPost -Uri "$($Context.DashboardUrl)/actions/task-type-hold-release" `
+    -Origin $Context.DashboardUrl -Fields ([ordered]@{ mapId = [string]$Context.MapId; taskType = 'WIRE_TO_GATE' })
+$serverDelete = Invoke-WebRequest -NoProxy -TimeoutSec 10 -Method Delete -SkipHttpErrorCheck `
+    -Uri "$serverBase/api/task-type-holds"
+$serverRelease = Invoke-WebRequest -NoProxy -TimeoutSec 10 -Method Post -SkipHttpErrorCheck `
+    -Uri "$serverBase/api/task-type-holds/release" -ContentType 'application/json' `
+    -Body (@{ mapId = $Context.MapId; taskType = 'WIRE_TO_GATE' } | ConvertTo-Json -Compress)
+$statuses = @([int]$dashboardRelease.StatusCode, [int]$serverDelete.StatusCode, [int]$serverRelease.StatusCode)
+$holds = Get-L2TaskTypeHolds -Context $Context
+$assertions.Add(
+    'L2-BH-09', '看板主页没有表单、没有指向解除的链接，本票卡片里没有解除字样；看板与服务端的解除请求都不是成功响应，两条暂停仍然成立',
+    (-not $page.Contains('<form') -and $liftLinks.Count -eq 0 -and -not $bindingCard.Contains('解除') -and
+        @($statuses | Where-Object { $_ -ge 200 -and $_ -lt 400 }).Count -eq 0 -and @($holds).Count -eq 2),
+    'no form, no lifting link, no 解除 in the binding card; every release attempt >= 400; 2 holds standing',
+    "form: $($page.Contains('<form')); lifting links: $($liftLinks -join ' '); 解除 in card: $($bindingCard.Contains('解除')); " +
+        "statuses $($statuses -join ', '); $(Format-Holds $holds)")
+
+$bindingsAfter = Get-L2ActiveBindings -Context $Context
+$assertions.Add(
+    'L2-BH-10', '暂停不改绑定：生效绑定集版本与每条绑定前后相同',
+    ($bindingsAfter -eq $bindingsBefore -and -not [string]::IsNullOrEmpty($bindingsBefore)),
+    $bindingsBefore, $bindingsAfter)
+
+$journal.Note('Scenario finished.')

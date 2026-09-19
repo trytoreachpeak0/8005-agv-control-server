@@ -46,6 +46,21 @@ internal static class TaskTypeStationRuntimeSeed
         return (rules.Version, set.Version);
     }
 
+    /// <summary>The catalog change convergence the engine runs after each confirmation (control-server#162).</summary>
+    public static CatalogBindingHoldConvergence CatalogBindingHolds(ControlServerDbContext context, TimeProvider clock)
+    {
+        GovernanceDeploymentIdentity deployment = new("deployment:8005-controlserver@test");
+        GovernanceStore governance = new(context, deployment, AuditRetentionPolicy.Default);
+        return new CatalogBindingHoldConvergence(
+            context,
+            new TaskTypeStationBindingStore(context, new GovernedConfigurationPublisher(governance, governance)),
+            new TaskTypeStationHoldStore(context),
+            new TaskTypeStationCatalogChangeStore(context),
+            governance,
+            deployment,
+            clock);
+    }
+
     /// <summary>The batch 6 stores over one context, the way the host's scope builds them.</summary>
     public static TaskTypeStationAccess Access(ControlServerDbContext context)
     {

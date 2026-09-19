@@ -1,0 +1,63 @@
+commit: 549783d484f25b26569173e3db6be2a149f6ceec dirty: 0
+filter: FullyQualifiedName~CatalogBindingHoldConvergenceTests
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:06.63]     ControlServer.Tests.CatalogBindingHoldConvergenceTests.EveryAutomaticHoldWritesOneImmutableAuditRecordNamingTheChangeOnBothSides [FAIL]
+  Failed ControlServer.Tests.CatalogBindingHoldConvergenceTests.EveryAutomaticHoldWritesOneImmutableAuditRecordNamingTheChangeOnBothSides [3 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingHoldConvergenceTests.EveryAutomaticHoldWritesOneImmutableAuditRecordNamingTheChangeOnBothSides() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 59
+   at ControlServer.Tests.CatalogBindingHoldConvergenceTests.EveryAutomaticHoldWritesOneImmutableAuditRecordNamingTheChangeOnBothSides() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 78
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:07.90]     ControlServer.Tests.CatalogBindingHoldConvergenceTests.TheSameChangeSeenOnTwoRoundsIsOneHoldOneChangeRecordAndOneAudit [FAIL]
+  Failed ControlServer.Tests.CatalogBindingHoldConvergenceTests.TheSameChangeSeenOnTwoRoundsIsOneHoldOneChangeRecordAndOneAudit [1 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingHoldConvergenceTests.TheSameChangeSeenOnTwoRoundsIsOneHoldOneChangeRecordAndOneAudit() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 123
+   at ControlServer.Tests.CatalogBindingHoldConvergenceTests.TheSameChangeSeenOnTwoRoundsIsOneHoldOneChangeRecordAndOneAudit() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 126
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:09.67]     ControlServer.Tests.CatalogBindingHoldConvergenceTests.AChangeMadeWhileTheServiceWasDownIsJudgedOnTheFirstRoundAfterTheRestart [FAIL]
+  Failed ControlServer.Tests.CatalogBindingHoldConvergenceTests.AChangeMadeWhileTheServiceWasDownIsJudgedOnTheFirstRoundAfterTheRestart [1 s]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingHoldConvergenceTests.AChangeMadeWhileTheServiceWasDownIsJudgedOnTheFirstRoundAfterTheRestart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 146
+   at ControlServer.Tests.CatalogBindingHoldConvergenceTests.AChangeMadeWhileTheServiceWasDownIsJudgedOnTheFirstRoundAfterTheRestart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 148
+   at ControlServer.Tests.CatalogBindingHoldConvergenceTests.AChangeMadeWhileTheServiceWasDownIsJudgedOnTheFirstRoundAfterTheRestart() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 148
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:11.62]     ControlServer.Tests.CatalogBindingHoldConvergenceTests.AHoldDoesNotTouchAJourneyAlreadyUnderWayAndCountsItInTheAudit [FAIL]
+  Failed ControlServer.Tests.CatalogBindingHoldConvergenceTests.AHoldDoesNotTouchAJourneyAlreadyUnderWayAndCountsItInTheAudit [1 s]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingHoldConvergenceTests.AHoldDoesNotTouchAJourneyAlreadyUnderWayAndCountsItInTheAudit() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 185
+   at ControlServer.Tests.CatalogBindingHoldConvergenceTests.AHoldDoesNotTouchAJourneyAlreadyUnderWayAndCountsItInTheAudit() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 190
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:12.79]     ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARemovedStationAndAnIdReplacedStationBothHoldAndNeitherIsReboundByName [FAIL]
+  Failed ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARemovedStationAndAnIdReplacedStationBothHoldAndNeitherIsReboundByName [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ
+                                             ↓ (pos 0)
+Expected: <>z__ReadOnlyArray<string>        ["STAGING_TO_WIRE", "WIRE_TO_GATE"]
+Actual:   OrderedEnumerable<string, string> []
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARemovedStationAndAnIdReplacedStationBothHoldAndNeitherIsReboundByName() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 94
+   at ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARemovedStationAndAnIdReplacedStationBothHoldAndNeitherIsReboundByName() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 108
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:13.68]     ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARenamedStationHoldsOnlyTheTaskTypeBoundToItAndNothingOnAnotherMap [FAIL]
+  Failed ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARenamedStationHoldsOnlyTheTaskTypeBoundToItAndNothingOnAnotherMap [884 ms]
+  Error Message:
+   Assert.Single() Failure: The collection was empty
+  Stack Trace:
+     at ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARenamedStationHoldsOnlyTheTaskTypeBoundToItAndNothingOnAnotherMap() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 30
+   at ControlServer.Tests.CatalogBindingHoldConvergenceTests.ARenamedStationHoldsOnlyTheTaskTypeBoundToItAndNothingOnAnotherMap() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-06-8005-agv-control-server\tests\ControlServer.Tests\CatalogBindingHoldConvergenceTests.cs:line 46
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     6, Passed:     1, Skipped:     0, Total:     7, Duration: 11 s - ControlServer.Tests.dll (net8.0)
