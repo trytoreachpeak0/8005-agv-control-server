@@ -37,7 +37,8 @@ public sealed class BoundFixedTaskStationResolver(
         TaskTypeStationRuleVersion? rules = bindingSet is null
             ? await access.Rules.ReadCurrentAsync(cancellationToken).ConfigureAwait(false)
             : await access.Rules.ReadVersionAsync(bindingSet.RuleVersion, cancellationToken).ConfigureAwait(false);
-        return new BoundFixedTaskStationView(map, rules, bindingSet);
+        TaskTypeHolds holds = await access.ReadHoldsAsync(_mapId, cancellationToken).ConfigureAwait(false);
+        return new BoundFixedTaskStationView(map, rules, bindingSet, holds);
     }
 }
 
@@ -45,7 +46,8 @@ public sealed class BoundFixedTaskStationResolver(
 public sealed class BoundFixedTaskStationView(
     RiotMapStationCatalogSnapshot map,
     TaskTypeStationRuleVersion? rules,
-    TaskTypeStationBindingSetVersion? bindingSet) : IFixedTaskStationView
+    TaskTypeStationBindingSetVersion? bindingSet,
+    TaskTypeHolds holds) : IFixedTaskStationView
 {
     public FixedTaskStationResolution Resolve(string taskType)
     {
@@ -73,6 +75,12 @@ public sealed class BoundFixedTaskStationView(
                 taskType, end, violations[0].ReasonCode, ruleVersion.Version, bindingSet.Version);
         }
 
+        if (holds.Holds(taskType))
+        {
+            return FixedTaskStationResolution.Refused(
+                taskType, end, DispatchReasonCodes.TaskTypeHeld, ruleVersion.Version, bindingSet.Version);
+        }
+
         RiotMapStation station = map.Stations.Single(item => item.StationId == binding.StationRiotId);
         return FixedTaskStationResolution.Resolved(taskType, end, station, ruleVersion.Version, bindingSet!.Version);
     }
@@ -92,4 +100,27 @@ public sealed class TaskTypeStationAccess(
     public ITaskTypeStationHoldStore Holds { get; } = holds;
 
     public IDemandTaskTypeStationFreeze Freezes { get; } = freezes;
+
+    /// <summary>
+    /// Every hold in force on the Map, whatever raised it: an unreleased hold row (an operator or a catalog change,
+    /// REQ-0340, REQ-0342), or an activation whose outcome is unknown, which holds the whole Map (REQ-0347).
+    /// </summary>
+    public async Task<TaskTypeHolds> ReadHoldsAsync(int mapId, CancellationToken cancellationToken)
+    {
+        TaskTypeStationActivePointer? pointer = await Bindings.ReadActivePointerAsync(mapId, cancellationToken)
+            .ConfigureAwait(false);
+        IReadOnlyList<TaskTypeStationHold> held = await Holds.ListUnreleasedAsync(mapId, cancellationToken)
+            .ConfigureAwait(false);
+        return new TaskTypeHolds(
+            string.Equals(pointer?.State, TaskTypeStationActivationState.ActivationUnknown, StringComparison.Ordinal),
+            held.Select(hold => hold.TaskType).ToHashSet(StringComparer.Ordinal));
+    }
+}
+
+/// <summary>The holds in force on one Map.</summary>
+/// <param name="WholeMap">An activation's outcome is unknown, so every task type of the Map is held.</param>
+/// <param name="TaskTypes">The task types an unreleased hold names.</param>
+public sealed record TaskTypeHolds(bool WholeMap, IReadOnlySet<string> TaskTypes)
+{
+    public bool Holds(string taskType) => WholeMap || TaskTypes.Contains(taskType);
 }
