@@ -1303,9 +1303,10 @@ public sealed class RecoveryStateMachineG2Tests
             OnboardConnectionState state = CurrentState();
             string first = await ReachUnreconciledResultAsync("FaultCargoRecoveryResult", "FAILED", processor, state, proof);
             const string secondActionId = "51000000-0000-4000-8000-000000000170";
-            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+            Assert.Equal("RecoveryActionAccepted", MessageType(await SubmitAgainAsBeforeCs187Async(
+                processor, context, state,
                 RecoveryAction("FAULT_CARGO_HANDOFF", messageId: "e0000000-0000-4000-8000-000000001700",
-                    actionId: secondActionId), state, token)));
+                    actionId: secondActionId))));
             JsonNode second = JsonNode.Parse(first)!;
             second["messageId"] = "b3200000-0000-4000-8000-000000000170";
             second["payload"]!["recoveryActionId"] = secondActionId;
@@ -1363,9 +1364,10 @@ public sealed class RecoveryStateMachineG2Tests
             // Session A: the same handoff submitted twice; the first reports FAILED and closes A.
             string first = await ReachUnreconciledResultAsync("FaultCargoRecoveryResult", "FAILED", processor, state, proof);
             const string secondActionId = "51000000-0000-4000-8000-000000000173";
-            await processor.ProcessAsync(
+            await SubmitAgainAsBeforeCs187Async(
+                processor, context, state,
                 RecoveryAction("FAULT_CARGO_HANDOFF", messageId: "e0000000-0000-4000-8000-000000001730",
-                    actionId: secondActionId), state, token);
+                    actionId: secondActionId));
             JsonNode second = JsonNode.Parse(first)!;
             second["messageId"] = "b3200000-0000-4000-8000-000000000173";
             second["payload"]!["recoveryActionId"] = secondActionId;
@@ -2130,7 +2132,7 @@ public sealed class RecoveryStateMachineG2Tests
                 new RecordingPeer(context), recoveryLogger: log);
             OnboardConnectionState state = CurrentState();
             (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
-                action, lateOutcome, processor, state, proof);
+                action, lateOutcome, processor, context, state, proof);
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
             string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
             clock.Current = Now.AddMinutes(1);
@@ -2186,7 +2188,7 @@ public sealed class RecoveryStateMachineG2Tests
                 new RecordingPeer(context), recoveryLogger: log);
             OnboardConnectionState state = CurrentState();
             (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
-                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, state, proof);
+                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, context, state, proof);
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
             string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
             BusinessPicture before = await BusinessPictureAsync(context);
@@ -2238,7 +2240,7 @@ public sealed class RecoveryStateMachineG2Tests
                 new RecordingPeer(context), recoveryLogger: log);
             OnboardConnectionState state = CurrentState();
             (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
-                "FAULT_CARGO_HANDOFF", "HANDED_OFF", processor, state, proof);
+                "FAULT_CARGO_HANDOFF", "HANDED_OFF", processor, context, state, proof);
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
             string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
             clock.Current = Now.AddMinutes(1);
@@ -2300,7 +2302,7 @@ public sealed class RecoveryStateMachineG2Tests
                 new RecordingPeer(context), recoveryLogger: log);
             OnboardConnectionState state = CurrentState(deferOutbound: true);
             (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
-                "FAULT_CARGO_HANDOFF", "HANDED_OFF", processor, state, proof);
+                "FAULT_CARGO_HANDOFF", "HANDED_OFF", processor, context, state, proof);
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
             await processor.FlushDeferredOutboundAsync(state, token);
             string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
@@ -2396,7 +2398,7 @@ public sealed class RecoveryStateMachineG2Tests
                 new RecordingPeer(context), recoveryLogger: log);
             OnboardConnectionState state = CurrentState();
             (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
-                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, state, proof);
+                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, context, state, proof);
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
             string firstSessionId = StableGuid(RequestId, "exception-recovery-session");
             clock.Current = Now.AddMinutes(1);
@@ -2470,9 +2472,10 @@ public sealed class RecoveryStateMachineG2Tests
             await store.ApplyRecoveryReportAsync(
                 AgvId, 3, "f0000000-0000-4000-8000-000000000175", forcedRecoveryGeneration: 1,
                 AttemptId, "PREPARED", [], [AttemptId], [], token);
-            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+            Assert.Equal("RecoveryActionAccepted", MessageType(await SubmitAgainAsBeforeCs187Async(
+                processor, context, state,
                 RecoveryAction("FORCED_MECHANICAL_RECOVERY", messageId: "e0000000-0000-4000-8000-000000001755",
-                    actionId: SecondActionId), state, token)));
+                    actionId: SecondActionId))));
             await store.ApplyRecoveryReportAsync(
                 AgvId, 3, "f0000000-0000-4000-8000-000000000176", forcedRecoveryGeneration: 2,
                 AttemptId, "PREPARED", [], [AttemptId], [], token);
@@ -2601,7 +2604,7 @@ public sealed class RecoveryStateMachineG2Tests
                 new RecordingPeer(context), recoveryLogger: log);
             OnboardConnectionState state = CurrentState();
             (string first, string late) = await ReachTwoSubmissionsOfOneActionAsync(
-                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, state, proof);
+                "COMPENSATE_LOAD_ALL_EMPTY", "ALL_EMPTY", processor, context, state, proof);
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(
                 AllEmptyCompensationResult(first), state, token)));
             string sessionId = StableGuid(RequestId, "exception-recovery-session");
@@ -2658,9 +2661,10 @@ public sealed class RecoveryStateMachineG2Tests
             OnboardConnectionState state = CurrentState();
             string sessionId = StableGuid(RequestId, "exception-recovery-session");
             string first = await ReachCompensationResultAsync(processor, state, proof);
-            Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
+            Assert.Equal("RecoveryActionAccepted", MessageType(await SubmitAgainAsBeforeCs187Async(
+                processor, context, state,
                 RecoveryAction("COMPENSATE_LOAD_ALL_EMPTY", messageId: "e0000000-0000-4000-8000-000000001758",
-                    actionId: SecondActionId), state, token)));
+                    actionId: SecondActionId))));
             Assert.Equal("DurableAck", MessageType(await processor.ProcessAsync(first, state, token)));
             clock.Current = Now.AddMinutes(1);
             await OpenNextSessionAndHandOffAsync(processor, state, proof);
@@ -3949,8 +3953,45 @@ public sealed class RecoveryStateMachineG2Tests
     private const string SecondActionId = "51000000-0000-4000-8000-000000000175";
 
     /// <summary>
-    /// Session A on the seeded demand with <paramref name="action"/> taken twice while it executes (the protocol
-    /// allows the same action again under a new recoveryActionId). Returns, unsent, the first action's result,
+    /// Sends <paramref name="submission"/>, a second submission of an action whose first submission in the same
+    /// session still awaits its outcome, and has it accepted the way it was before control-server#187.
+    /// </summary>
+    /// <remarks>
+    /// Since #187 such a submission is refused, so a session holding two submissions of one action exists only in a
+    /// store written before that fix. The handling of their late results (control-server#169, #175) stays for those
+    /// stores, and its tests reach one the only way left: every workflow still awaiting its outcome is lifted off its
+    /// session while the submission is taken, then put back -- the store as it stood when such a submission was
+    /// accepted. The submission itself goes through the whole of SubmitActionAsync as before, command, snapshot and
+    /// a forced recovery's generation included.
+    /// </remarks>
+    private static async Task<string> SubmitAgainAsBeforeCs187Async(
+        OnboardMessageProcessor processor,
+        ControlServerDbContext context,
+        OnboardConnectionState state,
+        string submission)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        Dictionary<string, string> sessions = await context.RecoveryWorkflows.AsNoTracking()
+            .Where(row => row.ExceptionRecoverySessionId != null &&
+                          (row.State == RecoveryWorkflowState.CommandPending ||
+                           row.State == RecoveryWorkflowState.AwaitingResult))
+            .ToDictionaryAsync(row => row.WorkflowId, row => row.ExceptionRecoverySessionId!, token);
+        Assert.NotEmpty(sessions);
+        await context.RecoveryWorkflows.Where(row => sessions.Keys.Contains(row.WorkflowId))
+            .ExecuteUpdateAsync(set => set.SetProperty(row => row.ExceptionRecoverySessionId, (string?)null), token);
+        string response = await processor.ProcessAsync(submission, state, token);
+        foreach ((string workflowId, string sessionId) in sessions)
+        {
+            await context.RecoveryWorkflows.Where(row => row.WorkflowId == workflowId)
+                .ExecuteUpdateAsync(set => set.SetProperty(row => row.ExceptionRecoverySessionId, sessionId), token);
+        }
+        context.ChangeTracker.Clear();
+        return response;
+    }
+
+    /// <summary>
+    /// Session A on the seeded demand with <paramref name="action"/> taken twice while it executes (accepted as it was
+    /// before control-server#187, <see cref="SubmitAgainAsBeforeCs187Async"/>). Returns, unsent, the first action's result,
     /// which does not reconcile and so closes A, and the second action's, concluding <paramref name="lateOutcome"/>
     /// -- with every slot proven empty when that is a success.
     /// </summary>
@@ -3958,6 +3999,7 @@ public sealed class RecoveryStateMachineG2Tests
         string action,
         string lateOutcome,
         OnboardMessageProcessor processor,
+        ControlServerDbContext context,
         OnboardConnectionState state,
         string proof)
     {
@@ -3970,9 +4012,9 @@ public sealed class RecoveryStateMachineG2Tests
                 "FaultCargoRecoveryResult", "FAILED", processor, state, proof),
             _ => throw new ArgumentOutOfRangeException(nameof(action), action, null)
         };
-        Assert.Equal("RecoveryActionAccepted", MessageType(await processor.ProcessAsync(
-            RecoveryAction(action, messageId: "e0000000-0000-4000-8000-000000001750", actionId: SecondActionId),
-            state, token)));
+        Assert.Equal("RecoveryActionAccepted", MessageType(await SubmitAgainAsBeforeCs187Async(
+            processor, context, state,
+            RecoveryAction(action, messageId: "e0000000-0000-4000-8000-000000001750", actionId: SecondActionId))));
         JsonNode second = JsonNode.Parse(first)!;
         second["messageId"] = "b3200000-0000-4000-8000-000000000175";
         second["payload"]!["recoveryActionId"] = SecondActionId;

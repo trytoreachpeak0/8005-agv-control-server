@@ -429,18 +429,29 @@ public sealed class OnboardRecoveryCoordinator(
         string? actionProblem = ValidateActionPreconditions(action, session, connection, operation);
         if (actionProblem is not null)
             return RejectedAction(root, actionId, recoverySessionId, session.Revision, actionProblem);
-        // One resume authorization admits one replacement result, and the result finds its resume by attempt
-        // alone (WireToGateStore.RequireResumeAuthorizationAsync, ObserveOperationResultAsync). A second resume
-        // waiting on the same attempt, in this session or any other, would leave that result two to settle and
-        // it would never be acknowledged (control-server#180). So it is refused here, before it exists; its
-        // preconditions alone cannot tell, because the first resume leaves them true until its result arrives.
-        // A resend of an accepted resume never reaches this point: the replay above answers it.
-        if (action == "RESUME_AFTER_REPAIR" &&
-            await dbContext.RecoveryWorkflows.AnyAsync(
-                row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
-                       row.SlotOperationAttemptId == operation!.SlotOperationAttemptId &&
+        // The one check against taking an action again while the same action still awaits its outcome, for all four
+        // actions. Their preconditions alone cannot tell: the first submission leaves them true until its outcome
+        // arrives. A resend of an accepted action never reaches this point: the replay above answers it.
+        //
+        // A resume is judged by attempt, in this session or any other (control-server#180): one resume
+        // authorization admits one replacement result, and the result finds its resume by attempt alone
+        // (WireToGateStore.RequireResumeAuthorizationAsync, ObserveOperationResultAsync), so a second one waiting
+        // would leave that result two to settle and it would never be acknowledged.
+        //
+        // The other three are judged within the session (control-server#187, decided by the user on 2026-09-19):
+        // each would send the vehicle a second command for the same physical action, and it would carry it out
+        // twice. A second forced recovery would also advance the forced generation, which fences only a first
+        // command not yet delivered and makes its result historical while the vehicle may be executing it. A
+        // compensation awaiting authorization has sent nothing yet and is not counted: refusing past it would
+        // leave a session whose compensation is never authorized with no action left to take.
+        bool byAttempt = action == "RESUME_AFTER_REPAIR";
+        string? attemptId = operation?.SlotOperationAttemptId;
+        if (await dbContext.RecoveryWorkflows.AnyAsync(
+                row => row.WorkflowType == action &&
                        (row.State == RecoveryWorkflowState.CommandPending ||
-                        row.State == RecoveryWorkflowState.AwaitingResult),
+                        row.State == RecoveryWorkflowState.AwaitingResult) &&
+                       ((byAttempt && row.SlotOperationAttemptId == attemptId) ||
+                        (!byAttempt && row.ExceptionRecoverySessionId == recoverySessionId)),
                 cancellationToken).ConfigureAwait(false))
             return RejectedAction(
                 root, actionId, recoverySessionId, session.Revision, ServerReasonCodes.ActionNotAllowedInState);
