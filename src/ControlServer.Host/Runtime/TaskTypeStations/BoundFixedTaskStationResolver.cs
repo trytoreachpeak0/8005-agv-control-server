@@ -49,11 +49,21 @@ public sealed class BoundFixedTaskStationView(
 {
     public FixedTaskStationResolution Resolve(string taskType)
     {
-        TaskTypeStationRule rule = rules!.Rules.Single(item => item.TaskType == taskType);
+        TaskTypeStationRuleVersion ruleVersion = rules!;
+        TaskTypeStationRule rule = ruleVersion.Rules.Single(item => item.TaskType == taskType);
         FixedStationEnd end = rule.FixedEnd == TaskTypeFixedEnd.Origin ? FixedStationEnd.Origin : FixedStationEnd.Destination;
-        TaskTypeStationBinding binding = bindingSet!.Bindings.Single(item => item.TaskType == taskType);
+        TaskTypeStationBinding? binding = bindingSet is not null &&
+            bindingSet.RequiredTaskTypes.Contains(taskType, StringComparer.Ordinal)
+                ? bindingSet.Bindings.SingleOrDefault(item => item.TaskType == taskType)
+                : null;
+        if (binding is null)
+        {
+            return FixedTaskStationResolution.Refused(
+                taskType, end, DispatchReasonCodes.TaskTypeBindingMissing, ruleVersion.Version, bindingSet?.Version);
+        }
+
         RiotMapStation station = map.Stations.Single(item => item.StationId == binding.StationRiotId);
-        return FixedTaskStationResolution.Resolved(taskType, end, station, rules.Version, bindingSet.Version);
+        return FixedTaskStationResolution.Resolved(taskType, end, station, ruleVersion.Version, bindingSet!.Version);
     }
 }
 
