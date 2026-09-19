@@ -139,7 +139,8 @@ $assertions.Add(
 # 规格第 5.3 节：原因只在服务端与看板，不经 blockingFacts 下发。每一份业务状态快照都查，缺绑定的原因码、需求号都不许出现。
 $businessSnapshots = Get-L2RealOutbound $connection 'VehicleBusinessStateSnapshot'
 $leakingFacts = @($businessSnapshots | Where-Object {
-        $facts = @($_.Payload.blockingFacts) | ConvertTo-Json -Depth 10 -Compress
+        # -InputObject, not the pipeline: piped, an empty array serialises to nothing and $facts would be $null.
+        $facts = ConvertTo-Json -InputObject @($_.Payload.blockingFacts) -Depth 10 -Compress
         ((Test-L2RealPresent $backlogReason) -and $facts.Contains($backlogReason, [StringComparison]::Ordinal)) -or
             $facts.Contains($unboundId, [StringComparison]::OrdinalIgnoreCase) -or
             $facts.Contains($unboundGuid.ToString('N'), [StringComparison]::OrdinalIgnoreCase) -or
