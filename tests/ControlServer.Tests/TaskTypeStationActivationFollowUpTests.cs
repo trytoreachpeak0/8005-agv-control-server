@@ -239,6 +239,50 @@ public sealed class TaskTypeStationActivationFollowUpTests
         Assert.DoesNotContain(context.ChangeTracker.Entries<BusinessAuditRecordRow>(), entry => entry.State == EntityState.Added);
     }
 
+    // ======== e: a hold release names the audit record that recorded it ========
+
+    /// <summary>
+    /// cs#200 e：解除人工与目录变化暂停后，每条暂停的 <c>ReleasedBy</c> 是 <c>fieldops:release-hold:</c> 加这次解除那条审计的记录号，
+    /// 按它能在业务审计里查回那条解除审计；<c>RaisedBy</c> 不变。再解除一次（已无可解除）被拒，先前记下的解除人不被改写。
+    /// </summary>
+    [Fact]
+    public async Task AHoldReleaseRecordsItsOwnAuditRecordAsTheOneWhoReleasedTheHolds()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationActivationHarness.Stack stack = harness.Default();
+        await stack.Holds.RaiseAsync(
+            25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.Manual, "MANUAL_TIGHTEN", "{}", "operator",
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+        await stack.Holds.RaiseAsync(
+            25, TransportTaskTypes.WireToGate, TaskTypeStationHoldSource.CatalogChange, "CATALOG_RENAMED", "{}", "server",
+            TaskTypeStationActivationHarness.Now.AddMinutes(-5), Token);
+
+        TaskTypeStationHoldReleaseResult released = await stack.Service.ReleaseHoldAsync(
+            25, TransportTaskTypes.WireToGate, "SITE-RECHECK-0920", TaskTypeStationActivationHarness.Catalog,
+            TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+
+        Assert.Equal(TaskTypeStationHoldReleaseOutcome.Released, released.Outcome);
+        string releaser = "fieldops:release-hold:" + released.AuditRecordId;
+        IReadOnlyList<TaskTypeStationHoldRow> holds = await harness.HoldsAsync();
+        Assert.Equal(
+            [("operator", releaser), ("server", releaser)],
+            holds.Select(hold => (hold.RaisedBy, hold.ReleasedBy)).Order());
+        Assert.All(released.Released, hold => Assert.Equal(releaser, hold.ReleasedBy));
+        BusinessAuditRecordRow audit = Assert.Single(
+            await harness.AuditAsync(), row => row.AuditRecordId == released.AuditRecordId);
+        Assert.Equal(
+            (TaskTypeStationActivationAuditActions.HoldReleased, GovernanceActionOutcome.Succeeded),
+            (audit.Action, audit.Outcome));
+
+        TaskTypeStationHoldReleaseResult again = await stack.Service.ReleaseHoldAsync(
+            25, TransportTaskTypes.WireToGate, "SITE-RECHECK-0920", TaskTypeStationActivationHarness.Catalog,
+            TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now.AddMinutes(1), Token);
+
+        Assert.Equal(TaskTypeStationHoldReleaseOutcome.Rejected, again.Outcome);
+        Assert.Contains(again.Violations, violation => violation.ReasonCode == TaskTypeStationActivationReasonCodes.NoHoldToRelease);
+        Assert.All(await harness.HoldsAsync(), hold => Assert.Equal(releaser, hold.ReleasedBy));
+    }
+
     private static GovernanceStore Governance(ControlServerDbContext context) =>
         new(context, new GovernanceDeploymentIdentity("deployment:8005-controlserver@test"), AuditRetentionPolicy.Default);
 
