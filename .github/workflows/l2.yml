@@ -441,6 +441,15 @@ jobs:
       # fits under the limit with a margin.
       RIG_COMMIT_START_CEILING_GIB: '12'
       RIG_COMMIT_WAIT_MINUTES: '30'
+      # No build servers. They outlive the build by minutes, and on the first CI round (run
+      # 35449244079) the job's own server build and peer publishes left about 3 GiB committed through
+      # both scenarios: 8.08 GiB peak against 3.45 idle, of which the scenarios themselves were about
+      # 1.7. This job builds once and then runs for up to hours, so a warm compiler buys nothing.
+      # MSBuild reads UseSharedCompilation from the environment like any property, so it reaches the
+      # peer publishes inside Invoke-L2Scenario.ps1 too.
+      MSBUILDDISABLENODEREUSE: '1'
+      DOTNET_CLI_USE_MSBUILD_SERVER: '0'
+      UseSharedCompilation: 'false'
 
     steps:
       # Each repository in its own subdirectory. A peer checked out into the server's work tree would
@@ -552,6 +561,8 @@ jobs:
           $buildCode = $LASTEXITCODE
           Write-Host '::endgroup::'
           if ($buildCode -ne 0) { Stop-RigSetup "dotnet build ControlServer.sln -c Release exited with $buildCode" }
+          # Belt and braces for the environment above: anything a build still left running goes now.
+          & dotnet build-server shutdown *> $null
 
           # Each run's stage root goes inside the evidence root, as in the scenarios job.
           $stageTemp = Join-Path $evidenceRoot '_stage'
