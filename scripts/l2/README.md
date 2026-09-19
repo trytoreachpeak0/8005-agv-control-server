@@ -205,14 +205,19 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
   三者都不在 `$GITHUB_WORKSPACE` 根上；显式传 `-OnboardRepository`／`-SimulatorRepository`。对端发布按提交缓存在
   vm01 `agvops` 的 `%LOCALAPPDATA%\8005-l2-peers`，同一对提交第二次起不再构建。
 - **清单与遍数。** `real-rig` 作业里有自己的手写清单，`Runs` 的含义与合成清单相同（三连次数）；模式 `default` 每个一遍、
-  `consecutive` 按 `Runs`、`consecutive-all` 至少三遍。`real-onboard-recovery-entry-missing` 不在清单里：它按设计是红的。
+  `consecutive` 按 `Runs`、`consecutive-all` 至少三遍。`consecutive` 配上批次 6 出口那 8 个场景，就是批次 6 出口的真装置清单。
+  两个场景不在清单里：`real-onboard-recovery-entry-missing` 按设计是红的；`real-onboard-restart-with-open-recovery-session`
+  在车载端 `4d716340` 上等不到「申请恢复」入口（`L2-ROS-02`～`08` 未到达），空闲的 vm01 上单独跑也红，上一次绿是 09-14，
+  批次 6 出口没跑它，见 `evidence/l2/20260919-ci-real-rig-runs/`。
 - **桌面。** 这个桌面同时是黄金渲染机，也跑 `8005-mes-ingest` 的桌面测试。跨仓库互斥靠机器级互斥体
   `Global\W2G-InteractiveDesktop`：本仓每个真装置场景拿一次、排队最多 30 分钟；mes-ingest 那边同日改成排队
   （`8005-mes-ingest#8`）。撞上夜里的黄金渲染 verify（北京时间 03:00 触发，实际多在 05:30 前后开跑）只是多等，
   不会变红，但长的连跑别挑那个时段。作业收尾检查本轮目录里起的残留进程和新出现的崩溃对话框，有就关掉并判红。
 - **端口。** 槽位 0，与本机真装置一样；合成作业用 1～4，两边互不排队。
-- **内存。** 看整机已提交内存，不看进程树。每个场景开跑前若整机已提交超过 12 GiB 就等（最多 30 分钟），整轮每 2 秒
-  采样一次，写进证据的 `commit-samples.csv`，作业摘要给出最低与峰值。实测见下表。
+- **内存。** 看整机已提交内存，不看进程树。每个场景开跑前若整机已提交超过 12 GiB 就等（最多 30 分钟）；等满仍超，
+  这一遍记为 `NOT_STARTED_COMMIT_GUARD`，本轮停下，作业以 `RIG_COMMIT_GUARD` 判红，不靠作业超时去结束它。整轮每 2 秒
+  采样一次，写进证据的 `commit-samples.csv`，作业摘要给出最低与峰值。作业不留构建服务器（MSBuild 节点、VBCSCompiler）。
+  实测见下表。
 - **不取消、超时给足。** 作业超时 300 分钟；手动取消与超时取消都可能卡死 runner 会话。
 - **证据。** artifact `real-rig-evidence`：每一遍一个目录加同名 `.log`、`commits.json`（三端提交）、`SUMMARY.md`、
   `commit-samples.csv`。
@@ -222,6 +227,12 @@ gh workflow run l2.yml --ref <分支> -f rig=real -f onboard_ref=<...> -f simula
 | run | 内容 | 结果 | 整机已提交 |
 | --- | --- | --- | --- |
 | `35449244079` | `real-onboard-compensate-then-reconnect`、`real-onboard-expected-action-overdue` 各一遍 | 2/2 PASS（64／88 秒） | 峰值 8.08 GiB；其中两个场景本身约 1.7 GiB，其余是构建留下的 MSBuild 节点与 VBCSCompiler，此后作业关掉了构建服务器 |
+| `35449602428` | 批次 6 出口的真装置清单，`consecutive`（`expected-action-overdue`、`durable-ack-lost` 各三遍，其余六个各一遍） | 12/12 PASS，15 分 52 秒 | 峰值 6.07 GiB，单独跑 |
+| `35450443032` | 当时清单全部各一遍，**同时**跑合成 `l2`（`fp/v2-impl`，run `35450454688`，4 路，绿）与 `test.yml`（run `35450447624`，绿） | 10/11 PASS，红的一遍见上一条 | **叠加峰值 11.66 GiB**（上限 16） |
+| `35451359668` | `real-onboard-restart-with-open-recovery-session` 单独一遍 | FAIL，与叠加时同样的判据未到达 | 峰值 5.94 GiB |
+
+与本机对照：批次 6 出口在控制端笔记本上跑同一份清单（车载端 `44b3aa6e`，与 `4d716340` 只差证据；模拟器同为 `fb5f7c59`），正式场景 12 遍全 PASS（另有一次性副本 1 遍，CI 上不跑），
+`expected-action-overdue` 三遍 89／84／82 秒；vm01 上 86／85／86 秒。证据入库 `evidence/l2/20260919-ci-35449602428-*`。
 
 ## 两套装置
 
