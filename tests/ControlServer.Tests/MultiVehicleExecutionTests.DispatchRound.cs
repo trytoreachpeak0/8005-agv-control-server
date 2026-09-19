@@ -358,37 +358,47 @@ public sealed partial class MultiVehicleExecutionTests
         await Assert.ThrowsAsync<NotSupportedException>(() => fixture.RunRoundAsync(TimeSpan.FromSeconds(1)));
     }
 
+    // ---- per-vehicle failure isolation (control-server#231) -------------------------------------------------
+
     /// <summary>
-    /// Today a vehicle whose RIoT read throws ends the whole round: the vehicles behind it are not served and the
-    /// round-end hook is not called. Pinned as it is, not as it should be -- the move keeps behaviour, and isolating
-    /// one vehicle's failure is its own change (it also decides whether that vehicle counts as having finished for
-    /// the structural block).
+    /// A vehicle in the middle of the roster throwing leaves the vehicles on either side of it served, written down
+    /// whole the way the equivalence transcripts above are.
     /// </summary>
+    /// <remarks>
+    /// Batch 7-04 pinned this case as <c>AVehicleWhoseRiotReadThrowsEndsTheRoundForTheVehiclesBehindIt</c> -- the
+    /// round ended, the third vehicle went unserved and the round-end hook never ran -- deliberately as it was
+    /// rather than as it should be. control-server#231 is the change that was waiting for, so the transcript is
+    /// rewritten here rather than kept.
+    /// </remarks>
     [Fact]
-    public async Task AVehicleWhoseRiotReadThrowsEndsTheRoundForTheVehiclesBehindIt()
+    public async Task AVehicleWhoseRiotReadThrowsLeavesTheVehiclesOnEitherSideOfItServed()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         fixture.Riot.FailOn = FleetFixture.VehicleKeys[1];
 
         fixture.Clock.Tick = TimeSpan.FromMilliseconds(1);
-        await Assert.ThrowsAsync<HttpRequestException>(() => fixture.RunRoundAsync());
+        await fixture.RunRoundAsync();
 
         Assert.Equal(
-            [FleetFixture.AgvIds[0]],
-            await fixture.Context.JourneyRuntimes.Select(row => row.AgvId).ToArrayAsync(
-                TestContext.Current.CancellationToken));
-        Assert.Empty(fixture.RoundOutcomes.Outcomes);
+            [FleetFixture.AgvIds[0], FleetFixture.AgvIds[2]],
+            await fixture.Context.JourneyRuntimes.Select(row => row.AgvId)
+                .OrderBy(agvId => agvId)
+                .ToArrayAsync(TestContext.Current.CancellationToken));
         await AssertTranscriptAsync(fixture, """
             journey V1 D0 AwaitingPickupArrival block=- pickup=12 slots=[1] baskets=1
-            backlog D0 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
-            backlog D1 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
+            journey V3 D1 AwaitingPickupArrival block=- pickup=13 slots=[1] baskets=1
+            backlog D0 DEMAND_ALREADY_ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
+            backlog D1 ACCEPTED first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0000000+00:00 accepted=2026-09-08T06:00:00.0000000+00:00
             backlog D2 ELIGIBLE first=2026-09-08T06:00:00.0020000+00:00 last=2026-09-08T06:00:00.0020000+00:00 accepted=-
+            outcome accepted=D0,D1
+              V1: D0=ELIGIBLE[1] D1=ELIGIBLE[1] D2=ELIGIBLE[1]
+              V3: D0=DEMAND_ALREADY_ACCEPTED D1=ELIGIBLE[1] D2=ELIGIBLE[1]
             riot create BROKERX-0001 W2G-10000000-0000-4000-8000-000000000000-PICKUP-1 -> 12
-            catalog reads 2
+            riot create BROKERX-0003 W2G-10000001-0000-4000-8000-000000000001-PICKUP-1 -> 13
+            log 2123 LogVehicleRoundFailed Warning: Vehicle V2 could not be served this round: HttpRequestException. The round moved on to the remaining vehicles.
+            catalog reads 3
             """);
     }
-
-    // ---- per-vehicle failure isolation (control-server#231) -------------------------------------------------
 
     /// <summary>
     /// The first vehicle's RIoT read throws, and only that vehicle is skipped: the two behind it are served, the

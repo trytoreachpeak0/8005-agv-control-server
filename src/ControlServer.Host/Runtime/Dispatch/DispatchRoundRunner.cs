@@ -17,12 +17,16 @@ namespace ControlServer.Host.Runtime.Dispatch;
 /// <remarks>
 /// <para>
 /// <b>It shares the engine's scope.</b> Registered scoped, it is handed the same <see cref="ControlServerDbContext"/>
-/// the engine and every store of the round are, and that is load-bearing: a vehicle that runs out its budget clears
+/// the engine and every store of the round are, and that is load-bearing: a vehicle whose segment ends early clears
 /// the change tracker here, and that has to be the tracker every later save of the round goes through.
 /// </para>
 /// <para>
-/// It logs under <see cref="JourneyRuntimeEngine"/>'s category, with the event ids it had there (2101, 2104, 2106), so
-/// a log filter or an alert written against the engine still sees the round.
+/// <b>One vehicle's trouble is its own</b> (control-server#231): a segment that runs out its budget or throws is
+/// dropped, and the round carries on with the vehicles behind it and still reports at its end.
+/// </para>
+/// <para>
+/// It logs under <see cref="JourneyRuntimeEngine"/>'s category, with the event ids it had there (2101, 2104, 2106)
+/// plus 2123 for a segment that threw, so a log filter or an alert written against the engine still sees the round.
 /// </para>
 /// </remarks>
 public sealed class DispatchRoundRunner(
@@ -61,6 +65,12 @@ public sealed class DispatchRoundRunner(
             new EventId(2106, nameof(LogVehicleOccupancyConflict)),
             "Vehicle {AgvId} already holds an in-flight order; the claim for {UpperId} was refused by " +
             "the occupancy index.");
+    private static readonly Action<ILogger, string, string, Exception?> LogVehicleRoundFailed =
+        LoggerMessage.Define<string, string>(
+            LogLevel.Warning,
+            new EventId(2123, nameof(LogVehicleRoundFailed)),
+            "Vehicle {AgvId} could not be served this round: {ExceptionType}. The round moved on to the " +
+            "remaining vehicles.");
 
     private readonly JourneyRuntimeOptions runtimeOptions = options.Value;
 
@@ -157,17 +167,22 @@ public sealed class DispatchRoundRunner(
             {
                 LogVehicleRoundBudgetExhausted(
                     logger, vehicle.AgvId, (int)budget.TotalMilliseconds, null);
-                // Whatever the abandoned segment had staged is not this vehicle's decision any
-                // more and must not be written under the next vehicle's SaveChanges. Dropping it
-                // is what actually keeps one vehicle's timeout from reaching the others -- the
-                // budget only stops the work, the tracker is what would have carried it across.
-                dbContext.ChangeTracker.Clear();
-                backlogByDemandId.Clear();
-                foreach (JourneyBacklogRow row in await dbContext.JourneyBacklog
-                             .ToArrayAsync(cancellationToken).ConfigureAwait(false))
-                {
-                    backlogByDemandId[row.DemandId] = row;
-                }
+                await DropWhatTheSegmentStagedAsync(backlogByDemandId, cancellationToken).ConfigureAwait(false);
+            }
+            // A vehicle whose own reads fail -- an unreachable RIoT, an Onboard fact that cannot be read --
+            // is skipped exactly as a budget-exhausted one is (control-server#231). Before this, the first
+            // vehicle to throw ended the round: every vehicle behind it went unserved and the round-end hook
+            // below was never called, so one vehicle failing every round starved the whole fleet.
+            //
+            // It is not added to completedVehicles either, and that is the same rule rather than a second
+            // one: a segment that did not run to its end says nothing about that vehicle, so the round-end
+            // hook must not read its absence as "this vehicle refused". The structural dispatch block turns
+            // "every vehicle on the roster refused" into a fleet-wide alarm, and a vehicle that was merely
+            // unreadable this round has refused nothing.
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                LogVehicleRoundFailed(logger, vehicle.AgvId, error.GetType().Name, error);
+                await DropWhatTheSegmentStagedAsync(backlogByDemandId, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -177,7 +192,26 @@ public sealed class DispatchRoundRunner(
         // qualify (REQ-0205 has them compete for the same demand) is control-server#211's to decide.
         foreach (FleetVehicle vehicle in vehiclesUnderWay)
         {
-            if (await inTransitQualification.QualifiesAsync(round, vehicle, cancellationToken).ConfigureAwait(false))
+            bool qualifies;
+            try
+            {
+                qualifies = await inTransitQualification
+                    .QualifiesAsync(round, vehicle, cancellationToken).ConfigureAwait(false);
+            }
+            // The same isolation as the idle vehicles above, and it matters here for a reason of position: this
+            // loop sits between them and the round-end hook, so today -- with a path that only ever refuses --
+            // nothing can throw, but the path control-server#211 puts here reads, and a read that failed would
+            // take the hook down with it after every idle vehicle had already been served.
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                LogVehicleRoundFailed(logger, vehicle.AgvId, error.GetType().Name, error);
+                await DropWhatTheSegmentStagedAsync(backlogByDemandId, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            // Outside the catch on purpose: this is the round refusing to ignore an answer it cannot act on,
+            // not a vehicle failing, and swallowing it would be the silence it exists to prevent.
+            if (qualifies)
             {
                 throw new NotSupportedException(
                     $"Vehicle {vehicle.AgvId} qualified for an appended demand, which this round cannot yet dispatch " +
@@ -189,6 +223,28 @@ public sealed class DispatchRoundRunner(
         // is only answerable across the fleet; JourneyBacklog, overwritten vehicle by vehicle, cannot say.
         await roundOutcomes.RecordAsync(new DispatchRoundOutcome(round, completedVehicles), cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Drops whatever the segment that just ended had staged, and reads the backlog back as the database holds it.
+    /// </summary>
+    /// <remarks>
+    /// Shared by the two ways a segment can end early -- its budget running out and it throwing -- because the
+    /// hazard is one hazard. What the abandoned segment staged is not that vehicle's decision any more and must not
+    /// be written under the next vehicle's <c>SaveChanges</c>: stopping the work is not what keeps one vehicle's
+    /// trouble off the others, clearing the tracker they all share is.
+    /// </remarks>
+    private async Task DropWhatTheSegmentStagedAsync(
+        Dictionary<string, JourneyBacklogRow> backlogByDemandId,
+        CancellationToken cancellationToken)
+    {
+        dbContext.ChangeTracker.Clear();
+        backlogByDemandId.Clear();
+        foreach (JourneyBacklogRow row in await dbContext.JourneyBacklog
+                     .ToArrayAsync(cancellationToken).ConfigureAwait(false))
+        {
+            backlogByDemandId[row.DemandId] = row;
+        }
     }
 
     /// <summary>
