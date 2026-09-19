@@ -106,7 +106,11 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             options.DispatchGeneration,
             now,
             candidate.AreaAssignmentVersion,
-            candidate.RequiredSlotPosition);
+            candidate.RequiredSlotPosition,
+            // Carried through untouched: the versions the fixed station was resolved under, which the acceptance
+            // freezes (REQ-0344).
+            candidate.Route.FixedStation.RuleVersion,
+            candidate.Route.FixedStation.BindingSetVersion);
     }
 
     /// <summary>
