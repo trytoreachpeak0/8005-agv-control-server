@@ -226,7 +226,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
   握手里的 `RecoveryStateReport` 仍把这次 attempt 报成未结算。四条转 onboard-hmi#127。
 - **onboard-hmi#123（PR onboard-hmi#125）自列**：IO 预检 `FAILED`／`UNKNOWN` 之后向量与会话不清；绑定失败的拒绝仍不回结果，服务端停在 `AwaitingResult`〔合入时再核〕。
 - **REQ-0358 期待动作超时**（control-server#167）：车载端重启时卡片状态没有真装置证据；断开时的 HMI 文案只有 G2 覆盖；卸货侧、锁反馈卡死两种变体不做；
-  一次关门服务端约 1 秒内发 4 次快照请求（产品现象，未开票）；MVP `OnboardHmi_MVP` 有同一段代码，未核实。
+  一次关门服务端约 1 秒内发 4 次快照请求（产品现象，转 control-server#202）；MVP `OnboardHmi_MVP` 有同一段代码，未核实。
 - **Map 级改名检测未实施**（第五节第 14 点，control-server#186）。
 
 ### 证据的边界
