@@ -104,6 +104,40 @@ public sealed class AreaEndAdmissionStoreTests
     }
 
     /// <summary>
+    /// control-server#198 c-1, the replay branch: an operation already prepared under an admission identity that is not
+    /// the demand's task type -- written before this check existed -- is not replayed either. The replay returns the
+    /// stored outbox row after refreshing its envelope, which would send the command again; it is refused instead, and
+    /// the rows stay as they were.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        await AcceptAsync(fixture, ReverseDemand, TransportTaskTypes.StagingToWire);
+        WireToGateStore store = new(fixture.Context);
+        StationOperationPlan unload = Plan(
+            "ATTEMPT-UNLOAD", ReverseDemand, SlotOperationType.Unload, "N1-1", TransportTaskTypes.StagingToWire);
+        await store.PrepareSlotOperationAsync(unload, "MESSAGE-UNLOAD", Wire("MESSAGE-UNLOAD", "ATTEMPT-UNLOAD"), Token);
+        // The stored operation now names another task type than its demand: the state a write before this check could leave.
+        AcceptedDemandRow demand = await fixture.Context.AcceptedDemands.SingleAsync(row => row.DemandId == ReverseDemand, Token);
+        demand.WorkType = TransportTaskTypes.WireToGate;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Exception? refused = await Record.ExceptionAsync(() => store.PrepareSlotOperationAsync(
+            unload, "MESSAGE-UNLOAD", Wire("MESSAGE-UNLOAD", "ATTEMPT-UNLOAD"), Token));
+
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(refused is BusinessIdentityConflictException, $"exception: {refused?.GetType().Name ?? "none"}");
+        Assert.Equal(
+            (1, 1, 1),
+            (await fixture.Context.StationOperations.CountAsync(Token),
+                await fixture.Context.AdmissionDecisionSnapshots.CountAsync(Token),
+                await fixture.Context.ProtocolOutbox.CountAsync(Token)));
+    }
+
+    /// <summary>
     /// The factory rules, map 25 bound for WIRE_TO_GATE and STAGING_TO_WIRE, the reverse demand frozen against
     /// them, and an admission policy that admits both task types at the AREA machine station N1-1. The forward
     /// demand has no freeze, like every demand accepted before control-server#160 wrote one.
