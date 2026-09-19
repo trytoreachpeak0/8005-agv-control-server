@@ -283,36 +283,11 @@ public sealed record EligibleDispatchCandidate(
 /// <remarks>
 /// Separated from the chain because they answer different questions: the chain decides whether a
 /// candidate may be taken at all, the ranker decides which of the survivors this vehicle takes.
-/// The engine ticket replaces the implementation with real path cost; the chain does not change
-/// when it does.
+/// Its one implementation is <see cref="LayeredDispatchCandidateRanker"/> over the layers
+/// <see cref="DispatchCandidateOrdering"/> lists; a new ranking rule is a new layer, and this
+/// signature does not change when one is added.
 /// </remarks>
 public interface IDispatchCandidateRanker
 {
     EligibleDispatchCandidate SelectNext(IReadOnlyList<EligibleDispatchCandidate> eligible);
-}
-
-/// <summary>
-/// Oldest-first with a total order: first seen, then created, then demand id.
-/// </summary>
-/// <remarks>
-/// The demand id tie-break is what makes this deterministic rather than merely stable — two
-/// demands can share both timestamps, and a dispatch decision that depends on enumeration order
-/// is not reproducible from the evidence afterwards.
-/// </remarks>
-public sealed class FirstSeenDispatchCandidateRanker : IDispatchCandidateRanker
-{
-    public EligibleDispatchCandidate SelectNext(IReadOnlyList<EligibleDispatchCandidate> eligible)
-    {
-        ArgumentNullException.ThrowIfNull(eligible);
-        if (eligible.Count == 0)
-        {
-            throw new ArgumentException("The ranker is only called with at least one candidate.", nameof(eligible));
-        }
-
-        return eligible
-            .OrderBy(item => item.FirstSeenAt)
-            .ThenBy(item => item.Snapshot.CreatedAt)
-            .ThenBy(item => item.Snapshot.DemandId, StringComparer.Ordinal)
-            .First();
-    }
 }

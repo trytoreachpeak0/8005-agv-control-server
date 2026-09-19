@@ -906,21 +906,15 @@ internal static class JourneyRuntimeWorkerTestKit
             // the engine resolves it again after the entry, and the real host shares one scoped store
             // between them the same way.
             PackageCapacityStore packageCapacity = new(Context);
-            return new JourneyRuntimeEngine(
+            // One of each, shared by the round and the engine, the way the host's scope shares them.
+            VehicleDispatchPolicyAccess dispatchPolicy =
+                new(new VehicleDispatchPolicyStore(Context), options, Clock);
+            OnboardDispatchFactsReader onboardFacts = new(Context, options, Clock);
+            DispatchRoundRunner dispatchRound = new(
                 Context,
                 Catalog,
                 Riot,
-                Riot,
-                new MapStationResolver(),
-                new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
-                TaskTypeStationRuntimeSeed.Access(Context),
-                TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
                 intake,
-                new MovementDispatchService(store, Riot),
-                store,
-                publisher,
-                BoxCounts,
-                packageCapacity,
                 new DispatchAdmissionChain(DispatchAdmissionCriteria.Default(
                     options,
                     new MapStationResolver(),
@@ -932,15 +926,8 @@ internal static class JourneyRuntimeWorkerTestKit
                     routeGraph: null,
                     catalog: CreateCatalogAccess(),
                     createGate: CreateGate())),
-                new FirstSeenDispatchCandidateRanker(),
-                CreateCatalogAccess(),
-                new CatalogAvailabilityStore(Context),
-                CreateGate(),
-                new VehicleRoster(options),
-                new VehicleDispatchPolicyAccess(new VehicleDispatchPolicyStore(Context), options, Clock),
-                Riot,
-                CheckpointWaits,
-                CreateFaultCoordinator(),
+                DispatchCandidateOrdering.Ranker(),
+                dispatchPolicy,
                 new AreaAssignmentStore(Context, CreateGovernedPublisher()),
                 new VehicleSlotPositionReader(Context),
                 new StructuralDispatchBlockSink(
@@ -948,6 +935,34 @@ internal static class JourneyRuntimeWorkerTestKit
                     new VehicleSlotPositionReader(Context),
                     new VehicleRoster(options),
                     StructuralBlockLog),
+                onboardFacts,
+                new InTransitAppendNotOpened(),
+                options,
+                Clock,
+                EngineLog);
+            return new JourneyRuntimeEngine(
+                Context,
+                Riot,
+                Riot,
+                new MapStationResolver(),
+                new BoundFixedTaskStationResolver(TaskTypeStationRuntimeSeed.Access(Context), options),
+                TaskTypeStationRuntimeSeed.Access(Context),
+                TaskTypeStationRuntimeSeed.CatalogBindingHolds(Context, Clock),
+                new MovementDispatchService(store, Riot),
+                store,
+                publisher,
+                BoxCounts,
+                packageCapacity,
+                CreateCatalogAccess(),
+                new CatalogAvailabilityStore(Context),
+                CreateGate(),
+                new VehicleRoster(options),
+                dispatchPolicy,
+                Riot,
+                CheckpointWaits,
+                CreateFaultCoordinator(),
+                dispatchRound,
+                onboardFacts,
                 options,
                 Clock,
                 EngineLog);
