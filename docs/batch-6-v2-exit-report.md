@@ -4,12 +4,11 @@ control-server#165（批次6-09）。本报告逐项对照规格 `8005-agv-progr
 （第 19 节、第 21 节补记优先；地图号按第 21.5 节读作 26）。需求条目按基线 **`v1.4.0`**（tag `requirements-baseline-v1.4.0`，359 条）引用。
 本批不改协议，门禁与证据绑 `protocol-v2.0.0`。
 
-> **状态：证据齐，待本 PR 默认 CI。**两次真装置封锁时段（20:32～21:15、21:28～21:49）都已跑完并归还。第一段的 staged G3 红在判据落后于 control-server#187，
-> 在本分支内改判据（测试代码，调度定不另开票）后，第二段四个 G3 runner 在出口提交上从头重跑，全绿。唯一的〔待取〕是本 PR 转 ready 后的默认 CI。
+> **状态：出口达成，待调度审查。**两次真装置封锁时段（20:32～21:15、21:28～21:49）都已跑完并归还；本 PR 默认 CI 在 `b71d2f0b` 上 `test`、`l2` 两项绿。
 
 ## 结论
 
-**批次 6 出口达成**（本 PR 默认 CI 待取）。规格第 8.3 节批次 6 行的每一项都在 `protocol-v2.0.0` 发布身份上成立：
+**批次 6 出口达成。**规格第 8.3 节批次 6 行的每一项都在 `protocol-v2.0.0` 发布身份上成立：
 `FP-IS-10`、`FP-IS-11` 四门禁全 PASS；CI 上 36 个合成场景各连续三次、共 108 次全 PASS（批次 6 的 8 个场景 24 次）；六条机制判据各有三份独立证据；
 真装置 13 次 PASS（含调度登记必跑的 `real-onboard-expected-action-overdue` 三连）；两端全量 L1 全绿（服务端 1559/1559，车载端 623/623）。
 **本报告不写「六类都跑通」**：验收期现场只有 `WIRE_TO_GATE` 能真实触发（第五节第 1 点）。
@@ -29,7 +28,7 @@ control-server#165（批次6-09）。本报告逐项对照规格 `8005-agv-progr
 | 每次门禁 `-Output`／`-EvidenceRoot` 新目录；红证据保留，`docs/defects/` 有记录 | **成立**：每次新目录；staged 两次红与一次未启动的目录原样保留，缺陷单已入库并记修复 | 第四节 |
 | 十三点如实写明，无第 8.8 节禁用表述 | 已写（第五节） | 第五节 |
 | 未切换 `C:\Users\szy\Desktop\8005-workspace\repos\` 下任何克隆 | 至今成立 | 全部操作在 `8005-workspace-v2` |
-| 本 PR 的 CI `test` 与 `l2` 两项绿 | 〔待取〕 | PR |
+| 本 PR 的 CI `test` 与 `l2` 两项绿 | **成立**：`b71d2f0b` 上 `test` run `35447013613`（1559/1559）、`l2` run `35447013428`，都 success | PR 检查页 |
 
 ## 前置核对（2026-09-19 实查）
 
@@ -189,7 +188,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 | 4d | `run-journey-g3.ps1`（现行） | **`JOURNEY_G3_PASS`**，14/14 场景；`FP-IS-01`／`02`／`03`／`07`／`10`／`11` 的 `gate-result.json` 都是 `PASS`、`formalSlicePass true` | `evidence/g3/20260919-protocol-v2.0.0-journey-85381ea2/` |
 | 4（第一段，历史） | 同上四个，绑定 `76c2ca21`（cs `905ffd1d`／onboard `44b3aa6e`） | staged 两次 `INCONCLUSIVE_RUNNER_ERROR`（第四节）；restart、需求承载、journey（14/14）PASS | `evidence/g3/20260919-protocol-v2.0.0-*-905ffd1d*/` |
 | 5 | CI `l2.yml` `consecutive-all` | run `35445347285` success，108/108 PASS | 见第二节 |
-| 6 | 本 PR 默认 CI（`test`、`l2`） | 〔待取〕 | PR 检查页 |
+| 6 | 本 PR 默认 CI（`test`、`l2`） | 都 success（`b71d2f0b`，run `35447013613`、`35447013428`） | PR 检查页 |
 
 两端 G2 的 `gate-result.json` 都绑 `protocolTag protocol-v2.0.0`、`protocolRepositoryCommit 86575456`、`protocolManifestSha256 4ac095ad…`、`protocolApprovalStatus APPROVED_RELEASE`。
 
