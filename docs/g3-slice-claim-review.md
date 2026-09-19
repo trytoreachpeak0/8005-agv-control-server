@@ -274,3 +274,55 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | journey | `manualChargingReturnRequiresVerifiedAdministrator`（G3-07-52） | FP-IS-07 | `CV-MANUAL-CHARGING-RETURN`（`REQUIRE_VERIFIED_ADMINISTRATOR` / `REQUEST_RETURN_WITH_OPERATOR_CONTEXT`） | 两次请求都带管理员号，服务端记下同一个管理员 | 疑点 29 |
 | journey | `eligibilityReevaluatedAfterReturn`（G3-07-53） | FP-IS-07 | `CV-MANUAL-CHARGING-RETURN`（`REEVALUATE_ELIGIBILITY_AFTER_RETURN`） | RecoveryRequired 时拒绝，Ready 时受理 | 疑点 29 |
 | journey | `manualChargingReturnHasNoSideEffects`（G3-07-54） | FP-IS-07 | `CV-MANUAL-CHARGING-RETURN` finalState | 会话仍 Ready，没有需求、操作或单，仓位关、空、锁上 | 疑点 29：`NEVER_CLEAR_HOLD_LOCALLY` 没有被断言 |
+
+## 批次 6 新增：FP-IS-10、FP-IS-11（control-server#164）
+
+批次 6 的 G3 认领由 control-server#164 独占。journey runner 新认领两片，各一条场景、各九条断言，全部是切片断言，不加运行级断言（运行级的八条照旧，对新场景同样生效）。向量内容按 `protocol-v2.0.0` 协议仓 `vectors/CV-TASK-TYPE-ADMISSION-FAIL-CLOSED/expected.json` 与 `vectors/CV-REVERSED-DIRECTION-JOURNEY/expected.json` 对照；检查内容取自场景脚本里 `$assertions.Add` 的判定文字。
+
+| runner | 运行级 | 切片断言 | 合计 |
+| --- | --- | --- | --- |
+| journey 新增 | 0 | 18（FP-IS-10 9、FP-IS-11 9） | 18 |
+
+### 向量产品断言到 G3 断言
+
+每条向量 `productAssertions` 都至少有一个 G3 断言对应，只有一条例外，单列在表末。
+
+| 向量 | 归属 | `productAssertions` 条目 | 对应的 G3 断言 |
+| --- | --- | --- | --- |
+| `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 服务端 | `ADMIT_ONLY_BOUND_TASK_TYPES` | `boundTaskTypeAdmittedAndCompletedAlongside`（G3-10-05） |
+| `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 服务端 | `FAIL_CLOSED_ON_MISSING_BINDING` | `unboundTaskTypeDemandNeverAccepted`（G3-10-01）、`unboundTaskTypeNeverPlannedListedOrOrdered`（G3-10-02）、`missingBindingReasonKeptOnTheServer`（G3-10-03）、`admissionReasonNeverSentToTheVehicle`（G3-10-04） |
+| `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 车载端 | `NEVER_INFER_UNBOUND_TASK_TYPE` | `onboardShowsNoTaskTypeBeforeAWorklistItem`（G3-10-07）、`onboardShowsOnlyTheBoundTaskType`（G3-10-08） |
+| `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 车载端 | `DISPLAY_ADMISSION_BLOCK_REASON` | **不认领**：规格第 5.3 节取消了这条断言，准入阻断原因只在服务端与看板，不经 `blockingFacts` 下发，v2 没有生产者。契约冲突由 onboard-hmi#115 登记为 trytoreachpeak0/8005-agv-program#125（汇总在 trytoreachpeak0/8005-agv-program#115），下次破坏性协议发布时改措辞。反向的「原因确实没有下发」由 G3-10-04 判 |
+| `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` | 两端 | `orderedExpectedMessages`、finalState | `admissionSequenceMatchesVector`（G3-10-06）、`admissionFinalStateNoDuplicateCommit`（G3-10-09） |
+| `CV-REVERSED-DIRECTION-JOURNEY` | 服务端 | `DERIVE_DIRECTION_FROM_TASK_TYPE_RULE` | `reversedPlanRunsFromStagingStationToAreaMachine`（G3-11-01）、`reversedWorklistStopRolesFollowThePlan`（G3-11-02）、`loadAtStagingStationUnloadAtAreaMachineOnTheTargetSlots`（G3-11-06） |
+| `CV-REVERSED-DIRECTION-JOURNEY` | 服务端 | `NEVER_SWAP_ORIGIN_AND_DESTINATION` | `originAndDestinationNeverSwapped`（G3-11-07） |
+| `CV-REVERSED-DIRECTION-JOURNEY` | 车载端 | `DISPLAY_DIRECTION_AS_PLANNED` | `onboardShowsPickupAtTheStagingStation`（G3-11-04）、`onboardShowsDropoffAtTheAreaMachine`（G3-11-05） |
+| `CV-REVERSED-DIRECTION-JOURNEY` | 两端 | `orderedExpectedMessages`、finalState | `reversedSequenceMatchesVector`（G3-11-03）、`reversedJourneyFinalStateNoDuplicateCommit`（G3-11-09） |
+| （规格第 4.1 节 I6，批次 6 推翻） | 服务端 | 不是向量条目 | `admissionFrozenOnTheUnload`（G3-11-08） |
+
+`CV-TASK-TYPE-ADMISSION-FAIL-CLOSED` 的 `stableErrorCode`（`ACTION_NOT_ALLOWED_IN_STATE`）没有对应断言：它是车载端对不可做动作的应答码，而本场景里缺绑定的任务类型从未下发，车载端没有被要求做任何它的动作。判的是「根本没下发」（G3-10-02、G3-10-04）。
+
+### 逐条表
+
+场景：FP-IS-10 是 `scripts/l2/scenarios/g3-task-type-admission-fail-closed.ps1`，FP-IS-11 是 `scripts/l2/scenarios/g3-reversed-direction-journey.ps1`；两条共用 `scripts/l2/L2TaskTypeJourney.psm1` 驱动整趟旅程并经 UIA 读车载端的 `StopDirection`、`TaskType` 两个元素（onboard-hmi#115）。车载端文字按 `AutomationId` 读、按含义判（含「关卡」「取」「卸」、不是「未知」），不比文案全文。
+
+| runner | 断言名 | 当前归属切片 | 依据向量 | 核实到的检查内容 | 疑点 |
+| --- | --- | --- | --- | --- | --- |
+| journey | `unboundTaskTypeDemandNeverAccepted`（G3-10-01） | FP-IS-10 | `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED`（`FAIL_CLOSED_ON_MISSING_BINDING`） | 出厂预置配置下缺绑定的 `STAGING_TO_WIRE` 需求没有受理快照、旅程、订单意图、仓位操作；已绑定那条走完后再转四轮仍是如此 | |
+| journey | `unboundTaskTypeNeverPlannedListedOrOrdered`（G3-10-02） | FP-IS-10 | 同上 | 服务端发件箱没有任何一条消息提到它的需求号（两种写法都查），RIoT 上没有不属于已绑定需求的单 | |
+| journey | `missingBindingReasonKeptOnTheServer`（G3-10-03） | FP-IS-10 | 同上（规格第 5.3 节：原因只在服务端与看板） | `JourneyBacklog` 里它的原因码是 `TASK_TYPE_BINDING_MISSING`（control-server#160 的缺绑定码，不是 `OUT_OF_SCOPE_WORK_TYPE` 或 `TASK_TYPE_NOT_YET_EXECUTABLE`），没有受理时间 | |
+| journey | `admissionReasonNeverSentToTheVehicle`（G3-10-04） | FP-IS-10 | 同上（规格第 5.3 节：不经 `blockingFacts` 下发） | 全部 `VehicleBusinessStateSnapshot` 的 `blockingFacts` 里都没有该原因码、需求号或 `STAGING_TO_WIRE` | |
+| journey | `boundTaskTypeAdmittedAndCompletedAlongside`（G3-10-05） | FP-IS-10 | 同一向量（`ADMIT_ONLY_BOUND_TASK_TYPES`） | 同一轮放入的 `WIRE_TO_GATE` 需求受理、Succeeded，旅程 Completed，装卸两笔 Committed（不连带） | |
+| journey | `admissionSequenceMatchesVector`（G3-10-06） | FP-IS-10 | 同一向量 `orderedExpectedMessages` | 已绑定需求的第一份计划被确认，其后有业务状态快照被确认；这一趟的计划与清单无作废、无未确认 | 向量四步里的计划属于已绑定那条需求：缺绑定的那条按设计什么都不发 |
+| journey | `onboardShowsNoTaskTypeBeforeAWorklistItem`（G3-10-07） | FP-IS-10 | 同一向量（`NEVER_INFER_UNBOUND_TASK_TYPE`） | 到站前只有计划时，`StopDirection` 已按计划腿显示方向，`TaskType` 为空 | |
+| journey | `onboardShowsOnlyTheBoundTaskType`（G3-10-08） | FP-IS-10 | 同上 | 取货点与关卡两站 `TaskType` 都非空；四次读数（到站前、取货点、关卡、完成后）出现过的文案只有一种，含「关卡」、不是「未知」 | 「全程」是四个采样点，不是连续监视 |
+| journey | `admissionFinalStateNoDuplicateCommit`（G3-10-09） | FP-IS-10 | 同一向量 finalState | 全程只受理一条需求、两张 RIoT 单、两笔仓位操作；卸完的仓 CLOSED/EMPTY/1/0 | |
+| journey | `reversedPlanRunsFromStagingStationToAreaMachine`（G3-11-01） | FP-IS-11 | `CV-REVERSED-DIRECTION-JOURNEY`（`DERIVE_DIRECTION_FROM_TASK_TYPE_RULE`） | 第一份计划：第 1 腿 `TO_PICKUP` 到派工待送站、第 2 腿 `TO_DROPOFF` 到 AREA 机台；所有计划的 `publicStationFunction` 为空 | |
+| journey | `reversedWorklistStopRolesFollowThePlan`（G3-11-02） | FP-IS-11 | 同上 | 派工待送站的清单项 `PICKUP/STAGING_TO_WIRE`，AREA 机台的 `DROPOFF/STAGING_TO_WIRE` | |
+| journey | `reversedSequenceMatchesVector`（G3-11-03） | FP-IS-11 | 同一向量 `orderedExpectedMessages` | 第一份是计划、清单在其后；这一趟的计划与清单全部被真车载端确认，没有作废 | |
+| journey | `onboardShowsPickupAtTheStagingStation`（G3-11-04） | FP-IS-11 | 同一向量（`DISPLAY_DIRECTION_AS_PLANNED`） | 派工待送站的清单确认后，`StopDirection` 含「取」、不含「卸」，`TaskType` 非空 | |
+| journey | `onboardShowsDropoffAtTheAreaMachine`（G3-11-05） | FP-IS-11 | 同上 | AREA 机台卸货等操作员时，`StopDirection` 含「卸」、不含「取」，`TaskType` 非空 | |
+| journey | `loadAtStagingStationUnloadAtAreaMachineOnTheTargetSlots`（G3-11-06） | FP-IS-11 | 同一向量（`DERIVE_DIRECTION_FROM_TASK_TYPE_RULE`），以及 `REQ-0352` 的装卸同仓 | 录入请求的站点是派工待送站；装货命令在车到派工待送站之后、出发去机台之前发出；第二张 RIoT 单开往 AREA 机台，卸货命令在车到机台之后；两条命令的 `slots` 都是目标仓；模拟器上装与卸开的是同一个目标仓 | 装卸发生在哪一站按时刻判：命令里没有站点字段 |
+| journey | `originAndDestinationNeverSwapped`（G3-11-07） | FP-IS-11 | 同一向量（`NEVER_SWAP_ORIGIN_AND_DESTINATION`） | 车出发之前判：`JourneyRuntimes` 记的起点是派工待送站（名称与 RIoT 号）、终点是 AREA 机台，只有一行、路线证据非空；RIoT 上第一张单开往派工待送站（第二张的目的站在 G3-11-06） | 路线证据是哈希，G3 读不出起终点；互换失配由 control-server#163 的 L1 证。G3-11-01 与本条在车出发前判，方向排反的服务端会让后面的驱动超时，判据仍写得出来 |
+| journey | `admissionFrozenOnTheUnload`（G3-11-08） | FP-IS-11 | 不是向量条目；规格第 4.1 节 I6（批次 6 推翻） | `AdmissionDecisionSnapshots` 里卸货那次一行：AREA 机台站、`STAGING_TO_WIRE`、放行；装货那次没有 | |
+| journey | `reversedJourneyFinalStateNoDuplicateCommit`（G3-11-09） | FP-IS-11 | 同一向量 finalState | 需求 Succeeded、旅程 Completed，两张单、两笔操作都 Committed，卸完的仓 CLOSED/EMPTY/1/0 | |

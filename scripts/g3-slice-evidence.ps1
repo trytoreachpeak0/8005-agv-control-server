@@ -49,6 +49,12 @@
 # G3 evidence already committed under the old attribution is not rewritten; control-server#90 re-runs
 # the gates under this one.
 #
+# Batch 6 (control-server#164): the journey runner claims FP-IS-10 and FP-IS-11, one scenario each, nine
+# assertions each. docs/g3-slice-claim-review.md has their rows, each against the vector's productAssertions
+# entry it answers. One onboard entry is deliberately answered by nothing: CV-TASK-TYPE-ADMISSION-FAIL-CLOSED's
+# DISPLAY_ADMISSION_BLOCK_REASON, which specification 5.3 cancelled (the reason stays on the server and the
+# dashboard, so v2 has no producer for it); registered as program#125.
+#
 # ---------------------------------------------------------------------------------------------
 # The ruling, 2026-09-09 (ticket 23, the user's decision -- recorded here rather than only in a
 # commit message, because this is the constant it governs):
@@ -429,6 +435,37 @@ function Get-G3RunnerClaim {
                     'manualChargingReturnRequiresVerifiedAdministrator',
                     'eligibilityReevaluatedAfterReturn',
                     'manualChargingReturnHasNoSideEffects')
+                # CV-TASK-TYPE-ADMISSION-FAIL-CLOSED (batch 6, control-server#164): under the factory preset
+                # STAGING_TO_WIRE has no binding, so its demand is never admitted while a WIRE_TO_GATE demand in
+                # the same rounds runs to completion. The onboard half is NEVER_INFER_UNBOUND_TASK_TYPE, read
+                # through UI Automation. DISPLAY_ADMISSION_BLOCK_REASON is deliberately unclaimed: specification
+                # 5.3 keeps the reason on the server and the dashboard, so no v2 producer exists (program#125).
+                'FP-IS-10' = @(
+                    'unboundTaskTypeDemandNeverAccepted',
+                    'unboundTaskTypeNeverPlannedListedOrOrdered',
+                    'missingBindingReasonKeptOnTheServer',
+                    'admissionReasonNeverSentToTheVehicle',
+                    'boundTaskTypeAdmittedAndCompletedAlongside',
+                    'admissionSequenceMatchesVector',
+                    'onboardShowsNoTaskTypeBeforeAWorklistItem',
+                    'onboardShowsOnlyTheBoundTaskType',
+                    'admissionFinalStateNoDuplicateCommit')
+                # CV-REVERSED-DIRECTION-JOURNEY (batch 6, control-server#164): STAGING_TO_WIRE bound to a dispatch
+                # staging station, so the fixed end is the origin and the AREA machine the destination. Server
+                # halves: DERIVE_DIRECTION_FROM_TASK_TYPE_RULE (plan, worklist roles, where each operation ran)
+                # and NEVER_SWAP_ORIGIN_AND_DESTINATION (the journey's two ends, the RIoT orders' destinations);
+                # admissionFrozenOnTheUnload is I6 overturned, the admission riding the leg at the AREA end. The
+                # onboard half, DISPLAY_DIRECTION_AS_PLANNED, is read through UI Automation at both stops.
+                'FP-IS-11' = @(
+                    'reversedPlanRunsFromStagingStationToAreaMachine',
+                    'reversedWorklistStopRolesFollowThePlan',
+                    'reversedSequenceMatchesVector',
+                    'onboardShowsPickupAtTheStagingStation',
+                    'onboardShowsDropoffAtTheAreaMachine',
+                    'loadAtStagingStationUnloadAtAreaMachineOnTheTargetSlots',
+                    'originAndDestinationNeverSwapped',
+                    'admissionFrozenOnTheUnload',
+                    'reversedJourneyFinalStateNoDuplicateCommit')
             }
         }
     }
