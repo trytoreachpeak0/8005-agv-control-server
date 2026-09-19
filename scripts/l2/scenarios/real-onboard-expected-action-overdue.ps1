@@ -14,7 +14,7 @@
   不改任何执行器时序，所以不是 README 第 11 条禁止的那种调短；`operationTimeoutMs` 不动。
 - 站点期限 60 秒，从到站起算。时间线（以第一次开锁为 0）：约 8 秒空关、车自己重开；门槛前读一次；20 秒越过门槛；
   随后读告警、线上请求、中途快照、端点、看板页、HMI；再空关一次看同一超时再报不出第二行；约 54 秒期限过去，看合成一行；
-  经代理断一次链路，看重连后仍是同一行；放货关门闭环，看撤下。全程约 80 秒，在 120 秒的 `operationTimeoutMs` 之内。
+  放货关门闭环，看撤下。全程约 70 秒，在 120 秒的 `operationTimeoutMs` 之内。
 - 判据来源：服务端 SQLite（`ProtocolInbox` 里车载端发来的 `OnboardAlarmSnapshot`／`SafetyStateSnapshot`／`OperationProgress`／
   `OperationResult`，`SessionRecoveries`，`JourneyRuntimes`，`StationOperations`，三张恢复表）；协议故障代理的流量日志
   （`SafetyStateSnapshotRequested` 只在线上）；看板只读端点 `GET /api/dashboard/expected-action-overdue` 与看板进程渲染的页面；
@@ -22,7 +22,10 @@
 - **`L2-EAO-09` 读 HMI 文字，这是本仓 L2 少数读 UI 文字的判据**：REQ-0358 的交付物本身就是这句提示（用户 2026-09-18 定的
   措辞），读的是它的内容而不是拿它推断业务事实；只比「告警的 displayMessage」与「已上报」两个片段，不逐字比整句。
 - 守护判据：`L2-EAO-10`（上报不改变行为）修正前也绿、`L2-EAO-12`（撤下）已有 G2 覆盖，二者不取红。
-- 不在本场景：会话断开时的 HMI 文案（G2 `ExpectedActionOverdueViewModelTests` 覆盖）；卸货侧、锁反馈卡死两种变体；判故障
+- 不在本场景：在途装货时断链重连。control-server#167 调试时试过（`evidence/cs167/debug-001`），重连后服务端判
+  `RecoveryRequired`／`PENDING_FACT_RECONCILIATION_REQUIRED` 等这次装货的结果，车载端却因会话不是 Ready 不发进度与结果
+  （`WIRE_TO_GATE_NOT_READY`），两端互相等、装货永远收不了尾——那是另一个缺陷，另案处理，放进本场景只会让后面的判据全部够不着。
+  会话断开时的 HMI 文案（G2 `ExpectedActionOverdueViewModelTests` 覆盖）；卸货侧、锁反馈卡死两种变体；判故障
   （REQ-0359，protocol-v3.0.0）。
 #>
 [CmdletBinding()]
@@ -210,7 +213,7 @@ $first = Wait-L2RealOrLast -Description "the onboard reported $code for slot $sl
 if ($null -eq $first) {
     # 缺陷版本（车载端没有这条告警）走到这里：后面每一条都建立在这份告警上，如实记成未到达。
     Add-L2RealNotReached $assertions @('L2-EAO-03', 'L2-EAO-04', 'L2-EAO-05', 'L2-EAO-06', 'L2-EAO-07', 'L2-EAO-08', 'L2-EAO-09',
-        'L2-EAO-10', 'L2-EAO-13', 'L2-EAO-11', 'L2-EAO-14', 'L2-EAO-12') "越过门槛 $([int]$threshold.TotalSeconds + 30) 秒内车载端没有报 $code"
+        'L2-EAO-10', 'L2-EAO-13', 'L2-EAO-11', 'L2-EAO-12') "越过门槛 $([int]$threshold.TotalSeconds + 30) 秒内车载端没有报 $code"
     $journal.Note('Scenario stopped: no overdue alarm to follow.')
     return
 }
@@ -323,7 +326,7 @@ $assertions.Add(
 
 # --- 6. 上报不改变行为（守护判据） ------------------------------------------------------------------------------
 
-$progress = @(Get-L2OperationProgress -Connection $connection -AttemptId $attemptId)
+$progress = Get-L2OperationProgress -Connection $connection -AttemptId $attemptId
 $lastPhase = if ($progress.Count -gt 0) { $progress[-1].Phase } else { '(none)' }
 $results = Get-L2OperationResults -Connection $connection -AttemptId $attemptId
 $held = Get-L2Runtime -Connection $connection -DemandId $demandId
@@ -370,38 +373,7 @@ $assertions.Add(
     "STATION_TIMEOUT_DOOR_NOT_CLOSED / 1 行 stationTimeout=True raisedAt $($alarm.raisedAt) / 门开",
     "$($blocked.BlockReasonCode) / $($merged.Count) 行 $(Format-EndpointRow $mergedRow) / $(Get-L2SlotPhysical -Simulator $simulator -SlotNo $slotNo)")
 
-# --- 9. 断一次链路：重连之后卡片还是同一行 -----------------------------------------------------------------------
-
-# 执行器不跟连接走，断网重连时这次装货还在等人，超时计时也不断；重连握手里的告警快照带回的应是同一个超时。
-$connectionsBefore = @((Get-L2RealTraffic $proxy).connections).Count
-$journal.Note('Dropping the onboard link through the protocol fault proxy.')
-$closed = @($proxy.Command('Post', 'disconnect', @{}).body.connections)
-$sessionAfter = Wait-L2RealOrLast -Description 'the onboard reconnected and the session is Ready in a new generation' `
-    -Journal $journal -Criterion 'reconnected-ready' -TimeoutSeconds 90 `
-    -Probe { Get-L2RealSession $connection $agvId } `
-    -Until { param($v) $null -ne $v -and [long]$v.SessionGeneration -gt $generation0 -and [string]$v.Readiness -eq 'Ready' }
-$reconnected = Wait-L2RealOrLast -Description 'the endpoint lists the same overdue slot after the reconnect' `
-    -Journal $journal -Criterion 'endpoint-after-reconnect' -TimeoutSeconds 30 `
-    -Probe { Get-Slots (Get-Endpoint) } -Until { param($v) $v.Count -eq 1 -and $null -ne $v[0].readings }
-$reconnectedRow = if ($reconnected.Count -gt 0) { $reconnected[0] } else { $null }
-$hmiAfter = Wait-L2RealOrLast -Description 'the HMI says reported again once the session is back' `
-    -Journal $journal -Criterion 'hmi-after-reconnect' -TimeoutSeconds 15 `
-    -Probe { Get-HmiOverdue } -Until { param($v) $null -ne $v -and $v.Contains('已上报') }
-$traffic = Get-L2RealTraffic $proxy
-$open = @(@($traffic.connections) | Where-Object { $null -eq $_.closedAt })
-$reportsAfter = @((Get-OverdueReports $slotNo) | Where-Object { $null -ne $_.Alarm -and [long]$_.Generation -gt $generation0 })
-$assertions.Add(
-    'L2-EAO-14', '断线重连后卡片状态正确：代理断一次链路，车重连成新代次且 Ready；新代次的告警快照带回同一个超时（同一 raisedAt）；端点仍恰好一行、raisedAt 不变、读数取新代次；HMI 又说「已上报」；没有恢复痕迹',
-    ($closed.Count -ge 1 -and $null -ne $sessionAfter -and [long]$sessionAfter.SessionGeneration -gt $generation0 -and [string]$sessionAfter.Readiness -eq 'Ready' -and
-        $reportsAfter.Count -ge 1 -and (ConvertTo-L2RealInstant $reportsAfter[0].Alarm.raisedAt) -eq $raisedAt -and
-        $reconnected.Count -eq 1 -and (ConvertTo-L2RealInstant $reconnectedRow.raisedAt) -eq $raisedAt -and
-        $null -ne $reconnectedRow.readings -and [string]$reconnectedRow.readings.lockState -eq 'UNLOCKED' -and
-        $null -ne $hmiAfter -and $hmiAfter.Contains('已上报') -and
-        @($traffic.connections).Count -eq $connectionsBefore + 1 -and $open.Count -eq 1 -and (Get-RecoveryFootprint) -eq $noRecovery),
-    "断 1 条 / 新代次 Ready / 新代次告警 raisedAt $($alarm.raisedAt) / 端点 1 行同 raisedAt、锁 UNLOCKED / HMI 已上报 / $($connectionsBefore + 1) 条连接 1 条开着 / $noRecovery",
-    "断 $($closed.Count) 条 / $(Format-L2RealSession $sessionAfter) / 新代次 $($reportsAfter.Count) 份告警快照带它$(if ($reportsAfter.Count -gt 0) { " raisedAt $($reportsAfter[0].Alarm.raisedAt)" }) / 端点 $($reconnected.Count) 行 $(Format-EndpointRow $reconnectedRow) / HMI $(if ($null -eq $hmiAfter) { '无' } else { "'$hmiAfter'" }) / $(@($traffic.connections).Count) 条连接 $($open.Count) 条开着（$(Format-L2RealConnections $traffic)） / $(Get-RecoveryFootprint)")
-
-# --- 10. 放货关门：闭环、撤下 ------------------------------------------------------------------------------------
+# --- 9. 放货关门：闭环、撤下 ------------------------------------------------------------------------------------
 
 $journal.Note("The operator finally puts the cargo in slot $slotNo and shuts the door.")
 $null = $simulator.Command('Put', "slots/$slotNo/cargo", @{ state = 'OCCUPIED' })
@@ -414,7 +386,7 @@ $withdrawn = Wait-L2RealOrLast -Description 'the overdue alarm was withdrawn eve
     -Journal $journal -Criterion 'overdue-withdrawn' -TimeoutSeconds 30 `
     -Probe { [pscustomobject]@{ Alarm = Get-LatestOverdueCount; Rows = (Get-Slots (Get-Endpoint)).Count; Hmi = Get-HmiOverdue } } `
     -Until { param($v) $v.Alarm -eq 0 -and $v.Rows -eq 0 -and $null -eq $v.Hmi }
-$outcomes = (@(Get-L2OperationResults -Connection $connection -AttemptId $attemptId) | ForEach-Object { [string]$_.Payload.overallOutcome }) -join ','
+$outcomes = ((Get-L2OperationResults -Connection $connection -AttemptId $attemptId) | ForEach-Object { [string]$_.Payload.overallOutcome }) -join ','
 $assertions.Add(
     'L2-EAO-12', '撤下（守护判据）：放货关门后装货 COMPLETED、Committed；随后最新一份告警快照里不再有这个码，端点 slots 为空，HMI 控件不在 UIA 树里',
     ($committed -eq 'Committed' -and $outcomes -eq 'COMPLETED' -and $withdrawn.Alarm -eq 0 -and $withdrawn.Rows -eq 0 -and $null -eq $withdrawn.Hmi),

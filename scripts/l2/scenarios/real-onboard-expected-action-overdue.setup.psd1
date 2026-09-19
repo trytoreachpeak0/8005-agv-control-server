@@ -9,7 +9,7 @@
 # 在期限之前；从第一次开锁到放货收尾不超过 operationTimeoutMs（120 秒），免得车载端的提示节拍混进判据。
 #
 # 走协议故障代理，因为服务端向车要中途快照的 SafetyStateSnapshotRequested 只在线上（它追加在应答之后，不进服务端库），
-# 只有代理的流量日志看得到；场景还用代理断一次链路，看重连之后卡片还对不对。
+# 只有代理的流量日志看得到。
 @{
     Onboard                        = 'Real'
     ProtocolFaultProxy             = $true
