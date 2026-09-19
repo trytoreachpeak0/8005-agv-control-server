@@ -55,12 +55,9 @@ $unboundId = $unboundGuid.ToString('D')
 
 function Get-Count([string]$sql) { return Get-L2RealCount $connection $sql }
 
-# 缺绑定的原因码由 control-server#160 定名。按含义认：点名「绑定缺失」，而且不是「任务类型不在范围内」
-# （OUT_OF_SCOPE_WORK_TYPE 是规则表不认识或部署不允许，那是另一种情形，现场处置也不同）。
-function Test-MissingBindingReason([string]$code) {
-    return (Test-L2RealPresent $code) -and $code -ne 'OUT_OF_SCOPE_WORK_TYPE' -and
-        $code -cmatch '(BINDING_MISSING|MISSING_BINDING|NOT_BOUND|UNBOUND)'
-}
+# 缺绑定的原因码（control-server#160，DispatchReasonCodes.TaskTypeBindingMissing）。与 OUT_OF_SCOPE_WORK_TYPE（规则表不认识或
+# 部署不允许）、TASK_TYPE_NOT_YET_EXECUTABLE（绑定齐全但本构建还不会执行）是三种不同情形，现场处置也不同。
+$missingBindingReason = 'TASK_TYPE_BINDING_MISSING'
 
 # --- 1. 两条需求同时出现在 MesIngest 目录里 ----------------------------------------------------------------------
 
@@ -124,9 +121,9 @@ $backlogReason = if ($null -ne $backlog) { [string]$backlog.ReasonCode } else { 
 $backlogAccepted = $null -ne $backlog -and (Test-L2RealPresent $backlog.AcceptedAt)
 $assertions.Add(
     'G3-10-03',
-    '不投运原因记在服务端：JourneyBacklog 里这条需求的原因是「缺绑定」（不是 OUT_OF_SCOPE_WORK_TYPE），且没有受理时间',
-    ((Test-MissingBindingReason $backlogReason) -and -not $backlogAccepted),
-    '缺绑定原因码 / 未受理',
+    '不投运原因记在服务端：JourneyBacklog 里这条需求的原因是 TASK_TYPE_BINDING_MISSING（缺绑定，不是范围外或尚未可执行），且没有受理时间',
+    ($backlogReason -ceq $missingBindingReason -and -not $backlogAccepted),
+    "$missingBindingReason / 未受理",
     $(if ($null -eq $backlog) { '(没有 JourneyBacklog 行)' } else { "$backlogReason / 受理时间=$($backlog.AcceptedAt)" }))
 
 # 规格第 5.3 节：原因只在服务端与看板，不经 blockingFacts 下发。每一份业务状态快照都查，缺绑定的原因码、需求号都不许出现。

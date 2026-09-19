@@ -310,7 +310,7 @@ L2 id 与断言名的对应在 `$scenarioAssertions`（第 74–185 行）；运
 | --- | --- | --- | --- | --- | --- |
 | journey | `unboundTaskTypeDemandNeverAccepted`（G3-10-01） | FP-IS-10 | `CV-TASK-TYPE-ADMISSION-FAIL-CLOSED`（`FAIL_CLOSED_ON_MISSING_BINDING`） | 出厂预置配置下缺绑定的 `STAGING_TO_WIRE` 需求没有受理快照、旅程、订单意图、仓位操作；已绑定那条走完后再转四轮仍是如此 | |
 | journey | `unboundTaskTypeNeverPlannedListedOrOrdered`（G3-10-02） | FP-IS-10 | 同上 | 服务端发件箱没有任何一条消息提到它的需求号（两种写法都查），RIoT 上没有不属于已绑定需求的单 | |
-| journey | `missingBindingReasonKeptOnTheServer`（G3-10-03） | FP-IS-10 | 同上（规格第 5.3 节：原因只在服务端与看板） | `JourneyBacklog` 里它的原因码是「缺绑定」（按含义认，且不是 `OUT_OF_SCOPE_WORK_TYPE`），没有受理时间 | 原因码由 control-server#160 定名，场景按名字含义认；#160 合入后收紧为那个常量 |
+| journey | `missingBindingReasonKeptOnTheServer`（G3-10-03） | FP-IS-10 | 同上（规格第 5.3 节：原因只在服务端与看板） | `JourneyBacklog` 里它的原因码是 `TASK_TYPE_BINDING_MISSING`（control-server#160 的缺绑定码，不是 `OUT_OF_SCOPE_WORK_TYPE` 或 `TASK_TYPE_NOT_YET_EXECUTABLE`），没有受理时间 | |
 | journey | `admissionReasonNeverSentToTheVehicle`（G3-10-04） | FP-IS-10 | 同上（规格第 5.3 节：不经 `blockingFacts` 下发） | 全部 `VehicleBusinessStateSnapshot` 的 `blockingFacts` 里都没有该原因码、需求号或 `STAGING_TO_WIRE` | |
 | journey | `boundTaskTypeAdmittedAndCompletedAlongside`（G3-10-05） | FP-IS-10 | 同一向量（`ADMIT_ONLY_BOUND_TASK_TYPES`） | 同一轮放入的 `WIRE_TO_GATE` 需求受理、Succeeded，旅程 Completed，装卸两笔 Committed（不连带） | |
 | journey | `admissionSequenceMatchesVector`（G3-10-06） | FP-IS-10 | 同一向量 `orderedExpectedMessages` | 已绑定需求的第一份计划被确认，其后有业务状态快照被确认；这一趟的计划与清单无作废、无未确认 | 向量四步里的计划属于已绑定那条需求：缺绑定的那条按设计什么都不发 |
