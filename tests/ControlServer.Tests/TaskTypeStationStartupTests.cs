@@ -8,6 +8,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using static ControlServer.Tests.TaskTypeStationTestData;
 
@@ -211,6 +212,42 @@ public sealed class TaskTypeStationStartupTests
     }
 
     [Fact]
+    public async Task AStartWithoutAPresetKeepsTheActiveVersionAndTheLogSaysSo()
+    {
+        // Specification 21.2 item 4: once a map has an active version the preset is no longer the authority, and a
+        // restart does not take it away. The log must say what actually holds -- WIRE_TO_GATE stays in service.
+        await using Harness harness = await Harness.CreateAsync(Runtime());
+        harness.WritePreset(Preset());
+        await TaskTypeStationStartup.EnsureAsync(harness.Services, Token);
+        harness.WritePreset(new { SomethingElse = new { value = 1 } });
+        harness.Logs.Clear();
+
+        Assert.Null(await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        await using AsyncServiceScope scope = harness.Services.CreateAsyncScope();
+        ITaskTypeStationBindingStore bindings = scope.ServiceProvider.GetRequiredService<ITaskTypeStationBindingStore>();
+        TaskTypeStationActivePointer pointer = Assert.IsType<TaskTypeStationActivePointer>(
+            await bindings.ReadActivePointerAsync(25, Token));
+        Assert.Equal((1L, TaskTypeStationActivationState.Active), (pointer.ActiveVersion!.Value, pointer.State));
+        Assert.Equal([GateBinding], (await bindings.ReadActiveAsync(25, Token))!.Bindings);
+        string logged = Assert.Single(harness.Logs, line => line.Contains("preset", StringComparison.Ordinal));
+        Assert.Contains("binding set version 1 stays active", logged, StringComparison.Ordinal);
+        Assert.DoesNotContain("no task type is enabled", logged, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AStartWithoutAPresetAndWithoutAnActiveVersionSaysNoTaskTypeIsEnabled()
+    {
+        await using Harness harness = await Harness.CreateAsync(Runtime());
+        harness.WritePreset(new { SomethingElse = new { value = 1 } });
+
+        Assert.Null(await TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
+
+        string logged = Assert.Single(harness.Logs, line => line.Contains("preset", StringComparison.Ordinal));
+        Assert.Contains("no task type is enabled", logged, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ANamedPresetFileThatDoesNotExistRefusesStartRatherThanSilentlyLoadingNothing()
     {
         await using Harness harness = await Harness.CreateAsync(Runtime());
@@ -232,6 +269,33 @@ public sealed class TaskTypeStationStartupTests
         InvalidDataException refused = await Assert.ThrowsAsync<InvalidDataException>(
             () => TaskTypeStationStartup.EnsureAsync(harness.Services, Token));
         Assert.Contains("stationRiotId", refused.Message, StringComparison.Ordinal);
+    }
+
+    private sealed class CapturingLoggerProvider(List<string> lines) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(lines);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(List<string> lines) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                lock (lines)
+                {
+                    lines.Add(formatter(state, exception));
+                }
+            }
+        }
     }
 
     private sealed class FailingBindingStore : ITaskTypeStationBindingStore
@@ -269,16 +333,21 @@ public sealed class TaskTypeStationStartupTests
         private readonly SqliteConnection _connection;
         private readonly string _directory;
 
-        private Harness(SqliteConnection connection, ServiceProvider services, string directory, string presetPath)
+        private Harness(
+            SqliteConnection connection, ServiceProvider services, string directory, string presetPath, List<string> logs)
         {
             _connection = connection;
             Services = services;
             _directory = directory;
             PresetPath = presetPath;
+            Logs = logs;
         }
 
         public ServiceProvider Services { get; }
         public string PresetPath { get; }
+
+        /// <summary>Every formatted log line the startup wrote, in order.</summary>
+        public List<string> Logs { get; }
 
         public static async Task<Harness> CreateAsync(
             JourneyRuntimeOptions runtime,
@@ -296,8 +365,9 @@ public sealed class TaskTypeStationStartupTests
             }
             IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
+            List<string> logs = [];
             ServiceCollection services = new();
-            services.AddLogging();
+            services.AddLogging(logging => logging.AddProvider(new CapturingLoggerProvider(logs)));
             services.AddSingleton(configuration);
             services.AddSingleton(Options.Create(runtime));
             services.AddDbContext<ControlServerDbContext>(options => options.UseSqlite(connection));
@@ -310,7 +380,7 @@ public sealed class TaskTypeStationStartupTests
                 await scope.ServiceProvider.GetRequiredService<ControlServerDbContext>().Database
                     .MigrateAsync(TestContext.Current.CancellationToken);
             }
-            return new Harness(connection, provider, directory, presetPath);
+            return new Harness(connection, provider, directory, presetPath, logs);
         }
 
         public void WritePreset(object preset) => WriteRaw(JsonSerializer.Serialize(preset));

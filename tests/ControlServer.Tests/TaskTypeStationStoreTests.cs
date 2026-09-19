@@ -107,6 +107,8 @@ public sealed class TaskTypeStationStoreTests
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
         await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(25, 1, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
+        await fixture.Rules.WriteVersionAsync(
+            [.. SixRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)], Source, Now, Token);
 
         TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion> next = await fixture.Bindings.WriteVersionAsync(
             25, 2, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
@@ -197,6 +199,27 @@ public sealed class TaskTypeStationStoreTests
             [GateBinding, StagingBinding with { StationRiotId = GateBinding.StationRiotId }],
             null, Source, Now, Token));
         Assert.Contains("UNIQUE", refused.InnerException!.Message, StringComparison.Ordinal);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Null(await fixture.Bindings.ReadLatestAsync(25, Token));
+        Assert.Empty(await fixture.Context.Set<GovernedConfigurationSnapshotRow>()
+            .Where(row => row.ObjectKind == GovernedObjectKind.PublicStationBinding)
+            .ToArrayAsync(Token));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task ABindingSetThatNamesARuleVersionThatDoesNotExistIsRefusedAndWritesNothing(long ruleVersion)
+    {
+        // A binding set validated against rules nobody can read back is a version with no rules behind it. The startup
+        // load always writes the rules first; this is the line for every other writer (batch 6-05's activation among them).
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
+
+        InvalidOperationException refused = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            fixture.Bindings.WriteVersionAsync(25, ruleVersion, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token));
+        Assert.Contains("rule version", refused.Message, StringComparison.Ordinal);
         fixture.Context.ChangeTracker.Clear();
 
         Assert.Null(await fixture.Bindings.ReadLatestAsync(25, Token));

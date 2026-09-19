@@ -23,6 +23,10 @@ public sealed class DemandTaskTypeStationFreezeTests
             [.. SixRules.Where(rule => rule.TaskType != TransportTaskTypes.DieToOven)], Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(25, 1, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(25, 2, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
+        // Map 25 version 3 goes back to rule version 1 with a different binding, so "same rules, other binding set" exists.
+        await fixture.Bindings.WriteVersionAsync(
+            25, 1, [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire], [GateBinding, StagingBinding],
+            null, Source, Now, Token);
         await fixture.Bindings.WriteVersionAsync(26, 1, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
         fixture.Context.ChangeTracker.Clear();
         return fixture;
@@ -34,11 +38,11 @@ public sealed class DemandTaskTypeStationFreezeTests
         await using TaskTypeStationPersistenceFixture fixture = await WithTwoVersionsOfEachAsync();
         Assert.Null(await fixture.Freezes.ReadAsync("demand-1", Token));
 
-        DemandTaskTypeStationFreeze first = await fixture.Freezes.FreezeAsync("demand-1", 1, 25, 2, Now, Token);
-        DemandTaskTypeStationFreeze again = await fixture.Freezes.FreezeAsync("demand-1", 1, 25, 2, Now.AddMinutes(9), Token);
+        DemandTaskTypeStationFreeze first = await fixture.Freezes.FreezeAsync("demand-1", 1, 25, 3, Now, Token);
+        DemandTaskTypeStationFreeze again = await fixture.Freezes.FreezeAsync("demand-1", 1, 25, 3, Now.AddMinutes(9), Token);
         fixture.Context.ChangeTracker.Clear();
 
-        Assert.Equal(new DemandTaskTypeStationFreeze("demand-1", 1, 25, 2, Now), first);
+        Assert.Equal(new DemandTaskTypeStationFreeze("demand-1", 1, 25, 3, Now), first);
         Assert.Equal(first, again);
         Assert.Equal(first, await fixture.Freezes.ReadAsync("demand-1", Token));
 
@@ -53,8 +57,8 @@ public sealed class DemandTaskTypeStationFreezeTests
         Assert.Equal((await fixture.Rules.ReadVersionAsync(1, Token))!.SnapshotId, rule.SnapshotId);
         ConfigurationConsumerBindingRow binding = Assert.Single(rows, row => row.ObjectKind == GovernedObjectKind.PublicStationBinding);
         Assert.Equal("map-25", binding.ObjectId);
-        Assert.Equal(2, binding.FrozenVersion);
-        Assert.Equal((await fixture.Bindings.ReadVersionAsync(25, 2, Token))!.SnapshotId, binding.SnapshotId);
+        Assert.Equal(3, binding.FrozenVersion);
+        Assert.Equal((await fixture.Bindings.ReadVersionAsync(25, 3, Token))!.SnapshotId, binding.SnapshotId);
     }
 
     [Theory]
@@ -65,7 +69,7 @@ public sealed class DemandTaskTypeStationFreezeTests
         long ruleVersion, int mapId, long bindingSetVersion)
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithTwoVersionsOfEachAsync();
-        DemandTaskTypeStationFreeze first = await fixture.Freezes.FreezeAsync("demand-1", 1, 25, 2, Now, Token);
+        DemandTaskTypeStationFreeze first = await fixture.Freezes.FreezeAsync("demand-1", 1, 25, 3, Now, Token);
 
         await Assert.ThrowsAsync<DemandTaskTypeStationFreezeConflictException>(
             () => fixture.Freezes.FreezeAsync("demand-1", ruleVersion, mapId, bindingSetVersion, Now, Token));
@@ -76,7 +80,7 @@ public sealed class DemandTaskTypeStationFreezeTests
 
     [Theory]
     [InlineData(3, 25, 1)]
-    [InlineData(1, 25, 3)]
+    [InlineData(1, 25, 9)]
     [InlineData(1, 27, 1)]
     public async Task FreezingAVersionThatDoesNotExistWritesNothing(long ruleVersion, int mapId, long bindingSetVersion)
     {
@@ -84,6 +88,26 @@ public sealed class DemandTaskTypeStationFreezeTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => fixture.Freezes.FreezeAsync("demand-1", ruleVersion, mapId, bindingSetVersion, Now, Token));
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Null(await fixture.Freezes.ReadAsync("demand-1", Token));
+        Assert.Empty(await fixture.Context.Set<ConfigurationConsumerBindingRow>().ToArrayAsync(Token));
+    }
+
+    [Theory]
+    [InlineData(2, 25, 1)]
+    [InlineData(1, 25, 2)]
+    [InlineData(2, 26, 1)]
+    public async Task ARuleVersionThatIsNotTheOneTheBindingSetWasBuiltOnIsRefusedAndWritesNothing(
+        long ruleVersion, int mapId, long bindingSetVersion)
+    {
+        // Both versions exist, but the binding set was validated against another rule version: freezing the pair would
+        // record a demand against rules and bindings that never held together (REQ-0344).
+        await using TaskTypeStationPersistenceFixture fixture = await WithTwoVersionsOfEachAsync();
+
+        InvalidOperationException refused = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => fixture.Freezes.FreezeAsync("demand-1", ruleVersion, mapId, bindingSetVersion, Now, Token));
+        Assert.Contains("rule version", refused.Message, StringComparison.Ordinal);
         fixture.Context.ChangeTracker.Clear();
 
         Assert.Null(await fixture.Freezes.ReadAsync("demand-1", Token));
@@ -98,7 +122,7 @@ public sealed class DemandTaskTypeStationFreezeTests
         failure.Armed = true;
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => fixture.Freezes.FreezeAsync("demand-1", 1, 25, 2, Now, Token));
+            () => fixture.Freezes.FreezeAsync("demand-1", 1, 25, 3, Now, Token));
         failure.Armed = false;
         fixture.Context.ChangeTracker.Clear();
 
