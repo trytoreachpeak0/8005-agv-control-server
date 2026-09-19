@@ -257,6 +257,10 @@ public static class StructuralDispatchClassification
         Backlog("FINAL_CATALOG_DECISION_FACT_CHANGED", null,
             "A decision fact changed during intake: the MES catalog or the area assignment table, which the " +
             "backlog cannot tell apart."),
+        Backlog("FINAL_JOURNEY_PLAN_INCOMPLETE", null,
+            "control-server#198: the plan named the task type station versions but no catalog revision, and acceptance " +
+            "refused it whole. Not reachable from JourneyPlanBuilder, which always carries the revision; a build defect " +
+            "rather than anything about the demand or the fleet. Doubtful, so backlog."),
         Backlog("DEMAND_DECISION_FACT_CHANGED", null, "A decision fact changed since the demand was first seen."),
         Backlog(DispatchReasonCodes.DemandLeftCatalog, null,
             "Not a verdict: the round writes it before the vehicle loop for an unaccepted demand the catalog no " +

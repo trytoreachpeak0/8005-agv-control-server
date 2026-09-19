@@ -636,6 +636,21 @@ public sealed class JourneyRuntimeRow
         BlockReasonCode = reasonCode;
         BlockReasonSince = reasonCode is null ? null : now;
     }
+
+    /// <summary>
+    /// Names the block a journey already holds more precisely, keeping when it began: the same wait escalated, not a new
+    /// one (control-server#198). The escalation schedule of program#55 is measured from <see cref="BlockReasonSince"/>,
+    /// and restarting it here would send a block that has already climbed the ladder back to its lowest tier.
+    /// </summary>
+    public void EscalateBlockReason(string reasonCode)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
+        if (BlockReasonCode is null)
+        {
+            throw new InvalidOperationException("Only a block the journey already holds can be escalated.");
+        }
+        BlockReasonCode = reasonCode;
+    }
 }
 
 public sealed class AdmissionPolicyStateRow

@@ -1,0 +1,57 @@
+commit: 78e37eac test: 受理层把缺目录修订的计划报成该需求自己的结果、不抛出（cs#198 ②）
+worktree dirty: 0 file(s)
+filter: FullyQualifiedName~DemandTaskTypeStationIntakeFreezeTests
+---
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:01.06]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:04.58]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:06.10]   Starting:    ControlServer.Tests
+[xUnit.net 00:00:13.90]     ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing [FAIL]
+[xUnit.net 00:00:13.90]       ControlServer.Domain.JourneyPlanFreezeIncompleteException : Demand 10000000-0000-4000-8000-000000000001's plan carries task type station rule version 1 and binding set version 1 but no station catalog revision, so its endpoints cannot be frozen.
+[xUnit.net 00:00:13.90]       Stack Trace:
+[xUnit.net 00:00:13.90]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs(513,0): at ControlServer.Infrastructure.Persistence.WireToGateStore.AcceptCoreAsync(AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, JourneyExecutionPlan journey, CancellationToken cancellationToken)
+[xUnit.net 00:00:13.90]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs(92,0): at ControlServer.Application.DemandIntakeService.AcceptCoreAsync(AcceptedDemandSnapshot discovered, OrderIntent orderIntent, JourneyExecutionPlan journey, Func`2 finalAdmissionGate, CancellationToken cancellationToken)
+[xUnit.net 00:00:13.90]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\DemandTaskTypeStationIntakeFreezeTests.cs(212,0): at ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing()
+[xUnit.net 00:00:13.90]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\DemandTaskTypeStationIntakeFreezeTests.cs(217,0): at ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing()
+[xUnit.net 00:00:13.90]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing [7 s]
+  Error Message:
+   ControlServer.Domain.JourneyPlanFreezeIncompleteException : Demand 10000000-0000-4000-8000-000000000001's plan carries task type station rule version 1 and binding set version 1 but no station catalog revision, so its endpoints cannot be frozen.
+  Stack Trace:
+     at ControlServer.Infrastructure.Persistence.WireToGateStore.AcceptCoreAsync(AcceptedDemandSnapshot snapshot, OrderIntent orderIntent, JourneyExecutionPlan journey, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\Persistence\WireToGateStore.cs:line 513
+   at ControlServer.Application.DemandIntakeService.AcceptCoreAsync(AcceptedDemandSnapshot discovered, OrderIntent orderIntent, JourneyExecutionPlan journey, Func`2 finalAdmissionGate, CancellationToken cancellationToken) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\WireToGateOrchestration.cs:line 92
+   at ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\DemandTaskTypeStationIntakeFreezeTests.cs:line 212
+   at ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\DemandTaskTypeStationIntakeFreezeTests.cs:line 217
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayNamingOtherVersionsIsADifferentAcceptanceAndTheFreezeStands [2 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayClaimingVersionsTheDemandNeverFrozeIsADifferentAcceptance [2 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayCarryingTheFrozenVersionsIsTheSameAcceptance [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.APlanCarryingNoneOfTheVersionsNorACatalogRevisionIsAcceptedAsBefore [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.APlanCarryingVersionsButNoCatalogRevisionIsRefusedWholeAndLeavesNothingBehind [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AcceptingFreezesBothEndpointsInTheSameTransactionOverStaleRowsOfARefusedAttempt [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AcceptingADemandFreezesTheRuleAndBindingSetVersionsItWasJudgedUnderInTheSameTransaction [1 s]
+[xUnit.net 00:00:27.56]   Finished:    ControlServer.Tests (ID = '7fe1d27820c58fa88990765005f51436f5418fd1c28f465e44b0b77937c5f8c4')
+Test Run Failed.
+Total tests: 8
+     Passed: 7
+     Failed: 1
+ Total time: 29.2968 Seconds

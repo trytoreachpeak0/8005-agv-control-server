@@ -19,6 +19,9 @@ public sealed class AreaEndAdmissionStoreTests
 
     private const string ForwardDemand = "D-WIRE-TO-GATE";
 
+    // A WIRE_TO_GATE demand that froze the factory rules, so STAGING_TO_WIRE's rule can be read under its version.
+    private const string FrozenForwardDemand = "D-WIRE-TO-GATE-FROZEN";
+
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -26,6 +29,7 @@ public sealed class AreaEndAdmissionStoreTests
     public async Task AStagingToWireUnloadCarriesAndFreezesTheAreaMachineAdmission()
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        await AcceptAsync(fixture, ReverseDemand, TransportTaskTypes.StagingToWire);
         WireToGateStore store = new(fixture.Context);
         StationOperationPlan unload = Plan(
             "ATTEMPT-UNLOAD", ReverseDemand, SlotOperationType.Unload, "N1-1", TransportTaskTypes.StagingToWire);
@@ -51,6 +55,10 @@ public sealed class AreaEndAdmissionStoreTests
     public async Task AnAdmissionIdentityOnTheLegAwayFromTheAreaMachineIsRefused()
     {
         await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        // Each demand accepted as its own task type, so what refuses below is the AREA-end check and not
+        // control-server#198's task type check.
+        await AcceptAsync(fixture, ReverseDemand, TransportTaskTypes.StagingToWire);
+        await AcceptAsync(fixture, ForwardDemand, TransportTaskTypes.WireToGate);
         WireToGateStore store = new(fixture.Context);
 
         await Assert.ThrowsAsync<BusinessIdentityConflictException>(() => store.PrepareSlotOperationAsync(
@@ -67,6 +75,71 @@ public sealed class AreaEndAdmissionStoreTests
         fixture.Context.ChangeTracker.Clear();
         Assert.Empty(await fixture.Context.StationOperations.ToArrayAsync(Token));
         Assert.Empty(await fixture.Context.AdmissionDecisionSnapshots.ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#198 c-1: the admission identity names the demand's own task type. A WIRE_TO_GATE demand whose
+    /// unload carries STAGING_TO_WIRE passes the AREA-end check -- that task type's rule puts its AREA end at the
+    /// unload -- and the machine admits STAGING_TO_WIRE, so until now it was frozen as admitted. Refused before
+    /// anything is written: no operation, no admission snapshot, no outbox row.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AnAdmissionIdentityNamingAnotherTaskTypeThanTheDemandsIsRefused()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        await fixture.Freezes.FreezeAsync(FrozenForwardDemand, 1, 25, 1, Now, Token);
+        await AcceptAsync(fixture, FrozenForwardDemand, TransportTaskTypes.WireToGate);
+        WireToGateStore store = new(fixture.Context);
+
+        Exception? refused = await Record.ExceptionAsync(() => store.PrepareSlotOperationAsync(
+            Plan("ATTEMPT-MISMATCH", FrozenForwardDemand, SlotOperationType.Unload, "N1-1", TransportTaskTypes.StagingToWire),
+            "MESSAGE-MISMATCH",
+            Wire("MESSAGE-MISMATCH", "ATTEMPT-MISMATCH"),
+            Token));
+
+        fixture.Context.ChangeTracker.Clear();
+        int operations = await fixture.Context.StationOperations.CountAsync(Token);
+        int snapshots = await fixture.Context.AdmissionDecisionSnapshots.CountAsync(Token);
+        int outbox = await fixture.Context.ProtocolOutbox.CountAsync(Token);
+        Assert.True(
+            refused is BusinessIdentityConflictException,
+            $"exception: {refused?.GetType().Name ?? "none"}; operations: {operations}; admission snapshots: {snapshots}; outbox rows: {outbox}");
+        Assert.Equal((0, 0, 0), (operations, snapshots, outbox));
+    }
+
+    /// <summary>
+    /// control-server#198 c-1, the replay branch: an operation already prepared under an admission identity that is not
+    /// the demand's task type -- written before this check existed -- is not replayed either. The replay returns the
+    /// stored outbox row after refreshing its envelope, which would send the command again; it is refused instead, and
+    /// the rows stay as they were.
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-11")]
+    public async Task AReplayOfAnOperationWhoseAdmissionIdentityIsNotTheDemandsTaskTypeIsRefused()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await WithFrozenReverseDemandAsync();
+        await AcceptAsync(fixture, ReverseDemand, TransportTaskTypes.StagingToWire);
+        WireToGateStore store = new(fixture.Context);
+        StationOperationPlan unload = Plan(
+            "ATTEMPT-UNLOAD", ReverseDemand, SlotOperationType.Unload, "N1-1", TransportTaskTypes.StagingToWire);
+        await store.PrepareSlotOperationAsync(unload, "MESSAGE-UNLOAD", Wire("MESSAGE-UNLOAD", "ATTEMPT-UNLOAD"), Token);
+        // The stored operation now names another task type than its demand: the state a write before this check could leave.
+        AcceptedDemandRow demand = await fixture.Context.AcceptedDemands.SingleAsync(row => row.DemandId == ReverseDemand, Token);
+        demand.WorkType = TransportTaskTypes.WireToGate;
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Exception? refused = await Record.ExceptionAsync(() => store.PrepareSlotOperationAsync(
+            unload, "MESSAGE-UNLOAD", Wire("MESSAGE-UNLOAD", "ATTEMPT-UNLOAD"), Token));
+
+        fixture.Context.ChangeTracker.Clear();
+        Assert.True(refused is BusinessIdentityConflictException, $"exception: {refused?.GetType().Name ?? "none"}");
+        Assert.Equal(
+            (1, 1, 1),
+            (await fixture.Context.StationOperations.CountAsync(Token),
+                await fixture.Context.AdmissionDecisionSnapshots.CountAsync(Token),
+                await fixture.Context.ProtocolOutbox.CountAsync(Token)));
     }
 
     /// <summary>
@@ -94,6 +167,14 @@ public sealed class AreaEndAdmissionStoreTests
             Token);
         fixture.Context.ChangeTracker.Clear();
         return fixture;
+    }
+
+    /// <summary>An accepted demand row of <paramref name="workType"/>, the one fact the admission identity is checked against.</summary>
+    private static async Task AcceptAsync(TaskTypeStationPersistenceFixture fixture, string demandId, string workType)
+    {
+        fixture.Context.AcceptedDemands.Add(AcceptedDemand(demandId, workType));
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
     }
 
     private static StationOperationPlan Plan(

@@ -144,6 +144,83 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
             row => Assert.Equal(21, row.CatalogRevision));
     }
 
+    /// <summary>
+    /// control-server#198 ②：计划带规则版本与绑定集版本、却没有目录修订，受理照旧会冻结版本而不冻结落点，一声不吭。
+    /// 现在整笔受理被拒：不写受理行、租约、意图、旅程，也不写任何冻结行；拒绝之后同一个上下文再保存一次，也不能把被拒的
+    /// 那次受理带进库（引擎紧接着就会为这条需求写积压原因）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task APlanCarryingVersionsButNoCatalogRevisionIsRefusedWholeAndLeavesNothingBehind()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        (long ruleVersion, long bindingSetVersion) = await BoundFixedTaskStationResolverTests.ActivateAsync(
+            fixture, [TransportTaskTypes.WireToGate], [GateBinding]);
+
+        Exception? refused = await Record.ExceptionAsync(() => new WireToGateStore(fixture.Context).AcceptWithOrderIntentAsync(
+            Demand(), PickupIntent(), Plan(ruleVersion, bindingSetVersion) with { StationCatalogRevision = null }, Token));
+        await fixture.Context.SaveChangesAsync(Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        int accepted = await fixture.Context.AcceptedDemands.AsNoTracking().CountAsync(Token);
+        int endpoints = await fixture.Context.FrozenDemandStations.AsNoTracking().CountAsync(row => row.DemandId == DemandId, Token);
+        DemandTaskTypeStationFreeze? versions = await fixture.Freezes.ReadAsync(DemandId, Token);
+        Assert.True(
+            refused is JourneyPlanFreezeIncompleteException,
+            $"exception: {refused?.GetType().Name ?? "none"}; accepted rows: {accepted}; versions frozen: {versions is not null}; endpoints frozen: {endpoints}");
+        Assert.Equal(0, accepted);
+        Assert.Equal(0, endpoints);
+        Assert.Null(versions);
+        Assert.Empty(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(await fixture.Context.OrderIntents.AsNoTracking().ToArrayAsync(Token));
+        Assert.Empty(await fixture.Context.VehicleDispatchLeases.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#198 ②：三者都没有的计划是 #160 之前受理的旧形状，照旧受理，什么也不冻结——新检查只拒「带版本缺目录修订」。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task APlanCarryingNoneOfTheVersionsNorACatalogRevisionIsAcceptedAsBefore()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+
+        await new WireToGateStore(fixture.Context).AcceptWithOrderIntentAsync(
+            Demand(), PickupIntent(), Plan(null, null), Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(DemandId, (await fixture.Context.AcceptedDemands.AsNoTracking().SingleAsync(Token)).DemandId);
+        Assert.Single(await fixture.Context.JourneyRuntimes.AsNoTracking().ToArrayAsync(Token));
+        Assert.Null(await fixture.Freezes.ReadAsync(DemandId, Token));
+        Assert.Empty(await fixture.Context.FrozenDemandStations.AsNoTracking().Where(row => row.DemandId == DemandId).ToArrayAsync(Token));
+    }
+
+    /// <summary>
+    /// control-server#198 ②：受理层接住这种拒绝，报成这条需求自己的结果，不把异常抛出去。抛出去就会冒出
+    /// <c>JourneyRuntimeEngine.ExecuteOnceAsync</c>：同一条需求每轮都被选中、每轮都抛，这一辆车后面的车和轮末汇总都走不到
+    /// （#188 审查第 2 条那种整轮停摆）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        (long ruleVersion, long bindingSetVersion) = await BoundFixedTaskStationResolverTests.ActivateAsync(
+            fixture, [TransportTaskTypes.WireToGate], [GateBinding]);
+        DemandIntakeService intake = new(new OneDemandCatalog(Demand()), new WireToGateStore(fixture.Context));
+
+        DemandIntakeOutcome outcome = await intake.AcceptJourneyAsync(
+            Demand(), PickupIntent(), Plan(ruleVersion, bindingSetVersion) with { StationCatalogRevision = null }, Token);
+
+        Assert.Equal(DemandIntakeOutcome.JourneyPlanIncomplete, outcome);
+        fixture.Context.ChangeTracker.Clear();
+        Assert.Empty(await fixture.Context.AcceptedDemands.AsNoTracking().ToArrayAsync(Token));
+    }
+
+    /// <remarks>
+    /// Carries a catalog revision whenever it carries the versions, as the engine's plans always do
+    /// (<c>JourneyPlanBuilder.CreatePlan</c>); control-server#198 refuses a plan that has the versions without it.
+    /// </remarks>
     private static JourneyExecutionPlan Plan(long? ruleVersion, long? bindingSetVersion) => new(
         "AGV-1",
         "BROKERX-0001",
@@ -166,7 +243,8 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
         1,
         Now,
         TaskTypeStationRuleVersion: ruleVersion,
-        TaskTypeStationBindingSetVersion: bindingSetVersion);
+        TaskTypeStationBindingSetVersion: bindingSetVersion,
+        StationCatalogRevision: ruleVersion is null && bindingSetVersion is null ? null : 20);
 
     private static AcceptedDemandSnapshot Demand() => new(
         DemandId,
@@ -197,4 +275,14 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
         12,
         1,
         1);
+
+    /// <summary>A MesIngest catalog holding one unchanged demand, so intake reaches the store.</summary>
+    private sealed class OneDemandCatalog(AcceptedDemandSnapshot demand) : IMesIngestCatalog
+    {
+        public Task<DemandCatalogSnapshot> ReadCatalogAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new DemandCatalogSnapshot(demand.HistoryEpoch, demand.CatalogRevision, [demand]));
+
+        public Task<AcceptedDemandSnapshot?> ReadCurrentAsync(string demandId, CancellationToken cancellationToken) =>
+            Task.FromResult<AcceptedDemandSnapshot?>(demand.DemandId == demandId ? demand : null);
+    }
 }

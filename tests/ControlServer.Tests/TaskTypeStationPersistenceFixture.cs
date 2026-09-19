@@ -66,6 +66,30 @@ internal static class TaskTypeStationTestData
 {
     public static readonly DateTimeOffset Now = new(2026, 9, 19, 8, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// An accepted demand row of <paramref name="workType"/>: since control-server#198 a slot operation carrying an
+    /// admission identity is prepared only for an accepted demand of the task type it names.
+    /// </summary>
+    public static AcceptedDemandRow AcceptedDemand(string demandId, string workType) => new()
+    {
+        DemandId = demandId,
+        SeriesId = "SERIES-" + demandId,
+        TransportDemandKey = $"SUBLOT-1|{workType}|{demandId}",
+        WorkType = workType,
+        Sublot = "SUBLOT-1",
+        Generation = 1,
+        DemandRevision = 1,
+        HistoryEpoch = "11111111-1111-4111-8111-111111111111",
+        CatalogRevision = 1,
+        CreatedAt = Now,
+        ValueObservedAt = Now,
+        ValuePollTraceId = "TRACE-" + demandId,
+        ValueProjectionCommitId = "COMMIT-" + demandId,
+        LiveMesFieldsJson = "{}",
+        AcceptedAt = Now,
+        Status = DemandExecutionStatus.Accepted,
+    };
+
     public const string Source = "preset:test";
 
     public static readonly TaskTypeStationRule[] SixRules =

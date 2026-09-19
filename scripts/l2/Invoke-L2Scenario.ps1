@@ -595,8 +595,6 @@ try {
         'JourneyRuntime__vehicleKey'                      = $vehicleKey
         'JourneyRuntime__mapId'                           = [string]$mapId
         'JourneyRuntime__mapIdentity'                     = $mapIdentity
-        'JourneyRuntime__gateStationId'                   = $gateStationId
-        'JourneyRuntime__gateStationRiotId'               = [string]$gateStationRiotId
         'JourneyRuntime__admissionPolicyDeploymentId'     = "L2-$runId"
     }
 
