@@ -226,6 +226,37 @@ public sealed class TaskTypeStationStartupTests
     }
 
     [Fact]
+    public async Task AMapClosedManuallyStaysWithoutAnActiveVersionAcrossARestartAndThePresetIsNotApplied()
+    {
+        // Review round 2, N1: after close-task-type-station-activation the map has no active version until the next FieldOps
+        // activation or rollback. An unplanned restart in between (a crash, a power cut, a deployment) must not quietly
+        // put the preset's stations back into service.
+        await using Harness harness = await Harness.CreateAsync(Runtime());
+        harness.WritePreset(Preset());
+        await TaskTypeStationStartup.EnsureAsync(harness.Services, Token);
+        await using (AsyncServiceScope scope = harness.Services.CreateAsyncScope())
+        {
+            ControlServerDbContext context = scope.ServiceProvider.GetRequiredService<ControlServerDbContext>();
+            TaskTypeStationActiveBindingSetRow pointer = await context.Set<TaskTypeStationActiveBindingSetRow>()
+                .SingleAsync(row => row.MapId == 25, Token);
+            pointer.ActiveVersion = null;
+            pointer.State = "CLOSED_MANUALLY";
+            await context.SaveChangesAsync(Token);
+        }
+        harness.Logs.Clear();
+
+        await TaskTypeStationStartup.EnsureAsync(harness.Services, Token);
+
+        await using AsyncServiceScope after = harness.Services.CreateAsyncScope();
+        ITaskTypeStationBindingStore bindings = after.ServiceProvider.GetRequiredService<ITaskTypeStationBindingStore>();
+        TaskTypeStationActivePointer kept = (await bindings.ReadActivePointerAsync(25, Token))!;
+        Assert.Equal(("CLOSED_MANUALLY", (long?)null), (kept.State, kept.ActiveVersion));
+        Assert.Null(await bindings.ReadActiveAsync(25, Token));
+        Assert.Equal(1, await harness.CountAsync<TaskTypeStationBindingSetVersionRow>());
+        Assert.Contains(harness.Logs, line => line.Contains("not applied", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AMisconfiguredPresetRefusesStartNamingEveryViolationAndWritesNothing()
     {
         await using Harness harness = await Harness.CreateAsync(Runtime());

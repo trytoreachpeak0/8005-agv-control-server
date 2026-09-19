@@ -121,18 +121,20 @@ public sealed class TaskTypeStationActivationTests
     [Fact]
     public async Task ReadBackThatContradictsTheTargetPutsTheMapBackOnHoldAndNeverSaysActivated()
     {
+        // The pointer names the target, but the target's rows no longer hash to what the version recorded (review round 2,
+        // N2: a pointer moved to some other version is being overtaken, which is a different test).
         await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
         TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
             harness.NewContext(),
             inner => new AfterComplete(inner, () => harness.ExecuteAsync(
-                "UPDATE TaskTypeStationActiveBindingSets SET ActiveVersion = 1 WHERE MapId = 25")));
+                "UPDATE TaskTypeStationBindings SET StationName = '关卡-改' WHERE MapId = 25 AND Version = 2")));
 
         TaskTypeStationActivationResult result = await stack.ActivateAsync(
             TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
 
         Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
-        Assert.Contains("reads back as version 1", result.Detail, StringComparison.Ordinal);
-        Assert.Equal("25|1|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
+        Assert.Contains("but its header says", result.Detail, StringComparison.Ordinal);
+        Assert.Equal("25|2|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
         Assert.Equal(
             [TransportTaskTypes.StagingToWire, TransportTaskTypes.WireToGate],
             (await harness.HoldsAsync()).Where(hold => hold.ReleasedAt is null)
@@ -866,7 +868,9 @@ public sealed class TaskTypeStationActivationTests
         Assert.Equal(TaskTypeStationManualCloseOutcome.Closed, closed.Outcome);
         Assert.Equal(1, closed.ActiveVersionBefore);
         Assert.Equal(2, closed.ReleasedHoldIds.Count);
-        Assert.Equal(string.Empty, await harness.PointerRowAsync());
+        // Review round 2, N1: a tombstone, not a missing row -- the map has no active version, and a restart must not read
+        // that as "never activated" and load the preset.
+        Assert.Equal("25|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
         Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
         BusinessAuditRecordRow[] records = [.. (await harness.AuditAsync())
             .Where(row => row.Action is TaskTypeStationActivationAuditActions.ClosedManually or TaskTypeStationActivationAuditActions.CloseRejected)];
@@ -1039,6 +1043,122 @@ public sealed class TaskTypeStationActivationTests
         Assert.True(await harness.Default().Holds.IsHeldAsync(25, TransportTaskTypes.WireToGate, Token));
     }
 
+    // ======== Review round 2 of PR #183 (issuecomment-5739928863): N1-N4 ========
+
+    /// <summary>
+    /// N1：人工收尾之后该图没有生效版本，直到下一次 FieldOps 激活或回滚——从墓碑出发的激活照常；它若又中断，对账判「原版本在用」时
+    /// 回到墓碑，不是回到「从未激活」（那样重启就会把预置装上）。
+    /// </summary>
+    [Fact]
+    public async Task AfterAManualCloseTheMapStaysWithoutAnActiveVersionUntilAnActivationEvenAcrossAnotherInterruptedOne()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        await CloseAfterAContradictionAsync(harness);
+        Assert.Equal("25|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+        Assert.Null(await harness.Default().Bindings.ReadActiveAsync(25, Token));
+
+        // An activation from the tombstone is interrupted, and reconciled: back to the tombstone.
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying))
+            .ActivateAsync(TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Optical));
+        Assert.StartsWith("25|<null>|ACTIVATION_UNKNOWN|", await harness.PointerRowAsync(), StringComparison.Ordinal);
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled.Conclusion);
+        Assert.Equal("25|<null>|CLOSED_MANUALLY|<null>", await harness.PointerRowAsync());
+
+        // And an activation that completes ends the tombstone.
+        TaskTypeStationActivationResult activated = await harness.Default().ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate));
+        Assert.Equal(TaskTypeStationActivationOutcome.Activated, activated.Outcome);
+        Assert.Null(activated.PreviousVersion);
+        Assert.Equal(FormattableString.Invariant($"25|{activated.TargetVersion}|ACTIVE|<null>"), await harness.PointerRowAsync());
+    }
+
+    /// <summary>
+    /// N2：A 的第二步失败，在 A 重标之前，对账已给出结论、B 已激活完成；A 的重标不得造出「未知、待定 A、生效 B」——
+    /// 那会让对账判矛盾、人工收尾删掉合法生效的 B。A 按被超越处理，只写审计。
+    /// </summary>
+    [Fact]
+    public async Task ARemarkThatArrivesAfterANewerActivationCompletedLeavesThatActivationAlone()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        CommitFault fault = new(new TimeoutException("lock timeout")) { Remaining = 1 };
+        TaskTypeStationActivationResult? b = null;
+        TaskTypeStationActivationHarness.Stack a = TaskTypeStationActivationHarness.StackOver(
+            harness.NewContext(fault),
+            inner => new BeforeRemark(new FaultOnComplete(inner, fault), async () =>
+            {
+                await harness.Default().Service.ReconcileAsync(
+                    25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token);
+                b = await harness.Default().ActivateAsync(
+                    TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Optical));
+            }));
+
+        TaskTypeStationActivationResult result = await a.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(TaskTypeStationActivationOutcome.Activated, b!.Outcome);
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
+        Assert.Equal(FormattableString.Invariant($"25|{b.TargetVersion}|ACTIVE|<null>"), await harness.PointerRowAsync());
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+        Assert.Contains("overtaken", result.Detail, StringComparison.Ordinal);
+    }
+
+    /// <summary>N3：第二步已提交，读回时等锁超时：不崩溃，按结果未知写审计、该图暂停着，对账读到目标版本。</summary>
+    [Fact]
+    public async Task AReadBackThatTimesOutAfterTheSecondStepCommittedIsAuditedAsUnknownAndReconcilable()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(
+            harness.NewContext(), inner => new ReadBackFailsOnce(inner, new TimeoutException("SQLite busy past the timeout")));
+
+        TaskTypeStationActivationResult result = await stack.ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, result.Outcome);
+        Assert.Equal("25|2|ACTIVATION_UNKNOWN|2", await harness.PointerRowAsync());
+        Assert.Equal(2, (await harness.HoldsAsync()).Count(hold => hold.ReleasedAt is null));
+        BusinessAuditRecordRow last = (await harness.AuditAsync())[^1];
+        Assert.Equal((TaskTypeStationActivationAuditActions.ResultUnknown, GovernanceActionOutcome.TimedOut), (last.Action, last.Outcome));
+        Assert.DoesNotContain(await harness.AuditAsync(), row => row.Action == TaskTypeStationActivationAuditActions.Activated);
+        Assert.Equal(
+            TaskTypeStationReconciliationConclusion.TargetActive,
+            (await harness.Default().Service.ReconcileAsync(25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now, Token)).Conclusion);
+    }
+
+    /// <summary>
+    /// N4：#159 原测试的另一半——写入中途被数据库拒绝时整体回滚：版本头、快照、审计、绑定行一样都不留。
+    /// </summary>
+    [Fact]
+    public async Task ABindingSetWriteRefusedByTheDatabaseHalfwayLeavesNothingBehind()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        IReadOnlyDictionary<string, long> before = await harness.CountRowsAsync();
+        SaveFault fault = new(new Microsoft.EntityFrameworkCore.DbUpdateException("disk I/O error"), failOnSave: 2);
+        TaskTypeStationActivationHarness.Stack stack = TaskTypeStationActivationHarness.StackOver(harness.NewContext(fault));
+
+        await Assert.ThrowsAsync<Microsoft.EntityFrameworkCore.DbUpdateException>(() => stack.Bindings.WriteVersionAsync(
+            25, 1, [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
+            [TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging],
+            null, "direct", TaskTypeStationActivationHarness.Now, Token));
+
+        Assert.True(fault.Failed);
+        Assert.Equal(before, await harness.CountRowsAsync());
+        Assert.Null(await harness.Default().Bindings.ReadVersionAsync(25, 2, Token));
+    }
+
+    private static async Task CloseAfterAContradictionAsync(TaskTypeStationActivationHarness harness)
+    {
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying)).ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+        await harness.ExecuteAsync("UPDATE TaskTypeStationBindings SET StationName = '关卡-改' WHERE MapId = 25 AND Version = 1");
+        TaskTypeStationManualCloseResult closed = await harness.Default().Service.CloseManuallyAsync(
+            25, new TaskTypeStationChangeRequest("两个版本都读不回", "现场工程师"), TaskTypeStationActivationHarness.Now, Token);
+        Assert.Equal(TaskTypeStationManualCloseOutcome.Closed, closed.Outcome);
+    }
+
     private static string AttemptOf(TaskTypeStationHoldRow hold)
     {
         using System.Text.Json.JsonDocument detail = System.Text.Json.JsonDocument.Parse(hold.DetailJson);
@@ -1175,5 +1295,53 @@ internal sealed class CommitFault(Exception toThrow) : Microsoft.EntityFramework
             throw toThrow;
         }
         return base.TransactionCommittingAsync(transaction, eventData, result, cancellationToken);
+    }
+}
+
+/// <summary>Runs <paramref name="beforeRemark"/> just before the real re-marking, as whatever overtook it would.</summary>
+internal sealed class BeforeRemark(ITaskTypeStationActivationStore inner, Func<Task> beforeRemark) : DelegatingActivationStore(inner)
+{
+    public override async Task<TaskTypeStationActivationAttempt> MarkUnknownAsync(
+        TaskTypeStationActivationAttempt attempt, DateTimeOffset at, CancellationToken cancellationToken)
+    {
+        await beforeRemark();
+        return await base.MarkUnknownAsync(attempt, at, cancellationToken);
+    }
+}
+
+/// <summary>The first read-back throws, as a lock wait past the busy timeout would; later ones go through.</summary>
+internal sealed class ReadBackFailsOnce(ITaskTypeStationActivationStore inner, Exception failure) : DelegatingActivationStore(inner)
+{
+    private bool _failed;
+
+    public override Task<TaskTypeStationActiveReadBack> ReadBackAsync(int mapId, CancellationToken cancellationToken)
+    {
+        if (!_failed)
+        {
+            _failed = true;
+            throw failure;
+        }
+        return base.ReadBackAsync(mapId, cancellationToken);
+    }
+}
+
+/// <summary>Fails the n-th SaveChanges on its context, from inside the database write.</summary>
+internal sealed class SaveFault(Exception toThrow, int failOnSave) : Microsoft.EntityFrameworkCore.Diagnostics.SaveChangesInterceptor
+{
+    private int _saves;
+
+    public bool Failed { get; private set; }
+
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> SavingChangesAsync(
+        Microsoft.EntityFrameworkCore.Diagnostics.DbContextEventData eventData,
+        Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+        CancellationToken cancellationToken = default)
+    {
+        if (++_saves == failOnSave)
+        {
+            Failed = true;
+            throw toThrow;
+        }
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 }
