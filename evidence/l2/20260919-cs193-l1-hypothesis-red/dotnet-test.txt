@@ -1,0 +1,14 @@
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:05.94]     ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.WhenTheLoadCommandIsSentTheJourneyAlreadyReadsAwaitingLoadResult [FAIL]
+  Failed ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.WhenTheLoadCommandIsSentTheJourneyAlreadyReadsAwaitingLoadResult [3 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: AwaitingLoadResult
+Actual:   AwaitingSublot
+  Stack Trace:
+     at ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.WhenTheLoadCommandIsSentTheJourneyAlreadyReadsAwaitingLoadResult() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-193-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCommandCommitOrderTests.cs:line 36
+   at ControlServer.Tests.JourneyRuntimeWorkerLoadCommandCommitOrderTests.WhenTheLoadCommandIsSentTheJourneyAlreadyReadsAwaitingLoadResult() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b6-193-8005-agv-control-server\tests\ControlServer.Tests\JourneyRuntimeWorkerLoadCommandCommitOrderTests.cs:line 36
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1, Duration: 3 s - ControlServer.Tests.dll (net8.0)
