@@ -34,6 +34,14 @@ public sealed class OnboardRecoveryCoordinator(
                 "Exception recovery session {SessionId} closed under {CloseReasonCode}: {WorkflowType} " +
                 "{WorkflowId} reported {Outcome}, which does not reconcile. Demand {DemandId} stays blocked; a new " +
                 "session is needed to recover it.");
+    private static readonly Action<ILogger, string, string, string, string?, string?, Exception?>
+        LogLateResultForClosedSession =
+            LoggerMessage.Define<string, string, string, string?, string?>(
+                LogLevel.Warning,
+                new EventId(2122, nameof(LogLateResultForClosedSession)),
+                "Exception recovery session {SessionId} had already closed when {WorkflowType} {WorkflowId} reported " +
+                "{Outcome}. The result is recorded as evidence only: demand {DemandId}, its journey, lease and " +
+                "vehicle are left as the session handling them now has them; reconcile by hand if they disagree.");
 
     /// <summary>
     /// Why a session closed on a result that did not reconcile (control-server#169). Not a wire code: the
@@ -1030,6 +1038,29 @@ public sealed class OnboardRecoveryCoordinator(
         RecoveryWorkflowRow workflow,
         CancellationToken cancellationToken)
     {
+        // A session already CLOSED was closed by an earlier result, and the demand and journey have been in the
+        // hands of the next session since (control-server#169): it may be executing, or may have settled them, and
+        // this late result is a record of its own attempt, not a verdict on theirs -- whichever way it concluded
+        // (control-server#175, decided by the user on 2026-09-19). So it settles nothing: no demand, journey,
+        // operation, lease or vehicle write, and no termination, which a demand the next session delivered would
+        // refuse outright. Decided here, before either branch below writes anything, once for both directions.
+        // The workflow is RecoveryRequired, never HistoricalOnly, so a forced recovery keeps holding the vehicle for
+        // its hardware record; and since the session closed on its first judged result, this one reads from the
+        // store as arriving after the closing without changing why the session closed.
+        bool sessionClosed = workflow.ExceptionRecoverySessionId is not null &&
+                             await dbContext.ExceptionRecoverySessions.AnyAsync(
+                                 row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId &&
+                                        row.State == "CLOSED",
+                                 cancellationToken).ConfigureAwait(false);
+        if (sessionClosed)
+        {
+            workflow.State = RecoveryWorkflowState.RecoveryRequired;
+            LogLateResultForClosedSession(
+                logger ?? (ILogger)NullLogger.Instance,
+                workflow.ExceptionRecoverySessionId!, workflow.WorkflowType, workflow.WorkflowId, workflow.Outcome,
+                workflow.DemandId, null);
+            return;
+        }
         bool safeEmpty = messageType is "LoadCancellationResult" or "LoadCompensationResult" or "FaultCargoRecoveryResult"
             ? HasExactSafeSlotResult(payload, ParseSlots(workflow.SlotsJson), "EMPTY")
             : false;
@@ -1051,20 +1082,8 @@ public sealed class OnboardRecoveryCoordinator(
         if (!success)
         {
             workflow.State = RecoveryWorkflowState.RecoveryRequired;
-            // A session already CLOSED was closed by an earlier result, and the demand and journey have been in the
-            // hands of the next session since (control-server#169): that one may have settled them, and this late
-            // result is a record of its own attempt, not a verdict on theirs. Before #169 such a session was still
-            // EXECUTING and nothing else could have moved the journey.
-            bool sessionClosed = workflow.ExceptionRecoverySessionId is not null &&
-                                 await dbContext.ExceptionRecoverySessions.AnyAsync(
-                                     row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId &&
-                                            row.State == "CLOSED",
-                                     cancellationToken).ConfigureAwait(false);
-            if (!sessionClosed)
-            {
-                await KeepDemandAndJourneyBlockedAsync(
-                    workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
-            }
+            await KeepDemandAndJourneyBlockedAsync(
+                workflow.DemandId, messageType + "_NOT_RECONCILED", cancellationToken).ConfigureAwait(false);
             return;
         }
         // A forced mechanical recovery closes the cargo's business, and only that (REQ-0242,
