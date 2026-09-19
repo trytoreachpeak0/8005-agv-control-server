@@ -52,6 +52,12 @@ public sealed class OnboardRecoveryCoordinator(
     /// </summary>
     internal const string SessionClosedResultNotReconciled = "RECOVERY_ACTION_RESULT_NOT_RECONCILED";
 
+    /// <summary>
+    /// The outcome a resume is judged on when the vehicle refused its command (control-server#187). A resume's
+    /// outcome is otherwise empty -- its account is the replacement OperationResult -- so this marks, in the store,
+    /// that its session closed because the command was refused rather than because a result did not reconcile. The
+    /// refusal itself, the vehicle's reason code included, is the inbound message the workflow's ResultMessageId names.
+    /// </summary>
     internal const string ResumeCommandRejectedOutcome = "COMMAND_REJECTED";
 
     private static readonly string[] RecoveryRequestTypes =
@@ -240,6 +246,49 @@ public sealed class OnboardRecoveryCoordinator(
                 .Select(row => row.SessionGeneration).SingleAsync(cancellationToken).ConfigureAwait(false);
             await AdvanceSessionAfterResultAsync(workflow, sessionGeneration, cancellationToken).ConfigureAwait(false);
         }
+        await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The vehicle refused a command with <c>SlotOperationCommandRejected</c>. When the refused command is a resume
+    /// still waiting for its replacement result, no result will come: the resume is judged RecoveryRequired and its
+    /// session closes, the way a result that does not reconcile closes it (control-server#169, #187). The demand, the
+    /// journey, the lease and the vehicle are not touched -- they stay where the failed load left them, for the next
+    /// session. Any other refusal -- of the original SlotOperationCommand, or matching no waiting resume -- is only
+    /// acknowledged, as before.
+    /// </summary>
+    /// <remarks>
+    /// The refused command is known by the envelope's correlationId, which the protocol requires to be the refused
+    /// command's messageId (REQUIRED_ORIGINAL_MESSAGE_ID) and the onboard fills so: the attempt alone cannot tell,
+    /// because a refusal of the original SlotOperationCommand names the same attempt. The attempt must agree as well.
+    /// A resend is answered by the inbox before this is called; a second refusal of the same command under a new
+    /// messageId finds the resume already judged and changes nothing.
+    /// </remarks>
+    public async Task ObserveCommandRejectedAsync(JsonElement root, CancellationToken cancellationToken)
+    {
+        if (!root.TryGetProperty("correlationId", out JsonElement correlation) ||
+            correlation.ValueKind != JsonValueKind.String)
+            return;
+        string refusedCommandId = correlation.GetString()!;
+        string agvId = RequiredString(root, "agvId");
+        string attemptId = RequiredString(root.GetProperty("payload"), "slotOperationAttemptId");
+        RecoveryWorkflowRow? workflow = await dbContext.RecoveryWorkflows.SingleOrDefaultAsync(
+            row => row.WorkflowType == "RESUME_AFTER_REPAIR" &&
+                   row.AgvId == agvId &&
+                   row.CommandMessageId == refusedCommandId &&
+                   row.SlotOperationAttemptId == attemptId &&
+                   (row.State == RecoveryWorkflowState.CommandPending ||
+                    row.State == RecoveryWorkflowState.AwaitingResult),
+            cancellationToken).ConfigureAwait(false);
+        if (workflow is null) return;
+
+        workflow.State = RecoveryWorkflowState.RecoveryRequired;
+        workflow.Outcome = ResumeCommandRejectedOutcome;
+        workflow.ResultMessageId = RequiredString(root, "messageId");
+        workflow.UpdatedAt = timeProvider.GetUtcNow();
+        await AdvanceSessionAfterResultAsync(
+            workflow, root.GetProperty("sessionGeneration").GetInt64(), cancellationToken).ConfigureAwait(false);
         await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
