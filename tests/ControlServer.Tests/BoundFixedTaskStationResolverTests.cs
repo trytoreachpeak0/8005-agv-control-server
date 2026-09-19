@@ -75,6 +75,43 @@ public sealed class BoundFixedTaskStationResolverTests
         Assert.Equal(FixedStationEnd.Destination, resolution.FixedEnd);
     }
 
+    /// <summary>
+    /// 绑定站点不在本轮目录里（id 没了、同 id 改了名、目录不是本图）：该任务类型得到「绑定站点缺失」，与缺绑定区分；
+    /// 同一轮里另一个绑定站点还在的任务类型照常解析（REQ-0342，不连带）。
+    /// </summary>
+    [Theory]
+    [InlineData("absent")]
+    [InlineData("renamed")]
+    [InlineData("other-map")]
+    public async Task ABoundStationMissingFromTheCatalogRefusesOnlyItsOwnTaskType(string shape)
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await ActivateAsync(
+            fixture,
+            [TransportTaskTypes.WireToGate, TransportTaskTypes.StagingToWire],
+            [GateBinding, StagingBinding]);
+        RiotMapStation staging = new(305, "派工待送取货");
+        RiotMapStationCatalogSnapshot map = shape switch
+        {
+            "absent" => Map with { Stations = [new RiotMapStation(12, "N1-1"), staging] },
+            "renamed" => Map with { Stations = [new RiotMapStation(12, "N1-1"), new RiotMapStation(210, "关卡-旧"), staging] },
+            _ => Map with { MapId = 26, Stations = [new RiotMapStation(12, "N1-1"), Gate, staging] },
+        };
+
+        IFixedTaskStationView view = await ReadAsync(fixture, map);
+        FixedTaskStationResolution gate = view.Resolve(TransportTaskTypes.WireToGate);
+
+        Assert.Equal(TaskTypeStationReasonCodes.BindingStationNotInCatalog, gate.RefusalReasonCode);
+        Assert.Null(gate.Station);
+        if (shape != "other-map")
+        {
+            FixedTaskStationResolution other = view.Resolve(TransportTaskTypes.StagingToWire);
+            Assert.Null(other.RefusalReasonCode);
+            Assert.Equal(staging, other.Station);
+            Assert.Equal(FixedStationEnd.Origin, other.FixedEnd);
+        }
+    }
+
     internal static async Task<(long RuleVersion, long BindingSetVersion)> ActivateAsync(
         TaskTypeStationPersistenceFixture fixture,
         IReadOnlyList<string> required,
