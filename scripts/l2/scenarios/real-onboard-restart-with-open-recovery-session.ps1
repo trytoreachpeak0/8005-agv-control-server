@@ -10,11 +10,15 @@ revision fence」的 `ExceptionRecoverySessionSnapshot` 重放进新会话（`On
 再申请又被服务端以已有开着的会话拒绝。已有的 v2 场景都是先重启、后开会话，覆盖不到这一格。
 
 **会话怎么在重启时「开着」。**v2 车载端的每个恢复入口都是一次按下连发「申请会话 → 提交动作」，中间没有可以
-停下来的地方；协议流也没有可暂停的故障代理（`ClockSkewProxy` 只转发车辆安全投影）。唯一确定的办法是让动作被
-服务端拒绝、会话留在 OPEN：装载以 UNKNOWN 结束后、**重启之前**按「申请恢复」。服务端授权 `RESUME_AFTER_REPAIR`
-要一个已证实的物理断点，而断点只在恢复状态报告里报上来，重启前服务端手上的还是装载之前那次握手的值，所以动作被
-`PROVEN_RECOVERY_CHECKPOINT_REQUIRED` 拒绝，会话 OPEN、revision 1、没有工作流（`ValidateActionPreconditions`）。
-现场就是这个样子：维护人员先按了「申请恢复」被拒，车随后断电。
+停下来的地方。本场景让开会话的那条应答在路上丢掉：按「申请恢复」之前让协议故障代理（`tools/ControlServer.ProtocolFaultProxy`）
+丢一条 `ExceptionRecoverySessionOpened`、链路不断。服务端已经开了会话（OPEN、revision 1、没有工作流），车等满
+`messageTimeoutMs` 没等到应答，放弃这次申请，动作一条也没发。然后车断电。现场就是这个样子：维护人员按了「申请恢复」，
+应答还在路上，车没电了。
+
+2026-09-14 的写法是另一条路：装载 UNKNOWN 之后、**没有任何重启时**按「申请恢复」，服务端因没有已证实断点拒绝
+`RESUME_AFTER_REPAIR`，会话留在 OPEN。control-server#128 之后公共前置 `Invoke-G3UnknownLoad` 自己就要重启一次车载端
+（v2 车载端空关不再超时出结果），重启后的恢复状态报告带着已证实断点，服务端于是**接受**续行（control-server#222，
+run 35455541316：会话 CLOSED、动作 RESUME_AFTER_REPAIR、工作流 1），那条路走不通了。
 
 **重启之后按「补偿清空」。**门关着、仓是空的，补偿不开门就能证空，服务端授权补偿只看「装载是 Load 且
 RecoveryRequired」，与 `g3-exception-compensate` 同一条路，只是会话来自重启前、快照来自重放。
@@ -35,6 +39,7 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealOnboard.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -42,6 +47,7 @@ $riot = $Context.Riot
 $onboard = $Context.Onboard
 $simulator = $Context.Simulator
 $connection = $Context.Connection
+$proxy = $Context.ProtocolProxy
 
 if ([string]::IsNullOrEmpty([string]$Context.OnboardJournalPath)) {
     throw 'This scenario needs the real onboard rig: the restart and the recovery entry are the onboard HMI.'
@@ -148,13 +154,15 @@ $assertions.Add(
     'UNKNOWN / RecoveryRequired / Blocked',
     "$($load.First.Payload.overallOutcome) / $loadStatus / $journeyBefore")
 
-# --- 2. 重启前开出恢复会话：「申请恢复」被拒，会话留在 OPEN ------------------------------------------------
+# --- 2. 重启前开出恢复会话：「申请恢复」的开会话应答在路上丢了，会话留在 OPEN -----------------------------------------
 
 if (-not (Wait-G3ButtonOffered $onboard $journal '申请恢复' 'onboard-resume-entry-before-restart' 90)) {
     Add-G3NotReached $assertions (Get-RosIds 2) '装载停摆后车载端没有给出「申请恢复」入口，开不出恢复会话'
     return
 }
-$journal.Note('Maintenance presses 申请恢复 before any restart; the server has no proven checkpoint yet and should refuse the action, leaving the session OPEN.')
+$journal.Note('Arming the proxy: drop the first ExceptionRecoverySessionOpened and keep the link up.')
+$null = $proxy.Command('Put', 'drop-message', @{ messageType = 'ExceptionRecoverySessionOpened'; count = 1 })
+$journal.Note('Maintenance presses 申请恢复 before any restart; the answer that opens the session is lost on the way, so the vehicle never submits the action and the session stays OPEN.')
 try {
     $null = Invoke-G3ConfirmedButton $onboard $journal '申请恢复' '申请恢复原操作'
 } catch {
@@ -162,27 +170,32 @@ try {
     return
 }
 
-$resumeAnswer = Wait-RosValue 'resume-action-answered' 90 {
-    $answeredActions = @((Get-G3Inbound $connection 'RecoveryActionSubmitted') | Where-Object {
+# 第一个事实：服务端开了会话、应答了，代理把那条应答丢了。按请求的 messageId 对上丢弃记录，不是随便哪一次丢弃。
+$sessionRequest = Wait-RosValue 'session-opened-answer-dropped' 60 {
+    $answered = @((Get-G3Inbound $connection 'ExceptionRecoverySessionRequested') | Where-Object {
         [string]$_.Payload.demandId -eq $demandId -and $null -ne $_.ResponseLine })
-    $answeredRequests = @((Get-G3Inbound $connection 'ExceptionRecoverySessionRequested') | Where-Object {
-        [string]$_.Payload.demandId -eq $demandId -and $null -ne $_.ResponseLine })
-    if ($answeredActions.Count -ge 1) { $answeredActions[0] }
-    elseif ($answeredRequests.Count -ge 1 -and $answeredRequests[0].Response -ne 'ExceptionRecoverySessionOpened') { $answeredRequests[0] }
-    else { $null }
+    if ($answered.Count -eq 0) { return $null }
+    $dropped = @(@((Get-L2RealTraffic $proxy).drops) | Where-Object {
+        [string]$_.acceptedMessageType -eq 'ExceptionRecoverySessionOpened' -and [string]$_.acceptedMessageId -eq $answered[0].MessageId })
+    if ($dropped.Count -ge 1) { $answered[0] } else { $null }
 }
-if ($null -eq $resumeAnswer) {
-    Add-G3NotReached $assertions (Get-RosIds 2) '按「申请恢复」之后 90 秒内服务端没有收到并应答恢复动作'
+if ($null -eq $sessionRequest) {
+    Add-G3NotReached $assertions (Get-RosIds 2) '按「申请恢复」之后 60 秒内没有看到服务端应答开会话、代理丢掉那条应答'
     return
 }
-try { $null = Confirm-G3Notice $onboard '恢复申请失败' $journal } catch { $journal.Note("Dismissing 恢复申请失败 failed: $($_.Exception.Message)") }
+# 第二个事实：车自己放弃了这次申请（等满 messageTimeoutMs，弹「恢复申请失败」）。之后它不会再为这次按下发动作，
+# 「重启前没有提交过动作」这条否定判据才有意义（scripts/l2/README.md 第 14 条）。提示框只是驱动与等待，不作判据。
+$gaveUp = Wait-RosValue 'onboard-gave-up-session-request' 60 {
+    if (@($onboard.WindowTitles()) -contains '恢复申请失败') { $true } else { $null }
+}
+if ($null -ne $gaveUp) {
+    try { $null = Confirm-G3Notice $onboard '恢复申请失败' $journal } catch { $journal.Note("Dismissing 恢复申请失败 failed: $($_.Exception.Message)") }
+}
 
-$sessionRequest = @((Get-G3Inbound $connection 'ExceptionRecoverySessionRequested') | Where-Object { [string]$_.Payload.demandId -eq $demandId }) | Select-Object -First 1
-$sessionId = if ($null -ne $sessionRequest -and $sessionRequest.Response -eq 'ExceptionRecoverySessionOpened') {
+$sessionId = if ($sessionRequest.Response -eq 'ExceptionRecoverySessionOpened') {
     [string](Get-RosField $sessionRequest.ResponsePayload 'exceptionRecoverySessionId')
 } else { '' }
-$resumeAction = @((Get-G3Inbound $connection 'RecoveryActionSubmitted') | Where-Object { [string]$_.Payload.demandId -eq $demandId }) | Select-Object -First 1
-$resumeProblem = if ($null -ne $resumeAction) { [string](Get-RosField (Get-RosField $resumeAction.ResponsePayload 'problem') 'reasonCode') } else { '' }
+$actionsBefore = @((Get-G3Inbound $connection 'RecoveryActionSubmitted') | Where-Object { [string]$_.Payload.demandId -eq $demandId })
 $sessionsBefore = Get-RosRecoverySessions
 $sessionRow = @($sessionsBefore | Where-Object { [string]$_.ExceptionRecoverySessionId -eq $sessionId }) | Select-Object -First 1
 $workflowsBefore = if (Test-G3Present $sessionId) {
@@ -190,15 +203,14 @@ $workflowsBefore = if (Test-G3Present $sessionId) {
 } else { -1 }
 $assertions.Add(
     'L2-ROS-02',
-    '重启前服务端有一个开着的恢复会话：SessionRequested → Opened；RESUME_AFTER_REPAIR 因没有已证实断点被拒（PROVEN_RECOVERY_CHECKPOINT_REQUIRED）；这辆车只有这一个会话行，OPEN、未选动作、revision 1、没有工作流',
-    ((Test-G3Present $sessionId) -and $null -ne $resumeAction -and
-        $resumeAction.Response -eq 'RecoveryActionRejected' -and [string]$resumeAction.Payload.action -eq 'RESUME_AFTER_REPAIR' -and
-        $resumeProblem -eq 'PROVEN_RECOVERY_CHECKPOINT_REQUIRED' -and $sessionsBefore.Count -eq 1 -and $null -ne $sessionRow -and
+    '重启前服务端有一个开着的恢复会话：SessionRequested → Opened，这条应答被代理丢掉、车等满超时放弃了这次申请；重启前没有为这笔需求提交过任何恢复动作；这辆车只有这一个会话行，OPEN、未选动作、revision 1、没有工作流',
+    ((Test-G3Present $sessionId) -and $null -ne $gaveUp -and $actionsBefore.Count -eq 0 -and
+        $sessionsBefore.Count -eq 1 -and $null -ne $sessionRow -and
         [string]$sessionRow.State -eq 'OPEN' -and -not (Test-G3Present $sessionRow.SelectedAction) -and [long]$sessionRow.Revision -eq 1 -and
         $workflowsBefore -eq 0),
-    'Opened / RESUME_AFTER_REPAIR→RecoveryActionRejected(PROVEN_RECOVERY_CHECKPOINT_REQUIRED) / 会话行 1：OPEN、无动作、r1 / 工作流 0',
-    "$(if ($sessionRequest) { $sessionRequest.Response } else { '(no session request)' }) / " +
-    "$(if ($resumeAction) { "$($resumeAction.Payload.action)→$($resumeAction.Response)($resumeProblem)" } else { '(no action)' }) / " +
+    'Opened（应答被丢）/ 车放弃申请 / 恢复动作 0 / 会话行 1：OPEN、无动作、r1 / 工作流 0',
+    "$($sessionRequest.Response)（应答被丢）/ 车放弃申请=$($null -ne $gaveUp) / 恢复动作 $($actionsBefore.Count)" +
+    "$(if ($actionsBefore.Count -ge 1) { "（$(@($actionsBefore | ForEach-Object { "$($_.Payload.action)→$($_.Response)" }) -join ',')）" }) / " +
     "会话行 $($sessionsBefore.Count)：$(if ($sessionRow) { "$($sessionRow.State)、动作='$($sessionRow.SelectedAction)'、r$($sessionRow.Revision)" } else { '(none)' }) / 工作流 $workflowsBefore")
 
 if ($null -eq $sessionRow -or [string]$sessionRow.State -ne 'OPEN') {
@@ -338,8 +350,8 @@ $readySession = Wait-RosValue 'session-readiness-ready' 60 {
     if ([string]$current.Readiness -eq 'Ready') { $current } else { $null }
 }
 
-# 按 recoveryActionId 与动作一起选。车载端的动作 id 跨按下保留（服务端按它去重、被拒时不落任何行），所以重启前被拒的
-# 那次 RESUME_AFTER_REPAIR 与这次补偿带着同一个 recoveryActionId，只是 messageId 不同（ros-002，2026-09-14）。
+# 按 recoveryActionId 与动作一起选。车载端的动作 id 跨按下保留（服务端按它去重、被拒时不落任何行）；2026-09-14 的写法里
+# 重启前被拒的那次 RESUME_AFTER_REPAIR 与补偿带着同一个 id（ros-002）。现在重启前一条动作都没发，同 id 下只能有这次补偿。
 $sameIdActions = @((Get-G3Inbound $connection 'RecoveryActionSubmitted') | Where-Object { [string]$_.Payload.recoveryActionId -eq $actionId })
 $actions = @($sameIdActions | Where-Object { [string]$_.Payload.action -eq 'COMPENSATE_LOAD_ALL_EMPTY' })
 $otherSameIdActions = @($sameIdActions | Where-Object { [string]$_.Payload.action -ne 'COMPENSATE_LOAD_ALL_EMPTY' })
@@ -354,12 +366,12 @@ $orderOk = $actions.Count -eq 1 -and $compensationRequests.Count -eq 1 -and $com
     (Format-G3Slots $commands[0].Payload.slots) -eq (Format-G3Slots $load.TargetSlots) -and
     [string]$results[0].Payload.overallOutcome -eq 'ALL_EMPTY' -and
     $actions[0].Generation -ge $report.Generation -and $compensationRequests[0].Generation -ge $report.Generation -and $results[0].Generation -ge $report.Generation -and
-    @($otherSameIdActions | Where-Object { $_.Response -ne 'RecoveryActionRejected' -or $_.At -gt $restartAt }).Count -eq 0
+    $otherSameIdActions.Count -eq 0
 $assertions.Add(
     'L2-ROS-06',
-    '补偿在重启后的新会话里按向量走完，各一次：ActionSubmitted(COMPENSATE_LOAD_ALL_EMPTY) → Accepted → LoadCompensationRequested → LoadCompensationCommand（指向重启前那个会话、这笔装载与装载仓）→ LoadCompensationResult(ALL_EMPTY) → DurableAck；同一 recoveryActionId 下别的动作只能是重启前被拒的那次',
+    '补偿在重启后的新会话里按向量走完，各一次：ActionSubmitted(COMPENSATE_LOAD_ALL_EMPTY) → Accepted → LoadCompensationRequested → LoadCompensationCommand（指向重启前那个会话、这笔装载与装载仓）→ LoadCompensationResult(ALL_EMPTY) → DurableAck；同一 recoveryActionId 下没有别的动作（重启前没有发过动作，id 不承接任何旧动作）',
     $orderOk,
-    "各 1，重启之后按序，代次 ≥ $($report.Generation)，命令会话 $sessionId / attempt $attemptId / 仓 $(Format-G3Slots $load.TargetSlots)，ALL_EMPTY；同 id 其它动作全是重启前的 RecoveryActionRejected",
+    "各 1，重启之后按序，代次 ≥ $($report.Generation)，命令会话 $sessionId / attempt $attemptId / 仓 $(Format-G3Slots $load.TargetSlots)，ALL_EMPTY；同 id 其它动作 无",
     "同 id 其它动作：$(if ($otherSameIdActions.Count -eq 0) { '无' } else { (@($otherSameIdActions | ForEach-Object { "$($_.Payload.action)→$($_.Response)(g$($_.Generation)，重启前=$($_.At -lt $restartAt))" }) -join '，') }) / " +
     "Action×$($actions.Count) / CompensationRequested×$($compensationRequests.Count) / Command×$($commands.Count) / Result×$($results.Count)" +
     "$(if ($results.Count -ge 1) { " $($results[0].Payload.overallOutcome)→$($results[0].Response)" })" +
