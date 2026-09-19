@@ -24,13 +24,36 @@ public sealed class BoundFixedTaskStationResolver(
     TaskTypeStationAccess access,
     IOptions<JourneyRuntimeOptions> options) : IFixedTaskStationResolver
 {
-    public Task<IFixedTaskStationView> ReadForRoundAsync(
+    private readonly int _mapId = options.Value.MapId;
+
+    public async Task<IFixedTaskStationView> ReadForRoundAsync(
         RiotMapStationCatalogSnapshot map,
         CancellationToken cancellationToken)
     {
-        _ = access;
-        _ = options;
-        throw new NotImplementedException();
+        ArgumentNullException.ThrowIfNull(map);
+
+        TaskTypeStationBindingSetVersion? bindingSet = await access.Bindings
+            .ReadActiveAsync(_mapId, cancellationToken).ConfigureAwait(false);
+        TaskTypeStationRuleVersion? rules = bindingSet is null
+            ? await access.Rules.ReadCurrentAsync(cancellationToken).ConfigureAwait(false)
+            : await access.Rules.ReadVersionAsync(bindingSet.RuleVersion, cancellationToken).ConfigureAwait(false);
+        return new BoundFixedTaskStationView(map, rules, bindingSet);
+    }
+}
+
+/// <summary>One round's rules and bindings, answered per task type.</summary>
+public sealed class BoundFixedTaskStationView(
+    RiotMapStationCatalogSnapshot map,
+    TaskTypeStationRuleVersion? rules,
+    TaskTypeStationBindingSetVersion? bindingSet) : IFixedTaskStationView
+{
+    public FixedTaskStationResolution Resolve(string taskType)
+    {
+        TaskTypeStationRule rule = rules!.Rules.Single(item => item.TaskType == taskType);
+        FixedStationEnd end = rule.FixedEnd == TaskTypeFixedEnd.Origin ? FixedStationEnd.Origin : FixedStationEnd.Destination;
+        TaskTypeStationBinding binding = bindingSet!.Bindings.Single(item => item.TaskType == taskType);
+        RiotMapStation station = map.Stations.Single(item => item.StationId == binding.StationRiotId);
+        return FixedTaskStationResolution.Resolved(taskType, end, station, rules.Version, bindingSet.Version);
     }
 }
 
