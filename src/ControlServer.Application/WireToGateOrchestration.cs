@@ -9,7 +9,13 @@ public enum DemandIntakeOutcome
     Accepted,
     CandidateGone,
     CandidateChanged,
-    FinalAdmissionRejected
+    FinalAdmissionRejected,
+
+    /// <summary>
+    /// The plan names the task type station versions but not the catalog revision its endpoints came from, so it could
+    /// not be accepted without freezing the versions alone (control-server#198). Nothing was written.
+    /// </summary>
+    JourneyPlanIncomplete
 }
 
 public sealed class DemandIntakeService(IMesIngestCatalog catalog, IDemandAcceptanceStore store)
