@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "scenario": "real-onboard-station-timeout-door-open",
+  "runId": "20260919T130546130Z",
+  "outcome": "PASS",
+  "failureReason": "",
+  "identity": {
+    "vehicleKey": "BROKERX-L2-0001",
+    "batchId": "batch-2",
+    "onboardHmiCommit": "44b3aa6e255f0820c3988d3f50f0b4dba1105006",
+    "protocolReleaseIdentity": {
+      "repository": "8005-agv-protocol",
+      "releaseVersion": "2.0.0",
+      "tag": "protocol-v2.0.0",
+      "commit": "86575456c847041515b7b75e8851a00e0d939804",
+      "protocolVersion": 3,
+      "profileId": "AGV_FULL_PRODUCT",
+      "manifestSha256": "4ac095ad371d3aaa60d7c2e0198cfd64cff5f3068230fc3420e9cdf5616422a7",
+      "schemaBundleSha256": "9db0dbdc22fed7e39edf8d01b1fc40a12f5d70a7414f696f909ab2a87eb8c221",
+      "vectorsSha256": "391fa69a7d6e9f86ea139ba4c74eadf4994bf0a87e89d3dc5258dd7968d9182a",
+      "approvalStatus": "APPROVED_RELEASE"
+    },
+    "agvId": "AGV-L2-001",
+    "slotsSimulatorCommit": "fb5f7c593742bf98bc3957b8729a38aad5321f28",
+    "controlServerCommit": "76c2ca2163832d5be85c83bcfc4f9261aa4db0c7",
+    "stageRoot": "C:\\Users\\szy\\AppData\\Local\\Temp\\l2-20260919T130546130Z",
+    "rig": "RealOnboard"
+  },
+  "assertions": [
+    {
+      "id": "L2-DT-01",
+      "description": "车载端说在等操作员时，1 号仓门确实弹开了、空着、开锁输出已复位——操作员走开时的现场原样",
+      "outcome": "PASS",
+      "expected": "OPEN/EMPTY/0/0",
+      "actual": "OPEN/EMPTY/0/0"
+    },
+    {
+      "id": "L2-DT-02",
+      "description": "服务端的安全投影里出现车辆自己算出的 LOCK_NOT_CLOSED，而会话仍是 Ready——开着的门由本车在途的装货解释",
+      "outcome": "PASS",
+      "expected": "含 LOCK_NOT_CLOSED / Ready",
+      "actual": "[\"LOCK_NOT_CLOSED\"] / Ready (READY)"
+    },
+    {
+      "id": "L2-DT-03",
+      "description": "期限未到：门开着也不挂告警，旅程原地等装货结果",
+      "outcome": "PASS",
+      "expected": "读于期限前 / AwaitingLoadResult / 无阻断码",
+      "actual": "读于期限前 35.9 s / AwaitingLoadResult / ''"
+    },
+    {
+      "id": "L2-DT-04",
+      "description": "期限到期挂上 STATION_TIMEOUT_DOOR_NOT_CLOSED：开始时间不早于期限，stage 仍是 AwaitingLoadResult（不是 Blocked），装货仍在途，需求未被终结",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult / since >= 2026-09-19T13:06:42.9059064+00:00 / Prepared / Accepted",
+      "actual": "AwaitingLoadResult / since 2026-09-19 13:06:43.7829789+00:00 / Prepared / Accepted"
+    },
+    {
+      "id": "L2-DT-05",
+      "description": "告警不是恢复：没有异常恢复会话、没有恢复工作流、没有 RecoveryRequired，会话仍是 Ready",
+      "outcome": "PASS",
+      "expected": "恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0 / Ready",
+      "actual": "恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0 / Ready (READY)"
+    },
+    {
+      "id": "L2-DT-06",
+      "description": "过期 30 秒后仍然如此：同一个告警码、开始时间不动，stage 仍是 AwaitingLoadResult，装货仍在途、车载端一份结果都没报，需求未终结，没有恢复，会话 Ready，门仍开着",
+      "outcome": "PASS",
+      "expected": "AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED since 2026-09-19 13:06:43.7829789+00:00 / Prepared / 0 result / Accepted / 恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0 / Ready / OPEN",
+      "actual": "AwaitingLoadResult / STATION_TIMEOUT_DOOR_NOT_CLOSED since 2026-09-19 13:06:43.7829789+00:00 / Prepared / 0 result / Accepted / 恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0 / Ready / OPEN/EMPTY/0/0"
+    },
+    {
+      "id": "L2-DT-07",
+      "description": "放料关门后车载端报 COMPLETED（整个 attempt 唯一一份结果），装货 Committed，仓位关门、锁上、有货",
+      "outcome": "PASS",
+      "expected": "COMPLETED / Committed / CLOSED/OCCUPIED/1/0",
+      "actual": "COMPLETED / Committed / CLOSED/OCCUPIED/1/0"
+    },
+    {
+      "id": "L2-DT-08",
+      "description": "告警清掉，旅程离开 AwaitingLoadResult 往下走，需求仍在（没有被取消）",
+      "outcome": "PASS",
+      "expected": "非 STATION_TIMEOUT_DOOR_NOT_CLOSED / 非 AwaitingLoadResult / Accepted",
+      "actual": "'' / AwaitingStationDeparture / Accepted"
+    },
+    {
+      "id": "L2-DT-09",
+      "description": "全程没有进过恢复",
+      "outcome": "PASS",
+      "expected": "恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0",
+      "actual": "恢复会话 0 / 恢复工作流 0 / RecoveryRequired 操作 0"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+2026-09-19T21:04:14.2440550+08:00	Information	App	车载端启动：agvId=AGV-L2-001，environment=Development，version=0.2.0-safety-mock-travel+44b3aa6e255f0820c3988d3f50f0b4dba1105006。
+2026-09-19T21:04:14.9061071+08:00	Information	ModbusTcpIoModuleClient	已连接IO模块 127.0.0.1:48412，UnitId=255。
+2026-09-19T21:04:14.9229407+08:00	Information	OnboardController	IO模块在线。
+2026-09-19T21:04:14.9243660+08:00	Information	OnboardController	启动IO安全快照验证通过。
+2026-09-19T21:04:15.4257394+08:00	Information	WireToGateSessionService	上层会话已建立：generation=1，readiness=Ready。
+2026-09-19T21:04:22.3021653+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=L2-CS189-20260919T130403954Z。 
+2026-09-19T21:04:23.2386361+08:00	Information	App	服务端请求录入Sublot：station=N1-3_N1-7，revision=1，expectedSublots=L2-CS189-20260919T130403954Z。 
+2026-09-19T21:04:23.4390219+08:00	Information	ModbusTcpIoModuleClient	已向物理1号仓发送开锁脉冲触发，DO地址=100。硬件负责自动复位。 
+2026-09-19T21:04:23.5389486+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->1，锁DI 1->1，光幕DI 1->1。
+2026-09-19T21:04:23.6480775+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->1，锁DI 1->0，光幕DI 1->1。
+2026-09-19T21:04:23.9775650+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 1->0，锁DI 0->0，光幕DI 1->1。
+2026-09-19T21:04:24.2389800+08:00	Information	WireToGateBusinessService	忽略并发重复SlotOperationCommand：attempt=66a68776-69d6-b750-8597-6a290ab20ab5。
+2026-09-19T21:04:25.4575513+08:00	Warning	WireToGateSessionService	上层会话不可用：WIRE_TO_GATE会话尚未建立。。将在2秒后重连。
+2026-09-19T21:04:27.5496308+08:00	Information	WireToGateSessionService	上层会话已建立：generation=2，readiness=RecoveryRequired。
+2026-09-19T21:04:30.7776846+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->0，光幕DI 1->0。
+2026-09-19T21:04:30.8887347+08:00	Information	ModbusTcpIoModuleClient	1号仓IO变化：DO 0->0，锁DI 0->1，光幕DI 0->0。
+2026-09-19T21:04:31.2583418+08:00	Warning	WireToGateBusinessService	仓位操作进度未能发送，不影响仓位判定：attempt=66a68776-69d6-b750-8597-6a290ab20ab5，phase=VERIFYING，round=0，error=InvalidOperationException。
+2026-09-19T21:04:31.2661489+08:00	Warning	WireToGateBusinessService	仓位操作进度未能发送，不影响仓位判定：attempt=66a68776-69d6-b750-8597-6a290ab20ab5，phase=SAFE_FINISH，round=0，error=InvalidOperationException。
+2026-09-19T21:04:32.5501995+08:00	Warning	WireToGateSessionService	上层会话不可用：WIRE_TO_GATE会话尚未建立。。将在2秒后重连。
+2026-09-19T21:04:34.6277870+08:00	Information	WireToGateSessionService	上层会话已建立：generation=3，readiness=Ready。
+2026-09-19T21:04:35.2379677+08:00	Information	WireToGateBusinessService	忽略重复SlotOperationCommand：attempt=66a68776-69d6-b750-8597-6a290ab20ab5，保留原OperationResult重放。
