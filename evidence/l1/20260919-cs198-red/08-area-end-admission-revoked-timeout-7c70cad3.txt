@@ -1,0 +1,76 @@
+commit: 7c70cad3 test: ⑧ 的测试在拨时钟后补车载端心跳（cs#198 ⑧）
+worktree dirty: 0 file(s)
+filter: FullyQualifiedName~ReversedDirectionJourneyRuntimeTests
+---
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.42]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:02.25]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:02.63]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.HoldingWireToGateDoesNotHoldAStagingToWireSecondLeg [6 s]
+[xUnit.net 00:00:11.50]     ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.TheThresholdIsConfiguredAndEscalatingLeavesTheOrderToTheMachineAlone [FAIL]
+[xUnit.net 00:00:11.51]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:11.51]       Expected: Blocked
+[xUnit.net 00:00:11.51]       Actual:   AwaitingGateArrival
+[xUnit.net 00:00:11.51]       Stack Trace:
+[xUnit.net 00:00:11.51]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs(375,0): at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.TheThresholdIsConfiguredAndEscalatingLeavesTheOrderToTheMachineAlone()
+[xUnit.net 00:00:11.51]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs(381,0): at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.TheThresholdIsConfiguredAndEscalatingLeavesTheOrderToTheMachineAlone()
+[xUnit.net 00:00:11.51]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.TheThresholdIsConfiguredAndEscalatingLeavesTheOrderToTheMachineAlone [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Blocked
+Actual:   AwaitingGateArrival
+  Stack Trace:
+     at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.TheThresholdIsConfiguredAndEscalatingLeavesTheOrderToTheMachineAlone() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs:line 375
+   at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.TheThresholdIsConfiguredAndEscalatingLeavesTheOrderToTheMachineAlone() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs:line 381
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AHeldStagingToWireGetsNoSecondLegUntilTheHoldIsReleased [2 s]
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.TheShippedAdmissionPolicyVersionMovesPastTheOneTheWireToGateOnlySeedWasBoundTo [2 ms]
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AStagingToWireJourneyFreezesItsAdmissionOnTheUnloadAtTheAreaMachineAndCompletes [2 s]
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AnAdmissionRestoredInsideTheThresholdGoesOnAndClearsTheCount [1 s]
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AStagingToWireJourneyIsPlannedFromTheStagingStationToTheAreaMachineAndNeverSwapped [94 ms]
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AMachineThatNoLongerAdmitsTheTaskTypeHoldsTheUnloadUntilItDoesAgain [2 s]
+[xUnit.net 00:00:21.92]     ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AnAdmissionStillRevokedPastTheThresholdBlocksTheJourneyForManualRecovery [FAIL]
+[xUnit.net 00:00:21.92]       Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:21.92]       Expected: Tuple (Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", 2026-08-26T01:10:00.0000000+00:00)
+[xUnit.net 00:00:21.92]       Actual:   Tuple (AwaitingGateArrival, "TASK_TYPE_NOT_ALLOWED_AT_STATION", 2026-08-26T01:00:00.0000000+00:00)
+[xUnit.net 00:00:21.92]       Stack Trace:
+[xUnit.net 00:00:21.92]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs(288,0): at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AnAdmissionStillRevokedPastTheThresholdBlocksTheJourneyForManualRecovery()
+[xUnit.net 00:00:21.92]         C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs(308,0): at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AnAdmissionStillRevokedPastTheThresholdBlocksTheJourneyForManualRecovery()
+[xUnit.net 00:00:21.92]         --- End of stack trace from previous location ---
+  Failed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AnAdmissionStillRevokedPastTheThresholdBlocksTheJourneyForManualRecovery [2 s]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: Tuple (Blocked, "TASK_TYPE_NOT_ALLOWED_AT_STATION_TIMEOUT", 2026-08-26T01:10:00.0000000+00:00)
+Actual:   Tuple (AwaitingGateArrival, "TASK_TYPE_NOT_ALLOWED_AT_STATION", 2026-08-26T01:00:00.0000000+00:00)
+  Stack Trace:
+     at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AnAdmissionStillRevokedPastTheThresholdBlocksTheJourneyForManualRecovery() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs:line 288
+   at ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AnAdmissionStillRevokedPastTheThresholdBlocksTheJourneyForManualRecovery() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\ReversedDirectionJourneyRuntimeTests.cs:line 308
+--- End of stack trace from previous location ---
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.ADurableEntryAtTheStagingStationHoldsTheStopAgainstACancellationBeforeAnySublot [260 ms]
+  Passed ControlServer.Tests.ReversedDirectionJourneyRuntimeTests.AfterARestartAPreparedUnloadGoesOnUnderItsFrozenAdmission [2 s]
+[xUnit.net 00:01:01.49]   Finished:    ControlServer.Tests (ID = '7fe1d27820c58fa88990765005f51436f5418fd1c28f465e44b0b77937c5f8c4')
+Test Run Failed.
+Total tests: 11
+     Passed: 9
+     Failed: 2
+ Total time: 1.0390 Minutes

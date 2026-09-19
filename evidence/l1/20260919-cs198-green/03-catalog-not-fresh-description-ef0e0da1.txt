@@ -1,0 +1,40 @@
+commit: ef0e0da1 fix(dashboard): TASK_TYPE_BINDING_CATALOG_NOT_FRESH 补中文说明，按 REQ-0302 写成整图状态（cs#198 ③）
+worktree dirty: 0 file(s)
+filter: FullyQualifiedName~DispatchBacklogDashboardTests
+---
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:02.75]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:05.55]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:06.48]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.TheCardIsSelfRegisteredAndReadsOnlyItsDashboardQueryEndpoint [182 ms]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.TheEndpointReturnsWaitingBacklogAndUnclearedStructuralBlocksAsTwoSeparateGroups [7 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.WithNoStructuralBlocksTheCardSaysNoneWithoutAlarmStyling [2 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.ADemandNoLongerInTheCatalogIsNeitherWaitingNorCountedAsSilent [3 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.TheCatalogNotFreshReasonIsExplainedAsAWholeMapStateRatherThanShownAsUnregistered [1 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.AClearedStructuralBlockIsNotShown [1 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.AnOutOfScopeAreaDemandIsNotListedAndNeverRenderedAsAnAlarm [1 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.TheCardExplainsTheFourSlotGroupReasonsAndShowsAnUnregisteredCodeAsIs [938 ms]
+[xUnit.net 00:00:28.15]   Finished:    ControlServer.Tests (ID = '7fe1d27820c58fa88990765005f51436f5418fd1c28f465e44b0b77937c5f8c4')
+Test Run Successful.
+Total tests: 8
+     Passed: 8
+ Total time: 30.4454 Seconds

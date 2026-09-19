@@ -1,0 +1,133 @@
+commit: cf99fd49 fix(intake): 缺目录修订的计划落成该需求自己的积压原因 FINAL_JOURNEY_PLAN_INCOMPLETE，不再让整轮停摆（cs#198 ②）
+worktree dirty: 0 file(s)
+filter: FullyQualifiedName~DemandTaskTypeStationIntakeFreezeTests|FullyQualifiedName~StructuralDispatchBlockTests|FullyQualifiedName~DispatchBacklogDashboardTests
+---
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.96]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:03.90]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:05.63]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "RIOT_VEHICLE_BINDING_MISMATCH", expected: Backlog) [45 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "CATALOG_PARAMETERS_NOT_APPROVED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DEMAND_LEFT_CATALOG", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ONBOARD_DEPARTURE_UNSAFE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_EVIDENCE_MISSING", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "CREATE_GATE_STATION_UNREACHABLE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "RIOT_VEHICLE_NOT_STOPPED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_GRAPH_NEVER_REFRESHED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "TASK_TYPE_NOT_YET_EXECUTABLE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "AREA_EQP_NOT_UNIQUE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_GRAPH_PICKUP_UNREACHABLE", expected: StructuralWhenEveryVehicleReturnsIt) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "VEHICLE_FAULT_ISOLATED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "TASK_TYPE_HELD", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "VEHICLE_FAULT_SUSPECTED_BLOCK", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DEMAND_ALREADY_ACCEPTED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "AREA_STATION_NOT_UNIQUE", expected: Structural) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_GRAPH_VEHICLE_POSITION_UNKNOWN", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING", expected: Structural) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "VEHICLE_SLOT_MODEL_UNRESOLVED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "CATALOG_FRESHNESS_EXCEEDED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "RIOT_VEHICLE_ORDER_OCCUPIED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "CREATE_GATE_FROZEN_STATION_ABSENT", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.TheCardIsSelfRegisteredAndReadsOnlyItsDashboardQueryEndpoint [132 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "CATALOG_BUILD_INCOMPATIBLE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DISPATCH_ZONE_HAS_NO_VEHICLES", expected: Structural) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "FINAL_JOURNEY_PLAN_INCOMPLETE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "SLOT_GROUP_CAPACITY_TEMPORARILY_UNAVAILABLE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "EXPECTED_BASKET_COUNT_OUT_OF_RANGE", expected: StructuralWhenNoVehicleHasTheSlots) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "CATALOG_NEVER_CONFIRMED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "REQUIRED_MES_FACT_MISSING", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "SUBLOT_BOX_COUNT_UNAVAILABLE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "RIOT_VEHICLE_FACT_STALE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "RIOT_VEHICLE_NOT_AVAILABLE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "TASK_TYPE_BINDING_MISSING", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "FINAL_CATALOG_DECISION_FACT_CHANGED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "BATTERY_FACT_UNKNOWN", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "RIOT_VEHICLE_NOT_IDLE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ONBOARD_FACTS_NOT_READY", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "EXPECTED_BASKET_COUNT_EXCEEDS_SLOT_GROUP", expected: StructuralWhenNoVehicleHasTheSlots) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ADMISSION_POLICY_DRIFT", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "BATTERY_POLICY_NOT_SATISFIED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "CREATE_GATE_EVIDENCE_CONFLICT", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "VEHICLE_TASK_TYPE_NOT_ADMITTED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "VEHICLE_NOT_ADMITTED_IN_ZONE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "TASK_TYPE_BINDING_STATION_NOT_IN_CATALOG", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_GRAPH_REFRESH_FAILED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "CREATE_GATE_ROUTE_COST_UNAVAILABLE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "DEMAND_DECISION_FACT_CHANGED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "VEHICLE_FAULT_IDENTITY_UNRESOLVED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "RIOT_VEHICLE_MAP_MISMATCH", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "AREA_SLOT_GROUP_NOT_ASSIGNED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "AREA_STATION_NOT_FOUND", expected: Structural) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_GRAPH_RUNTIME_STATE_EXPIRED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "VEHICLE_NOT_IN_DISPATCH_POLICY", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_GRAPH_DESIGN_STATE_EXPIRED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "TASK_TYPE_BINDING_CATALOG_NOT_FRESH", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "OUT_OF_SCOPE_AREA", expected: Silent) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_GRAPH_DYNAMIC_ROUTE_COST_APPEARED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "TASK_TYPE_NOT_ALLOWED_AT_STATION", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "OUT_OF_SCOPE_WORK_TYPE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "PACKAGE_CAPACITY_NOT_UNIQUE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "FINAL_DYNAMIC_FACTS_NOT_READY", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "FINAL_CATALOG_CANDIDATE_GONE", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryReasonCodeHasItsClassAndARationale(reasonCode: "ROUTE_GRAPH_EDGE_GROUP_FINGERPRINT_CHANGED", expected: Backlog) [< 1 ms]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.TheEndpointReturnsWaitingBacklogAndUnclearedStructuralBlocksAsTwoSeparateGroups [6 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.AVehicleWithNoSlotModelOnRecordLeavesTheFleetCheckUndecided [6 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing [6 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.WithNoStructuralBlocksTheCardSaysNoneWithoutAlarmStyling [2 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryVehicleOnTheRosterFindingThePickupUnreachableIsStructural [3 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.ADemandNoLongerInTheCatalogIsNeitherWaitingNorCountedAsSilent [3 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayNamingOtherVersionsIsADifferentAcceptanceAndTheFreezeStands [5 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.OneVehicleFindingThePickupUnreachableWhileAnotherIsMerelyBusyIsBacklog [3 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.TheCatalogNotFreshReasonIsExplainedAsAWholeMapStateRatherThanShownAsUnregistered [3 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayClaimingVersionsTheDemandNeverFrozeIsADifferentAcceptance [3 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.ADemandThatTurnsOutOfScopeClearsItsBlock [2 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EveryChainOrderInTheTableIsTheOrderOfARealCriterion [18 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.TheTableCoversEveryReasonCodeTheChainAndTheIntakeBehindItWrite [57 ms]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.AClearedStructuralBlockIsNotShown [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayCarryingTheFrozenVersionsIsTheSameAcceptance [1 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EachVehicleIndependentReasonRaisesItsOwnBlock(reasonCode: "DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING") [2 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.AnOutOfScopeAreaDemandIsNotListedAndNeverRenderedAsAnAlarm [2 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.APlanCarryingNoneOfTheVersionsNorACatalogRevisionIsAcceptedAsBefore [2 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EachVehicleIndependentReasonRaisesItsOwnBlock(reasonCode: "AREA_STATION_NOT_UNIQUE") [2 s]
+  Passed ControlServer.Tests.DispatchBacklogDashboardTests.TheCardExplainsTheFourSlotGroupReasonsAndShowsAnUnregisteredCodeAsIs [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.APlanCarryingVersionsButNoCatalogRevisionIsRefusedWholeAndLeavesNothingBehind [2 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EachVehicleIndependentReasonRaisesItsOwnBlock(reasonCode: "DISPATCH_ZONE_HAS_NO_VEHICLES") [1 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.EverySilentCodeIsClassifiedSilentAndAnUnlistedCodeIsOrdinaryBacklog [< 1 ms]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AcceptingFreezesBothEndpointsInTheSameTransactionOverStaleRowsOfARefusedAttempt [1 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.SlotsThatAreDisabledOrOccupiedNeverMakeADemandStructural [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AcceptingADemandFreezesTheRuleAndBindingSetVersionsItWasJudgedUnderInTheSameTransaction [1 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.ARoundWhereAVehicleRanOutItsBudgetConcludesOnlyFromTheVehiclesThatFinished [2 s]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.ABlockClearsWhenTheReasonGoesAndARecurrenceIsRaisedAsNewAgain [866 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.TheVehicleThatHasTheSlotsCountsEvenWhenItWasNotInTheRound [771 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.AVehicleIndependentReasonHoldsOnOneVerdictAndOnlyClearsOnProofItIsGone [706 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.OneVehicleWhoseGroupIsTooSmallIsNotStructuralWhileAnotherOnTheMapHasTheSlots [632 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.ARoundWhereTheVehicleWithTheSlotsRanOutItsBudgetDoesNotMakeTheDemandOversized [758 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.ABlockClearsOnceTheDemandIsAccepted [642 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.WhileItHoldsTheBlockStaysOneRowThatOnlyMovesLastSeenAndItClearsWhenTheDemandLeavesTheCatalog [650 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.TheHostRegistersTheStructuralSummaryAsTheRoundEndHookAndNothingElseOfBatch4 [2 ms]
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.AnOutOfScopeAreaNeverRaisesABlockOrAWarning [577 ms]
+[xUnit.net 00:00:39.28]   Finished:    ControlServer.Tests (ID = '7fe1d27820c58fa88990765005f51436f5418fd1c28f465e44b0b77937c5f8c4')
+  Passed ControlServer.Tests.StructuralDispatchBlockTests.ADemandLargerThanItsGroupOnEveryVehicleRaisesOneBlockAndOneWarning [604 ms]
+Test Run Successful.
+Total tests: 101
+     Passed: 101
+ Total time: 41.2040 Seconds

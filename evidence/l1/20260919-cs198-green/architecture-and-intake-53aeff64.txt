@@ -1,0 +1,87 @@
+commit: 53aeff64 style: 计划夹具的说明挪出参数列表，dotnet format 通过（cs#198）
+worktree dirty: 0 file(s)
+filter: FullyQualifiedName~ArchitectureTests|FullyQualifiedName~DemandTaskTypeStationIntakeFreezeTests
+---
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ControlServer.Domain -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Domain\bin\Release\net8.0\win-x64\ControlServer.Domain.dll
+  ControlServer.TestDoubles -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.TestDoubles\bin\Release\net8.0\win-x64\ControlServer.TestDoubles.dll
+  ControlServer.Dashboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Dashboard\bin\Release\net8.0\win-x64\ControlServer.Dashboard.dll
+  ControlServer.Application -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Application\bin\Release\net8.0\win-x64\ControlServer.Application.dll
+  ControlServer.ProtocolFaultProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ProtocolFaultProxy\bin\Release\net8.0\win-x64\ControlServer.ProtocolFaultProxy.dll
+  ControlServer.ClockSkewProxy -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.ClockSkewProxy\bin\Release\net8.0\win-x64\ControlServer.ClockSkewProxy.dll
+  ControlServer.FakeRiot -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeRiot\bin\Release\net8.0\win-x64\ControlServer.FakeRiot.dll
+  ControlServer.FakeOnboard -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FakeOnboard\bin\Release\net8.0\win-x64\ControlServer.FakeOnboard.dll
+  ControlServer.Infrastructure -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Infrastructure\bin\Release\net8.0\win-x64\ControlServer.Infrastructure.dll
+  ControlServer.FieldOps -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.FieldOps\bin\Release\net8.0\win-x64\ControlServer.FieldOps.dll
+  ControlServer.Host -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\src\ControlServer.Host\bin\Release\net8.0\win-x64\ControlServer.Host.dll
+  ControlServer.SchemaConformance -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tools\ControlServer.SchemaConformance\bin\Release\net8.0\win-x64\ControlServer.SchemaConformance.dll
+  ControlServer.Tests -> C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-198-8005-agv-control-server\tests\ControlServer.Tests\bin\Release\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v3.1.5+1b188a7b0a (64-bit .NET 8.0.31)
+[xUnit.net 00:00:00.67]   Discovering: ControlServer.Tests
+[xUnit.net 00:00:02.83]   Discovered:  ControlServer.Tests
+[xUnit.net 00:00:03.56]   Starting:    ControlServer.Tests
+  Passed ControlServer.Tests.ProtocolIdentityArchitectureTests.TheTagIsWellFormedForTheReleaseVersionItNames [37 ms]
+  Passed ControlServer.Tests.RiotCallAllowlistArchitectureTests.TheRawScanCatchesAnEscapeThatIsReallyThere [72 ms]
+  Passed ControlServer.Tests.ProtocolIdentityArchitectureTests.TheVendoredManifestIsTheProtocolManifestByteForByte [4 ms]
+  Passed ControlServer.Tests.RiotCallAllowlistArchitectureTests.TheVendoredAllowlistIsTheApprovedDocumentByteForByte [2 ms]
+  Passed ControlServer.Tests.ProtocolIdentityArchitectureTests.TheShippedSettingsMirrorTheIdentityConstants [1 ms]
+  Passed ControlServer.Tests.ProtocolIdentityArchitectureTests.ThisIdentityIsTheApprovedReleaseItNames [< 1 ms]
+  Passed ControlServer.Tests.ProtocolIdentityArchitectureTests.TheIdentityConstantsAreTheVendoredManifestsOwnFields [32 ms]
+  Passed ControlServer.Tests.ProtocolMessageSurfaceArchitectureTests.TheManifestParsesIntoSixtyThreeMessagesAndElevenDenylistedTypes [115 ms]
+  Passed ControlServer.Tests.ProtocolPayloadShapeArchitectureTests.TheShapeCheckReportsThePayloadShapeVersionOneSent [116 ms]
+  Passed ControlServer.Tests.RiotCallAllowlistArchitectureTests.ProductCodeReachesRiotOnlyThroughNamedFacades [51 ms]
+  Passed ControlServer.Tests.RiotCallAllowlistArchitectureTests.TheAllowlistParsesIntoTheTwentySixApprovedCalls [58 ms]
+  Passed ControlServer.Tests.RiotCallAllowlistArchitectureTests.TheAllowlistComparisonCatchesACallNobodyApproved [17 ms]
+  Passed ControlServer.Tests.RiotCallAllowlistArchitectureTests.EveryRiotCallProductCodeMakesIsOnTheAllowlist [5 ms]
+  Passed ControlServer.Tests.RiotCallAllowlistArchitectureTests.EverySourceProjectIsInTheScannedSet [23 ms]
+  Passed ControlServer.Tests.ProtocolReasonCodeArchitectureTests.NoReasonCodeIsWrittenAsABareLiteral [282 ms]
+  Passed ControlServer.Tests.ProtocolReasonCodeArchitectureTests.TheRegistryCopyIsTheVendoredErrorCodeEnumeration [4 ms]
+  Passed ControlServer.Tests.ProtocolReasonCodeArchitectureTests.TheBareLiteralScanCatchesEachWritingPosition [2 ms]
+  Passed ControlServer.Tests.ProtocolReasonCodeArchitectureTests.EveryReasonCodeTheServerEmitsIsInTheRegistryOrAPinnedDeviation [2 ms]
+  Passed ControlServer.Tests.ProtocolReasonCodeArchitectureTests.ThePinnedDeviationComparisonCatchesACodeNobodyRegistered [< 1 ms]
+  Passed ControlServer.Tests.ProtocolMessageSurfaceArchitectureTests.NoDenylistedMessageTypeIsNamedInTheServer [198 ms]
+  Passed ControlServer.Tests.ProtocolEnvelopeObserverArchitectureTests.EveryProductFileThatNamesTheObserverIsOnTheLedger [316 ms]
+  Passed ControlServer.Tests.SlotConfigurationVersionLineArchitectureTests.TheScanCatchesAWriterThatNumbersItsOwnVersions [326 ms]
+  Passed ControlServer.Tests.ProtocolMessageSurfaceArchitectureTests.EveryFrozenMessageTypeIsNamedInTheServerOrPinnedAsUnimplemented [36 ms]
+  Passed ControlServer.Tests.ProtocolMessageSurfaceArchitectureTests.TheImplementationCheckReportsAMessageThatLosesItsLastMention [5 ms]
+  Passed ControlServer.Tests.SlotConfigurationVersionLineArchitectureTests.EveryWriterThatFreezesAGovernedVersionIsOnTheLedger [51 ms]
+  Passed ControlServer.Tests.SlotConfigurationVersionLineArchitectureTests.EveryWriterOnTheSlotConfigurationLineAllocatesThroughTheVersionLine [50 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.TheBindingCheckCatchesAPinnedVectorThatSomethingNowBinds [451 ms]
+  Passed ControlServer.Tests.ProtocolPayloadShapeArchitectureTests.TheVendoredSchemaTreeIsTheProtocolSchemaTreeFileForFile [344 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.TheAccountingCheckReportsATestThatLosesItsOnlySliceTrait [467 ms]
+  Passed ControlServer.Tests.ProtocolEnvelopeObserverArchitectureTests.NoProductCodeAssignsTheOutboundObserver [211 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.NoTestClaimsAVectorIdTheProtocolNeverFroze [100 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.EveryPinnedVectorBelongsOnlyToSlicesThisBatchDoesNotImplement [13 ms]
+  Passed ControlServer.Tests.ProtocolPayloadShapeArchitectureTests.TheSublotRejectionTypeMatchesItsFrozenSchema(demandId: null) [101 ms]
+  Passed ControlServer.Tests.ProtocolPayloadShapeArchitectureTests.TheSublotRejectionTypeMatchesItsFrozenSchema(demandId: "00000000-0000-4000-8000-000000000421") [1 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.TheIndexParsesIntoSixteenSlicesAndThirtyThreeDistinctVectors [6 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.TheVendoredIndexIsTheProtocolIndexByteForByte [8 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.EverySliceTraitNamesOneOfTheSixteenFrozenSlices [119 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.TheBindingCheckCatchesAVectorThatLostItsLastNamedTest [75 ms]
+  Passed ControlServer.Tests.SlotConfigurationVersionLineArchitectureTests.EverySourceFileThatNamesTheSlotConfigurationLineIsOnTheLedger [236 ms]
+  Passed ControlServer.Tests.SlotConfigurationVersionLineArchitectureTests.EverySourceProjectIsInTheScannedSet [1 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.EveryTestOutsideTheSliceFamilyIsAccountedFor [96 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.TheBindingCheckCatchesATestThatNamesAVectorNobodyFroze [68 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.EveryClaimedVectorIsCoveredByASliceItsOwnTestCarries [77 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.EveryFrozenVectorIsBoundToANamedTestOrPinnedToASliceNobodyHasBuiltYet [74 ms]
+  Passed ControlServer.Tests.ProtocolVectorTestBindingArchitectureTests.AClaimedPinOnABuiltSliceMustNameThatSliceAndItsTicket [8 ms]
+  Passed ControlServer.Tests.IntegrationSliceTraitArchitectureTests.TheSixteenSliceFiltersRunEveryTestThatCarriesTheTrait [74 ms]
+  Passed ControlServer.Tests.ProtocolPayloadShapeArchitectureTests.EverySnapshotThePublisherSendsMatchesItsFrozenSchema [4 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.IntakeReportsAPlanWithoutACatalogRevisionAsThisDemandsOutcomeInsteadOfThrowing [7 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayNamingOtherVersionsIsADifferentAcceptanceAndTheFreezeStands [2 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayClaimingVersionsTheDemandNeverFrozeIsADifferentAcceptance [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AReplayCarryingTheFrozenVersionsIsTheSameAcceptance [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.APlanCarryingNoneOfTheVersionsNorACatalogRevisionIsAcceptedAsBefore [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.APlanCarryingVersionsButNoCatalogRevisionIsRefusedWholeAndLeavesNothingBehind [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AcceptingFreezesBothEndpointsInTheSameTransactionOverStaleRowsOfARefusedAttempt [1 s]
+  Passed ControlServer.Tests.DemandTaskTypeStationIntakeFreezeTests.AcceptingADemandFreezesTheRuleAndBindingSetVersionsItWasJudgedUnderInTheSameTransaction [1 s]
+[xUnit.net 00:00:56.82]   Finished:    ControlServer.Tests (ID = '7fe1d27820c58fa88990765005f51436f5418fd1c28f465e44b0b77937c5f8c4')
+Test Run Successful.
+Total tests: 55
+     Passed: 55
+ Total time: 58.1026 Seconds
