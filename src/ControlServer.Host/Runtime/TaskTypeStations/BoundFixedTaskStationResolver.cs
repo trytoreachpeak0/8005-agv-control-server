@@ -62,6 +62,17 @@ public sealed class BoundFixedTaskStationView(
                 taskType, end, DispatchReasonCodes.TaskTypeBindingMissing, ruleVersion.Version, bindingSet?.Version);
         }
 
+        // The catalog half of #159's validator, asked every round rather than at startup (specification 21.2 item 1):
+        // the site Map is shared with production, so a station edited elsewhere stops only the task type bound to it.
+        // The Map passed in was just read whole, which is what a fresh catalog is.
+        IReadOnlyList<TaskTypeStationViolation> violations =
+            TaskTypeStationConfigurationValidator.EvaluateCatalog(bindingSet!.MapId, [binding], map, catalogFresh: true);
+        if (violations.Count > 0)
+        {
+            return FixedTaskStationResolution.Refused(
+                taskType, end, violations[0].ReasonCode, ruleVersion.Version, bindingSet.Version);
+        }
+
         RiotMapStation station = map.Stations.Single(item => item.StationId == binding.StationRiotId);
         return FixedTaskStationResolution.Resolved(taskType, end, station, ruleVersion.Version, bindingSet!.Version);
     }
