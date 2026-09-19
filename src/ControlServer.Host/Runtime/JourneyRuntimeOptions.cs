@@ -145,6 +145,10 @@ public sealed class JourneyRuntimeOptionsValidator(IConfiguration configuration)
         {
             failures.Add("CheckpointWaitBudget must be positive.");
         }
+        if (options.AreaEndAdmissionRevokedTimeout <= TimeSpan.Zero)
+        {
+            failures.Add("AreaEndAdmissionRevokedTimeout must be positive.");
+        }
         if (options.DepartureSafetyResultWait <= TimeSpan.Zero ||
             options.DepartureSafetyResultWait > TimeSpan.FromSeconds(10))
         {
