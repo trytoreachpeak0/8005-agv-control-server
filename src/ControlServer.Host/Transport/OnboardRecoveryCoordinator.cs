@@ -897,6 +897,9 @@ public sealed class OnboardRecoveryCoordinator(
     /// and told the vehicle it was still waiting for a result. Closing it is not "handled": the business stays
     /// where the result left it (demand RecoveryRequired, journey Blocked, lease and vehicle held), and the
     /// administrator opens a new session, whose actions are worked out afresh from the vehicle's facts then.
+    /// A result judged HistoricalOnly never reaches here (<see cref="ProcessResultAsync"/>): the only thing
+    /// that makes a result historical is a later forced generation, which only a forced action submitted in
+    /// the same open session creates, and that later action's own result closes the session.
     /// </remarks>
     private async Task AdvanceSessionAfterResultAsync(
         RecoveryWorkflowRow workflow,
@@ -907,6 +910,10 @@ public sealed class OnboardRecoveryCoordinator(
         ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
             row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
             cancellationToken).ConfigureAwait(false);
+        // The first result to arrive closed it, and that closing stands. A later one -- the same action submitted
+        // again under another recoveryActionId while the session was still executing -- is recorded against its
+        // own workflow and changes nothing here: no new revision, no second closing snapshot.
+        if (session.State == "CLOSED") return;
         session.State = "CLOSED";
         session.Revision++;
         session.UpdatedAt = timeProvider.GetUtcNow();
