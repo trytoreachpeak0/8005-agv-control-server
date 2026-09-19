@@ -1214,6 +1214,53 @@ public sealed class TaskTypeStationActivationTests
     }
 
     /// <summary>
+    /// cs#191 第 4 条：对账与人工收尾撤「激活结果未知」暂停时，<c>ReleasedBy</c> 记的是这次动作——前缀说是哪个动词，后面是它那条审计的
+    /// 记录号（理由、自报角色与部署身份都在那条审计里）；置暂停的那次尝试仍在 <c>RaisedBy</c> 里，不被改写。
+    /// </summary>
+    [Fact]
+    public async Task AReconciliationOrAManualCloseRecordsItselfAsTheOneWhoReleasedTheHolds()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        ControlServerDbContext dying = harness.NewContext();
+        TaskTypeStationActivationResult interrupted = await TaskTypeStationActivationHarness.StackOver(
+            dying, inner => new DieBeforeComplete(inner, dying)).ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging));
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now.AddMinutes(1), Token);
+
+        Assert.Equal(2, reconciled.ReleasedHoldIds.Count);
+        TaskTypeStationHoldRow[] byReconciliation = [.. (await harness.HoldsAsync())
+            .Where(hold => reconciled.ReleasedHoldIds.Contains(hold.HoldId))];
+        Assert.All(byReconciliation, hold => Assert.Equal(
+            ("fieldops:activation:" + interrupted.AttemptId, "fieldops:reconcile:" + reconciled.AuditRecordId),
+            (hold.RaisedBy, hold.ReleasedBy)));
+
+        // A second attempt, a contradiction, and a manual close.
+        ControlServerDbContext dyingAgain = harness.NewContext();
+        TaskTypeStationActivationResult contradicted = await TaskTypeStationActivationHarness.StackOver(
+            dyingAgain, inner => new DieBeforeComplete(inner, dyingAgain)).ActivateAsync(
+            TaskTypeStationActivationHarness.Candidate(TaskTypeStationActivationHarness.Gate, TaskTypeStationActivationHarness.Staging),
+            at: TaskTypeStationActivationHarness.Now.AddMinutes(2));
+        await harness.ExecuteAsync("UPDATE TaskTypeStationBindings SET StationName = '关卡-改' WHERE MapId = 25 AND Version = 1");
+
+        TaskTypeStationManualCloseResult closed = await harness.Default().Service.CloseManuallyAsync(
+            25, new TaskTypeStationChangeRequest("两个版本都读不回", "现场工程师"), TaskTypeStationActivationHarness.Now.AddMinutes(3), Token);
+
+        Assert.Equal(TaskTypeStationManualCloseOutcome.Closed, closed.Outcome);
+        Assert.Equal(2, closed.ReleasedHoldIds.Count);
+        TaskTypeStationHoldRow[] byClose = [.. (await harness.HoldsAsync())
+            .Where(hold => closed.ReleasedHoldIds.Contains(hold.HoldId))];
+        Assert.All(byClose, hold => Assert.Equal(
+            ("fieldops:activation:" + contradicted.AttemptId, "fieldops:close:" + closed.AuditRecordId),
+            (hold.RaisedBy, hold.ReleasedBy)));
+        // The reconciliation's releases stay as they were written.
+        Assert.All(
+            (await harness.HoldsAsync()).Where(hold => reconciled.ReleasedHoldIds.Contains(hold.HoldId)),
+            hold => Assert.Equal("fieldops:reconcile:" + reconciled.AuditRecordId, hold.ReleasedBy));
+    }
+
+    /// <summary>
     /// 同一台重新起的服务端：在 <paramref name="harness"/> 的库文件上，带一份把 <c>WIRE_TO_GATE</c> 绑到 210 的预置，跑一遍启动装载。
     /// 返回启动写的每一行日志。
     /// </summary>
