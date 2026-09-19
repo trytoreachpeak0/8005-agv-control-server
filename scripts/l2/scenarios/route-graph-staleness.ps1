@@ -28,6 +28,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -75,7 +77,12 @@ $null = Wait-L2Condition -Description 'the engine took its first complete snapsh
     } `
     -Until { param($v) $v -eq 'ready' }
 
-$baseline = Get-Snapshot
+# 陈旧原因是在动态代价那次保存之后、由 EvaluateStalenessAsync 另外清掉的（RouteGraphRefresher.RefreshOnceAsync），
+# 上面等齐的三样落库时它可能还是新行起步的 SNAPSHOT_NEVER_REFRESHED，所以再等它清掉（control-server#193 普查）。
+$baseline = Wait-L2ConditionOrLast -Description 'the first complete snapshot is not stale' `
+    -Journal $journal -Criterion 'route-graph-baseline-fresh' -TimeoutSeconds 30 `
+    -Probe { Get-Snapshot } `
+    -Until { param($s) $null -eq $s.StaleReason -or [string]$s.StaleReason -eq '' }
 $assertions.Add(
     'L2-RGS-01',
     '基线快照建立：设计态、边组指纹、动态代价都取过一次，且不陈旧',

@@ -26,6 +26,8 @@ param([Parameter(Mandatory)][object]$Context)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
+
 $journal = $Context.Journal
 $assertions = $Context.Assertions
 $riot = $Context.Riot
@@ -122,7 +124,14 @@ $null = Wait-L2Condition -Description 'the server escalated to an emergency stop
     -Journal $journal -Criterion 'trigger-issued' -TimeoutSeconds 90 `
     -Probe { (Get-EmergencyAttempts 'triggerEmergency').Count } -Until { param($v) $v -ge 1 }
 
-$first = (Get-EmergencyAttempts 'triggerEmergency')[0]
+# 急停审计行先「武装」（Outcome = Pending）落库，再调 RIoT，回读之后才由 RecordOutcomeAsync 写 Outcome 与
+# ReceiptJson（EmergencyStopSupervisor.TriggerAsync），三步各自提交。行出现了，线上那次调用与结算都未必已经发生，
+# 所以等 ReceiptJson 落库再读这一行和假 RIoT（control-server#193 普查）。
+# L2-ES-04 因此读的是结算后的 Outcome，而不是武装时那个必然的 Pending。
+$first = Wait-L2ConditionOrLast -Description 'the first trigger attempt was settled' `
+    -Journal $journal -Criterion 'trigger-settled' -TimeoutSeconds 30 `
+    -Probe { $rows = Get-EmergencyAttempts 'triggerEmergency'; if ($rows.Count -gt 0) { $rows[0] } else { $null } } `
+    -Until { param($row) -not [string]::IsNullOrEmpty([string]$row.ReceiptJson) }
 $assertions.Add(
     'L2-ES-02',
     '该发时发了：单被报 FAILED 且车证不出停住，服务端发出 triggerEmergency，记在这台车名下',
@@ -220,7 +229,13 @@ $null = Wait-L2Condition -Description 'the externally released latch was re-trig
     -Journal $journal -Criterion 'retrigger-issued' -TimeoutSeconds 30 `
     -Probe { (Get-EmergencyAttempts 'triggerEmergency').Count } -Until { param($v) $v -ge 2 }
 
-$second = (Get-EmergencyAttempts 'triggerEmergency')[1]
+# 急停审计行先「武装」（Outcome = Pending）落库，再调 RIoT，回读之后才由 RecordOutcomeAsync 写 Outcome 与
+# ReceiptJson（EmergencyStopSupervisor.TriggerAsync），三步各自提交。行出现了，线上那次调用与结算都未必已经发生，
+# 所以等 ReceiptJson 落库再读这一行和假 RIoT（control-server#193 普查）。
+$second = Wait-L2ConditionOrLast -Description 'the re-trigger attempt was settled' `
+    -Journal $journal -Criterion 'retrigger-settled' -TimeoutSeconds 30 `
+    -Probe { $rows = Get-EmergencyAttempts 'triggerEmergency'; if ($rows.Count -gt 1) { $rows[1] } else { $null } } `
+    -Until { param($row) -not [string]::IsNullOrEmpty([string]$row.ReceiptJson) }
 $assertions.Add(
     'L2-ES-13',
     '原因消除前闩锁意外恢复 OK：服务端重触发，第二行的原因写的是 EMERGENCY_LATCH_RELEASED_EXTERNALLY（REQ-0248）',

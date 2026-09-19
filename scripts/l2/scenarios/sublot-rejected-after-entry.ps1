@@ -35,6 +35,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Change.psm1') -Force
+Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2ConditionOrLast.psm1') -Force
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -242,14 +243,18 @@ $refused = Wait-L2Change -Description 'the peer received a SublotRejected for th
     -Until { param($before, $now) $before -eq 0 -and $now.Count -eq 1 }
 $rejection = @($refused.Value)[0]
 $firstSubmission = @(Get-Submissions)[0]
-$refusalSeen = @(Get-PeerInbound 'SublotRejected' $answeredAt |
-    Where-Object { [string]$_.messageId -eq $rejection.MessageId })
+# 服务端的发件箱那一行先落库、再上线（OnboardJourneyPublisher.PublishStampedEnvelopeAsync），上面等到的是那一行；
+# 车收到是之后的事，所以要自己再等一次（control-server#193 普查）。
+$refusalSeenCount = [int](Wait-L2ConditionOrLast -Description 'the peer received that SublotRejected' `
+    -Journal $journal -Criterion 'refusal-received' -TimeoutSeconds 30 `
+    -Probe { @(Get-PeerInbound 'SublotRejected' $answeredAt | Where-Object { [string]$_.messageId -eq $rejection.MessageId }).Count } `
+    -Until { param($v) $v -ge 1 })
 $assertions.Add(
     'L2-SRJ-03', '服务端拒收并发出 SublotRejected：原因是 EXPECTED_BASKET_COUNT_MISMATCH，correlationId 是被拒那条提交的 messageId，rejectedSublot 是录入值',
     ($rejection.Problem -eq 'EXPECTED_BASKET_COUNT_MISMATCH' -and $rejection.CorrelationId -eq $firstSubmission.MessageId -and
-        $rejection.RejectedSublot -eq $sublot -and $rejection.DemandId -eq $demandId -and $refusalSeen.Count -ge 1),
+        $rejection.RejectedSublot -eq $sublot -and $rejection.DemandId -eq $demandId -and $refusalSeenCount -ge 1),
     "EXPECTED_BASKET_COUNT_MISMATCH / $($firstSubmission.MessageId) / $sublot / 车收到",
-    "$($rejection.Problem) / $($rejection.CorrelationId) / $($rejection.RejectedSublot) / demandId=$($rejection.DemandId) / 车收到 $($refusalSeen.Count) 次")
+    "$($rejection.Problem) / $($rejection.CorrelationId) / $($rejection.RejectedSublot) / demandId=$($rejection.DemandId) / 车收到 $refusalSeenCount 次")
 $assertions.Add(
     'L2-SRJ-04', '被拒的那条提交带的是本站地址、带 currentWorklistRevision',
     ($firstSubmission.Sublot -eq $sublot -and $rejection.WorklistRevision -eq [long]$waiting.WorklistRevision -and
