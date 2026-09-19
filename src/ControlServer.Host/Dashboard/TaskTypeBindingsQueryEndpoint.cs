@@ -143,9 +143,8 @@ internal sealed class TaskTypeBindingsQueryEndpoint : IDashboardQueryEndpoint
     {
         TaskTypeStationHoldSource.Manual => "看板人工",
         TaskTypeStationHoldSource.CatalogChange => "目录变化",
-        // Batch 6-05 (control-server#161) adds TaskTypeStationHoldSource.ActivationResultUnknown with this value;
-        // named literally here until that constant is on this branch.
-        "ACTIVATION_RESULT_UNKNOWN" => "激活结果未知",
+        // Written by batch 6-05's activation transaction directly, not through RaiseAsync (control-server#161).
+        TaskTypeStationHoldSource.ActivationResultUnknown => "激活结果未知",
         _ => source
     };
 

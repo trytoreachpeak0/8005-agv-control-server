@@ -178,6 +178,12 @@ public static class TaskTypeStationActivationState
 {
     public const string Active = "ACTIVE";
     public const string ActivationUnknown = "ACTIVATION_UNKNOWN";
+
+    /// <summary>
+    /// 墓碑：人工收尾放弃了一次读回矛盾的激活，该图没有生效版本（<c>ActiveVersion</c> 为空），直到下一次 FieldOps 激活或回滚。
+    /// 不是「从未激活」——重启不按第一版装预置（control-server#161 第二轮复审 N1）。
+    /// </summary>
+    public const string ClosedManually = "CLOSED_MANUALLY";
 }
 
 /// <summary>一张图当前生效的绑定集版本指针。</summary>
@@ -222,7 +228,8 @@ public interface ITaskTypeStationBindingStore
     /// <summary>
     /// 写入该图的新版本。内容（需求集、绑定与所依赖的规则版本）与该图最新一版相同时不产生新版本；目录修订、来源与时间
     /// 不算内容。不动生效指针。<paramref name="ruleVersion"/> 不存在时抛 <see cref="InvalidOperationException"/>。
-    /// 不做业务校验：写入前调用方须先过 <see cref="TaskTypeStationConfigurationValidator.ValidateStatic"/>。
+    /// 写入前按 <paramref name="ruleVersion"/> 那一版规则过 <see cref="TaskTypeStationConfigurationValidator.ValidateStatic"/>，
+    /// 有违规抛 <see cref="TaskTypeStationConfigurationException"/>、什么都不写（control-server#161 审查 S6：库里没有 CHECK 约束，存储自己把关）。
     /// </summary>
     Task<TaskTypeStationVersionWrite<TaskTypeStationBindingSetVersion>> WriteVersionAsync(
         int mapId,
@@ -249,6 +256,12 @@ public static class TaskTypeStationHoldSource
 {
     public const string Manual = "MANUAL";
     public const string CatalogChange = "CATALOG_CHANGE";
+
+    /// <summary>
+    /// 激活第一步置、第二步或对账撤的暂停（REQ-0347，control-server#161）。只由激活流程写，
+    /// <see cref="ITaskTypeStationHoldStore.RaiseAsync"/> 不收它；解除暂停动词也不碰它。
+    /// </summary>
+    public const string ActivationResultUnknown = "ACTIVATION_RESULT_UNKNOWN";
 }
 
 /// <summary>一条暂停。<see cref="ReleasedAt"/> 为空表示仍成立。</summary>

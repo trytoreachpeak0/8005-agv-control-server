@@ -68,7 +68,16 @@ public sealed class BoundFixedTaskStationResolverTests
                 await ActivateAsync(fixture, [TransportTaskTypes.StagingToWire], [StagingBinding]);
                 break;
             default:
-                await ActivateAsync(fixture, [TransportTaskTypes.WireToGate], []);
+                // No validated path writes a set that requires a task type it does not bind: since control-server#161
+                // (review S6) the store refuses it. The shape can still reach the database by hand, so it is made here by
+                // activating a whole set and removing its binding row around the store; the resolver must still refuse.
+                (_, long version) = await ActivateAsync(fixture, [TransportTaskTypes.WireToGate], [GateBinding]);
+                await using (Microsoft.Data.Sqlite.SqliteCommand unbind = fixture.Connection.CreateCommand())
+                {
+                    unbind.CommandText = FormattableString.Invariant(
+                        $"DELETE FROM TaskTypeStationBindings WHERE MapId = 25 AND Version = {version}");
+                    await unbind.ExecuteNonQueryAsync(Token);
+                }
                 break;
         }
 

@@ -76,6 +76,16 @@ public sealed class TaskTypeStationRuleStore(
             ArgumentException.ThrowIfNullOrWhiteSpace(rule.FixedEnd, nameof(rules));
         }
 
+        // The store refuses what the validator refuses, whoever the caller is (control-server#161 review S6): no CHECK
+        // constraint guards FixedEnd, so this is the line. A rule table alone is checked against an empty map.
+        IReadOnlyList<TaskTypeStationViolation> violations = TaskTypeStationConfigurationValidator.ValidateStatic(
+            new TaskTypeStationConfiguration(rules, new TaskTypeStationMapConfiguration(RulesOnlyMapId, [], [])),
+            RulesOnlyMapId);
+        if (violations.Count > 0)
+        {
+            throw new TaskTypeStationConfigurationException(violations);
+        }
+
         // Ordered so that the same table always freezes to the same content and the same SHA-256.
         TaskTypeStationRule[] ordered = [.. rules.OrderBy(rule => rule.TaskType, StringComparer.Ordinal)];
         string contentJson = TaskTypeStationContent.RulesJson(ordered);
@@ -130,6 +140,9 @@ public sealed class TaskTypeStationRuleStore(
                 version, snapshot.ContentSha256, snapshot.SnapshotId, loadedAt, source, ordered),
             Created: true);
     }
+
+    /// <summary>A placeholder map for checking a rule table on its own; no binding is ever written against it.</summary>
+    private const int RulesOnlyMapId = 1;
 }
 
 /// <summary>
@@ -239,6 +252,23 @@ public sealed class TaskTypeStationBindingStore(
             throw new InvalidOperationException(string.Create(
                 CultureInfo.InvariantCulture,
                 $"Task type rule version {ruleVersion} does not exist, so Map {mapId} cannot have a binding set version built on it."));
+        }
+
+        // The store refuses what the validator refuses, whoever the caller is (control-server#161 review S6): the startup
+        // load and FieldOps activation both validate first, but this is a public port and the database has no CHECK
+        // constraints, so an unvalidated caller must not be able to write a station reused by two task types, a blank site
+        // verification or an area-named station. Checked against the rule version the set names.
+        TaskTypeStationRule[] namedRules = await _context.Set<TaskTypeStationRuleRow>()
+            .AsNoTracking()
+            .Where(row => row.Version == ruleVersion)
+            .Select(row => new TaskTypeStationRule(row.TaskType, row.FixedEnd))
+            .ToArrayAsync(cancellationToken);
+        IReadOnlyList<TaskTypeStationViolation> violations = TaskTypeStationConfigurationValidator.ValidateStatic(
+            new TaskTypeStationConfiguration(namedRules, new TaskTypeStationMapConfiguration(mapId, requiredTaskTypes, bindings)),
+            mapId);
+        if (violations.Count > 0)
+        {
+            throw new TaskTypeStationConfigurationException(violations);
         }
 
         TaskTypeStationBindingSetVersionRow? latest = await _context.Set<TaskTypeStationBindingSetVersionRow>()

@@ -187,24 +187,34 @@ public sealed class TaskTypeStationStoreTests
     }
 
     [Fact]
-    public async Task TheDatabaseRefusesOneStationBoundToTwoTaskTypesAndNothingOfThatVersionIsLeftBehind()
+    public async Task OneStationBoundToTwoTaskTypesIsRefusedByTheStoreAndUnderneathByTheDatabase()
     {
-        // The store does no business validation of its own (that is the validator's job); this is the database's
-        // own line, underneath every caller.
+        // Two lines. Since control-server#161 (review S6) the store runs the validator itself, so no caller gets a reused
+        // station written; underneath, the unique index (MapId, Version, StationRiotId) is the database's own line, shown
+        // here by going around the store.
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
         await fixture.Rules.WriteVersionAsync(SixRules, Source, Now, Token);
 
-        DbUpdateException refused = await Assert.ThrowsAsync<DbUpdateException>(() => fixture.Bindings.WriteVersionAsync(
-            25, 1, [TransportTaskTypes.WireToGate],
-            [GateBinding, StagingBinding with { StationRiotId = GateBinding.StationRiotId }],
-            null, Source, Now, Token));
-        Assert.Contains("UNIQUE", refused.InnerException!.Message, StringComparison.Ordinal);
+        TaskTypeStationConfigurationException refused = await Assert.ThrowsAsync<TaskTypeStationConfigurationException>(
+            () => fixture.Bindings.WriteVersionAsync(
+                25, 1, [TransportTaskTypes.WireToGate],
+                [GateBinding, StagingBinding with { StationRiotId = GateBinding.StationRiotId }],
+                null, Source, Now, Token));
+        Assert.Contains(refused.Violations, violation => violation.ReasonCode == TaskTypeStationReasonCodes.StationReused);
         fixture.Context.ChangeTracker.Clear();
-
         Assert.Null(await fixture.Bindings.ReadLatestAsync(25, Token));
         Assert.Empty(await fixture.Context.Set<GovernedConfigurationSnapshotRow>()
             .Where(row => row.ObjectKind == GovernedObjectKind.PublicStationBinding)
             .ToArrayAsync(Token));
+
+        await fixture.Bindings.WriteVersionAsync(25, 1, [TransportTaskTypes.WireToGate], [GateBinding], null, Source, Now, Token);
+        await using Microsoft.Data.Sqlite.SqliteCommand around = fixture.Connection.CreateCommand();
+        around.CommandText =
+            "INSERT INTO TaskTypeStationBindings (MapId, Version, TaskType, StationRiotId, StationName, SiteVerificationRef) "
+            + $"VALUES (25, 1, '{TransportTaskTypes.StagingToWire}', {GateBinding.StationRiotId}, 'x', 'x')";
+        Microsoft.Data.Sqlite.SqliteException index = await Assert.ThrowsAsync<Microsoft.Data.Sqlite.SqliteException>(
+            () => around.ExecuteNonQueryAsync(Token));
+        Assert.Contains("UNIQUE", index.Message, StringComparison.Ordinal);
     }
 
     [Theory]
