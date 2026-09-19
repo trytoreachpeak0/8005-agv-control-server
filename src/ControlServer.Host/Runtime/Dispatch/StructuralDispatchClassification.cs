@@ -119,6 +119,9 @@ public static class StructuralDispatchClassification
         Backlog(TaskTypeStationReasonCodes.BindingStationNotInCatalog, WorkTypeScope,
             "control-server#160: the bound station is not in this round's catalog (gone, renamed, or another Map). " +
             "A configured outcome, not a fault, so never a structural alarm; only this task type waits."),
+        Backlog(TaskTypeStationReasonCodes.BindingCatalogNotFresh, WorkTypeScope,
+            "control-server#160: defensive only -- the resolver checks a binding against the catalog the round just " +
+            "read whole, which is fresh by definition. Registered because #159's catalog check can return it."),
         Backlog(DispatchReasonCodes.TaskTypeHeld, WorkTypeScope,
             "control-server#160: the task type is held on this Map (operator, catalog change, or an activation of " +
             "unknown outcome). A configured outcome, not a fault; releasing the hold clears it."),

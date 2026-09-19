@@ -34,6 +34,7 @@ public sealed class BoundFixedTaskStationResolver(
         DispatchReasonCodes.OutOfScopeWorkType,
         DispatchReasonCodes.TaskTypeBindingMissing,
         TaskTypeStationReasonCodes.BindingStationNotInCatalog,
+        TaskTypeStationReasonCodes.BindingCatalogNotFresh,
         DispatchReasonCodes.TaskTypeHeld,
     ];
 
