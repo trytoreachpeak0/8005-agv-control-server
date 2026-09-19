@@ -44,7 +44,7 @@ control-server#165（批次6-09）。本报告逐项对照规格 `8005-agv-progr
 | --- | --- | --- | --- |
 | onboard-hmi#123 | 车载端 | 开锁前挡住补偿、受控取货、强制取出命令时不回结果，服务端会话停在 `EXECUTING`（control-server#187 审查发现） | open；PR onboard-hmi#125 待改（调度审查必修项 A） |
 | onboard-hmi#124 | 车载端＋服务端 | 已完成的装货因结果确认没回来被报成「上次操作未完成」；重启后遗留 attempt 与重发命令竞态不结算 | 已合入：车载端 PR onboard-hmi#126（`2b04729`）；服务端判据 `L2-DA-09` 进 `real-onboard-durable-ack-lost`，PR #196（`e56ffa4a`） |
-| control-server#193 | 服务端 | `load-command-never-answered` 的 `L2-LN-01` 取样竞态；普查改了六个合成场景的同型取样 | open；PR #194 CI 绿，待审 |
+| control-server#193 | 服务端 | `load-command-never-answered` 的 `L2-LN-01` 取样竞态；普查改了六个合成场景的同型取样 | 已合入：PR #194（`905ffd1d`） |
 | onboard-hmi#127 | 车载端 | 在途装货断线重连后车载端不发结果，与服务端互相等（control-server#189 第二步；#189 第一步 PR #195 已合入 `5a126238`） | open，还没有 PR；开工前置 onboard-hmi#124 已满足 |
 
 ## 身份
@@ -235,7 +235,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 - **G3 `FP-IS-10`／`11` 的判据**（control-server#164）：「全程只出现一种任务类型」只在四个点采样，不是连续监视；路线证据是哈希，G3 读不出起终点。
 - **control-server#162 的三份 L2 红证据**跑在合入 #161 之前的 `d223b14e`，没有在新代码上重取。
 - **control-server#159 负向场景**五条判据里只有 `L2-TTSR-03`／`04` 有区分力，另三条被唯一索引兜底。
-- **control-server#193 普查**改了六个场景的同型取样，没做故障注入；两处「拿不准」和四处「相邻形状」没改（`L2-SCA-09`、`g3-pickup-load-and-correction`、`L2-DC-12` 可能假绿、`L2-NL-03`、`L2-RW-02`）〔合入时再核〕。
+- **control-server#193 普查**改了六个场景的同型取样，没做故障注入；两处「拿不准」和四处「相邻形状」没改（`L2-SCA-09`、`g3-pickup-load-and-correction`、`L2-DC-12` 可能假绿、`L2-NL-03`、`L2-RW-02`）（PR #194 已合入 `905ffd1d`，这两类仍未改）。
 - **向量弱绑定**（第五节第 7 点）；**合成 L2 与真装置都不证明真实硬件**（光幕极性、锁反馈时序、机械弹开），control-server#44 的极性对齐仍是切生产门槛。
 - **G2 证据作废**：onboard-hmi#123、#124 作废车载端 `FP-IS-02`／`03`／`07` 的既有 G2 证据；本批出口只重出 `FP-IS-10`／`11`，其余切片在下一次出口或切 RC 时按顶端重出。
 
@@ -256,7 +256,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 | control-server#186 | Map 级改名检测：RIoT 地图名存作基线 | open，后续批次 |
 | onboard-hmi#127 | 在途装货断线重连后车载端补发结果（control-server#189 第二步）；接 onboard-hmi#124 转来的四条 | open，本批追加 |
 | onboard-hmi#123 | 开锁前被挡的恢复命令回结果 | open，本批追加 |
-| control-server#193 | `L2-LN-01` 取样竞态 | open，本批追加 |
+| control-server#193 | `L2-LN-01` 取样竞态 | 已合入（PR #194），本批追加 |
 | program#125 | `DISPLAY_ADMISSION_BLOCK_REASON` 契约措辞（随 `protocol-v3.0.0`，program#115） | open |
 | onboard-hmi#61 | 清单项数与腿数两处收窄 | open，批次 7 |
 
