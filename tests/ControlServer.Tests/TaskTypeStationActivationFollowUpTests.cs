@@ -114,6 +114,77 @@ public sealed class TaskTypeStationActivationFollowUpTests
         Assert.Equal(await harness.PointerRowAsync(), PointerRowOf(25, after));
     }
 
+    // ======== c: an unattributed attempt over an active version goes back to ACTIVE, not to a tombstone ========
+
+    /// <summary>
+    /// cs#200 c：需求集为空、已有生效版本 v2 的图，激活 v3 在两步之间中断——没有暂停记着来历（<c>unattributed</c>）。对账读回
+    /// v2 仍在用：指针回到 <c>ACTIVE</c>、生效 v2、无待定版本，不是墓碑。
+    /// </summary>
+    [Fact]
+    public async Task AnUnattributedAttemptOverAnActiveVersionThatDidNotHappenGoesBackToActiveNotToATombstone()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        await ActivateAnEmptyRequirementSetAsync(harness);
+        Assert.Equal("25|2|ACTIVE|<null>", await harness.PointerRowAsync());
+
+        ControlServerDbContext dying = harness.NewContext();
+        await TaskTypeStationActivationHarness.StackOver(dying, inner => new DieBeforeComplete(inner, dying)).ActivateAsync(
+            SecondEmptyRequirementSet, at: TaskTypeStationActivationHarness.Now.AddMinutes(1));
+        Assert.Equal("25|2|ACTIVATION_UNKNOWN|3", await harness.PointerRowAsync());
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now.AddMinutes(2), Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.PreviousActive, reconciled.Conclusion);
+        Assert.Equal("unattributed", reconciled.AttemptId);
+        Assert.Equal((2L, 3L), (reconciled.PreviousVersion, reconciled.TargetVersion));
+        Assert.Equal("25|2|ACTIVE|<null>", await harness.PointerRowAsync());
+        Assert.Equal(2, (await harness.Default().Bindings.ReadActiveAsync(25, Token))?.Version);
+    }
+
+    /// <summary>
+    /// cs#200 c：同上，但 v3 的第二步已提交、提交之后连接断了——指针被重新标成结果未知（生效 v3、待定 v3），仍没有暂停。对账读回
+    /// v3 已生效：指针 <c>ACTIVE</c>、生效 v3。
+    /// </summary>
+    [Fact]
+    public async Task AnUnattributedAttemptWhoseTargetCommittedGoesToActiveOnTheTarget()
+    {
+        await using TaskTypeStationActivationHarness harness = await TaskTypeStationActivationHarness.CreateAsync();
+        await ActivateAnEmptyRequirementSetAsync(harness);
+
+        CommitFault fault = new(new InvalidOperationException("The connection dropped after COMMIT was sent.")) { AfterCommit = true };
+        TaskTypeStationActivationResult unknown = await TaskTypeStationActivationHarness.StackOver(
+                harness.NewContext(fault), inner => new FaultOnComplete(inner, fault))
+            .ActivateAsync(SecondEmptyRequirementSet, at: TaskTypeStationActivationHarness.Now.AddMinutes(1));
+        Assert.Equal(TaskTypeStationActivationOutcome.ResultUnknown, unknown.Outcome);
+        Assert.Equal("25|3|ACTIVATION_UNKNOWN|3", await harness.PointerRowAsync());
+        Assert.DoesNotContain(await harness.HoldsAsync(), hold => hold.ReleasedAt is null);
+
+        TaskTypeStationReconciliationResult reconciled = await harness.Default().Service.ReconcileAsync(
+            25, TaskTypeStationActivationHarness.Request, TaskTypeStationActivationHarness.Now.AddMinutes(2), Token);
+
+        Assert.Equal(TaskTypeStationReconciliationConclusion.TargetActive, reconciled.Conclusion);
+        Assert.Equal("unattributed", reconciled.AttemptId);
+        Assert.Equal("25|3|ACTIVE|<null>", await harness.PointerRowAsync());
+        Assert.Equal(3, (await harness.Default().Bindings.ReadActiveAsync(25, Token))?.Version);
+    }
+
+    /// <summary>
+    /// A second version with an empty requirement set, different from the first: the gate stays bound but nothing on the
+    /// map requires it, so an activation of it from the first holds no task type.
+    /// </summary>
+    private static TaskTypeStationCandidate SecondEmptyRequirementSet { get; } =
+        new(TaskTypeStationActivationHarness.MapId, 1, [], [TaskTypeStationActivationHarness.Gate]);
+
+    /// <summary>Map 25 moves from the fixture's version 1 to a version 2 whose requirement set is empty.</summary>
+    private static async Task ActivateAnEmptyRequirementSetAsync(TaskTypeStationActivationHarness harness)
+    {
+        TaskTypeStationActivationResult activated = await harness.Default().ActivateAsync(
+            new TaskTypeStationCandidate(TaskTypeStationActivationHarness.MapId, 1, [], []));
+        Assert.Equal((TaskTypeStationActivationOutcome.Activated, 2L), (activated.Outcome, activated.TargetVersion));
+    }
+
     private static async Task CloseAfterAContradictionAsync(TaskTypeStationActivationHarness harness)
     {
         ControlServerDbContext dying = harness.NewContext();
