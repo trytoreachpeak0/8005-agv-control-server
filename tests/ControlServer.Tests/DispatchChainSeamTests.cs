@@ -293,7 +293,7 @@ public sealed class DispatchChainSeamTests
             new DispatchRoundFacts(
                 new DemandCatalogSnapshot(candidate.HistoryEpoch, 21, [candidate]),
                 new RiotMapStationCatalogSnapshot(25, Now, new string('c', 64), []),
-                new RiotMapStation(210, "关卡"),
+                new ConfiguredGateStationView(new RiotMapStation(210, "关卡")),
                 new HashSet<string>(StringComparer.Ordinal),
                 Now,
                 new VehicleDispatchPolicy([], new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal), "TEST-POLICY"),
