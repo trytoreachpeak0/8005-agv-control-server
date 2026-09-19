@@ -312,7 +312,8 @@ public sealed record JourneyExecutionPlan(
     long? AreaAssignmentVersion = null,
     string? RequiredSlotPosition = null,
     long? TaskTypeStationRuleVersion = null,
-    long? TaskTypeStationBindingSetVersion = null);
+    long? TaskTypeStationBindingSetVersion = null,
+    long? StationCatalogRevision = null);
 
 public enum ConnectionRecoveryStatus
 {

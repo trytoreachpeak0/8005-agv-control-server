@@ -105,6 +105,45 @@ public sealed class DemandTaskTypeStationIntakeFreezeTests
             Demand(), PickupIntent(), Plan(ruleVersion, bindingSetVersion), Token));
     }
 
+    /// <summary>
+    /// 落点站与版本在同一个受理事务里冻结。库里若还留着一次被拒受理写下的旧冻结行（本票之前站点冻结在受理事务之外），
+    /// 这条需求从没被受理过，那两行不是任何任务的终点：受理时换成本次计划的两端，不因「拒绝改写」让整轮失败。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task AcceptingFreezesBothEndpointsInTheSameTransactionOverStaleRowsOfARefusedAttempt()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        (long ruleVersion, long bindingSetVersion) = await BoundFixedTaskStationResolverTests.ActivateAsync(
+            fixture, [TransportTaskTypes.WireToGate], [GateBinding with { StationRiotId = 220, StationName = "关卡2" }]);
+        await new CatalogAvailabilityStore(fixture.Context).FreezeDemandStationsAsync(
+            DemandId,
+            "SUBLOT-001|WIRE_TO_GATE",
+            [new FrozenStationFact(FrozenStationRole.Pickup, 25, 12, "N1-1"), new FrozenStationFact(FrozenStationRole.Dropoff, 25, 210, "关卡")],
+            20,
+            Now.AddMinutes(-5),
+            Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        await new WireToGateStore(fixture.Context).AcceptWithOrderIntentAsync(
+            Demand(),
+            PickupIntent(),
+            Plan(ruleVersion, bindingSetVersion) with { GateStationId = "关卡2", GateStationRiotId = 220, StationCatalogRevision = 21 },
+            Token);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(
+            [
+                new FrozenStationFact(FrozenStationRole.Pickup, 25, 12, "N1-1"),
+                new FrozenStationFact(FrozenStationRole.Dropoff, 25, 220, "关卡2"),
+            ],
+            (await new CatalogAvailabilityStore(fixture.Context).ReadFrozenStationsAsync(DemandId, Token))
+                .OrderBy(station => station.Role));
+        Assert.All(
+            await fixture.Context.FrozenDemandStations.AsNoTracking().Where(row => row.DemandId == DemandId).ToArrayAsync(Token),
+            row => Assert.Equal(21, row.CatalogRevision));
+    }
+
     private static JourneyExecutionPlan Plan(long? ruleVersion, long? bindingSetVersion) => new(
         "AGV-1",
         "BROKERX-0001",

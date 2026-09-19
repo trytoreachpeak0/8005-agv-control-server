@@ -134,6 +134,57 @@ public sealed class TaskTypeAdmissionRuntimeTests
             await FreezeAsync(fixture));
     }
 
+    /// <summary>
+    /// 一次受理在最后一刻被拒（需求在受理前的复读里不见了），之后改绑到 220：下一轮照常受理这条需求、冻结新的落点站，
+    /// 引擎这一轮不抛异常。落点站若在受理事务之外先冻结，被拒那次会留下 210 的冻结行，下一轮改写被拒、异常冒出
+    /// <c>ExecuteOnceAsync</c>，从此每一轮都失败，所有任务类型都不再受理（#160 审查应修第 2 条）。
+    /// </summary>
+    [Fact]
+    [Trait("IntegrationSlice", "FP-IS-10")]
+    public async Task AnAcceptanceRefusedAtTheLastMomentLeavesNothingFrozenSoARebindingIsTakenNextRound()
+    {
+        const string demandId = "10000000-0000-4000-8000-000000000001";
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Riot.SetMapStations(
+            new RiotMapStation(12, "N1-1"),
+            new RiotMapStation(13, "N1-2_N1-3"),
+            new RiotMapStation(210, "关卡"),
+            new RiotMapStation(220, "关卡2"),
+            new RiotMapStation(300, "等待点"));
+        AcceptedDemandSnapshot demand = fixture.Demand(demandId, "SUBLOT-001", Now.AddMinutes(-10));
+        fixture.Catalog.Set(demand);
+        fixture.BoxCounts.Set("SUBLOT-001", 7);
+        // Read 1 is discovery, read 2 the intake's final re-read: the demand is gone by then.
+        fixture.Catalog.BeforeRead = readCount =>
+        {
+            if (readCount == 2)
+            {
+                fixture.Catalog.Set();
+            }
+        };
+        await fixture.Engine.ExecuteOnceAsync(Token);
+        Assert.Equal(
+            "FINAL_CATALOG_CANDIDATE_GONE",
+            (await fixture.Context.JourneyBacklog.AsNoTracking().SingleAsync(row => row.DemandId == demandId, Token)).ReasonCode);
+        Assert.False(await fixture.Context.AcceptedDemands.AnyAsync(row => row.DemandId == demandId, Token));
+
+        fixture.Catalog.BeforeRead = null;
+        fixture.Catalog.Set(demand);
+        (long ruleVersion, long bindingSetVersion) = await TaskTypeStationRuntimeSeed.ActivateAsync(
+            fixture.DbOptionsForTests,
+            Now,
+            bindings: [TaskTypeStationRuntimeSeed.GateBinding with { StationRiotId = 220, StationName = "关卡2" }]);
+        fixture.Context.ChangeTracker.Clear();
+        await fixture.Engine.ExecuteOnceAsync(Token);
+
+        Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync()).Stage);
+        FrozenStationFact dropoff = Assert.Single(
+            await new CatalogAvailabilityStore(fixture.Context).ReadFrozenStationsAsync(demandId, Token),
+            station => station.Role == FrozenStationRole.Dropoff);
+        Assert.Equal(new FrozenStationFact(FrozenStationRole.Dropoff, 25, 220, "关卡2"), dropoff);
+        Assert.Equal(new DemandTaskTypeStationFreeze(demandId, ruleVersion, 25, bindingSetVersion, Now), await FreezeAsync(fixture));
+    }
+
     private static async Task<TaskTypeStationBindingSetVersion?> ActiveBindingsAsync(RuntimeFixture fixture) =>
         await TaskTypeStationRuntimeSeed.Access(fixture.Context).Bindings.ReadActiveAsync(25, Token);
 
