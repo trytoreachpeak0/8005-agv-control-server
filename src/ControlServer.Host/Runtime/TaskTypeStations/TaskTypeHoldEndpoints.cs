@@ -59,6 +59,12 @@ public static class TaskTypeHoldEndpoints
     /// <summary>The administrator audit action written for every request.</summary>
     public const string HoldRequestedAction = "TASK_TYPE_STATION_HOLD_REQUESTED";
 
+    /// <summary>The longest reason taken, in UTF-16 code units after trimming.</summary>
+    public const int MaxReasonLength = 500;
+
+    /// <summary>The longest claimed role taken, in UTF-16 code units after trimming.</summary>
+    public const int MaxClaimedRoleLength = 64;
+
     private static readonly JsonSerializerOptions DetailOptions = new()
     {
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)

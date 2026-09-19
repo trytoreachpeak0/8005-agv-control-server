@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -25,15 +26,111 @@ public sealed class TaskTypeHoldEndpointsTests
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task ARequestFromAnywhereButLoopbackIsForbiddenWhateverAddressTheServerListensOn()
+    public async Task ARequestFromAnotherMachineIsForbiddenWhateverAddressTheServerListensOn()
     {
         await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
         await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
 
-        IResult result = await Post(fixture, ValidRequest(), IPAddress.Parse("172.19.205.30"));
+        IResult listeningOnLoopback = await Post(fixture, ValidRequest(), IPAddress.Parse("172.19.205.30"));
+        IResult listeningOnThePlantInterface = await Post(
+            fixture, ValidRequest(), IPAddress.Parse("172.19.205.30"), local: IPAddress.Parse("172.19.205.222"));
+
+        Assert.Equal(StatusCodes.Status403Forbidden, StatusOf(listeningOnLoopback));
+        Assert.Equal(StatusCodes.Status403Forbidden, StatusOf(listeningOnThePlantInterface));
+        Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
+    }
+
+    [Theory]
+    [InlineData("172.19.205.222", "172.19.205.222")]
+    [InlineData("::ffff:172.19.205.222", "172.19.205.222")]
+    [InlineData("172.19.205.222", "::ffff:172.19.205.222")]
+    public async Task ARequestFromThisMachinesOwnPlantAddressIsTakenBecauseThatIsHowTheDashboardReachesAServerBoundToIt(
+        string remote, string local)
+    {
+        // Install-ControlServerLocal.ps1 binds the HTTP surface to the plant-facing interface and points the dashboard's
+        // controlServerBaseUrl at that same address, so the dashboard's forwarded request arrives from the machine's own
+        // interface address, not from loopback.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+
+        IResult result = await Post(fixture, ValidRequest(), IPAddress.Parse(remote), local: IPAddress.Parse(local));
+
+        Assert.Equal(StatusCodes.Status201Created, StatusOf(result));
+        Assert.Single(await fixture.Holds.ListUnreleasedAsync(25, Token));
+    }
+
+    [Fact]
+    public async Task AForbiddenRequestIsAuditedByAddressAloneAndNoneOfWhatItClaimedIsKept()
+    {
+        // Anyone on the plant network can reach a server bound to the plant interface. What a refused caller typed must
+        // not become immutable audit text.
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+
+        IResult result = await Post(
+            fixture,
+            ValidRequest() with { Reason = new string('x', 4000), ClaimedRole = "厂长" },
+            IPAddress.Parse("172.19.205.30"),
+            local: IPAddress.Parse("172.19.205.222"));
+        fixture.Context.ChangeTracker.Clear();
 
         Assert.Equal(StatusCodes.Status403Forbidden, StatusOf(result));
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.Equal(GovernanceActionOutcome.Failed, audit.Outcome);
+        Assert.Null(audit.ClaimedAdministratorRole);
+        using JsonDocument detail = JsonDocument.Parse(audit.DetailJson);
+        Assert.Equal("172.19.205.30", detail.RootElement.GetProperty("remoteAddress").GetString());
+        Assert.Equal("FORBIDDEN_NOT_LOCAL", detail.RootElement.GetProperty("result").GetString());
+        Assert.False(detail.RootElement.TryGetProperty("reason", out _));
+        Assert.False(detail.RootElement.TryGetProperty("claimedRole", out _));
+        Assert.DoesNotContain("xxxx", audit.DetailJson, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(TaskTypeHoldEndpoints.MaxReasonLength + 1, 1, "REASON_TOO_LONG")]
+    [InlineData(1, TaskTypeHoldEndpoints.MaxClaimedRoleLength + 1, "CLAIMED_ROLE_TOO_LONG")]
+    public async Task AnOverlongReasonOrClaimedRoleIsRefusedWithACodeAndIsNotWrittenIntoTheAudit(
+        int reasonLength, int roleLength, string code)
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+
+        IResult result = await Post(
+            fixture,
+            ValidRequest() with { Reason = new string('r', reasonLength), ClaimedRole = new string('c', roleLength) },
+            IPAddress.Loopback);
+        fixture.Context.ChangeTracker.Clear();
+
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, StatusOf(result));
+        ProblemHttpResult problem = Assert.IsType<ProblemHttpResult>(result);
+        string[] codes = Assert.IsType<string[]>(problem.ProblemDetails.Extensions["codes"]);
+        Assert.Equal([code], codes);
         Assert.Empty(await fixture.Holds.ListUnreleasedAsync(25, Token));
+        AdministratorAuditRecordRow audit = Assert.Single(await fixture.Context.Set<AdministratorAuditRecordRow>()
+            .Where(row => row.Action == TaskTypeHoldEndpoints.HoldRequestedAction)
+            .ToArrayAsync(Token));
+        Assert.True(audit.DetailJson.Length < 2000, $"audit detail is {audit.DetailJson.Length} characters");
+        Assert.True((audit.ClaimedAdministratorRole?.Length ?? 0) <= TaskTypeHoldEndpoints.MaxClaimedRoleLength);
+    }
+
+    [Fact]
+    public async Task AReasonAndClaimedRoleAtTheLimitAreTaken()
+    {
+        await using TaskTypeStationPersistenceFixture fixture = await TaskTypeStationPersistenceFixture.CreateAsync();
+        await TaskTypeHoldTestKit.ActivateAsync(fixture, 25, GateBinding, StagingBinding);
+
+        IResult result = await Post(
+            fixture,
+            ValidRequest() with
+            {
+                Reason = new string('r', TaskTypeHoldEndpoints.MaxReasonLength),
+                ClaimedRole = new string('c', TaskTypeHoldEndpoints.MaxClaimedRoleLength)
+            },
+            IPAddress.Loopback);
+
+        Assert.Equal(StatusCodes.Status201Created, StatusOf(result));
     }
 
     [Theory]
@@ -95,7 +192,7 @@ public sealed class TaskTypeHoldEndpointsTests
     }
 
     [Fact]
-    public async Task AMapWhoseActivationWasClosedByHandCanStillBeHeldSoTheHoldOutlivesTheNextActivation()
+    public async Task AMapWhoseActivationWasClosedByHandStillTakesAManualHold()
     {
         // #161's tombstone leaves the Map with no active version until the next activation, and an activation does not
         // lift a manual hold. Refusing the hold here would leave the person no way to keep the task type stopped through
@@ -210,10 +307,12 @@ public sealed class TaskTypeHoldEndpointsTests
     private static async Task<IResult> Post(
         TaskTypeStationPersistenceFixture fixture,
         TaskTypeHoldRequest request,
-        IPAddress remote)
+        IPAddress remote,
+        IPAddress? local = null)
     {
         DefaultHttpContext context = new();
         context.Connection.RemoteIpAddress = remote;
+        context.Connection.LocalIpAddress = local ?? IPAddress.Loopback;
         IResult result = await TaskTypeHoldEndpoints.HandleAsync(
             context,
             request,
