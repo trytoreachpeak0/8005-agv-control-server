@@ -180,8 +180,9 @@ public static class TaskTypeStationActivationState
     public const string ActivationUnknown = "ACTIVATION_UNKNOWN";
 
     /// <summary>
-    /// 墓碑：人工收尾放弃了一次读回矛盾的激活，该图没有生效版本（<c>ActiveVersion</c> 为空），直到下一次 FieldOps 激活或回滚。
-    /// 不是「从未激活」——重启不按第一版装预置（control-server#161 第二轮复审 N1）。
+    /// 墓碑：该图没有生效版本（<c>ActiveVersion</c> 为空），直到下一次 FieldOps 激活或回滚。两种来历都留下它：人工收尾放弃了一次
+    /// 读回矛盾的激活（control-server#161）；一次没有暂停可还原来历的结果未知尝试，对账读回「原版本为空」时回到这里
+    /// （control-server#191）。不是「从未激活」——重启不按第一版装预置（control-server#161 第二轮复审 N1）。
     /// </summary>
     public const string ClosedManually = "CLOSED_MANUALLY";
 }
