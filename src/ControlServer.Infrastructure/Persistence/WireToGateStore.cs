@@ -357,14 +357,14 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
                      !forcedRecoveryAwaitsHardwareRecord &&
                      row.ReportedForcedRecoveryGeneration == row.ForcedRecoveryGeneration;
         row.Readiness = ready ? SessionReadiness.Ready : SessionReadiness.RecoveryRequired;
+        // The slot configuration mismatch is named first when it applies: every other reason here is about this
+        // session's own progress, and an operator who reads one of those would go looking in the wrong place for a
+        // vehicle whose configuration is simply not the approved one.
         row.ReasonCode = ready
             ? "READY"
             : slotConfigurationAgrees
                 ? GetRecoveryReason(
                     row, noPendingFacts, departureUsable, operationNeedsRecovery, forcedRecoveryAwaitsHardwareRecord)
-                // Named first when it applies: every other reason here is about this session's own
-                // progress, and an operator who reads one of those would go looking in the wrong
-                // place for a vehicle whose configuration is simply not the approved one.
                 : SlotConfigurationFingerprintVerdict.MismatchCode;
         row.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

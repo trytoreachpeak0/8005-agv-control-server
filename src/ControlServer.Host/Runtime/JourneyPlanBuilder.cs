@@ -78,6 +78,11 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             fixedStation));
     }
 
+    /// <summary>The plan a candidate is accepted under.</summary>
+    /// <remarks>
+    /// The fixed station's rule and binding set versions are carried through untouched: they are what the acceptance
+    /// freezes (REQ-0344, control-server#160).
+    /// </remarks>
     public JourneyExecutionPlan CreatePlan(
         FleetVehicle fleetVehicle,
         EligibleDispatchCandidate candidate,
@@ -107,8 +112,6 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
             now,
             candidate.AreaAssignmentVersion,
             candidate.RequiredSlotPosition,
-            // Carried through untouched: the versions the fixed station was resolved under, which the acceptance
-            // freezes (REQ-0344).
             candidate.Route.FixedStation.RuleVersion,
             candidate.Route.FixedStation.BindingSetVersion);
     }
