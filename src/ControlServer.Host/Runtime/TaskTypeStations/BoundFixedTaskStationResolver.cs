@@ -51,8 +51,17 @@ public sealed class BoundFixedTaskStationView(
 {
     public FixedTaskStationResolution Resolve(string taskType)
     {
-        TaskTypeStationRuleVersion ruleVersion = rules!;
-        TaskTypeStationRule rule = ruleVersion.Rules.Single(item => item.TaskType == taskType);
+        ArgumentNullException.ThrowIfNull(taskType);
+
+        // No rule, no fixed end: the task type is outside what this server knows how to judge at all. The end is
+        // meaningless on this refusal and only filled because a resolution always carries one.
+        if (rules is not { } ruleVersion ||
+            ruleVersion.Rules.SingleOrDefault(item => item.TaskType == taskType) is not { } rule)
+        {
+            return FixedTaskStationResolution.Refused(
+                taskType, FixedStationEnd.Destination, DispatchReasonCodes.OutOfScopeWorkType, rules?.Version);
+        }
+
         FixedStationEnd end = rule.FixedEnd == TaskTypeFixedEnd.Origin ? FixedStationEnd.Origin : FixedStationEnd.Destination;
         TaskTypeStationBinding? binding = bindingSet is not null &&
             bindingSet.RequiredTaskTypes.Contains(taskType, StringComparer.Ordinal)
