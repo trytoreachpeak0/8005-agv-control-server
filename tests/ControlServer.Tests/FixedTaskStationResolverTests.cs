@@ -55,23 +55,6 @@ public sealed class FixedTaskStationResolverTests
     }
 
     /// <summary>
-    /// A fixed station at the origin end is a reverse journey, which control-server#163 builds. Until
-    /// then the plan builder refuses the route rather than hashing it as if the fixed station were the
-    /// destination.
-    /// </summary>
-    [Fact]
-    public async Task AFixedStationAtTheOriginEndIsRefusedUntilReverseJourneysExist()
-    {
-        DispatchCandidateEvaluation evaluation = Evaluation(
-            Round(new ScriptedView(taskType =>
-                FixedTaskStationResolution.Resolved(taskType, FixedStationEnd.Origin, Gate))),
-            "WIRE_TO_GATE");
-
-        Assert.Equal("FIXED_STATION_AS_ORIGIN_NOT_SUPPORTED", await EvaluateAsync(evaluation));
-        Assert.Null(evaluation.Route);
-    }
-
-    /// <summary>
     /// Two station parameters of one type can be swapped at a call site without the compiler saying a
     /// word, and the swapped id then fails to match on idempotent replay (scope specification 5.3). The
     /// ends travel in one object whose members are required and init-only, so a call site has to name

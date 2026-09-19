@@ -167,9 +167,6 @@ public static class StructuralDispatchClassification
         new("DISPATCH_ZONE_VEHICLE_ADMISSION_MISSING", DispatchReasonClass.Structural, StationResolution,
             "The zone the AREA is assigned is not among this server's allowed dispatch zones. Configuration, " +
             "the same for every vehicle."),
-        Backlog(JourneyPlanBuilder.FixedStationAsOriginNotSupported, StationResolution,
-            "A fixed station at the origin end, which the plan builder cannot plan until control-server#163. " +
-            "Unreachable today: WorkTypeScopeCriterion refuses every task type this build cannot execute first."),
         Backlog("ROUTE_EVIDENCE_MISSING", StationResolution,
             "The route evidence id came out empty. It is derived from Map, stations, AREA and EQP and is not " +
             "expected to happen at all; not in the ticket's structural list. Doubtful, so backlog."),
