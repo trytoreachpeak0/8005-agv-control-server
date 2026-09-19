@@ -111,6 +111,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["StructuralDispatchBlockStoreTests"] = "batch 4 REQ-0210 structural dispatch block storage; server and dashboard only, never sent in blockingFacts (program#70 decision 2)",
             ["TaskTypeStationConfigurationValidatorTests"] = "batch 6 FP-C9a REQ-0334/REQ-0338/REQ-0343 startup fail-closed validation of task type rules and bindings (control-server#159); binding reasons stay on the server (spec 5.3), no wire message",
             ["TaskTypeStationHoldAndCatalogChangeStoreTests"] = "batch 6 FP-C9b REQ-0340/REQ-0341 task type holds and catalog change records (control-server#159); server-internal, no wire message",
+            ["TaskTypeStationStartupTests"] = "batch 6 FP-C9a REQ-0343 startup load of the controlled task type station preset (control-server#159); server startup only, no wire message",
             ["TaskTypeStationStoreTests"] = "batch 6 FP-C9b REQ-0337/REQ-0343 task type rule and per-map binding set versions (control-server#159); server-internal, no wire message",
             ["VehicleFaultIsolationTests"] = "7.5 #8, FP-C11 fault isolation; single-ended server-to-RIoT",
             ["VehicleSlotPositionReaderTests"] = "batch 4 FP-C15 server-authoritative SlotPosition per vehicle, never the onboard's report (program#70 decision 4); no wire message"
