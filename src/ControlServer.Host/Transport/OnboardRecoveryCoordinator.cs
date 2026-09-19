@@ -223,15 +223,9 @@ public sealed class OnboardRecoveryCoordinator(
         }
         if (workflow.ExceptionRecoverySessionId is not null)
         {
-            ExceptionRecoverySessionRow session = await dbContext.ExceptionRecoverySessions.SingleAsync(
-                row => row.ExceptionRecoverySessionId == workflow.ExceptionRecoverySessionId,
-                cancellationToken).ConfigureAwait(false);
-            session.State = reconciled ? "CLOSED" : "EXECUTING";
-            session.Revision++;
-            session.UpdatedAt = timeProvider.GetUtcNow();
             long sessionGeneration = await dbContext.SessionRecoveries.Where(row => row.AgvId == workflow.AgvId)
                 .Select(row => row.SessionGeneration).SingleAsync(cancellationToken).ConfigureAwait(false);
-            await QueueSessionSnapshotAsync(session, sessionGeneration, cancellationToken).ConfigureAwait(false);
+            await AdvanceSessionAfterResultAsync(workflow, sessionGeneration, cancellationToken).ConfigureAwait(false);
         }
         await SettleAnsweredCommandAsync(workflow, cancellationToken).ConfigureAwait(false);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
