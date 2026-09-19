@@ -138,7 +138,7 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
    改视图模型或恢复入口的改动在真装置上跑恢复场景。
 
 计划清单（调度 2026-09-19 认可）：`real-onboard-expected-action-overdue` × 3；`real-onboard-durable-ack-lost`（含 control-server#196 新加的 `L2-DA-09`）× 3；`real-onboard-inflight-load-reconnect` × 1；批次 5 出口的其余六条（control-server#86 三条、#88 除 `durable-ack-lost` 外三条）各 × 1 作回归。
-`real-onboard-inflight-load-reconnect` 是 control-server#189 第二步（onboard-hmi#127）唯一的真装置证明，**不是 `scripts/l2/scenarios/` 里的正式场景**：它是 onboard-hmi PR #131 的一次性副本（车载端仓 `evidence/hmi-127/green/rig-inflight-load-reconnect-d21b3e8-001/scenario/`），出口按那份副本在最终顶端上跑一次，副本随证据入库；转成正式场景留给后续。
+`real-onboard-inflight-load-reconnect` 是 control-server#189 第二步（onboard-hmi#127）唯一的真装置证明，**不是 `scripts/l2/scenarios/` 里的正式场景**：它是 onboard-hmi PR #131 的一次性副本（车载端仓 `evidence/hmi-127/green/rig-inflight-load-reconnect-d21b3e8-001/scenario/`），出口按那份副本在最终顶端上跑一次，副本随证据入库。副本来源 onboard-hmi#131，转正式场景见 control-server#205。
 真装置只实测一个管理员恢复入口（「补偿清空」），其余三个入口由 G2 覆盖（onboard-hmi#126 审查，调度要求写明）。
 
 ## 三、门禁
@@ -273,6 +273,8 @@ control-server#169（PR #173 `911ee2ef`，8）、#175（PR #177 `b740d319`，9�
 | control-server#204 | control-server#167：`L2-EAO-13` 加「端点读数版本号前进」判据、门槛重复写两处、red-05 两条缺席；control-server#196（a～d）：单元素读名失败仍计数、UIA 持续抛异常拖成等待超时可能假红、journal「Not reached」措辞、README 状态列 |
 | onboard-hmi#128 | 假服务端替身在车非 Ready 时仍发快照 |
 | onboard-hmi#129 | onboard-hmi#123 审查 B、C 与复审 |
+| onboard-hmi#132 | onboard-hmi#127（PR onboard-hmi#131）审查的转后续 1～4 |
+| control-server#205 | 一次性场景 `real-onboard-inflight-load-reconnect`（onboard-hmi#131 的副本）转为 `scripts/l2/scenarios/` 的正式场景 |
 | onboard-hmi#130 | onboard-hmi#115：`docs/LOCAL_G2_EVIDENCE.md:42` 的已实现切片清单未更新（用户定车载端 `docs/` 按我方文档维护） |
 
 不开票的一条：
