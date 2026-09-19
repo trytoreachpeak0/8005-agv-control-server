@@ -168,6 +168,57 @@ public sealed class JourneyRuntimeOptionsTests
             allowed.Order(StringComparer.Ordinal));
     }
 
+    /// <summary>
+    /// 持货超时（ADR-cross-0057，批次 7 建表票 control-server#206）：默认 30 分钟、必须为正，出厂配置写明这一项。
+    /// 本票没有读者，读它的是批次7-07（control-server#212）。
+    /// </summary>
+    [Fact]
+    public void CargoHoldingTimeoutDefaultsToThirtyMinutesMustBePositiveAndIsShippedInAppSettings()
+    {
+        const string failure = "CargoHoldingTimeout must be positive.";
+        Assert.Equal(TimeSpan.FromMinutes(30), new JourneyRuntimeOptions().CargoHoldingTimeout);
+        JourneyRuntimeOptionsValidator validator = new(new ConfigurationBuilder().Build());
+        JourneyRuntimeOptions options = ValidEnabledOptions();
+
+        foreach (TimeSpan accepted in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(40), TimeSpan.FromMinutes(30) })
+        {
+            options.CargoHoldingTimeout = accepted;
+            Assert.DoesNotContain(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
+        foreach (TimeSpan refused in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(-1) })
+        {
+            options.CargoHoldingTimeout = refused;
+            Assert.Contains(failure, validator.Validate(null, options).Failures ?? [], StringComparer.Ordinal);
+        }
+
+        IConfiguration shipped = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(RepositoryRoot(), "src", "ControlServer.Host", "appsettings.json"), optional: false)
+            .Build();
+        Assert.Equal("00:30:00", shipped["JourneyRuntime:cargoHoldingTimeout"]);
+        Assert.Equal(TimeSpan.FromMinutes(30), shipped.GetSection("JourneyRuntime").Get<JourneyRuntimeOptions>()!.CargoHoldingTimeout);
+    }
+
+    [Fact]
+    public void CargoHoldingTimeoutBindsFromTheEnvironmentVariableTheL2OrchestratorSets()
+    {
+        // scripts/l2/Invoke-L2Scenario.ps1 maps the CargoHoldingTimeout setup key to JourneyRuntime__cargoHoldingTimeout,
+        // the way it maps StationDepartureWaitTimeout. A prefix of this test's own keeps the variable out of every other test.
+        const string prefix = "CONTROL_SERVER_TEST_B7_CARGO_";
+        Environment.SetEnvironmentVariable(prefix + "JourneyRuntime__cargoHoldingTimeout", "00:00:40");
+        try
+        {
+            IConfiguration configuration = new ConfigurationBuilder().AddEnvironmentVariables(prefix).Build();
+
+            Assert.Equal(
+                TimeSpan.FromSeconds(40),
+                configuration.GetSection("JourneyRuntime").Get<JourneyRuntimeOptions>()!.CargoHoldingTimeout);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(prefix + "JourneyRuntime__cargoHoldingTimeout", null);
+        }
+    }
+
     private static string RepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

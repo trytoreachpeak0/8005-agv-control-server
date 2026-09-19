@@ -20,7 +20,10 @@ public enum GovernedObjectKind
     DispatchZoneAreaAssignment,
 
     /// <summary>任务类型规则表，整张表一个版本（REQ-0343）。按图的绑定集沿用 <see cref="PublicStationBinding"/>。</summary>
-    TaskTypeStationRule
+    TaskTypeStationRule,
+
+    /// <summary>每区派车参数表，整张表一个版本（REQ-0198、REQ-0203；批次 7 建表票 control-server#206）。</summary>
+    DispatchZoneParameters
 }
 
 /// <summary>

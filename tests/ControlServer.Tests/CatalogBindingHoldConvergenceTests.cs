@@ -370,6 +370,7 @@ internal static class TaskTypeHoldTestKit
         });
         context.JourneyRuntimes.Add(new JourneyRuntimeRow
         {
+            JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
             DemandId = demandId,
             Stage = JourneyRuntimeStage.AwaitingGateArrival,
             AgvId = "AGV-" + demandId,

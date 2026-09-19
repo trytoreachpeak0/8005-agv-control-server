@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
@@ -696,6 +697,7 @@ public sealed class WireToGateStoreTests
         {
             Context.JourneyRuntimes.Add(new JourneyRuntimeRow
             {
+                JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
                 DemandId = demandId,
                 Stage = JourneyRuntimeStage.AwaitingLoadResult,
                 AgvId = agvId,

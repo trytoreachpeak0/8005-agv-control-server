@@ -564,6 +564,7 @@ public sealed class JourneyRuntimeWorkerTests
         fixture.Clock.Advance(TimeSpan.FromSeconds(10));
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
         Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync()).Stage);
+        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
 
         AcceptedDemandSnapshot next = fixture.Demand(
             "10000000-0000-4000-8000-000000000002", "SUBLOT-002", createdAt: Now.AddMinutes(-5));
@@ -573,6 +574,7 @@ public sealed class JourneyRuntimeWorkerTests
         await fixture.Engine.ExecuteOnceAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(JourneyRuntimeStage.AwaitingPickupArrival, (await fixture.RuntimeAsync(next.DemandId)).Stage);
+        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
         Assert.Equal(2, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal(2, fixture.Riot.CreateCount("TO_PICKUP"));
     }

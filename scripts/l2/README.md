@@ -377,6 +377,35 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
 `slot-configuration-activation-replay`（自己入库、绑定并断言计数，两者都关）、`area-assignment-import-rejects`
 （断言导入之前一版表都没有，只关导入）。
 
+### 批次 7 的默认前置：每区派车参数「未配置」（control-server#206）
+
+批次 7 起服务端有一张每区派车参数表（途中追加最大允许增量、防饥饿阈值，按分区、按版本）。**经本编排器跑的每个场景，默认一版都不写**，
+也就是「每区参数未配置」：本区禁止途中追加、不持货等单、只计龄不升级——这就是批次 7 之前的行为。默认必须是它：一旦写了参数，
+后面的持货等单（control-server#212）会让每个既有的单需求场景装完不走、一直等到持货超时，全部变红。
+
+要参数的场景（批次7-06～7-10，control-server#211～#215）在 `setup.psd1` 里写两个键：
+
+| 键 | 取值 | 编排器做什么 |
+| --- | --- | --- |
+| `CargoHoldingTimeout` | `'hh:mm:ss'`，必须为正，例如 `'00:00:40'` | 映射成服务端环境变量 `JourneyRuntime__cargoHoldingTimeout`（与 `StationDepartureWaitTimeout` 同一种做法）。不给就不传，服务端取自己的默认 30 分钟 |
+| `DispatchZoneParameters` | 分区 → `@{ EnRouteAdditionMaxPathCostIncrease = <非负整数或 $null>; StarvationThresholdSeconds = <非负整数或 $null> }` | 服务端就绪之后、场景发布第一条需求之前，把这张表写成每区参数的一个版本 |
+
+```powershell
+DispatchZoneParameters = @{
+    'MAP-25-WIRE_TO_GATE' = @{ EnRouteAdditionMaxPathCostIncrease = 20000; StarvationThresholdSeconds = 600 }
+}
+```
+
+- 途中追加增量的单位是计划路径代价（今天是毫米），不是时间；阈值是秒。`0` 与 `$null` 都表示本区禁止途中追加，两者都存得下、读回可区分；
+  某个字段不写等于 `$null`，表里没列的分区即未配置。
+- **两个键在任何进程启动之前检查，拼错立即报错**：键名与两者近似（只看字母数字、忽略大小写、编辑距离不超过 3，例如 `DispatchZoneParameter`、`cargoHoldingTimeout`）、字段名写错、
+  值不是非负整数、超时不是正的 `hh:mm:ss`、空表，都在起装置之前抛出。自检是 `scripts/l2/Test-L2DispatchZoneParameters.ps1`（一秒，不起装置）。
+- **L2 预置不走正式导入**：辅助模块 `L2DispatchZoneParameters.psm1` 直写服务端库，版本号取当前最大 + 1，版本行 `Source = 'L2_PRESET'`、
+  `SnapshotId` 为空，不经治理快照与业务审计。正式导入的动词与它的证据归批次7-11（control-server#216）的场景；它合入之后 L2 是否改走
+  FieldOps 由它决定。写入的内容留在 `snapshots/preseed-dispatch-zone-parameters.json`，判据 `preseed:dispatch-zone-parameters` 进
+  `timeline.jsonl`；收尾快照多了 `db-DispatchZoneParameterVersions.json`、`db-DispatchZoneParameters.json` 与 `db-VehiclePurposeClaims.json`。
+- 预期服务端启动即拒绝的场景（`ExpectedStartupRefusal`）没有库可写，同时给 `DispatchZoneParameters` 直接报错。
+
 ### 批次 4 的辅助模块：`L2SlotGroups.psm1`
 
 与 `L2Change.psm1` 同样是单独一个文件，用的场景自己导入：
@@ -493,6 +522,17 @@ $null = Set-L2OnboardSafety -Onboard $onboard -Connection $connection -AgvId $Co
   改它要连脚本一起改。取值的上界来自装货提交之后那条等待的判据超时（例如 `real-onboard-normal-load` 是 180 秒，
   `g3-predeparture-check-expires` 是 90 秒），下界来自录入那一段，两者之间才是安全区。
   `real-onboard-clock-skew` 与 `g3-manual-charging-return` 不进 `AwaitingSublot`，不受影响，没有加这个键。
+
+下面两个键是批次 7 的（control-server#206），默认前置与写法见上面「批次 7 的默认前置：每区派车参数「未配置」」一节：
+
+- `CargoHoldingTimeout` —— 服务端 `JourneyRuntime:cargoHoldingTimeout`，持货超时（ADR-cross-0057，产品默认 30 分钟），
+  写成正的 `'hh:mm:ss'`。与 `StationDepartureWaitTimeout` 是两只不同的钟，不共用字段。不给就不传。
+- `DispatchZoneParameters` —— 每区派车参数，分区 → 途中追加最大允许增量（计划路径代价，今天是毫米）与防饥饿阈值（秒），
+  两者都是非负整数或 `$null`。不给就一版都不写，即「每区参数未配置」。L2 直写库，`Source = 'L2_PRESET'`，不经治理快照与审计。
+
+两个键都在启动任何进程之前校验。键名与它们「近似」——只看字母数字、忽略大小写、编辑距离不超过 3，例如
+`DispatchZoneParameter`、`cargoHoldingTimeout`、`CargoHoldTimeout`——直接报错；只沾一个词的新键（后续票的
+`CargoHoldingYieldWindow` 之类）不受影响。
 
 下面四个键是批次 4 的仓位分组（control-server#71），默认前置见上面「派车场景的默认前置」。四个键的结构（仓号、字段名、键之间的组合规则，含
 `OnboardPeers` 各项自带的 `SlotStates`）都在启动任何进程之前校验，写错直接报错，而不是几分钟后表现成「一辆车也没派出去」；

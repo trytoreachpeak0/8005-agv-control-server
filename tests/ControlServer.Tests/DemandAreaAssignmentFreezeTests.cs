@@ -248,6 +248,7 @@ public sealed class DemandAreaAssignmentFreezeTests
 
     private static JourneyRuntimeRow Runtime(string demandId, JourneyRuntimeStage stage) => new()
     {
+        JourneyId = JourneyIdentity.ForAnchorDemand(demandId),
         DemandId = demandId,
         Stage = stage,
         AgvId = "AGV-01",

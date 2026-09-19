@@ -66,6 +66,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("DurableAck", FirstLineType(ack));
                 Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
+                await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
 
                 await fixture.RestoreSessionReadyAsync();
                 AcceptedDemandSnapshot next = await ListNextDemandBesideAsync(fixture, ended);
@@ -111,6 +112,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
                 Assert.Equal("DurableAck", FirstLineType(ack));
                 Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.DemandRowAsync()).Status);
                 Assert.Equal("TERMINATED_BY_FAULT_CARGO_HANDOFF", (await fixture.RuntimeAsync()).BlockReasonCode);
+                await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
 
                 // The vehicle reconnects having adopted the new generation and reports nothing open.
                 WireToGateStore store = new(connection);
@@ -187,6 +189,7 @@ public sealed class JourneyRuntimeWorkerCargoRecoveryTests
         Assert.Equal(JourneyRuntimeStage.Completed, (await fixture.RuntimeAsync(ended.DemandId)).Stage);
         Assert.Equal(DemandExecutionStatus.Cancelled, (await fixture.Context.AcceptedDemands.AsNoTracking()
             .SingleAsync(row => row.DemandId == ended.DemandId, token)).Status);
+        await VehicleOccupancyAssertions.AssertActiveLeasesAndPurposeClaimsMatchAsync(fixture.Context);
     }
 
     private static async Task<string> OpenSessionAsync(
