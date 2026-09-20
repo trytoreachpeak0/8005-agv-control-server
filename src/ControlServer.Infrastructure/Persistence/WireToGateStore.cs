@@ -26,7 +26,13 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
     /// gate stop (JourneyRuntimeEngine publishes both stops), so the next journey on the same
     /// vehicle has to start two above the stored one.
     /// </summary>
-    private const long RevisionsPerJourney = 2;
+    /// <remarks>
+    /// Public since control-server#211, read by <c>JourneyRuntimeEngine.AdvanceWorklistRevisionCounterAsync</c>: a
+    /// journey carrying several demands publishes more worklist revisions than this reservation covers, and the engine
+    /// raises the counter so the next journey's base still clears what this one used. The value is unchanged -- what
+    /// changed is that the engine now has to know what the reservation is rather than assume it.
+    /// </remarks>
+    public const long RevisionsPerJourney = 2;
 
     /// <summary>
     /// The plan stream takes three per journey rather than two. Since 2026-09-13 the plan also goes

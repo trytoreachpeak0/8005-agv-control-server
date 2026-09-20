@@ -136,19 +136,37 @@ public sealed class JourneyPlanBuilder(JourneyRuntimeOptions options)
         plan.AgvLifecycleGeneration,
         plan.DispatchGeneration);
 
-    /// <summary>The second move order, created once the vehicle is loaded and cleared to leave.</summary>
-    public static OrderIntent GateIntent(JourneyRuntimeRow runtime, DateTimeOffset now) => new(
-        runtime.GateMovementLegId,
-        runtime.DemandId,
-        runtime.GateUpperId,
-        "TO_GATE",
-        runtime.GateStationId,
-        now,
-        runtime.VehicleKey,
-        runtime.MapId,
-        runtime.GateStationRiotId,
-        runtime.AgvLifecycleGeneration,
-        runtime.DispatchGeneration);
+    /// <summary>
+    /// 开往下一个停靠的那张订单，在车装完、离站核验通过之后建（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 腿、订单号与目标站都取<b>那个停靠的行</b>，不再取旅程行上写死的 <c>Gate*</c> 四列。写死的那四列就是
+    /// 「一趟只有取货、卸货两个停靠」这个假设本身：多停靠计划里第三段腿在旅程行上没有地方放。单需求两停靠下，
+    /// 停靠行的这四个值由受理时从旅程行原样搬入，所以建出来的订单逐字相同。
+    /// </para>
+    /// <para>
+    /// <c>demandId</c> 仍取锚需求：一张 RIoT 订单是一次整车移动，协议与 RIoT 那一侧都只放得下一个需求
+    /// （票面第 10 条）。
+    /// </para>
+    /// </remarks>
+    public static OrderIntent LegIntent(JourneyRuntimeRow runtime, JourneyStopRow stop, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(stop);
+        return new OrderIntent(
+            stop.MovementLegId,
+            runtime.DemandId,
+            stop.UpperId,
+            "TO_GATE",
+            stop.StationId,
+            now,
+            runtime.VehicleKey,
+            runtime.MapId,
+            stop.StationRiotId,
+            runtime.AgvLifecycleGeneration,
+            runtime.DispatchGeneration);
+    }
 
     // The plan stream advances three times per journey: before the pickup arrival at the stored
     // revision, at the pickup one above it, at the gate two above it. WireToGateStore seeds the next

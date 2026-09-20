@@ -1,3 +1,4 @@
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -90,7 +91,42 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
         }
     }
 
-    /// <summary>The first step: this demand, and nothing else, is terminated.</summary>
+    /// <summary>
+    /// 同 <see cref="StageAsync(JourneyRuntimeRow, string, string, DateTimeOffset, CancellationToken)"/>，但结算的是
+    /// <paramref name="stops"/> 当前停靠上那一版录入请求（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <b>「同名不同源」在这里分岔。</b>旅程行与停靠行上都有一列 <c>SublotRequestMessageId</c>，受理时从前者搬到后者，
+    /// 此后一直恒等——直到清单升版：升版换一个新 id，写在<b>停靠行</b>上，而旅程行那一列还停在受理时那个。读旅程行的
+    /// 那一版会结算不到当前这条录入请求，于是它被补发进下一个会话，车载端把它当成内容已变的业务 id 而断会话。
+    /// 所以有游标时读游标；没有游标的那个重载留给调用方没有停靠上下文的路径，它读旅程行，而那条路径只在单需求旅程上
+    /// 走得到，两者恒等。
+    /// </remarks>
+    public async Task StageAsync(
+        JourneyRuntimeRow runtime,
+        string currentSublotRequestMessageId,
+        string demandId,
+        string reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
+
+        await StageDemandTerminationAsync(demandId, cancellationToken).ConfigureAwait(false);
+        if (await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, runtime.JourneyId, demandId, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            await StageJourneyClosureAsync(
+                runtime, currentSublotRequestMessageId, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The first step: this demand, and nothing else, is terminated. Its membership in the journey is marked
+    /// terminated too (control-server#211), which is what takes it off the stop's worklist.
+    /// </summary>
     public async Task StageDemandTerminationAsync(string demandId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(demandId);
@@ -102,14 +138,37 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
                 "A completed demand cannot be terminated at its pickup stop.");
         }
         demand.Status = DemandExecutionStatus.Cancelled;
+        JourneyDemandRow? membership = await dbContext.Set<JourneyDemandRow>()
+            .SingleOrDefaultAsync(row => row.DemandId == demandId && row.RemovedAt == null, cancellationToken)
+            .ConfigureAwait(false);
+        if (membership is not null)
+        {
+            membership.Status = JourneyDemandStatuses.Terminated;
+        }
     }
 
     /// <summary>
     /// The second step, for a journey that carries no open demand any more: it completes under
     /// <paramref name="reasonCode"/>, and the lease, the order occupancy and the purpose claim are released together.
     /// </summary>
+    public Task StageJourneyClosureAsync(
+        JourneyRuntimeRow runtime,
+        string reasonCode,
+        DateTimeOffset endedAt,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runtime);
+        return StageJourneyClosureAsync(
+            runtime, runtime.SublotRequestMessageId, reasonCode, endedAt, cancellationToken);
+    }
+
+    /// <inheritdoc cref="StageJourneyClosureAsync(JourneyRuntimeRow, string, DateTimeOffset, CancellationToken)"/>
+    /// <remarks>
+    /// <paramref name="currentSublotRequestMessageId"/> 是本停靠此刻那一版录入请求，见上面那段「同名不同源」。
+    /// </remarks>
     public async Task StageJourneyClosureAsync(
         JourneyRuntimeRow runtime,
+        string currentSublotRequestMessageId,
         string reasonCode,
         DateTimeOffset endedAt,
         CancellationToken cancellationToken)
@@ -127,7 +186,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
         // later session, where the peer refuses it as a business id whose content changed and tears
         // the session down -- the same failure the answered request is settled for.
         ProtocolOutboxRow? entryRequest = await dbContext.ProtocolOutbox
-            .SingleOrDefaultAsync(row => row.MessageId == runtime.SublotRequestMessageId, cancellationToken)
+            .SingleOrDefaultAsync(row => row.MessageId == currentSublotRequestMessageId, cancellationToken)
             .ConfigureAwait(false);
         if (entryRequest is not null)
         {

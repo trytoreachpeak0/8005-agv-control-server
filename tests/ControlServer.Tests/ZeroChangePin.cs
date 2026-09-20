@@ -21,6 +21,14 @@ namespace ControlServer.Tests;
 /// 工作树上跑出来，再搬回来。**重录只有这一种做法**：在集成分支上录，不在本票分支上录；红了就是行为变了，不能重录来变绿。
 /// 那次重录唯一的差别是 <c>JourneyRuntimes</c> 多了 cs#228 的新列 <c>AreaEndAdmissionRevokedSince=NULL</c>，其余逐字未动。
 /// </para>
+/// <para>
+/// <b>批次7-06（control-server#211）之后，这批基线钉的不再是「什么都没变」，而是「只有这两列变了」。</b>那一票让
+/// <c>JourneyStops.Status</c> 与 <c>JourneyDemands.Status</c> 真的动起来——当前停靠与装货进度从此是落库的状态，
+/// 不再从阶段反推——所以基线在这两列上必然变，那是它要的变化。**它仍然不是「重录来变绿」**：重录之后逐行比对过，
+/// 全部差异只有三种形状，<c>Status='PENDING'→'COMPLETED'</c>、<c>'PENDING_LOAD'→'UNLOADED'</c> 与
+/// <c>'PENDING_LOAD'→'TERMINATED'</c>，七张表的其余每一列、以及出站消息的确认时刻，逐字未动
+/// （<c>evidence/b7-06/green/03-zero-change-pin-diff.txt</c>）。判别力正在这里：差异越出这三种形状，就是改坏了别的东西。
+/// </para>
 /// </remarks>
 internal static class ZeroChangePin
 {

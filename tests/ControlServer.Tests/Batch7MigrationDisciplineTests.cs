@@ -198,8 +198,11 @@ public sealed class Batch7MigrationDisciplineTests
         JourneyRuntimeRow toGate = await context.JourneyRuntimes.SingleAsync(row => row.DemandId == "D-C", cancellationToken);
         toGate.Stage = JourneyRuntimeStage.AwaitingGateArrival;
         await context.SaveChangesAsync(cancellationToken);
+        // 卸货停靠的行就是这一段腿的载体（control-server#211 把写死的 Gate* 四列换成了它）。
+        JourneyStopRow toGateStop = await context.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == JourneyIdentity.UnloadStopId(toGate.JourneyId), cancellationToken);
         await new WireToGateStore(context).AuthorizeMovementAsync(
-            JourneyPlanBuilder.GateIntent(toGate, now.AddMinutes(5)),
+            JourneyPlanBuilder.LegIntent(toGate, toGateStop, now.AddMinutes(5)),
             new SafetyCheckObservation(toGate.PreDepartureSafetyCheckId, 1, true, now.AddMinutes(5), now.AddMinutes(6)),
             now.AddMinutes(5),
             cancellationToken);

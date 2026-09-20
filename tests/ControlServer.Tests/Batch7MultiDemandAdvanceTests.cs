@@ -56,10 +56,14 @@ public sealed class Batch7MultiDemandAdvanceTests
         using JsonDocument document = JsonDocument.Parse(command.PayloadJson);
         JsonElement payload = document.RootElement.GetProperty("payload");
         Assert.Equal(SecondDemandId, payload.GetProperty("demandId").GetString());
-        Assert.Equal(SecondSublot, payload.GetProperty("sublotId").GetString());
         Assert.Equal(
             second.LoadSlotOperationAttemptId,
             payload.GetProperty("slotOperationAttemptId").GetString());
+        // 仓位也必须是第二条自己的：夹具把两条的仓位错开了，所以「发第二条的 attempt 却开第一条的仓门」这种
+        // 半搬迁的样子在这里会红。
+        Assert.Equal(
+            JsonSerializer.Deserialize<int[]>(second.TargetSlotsJson),
+            payload.GetProperty("slots").EnumerateArray().Select(slot => slot.GetInt32()).ToArray());
 
         // 「此刻在装第二条」落了库：第二条 LOADING，第一条还在待装。
         Assert.Equal(JourneyDemandStatuses.Loading, second.Status);

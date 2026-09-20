@@ -79,7 +79,14 @@ internal static class JourneyMembershipSeed
             Status = status
         };
         context.AcceptedDemands.Add(further);
-        context.Set<JourneyDemandRow>().Add(Member(journey, demandId));
+        // 归属行的状态跟着需求的执行状态走（control-server#211）：一条已取消的需求，它在旅程里的归属就是 TERMINATED。
+        // 造一个「需求取消了、归属还写着待装」的库，是这台服务器自己产不出来的形状。
+        JourneyDemandRow membership = Member(journey, demandId);
+        if (status == DemandExecutionStatus.Cancelled)
+        {
+            membership.Status = JourneyDemandStatuses.Terminated;
+        }
+        context.Set<JourneyDemandRow>().Add(membership);
         await context.SaveChangesAsync(cancellationToken);
         return further;
     }
