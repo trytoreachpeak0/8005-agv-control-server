@@ -24,4 +24,5 @@ L2 场景的证据在 `evidence/l2/b7-06-*`，这里是单元测试这一层的�
 
 | 文件 | 它证的是什么 |
 | --- | --- |
-| `green/03-zero-change-pin-diff.txt` | 十份 `ZeroChangePin` 重录的完整 diff：13 个文件、31 行新增，有且只有三种形状（归属状态由引擎推进、三份 `commanded-ending-*` 纯增停靠行、新列 `DispatchZoneParameterVersion=NULL`）。四份 `WirePin` 一个字没动，那是「车看到的东西没变」的独立证据。 |
+| `green/03-zero-change-pin-diff.txt` | 本票分支<b>内部</b>那次重录的 diff：13 个 `diff --git` 段，但只覆盖 10 个文件——三份 `commanded-ending-*` 被拼了两遍。内容与下面那份等价（同为 +18/−12 行）。留着是因为它是当时的实际产物；要引用数字请用下面那份。 |
+| `green/04-zero-change-pin-vs-integration-tip.txt` | 与<b>集成分支顶端</b> `fp/v2-impl@10175635` 的逐字段对照，基准写在文件头上。14 份 pin 里本票动了 10 份，全部差异两类：同一行内改写 12 处、三种形状全部是 `Status`（`JourneyDemands` 的 `PENDING_LOAD→TERMINATED` 9 处、`PENDING_LOAD→UNLOADED` 1 处，`JourneyStops` 的 `PENDING→COMPLETED` 2 处，每处只变一列），纯新增 6 行全部是 `JourneyStops`，删除 0 行。合计 +18/−12。8 份 `WirePin` 一个字没动，那是「车看到的东西没变」的独立证据。 |
