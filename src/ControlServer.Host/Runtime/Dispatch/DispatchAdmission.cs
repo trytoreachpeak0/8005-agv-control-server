@@ -71,9 +71,13 @@ public sealed record DispatchRoundFacts(
     /// </para>
     /// <para>
     /// <b><see cref="DemandIntakeOutcome.CandidateGone"/> is deliberately not in here.</b> That demand left the
-    /// catalog, so a block standing against it is no longer about anything and clearing it is right — the round
-    /// after this one would clear it anyway on the catalog-absence rule. The other three refusals say nothing
-    /// about the block either way.
+    /// catalog, so a block standing against it is no longer about anything and clearing it is right. Keeping the
+    /// claim is what clears it, and it is worth knowing that the catalog-absence rule in
+    /// <see cref="StructuralDispatchBlockSink"/> does not do that job in this round: the sink judges against
+    /// <see cref="Catalog"/>, read before the round started, and intake only found the demand gone on its re-read
+    /// half way through. That rule clears the block a round later, so subtracting this outcome too would not lose
+    /// the clearing — it would delay it, while an operator looks at an alarm about a demand that is already gone.
+    /// The other three refusals say nothing about the block either way.
     /// </para>
     /// <para>
     /// A grow-while-the-round-runs set like <see cref="AcceptedDemandIds"/>, and sound for the same reason: the
