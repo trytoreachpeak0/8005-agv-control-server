@@ -23,6 +23,16 @@ namespace ControlServer.Tests;
 /// 的载荷——也就是车上真会收到的那一份——而计划是推进段按库里的停靠行算出来的。造一个投影对象直接断言它的字段，
 /// 证的只是那个对象的构造函数。
 /// </para>
+/// <para>
+/// <b>这条向量断言证明的是投影，不是那个上限。</b>夹具直写库造 9 个停靠，断 <c>legs</c> 长度为 9——
+/// 它钉住的是「N 个停靠投影成 N 条腿」。把 <c>EnRouteAppendPlanner.MaximumLegs</c> 改成 99，这条照绿：
+/// 上限只在规划器里，投影侧本来就没有上限。
+/// </para>
+/// <para>
+/// 真正钉住 9 这个数字的是 <c>Batch7EnRouteAppendPlannerTests</c> 里那两对用例
+/// （<c>ACompletedStopStillCountsTowardsTheNineLegLimit</c> / <c>…PushesAPlanOverTheNineLegLimit</c>，
+/// 以及并入那一对）。这段写在这里，是为了让读这条具名向量的人不必自己去推它的强度。
+/// </para>
 /// </remarks>
 public sealed class MultiStopPlanNineLegsVectorTests
 {

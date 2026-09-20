@@ -107,6 +107,11 @@ public sealed class StructuralDispatchBlockTests
     [InlineData("EN_ROUTE_APPEND_NOT_CONFIGURED", DispatchReasonClass.Backlog)]
     [InlineData("EN_ROUTE_APPEND_DELAY_GATE_EXCEEDED", DispatchReasonClass.Backlog)]
     [InlineData("EN_ROUTE_APPEND_DELAY_UNCOMPUTABLE", DispatchReasonClass.Backlog)]
+    // 这一行断的是「分类表里有这个码」，不是「它会被产出」。当前模型下没有任何输入能让它成为最终结论——
+    // 相邻插入总有合法位，而腿数一旦触发，撞上腿数的那个位置就 continue 掉、不会再贡献连续性理由
+    // （Batch7EnRouteAppendPlannerTests 里那段 remarks 有完整的两层机理，以及它为什么今天还没有判据）。
+    // 能通过它的错误实现：把规划器里 refusals.Add(EnRouteAppendBreaksZoneContiguity) 换成别的码，这一行照绿。
+    // 留着它是因为登记一个今天产不出的码，成本是一行，而将来模型一变就不必再新增码、改仪表盘文案。
     [InlineData("EN_ROUTE_APPEND_BREAKS_ZONE_CONTIGUITY", DispatchReasonClass.Backlog)]
     [InlineData("EN_ROUTE_APPEND_PLAN_LIMIT_REACHED", DispatchReasonClass.Backlog)]
     [InlineData("EN_ROUTE_APPEND_NO_INSERTION_POINT", DispatchReasonClass.Backlog)]

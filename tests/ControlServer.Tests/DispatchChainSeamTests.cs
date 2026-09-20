@@ -133,6 +133,12 @@ public sealed class DispatchChainSeamTests
         Assert.True(
             requiredMesFacts >= 0 && requiredMesFacts < lookup,
             $"The AREA presence check must run before the lookup; the chain is {string.Join(" -> ", order)}.");
+        // 区间里装了什么，逐条点名。只断「在前面」的话，任何判据都可以插进这两者之间而不被发现——
+        // 包括一条读 AREA 的判据，而这条接缝守的恰恰是「第一个对 AREA 做决定的判据在查找之后」。
+        // 名单要变是正常的（批次7-06 就往里加了一条），变的时候有人看见才是这条用例的作用。
+        Assert.Equal(
+            [nameof(SublotTaskTypeConflictCriterion)],
+            order[(requiredMesFacts + 1)..lookup]);
         Assert.Equal(nameof(AreaScopeCriterion), order[lookup + 1]);
 
         ServiceCollection services = new();

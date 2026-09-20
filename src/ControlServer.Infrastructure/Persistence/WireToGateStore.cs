@@ -821,6 +821,31 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext)
                 $"Resequencing does not cover every stop of journey '{plan.JourneyId}': {string.Join(',', missing)}.");
         }
 
+        // 当前下一站不可变（REQ-0196），在<b>写入这一刻</b>再判一次。
+        //
+        // 轮次是先读计划、算插位，再进这个事务写。这中间车可能刚好到站：它原本驶向的那个停靠完成了，
+        // 当前下一站前移到下一个——而手上这份重排是按旧的当前下一站算的，它给那个新的当前下一站安排了一个
+        // 更靠后的序位，也就是把新需求的停靠插到了<b>车此刻正驶向的那一站之前</b>。车在路上，目的地被改了。
+        //
+        // 判据是「当前下一站的序位没有变」：合法的追加按 REQ-0196 本来就不会把任何东西插到它前面，
+        // 所以它的序位必然原样；一旦变大，就说明有东西插进去了。
+        //
+        // <b>它和上面那道覆盖检查、和 DispatchRoundRunner 的准入口径都不重复。</b>覆盖检查看的是重排说全了没有，
+        // 准入口径看的是轮次开始时这辆车值不值得算——只有这一处与它守护的那次写入在同一个事务里，
+        // 也只有它能看见「读完之后车到站了」。
+        JourneyStopRow? currentNextStop = stored
+            .Where(row => row.Status is not (JourneyStopStatuses.Completed or JourneyStopStatuses.Removed))
+            .OrderBy(row => row.Sequence)
+            .FirstOrDefault();
+        if (currentNextStop is not null &&
+            plan.Resequenced.Single(change => change.StopId == currentNextStop.StopId).Sequence
+                != currentNextStop.Sequence)
+        {
+            throw new BusinessIdentityConflictException(
+                $"Journey '{plan.JourneyId}' moved on to stop '{currentNextStop.StopId}' while this append was " +
+                "being planned; the plan would resequence the stop the vehicle is already heading for.");
+        }
+
         foreach (JourneyStopSequenceChange change in plan.Resequenced)
         {
             // 认不出的 StopId 同样是矛盾：重排说的是一个这趟旅程里没有的停靠。静默跳过会让调用方以为它生效了。

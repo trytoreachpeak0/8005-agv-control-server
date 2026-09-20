@@ -133,6 +133,40 @@ public sealed class DispatchAdmissionChainDerivationTests
         Assert.Equal(OnlyOnTheInTransitChain, Only(inTransit, idle));
     }
 
+    /// <summary>
+    /// 追加门禁拿到一辆没有计划的车时放行——而这个放行之所以安全，靠的是上面那几条。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="EnRouteAppendCriterion"/> 在 <c>Vehicle.Plan</c> 为空时直接返回 <c>ELIGIBLE</c>，四道追加门全部跳过。
+    /// 单看这一行是一个 fail-open，而链上别处的失败都是 fail-closed，所以它需要一个说法。
+    /// </para>
+    /// <para>
+    /// <b>说法是：空闲车根本不该走到这条判据。</b>它只装在在途链上，而在途链的车按定义有计划。代码注释写了这句话，
+    /// 而这个文件里的<b>差集</b>那几条就是它的判据——把这条判据错装进空闲链，那几条会红。这一条用例本身只钉住
+    /// 「走到了就放行，不抛」：抛会把一轮派车整个带下去，而链装配错了不是一辆车的问题，不该由这条判据在运行期表达。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task TheAppendGateLetsAVehicleWithNoPlanThroughRatherThanThrowing()
+    {
+        DispatchVehicleFacts noPlan = new(
+            "BROKERX-0001",
+            "agv02",
+            new OnboardDispatchFacts(1, [3, 4], true, true, true, true, false),
+            new RiotVehicleObservation(
+                "BROKERX-0001", true, true, "IDLE", "MAP-26", 12, 90, "NO_CHARGE", 0,
+                new DateTimeOffset(2026, 9, 21, 6, 0, 0, TimeSpan.Zero)),
+            new DateTimeOffset(2026, 9, 21, 6, 0, 0, TimeSpan.Zero));
+        Assert.Null(noPlan.Plan);
+
+        string verdict = await new EnRouteAppendCriterion(RouteGraph()).EvaluateAsync(
+            new DispatchCandidateEvaluation(candidate: null!, round: null!, noPlan),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(DispatchAdmissionChain.Eligible, verdict);
+    }
+
     /// <summary>被测的是装配，不是判断，所以每个协作者都可以是空的。</summary>
     private static IReadOnlyList<IDispatchAdmissionCriterion> IdleChain() =>
         DispatchAdmissionCriteria.Default(
