@@ -204,12 +204,16 @@ public sealed class Batch7StopDrivenAdvanceTests
         await RunJourneyToCompletionAsync(
             fixture, FirstDemandId, FirstSublot, FirstSubmissionId, FirstSafetyResultId);
         Dictionary<string, long> highestOfFirst = await HighestRevisionByTypeAsync(fixture);
+        // 第一趟结束时发件箱里已有的行。第二趟发的是哪些，靠这个集合的补集认，**不靠修订号**——
+        // 用「修订号比第一趟最高还大」去挑第二趟的报文，就是拿要证明的那个量去挑要检验的样本：
+        // 第二趟发 {N, N+1} 而第一趟最高是 N 时，回退的那条 N 会被筛掉，剩下的 N+1 照样通过。
+        HashSet<string> sentByFirst = await OutboxMessageIdsAsync(fixture);
 
         fixture.Catalog.Set(fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9)));
         fixture.BoxCounts.Set(SecondSublot, 4);
         await RunJourneyToCompletionAsync(
             fixture, SecondDemandId, SecondSublot, SecondSubmissionId, SecondSafetyResultId);
-        Dictionary<string, long> lowestOfSecond = await LowestRevisionByTypeAsync(fixture, highestOfFirst);
+        Dictionary<string, long> lowestOfSecond = await LowestRevisionByTypeAsync(fixture, sentByFirst);
 
         Assert.Equal(
             ["CurrentStopWorklistSnapshot", "UpcomingStopPlanSnapshot", "VehicleBusinessStateSnapshot"],
@@ -468,6 +472,62 @@ public sealed class Batch7StopDrivenAdvanceTests
         await fixture.Context.SaveChangesAsync(token);
     }
 
+    /// <summary>
+    /// 人工充电恢复的应答里那个 <c>vehicleBusinessStateRevision</c>，等于该车 <c>JourneyRuntimes</c> 上
+    /// <c>VehicleBusinessRevision</c> 的最大值。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这是全 PR 里唯一一个协议可见、却差点没人守的数</b>（独立审查 S1）。本票拒绝票面第 4 条 (2) 的全部理由，
+    /// 就押在「它必须一字不变」上：按 (2) 把按车计数器改成「已用过的最高」，这个数会 +1，而它是要发到车上的
+    /// （`ManualChargingReturnToServiceResult` 的载荷）。
+    /// </para>
+    /// <para>
+    /// 在这条之前，唯一的断言是 <c>OnboardMessageProcessorTests</c> 里的 `Assert.Equal(0, ...)`——只覆盖「这辆车
+    /// 一趟旅程都没跑过」。今天这个数靠「计数器 ≡ <c>MAX(JourneyRuntimes.VehicleBusinessRevision)</c>」这条不变式
+    /// 成立；<b>批次7-06 若真按票面把计数器改成「已用过的最高」，不变式断掉、这个数静默 +1，而没有任何测试会红。</b>
+    /// 这一条就是那时该红的东西。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task ManualChargingReturnToServiceReportsTheVehiclesHighestJourneyRevision()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
+        fixture.BoxCounts.Set(FirstSublot, 4);
+        await RunJourneyToCompletionAsync(
+            fixture, FirstDemandId, FirstSublot, FirstSubmissionId, FirstSafetyResultId);
+        fixture.Catalog.Set(fixture.Demand(SecondDemandId, SecondSublot, Now.AddMinutes(-9)));
+        fixture.BoxCounts.Set(SecondSublot, 4);
+        await RunJourneyToCompletionAsync(
+            fixture, SecondDemandId, SecondSublot, SecondSubmissionId, SecondSafetyResultId);
+
+        long highestOnJourneys = await fixture.Context.JourneyRuntimes.AsNoTracking()
+            .Where(row => row.AgvId == fixture.Options.AgvId)
+            .MaxAsync(row => row.VehicleBusinessRevision, TestContext.Current.CancellationToken);
+        SessionRecoveryRow session = await fixture.Context.SessionRecoveries.AsNoTracking()
+            .SingleAsync(TestContext.Current.CancellationToken);
+
+        ManualChargingReturnToServiceDecision decision =
+            await new WireToGateStore(fixture.Context).DecideManualChargingReturnToServiceAsync(
+                new ManualChargingReturnToServiceRequest(
+                    "30000000-0000-4000-8000-000000000001",
+                    fixture.Options.AgvId,
+                    session.SessionGeneration,
+                    "30000000-0000-4000-8000-000000000002",
+                    new string('f', 64),
+                    "ADMIN-001",
+                    "MAINTENANCE_ADMINISTRATOR",
+                    "人工确认电量足够，退回可调度",
+                    ObservedBatteryPercent: 55),
+                TestContext.Current.CancellationToken);
+
+        // 两趟跑满，所以这个数是第二趟的基准——不是「已经发出去的最高一号」（那会多一）。
+        Assert.Equal(highestOnJourneys, decision.VehicleBusinessStateRevision);
+        VehicleSnapshotRevisionRow counter = await CounterAsync(fixture);
+        Assert.Equal(counter.VehicleBusinessRevision, decision.VehicleBusinessStateRevision);
+    }
+
     /// <summary>崩在写到线上的那一刻：报文已经进了发件箱，车却没收到。</summary>
     private static Func<string, Task> CrashOn(string messageType) => line =>
         line.Contains($"\"messageType\":\"{messageType}\"", StringComparison.Ordinal)
@@ -495,20 +555,35 @@ public sealed class Batch7StopDrivenAdvanceTests
         .GroupBy(item => item.MessageType, StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.Max(item => item.Revision), StringComparer.Ordinal);
 
-    /// <summary>第二趟发的那些快照里，每条流最低的一个修订号——「第二趟」就是第一趟之后新出现的那些报文。</summary>
+    /// <summary>
+    /// 第二趟发的那些快照里，每条流最低的一个修订号。<b>「第二趟」按归属认</b>：不在
+    /// <paramref name="sentByFirst"/> 里的行就是第二趟发的。
+    /// </summary>
+    /// <remarks>
+    /// 这里曾经按「修订号大于第一趟最高」去挑，那是<b>拿要证明的那个量去挑要检验的样本</b>：第二趟发 {N, N+1}
+    /// 而第一趟最高是 N 时，回退的那条 N 恰好被筛掉，剩下的 N+1 照样通过——一步回退按构造漏掉
+    /// （独立审查 S3）。按发件箱行的归属认就没有这个问题。
+    /// </remarks>
     private static async Task<Dictionary<string, long>> LowestRevisionByTypeAsync(
         RuntimeFixture fixture,
-        Dictionary<string, long> highestOfFirst) =>
+        HashSet<string> sentByFirst) =>
         (await RevisionsAsync(fixture))
-        .Where(item => item.Revision > highestOfFirst.GetValueOrDefault(item.MessageType, long.MinValue))
+        .Where(item => !sentByFirst.Contains(item.MessageId))
         .GroupBy(item => item.MessageType, StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.Min(item => item.Revision), StringComparer.Ordinal);
 
-    private static async Task<(string MessageType, long Revision)[]> RevisionsAsync(RuntimeFixture fixture)
+    /// <summary>此刻发件箱里所有行的 messageId。</summary>
+    private static async Task<HashSet<string>> OutboxMessageIdsAsync(RuntimeFixture fixture) =>
+        [.. await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Select(row => row.MessageId)
+            .ToArrayAsync(TestContext.Current.CancellationToken)];
+
+    private static async Task<(string MessageId, string MessageType, long Revision)[]> RevisionsAsync(
+        RuntimeFixture fixture)
     {
         ProtocolOutboxRow[] rows = await fixture.Context.ProtocolOutbox.AsNoTracking()
             .ToArrayAsync(TestContext.Current.CancellationToken);
-        List<(string, long)> revisions = [];
+        List<(string, string, long)> revisions = [];
         foreach (ProtocolOutboxRow row in rows)
         {
             if (SnapshotRevisionProperty(row.MessageType) is not { } property)
@@ -517,7 +592,10 @@ public sealed class Batch7StopDrivenAdvanceTests
             }
 
             using JsonDocument document = JsonDocument.Parse(row.PayloadJson);
-            revisions.Add((row.MessageType, document.RootElement.GetProperty("payload").GetProperty(property).GetInt64()));
+            revisions.Add((
+                row.MessageId,
+                row.MessageType,
+                document.RootElement.GetProperty("payload").GetProperty(property).GetInt64()));
         }
 
         return [.. revisions];

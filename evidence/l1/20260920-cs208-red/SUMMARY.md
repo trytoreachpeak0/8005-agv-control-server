@@ -50,7 +50,22 @@ id 一变，发件箱的排序就变了。
 - `TwoJourneysOnOneVehicleKeepTheirRevisionStreamsMonotonic`：第二趟的修订号整体低了一号。
 
 跑满两趟的那条对照 pin 这次也红了，但**不能指望它**：它两趟都跑满，只是因为这次注入把公式整个改了才连带红。
-把注入换成「只在半途终结时缩」，红的就只剩前一条。
+「把注入换成只在半途终结时缩，红的就只剩前一条」——这句当时是推测，没有验证。下一节把它验了。
+
+## 03b 方案 c 的精确形态
+
+上一节注入的是「步长整体改小」（`SeedSnapshotRevisionsAsync` 的 `+ RevisionsPerJourney` 改成 `+ 1`），那不是方案 c，
+所以跑满两趟的用例连带红了——**也就是说 03 那份红并没有证明「这条守卫是唯一的」**（独立审查 S2）。
+
+这一节注入**方案 c 本身**：基准 = 该车「已经发出去的最高一号」+ 1，从发件箱里的
+`VehicleBusinessStateSnapshot` 载荷实算。跑满的一趟里「已发出的最高」恰好是基准 +1，所以数列不变；
+只有半途终结的那一趟才偏。
+
+结果：**14 条里只红 1 条**，正是 `AJourneyEndedHalfwayStillCostsTheVehicleAWholeJourneyOfRevisions`
+（期望 3、实际 2）。其余 13 条全绿，包括跑满两趟的 `two-journeys-one-vehicle` pin 与
+`TheFirstSnapshotOfTheSecondJourneyOutranksTheLastOfTheFirst`。
+
+**这才是「它是唯一的守卫」那句话的证据**：换一个不是方案 c 的注入，连带红的用例会让人误以为有好几道防线。
 
 ## 04 锚需求的查找改回「只在未终结的那一份里找」
 
@@ -83,3 +98,39 @@ System.IO.InvalidDataException : Demand '10000000-0000-4000-8000-000000000001' i
 
 **留给下次的教训**：一条测试「在正确实现上绿」什么都不证明，要证明的是「在它该防的那个错法上红」。这一条前后
 两版都在正确实现上绿，差别只在注入之后。
+
+
+## 05 录入的派车范围不退回锚需求
+
+`RevalidateEnteredSublotAsync` 里那句「匹配到非锚需求就当作不在范围内」删掉——也就是把范围真的放宽到整个停靠。
+这是独立审查 S4 指出的、本票亲手放进去的地雷。
+
+结果：14 条里红 1 条，`EnteringTheSecondDemandsSublotIsRefusedRatherThanLoadingTheAnchor`，
+失败原文「期望 `AwaitingSublot`、实际 `AwaitingLoadResult`」——**旅程真的进了等装货结果**，也就是服务端真的对
+锚需求下了开仓命令，而操作员扫的是第二条的子批。
+
+## 06 第二趟的修订号回退一步
+
+`RevisionsPerJourney` 从 2 改成 1，第二趟的基准正好落在第一趟的最高号上（回退一步）。
+
+结果：`TheFirstSnapshotOfTheSecondJourneyOutranksTheLastOfTheFirst` 红，原文
+「VehicleBusinessStateSnapshot: 第二趟最低 2 没有高过第一趟最高 2」。
+
+**这一节是为了验证那条测试的筛选判据**（独立审查 S3）。它原本按「修订号大于第一趟最高」去挑第二趟的报文——
+那是拿要证明的量去挑要检验的样本：第二趟发 {2, 3} 时，回退的那条 2 恰好被筛掉，剩下的 3 照样通过，**这一步回退
+按构造漏掉**。改成按发件箱行的归属认（不在第一趟那批 messageId 里的才算第二趟）之后才抓得到。
+
+## 07 人工充电恢复上报的那个数偏一
+
+`ManualChargingReturnToService` 那一处读计数器时 `+ 1`，也就是把它从「本趟基准」读成「已用过的最高」——
+**这正是批次7-06 若按票面第 4 条 (2) 改计数器语义之后，这个数会发生的事**。
+
+结果：**18 条里只红 1 条**，`ManualChargingReturnToServiceReportsTheVehiclesHighestJourneyRevision`
+（期望 3、实际 4）。其余 17 条全绿。
+
+**在这条测试之前，这个数一个守卫都没有**（独立审查 S1）。它是全 PR 里唯一一个协议可见、却没被对照钉住的值——
+而本票拒绝票面第 4 条 (2) 的全部理由，恰恰押在「它必须一字不变」上。既有的唯一断言在
+`OnboardMessageProcessorTests` 里，是 `Assert.Equal(0, ...)`，只覆盖「这辆车一趟旅程都没跑过」。
+
+先前还做过一次**不够精确**的注入（把计数器本身写成 `runtime.VehicleBusinessRevision + 1`）：那会连带改掉下一趟
+的基准，于是报文对照 pin 也红了，看上去像有好几道防线。改成只动上报那一处，才看清楚**只有这一条在守**。
