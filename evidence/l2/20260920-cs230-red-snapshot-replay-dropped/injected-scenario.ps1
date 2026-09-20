@@ -302,6 +302,18 @@ if ($null -eq $pendingSnapshot) {
 
 # --- 3. 会话开着、车也记着它时断电 -----------------------------------------------------------------------
 
+# >>> INJECTED FAULT, control-server#230 red evidence. Reverted immediately after the red run. <<<
+# Drops the session snapshot the server replays to the onboard after the restart. Armed BEFORE the restart
+# rather than after it, so there is no race with the onboard's reconnect: by this point every snapshot of this
+# session has already been sent, so the only ones left to drop are the replayed ones.
+#
+# The server still replays -- ReplayPendingForSessionAsync rebinds the outbox row's generation and writes it out
+# before the relay drops the line -- so L2-RAO-05, which reads the server's outbox, stays green on purpose. What
+# must go red is L2-RAO-06: the onboard never receives the snapshot, has no in-memory session, and the recovery
+# entry refuses locally with RECOVERY_SESSION_STATE_PENDING (RecoveryVectors.cs:963).
+$journal.Note('INJECTED FAULT: dropping the recovery session snapshots the server replays after the restart.')
+$null = $proxy.Command('Put', 'drop-message', @{ messageType = 'ExceptionRecoverySessionSnapshot'; count = 5 })
+# >>> END INJECTED FAULT <<<
 $restartAt = [DateTimeOffset]::UtcNow
 $null = & $Context.RestartOnboard
 $onboard = $Context.Onboard
