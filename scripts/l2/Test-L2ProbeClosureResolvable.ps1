@@ -34,12 +34,19 @@ seconds later as though the server never acted.
 
 This paragraph used to describe that second shape as ".GetNewClosure() called inside a scriptblock
 that is already a closure". That was wrong, and it is recorded here rather than deleted because the
-word "nested" is what a reader arrives with. Twenty measured shapes (evidence/l2/cs266-closure-capture/)
-say nesting is neither sufficient nor necessary: nested blocks that capture their own scope's
-variables are fine, and unnested ones -- a plain scriptblock, a function inside a function, any
-$script:-qualified read -- are not. A guard written from the word "nested" would have flagged eleven
-working call sites in this repository; that number is measured too, by deleting one rule from the
-real guard and rerunning it.
+word "nested" is what a reader arrives with. The grid in evidence/l2/cs266-closure-capture/ says
+nesting is neither sufficient nor necessary: nested blocks that read their own scope variables are
+fine, and unnested ones -- a plain scriptblock, a function inside a function -- are not. The one axis
+that fits every cell is WHERE the closure is taken: at the file top level a read is carried, anywhere
+deeper it is not. A guard written from the word "nested" would have flagged eleven working call sites
+in this repository; that number is measured too, by deleting one rule from the real guard and
+rerunning it.
+
+Two sentences that used to be here were themselves wrong and are worth knowing as wrong, because both
+were written from a single measurement: "$script: reads are unconditionally empty" (they are carried
+from the file top level) and "a .psm1 top-level variable is not capturable" (it is, at the module own
+top level). Same mistake both times -- one position measured, the conclusion written as though
+position did not matter.
 #>
 [CmdletBinding()]
 param()
