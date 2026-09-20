@@ -58,7 +58,12 @@ public sealed class Batch3MigrationDisciplineTests
         "20260919200353_AreaEndAdmissionRevokedSince",
         // 批次 7 迁移通道第二张：control-server#199，两张审计表加 BEFORE UPDATE／BEFORE DELETE 触发器，把「审计写一次
         // 就不再改」从 EF 层落到数据库层。在 #228 合入之后的 fp/v2-impl 上生成。自己的断言在 AuditDatabaseImmutabilityTests。
-        "20260920001500_AuditImmutabilityTriggers"
+        "20260920001500_AuditImmutabilityTriggers",
+        // 批次 7 迁移通道第三张：control-server#211，**data only, no schema change**——把升级那一刻正在装货的
+        // 那条归属回填成 LOADING。本票票面写的是「零 migration」，这一条是 Coordinator 7 于 2026-09-20 松开那条
+        // 约束后加的例外；为什么非它不可、谓词为什么无歧义，写在 Batch7MigrationDisciplineTests 的同一条上。
+        // 自己的断言在 Batch7LoadingMembershipBackfillMigrationTests。
+        "20260920145604_Batch7LoadingMembershipBackfill"
     ];
 
     private static readonly string[] Batch3Tables =
