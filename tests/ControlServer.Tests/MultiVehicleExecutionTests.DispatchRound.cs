@@ -308,23 +308,58 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
-    /// With every vehicle under way the round ends before dispatch: the catalog is not read and the orphan check
-    /// does not run -- an accepted demand without a journey, which that check refuses, goes unnoticed this round.
+    /// 全车在途不再是「这一轮没什么可做」：目录照读，三辆车照样进轮次结局（REQ-0205；批次7-06，
+    /// control-server#211）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这一条以前钉的是相反的事——全车在途时轮次在读目录之前就结束，连孤儿检查都不跑。那时在途车走一条
+    /// 一律拒绝的占位路径，问它等于白问，提前退出省下的是纯粹的浪费。本票让在途车与空闲车在同一张候选表上
+    /// 竞争，「全车在途」于是成了一种有活可派的局面。
+    /// </para>
+    /// <para>
+    /// <b>单车现场里这不是边角情形，而是常态</b>：车一接单就不再空闲，此后到卸完货为止的每一条新需求都只能
+    /// 靠追加接。按空闲车判会让这些需求一条都看不见——同区追加那条 L2 场景第一次跑出来正是这个样子，
+    /// 第二条需求连积压行都没有。
+    /// </para>
+    /// </remarks>
     [Fact]
-    public async Task WithEveryVehicleUnderWayTheRoundReadsNoCatalogAndRunsNoOrphanCheck()
+    public async Task WithEveryVehicleUnderWayTheRoundStillReadsTheCatalogAndReports()
     {
         await using FleetFixture fixture = await FleetFixture.CreateAsync();
         await fixture.RunRoundAsync();
         Assert.Equal(3, await fixture.Context.JourneyRuntimes.CountAsync(TestContext.Current.CancellationToken));
-        await fixture.AcceptOrphanAsync();
         int catalogReads = fixture.Catalog.ReadCount;
         fixture.RoundOutcomes.Outcomes.Clear();
 
         await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
 
-        Assert.Equal(catalogReads, fixture.Catalog.ReadCount);
-        Assert.Empty(fixture.RoundOutcomes.Outcomes);
+        Assert.True(fixture.Catalog.ReadCount > catalogReads, "The round did not read the catalog.");
+        Assert.Equal(
+            FleetFixture.AgvIds.Order(StringComparer.Ordinal).ToArray(),
+            Assert.Single(fixture.RoundOutcomes.Outcomes).CompletedVehicles
+                .Select(vehicle => vehicle.AgvId).Order(StringComparer.Ordinal).ToArray());
+    }
+
+    /// <summary>
+    /// 孤儿检查跟着一起搬到了前面：全车在途时它照跑，一条没有旅程的已受理需求当场就被抓出来。
+    /// </summary>
+    /// <remarks>
+    /// 它守的是受理这道口子，所以它该在「这一轮要不要接活」之前跑。翻转之前全车在途时轮次提早结束，
+    /// 这个检查也就一并不跑——孤儿会被推到下一轮有车空出来时才发现。现在不会了。
+    /// </remarks>
+    [Fact]
+    public async Task WithEveryVehicleUnderWayTheOrphanCheckStillGuardsIntake()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.RunRoundAsync();
+        await fixture.AcceptOrphanAsync();
+
+        BusinessIdentityConflictException error =
+            await Assert.ThrowsAsync<BusinessIdentityConflictException>(
+                () => fixture.RunRoundAsync(TimeSpan.FromSeconds(1)));
+
+        Assert.Contains("no production journey runtime", error.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
