@@ -445,10 +445,13 @@ public sealed class JourneyRuntimeEngine(
             }
             return;
         }
+        // 本轮推进读到的停靠与归属。每一个要发出去的 id 都从这里取，取货与关卡两段不再各读各的列。
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+            .ConfigureAwait(false);
         await publisher.ReplayPendingForSessionAsync(
             runtime.AgvId,
             session.SessionGeneration,
-            RuntimeMessageIds(runtime),
+            RuntimeMessageIds(runtime, stops),
             cancellationToken).ConfigureAwait(false);
 
         // Set when this iteration has already asked a pre-departure check again, so the judgment that
@@ -462,7 +465,7 @@ public sealed class JourneyRuntimeEngine(
                 {
                     return;
                 }
-                await PublishPickupDispatchPlanOnceAsync(runtime, session, cancellationToken).ConfigureAwait(false);
+                await PublishPickupDispatchPlanOnceAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 ArrivalCheck pickupArrival = await CheckArrivalAsync(
                     runtime, "TO_PICKUP", session, cancellationToken).ConfigureAwait(false);
                 if (!pickupArrival.Trusted)
@@ -475,7 +478,7 @@ public sealed class JourneyRuntimeEngine(
                     await NameCheckpointWaitAsync(runtime, cancellationToken).ConfigureAwait(false);
                     return;
                 }
-                await PublishPickupStateAsync(runtime, session, cancellationToken).ConfigureAwait(false);
+                await PublishPickupStateAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingSublot, now);
                 break;
             case JourneyRuntimeStage.AwaitingSublot:
@@ -485,7 +488,7 @@ public sealed class JourneyRuntimeEngine(
                 // the projection reconciliation".
                 bool waitRefilled = runtime.StationDepartureWaitStartedAt is null;
                 runtime.StationDepartureWaitStartedAt ??= now;
-                ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, session, cancellationToken)
+                ProtocolInboxRow? sublot = await FindMatchingSublotAsync(runtime, stops, session, cancellationToken)
                     .ConfigureAwait(false);
                 // An operator cancelling before any entry (ADR-cross-0046; control-server#83) holds the stop
                 // until the vehicle reports: no load starts and the deadline does not end it. Read after the
@@ -530,12 +533,12 @@ public sealed class JourneyRuntimeEngine(
                 // after the cancellation has had its chance to decide the stop: an entry that loses to
                 // one is neither loaded nor answered. A refusal is answered here, which is the point of
                 // BR-013's "give the operator the real reason", and leaves the stop exactly where it was.
-                if (!await RevalidateEnteredSublotAsync(runtime, session, sublot, now, cancellationToken)
+                if (!await RevalidateEnteredSublotAsync(runtime, stops, session, sublot, now, cancellationToken)
                         .ConfigureAwait(false))
                 {
                     return;
                 }
-                await PublishLoadAsync(runtime, session, sublot.MessageId, cancellationToken).ConfigureAwait(false);
+                await PublishLoadAsync(runtime, stops, session, sublot.MessageId, cancellationToken).ConfigureAwait(false);
                 runtime.ConsumedSublotMessageId = sublot.MessageId;
                 // The submission is this command's answer. Leaving the command unsettled replayed it
                 // into every later session, where the peer refused it as a business id whose content
@@ -594,12 +597,14 @@ public sealed class JourneyRuntimeEngine(
                     return;
                 }
                 runtime.StationDepartureWaitStartedAt = null;
+                // 核验的两个 id 取当前停靠。命令里的 demandId 取锚需求：协议只放得下一个，而离站安全本来就是
+                // 一次整车判断，不是对某一条需求的判断（票面第 7 条）。
                 await publisher.PublishPreDepartureSafetyCheckAsync(
-                    runtime.PreDepartureSafetyCheckMessageId,
+                    DepartureCheckMessageId(stops.Current),
                     runtime.AgvId,
                     session.SessionGeneration,
                     new PreDepartureSafetyCheckCommand(
-                        runtime.PreDepartureSafetyCheckId,
+                        DepartureCheckId(stops.Current),
                         runtime.DemandId,
                         runtime.GateMovementLegId,
                         session.SafetyRevision ?? throw new InvalidDataException("Safety revision is required."),
@@ -614,12 +619,12 @@ public sealed class JourneyRuntimeEngine(
                 goto case JourneyRuntimeStage.AwaitingDepartureSafety;
             case JourneyRuntimeStage.AwaitingDepartureSafety:
                 SafetyCheckObservation? safety = await AwaitSafeDepartureResultAsync(
-                    runtime, session, cancellationToken).ConfigureAwait(false);
+                    runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 now = timeProvider.GetUtcNow();
                 if (safety is null)
                 {
                     if (!reissuedDepartureCheck &&
-                        await ReissueExpiredDepartureCheckAsync(runtime, session, now, cancellationToken)
+                        await ReissueExpiredDepartureCheckAsync(runtime, stops, session, now, cancellationToken)
                             .ConfigureAwait(false))
                     {
                         reissuedDepartureCheck = true;
@@ -659,9 +664,9 @@ public sealed class JourneyRuntimeEngine(
                 MovementDispatchResult dispatch = await movementDispatch.ReconcileOrCreateAsync(
                     runtime.GateUpperId, cancellationToken).ConfigureAwait(false);
                 runtime.ConsumedSafetyResultMessageId = await FindSafetyResultMessageIdAsync(
-                    runtime.PreDepartureSafetyCheckId, cancellationToken).ConfigureAwait(false);
+                    DepartureCheckId(stops.Current), cancellationToken).ConfigureAwait(false);
                 await store.SettleAnsweredCommandAsync(
-                    runtime.PreDepartureSafetyCheckMessageId, now, cancellationToken).ConfigureAwait(false);
+                    DepartureCheckMessageId(stops.Current), now, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingGateArrival, now);
                 runtime.SetBlockReason(
                     dispatch.Outcome == MovementDispatchOutcome.Confirmed ? null : dispatch.Outcome.ToString(),
@@ -708,7 +713,7 @@ public sealed class JourneyRuntimeEngine(
                     await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
-                await PublishGateStateAndUnloadAsync(runtime, session, cancellationToken).ConfigureAwait(false);
+                await PublishGateStateAndUnloadAsync(runtime, stops, session, cancellationToken).ConfigureAwait(false);
                 // Admitted again: the one place the wait's start is cleared.
                 runtime.ReleaseAreaEndAdmissionHold();
                 SetStage(runtime, JourneyRuntimeStage.AwaitingUnloadResult, now);
@@ -984,53 +989,74 @@ public sealed class JourneyRuntimeEngine(
         return false;
     }
 
+    /// <summary>
+    /// 车到了当前停靠：把这个停靠的车辆业务状态、清单、计划与录入请求发出去。
+    /// </summary>
+    /// <remarks>
+    /// 四条消息的 id、作业会话与站点全部取自停靠行；清单项与录入请求的期待子批取这个停靠上还没终结的需求
+    /// （单需求时就是今天那一条）。方法名里的 Pickup 留着，因为今天只有取货停靠会走到这里——问录入是取货才有的事。
+    /// </remarks>
     private async Task PublishPickupStateAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        JourneyStopRow stop = stops.Current;
+        IReadOnlyList<JourneyStopDemand> demands = stops.CurrentStopDemands;
+        if (demands.Count == 0)
+        {
+            // 走不到：一条需求都不剩的旅程在这一轮之前就已经关闭了。写在这里是因为「走不到」与「发出去也无所谓」
+            // 是两回事——录入请求的 expectedSublots 带 minItems: 1，空集合发出去就是一条违反 schema 的报文，
+            // 而车载端拿到一张空清单也不知道该扫什么。宁可在这里响亮地停下。
+            throw new InvalidDataException(
+                $"Stop '{stop.StopId}' has no open demand to publish a worklist for.");
+        }
+
         await publisher.PublishVehicleBusinessStateAsync(
-            runtime.VehicleBusinessMessageId,
+            stop.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            TransportBusinessState(runtime.VehicleBusinessRevision, LoadingPhase(runtime.Stage, loadBatchClosed: false)),
+            TransportBusinessState(
+                StopRevision(runtime.VehicleBusinessRevision, stop),
+                LoadingPhase(runtime.Stage, loadBatchClosed: false)),
             cancellationToken).ConfigureAwait(false);
         // ADR-cross-0055: the station departure wait starts at the arrival. Seeded ahead of the
         // worklist, whose save carries it, because the worklist is where the vehicle is told the
         // deadline -- a first snapshot sent before the seed would tell it there is none.
         runtime.StationDepartureWaitStartedAt ??= timeProvider.GetUtcNow();
         await publisher.PublishCurrentStopWorklistAsync(
-            runtime.WorklistMessageId,
+            stop.WorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             Worklist(
-                runtime,
-                demand,
-                runtime.PickupStationId,
-                "PICKUP",
-                runtime.WorklistRevision,
+                stop,
+                demands,
+                StopRevision(runtime.WorklistRevision, stop),
                 StationDepartureDeadline(runtime, runtimeOptions.StationDepartureWaitTimeout)),
             cancellationToken).ConfigureAwait(false);
         await RetireSupersededSnapshotAsync(PickupDispatchPlanMessageId(runtime), cancellationToken)
             .ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
-            runtime.PlanMessageId,
+            stop.PlanMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            JourneyPlanBuilder.PickupPlan(runtime),
+            JourneyPlanBuilder.Plan(
+                runtime, stops.Stops, stop, arrivedAtCurrent: true,
+                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
             cancellationToken).ConfigureAwait(false);
-        // One demand per journey, so the dispatch scope is this demand's sublot (protocol 2.0.0 item 2).
+        // 期待子批 = 这个停靠上还没终结的需求（protocol 2.0.0 第 2 项）。今天一个停靠一条需求，所以就是那一条；
+        // 「未装」与「未终结」的区分要等装货闭环落到从属需求行上（批次7-06、7-07），本票不写那一列，也就还分不开。
         await publisher.PublishSublotEntryRequestAsync(
-            runtime.SublotRequestMessageId,
+            stop.SublotRequestMessageId
+                ?? throw new InvalidDataException($"Stop '{stop.StopId}' asks for an entry but has no request id."),
             runtime.AgvId,
             session.SessionGeneration,
             new SublotEntryRequest(
-                runtime.OperationSessionId,
-                runtime.PickupStationId,
-                runtime.WorklistRevision,
-                [demand.Sublot]),
+                stop.OperationSessionId,
+                stop.StationId,
+                StopRevision(runtime.WorklistRevision, stop),
+                [.. demands.Select(item => item.Demand.Sublot)]),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1060,6 +1086,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task PublishPickupDispatchPlanOnceAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
@@ -1070,11 +1097,14 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
+        // 车还在路上，所以当前停靠这条腿是 ACTIVE 而不是 ARRIVED。
         await publisher.PublishUpcomingStopPlanAsync(
             messageId,
             runtime.AgvId,
             session.SessionGeneration,
-            JourneyPlanBuilder.PickupDispatchPlan(runtime),
+            JourneyPlanBuilder.Plan(
+                runtime, stops.Stops, stops.Current, arrivedAtCurrent: false,
+                PlanRevisionAt(runtime.PlanRevision, stops.Current, arrivedAtStop: false)),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -1106,92 +1136,107 @@ public sealed class JourneyRuntimeEngine(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 对录入所答复的那条需求下装货命令。attempt id、命令 id 与目标仓位取它在本旅程的归属行，作业会话与站点取当前停靠。
+    /// </summary>
     private async Task PublishLoadAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         string correlationId,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
-        int[] slots = JsonSerializer.Deserialize<int[]>(runtime.TargetSlotsJson) ?? [];
-        string hash = BusinessHash(runtime.DemandId, demand.Sublot, "LOAD", slots);
+        JourneyStopRow stop = stops.Current;
+        JourneyStopDemand anchor = stops.Anchor(runtime.DemandId);
+        int[] slots = JsonSerializer.Deserialize<int[]>(anchor.Membership.TargetSlotsJson) ?? [];
+        string hash = BusinessHash(anchor.Demand.DemandId, anchor.Demand.Sublot, "LOAD", slots);
         // The load carries the admission only where the AREA machine is the pickup (WIRE_TO_GATE); STAGING_TO_WIRE's
         // is carried by the unload at the machine (I6 overturned, scope specification 21.2 item 2).
-        bool admission = await store.AreaEndOperationAsync(runtime.DemandId, demand.WorkType, cancellationToken)
+        bool admission = await store.AreaEndOperationAsync(
+                anchor.Demand.DemandId, anchor.Demand.WorkType, cancellationToken)
             .ConfigureAwait(false) == SlotOperationType.Load;
         await publisher.PublishSlotOperationCommandAsync(
-            runtime.LoadCommandMessageId,
+            anchor.Membership.LoadCommandMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new SlotOperationCommand(
                 correlationId,
-                runtime.DemandId,
-                demand.Sublot,
-                runtime.OperationSessionId,
-                runtime.LoadSlotOperationAttemptId,
+                anchor.Demand.DemandId,
+                anchor.Demand.Sublot,
+                stop.OperationSessionId,
+                anchor.Membership.LoadSlotOperationAttemptId,
                 SlotOperationType.Load,
                 slots,
                 session.ForcedRecoveryGeneration,
                 hash),
             cancellationToken,
-            admission ? runtime.PickupStationId : null,
-            admission ? demand.WorkType : null).ConfigureAwait(false);
+            admission ? stop.StationId : null,
+            admission ? anchor.Demand.WorkType : null).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 车到了卸货停靠：发这个停靠的三条快照，再对锚需求下卸货命令。
+    /// </summary>
+    /// <remarks>
+    /// 一个停靠上几条需求各下一条卸货命令，是 批次7-06（control-server#211）的事；本票仍是一条，取锚需求的归属行。
+    /// </remarks>
     private async Task PublishGateStateAndUnloadAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        AcceptedDemandRow demand = await dbContext.AcceptedDemands.SingleAsync(
-            row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+        JourneyStopRow stop = stops.Current;
+        JourneyStopDemand anchor = stops.Anchor(runtime.DemandId);
         await publisher.PublishVehicleBusinessStateAsync(
-            runtime.GateVehicleBusinessMessageId,
+            stop.VehicleBusinessMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            TransportBusinessState(runtime.VehicleBusinessRevision + 1, LoadingPhase(runtime.Stage, loadBatchClosed: true)),
+            TransportBusinessState(
+                StopRevision(runtime.VehicleBusinessRevision, stop),
+                LoadingPhase(runtime.Stage, loadBatchClosed: true)),
             cancellationToken).ConfigureAwait(false);
         // The drop-off stop has no departure wait: ADR-cross-0055's wait is the pickup's.
         await publisher.PublishCurrentStopWorklistAsync(
-            runtime.GateWorklistMessageId,
+            stop.WorklistMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             Worklist(
-                runtime,
-                demand,
-                runtime.GateStationId,
-                "DROPOFF",
-                runtime.WorklistRevision + 1,
+                stop,
+                stops.CurrentStopDemands,
+                StopRevision(runtime.WorklistRevision, stop),
                 stationDepartureDeadlineAt: null),
             cancellationToken).ConfigureAwait(false);
         await publisher.PublishUpcomingStopPlanAsync(
-            runtime.GatePlanMessageId,
+            stop.PlanMessageId,
             runtime.AgvId,
             session.SessionGeneration,
-            JourneyPlanBuilder.GatePlan(runtime),
+            JourneyPlanBuilder.Plan(
+                runtime, stops.Stops, stop, arrivedAtCurrent: true,
+                PlanRevisionAt(runtime.PlanRevision, stop, arrivedAtStop: true)),
             cancellationToken).ConfigureAwait(false);
-        int[] slots = JsonSerializer.Deserialize<int[]>(runtime.TargetSlotsJson) ?? [];
+        int[] slots = JsonSerializer.Deserialize<int[]>(anchor.Membership.TargetSlotsJson) ?? [];
         // The unload carries the admission where the AREA machine is the drop-off (STAGING_TO_WIRE).
-        bool admission = await store.AreaEndOperationAsync(runtime.DemandId, demand.WorkType, cancellationToken)
+        bool admission = await store.AreaEndOperationAsync(
+                anchor.Demand.DemandId, anchor.Demand.WorkType, cancellationToken)
             .ConfigureAwait(false) == SlotOperationType.Unload;
         await publisher.PublishSlotOperationCommandAsync(
-            runtime.UnloadCommandMessageId,
+            anchor.Membership.UnloadCommandMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new SlotOperationCommand(
                 null,
-                runtime.DemandId,
-                demand.Sublot,
-                runtime.OperationSessionId,
-                runtime.UnloadSlotOperationAttemptId,
+                anchor.Demand.DemandId,
+                anchor.Demand.Sublot,
+                stop.OperationSessionId,
+                anchor.Membership.UnloadSlotOperationAttemptId,
                 SlotOperationType.Unload,
                 slots,
                 session.ForcedRecoveryGeneration,
-                BusinessHash(runtime.DemandId, demand.Sublot, "UNLOAD", slots)),
+                BusinessHash(anchor.Demand.DemandId, anchor.Demand.Sublot, "UNLOAD", slots)),
             cancellationToken,
-            admission ? runtime.GateStationId : null,
-            admission ? demand.WorkType : null).ConfigureAwait(false);
+            admission ? stop.StationId : null,
+            admission ? anchor.Demand.WorkType : null).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1251,10 +1296,13 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<ProtocolInboxRow?> FindMatchingSublotAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
-        string operationSessionId = runtime.OperationSessionId;
+        // 预筛用当前停靠的作业会话（control-server#208）。下面 AnswersTheStop 读的仍是旅程行上的同源副本：
+        // 那个判定被 LoadCancellationBeforeSublot 与取消那条入站链共用，本票不碰那条链，所以它随多停靠一起搬（批次7-06）。
+        string operationSessionId = stops.Current.OperationSessionId;
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -1316,6 +1364,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<bool> RevalidateEnteredSublotAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         ProtocolInboxRow submission,
         DateTimeOffset now,
@@ -1323,12 +1372,27 @@ public sealed class JourneyRuntimeEngine(
     {
         using JsonDocument document = JsonDocument.Parse(submission.RequestJson);
         string enteredSublot = RequiredString(document.RootElement.GetProperty("payload"), "sublot");
-        // The dispatch scope: the demands this journey was sent for.
-        AcceptedDemandRow[] scope = await dbContext.AcceptedDemands.AsNoTracking()
-            .Where(row => row.DemandId == runtime.DemandId)
-            .ToArrayAsync(cancellationToken).ConfigureAwait(false);
+        // 派车范围：这个停靠上还没终结的需求（control-server#208）。写成集合，是因为 FR-001 AC-3 把录入的范围定在
+        // 整个停靠序列上，而集合正是它长成的样子。
+        AcceptedDemandRow[] scope = [.. stops.CurrentStopDemands.Select(item => item.Demand)];
         AcceptedDemandRow? demand = scope.SingleOrDefault(
             row => string.Equals(row.Sublot, enteredSublot, StringComparison.Ordinal));
+        // 但本票只认锚需求，范围放宽到此为止——下面这一句是刻意的，不是漏改。
+        //
+        // 往下的每一步今天都按锚需求走：花篮数比对读 runtime.ExpectedBasketCount，装货命令取锚需求归属行上的
+        // attempt 与仓位，等装货结果时又按 runtime.LoadSlotOperationAttemptId 去查。**只放宽这里而不动那几步**，
+        // 结果是操作员扫第二条的子批、车上收到的却是第一条的开仓命令与仓位；**把那几步也改成按被录入的那条走**，
+        // AwaitingLoadResult 仍然只会去查锚需求的 attempt，于是查不到结果、旅程停在那里静默卡死——比前者更难查。
+        //
+        // 两条都不是「行为不变」该有的样子。让「这个停靠此刻在装哪一条需求」成为一个状态，是多需求推进语义本身，
+        // 归 批次7-06（control-server#211）。在那之前退回锚需求，拒绝的理由码与改动前逐字相同
+        // （改动前 scope 里本来就只有锚需求，扫别的子批同样落进下面这个 SublotNotInDispatchScope）。
+        // 7-06 放宽时，这一句是第一个该删的东西。
+        if (demand is not null && !string.Equals(demand.DemandId, runtime.DemandId, StringComparison.Ordinal))
+        {
+            demand = null;
+        }
+
         if (demand is null)
         {
             return await RefuseAsync(
@@ -1488,6 +1552,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<SafetyCheckObservation?> AwaitSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         CancellationToken cancellationToken)
     {
@@ -1499,7 +1564,8 @@ public sealed class JourneyRuntimeEngine(
         {
             DateTimeOffset now = timeProvider.GetUtcNow();
             (SafetyCheckObservation? safety, bool invalid) = await FindSafeDepartureResultAsync(
-                runtime, session, now, cancellationToken).ConfigureAwait(false);
+                runtime,
+                stops, session, now, cancellationToken).ConfigureAwait(false);
             if (safety is not null || invalid || attempt >= attempts)
             {
                 // Written once, as the wait ends. Clearing the code before every attempt and writing it
@@ -1514,6 +1580,7 @@ public sealed class JourneyRuntimeEngine(
 
     private async Task<(SafetyCheckObservation? Safety, bool Invalid)> FindSafeDepartureResultAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -1527,7 +1594,7 @@ public sealed class JourneyRuntimeEngine(
             using JsonDocument document = JsonDocument.Parse(row.RequestJson);
             JsonElement root = document.RootElement;
             JsonElement payload = root.GetProperty("payload");
-            if (RequiredString(payload, "preDepartureSafetyCheckId") != runtime.PreDepartureSafetyCheckId)
+            if (RequiredString(payload, "preDepartureSafetyCheckId") != DepartureCheckId(stops.Current))
                 continue;
             JsonElement safety = payload.GetProperty("safety");
             DateTimeOffset observedAt = payload.GetProperty("observedAt").GetDateTimeOffset();
@@ -1540,8 +1607,8 @@ public sealed class JourneyRuntimeEngine(
             // above, and it is unique to this journey's leg, so the correlationId was only ever a
             // second name for a fact already proven.
             string correlationId = RequiredString(root, "correlationId");
-            bool valid = (correlationId == runtime.PreDepartureSafetyCheckMessageId ||
-                          correlationId == runtime.PreDepartureSafetyCheckId) &&
+            bool valid = (correlationId == DepartureCheckMessageId(stops.Current) ||
+                          correlationId == DepartureCheckId(stops.Current)) &&
                          RequiredString(root, "agvId") == runtime.AgvId &&
                          root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
                          RequiredString(payload, "outcome") == "SAFE" &&
@@ -1562,7 +1629,7 @@ public sealed class JourneyRuntimeEngine(
                 return (null, false);
             }
             return (new SafetyCheckObservation(
-                runtime.PreDepartureSafetyCheckId,
+                DepartureCheckId(stops.Current),
                 safetyRevision,
                 true,
                 observedAt,
@@ -1682,24 +1749,32 @@ public sealed class JourneyRuntimeEngine(
     /// that rejection, and the unload command queued behind it was never reached, so the gate stage
     /// could not start. The sibling projections at this stop already advance the same way.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 站点、作业会话与项的角色全部由停靠行给出，项本身是这个停靠上还没终结的需求（批次7-03，control-server#208）。
+    /// </para>
+    /// <para>
+    /// 协议顶层只有一个 <c>operationSessionId</c>（规格第 22 节补记），项至多 8 条。今天一个停靠一条需求，
+    /// 所以这里恒为一项，与原来写死的那一项逐字相同。
+    /// </para>
+    /// </remarks>
     private static CurrentStopWorklistProjection Worklist(
-        JourneyRuntimeRow runtime,
-        AcceptedDemandRow demand,
-        string station,
-        string role,
+        JourneyStopRow stop,
+        IReadOnlyList<JourneyStopDemand> demands,
         long revision,
         DateTimeOffset? stationDepartureDeadlineAt) => new(
-            station,
+            stop.StationId,
             revision,
-            runtime.OperationSessionId,
+            stop.OperationSessionId,
             stationDepartureDeadlineAt,
-            [new CurrentStopWorklistItem(
-                demand.DemandId,
-                demand.TransportDemandKey,
-                demand.Sublot,
-                demand.WorkType,
-                role,
-                runtime.ExpectedBasketCount)]);
+            [.. demands.Select(item => new CurrentStopWorklistItem(
+                item.Demand.DemandId,
+                item.Demand.TransportDemandKey,
+                item.Demand.Sublot,
+                item.Demand.WorkType,
+                // 协议这一栏说的是「在这个停靠上对这条需求做什么」：取货停靠装货，卸货停靠卸货。
+                stop.StopRole == JourneyStopRoles.Pickup ? "PICKUP" : "DROPOFF",
+                item.Membership.ExpectedBasketCount))]);
 
     // Likewise the only activePurpose this runtime can be in. CHARGING is batch 8, IDLE_RETURN is
     // batch 5, CLEARING_MAINTENANCE is deferred; a vehicle running this worker is carrying a demand.
@@ -1762,23 +1837,82 @@ public sealed class JourneyRuntimeEngine(
 
     // Derived rather than stored: the row predates this snapshot, and a deterministic id from the
     // demand is what the stored ones are anyway (WireToGateStore.ToRuntimeRow), without a migration.
+
+    /// <summary>
+    /// 车辆业务状态与清单这两条流，在这个停靠上发的是第几号：每个停靠各发一张，所以是基准加序位。
+    /// </summary>
+    /// <remarks>
+    /// 在批次7-03 之前这两个偏移写死在两个发布方法里——取货那段发基准，关卡那段发基准 +1。写死的 +1 就是「这趟只有两个
+    /// 停靠」这个假设本身。单需求两停靠下这里算出来的还是基准与基准 +1。
+    /// </remarks>
+    private static long StopRevision(long journeyBase, JourneyStopRow stop) =>
+        journeyBase + stop.Sequence - 1;
+
+    /// <summary>
+    /// 计划流在这一刻发的是第几号。它比上面那条多一张：派车时先发一张「车还在路上」的计划（CV-DEMAND-ACCEPT-TO-PICKUP），
+    /// 之后每到一个停靠再发一张。所以号数就是「到站几次」——派车时零次，取货到站一次，卸货到站两次。
+    /// </summary>
+    private static long PlanRevisionAt(long journeyBase, JourneyStopRow stop, bool arrivedAtStop) =>
+        journeyBase + (arrivedAtStop ? stop.Sequence : stop.Sequence - 1);
+
+    /// <summary>
+    /// 一个停靠的离站核验身份。今天只有取货停靠有（卸货停靠是旅程的终点，没有「离开之前」可言），所以取不到就是
+    /// 在一个不该问离站安全的停靠上问了。
+    /// </summary>
+    private static string DepartureCheckId(JourneyStopRow stop) =>
+        stop.DepartureSafetyCheckId
+        ?? throw new InvalidDataException($"Stop '{stop.StopId}' has no pre-departure safety check id.");
+
+    private static string DepartureCheckMessageId(JourneyStopRow stop) =>
+        stop.DepartureSafetyCheckMessageId
+        ?? throw new InvalidDataException($"Stop '{stop.StopId}' has no pre-departure safety check message id.");
+
     private static string PickupDispatchPlanMessageId(JourneyRuntimeRow runtime) =>
         JourneyPlanBuilder.StableGuid(runtime.DemandId, "pickup-dispatch-plan");
 
-    private static HashSet<string> RuntimeMessageIds(JourneyRuntimeRow runtime) =>
-    [
-        runtime.VehicleBusinessMessageId,
-        runtime.WorklistMessageId,
-        PickupDispatchPlanMessageId(runtime),
-        runtime.PlanMessageId,
-        runtime.SublotRequestMessageId,
-        runtime.LoadCommandMessageId,
-        runtime.PreDepartureSafetyCheckMessageId,
-        runtime.GateVehicleBusinessMessageId,
-        runtime.GateWorklistMessageId,
-        runtime.GatePlanMessageId,
-        runtime.UnloadCommandMessageId
-    ];
+    /// <summary>
+    /// 这趟旅程有权补发的消息，按停靠与归属枚举出来。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 在批次7-03 之前这里是写死的 11 个 id。单需求两个停靠下枚举出来的仍是那 11 个：每个停靠贡献车辆业务状态、清单、
+    /// 计划三条，取货停靠另有录入请求与离站核验两条，每条需求贡献装、卸两条命令，再加上派车时那张现算的计划。
+    /// </para>
+    /// <para>
+    /// <b>这个集合少一个就是一条报文再也不补发</b>，车载端会一直等一个不会来的东西；多一个或换了 id，车载端会当成
+    /// 没见过的新消息。<c>Batch7StopDrivenAdvanceWireParityTests</c> 的重连那条用例钉的就是它。
+    /// </para>
+    /// <para>
+    /// 离站核验过期重发会换一对新 id，写回停靠行（见 <see cref="ReissueExpiredDepartureCheckAsync"/>），所以这里读停靠行
+    /// 读到的就是当前那一对。归属取 <see cref="JourneyStopCursor.AllDemands"/> 而不是未终结的那一份：一条需求终结
+    /// 不会让它的装卸命令变成别人的消息。
+    /// </para>
+    /// </remarks>
+    private static HashSet<string> RuntimeMessageIds(JourneyRuntimeRow runtime, JourneyStopCursor stops)
+    {
+        HashSet<string> ids = [PickupDispatchPlanMessageId(runtime)];
+        foreach (JourneyStopRow stop in stops.Stops)
+        {
+            ids.Add(stop.VehicleBusinessMessageId);
+            ids.Add(stop.WorklistMessageId);
+            ids.Add(stop.PlanMessageId);
+            if (stop.SublotRequestMessageId is { } sublotRequest)
+            {
+                ids.Add(sublotRequest);
+            }
+            if (stop.DepartureSafetyCheckMessageId is { } departureCheck)
+            {
+                ids.Add(departureCheck);
+            }
+        }
+        foreach (JourneyStopDemand demand in stops.AllDemands)
+        {
+            ids.Add(demand.Membership.LoadCommandMessageId);
+            ids.Add(demand.Membership.UnloadCommandMessageId);
+        }
+
+        return ids;
+    }
 
     private static string RequiredString(JsonElement element, string propertyName) =>
         element.GetProperty(propertyName).GetString()
@@ -2263,6 +2397,7 @@ public sealed class JourneyRuntimeEngine(
     /// </remarks>
     private async Task<bool> ReissueExpiredDepartureCheckAsync(
         JourneyRuntimeRow runtime,
+        JourneyStopCursor stops,
         SessionRecoveryRow session,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -2273,7 +2408,7 @@ public sealed class JourneyRuntimeEngine(
         }
 
         ProtocolOutboxRow? check = await dbContext.ProtocolOutbox
-            .SingleOrDefaultAsync(row => row.MessageId == runtime.PreDepartureSafetyCheckMessageId, cancellationToken)
+            .SingleOrDefaultAsync(row => row.MessageId == DepartureCheckMessageId(stops.Current), cancellationToken)
             .ConfigureAwait(false);
         if (check is null)
         {
@@ -2297,7 +2432,7 @@ public sealed class JourneyRuntimeEngine(
             {
                 using JsonDocument document = JsonDocument.Parse(answer.RequestJson);
                 JsonElement payload = document.RootElement.GetProperty("payload");
-                if (RequiredString(payload, "preDepartureSafetyCheckId") != runtime.PreDepartureSafetyCheckId)
+                if (RequiredString(payload, "preDepartureSafetyCheckId") != DepartureCheckId(stops.Current))
                     continue;
                 // A version change expires the check at once. A window that merely closed while the
                 // version stayed put waits out the evidence age first: that answer lapses every couple
@@ -2316,16 +2451,28 @@ public sealed class JourneyRuntimeEngine(
         {
             check.FencedAt = now;
         }
-        runtime.PreDepartureSafetyCheckId =
-            JourneyPlanBuilder.StableGuid(runtime.PreDepartureSafetyCheckId, "reissued-after-expiry");
-        runtime.PreDepartureSafetyCheckMessageId =
-            JourneyPlanBuilder.StableGuid(runtime.PreDepartureSafetyCheckMessageId, "reissued-after-expiry");
+        // 换一对新身份，派生算法照旧（control-server#208 只改「从哪里读」）。写三处：库里的停靠行是权威，旅程行那两列
+        // 跟着写，本轮 cursor 手上那个快照实例也跟着改——这一轮重发完会原地再判一次答复，判的必须是新身份。
+        string reissuedCheckId = JourneyPlanBuilder.StableGuid(
+            DepartureCheckId(stops.Current), "reissued-after-expiry");
+        string reissuedMessageId = JourneyPlanBuilder.StableGuid(
+            DepartureCheckMessageId(stops.Current), "reissued-after-expiry");
+        JourneyStopRow trackedStop = await dbContext.Set<JourneyStopRow>()
+            .SingleAsync(row => row.StopId == stops.Current.StopId, cancellationToken).ConfigureAwait(false);
+        trackedStop.DepartureSafetyCheckId = reissuedCheckId;
+        trackedStop.DepartureSafetyCheckMessageId = reissuedMessageId;
+        stops.Current.DepartureSafetyCheckId = reissuedCheckId;
+        stops.Current.DepartureSafetyCheckMessageId = reissuedMessageId;
+        // 旅程行那两列今天是重发后的权威，本票把权威搬到停靠行，但仍然照旧写它：库里落下的状态因此一字未变，
+        // 而票面之外的读者（如果还有）也读不到过期的值。它们在 批次7-06 随多停靠退役。
+        runtime.PreDepartureSafetyCheckId = reissuedCheckId;
+        runtime.PreDepartureSafetyCheckMessageId = reissuedMessageId;
         await publisher.PublishPreDepartureSafetyCheckAsync(
-            runtime.PreDepartureSafetyCheckMessageId,
+            reissuedMessageId,
             runtime.AgvId,
             session.SessionGeneration,
             new PreDepartureSafetyCheckCommand(
-                runtime.PreDepartureSafetyCheckId,
+                reissuedCheckId,
                 runtime.DemandId,
                 runtime.GateMovementLegId,
                 currentRevision,

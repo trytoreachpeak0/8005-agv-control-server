@@ -406,10 +406,12 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
             return ToDecision(replay);
         }
 
-        long revision = await dbContext.JourneyRuntimes
+        // control-server#208：改读按车计数器。它的值恒等于这辆车 JourneyRuntimes 上那一列的最大值——受理事务同一次保存
+        // 里写的，迁移回填时也是照这条 SQL 算的（Batch7MultiDemandJourneyPersistence 的 BackFill）——所以这个数一字未变。
+        long revision = await dbContext.Set<VehicleSnapshotRevisionRow>().AsNoTracking()
             .Where(row => row.AgvId == request.AgvId)
             .Select(row => (long?)row.VehicleBusinessRevision)
-            .MaxAsync(cancellationToken).ConfigureAwait(false) ?? 0;
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false) ?? 0;
         SessionRecoveryRow session = await GetCurrentSessionAsync(
             request.AgvId, request.SessionGeneration, cancellationToken).ConfigureAwait(false);
 
@@ -2587,25 +2589,20 @@ public sealed class WireToGateStore(ControlServerDbContext dbContext) : IJourney
         JourneyRuntimeRow runtime,
         CancellationToken cancellationToken)
     {
-        var highest = await dbContext.JourneyRuntimes
-            .Where(row => row.AgvId == runtime.AgvId)
-            .GroupBy(row => row.AgvId)
-            .Select(group => new
-            {
-                VehicleBusiness = group.Max(row => row.VehicleBusinessRevision),
-                Worklist = group.Max(row => row.WorklistRevision),
-                Plan = group.Max(row => row.PlanRevision)
-            })
-            .SingleOrDefaultAsync(cancellationToken)
+        // control-server#208：改读按车计数器，理由同 ManualChargingReturnToService 那一处——值一字未变，只是不再
+        // 对 JourneyRuntimes 做一次聚合。读的是被跟踪的那一行：下面 AdvanceSnapshotRevisionCounterAsync 要在同一次
+        // 保存里把它推进到这趟的三个值，两处必须是同一个实例。
+        VehicleSnapshotRevisionRow? highest = await dbContext.Set<VehicleSnapshotRevisionRow>()
+            .SingleOrDefaultAsync(row => row.AgvId == runtime.AgvId, cancellationToken)
             .ConfigureAwait(false);
         if (highest is null)
         {
             return;
         }
 
-        runtime.VehicleBusinessRevision = highest.VehicleBusiness + RevisionsPerJourney;
-        runtime.WorklistRevision = highest.Worklist + RevisionsPerJourney;
-        runtime.PlanRevision = highest.Plan + PlanRevisionsPerJourney;
+        runtime.VehicleBusinessRevision = highest.VehicleBusinessRevision + RevisionsPerJourney;
+        runtime.WorklistRevision = highest.WorklistRevision + RevisionsPerJourney;
+        runtime.PlanRevision = highest.PlanRevision + PlanRevisionsPerJourney;
     }
 
     /// <summary>

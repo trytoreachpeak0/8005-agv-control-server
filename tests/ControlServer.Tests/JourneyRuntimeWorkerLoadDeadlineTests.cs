@@ -60,6 +60,14 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
         Assert.Contains(fixture.EngineLog.Entries, entry =>
             entry.Level == LogLevel.Warning && entry.Message.Contains("CANCELLED_BY_STATION_TIMEOUT"));
         await ZeroChangePin.AssertMatchesAsync(fixture.Context, "determinate-load-failure");
+        // control-server#208：发出去的报文与修订号。录入提交的 messageId 是随机的，而它原样进了装货命令的
+        // correlationId，所以按值遮掉。
+        string submissionId = await fixture.Context.ProtocolInbox.AsNoTracking()
+            .Where(row => row.MessageType == "SublotSubmitted")
+            .Select(row => row.MessageId)
+            .SingleAsync(TestContext.Current.CancellationToken);
+        await WirePin.AssertMatchesAsync(
+            fixture.Context, "determinate-load-failure", fixture.Peer.Lines, [submissionId]);
     }
 
     /// <summary>
