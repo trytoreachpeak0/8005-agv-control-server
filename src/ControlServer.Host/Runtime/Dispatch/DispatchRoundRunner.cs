@@ -160,9 +160,14 @@ public sealed class DispatchRoundRunner(
         // one version of the table, and that is the version a demand freezes.
         AreaAssignmentTableVersion? areaAssignmentTable = await areaAssignments
             .ReadCurrentAsync(cancellationToken).ConfigureAwait(false);
+        // The subtraction from the set above, filled in as intake refuses: see DispatchRoundFacts.ClaimsIntakeRefused.
+        HashSet<string> claimsIntakeRefused = new(StringComparer.Ordinal);
         DispatchRoundFacts round = new(
             snapshot, currentMap, fixedStations, acceptedDemandIds, now, policy, areaAssignmentTable,
-            admissionPolicyDrifted);
+            admissionPolicyDrifted)
+        {
+            ClaimsIntakeRefused = claimsIntakeRefused,
+        };
         List<DispatchVehicleOutcome> completedVehicles = [];
 
         // One worker, vehicles in series -- not one worker per vehicle. Serial iteration is what
@@ -185,8 +190,8 @@ public sealed class DispatchRoundRunner(
             try
             {
                 await DispatchForVehicleAsync(
-                    round, vehicle, acceptedDemandIds, claimedThisSegment, backlogByDemandId, verdicts, now,
-                    linked.Token)
+                    round, vehicle, acceptedDemandIds, claimsIntakeRefused, claimedThisSegment, backlogByDemandId,
+                    verdicts, now, linked.Token)
                     .ConfigureAwait(false);
                 // Only once the segment has run to its end. A vehicle its budget cuts off below has not
                 // finished deciding, so what it judged so far says nothing about that vehicle.
@@ -376,6 +381,7 @@ public sealed class DispatchRoundRunner(
         DispatchRoundFacts round,
         FleetVehicle fleetVehicle,
         HashSet<string> claimedDemandIds,
+        HashSet<string> claimsIntakeRefused,
         List<string> claimedThisSegment,
         Dictionary<string, JourneyBacklogRow> backlogByDemandId,
         List<DispatchCandidateVerdict> verdicts,
@@ -465,6 +471,13 @@ public sealed class DispatchRoundRunner(
         // then reports, because every refusal below leaves the demand bound to this attempt.
         // Written down as well, so that a segment which throws instead of reporting can have the claim taken
         // back -- an unaccepted demand the round believes was accepted would have its structural block cleared.
+        //
+        // The claim outliving an intake refusal is right for the vehicles behind and wrong for the round's end,
+        // and control-server#242 splits those two readings rather than the claim: the demand stays in this set,
+        // so nobody behind tries it again, and a refusal below also names it in claimsIntakeRefused, which is
+        // what keeps the round's end from counting it as accepted. Withdrawing it here instead -- the way a
+        // segment cut off before it reported has to (control-server#239) -- would trade a silent defect for a
+        // louder one: two vehicles attempting the same demand in one round.
         claimedDemandIds.Add(selected.Snapshot.DemandId);
         claimedThisSegment.Add(selected.Snapshot.DemandId);
         JourneyIntakeResult result = await intakeCoordinator.AcceptAndDispatchToPickupAsync(
@@ -479,6 +492,16 @@ public sealed class DispatchRoundRunner(
             cancellationToken).ConfigureAwait(false);
         if (result.IntakeOutcome != DemandIntakeOutcome.Accepted)
         {
+            // Nothing was written, so the claim above is not a demand this server took. It stands for the rest of
+            // the round -- the demand is bound to this attempt -- but the round's end must not read it as an
+            // acceptance and clear the demand's structural block on the strength of it (control-server#242).
+            // CandidateGone is left out: that demand is no longer in the catalog, so a block against it is about
+            // nothing and clearing it is the right answer rather than a lost alarm.
+            if (result.IntakeOutcome != DemandIntakeOutcome.CandidateGone)
+            {
+                claimsIntakeRefused.Add(selected.Snapshot.DemandId);
+            }
+
             await SetBacklogReasonAsync(
                 selected.Snapshot.DemandId,
                 result.IntakeOutcome switch
