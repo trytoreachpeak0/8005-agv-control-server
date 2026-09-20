@@ -342,6 +342,62 @@ public sealed partial class MultiVehicleExecutionTests
     }
 
     /// <summary>
+    /// 一辆车的旅程 Blocked 时，这一轮连一条候选都不为它评估——新需求连 backlog 记录都不该有。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ADR-cross-0006 与 ADR-cross-0015：仓位物理状态未经证实、dispatch lease 仍被持有时，不许把车派去干别的。
+    /// 「不派」不只是「拒绝」——连评估都不该发生，否则库里会留下一条说这辆车「会话没准备好」的记录，
+    /// 而真正的原因是它正等着人来处理。
+    /// </para>
+    /// <para>
+    /// <b>这条是补上一个缺口，不是新立的规矩。</b>批次7-06 把在途车放进候选竞争之后，
+    /// <c>L2-LR-10</c>（<c>load-result-requires-recovery</c>）开始偶发红——同一个 commit 两轮，一绿一红。
+    /// 当时为那处改动补的两条 L1 守的是「全车在途时轮次仍然读目录、孤儿检查仍然守着入口」，
+    /// <b>没有一条守「Blocked 的车不进轮次」</b>，也就是修复本身要保证的那件事。判据要断正确的那一个。
+    /// </para>
+    /// <para>
+    /// <b>它的判别力要同时去掉两处 Blocked 排除才看得出来，单独去掉任何一处都不红。</b>那两处是
+    /// <c>JourneyRuntimeEngine</c> 里「Blocked 的车不进 <c>underWay</c>」，和
+    /// <c>DispatchRoundRunner.ReadEnRoutePlanAsync</c> 里「Blocked 的旅程读不出计划」——后者读不出计划时
+    /// <c>TryAdmitToRoundAsync</c> 会把车整个剔出这一轮。两道是纵深的，所以单点注入不红是<b>对的</b>，
+    /// 不是这条用例没用：两道一起去掉它立刻红在 <c>Assert.Empty</c> 上。
+    /// <b>验一条守护用例的判别力时，要按它实际依赖的那组保证去注入，而不是按「我这次改的那一行」。</b>
+    /// </para>
+    /// <para>
+    /// <b>这条用例没有重现那个 L2 偶发红。</b>它钉住的是「按代码读，Blocked 的车进不了轮次」这个命题,
+    /// 而 CI 上那条 <c>ONBOARD_FACTS_NOT_READY</c> 的积压记录写在旅程 <c>BlockReasonSince</c> 之后 9 秒,
+    /// 说明真机上有一条路绕过了这两道——那条路还没找到，本机五遍跑不出来。<b>所以别把这条用例读成
+    /// 「那个问题已经解决」</b>：它只说明这两道在单元这一层是有效的。</para>
+    /// </remarks>
+    [Fact]
+    public async Task ABlockedJourneyKeepsItsVehicleOutOfTheRoundEntirely()
+    {
+        await using FleetFixture fixture = await FleetFixture.CreateAsync();
+        await fixture.RunRoundAsync();
+        await fixture.BlockJourneysAsync(FleetFixture.AgvIds);
+        // 车载端也断掉：L2-LR-10 那条场景里车是关了机的，而这一点不是布景。车载端事实读得到时，
+        // 在途链会走到更后面、被本票新加的「这辆车接不了，换下一个出价者」那一档<b>静默</b>跳过,
+        // 什么都不写；读不到时它停在 ONBOARD_FACTS_NOT_READY，那一档是要写进 JourneyBacklog 的。
+        // 少了这一步，用例在「车进没进轮次」这件事上恒绿——把修复整个去掉它也不红。
+        foreach (string agvId in FleetFixture.AgvIds)
+        {
+            await fixture.DropSessionAsync(agvId);
+        }
+
+        // 只把新需求留在目录里：原来那三条已经受理、各自有旅程，它们的 backlog 行怎么变都不影响这条判据,
+        // 而目录里只有一条要判的东西时，「为它评估过」与「没评估过」之间没有别的解释。
+        AcceptedDemandSnapshot next = FleetFixture.Demand(9, "N1-1", 0);
+        fixture.Catalog.Set([next]);
+
+        await fixture.RunRoundAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Empty(await fixture.Context.JourneyBacklog
+            .Where(row => row.DemandId == next.DemandId)
+            .ToArrayAsync(TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>
     /// 孤儿检查跟着一起搬到了前面：全车在途时它照跑，一条没有旅程的已受理需求当场就被抓出来。
     /// </summary>
     /// <remarks>
