@@ -24,6 +24,10 @@
   program#55 改写，没有整份拷贝。
 
 「车辆释放」判两层：租约与车辆占用两处释放标记（`L2-DC-10`），以及它们的后果——同一台车能接下一单（`L2-DC-12`）。
+`L2-DC-12` 自 control-server#203 起直接调 `G3RecoveryCommon.ps1` 的 `Add-G3VehicleReleasedForNextDemand`，与 G3 的
+`G3-07-26`、`G3-07-36`、`G3-02-28` 同一份实现：等到下一单的 `TO_PICKUP` 意图 `CONFIRMED`（占车冲突那条路走不到那里）
+再判，不再停在「到了 `AwaitingPickupArrival`」——那个阶段是受理那一次提交写下的，冲突要到之后认领占用失败时才
+另写一次。代价是它现在也顺带判了第一层的占用释放标记，与 `L2-DC-10` 重合；两项在「实际」栏各自打印，红了分得清。
 2026-09-18 本条在这两处是红的：在途取消终结后车辆占用不释放，见
 `docs/defects/20260918-in-flight-load-cancellation-keeps-vehicle-occupancy.md`（control-server#131）。
 
@@ -39,6 +43,8 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2Change.psm1') -Force
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'L2RealStation.psm1') -Force
+# Only for Add-G3VehicleReleasedForNextDemand (L2-DC-12); this scenario keeps its own readers.
+. (Join-Path $PSScriptRoot 'G3RecoveryCommon.ps1')
 
 $journal = $Context.Journal
 $assertions = $Context.Assertions
@@ -229,31 +235,15 @@ $assertions.Add(
 # 「车辆释放」的行为面：同一台车能接下一单。上一条读的是两处释放标记，这一条看它们的后果——车辆占用的唯一索引
 # 只允许一台车同时占着一张单，占用没释放，下一单就派不出去。不用 Wait-L2Condition：派不出去时它会抛超时，
 # 而这里要把「派不出去」和积压表里的原因一起记成一条判据。
-$next = [pscustomobject]@{ Wire = [guid]::NewGuid().ToString('N') }
-$next | Add-Member -NotePropertyName Id -NotePropertyValue ([guid]::ParseExact($next.Wire, 'N').ToString('D'))
-$journal.Note("Publishing the next demand $($next.Wire) to see whether the vehicle takes it.")
-$null = $Context.MesIngest.Command('Put', "demands/$($next.Wire)", @{
-    sublot      = "$sublot-NEXT"
-    area        = 'N1-3'
-    eqp         = 'EQP-L2-01'
-    package     = 'L2-PACKAGE'
-    maxBoxCount = 4
-})
-$nextDeadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
-$nextRuntime = $null
-while ([DateTimeOffset]::UtcNow -lt $nextDeadline) {
-    $nextRuntime = Get-L2Runtime -Connection $connection -DemandId $next.Id
-    $journal.Observe('next-demand-dispatched', $(if ($nextRuntime) { [string]$nextRuntime.Stage } else { $null }), $null)
-    # 派出去是 AwaitingPickupArrival。建了旅程却 Blocked（例如 VEHICLE_OCCUPANCY_CONFLICT）不算，继续等到超时。
-    if ($nextRuntime -and [string]$nextRuntime.Stage -eq 'AwaitingPickupArrival') { break }
-    Start-Sleep -Milliseconds 500
-}
-$backlog = @(Invoke-L2Query -Connection $connection -Sql "SELECT * FROM JourneyBacklog WHERE DemandId = '$($next.Id)'")
-$backlogText = if ($backlog.Count -ge 1) { ($backlog[0].PSObject.Properties | Where-Object { $_.Name -match 'Status|Reason' } | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ' ' } else { '(no backlog row)' }
-$assertions.Add(
-    'L2-DC-12', '取消收尾之后，同一台车在 60 秒内接了下一单（车辆真的被释放了）',
-    ($null -ne $nextRuntime -and [string]$nextRuntime.Stage -eq 'AwaitingPickupArrival' -and [string]$nextRuntime.AgvId -eq [string]$Context.AgvId),
-    "下一单 AwaitingPickupArrival on $($Context.AgvId)",
-    $(if ($nextRuntime) { "下一单 $($nextRuntime.Stage) $($nextRuntime.BlockReasonCode) on $($nextRuntime.AgvId)" } else { "60 s 内没有派出 / 积压：$backlogText" }))
+# 这一条与 G3 的 G3-07-26、G3-07-36、G3-02-28 判的是同一件事，写法一直是抄过来的两份，现在直接调那个共用函数
+# （control-server#203 条目 8）。原来两边都停在「下一单到了 AwaitingPickupArrival」，而那个阶段是受理那一次提交
+# 写下的，占车冲突要到之后认领占用失败时才另写一次——所以即使车还被占着，这一条也可能绿。共用函数改成等到
+# TO_PICKUP 意图 CONFIRMED（冲突那条路走不到），并要求没有停摆原因码。
+#
+# sublot 前缀传 'L2-DC'，与本场景的 $sublot 同源，拼出来仍是 L2-DC-<RunId>-NEXT，与改动前一致。
+# 判据因此多了一项「TO_PICKUP 占用已释放」，与 L2-DC-10 的第一层重合：两项在「实际」栏各自打印，红了分得清。
+Add-G3VehicleReleasedForNextDemand $Context 'L2-DC-12' `
+    '取消收尾之后，同一台车在 60 秒内接了下一单，并且那一单真的建出了 RIoT 单、没有被占车冲突挡住（车辆真的被释放了）' `
+    $demandId 'L2-DC'
 
 $journal.Note('Scenario finished.')

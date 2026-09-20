@@ -321,20 +321,44 @@ function Add-G3VehicleReleasedForNextDemand([object]$Context, [string]$Id, [stri
     $null = $Context.MesIngest.Command('Put', "demands/$($nextGuid.ToString('N'))", @{
         sublot = "$SublotPrefix-$($Context.RunId)-NEXT"; area = 'N1-3'; eqp = 'EQP-L2-01'; package = 'L2-PACKAGE'; maxBoxCount = 4
     })
+    # 「车放出来了」不能停在「下一单到了 AwaitingPickupArrival」。那个阶段是**受理那一次提交**写下的，而占车
+    # 冲突要等之后 TryClaimVehicleOccupancyAsync 认领失败时才另写一次（DispatchRoundRunner：受理 → 认领占用 →
+    # 建 RIoT 单，三次落库，见 `DispatchRoundRunner.cs` 的 `VEHICLE_OCCUPANCY_CONFLICT` 分支）。停在第一次落库
+    # 上，即使这台车真的还被占着，这条判据也可能绿——判据在它要观测的事情发生之前就收工了
+    # （control-server#203 条目 8，来自 #193 PR #194 的审查）。
+    #
+    # 所以等到能把「建单成功」与「占车冲突」分开的那个落库点：TO_PICKUP 意图的 Status 到 CONFIRMED。冲突那条
+    # 路在认领那一步就 return 了，根本不建单，走不到 CONFIRMED。
+    #
+    # Blocked 也算「等到了」，理由与条目 7 那处相同：让红落在判据表里、带着原因码，而不是熬满 60 秒只留下
+    # 一句「没派出」，把「被占着」和「还没轮到」混成同一种读数。
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(60)
     $next = $null
+    $intentStatus = $null
     while ([DateTimeOffset]::UtcNow -lt $deadline) {
         $rows = Invoke-L2Query -Connection $connection -Sql "SELECT Stage, BlockReasonCode, AgvId FROM JourneyRuntimes WHERE DemandId = '$nextDemandId'"
         $next = if ($rows.Count -ge 1) { $rows[0] } else { $null }
-        $journal.Observe("$Id-next-demand", $(if ($next) { "$($next.Stage)/$($next.BlockReasonCode)" } else { $null }), $null)
-        if ($next -and [string]$next.Stage -eq 'AwaitingPickupArrival') { break }
+        $intentStatus = Get-G3Scalar $connection "SELECT Status AS Value FROM OrderIntents WHERE DemandId = '$nextDemandId' AND Purpose = 'TO_PICKUP'"
+        $journal.Observe(
+            "$Id-next-demand",
+            $(if ($next) { "$($next.Stage)/$($next.BlockReasonCode)/TO_PICKUP=$intentStatus" } else { $null }),
+            $null)
+        if ($next -and ([string]$next.Stage -eq 'Blocked' -or
+                ([string]$next.Stage -eq 'AwaitingPickupArrival' -and [string]$intentStatus -eq 'CONFIRMED'))) {
+            break
+        }
         Start-Sleep -Milliseconds 500
     }
-    $nextText = if ($next) { "下一单 $($next.Stage)/$($next.BlockReasonCode) on $($next.AgvId)" } else { '60 s 内下一单没有建旅程' }
+    $backlog = @(Invoke-L2Query -Connection $connection -Sql "SELECT ReasonCode, Status FROM JourneyBacklog WHERE DemandId = '$nextDemandId'")
+    $backlogText = if ($backlog.Count -ge 1) { "积压 $($backlog[0].Status)/$($backlog[0].ReasonCode)" } else { '无积压行' }
+    $nextText = if ($next) {
+        "下一单 $($next.Stage)/$($next.BlockReasonCode) TO_PICKUP=$intentStatus on $($next.AgvId)"
+    } else { "60 s 内下一单没有建旅程（$backlogText）" }
     $Context.Assertions.Add(
         $Id, $Description,
         ((Test-G3Present $occupancy) -and $null -ne $next -and [string]$next.Stage -eq 'AwaitingPickupArrival' -and
-            [string]$next.AgvId -eq [string]$Context.AgvId),
-        "TO_PICKUP 占用已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)",
+            [string]$next.AgvId -eq [string]$Context.AgvId -and [string]$intentStatus -eq 'CONFIRMED' -and
+            -not (Test-G3Present $next.BlockReasonCode)),
+        "TO_PICKUP 占用已释放 / 下一单 AwaitingPickupArrival on $($Context.AgvId)，TO_PICKUP 意图 CONFIRMED，没有停摆原因码",
         "VehicleOccupancyReleasedAt='$occupancy' / $nextText")
 }
