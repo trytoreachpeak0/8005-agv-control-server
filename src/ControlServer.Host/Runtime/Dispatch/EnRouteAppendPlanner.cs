@@ -229,6 +229,15 @@ public sealed class EnRouteAppendPlanner
     /// 只是排除了一部分位置——单独看到它，说明剩下的位置是被别的理由挡的。</item>
     /// <item><c>NO_INSERTION_POINT</c>：兜底，一条信息都没有。</item>
     /// </list>
+    /// <para>
+    /// <b>这张表成立有一个前提：理由是按插入位分别收集的。</b>真正的判据不是「最可操作的那个」，是
+    /// 「解决它之后真能放行的那个」——两者在这里恰好重合，因为「腿数撞上限」只说明<b>那一个位置</b>不行，
+    /// 而另一个位置被延迟门禁拒时，调那一区的上限确实能把它放行。
+    /// </para>
+    /// <para>
+    /// 改成全局只收一个理由的话，这个重合就断了：那时报一个可调的理由，会让人去拧一个拧了也没用的旋钮，
+    /// 因为挡住全部位置的其实是那个硬上限。<b>改掉收集方式时，这张表要重新判。</b>
+    /// </para>
     /// </remarks>
     private static string MostActionableRefusal(HashSet<string> refusals)
     {
