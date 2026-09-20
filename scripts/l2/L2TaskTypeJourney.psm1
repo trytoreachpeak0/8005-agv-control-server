@@ -197,6 +197,62 @@ function Get-L2SecondLegIntents {
         "WHERE DemandId = '$DemandId' AND Purpose <> 'TO_PICKUP' ORDER BY UpperId"))
 }
 
+<#
+.SYNOPSIS
+Waits for the demand's one second-leg intent to be confirmed, and refuses to guess when there is more than one.
+
+.DESCRIPTION
+Its own function rather than a block inside the journey driver, so that Test-L2SecondLegIntentWait.ps1
+can drive THIS code with a stubbed Invoke-L2Query. A structural copy in a test would be a different
+thing than what runs -- measured, when the first attempt at that copy put the probe outside the module
+and so had no cross-module resolution left to get wrong, and came out green on code that was broken.
+
+Three things here are load-bearing, and all three are about the same property of Wait-L2Condition: its
+poll is `try { $last = & $Probe } catch { $last = $null }` (`L2.psm1:24`), a deliberate and necessary
+tolerance for a transient read, which flattens every failure inside a probe into one symptom -- a
+timeout. So a probe may contain nothing that fails silently:
+
+1. The count check is OUTSIDE the wait. Thrown from inside the probe it is not merely ineffective; it
+   becomes "timed out waiting for the second leg's intent", which reads as the server never confirming
+   one. Finding out otherwise costs a real-rig round.
+2. It is checked on BOTH exits. When only the later-sorting intent is confirmed the probe answers
+   $null for the full timeout, so the failure path has to check too.
+3. The failure path's own read may not replace the failure. A server that is gone is one of the
+   reasons the wait timed out, and then that read throws -- taking with it the only message that says
+   what was being waited for. Only the count check itself may replace it, because that message says
+   more than the timeout does.
+#>
+function Wait-L2SecondLegIntent {
+    param(
+        [Parameter(Mandatory)][object]$Connection,
+        [Parameter(Mandatory)][string]$DemandId,
+        [int]$TimeoutSeconds = 120,
+        [object]$Journal)
+
+    $assertOneSecondLeg = {
+        param($rows)
+        if (@($rows).Count -le 1) { return }
+        throw ("Demand $DemandId has $(@($rows).Count) non-TO_PICKUP order intents " +
+            "($(@($rows | ForEach-Object { "$($_.Purpose)/$($_.UpperId)" }) -join ', ')); " +
+            'this driver assumes one second leg and would silently judge whichever sorted first.')
+    }.GetNewClosure()
+    try {
+        $destinationIntent = Wait-L2Condition -Description 'the second leg''s intent was confirmed' `
+            -Journal $Journal -Criterion 'destination-intent' -TimeoutSeconds $TimeoutSeconds `
+            -Probe {
+                $rows = Get-L2SecondLegIntents -Connection $Connection -DemandId $DemandId
+                if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
+            }.GetNewClosure() -Until { param($v) $null -ne $v }
+    } catch {
+        $rowsAfterFailure = $null
+        try { $rowsAfterFailure = Get-L2SecondLegIntents -Connection $Connection -DemandId $DemandId } catch { }
+        if ($null -ne $rowsAfterFailure) { & $assertOneSecondLeg $rowsAfterFailure }
+        throw
+    }
+    & $assertOneSecondLeg (Get-L2SecondLegIntents -Connection $Connection -DemandId $DemandId)
+    return $destinationIntent
+}
+
 function Invoke-L2TaskTypeJourney {
     param(
         [Parameter(Mandatory)][object]$Context,
@@ -259,31 +315,7 @@ function Invoke-L2TaskTypeJourney {
     # 真有第二条意图时抛错，不悄悄取第一条：那说明这条需求的意图比这个驱动设想的多，往下跑出来的每一条
     # 判据都会是关于「碰巧排在前面的那一条」的，而判据表上看不出这件事。排序的理由见 Get-L2SecondLegIntents。
     #
-    # **这个检查绝不能写进 -Probe。**`Wait-L2Condition` 的轮询是 `try { $last = & $Probe } catch { $last = $null }`
-    # （`L2.psm1:24`），探针里抛出的异常会被整个吞掉——检查写在里面不是不生效，是退化成 120 秒后的
-    # 「等待第二腿意图确认超时」。那句话读起来像服务端没确认意图，真因一个字都到不了读证据的人手里，
-    # 而查清它要再烧一次真装置机时。那个 catch 是所有场景共用的、必要的瞬时错误容错，不能为这里改。
-    #
-    # 等到了要查，等不到也要查：只有排在后面那条被确认时，探针一直返回 $null，走的是超时那条路径。
-    $assertOneSecondLeg = {
-        param($rows)
-        if (@($rows).Count -le 1) { return }
-        throw ("Demand $DemandId has $(@($rows).Count) non-TO_PICKUP order intents " +
-            "($(@($rows | ForEach-Object { "$($_.Purpose)/$($_.UpperId)" }) -join ', ')); " +
-            'this driver assumes one second leg and would silently judge whichever sorted first.')
-    }.GetNewClosure()
-    try {
-        $destinationIntent = Wait-L2Condition -Description 'the second leg''s intent was confirmed' `
-            -Journal $journal -Criterion 'destination-intent' -TimeoutSeconds 120 `
-            -Probe {
-                $rows = Get-L2SecondLegIntents -Connection $connection -DemandId $DemandId
-                if ($rows.Count -ge 1 -and [string]$rows[0].Status -eq 'CONFIRMED') { $rows[0] } else { $null }
-            }.GetNewClosure() -Until { param($v) $null -ne $v }
-    } catch {
-        & $assertOneSecondLeg (Get-L2SecondLegIntents -Connection $connection -DemandId $DemandId)
-        throw
-    }
-    & $assertOneSecondLeg (Get-L2SecondLegIntents -Connection $connection -DemandId $DemandId)
+    $destinationIntent = Wait-L2SecondLegIntent -Connection $connection -DemandId $DemandId -Journal $journal
 
     $destinationDepartedAt = [DateTimeOffset]::UtcNow
     Move-L2RealVehicleTo $Context $destinationIntent $DestinationRiotId "the second stop ($DestinationRiotId)"
@@ -347,5 +379,5 @@ function Invoke-L2TaskTypeJourney {
 # as a product fault. Measured, not reasoned: scripts/l2/Test-L2ProbeClosureResolvable.ps1 holds the
 # counterexample and fails this repository's CI if any probe closure calls an unexported sibling.
 Export-ModuleMember -Function Get-L2StopFacts, Format-L2StopFacts, Wait-L2StopFacts,
-    Get-L2DemandJourneySnapshots, Format-L2JourneySnapshot, Get-L2SecondLegIntents,
+    Get-L2DemandJourneySnapshots, Format-L2JourneySnapshot, Get-L2SecondLegIntents, Wait-L2SecondLegIntent,
     Invoke-L2TaskTypeStationOperation, Invoke-L2TaskTypeJourney

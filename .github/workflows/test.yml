@@ -96,6 +96,16 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/l2/Test-L2ProbeClosureResolvable.ps1
 
+      # Six seconds, four of which are deliberate timeouts. Wait-L2SecondLegIntent refuses to judge a
+      # demand that has more than one second leg, and every journey the rig has ever run had exactly
+      # one -- so no real-rig round, green or red, reaches any of this. It drives the shipped function
+      # with Invoke-L2Query replaced in that module's own scope rather than a copy of the control flow:
+      # the first attempt at a copy put the probe outside the module, which removed the very thing the
+      # test was for, and passed on broken code (control-server#203).
+      - name: L2 scenario self-check (second-leg intent wait)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2SecondLegIntentWait.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test
