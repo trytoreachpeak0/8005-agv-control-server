@@ -85,6 +85,7 @@ public sealed class IntegrationSliceTraitArchitectureTests
             ["DashboardSkeletonTests"] = "batch 3 FP-C8 dashboard skeleton; the dashboard is disjoint from the protocol by construction and reads only /api/dashboard/",
             ["DemandAreaAssignmentFreezeTests"] = "batch 4 FP-C15 REQ-0350 demand freeze of the area assignment version; server-internal, no wire message",
             ["DemandTaskTypeStationFreezeTests"] = "batch 6 FP-C9b REQ-0344 demand freeze of the task type rule and binding set versions (control-server#159); server-internal, no wire message",
+            ["DispatchAdmissionChainDerivationTests"] = "batch 7-06 REQ-0205 the in-transit admission chain is derived from the idle one (control-server#211); assembly only, server-internal, no wire message",
             ["DispatchBacklogDashboardTests"] = "batch 4 FP-C15 REQ-0210 dispatch backlog and structural dispatch block dashboard card (control-server#70); reads only /api/dashboard/, reasons never go on the wire (spec 5.1 #10)",
             ["DispatchCandidateOrderingTests"] = "batch 7-04 behaviour-preserving restructuring guard (control-server#209): the layered candidate ordering against the ranker it replaced; server-internal, no wire message",
             ["DispatchVehicleOrderingTests"] = "batch 7-06 REQ-0206/REQ-0207 vehicle-side ordering layers and their fixed order (control-server#211); server-internal, no wire message",
