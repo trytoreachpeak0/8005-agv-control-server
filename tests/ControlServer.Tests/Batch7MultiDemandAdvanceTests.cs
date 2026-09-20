@@ -128,6 +128,50 @@ public sealed class Batch7MultiDemandAdvanceTests
     }
 
     /// <summary>
+    /// 一条装完之后清单升版，车载端按<b>新版</b>修订号提交下一条——服务端要认得这是本停靠的答复。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>这一条是从「测试恰好没发现」里补出来的。</b>上面那条串行用例里，第二次提交用的是测试手上那个旧的旅程行快照，
+    /// 它带的是受理时的基准修订号，而基准恰好还落在本停靠的版区间里，所以它过了。真实的车载端不会这样：
+    /// <c>SublotEntryRequested</c> 带 <c>expiresOnRevisionChange</c>，升版之后旧的那一版在车上作废，它只会拿新版的
+    /// 号来提交。入站匹配若仍按旅程行上那个基准比对，这条提交就不算答复本停靠——服务端会一直等一个已经到了的录入。
+    /// </para>
+    /// <para>
+    /// 判据因此定在「本停靠发过的任一版」而不是「当前那一版」：升版前就上路的提交带的是旧版号，它是对旧版清单的
+    /// 合法答复，丢掉它同样是等一个已经到了的录入。已经答复过的那些由消费记录挡住，已经装完的那条由
+    /// <see cref="JourneyStopCursor.OutstandingAtCurrentStop"/> 挡住。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AnEntrySentUnderTheRaisedWorklistRevisionStillAnswersTheStop()
+    {
+        await using RuntimeFixture fixture = await RuntimeFixture.CreateAsync();
+        JourneyRuntimeRow runtime = await TwoDemandsAtThePickupAsync(fixture);
+        await AddInboxAsync(
+            fixture, FirstSubmissionId, "SublotSubmitted", SublotSubmission(fixture, runtime, SecondSublot));
+        await TickAndRunAsync(fixture);
+        await ApplySafeResultAsync(fixture, SecondDemandId, SlotOperationType.Load, SlotBusinessState.Occupied);
+        await TickAndRunAsync(fixture);
+
+        // 车载端读的是刚发出去那一版录入请求上的修订号，不是受理时的基准。
+        JsonElement request = await LatestEntryRequestAsync(fixture);
+        long raised = request.GetProperty("worklistRevision").GetInt64();
+        Assert.True(
+            raised > runtime.WorklistRevision,
+            $"装完一条之后清单该升版，实际修订号仍是 {raised}。");
+
+        await AddInboxAsync(
+            fixture,
+            SecondSubmissionId,
+            "SublotSubmitted",
+            SubmissionAtRevision(fixture, runtime, FirstSublot, raised));
+        await TickAndRunAsync(fixture);
+
+        Assert.Equal(JourneyDemandStatuses.Loading, (await MembershipAsync(fixture, FirstDemandId)).Status);
+    }
+
+    /// <summary>
     /// 锚需求在取货站被终结，旅程还带着另一条：旅程<b>回到当前停靠继续推进</b>，不停在 <c>Blocked</c>
     /// （原 7-03 第 8 条，MVP <c>8be28b1c</c> 修的同一类问题）。
     /// </summary>
@@ -193,7 +237,7 @@ public sealed class Batch7MultiDemandAdvanceTests
     /// <summary>
     /// 受理、到取货站，然后往这个停靠上再挂一条需求：一站两条，都还没装。
     /// </summary>
-    private static async Task<JourneyRuntimeRow> TwoDemandsAtThePickupAsync(RuntimeFixture fixture)
+    internal static async Task<JourneyRuntimeRow> TwoDemandsAtThePickupAsync(RuntimeFixture fixture)
     {
         fixture.Catalog.Set(fixture.Demand(FirstDemandId, FirstSublot, Now.AddMinutes(-10)));
         fixture.BoxCounts.Set(FirstSublot, 4);
@@ -205,6 +249,52 @@ public sealed class Batch7MultiDemandAdvanceTests
         fixture.Riot.Vehicle = fixture.Riot.Vehicle with { CurrentStationId = runtime.PickupStationRiotId };
         await TickAndRunAsync(fixture);
         return await fixture.RuntimeAsync(FirstDemandId);
+    }
+
+    /// <summary>一条录入提交，修订号由调用方指定——车载端用的是它手上那一版录入请求上的号。</summary>
+    private static object SubmissionAtRevision(
+        RuntimeFixture fixture,
+        JourneyRuntimeRow runtime,
+        string sublot,
+        long worklistRevision) => new
+        {
+            operationSessionId = runtime.OperationSessionId,
+            stationId = runtime.PickupStationId,
+            worklistRevision,
+            sublot,
+            entryMethod = "SCANNER",
+            @operator = new
+            {
+                operatorId = "OP-001",
+                verificationMethod = "BADGE",
+                verifiedAt = fixture.Clock.GetUtcNow()
+            }
+        };
+
+    /// <summary>修订号最高的那一条录入请求的载荷，也就是此刻在车上有效的那一版。</summary>
+    /// <remarks>SQLite 排不了 <c>DateTimeOffset</c>，而「最新」本来就该按修订号定义，不按写盘时刻。</remarks>
+    private static async Task<JsonElement> LatestEntryRequestAsync(RuntimeFixture fixture)
+    {
+        string[] payloads = await fixture.Context.ProtocolOutbox.AsNoTracking()
+            .Where(item => item.MessageType == "SublotEntryRequested")
+            .Select(item => item.PayloadJson)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        JsonElement latest = default;
+        long highest = long.MinValue;
+        foreach (string json in payloads)
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement payload = document.RootElement.GetProperty("payload");
+            long revision = payload.GetProperty("worklistRevision").GetInt64();
+            if (revision > highest)
+            {
+                highest = revision;
+                latest = payload.Clone();
+            }
+        }
+
+        Assert.NotEqual(long.MinValue, highest);
+        return latest;
     }
 
     internal static Task<JourneyDemandRow> MembershipAsync(RuntimeFixture fixture, string demandId) =>

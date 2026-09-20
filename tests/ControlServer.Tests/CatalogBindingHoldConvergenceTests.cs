@@ -413,7 +413,7 @@ internal static class TaskTypeHoldTestKit
         };
         context.JourneyRuntimes.Add(journey);
         // control-server#207: acceptance writes the demand's membership beside the journey row.
-        context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(journey));
+        JourneyMembershipSeed.Seed(context, journey);
         context.OrderIntents.Add(new OrderIntentRow
         {
             MovementLegId = $"gate-leg-{demandId}",

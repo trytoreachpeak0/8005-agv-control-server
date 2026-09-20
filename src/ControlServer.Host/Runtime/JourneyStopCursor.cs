@@ -150,6 +150,87 @@ internal sealed class JourneyStopCursor
             : item.Membership.Status == JourneyDemandStatuses.Unloaded;
     }
 
+    /// <summary>
+    /// 清单这条流在 <paramref name="stop"/> 上<b>此刻</b>发的是第几号（批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 一个停靠上挂 N 条需求，清单就发 N 版：到站一版（N 条待做），此后每做完一条再发一版，做完最后一条不发——那时清单
+    /// 空了，车直接离站。所以号数 = 基准 + 前面每个停靠发过的版数 + <b>本停靠已做完的条数</b>。
+    /// </para>
+    /// <para>
+    /// <b>集合一变号就升，是这条算式自己保证的</b>（票面第 13 条）：清单项与录入请求的期待子批取的都是
+    /// <see cref="OutstandingAtCurrentStop"/>，做完一条，集合少一条，偏移加一。<c>SublotEntryRequested</c> 的业务
+    /// 去重键是 <c>(OperationSessionId, WorklistRevision)</c>，同一个键下集合不许变——这条算式让「集合变了」与
+    /// 「键变了」成为同一件事，而不是两件要互相记得的事。
+    /// </para>
+    /// <para>
+    /// 单需求两停靠下：取货停靠一条需求、发一版，号数是基准；卸货停靠前面一版、号数是基准 +1。与批次7-03 的
+    /// <c>基准 + 序位 - 1</c> 逐字相同。
+    /// </para>
+    /// </remarks>
+    public long WorklistRevisionAt(long journeyBase, JourneyStopRow stop) =>
+        FirstWorklistRevisionAt(journeyBase, stop) + DoneAt(stop);
+
+    /// <summary>这个停靠的第一版清单是第几号。</summary>
+    public long FirstWorklistRevisionAt(long journeyBase, JourneyStopRow stop)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+        return journeyBase + Stops.Where(earlier => earlier.Sequence < stop.Sequence).Sum(WorklistVersionsOf);
+    }
+
+    /// <summary>一个停靠上清单一共发几版：挂在它上面的需求有几条就几版，至少一版。</summary>
+    public long WorklistVersionsOf(JourneyStopRow stop) => Math.Max(1, AllAtStop(stop).Count);
+
+    /// <summary>这个停靠上已经做完本停靠作业的需求有几条。</summary>
+    public long DoneAt(JourneyStopRow stop) => AllAtStop(stop).Count(item => IsDoneAt(stop, item));
+
+    /// <summary>
+    /// 一条录入提交要答复当前停靠，必须对上的那组事实：车、作业会话、站点，以及本停靠<b>发过的任一版</b>修订号。
+    /// </summary>
+    /// <remarks>
+    /// 版号写成区间而不是「当前那一版」：升版前就上路的提交带的是旧版号，它是对旧版清单的合法答复，判成「不是本停靠的」
+    /// 会让服务端一直等一个已经到了的录入。已经答复过的那些由消费记录挡住，已经做完的那条由
+    /// <see cref="OutstandingAtCurrentStop"/> 挡住，两道都比「按号数卡」准。
+    /// </remarks>
+    public StopEntryAddress EntryAddressOfCurrentStop(long journeyBase)
+    {
+        JourneyStopRow stop = Current;
+        long first = FirstWorklistRevisionAt(journeyBase, stop);
+        return new StopEntryAddress(
+            _runtime.AgvId, stop.OperationSessionId, stop.StationId, first, first + WorklistVersionsOf(stop) - 1);
+    }
+
+    /// <summary>
+    /// 这个停靠上第 <paramref name="revision"/> 版清单的消息 id；录入请求同理，只是用途不同。
+    /// </summary>
+    /// <remarks>
+    /// <b>第一版用停靠行上的那一个</b>，后面的才派生。停靠行上的 id 是受理时从旅程行搬来的，单需求旅程只发一版，于是
+    /// 发出去的 id 与批次7-03 之前逐字相同——那是 <c>WirePin</c> 钉着的东西。派生用停靠 × 修订号当去重键
+    /// （不是 attempt，见记忆 <c>outbox-message-id-unique</c> 那次教训）。
+    /// </remarks>
+    public string WorklistMessageIdAt(long journeyBase, JourneyStopRow stop, long revision)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+        return revision == FirstWorklistRevisionAt(journeyBase, stop)
+            ? stop.WorklistMessageId
+            : JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "worklist");
+    }
+
+    /// <inheritdoc cref="WorklistMessageIdAt"/>
+    public string SublotRequestMessageIdAt(long journeyBase, JourneyStopRow stop, long revision)
+    {
+        ArgumentNullException.ThrowIfNull(stop);
+        return revision == FirstWorklistRevisionAt(journeyBase, stop)
+            ? stop.SublotRequestMessageId
+              ?? throw new InvalidDataException($"Stop '{stop.StopId}' asks for an entry but has no request id.")
+            : JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "sublot-entry");
+    }
+
+    /// <summary>当前停靠此刻这一版录入请求的消息 id——终结时要结算的就是它。</summary>
+    public string CurrentSublotRequestMessageId(long journeyBase) =>
+        SublotRequestMessageIdAt(journeyBase, Current, WorklistRevisionAt(journeyBase, Current));
+
     private static bool IsOpen(JourneyStopRow stop) =>
         stop.Status is not (JourneyStopStatuses.Completed or JourneyStopStatuses.Removed);
 
@@ -247,3 +328,22 @@ internal sealed class JourneyStopCursor
 
 /// <summary>一条需求在这趟旅程里的归属，连同需求本身。</summary>
 internal sealed record JourneyStopDemand(JourneyDemandRow Membership, AcceptedDemandRow Demand);
+
+/// <summary>
+/// 一条录入提交要答复某个停靠，必须对上的那组事实（批次7-06，control-server#211）。
+/// </summary>
+/// <remarks>
+/// 在这之前这组事实是旅程行上的四个列，而其中的清单修订号在一个停靠上只有一个值。一个停靠会发不止一版清单之后，
+/// 「对上」就成了一个区间，而把这组事实收成一个类型，是为了两个读者（推进段与取消授权）不会各自比各自的那几列。
+/// </remarks>
+internal readonly record struct StopEntryAddress(
+    string AgvId,
+    string OperationSessionId,
+    string StationId,
+    long FirstWorklistRevision,
+    long CurrentWorklistRevision)
+{
+    /// <summary>这个号是不是本停靠发过的某一版。</summary>
+    public bool Covers(long worklistRevision) =>
+        worklistRevision >= FirstWorklistRevision && worklistRevision <= CurrentWorklistRevision;
+}

@@ -5304,7 +5304,7 @@ public sealed class RecoveryStateMachineG2Tests
         JourneyRuntimeRow runtime = Runtime();
         context.JourneyRuntimes.Add(runtime);
         // control-server#207: acceptance writes the demand's membership beside the journey row.
-        context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(runtime));
+        JourneyMembershipSeed.Seed(context, runtime);
         context.StationOperations.Add(new StationOperationRow
         {
             SlotOperationAttemptId = AttemptId,

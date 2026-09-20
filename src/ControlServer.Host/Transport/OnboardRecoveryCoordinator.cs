@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ControlServer.Application;
 using ControlServer.Domain;
 using ControlServer.Host.Runtime;
 using ControlServer.Infrastructure.Persistence;
@@ -722,6 +723,21 @@ public sealed class OnboardRecoveryCoordinator(
         });
     }
 
+    /// <summary>
+    /// 操作员指名的那一条需求，此刻能不能在扫码之前取消（票面第 9 条，批次7-06，control-server#211）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>判的是那一条需求，不是整趟旅程。</b>一站几条需求逐条串行，第一条正在装的时候，第二条仍然是「扫码之前」的，
+    /// 操作员在清单上选中它就该能取消它。所以「旅程停在等录入」这个旅程级的条件换成了三条针对这条需求的：它挂在车
+    /// 此刻所在的那个停靠上、那是它的取货停靠、它自己还没被录入也没发过装货命令。
+    /// </para>
+    /// <para>
+    /// <b>单需求旅程的应答逐字不变。</b>那时停靠上只有这一条需求：旅程停在等录入 ⇔ 它的归属行是待装；旅程走到等装货
+    /// 结果 ⇔ 它已经是 <c>LOADING</c>，第三条挡下，与原先 <c>Stage != AwaitingSublot</c> 挡下的是同一批请求。
+    /// 车还没到站（<c>AwaitingPickupArrival</c>）也仍然拒绝——那时车不在这个停靠上，「扫码之前」无从谈起。
+    /// </para>
+    /// </remarks>
     private async Task<bool> CancellationBeforeSublotAllowedAsync(
         string demandId,
         string agvId,
@@ -732,13 +748,24 @@ public sealed class OnboardRecoveryCoordinator(
         JourneyRuntimeRow? runtime = await DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         if (demand?.Status != DemandExecutionStatus.Accepted ||
-            runtime?.Stage != JourneyRuntimeStage.AwaitingSublot ||
+            runtime is null ||
             runtime.AgvId != agvId ||
-            runtime.ConsumedSublotMessageId is not null)
+            // 车已经到了这个停靠、还在装：只有这两个阶段有「扫码之前」可言。
+            runtime.Stage is not (JourneyRuntimeStage.AwaitingSublot or JourneyRuntimeStage.AwaitingLoadResult))
         {
             return false;
         }
-        if (await LoadCommandedAsync(runtime, cancellationToken).ConfigureAwait(false) ||
+
+        JourneyStopCursor stops = await JourneyStopCursor.LoadAsync(dbContext, runtime, cancellationToken)
+            .ConfigureAwait(false);
+        if (stops.Current.StopRole != JourneyStopRoles.Pickup ||
+            stops.OutstandingAtCurrentStop.SingleOrDefault(
+                item => item.Demand.DemandId == demandId) is not { } member ||
+            member.Membership.Status != JourneyDemandStatuses.PendingLoad)
+        {
+            return false;
+        }
+        if (await LoadCommandedAsync(member, cancellationToken).ConfigureAwait(false) ||
             await LoadCancellationBeforeSublot.HasOpenCancellationAsync(dbContext, demandId, cancellationToken)
                 .ConfigureAwait(false))
         {
@@ -748,7 +775,8 @@ public sealed class OnboardRecoveryCoordinator(
         // every cancellation request and the inbox keeps every submission ever made. The operation
         // session is written into the submission's own JSON, so the substring is a filter the database
         // can apply; which entries are the stop's is still decided by the parse below.
-        string operationSessionId = runtime.OperationSessionId;
+        string operationSessionId = stops.Current.OperationSessionId;
+        StopEntryAddress address = stops.EntryAddressOfCurrentStop(runtime.WorklistRevision);
         ProtocolInboxRow[] entries = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -756,7 +784,7 @@ public sealed class OnboardRecoveryCoordinator(
         foreach (ProtocolInboxRow entry in entries)
         {
             using JsonDocument document = JsonDocument.Parse(entry.RequestJson);
-            if (LoadCancellationBeforeSublot.IsEntryForStop(document.RootElement, runtime, demand.Sublot))
+            if (LoadCancellationBeforeSublot.IsEntryForStop(document.RootElement, address, demand.Sublot))
             {
                 forThisStop.Add(entry);
             }
@@ -783,15 +811,23 @@ public sealed class OnboardRecoveryCoordinator(
     }
 
     /// <summary>
-    /// Whether the journey's load was commanded: its SlotOperationCommand is queued, or a slot operation
-    /// exists for the demand. The command's id is assigned when the journey is created, so the id alone
-    /// says nothing.
+    /// Whether this demand's load was commanded: its SlotOperationCommand is queued, or a slot operation
+    /// exists for it. The command's id is assigned when the journey is created, so the id alone says nothing.
     /// </summary>
-    private async Task<bool> LoadCommandedAsync(JourneyRuntimeRow runtime, CancellationToken cancellationToken) =>
-        await dbContext.ProtocolOutbox.AsNoTracking()
-            .AnyAsync(row => row.MessageId == runtime.LoadCommandMessageId, cancellationToken).ConfigureAwait(false) ||
-        await dbContext.StationOperations.AsNoTracking()
-            .AnyAsync(row => row.DemandId == runtime.DemandId, cancellationToken).ConfigureAwait(false);
+    /// <remarks>
+    /// Asked about the demand named in the request rather than the journey's anchor (control-server#211): a stop
+    /// carrying several demands has a command per demand, and the anchor's says nothing about the one the operator
+    /// is cancelling. With one demand per journey the two are the same row.
+    /// </remarks>
+    private async Task<bool> LoadCommandedAsync(JourneyStopDemand member, CancellationToken cancellationToken)
+    {
+        string commandMessageId = member.Membership.LoadCommandMessageId;
+        string demandId = member.Demand.DemandId;
+        return await dbContext.ProtocolOutbox.AsNoTracking()
+                   .AnyAsync(row => row.MessageId == commandMessageId, cancellationToken).ConfigureAwait(false) ||
+               await dbContext.StationOperations.AsNoTracking()
+                   .AnyAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Whether the demand's journey runs on the vehicle a request came from. A demand with no journey is
@@ -1231,8 +1267,16 @@ public sealed class OnboardRecoveryCoordinator(
                     workflow.WorkflowId, stop.DemandId, stop.Stage.ToString(), stop.BlockReasonCode, null);
                 return;
             }
-            if (stop.Stage != JourneyRuntimeStage.AwaitingSublot ||
-                await LoadCommandedAsync(stop, cancellationToken).ConfigureAwait(false))
+            // 这条需求在这趟旅程里的归属：命令发没发、要结算哪一版录入请求，都挂在它身上（批次7-06，control-server#211）。
+            JourneyStopCursor stopCursor = await JourneyStopCursor
+                .LoadAsync(dbContext, stop, cancellationToken).ConfigureAwait(false);
+            JourneyStopDemand? cancelled = stopCursor.AllDemands
+                .SingleOrDefault(item => item.Demand.DemandId == workflow.DemandId);
+            // 阶段判的仍是「车还在取货停靠上装货」，而不再是「旅程恰好停在等录入」：一站几条需求逐条串行，第一条正在装
+            // 的时候第二条的取消结果照样该被受理。单需求下两者是同一批请求。
+            if (stop.Stage is not (JourneyRuntimeStage.AwaitingSublot or JourneyRuntimeStage.AwaitingLoadResult) ||
+                cancelled is null ||
+                await LoadCommandedAsync(cancelled, cancellationToken).ConfigureAwait(false))
             {
                 workflow.State = RecoveryWorkflowState.RecoveryRequired;
                 await KeepDemandAndJourneyBlockedAsync(
@@ -1240,7 +1284,13 @@ public sealed class OnboardRecoveryCoordinator(
                 return;
             }
             await new PickupStopTermination(dbContext)
-                .StageAsync(stop, workflow.DemandId, "CANCELLED_BY_OPERATOR", timeProvider.GetUtcNow(), cancellationToken)
+                .StageAsync(
+                    stop,
+                    stopCursor.CurrentSublotRequestMessageId(stop.WorklistRevision),
+                    workflow.DemandId,
+                    "CANCELLED_BY_OPERATOR",
+                    timeProvider.GetUtcNow(),
+                    cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -1255,6 +1305,8 @@ public sealed class OnboardRecoveryCoordinator(
         // other endings, not the vehicle's observedAt: the release has to sort after the server's own claim.
         JourneyRuntimeRow runtime = await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
             .SingleAsync(cancellationToken).ConfigureAwait(false);
+        JourneyStopCursor commandedStops = await JourneyStopCursor
+            .LoadAsync(dbContext, runtime, cancellationToken).ConfigureAwait(false);
         if (workflow.SlotOperationAttemptId is not null)
         {
             StationOperationRow? operation = await dbContext.StationOperations.SingleOrDefaultAsync(
@@ -1265,6 +1317,7 @@ public sealed class OnboardRecoveryCoordinator(
         await new PickupStopTermination(dbContext)
             .StageAsync(
                 runtime,
+                commandedStops.CurrentSublotRequestMessageId(runtime.WorklistRevision),
                 workflow.DemandId,
                 messageType switch
                 {

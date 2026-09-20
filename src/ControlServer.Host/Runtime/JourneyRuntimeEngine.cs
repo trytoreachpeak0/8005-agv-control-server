@@ -551,7 +551,7 @@ public sealed class JourneyRuntimeEngine(
                 // into every later session, where the peer refused it as a business id whose content
                 // had changed and tore the session down.
                 await store.SettleAnsweredCommandAsync(
-                    CurrentSublotRequestMessageId(runtime, stops), now, cancellationToken).ConfigureAwait(false);
+                    stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), now, cancellationToken).ConfigureAwait(false);
                 SetStage(runtime, JourneyRuntimeStage.AwaitingLoadResult, now);
                 break;
             case JourneyRuntimeStage.AwaitingLoadResult:
@@ -1149,17 +1149,18 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        long revision = WorklistRevisionAt(runtime.WorklistRevision, stops, stop);
-        long baseRevision = revision - DoneAtStop(stops, stop);
+        long revision = stops.WorklistRevisionAt(runtime.WorklistRevision, stop);
+        long baseRevision = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
         if (revision > baseRevision)
         {
             // 上一版：同一个停靠，偏移少一。
             await RetireSupersededSnapshotAsync(
-                WorklistMessageId(stop, revision - 1, baseRevision), cancellationToken).ConfigureAwait(false);
+                stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision - 1), cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await publisher.PublishCurrentStopWorklistAsync(
-            WorklistMessageId(stop, revision, baseRevision),
+            stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, revision),
             runtime.AgvId,
             session.SessionGeneration,
             Worklist(stop, outstanding, revision, stationDepartureDeadlineAt),
@@ -1181,16 +1182,17 @@ public sealed class JourneyRuntimeEngine(
             return;
         }
 
-        long revision = WorklistRevisionAt(runtime.WorklistRevision, stops, stop);
-        long baseRevision = revision - DoneAtStop(stops, stop);
+        long revision = stops.WorklistRevisionAt(runtime.WorklistRevision, stop);
+        long baseRevision = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
         if (revision > baseRevision)
         {
             await RetireSupersededSnapshotAsync(
-                SublotRequestMessageId(stop, revision - 1, baseRevision), cancellationToken).ConfigureAwait(false);
+                stops.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, revision - 1), cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await publisher.PublishSublotEntryRequestAsync(
-            SublotRequestMessageId(stop, revision, baseRevision),
+            stops.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, revision),
             runtime.AgvId,
             session.SessionGeneration,
             new SublotEntryRequest(
@@ -1496,6 +1498,7 @@ public sealed class JourneyRuntimeEngine(
         // 预筛用当前停靠的作业会话（control-server#208）。下面 AnswersTheStop 读的仍是旅程行上的同源副本：
         // 那个判定被 LoadCancellationBeforeSublot 与取消那条入站链共用，本票不碰那条链，所以它随多停靠一起搬（批次7-06）。
         string operationSessionId = stops.Current.OperationSessionId;
+        StopEntryAddress address = stops.EntryAddressOfCurrentStop(runtime.WorklistRevision);
         ProtocolInboxRow[] rows = await dbContext.ProtocolInbox.AsNoTracking()
             .Where(row => row.MessageType == "SublotSubmitted" && row.RequestJson.Contains(operationSessionId))
             .ToArrayAsync(cancellationToken).ConfigureAwait(false);
@@ -1508,7 +1511,7 @@ public sealed class JourneyRuntimeEngine(
             // acts only on an answer of the session it is serving, while the cancellation refuses on an
             // entry of any generation (control-server#116 review).
             bool answersThisStop = root.GetProperty("sessionGeneration").GetInt64() == session.SessionGeneration &&
-                                   LoadCancellationBeforeSublot.AnswersTheStop(root, runtime);
+                                   LoadCancellationBeforeSublot.AnswersTheStop(root, address);
             if (answersThisStop)
             {
                 answers.Add(row);
@@ -1759,7 +1762,7 @@ public sealed class JourneyRuntimeEngine(
                 demandId,
                 stops.Current.OperationSessionId,
                 new WireProblem(reasonCode, "payload.sublot", displayMessage),
-                WorklistRevisionAt(runtime.WorklistRevision, stops, stops.Current),
+                stops.WorklistRevisionAt(runtime.WorklistRevision, stops.Current),
                 enteredSublot),
             cancellationToken).ConfigureAwait(false);
         runtime.UpdatedAt = now;
@@ -2081,59 +2084,9 @@ public sealed class JourneyRuntimeEngine(
         journeyBase + stop.Sequence - 1;
 
     /// <summary>
-    /// 清单这条流在这个停靠上<b>此刻</b>发的是第几号（批次7-06，control-server#211）。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// 一个停靠上挂 N 条需求，清单就发 N 版：到站一版（N 条待做），此后每做完一条再发一版，做完最后一条不发——那时清单
-    /// 空了，车直接离站。所以号数 = 基准 + 前面每个停靠发过的版数 + <b>本停靠已做完的条数</b>。
-    /// </para>
-    /// <para>
-    /// <b>集合一变号就升，是这条算式自己保证的</b>（票面第 13 条）：清单项与录入请求的期待子批取的都是「本停靠还没做完
-    /// 的需求」，做完一条，集合少一条，偏移加一。<c>SublotEntryRequested</c> 的业务去重键是
-    /// <c>(OperationSessionId, WorklistRevision)</c>，同一个键下集合不许变——这条算式让「集合变了」与「键变了」
-    /// 成为同一件事，而不是两件要互相记得的事。
-    /// </para>
-    /// <para>
-    /// 单需求两停靠下：取货停靠一条需求、发一版，号数是基准；卸货停靠前面一版、号数是基准 +1。与批次7-03 的
-    /// <c>基准 + 序位 - 1</c> 逐字相同。
-    /// </para>
-    /// </remarks>
-    private static long WorklistRevisionAt(long journeyBase, JourneyStopCursor stops, JourneyStopRow stop) =>
-        journeyBase
-        + stops.Stops.Where(earlier => earlier.Sequence < stop.Sequence)
-            .Sum(earlier => WorklistVersionsOf(stops, earlier))
-        + DoneAtStop(stops, stop);
-
-    /// <summary>一个停靠上清单一共发几版：挂在它上面的需求有几条就几版，至少一版。</summary>
-    private static long WorklistVersionsOf(JourneyStopCursor stops, JourneyStopRow stop) =>
-        Math.Max(1, stops.AllAtStop(stop).Count);
-
-    private static long DoneAtStop(JourneyStopCursor stops, JourneyStopRow stop) =>
-        stops.AllAtStop(stop).Count(item => JourneyStopCursor.IsDoneAt(stop, item));
-
-    /// <summary>
-    /// 这个停靠上第 <paramref name="revision"/> 版清单的消息 id；录入请求同理，只是用途不同。
-    /// </summary>
-    /// <remarks>
-    /// <b>第一版用停靠行上的那一个</b>，后面的才派生。停靠行上的 id 是受理时从旅程行搬来的，单需求旅程只发一版，于是
-    /// 发出去的 id 与批次7-03 之前逐字相同——那是 <c>WirePin</c> 钉着的东西。派生用停靠 × 修订号当去重键
-    /// （不是 attempt，见 <c>outbox-message-id-unique</c> 那次教训）。
-    /// </remarks>
-    private static string WorklistMessageId(JourneyStopRow stop, long revision, long baseRevision) =>
-        revision == baseRevision
-            ? stop.WorklistMessageId
-            : JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "worklist");
-
-    private static string SublotRequestMessageId(JourneyStopRow stop, long revision, long baseRevision) =>
-        revision == baseRevision
-            ? stop.SublotRequestMessageId
-              ?? throw new InvalidDataException($"Stop '{stop.StopId}' asks for an entry but has no request id.")
-            : JourneyPlanBuilder.StableGuid($"{stop.StopId}|{revision}", "sublot-entry");
-
-    /// <summary>
-    /// 计划流在这一刻发的是第几号。它比上面那条多一张：派车时先发一张「车还在路上」的计划（CV-DEMAND-ACCEPT-TO-PICKUP），
-    /// 之后每到一个停靠再发一张。所以号数就是「到站几次」——派车时零次，取货到站一次，卸货到站两次。
+    /// 计划流在这一刻发的是第几号。它比车辆业务状态那条多一张：派车时先发一张「车还在路上」的计划
+    /// （CV-DEMAND-ACCEPT-TO-PICKUP），之后每到一个停靠再发一张。所以号数就是「到站几次」——派车时零次，
+    /// 取货到站一次，卸货到站两次。
     /// </summary>
     private static long PlanRevisionAt(long journeyBase, JourneyStopRow stop, bool arrivedAtStop) =>
         journeyBase + (arrivedAtStop ? stop.Sequence : stop.Sequence - 1);
@@ -2163,14 +2116,6 @@ public sealed class JourneyRuntimeEngine(
         stops.OpenStops.FirstOrDefault(stop => stop.Sequence > stops.Current.Sequence)
         ?? throw new InvalidDataException(
             $"Stop {stops.Current.StopId} is the last one; there is no next leg to depart on.");
-
-    /// <summary>当前停靠此刻这一版录入请求的消息 id。</summary>
-    private static string CurrentSublotRequestMessageId(JourneyRuntimeRow runtime, JourneyStopCursor stops)
-    {
-        JourneyStopRow stop = stops.Current;
-        long revision = WorklistRevisionAt(runtime.WorklistRevision, stops, stop);
-        return SublotRequestMessageId(stop, revision, revision - DoneAtStop(stops, stop));
-    }
 
     /// <summary>
     /// 这个停靠上有没有一条还没结的扫码前取消。
@@ -2235,13 +2180,13 @@ public sealed class JourneyRuntimeEngine(
             ids.Add(stop.PlanMessageId);
             // 清单与录入请求在一个停靠上可能发不止一版（批次7-06）：挂几条需求就有几版，每一版一个 id。全部枚举出来
             // ——少一个就是一条报文再也不补发，而这个集合的每一项在发件箱里不一定有行，多出来的项不会让任何东西发出去。
-            long baseRevision = WorklistRevisionAt(runtime.WorklistRevision, stops, stop) - DoneAtStop(stops, stop);
-            for (long offset = 0; offset < WorklistVersionsOf(stops, stop); offset++)
+            long baseRevision = stops.FirstWorklistRevisionAt(runtime.WorklistRevision, stop);
+            for (long offset = 0; offset < stops.WorklistVersionsOf(stop); offset++)
             {
-                ids.Add(WorklistMessageId(stop, baseRevision + offset, baseRevision));
+                ids.Add(stops.WorklistMessageIdAt(runtime.WorklistRevision, stop, baseRevision + offset));
                 if (stop.SublotRequestMessageId is not null)
                 {
-                    ids.Add(SublotRequestMessageId(stop, baseRevision + offset, baseRevision));
+                    ids.Add(stops.SublotRequestMessageIdAt(runtime.WorklistRevision, stop, baseRevision + offset));
                 }
             }
             if (stop.DepartureSafetyCheckMessageId is { } departureCheck)
@@ -2685,7 +2630,7 @@ public sealed class JourneyRuntimeEngine(
             // 终结的是<b>装失败的那一条</b>（批次7-06）。旅程还带着别的需求时，第二步（关闭旅程）不跑，下一轮回到
             // 当前停靠继续推进。
             await new PickupStopTermination(dbContext).StageAsync(
-                runtime, CurrentSublotRequestMessageId(runtime, stops), loading.Demand.DemandId, terminalReason, now,
+                runtime, stops.CurrentSublotRequestMessageId(runtime.WorklistRevision), loading.Demand.DemandId, terminalReason, now,
                 cancellationToken).ConfigureAwait(false);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

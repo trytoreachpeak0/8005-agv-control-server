@@ -20,6 +20,61 @@ internal static class JourneyMembershipSeed
     internal static JourneyDemandRow For(JourneyRuntimeRow journey) => Member(journey, journey.DemandId);
 
     /// <summary>
+    /// 受理会在旅程行旁边写下的全部：两个停靠与锚需求的归属（control-server#206、#211）。手写旅程行的夹具用它，
+    /// 否则造出来的是一个<b>没有停靠的旅程</b>——批次 7 之后那是库坏了，推进段与恢复协调器都会在读停靠时响亮地停下。
+    /// </summary>
+    /// <remarks>
+    /// 形状照 <c>SingleDemandJourneyShape</c>（它 internal 在基础设施程序集里，这边看不到），所以那边改了这边要跟。
+    /// <c>Batch7JourneyAcceptanceTests</c> 比对的是真受理写下的行，那才是两边一致的判据。
+    /// </remarks>
+    internal static void Seed(ControlServerDbContext context, JourneyRuntimeRow journey)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(journey);
+        context.Set<JourneyStopRow>().AddRange(
+            new JourneyStopRow
+            {
+                StopId = JourneyIdentity.PickupStopId(journey.JourneyId),
+                JourneyId = journey.JourneyId,
+                Sequence = 1,
+                StopRole = JourneyStopRoles.Pickup,
+                StationId = journey.PickupStationId,
+                StationRiotId = journey.PickupStationRiotId,
+                DispatchZone = journey.DispatchZone,
+                OperationSessionId = journey.OperationSessionId,
+                MovementLegId = journey.PickupMovementLegId,
+                UpperId = journey.PickupUpperId,
+                VehicleBusinessMessageId = journey.VehicleBusinessMessageId,
+                WorklistMessageId = journey.WorklistMessageId,
+                PlanMessageId = journey.PlanMessageId,
+                SublotRequestMessageId = journey.SublotRequestMessageId,
+                DepartureSafetyCheckMessageId = journey.PreDepartureSafetyCheckMessageId,
+                DepartureSafetyCheckId = journey.PreDepartureSafetyCheckId,
+                Status = JourneyStopStatuses.Pending,
+                CreatedAt = journey.CreatedAt
+            },
+            new JourneyStopRow
+            {
+                StopId = JourneyIdentity.UnloadStopId(journey.JourneyId),
+                JourneyId = journey.JourneyId,
+                Sequence = 2,
+                StopRole = JourneyStopRoles.Unload,
+                StationId = journey.GateStationId,
+                StationRiotId = journey.GateStationRiotId,
+                DispatchZone = journey.DispatchZone,
+                OperationSessionId = journey.OperationSessionId,
+                MovementLegId = journey.GateMovementLegId,
+                UpperId = journey.GateUpperId,
+                VehicleBusinessMessageId = journey.GateVehicleBusinessMessageId,
+                WorklistMessageId = journey.GateWorklistMessageId,
+                PlanMessageId = journey.GatePlanMessageId,
+                Status = JourneyStopStatuses.Pending,
+                CreatedAt = journey.CreatedAt
+            });
+        context.Set<JourneyDemandRow>().Add(For(journey));
+    }
+
+    /// <summary>
     /// A further demand in the same journey. Batch 7's tables allow it; nothing in the runtime creates one yet
     /// (control-server#208 and later), so tests that need a two-demand journey write it here. Its per-demand ids are
     /// its own; the anchor keeps the journey row's.
