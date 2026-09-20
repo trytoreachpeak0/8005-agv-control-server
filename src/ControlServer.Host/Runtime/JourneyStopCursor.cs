@@ -75,8 +75,15 @@ internal sealed class JourneyStopCursor
     /// 而不是接着用手上这一份——接着用会拿上一个停靠的 id 发报文，测试照绿，只有车上收到的东西不对。
     /// </para>
     /// <para>
-    /// 角色不再参与定位，但它仍是一道自检：<see cref="RoleOf"/> 把阶段映到角色，当前停靠的角色对不上就是推进段把
-    /// 旅程推到了一个与它所在停靠不相称的阶段。
+    /// 角色不再参与定位。<see cref="RoleOf"/> 把阶段映到角色，本来是想当一道自检用的——<b>而它今天没有任何调用点</b>
+    /// （批次7-06 查证，control-server#211），所以它不自检任何东西，只是一张表。
+    /// </para>
+    /// <para>
+    /// <b>那张表仍然是承重的</b>：`OnboardRecoveryCoordinator` 里在途取消那一段靠
+    /// <c>stop.Stage is not (AwaitingSublot or AwaitingLoadResult)</c> 保证自己只在取货停靠上走到，
+    /// 而「那两个阶段蕴含当前停靠是取货停靠」这件事，全仓只有这张表表达。改了它，那道护栏就失效，
+    /// 而在 <c>JourneyStopEntryRequestIdTests.TheStagesThatMeanAPickupStopAreTheOnesTheRecoveryGuardNames</c>
+    /// 之前，没有任何东西会因此变红。
     /// </para>
     /// </remarks>
     public JourneyStopRow Current => Stops.FirstOrDefault(IsOpen)

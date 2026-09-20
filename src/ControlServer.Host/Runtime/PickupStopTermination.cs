@@ -33,6 +33,21 @@ namespace ControlServer.Host.Runtime;
 /// whole journey. It is now the only code that sets a demand <c>Cancelled</c>.
 /// </para>
 /// <para>
+/// <b>上面那句「交接在 gate 也会发生」，在批次7-06（control-server#211）里有一段时间是一条没人处理的预告。</b>
+/// 那一票把终结时要结算的录入请求 id 从旅程行改成读<b>当前停靠行</b>（为了清单升版后结算到对的那一条），
+/// 而受理只给取货停靠写那一列——于是 gate 上的交接不是被处理，是抛 <c>InvalidDataException</c>，
+/// 一条人工介入的恢复路径就此卡死。同一票内修掉了，靠的是
+/// <see cref="JourneyStopCursor.CurrentSublotRequestMessageIdOrNone"/>：卸货停靠没有录入请求，
+/// 也就没有要结算的那一条。
+/// </para>
+/// <para>
+/// 所以那句话今天的身份是<b>说明</b>而不是警告，判据是
+/// <c>RecoveryStateMachineG2Tests.AFaultCargoHandoffAtTheUnloadStopEndsTheDemandLikeOneAtThePickup</c>。
+/// 留着这一段，是因为它记着一件值得记的事：<b>那句预告和它的反例住在两个不同的文件里</b>——
+/// 这里写着「gate 也会发生」，<c>JourneyRuntimeEngine</c> 里写着「今天只有取货停靠会走到这里」，
+/// 单看任何一句都只是普通说明，并排放着才是警报。
+/// </para>
+/// <para>
 /// <b>It stages the changes and does not save.</b> Every fact here has to commit together with the
 /// caller's own: a cancelled demand whose vehicle is still leased, or a free vehicle whose journey is
 /// still open, is exactly what a crash between two saves would leave behind. The caller saves once.

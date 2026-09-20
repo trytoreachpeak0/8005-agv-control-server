@@ -177,6 +177,34 @@ public sealed class JourneyStopEntryRequestIdTests
             .SingleAsync(row => row.MessageId == runtime.SublotRequestMessageId, token)).AcknowledgedAt);
     }
 
+    /// <summary>
+    /// 恢复路径那道阶段护栏点名的两个阶段，确实都意味着「车此刻在一个取货停靠上」。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>OnboardRecoveryCoordinator</c> 里在途取消那一段的护栏是
+    /// <c>stop.Stage is not (AwaitingSublot or AwaitingLoadResult)</c>。它之所以够，全靠「这两个阶段只在取货停靠上
+    /// 出现」——而这件事全仓只有 <see cref="JourneyStopCursor.RoleOf"/> 那张表表达，<b>那张表没有任何调用点</b>，
+    /// 在这条用例之前也没有任何东西读过它。改掉它，那道护栏静默失效，同一票里另一段就是因为类似的失效才抛的。
+    /// </para>
+    /// <para>
+    /// 两个方向都断：该是取货的五个阶段一个不少，该是卸货的两个也没有混进来。只断前者的话，
+    /// 一张把所有阶段都映成取货的表照样通过。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TheStagesThatMeanAPickupStopAreTheOnesTheRecoveryGuardNames()
+    {
+        Assert.Equal(JourneyStopRoles.Pickup, JourneyStopCursor.RoleOf(JourneyRuntimeStage.AwaitingSublot));
+        Assert.Equal(JourneyStopRoles.Pickup, JourneyStopCursor.RoleOf(JourneyRuntimeStage.AwaitingLoadResult));
+        Assert.Equal(JourneyStopRoles.Pickup, JourneyStopCursor.RoleOf(JourneyRuntimeStage.AwaitingPickupArrival));
+        Assert.Equal(JourneyStopRoles.Pickup, JourneyStopCursor.RoleOf(JourneyRuntimeStage.AwaitingStationDeparture));
+        Assert.Equal(JourneyStopRoles.Pickup, JourneyStopCursor.RoleOf(JourneyRuntimeStage.AwaitingDepartureSafety));
+
+        Assert.Equal(JourneyStopRoles.Unload, JourneyStopCursor.RoleOf(JourneyRuntimeStage.AwaitingGateArrival));
+        Assert.Equal(JourneyStopRoles.Unload, JourneyStopCursor.RoleOf(JourneyRuntimeStage.AwaitingUnloadResult));
+    }
+
     private static async Task<ControlServerDbContext> CreateContextAsync(SqliteConnection connection)
     {
         ControlServerDbContext context = new(new DbContextOptionsBuilder<ControlServerDbContext>()
