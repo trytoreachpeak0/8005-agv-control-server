@@ -16,14 +16,34 @@ THE RULE IS ONE AXIS: WHERE THE CLOSURE IS TAKEN.
     the same spot does find them, which is why this is invisible in review.
 
 Measured in evidence/l2/cs266-closure-capture/ (result-capture-grid.txt is the grid; every cell has
-a control that must come out non-empty):
+a control that must come out non-empty).
 
-    where the closure is taken  | file top-level name | $script: | $global: | outer function local
-    ----------------------------+---------------------+----------+----------+---------------------
-    at the FILE top level       | carried             | carried  | resolves | n/a
-    (.ps1 and .psm1 alike)      |                     |          |          |
-    inside a function body      | EMPTY               | EMPTY    | resolves | EMPTY
-    inside a nested scriptblock | EMPTY               | EMPTY    | resolves | EMPTY
+Every condition that was held fixed is IN the table rather than in prose around it. That is not
+tidiness: this rule was written wrongly four times, and three of those were a sentence that omitted
+the condition the experiment had held fixed. A column header is harder to forget than a caveat.
+
+                                | file top-level name     |          |          |
+                                | or the script's param() | $script: | $global: | outer fn local
+    where the closure is taken  |  & path  |  pwsh -File  |          |          | or param
+    ----------------------------+----------+--------------+----------+----------+---------------
+    at the FILE top level       | carried  | carried      | carried  | resolves | n/a
+    (.ps1 and .psm1 alike)      |          |              |          |          |
+    inside a function body      | EMPTY    | carried      | EMPTY    | resolves | EMPTY
+    inside a nested scriptblock | EMPTY    | carried      | EMPTY    | resolves | EMPTY
+
+    $script: and $global: do NOT fork by invocation mode -- both columns were measured and are
+    identical. Only the file's own top-level names and its param() differ, because `pwsh -File`
+    puts them in the global scope, where a lookup from anywhere still finds them.
+
+THIS GUARD JUDGES BY THE `& path` COLUMN, the stricter one, because that is how a scenario is run
+(Invoke-L2Scenario.ps1:1286, `& $scenarioPath -Context $context`). Static analysis cannot see how a
+file will be invoked, so on a script that is only ever run as `pwsh -File` -- which is how every
+self-check in test.yml runs -- a finding about a file top-level name would be wrong.
+
+How many sites that affects today: measured, zero. The .ps1 files under scripts/ hold 3 closure sites
+in total and NONE of them is taken below its file's top level, so the strict column and the lenient
+one cannot disagree anywhere in this repository yet. Re-measure before relying on that sentence; the
+finding's own Reason string carries the caveat so that whoever is flagged first reads it there.
 
 Three earlier write-ups of this same rule, all from this repository, were overturned by that grid.
 They are listed rather than deleted because each is a word or a sentence a reader arrives with:
@@ -147,6 +167,36 @@ function Get-VisibleNames {
 # every depth. That is exactly the shape the grid measures as EMPTY, and it left the guard blind to
 # a scenario that moves its probe into a helper function -- the cheapest edit there is, and the one
 # that reproduces control-server#203.
+# The file's own top-level assignments and param() names -- the ONE group whose answer depends on how
+# the file is invoked (carried under `pwsh -File`, empty under `& path`).
+#
+# THIS MUST NEVER FEED THE VISIBILITY DECISION. An earlier version of this module had a function of
+# almost this name that did, applied at every depth, and that is exactly the blind spot which let the
+# control-server#203 shape through. It exists only to make a finding's Reason string say the right
+# thing to whoever is flagged first.
+function Get-NamesOnlyVisibleUnderPwshFile {
+    param([System.Management.Automation.Language.ScriptBlockAst]$FileAst)
+
+    $names = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($a in $FileAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
+        $up = $a.Parent
+        $atTop = $true
+        while ($up -and $up -ne $FileAst) {
+            if ($up -is [System.Management.Automation.Language.FunctionDefinitionAst] -or
+                $up -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) { $atTop = $false; break }
+            $up = $up.Parent
+        }
+        if (-not $atTop) { continue }
+        foreach ($v in $a.Left.FindAll({ param($n) $n -is [System.Management.Automation.Language.VariableExpressionAst] }, $true)) {
+            $null = $names.Add($v.VariablePath.UserPath)
+        }
+    }
+    if ($FileAst.ParamBlock) {
+        foreach ($p in $FileAst.ParamBlock.Parameters) { $null = $names.Add($p.Name.VariablePath.UserPath) }
+    }
+    return , $names
+}
+
 function Get-EnclosingScope {
     param([System.Management.Automation.Language.Ast]$Node)
 
@@ -238,11 +288,18 @@ function Get-L2ClosureCaptureFindings {
             })
         }
         if ($unreachable.Count -gt 0) {
+            $reason = 'not in the scope the closure is taken in, so it is carried as $null; copy it into a local in this scope first'
+            # Only say this when it can actually apply to one of the names being reported. An
+            # unconditional caveat teaches the reader to skip the Reason field.
+            $pwshFileOnly = Get-NamesOnlyVisibleUnderPwshFile -FileAst $ast
+            if (@($unreachable | Where-Object { $pwshFileOnly.Contains($_) }).Count -gt 0) {
+                $reason += '. CAVEAT: this name is the file own top level, which IS carried when the file is run as `pwsh -File` and empty only when it is run through the call operator -- the form a scenario is run with. If this file is never invoked the second way, this finding does not apply; the grid is in evidence/l2/cs266-closure-capture/'
+            }
             $findings.Add([pscustomobject]@{
                 File   = $Path
                 Line   = $call.Extent.StartLineNumber
                 Names  = (@($unreachable | Sort-Object -Unique) -join ', ')
-                Reason = 'not in the scope the closure is taken in, so it is carried as $null; copy it into a local in this scope first'
+                Reason = $reason
             })
         }
     }

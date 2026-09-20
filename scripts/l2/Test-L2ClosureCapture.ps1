@@ -142,6 +142,22 @@ foreach ($f in $broken) {
     Add-Case "报: $($f.Case)" (($found.Count -ge 1) -and ($names -like "*$($f.Want)*")) "$($found.Count) 条: $names"
 }
 
+# ------------------------------------------- the caveat in the Reason string, both directions
+#
+# The guard judges by the strict column (`& path`). For a file's OWN top-level names that is an
+# assumption about how the file is invoked, and the person who gets flagged reads the Reason field,
+# not the README -- so the caveat has to be there, and only there. Asserting only that it appears
+# would pass an implementation that appends it to everything, which would train readers to skip it.
+$caveatApplies = @(Get-L2ClosureCaptureFindings -Path (Join-Path $scratch 'script-top-in-function.ps1'))
+Add-Case '告警带例外说明：被点名的是文件顶层名时' `
+    (@($caveatApplies | Where-Object { $_.Reason -like '*CAVEAT*' }).Count -ge 1) `
+    "$($caveatApplies.Count) 条，带 CAVEAT 的 $(@($caveatApplies | Where-Object { $_.Reason -like '*CAVEAT*' }).Count) 条"
+
+$caveatDoesNot = @(Get-L2ClosureCaptureFindings -Path (Join-Path $scratch 'nested.ps1'))
+Add-Case '告警不带例外说明：被点名的是外层函数的参数时' `
+    (($caveatDoesNot.Count -ge 1) -and (@($caveatDoesNot | Where-Object { $_.Reason -like '*CAVEAT*' }).Count -eq 0)) `
+    "$($caveatDoesNot.Count) 条，带 CAVEAT 的 $(@($caveatDoesNot | Where-Object { $_.Reason -like '*CAVEAT*' }).Count) 条"
+
 # ---------------------------------------------------------------- legal shapes: must NOT be flagged
 
 $legal = @(

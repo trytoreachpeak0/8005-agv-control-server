@@ -94,6 +94,24 @@ function Get-GridB {
     return $out
 }
 
+# E: 嵌套 scriptblock 内取闭包（函数体内再套一层普通 scriptblock）。这一行是补测的：
+# 原先表里这一格是按 B 行类推填的，而这一轮的教训正是不许类推。
+function Get-GridE {
+    $out = [ordered]@{}
+    $inner = {
+        $ownLocal = 'OWN'
+        $out2 = [ordered]@{}
+        $out2['E1 自己的局部（对照组，必须非空）'] = Show (Invoke-Elsewhere { $ownLocal }.GetNewClosure())
+        $out2['E2 文件顶层名（无限定）']           = Show (Invoke-Elsewhere { $topUnqualified }.GetNewClosure())
+        $out2['E3 $script: 限定读']              = Show (Invoke-Elsewhere { $script:topScript }.GetNewClosure())
+        $out2['E4 $global: 限定读']              = Show (Invoke-Elsewhere { $global:gv }.GetNewClosure())
+        $out2['E2c 同一处直接读（对照组）']        = Show $topUnqualified
+        return $out2
+    }
+    foreach ($kv in (& $inner).GetEnumerator()) { $out[$kv.Key] = $kv.Value }
+    return $out
+}
+
 $rowsA = [ordered]@{}
 $rowsA['A2 文件顶层名（无限定）'] = Show (Invoke-Elsewhere { $topUnqualified }.GetNewClosure())
 $rowsA['A3 $script: 限定读']     = Show (Invoke-Elsewhere { $script:topScript }.GetNewClosure())
@@ -104,6 +122,8 @@ $rowsA['A6 外层流水线的 $_']     = Show ((@(1..2 | ForEach-Object { Invoke
 foreach ($k in $rowsA.Keys) { "{0,-44} : {1}" -f $k, $rowsA[$k] }
 $rowsB = Get-GridB -Passed 'PARAM'
 foreach ($k in $rowsB.Keys) { "{0,-44} : {1}" -f $k, $rowsB[$k] }
+$rowsE = Get-GridE
+foreach ($k in $rowsE.Keys) { "{0,-44} : {1}" -f $k, $rowsE[$k] }
 $rowsC = Get-GridC
 foreach ($k in $rowsC.Keys) { "{0,-44} : {1}" -f $k, $rowsC[$k] }
 $rowsD = Get-GridD
@@ -116,7 +136,8 @@ foreach ($k in $rowsD.Keys) { "{0,-44} : {1}" -f $k, $rowsD[$k] }
 
 $pwshExe = (Get-Process -Id $PID).Path
 
-Emit "位置 A = 脚本自己的顶层   B = 脚本的函数体内   C = 模块的函数体内   D = 模块自己的顶层"
+Emit "位置 A = 脚本自己的顶层   B = 脚本的函数体内   E = 函数体内再套一层 scriptblock"
+Emit "     C = 模块的函数体内   D = 模块自己的顶层"
 Emit "EMPTY = 闭包读出来是空。带「对照组」的行必须非空，否则这一格的夹具本身就是坏的。"
 Emit ''
 Emit '######## 调法一：pwsh -File grid-sub.ps1（脚本顶层即全局作用域）'
@@ -128,7 +149,12 @@ Emit ''
 Emit '两种调法只在 B2 与 B5 上不同：pwsh -File 时脚本顶层名落进全局作用域，函数体内的闭包'
 Emit '于是也读得到；用 & 调时脚本有自己的作用域，读不到。守卫按 & 这一种判，因为场景是这么跑的。'
 
-Set-Content -LiteralPath $OutputPath -Value $lines -Encoding utf8NoBOM
+# LF, not Set-Content's CRLF: .gitattributes gives evidence/**/*.txt eol=lf, and a rerun that flips
+# every line ending back to CRLF shows up as a whole-file diff that hides what actually changed.
+[System.IO.File]::WriteAllText(
+    ([System.IO.Path]::GetFullPath($OutputPath, $PWD.ProviderPath)),
+    (($lines -join "`n") + "`n"),
+    (New-Object System.Text.UTF8Encoding $false))
 Write-Host ''
 Write-Host "已写入 $OutputPath"
 Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
