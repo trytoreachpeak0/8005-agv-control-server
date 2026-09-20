@@ -115,6 +115,21 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -File ./scripts/Test-G3EvidenceLocation.ps1
 
+      # About 12 seconds, most of it scanning the 123 scripts. It is the other half of the
+      # "probe closures resolve" step further up (they are not adjacent): that one catches a closure
+      # whose COMMAND names do not resolve, this one a closure whose VARIABLES come back $null. Both
+      # surface as a criterion that can never be satisfied, so neither is redundant
+      # (control-server#266).
+      #
+      # It is two-sided on purpose, and both sides have now caught something. An early version flagged
+      # 0 of the repository's 23 working sites AND 0 of 3 broken fixtures -- and the 0-of-23 on its own
+      # read as success. Review then found the opposite failure: the guard flagged every $global: read,
+      # which is a false positive by construction, and no fixture could have caught it because every
+      # qualified-read fixture used $script:.
+      - name: L2 scenario self-check (closure variable capture)
+        shell: pwsh
+        run: pwsh -NoProfile -File ./scripts/l2/Test-L2ClosureCapture.ps1
+
       # Exit code is the contract — the guest is zh-CN and prints 已通过! not
       # Passed!, so no step here may match on English console text.
       - name: Test

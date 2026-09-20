@@ -1,0 +1,66 @@
+位置 A = 脚本自己的顶层   B = 脚本的函数体内   E = 函数体内再套一层 scriptblock
+     C = 模块的函数体内   D = 模块自己的顶层
+EMPTY = 闭包读出来是空。带「对照组」的行必须非空，否则这一格的夹具本身就是坏的。
+
+######## 调法一：pwsh -File grid-sub.ps1（脚本顶层即全局作用域）
+A2 文件顶层名（无限定）                                : TOP-UNQ
+A3 $script: 限定读                              : TOP-SCRIPT
+A4 $global: 限定读                              : GLOBAL
+A5 脚本参数 $Context                             : CTX
+A6 外层流水线的 $_                                 : 1,2
+B1 自己的局部（对照组，必须非空）                           : OWN
+B1p 本函数参数（对照组）                               : PARAM
+B2 文件顶层名（无限定）                                : TOP-UNQ
+B2c 同一处直接读（对照组）                              : TOP-UNQ
+B3 $script: 限定读                              : EMPTY
+B4 $global: 限定读                              : GLOBAL
+B5 脚本参数 $Context                             : CTX
+B6 外层流水线的 $_                                 : ,
+B7 闭包体内部的 ForEach-Object 读 $_                : v1,v2
+B8 foreach 语句的循环变量                           : i1
+B9 取闭包之后才赋值                                  : EMPTY
+E1 自己的局部（对照组，必须非空）                           : OWN
+E2 文件顶层名（无限定）                                : TOP-UNQ
+E3 $script: 限定读                              : EMPTY
+E4 $global: 限定读                              : GLOBAL
+E2c 同一处直接读（对照组）                              : TOP-UNQ
+C1 自己的局部（对照组，必须非空）                           : OWN
+C2 模块顶层名（无限定）                                : EMPTY
+C3 $script: 限定读                              : EMPTY
+C4 $global: 限定读                              : GLOBAL
+C5 外层流水线的 $_                                 : ,
+D2 模块顶层名（无限定）                                : MOD-TOP-UNQ
+D3 $script: 限定读                              : MOD-TOP-SCRIPT
+
+######## 调法二：父脚本用调用运算符 & 跑它（Invoke-L2Scenario 调场景的方式）
+A2 文件顶层名（无限定）                                : TOP-UNQ
+A3 $script: 限定读                              : TOP-SCRIPT
+A4 $global: 限定读                              : GLOBAL
+A5 脚本参数 $Context                             : CTX
+A6 外层流水线的 $_                                 : ,
+B1 自己的局部（对照组，必须非空）                           : OWN
+B1p 本函数参数（对照组）                               : PARAM
+B2 文件顶层名（无限定）                                : EMPTY
+B2c 同一处直接读（对照组）                              : TOP-UNQ
+B3 $script: 限定读                              : EMPTY
+B4 $global: 限定读                              : GLOBAL
+B5 脚本参数 $Context                             : EMPTY
+B6 外层流水线的 $_                                 : ,
+B7 闭包体内部的 ForEach-Object 读 $_                : v1,v2
+B8 foreach 语句的循环变量                           : i1
+B9 取闭包之后才赋值                                  : EMPTY
+E1 自己的局部（对照组，必须非空）                           : OWN
+E2 文件顶层名（无限定）                                : EMPTY
+E3 $script: 限定读                              : EMPTY
+E4 $global: 限定读                              : GLOBAL
+E2c 同一处直接读（对照组）                              : TOP-UNQ
+C1 自己的局部（对照组，必须非空）                           : OWN
+C2 模块顶层名（无限定）                                : EMPTY
+C3 $script: 限定读                              : EMPTY
+C4 $global: 限定读                              : GLOBAL
+C5 外层流水线的 $_                                 : ,
+D2 模块顶层名（无限定）                                : MOD-TOP-UNQ
+D3 $script: 限定读                              : MOD-TOP-SCRIPT
+
+两种调法只在 B2 与 B5 上不同：pwsh -File 时脚本顶层名落进全局作用域，函数体内的闭包
+于是也读得到；用 & 调时脚本有自己的作用域，读不到。守卫按 & 这一种判，因为场景是这么跑的。
