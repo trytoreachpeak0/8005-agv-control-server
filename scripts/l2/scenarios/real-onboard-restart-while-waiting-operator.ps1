@@ -56,6 +56,9 @@ $assertions.Add(
 # --- 2. 进程没了；操作员照常放货、关门 ---------------------------------------------------------------------------
 
 $sessionBefore = Get-L2RealSession $connection $Context.AgvId
+# 杀之前的两个基线：服务端收下过多少条报文，以及旅程运行时转到第几轮。下面两条都要用到。
+$inboxBefore = Get-L2RealCount $connection 'SELECT COUNT(*) AS Total FROM ProtocolInbox'
+$roundsBefore = [long]$Context.Riot.Snapshot().body.mapStationReads
 & $Context.StopComponent 'onboard-hmi'
 
 # 进程没了之后服务端一个字都没收到：结果只可能在重启之后才来，否则下面的判据证的就不是重启。
@@ -68,28 +71,40 @@ $sessionBefore = Get-L2RealSession $connection $Context.AgvId
 # 而这条场景的 setup 是纯真装置、没有协议故障代理，看不到连接关闭。所以等的是这条判据真正需要的那个
 # 事实本身——**服务端不会再往收件箱里写东西了**。车载端进程已经没了，不可能再发；收件箱行数稳定下来，
 # 就意味着它在死前发出的一切都已经落库。余量按数量级取：一条报文从读到落库是毫秒级的事。
+# 光有「行数不再增加」是不够的：**服务端自己卡住时，行数一样不增加**（在等锁、线程池饿死、正在重连），
+# 而那不是「它发出的一切都落库了」，是「什么都没在处理」——两种状态含义相反，弱判据分不开。所以再要两件事：
+#   - 收件箱行数不少于杀之前的基线。杀之前场景刚断言过车载端开了锁、在等操作员，所以那个基线本身就代表
+#     「握手与这次装货的报文都已经收到」，比写死一个数字硬。
+#   - 等待期间旅程运行时至少又转了两轮（假 RIoT 的 mapStationReads，与 Wait-L2Iterations 同一个计数）。
+#     这一条才是把「服务端在正常跑，但确实没有新报文进来」与「服务端卡住了所以不写」分开的那一条。
 $inboxSettleFor = [TimeSpan]::FromSeconds(2)
+$settleRounds = 2
 $inboxCount = -1
 $inboxStableSince = [DateTimeOffset]::UtcNow
-$settled = Wait-L2RealOrLast -Description 'the server stopped writing to its inbox after the onboard process went away' `
+$settled = Wait-L2RealOrLast -Description 'the server kept running yet stopped writing to its inbox after the onboard process went away' `
     -Journal $journal -Criterion 'inbox-settled' -TimeoutSeconds 60 `
     -Probe {
         $now = [DateTimeOffset]::UtcNow
         $count = Get-L2RealCount $connection 'SELECT COUNT(*) AS Total FROM ProtocolInbox'
         if ($count -ne $script:inboxCount) { $script:inboxCount = $count; $script:inboxStableSince = $now }
-        [pscustomobject]@{ Count = $count; StableFor = $now - $script:inboxStableSince }
+        [pscustomobject]@{
+            Count     = $count
+            StableFor = $now - $script:inboxStableSince
+            Rounds    = [long]$Context.Riot.Snapshot().body.mapStationReads - $roundsBefore
+        }
     } `
-    -Until { param($v) $v.StableFor -ge $inboxSettleFor }
+    -Until { param($v) $v.StableFor -ge $inboxSettleFor -and $v.Rounds -ge $settleRounds }
 $settledText = if ($null -eq $settled) { '(收件箱读不到)' } else {
-    "收件箱 $($settled.Count) 行，稳定 $([math]::Round($settled.StableFor.TotalSeconds, 1)) s" }
-$journal.Note("The onboard process is gone and the server's inbox settled: $settledText.")
+    "收件箱 $($settled.Count) 行（杀前 $inboxBefore），稳定 $([math]::Round($settled.StableFor.TotalSeconds, 1)) s，其间运行时转了 $($settled.Rounds) 轮" }
+$journal.Note("The onboard process is gone and the server's inbox settled while the runtime kept turning: $settledText.")
 
 $resultsWhileDown = Get-L2RealCount $connection "SELECT COUNT(*) AS Total FROM OperationResults WHERE SlotOperationAttemptId = '$attemptId'"
 $statusWhileDown = Get-L2RealScalar $connection "SELECT Status AS Value FROM StationOperations WHERE SlotOperationAttemptId = '$attemptId'"
 $assertions.Add(
-    'L2-RW-02', '车载端退出时没有留下结果：等服务端不再往收件箱写东西之后（它在死前发出的一切都已落库），OperationResults 0 行，装货操作仍是 Prepared',
-    ($null -ne $settled -and $settled.StableFor -ge $inboxSettleFor -and $resultsWhileDown -eq 0 -and $statusWhileDown -eq 'Prepared'),
-    "收件箱稳定 ≥ $($inboxSettleFor.TotalSeconds) s / 0 行 / Prepared",
+    'L2-RW-02', "车载端退出时没有留下结果：服务端仍在转（运行时又转过 $settleRounds 轮以上）而收件箱不再增长、行数不少于杀之前，此时 OperationResults 0 行，装货操作仍是 Prepared",
+    ($null -ne $settled -and $settled.StableFor -ge $inboxSettleFor -and $settled.Rounds -ge $settleRounds -and
+        $settled.Count -ge $inboxBefore -and $resultsWhileDown -eq 0 -and $statusWhileDown -eq 'Prepared'),
+    "收件箱 $inboxBefore 行以上且稳定 $($inboxSettleFor.TotalSeconds) s 以上 / 运行时 $settleRounds 轮以上 / 0 行 / Prepared",
     "$settledText / $resultsWhileDown 行 / $statusWhileDown")
 
 $journal.Note("While the onboard is down the operator loads slot $slot and closes it.")
