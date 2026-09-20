@@ -505,6 +505,7 @@ jobs:
               @{ Name = 'real-onboard-durable-ack-lost';                      Runs = 3 }
               @{ Name = 'real-onboard-expected-action-overdue';               Runs = 3 }
               @{ Name = 'real-onboard-restart-with-open-recovery-session';    Runs = 1 }
+              @{ Name = 'real-onboard-restart-after-recovery-session-opened'; Runs = 1 }
           )
 
           # Registered before anything can fail, so the upload step always has a path.
