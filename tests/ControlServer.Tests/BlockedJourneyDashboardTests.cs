@@ -349,6 +349,7 @@ public sealed class BlockedJourneyDashboardTests
         await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         using JsonDocument fact = await ReadAsync(database);
+        ZeroChangePin.AssertTextMatches(fact.RootElement.GetRawText(), "dashboard-blocked-journeys-admission-session-down");
         Dictionary<string, JsonElement> byDemand = fact.RootElement.GetProperty("journeys").EnumerateArray()
             .ToDictionary(journey => journey.GetProperty("demandId").GetString()!, StringComparer.Ordinal);
 
@@ -442,6 +443,7 @@ public sealed class BlockedJourneyDashboardTests
         await database.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         using JsonDocument fact = await ReadAsync(database);
+        ZeroChangePin.AssertTextMatches(fact.RootElement.GetRawText(), "dashboard-blocked-journeys-own-move-order");
         Dictionary<string, JsonElement> byDemand = fact.RootElement.GetProperty("journeys").EnumerateArray()
             .ToDictionary(journey => journey.GetProperty("demandId").GetString()!, StringComparer.Ordinal);
 

@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 6a647d6d..05772e63 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -227,7 +227,7 @@ public sealed class OnboardRecoveryCoordinator(
+         workflow.UpdatedAt = timeProvider.GetUtcNow();
+         JourneyRuntimeRow? runtime = workflow.DemandId is null
+             ? null
+-            : await DemandJourneyLookup.JourneyOf(dbContext, workflow.DemandId)
++            : await DemandJourneyLookup.JourneyOf(dbContext, "cs207-site-mutant")
+                 .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+         if (runtime is not null && reconciled)
+         {

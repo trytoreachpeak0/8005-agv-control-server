@@ -4220,6 +4220,7 @@ public sealed class RecoveryStateMachineG2Tests
             Assert.Equal(reasonCode, runtime.BlockReasonCode);
             Assert.NotNull((await context.OrderIntents.AsNoTracking()
                 .SingleAsync(row => row.UpperId == "UPPER-PICKUP", token)).VehicleOccupancyReleasedAt);
+            await ZeroChangePin.AssertMatchesAsync(context, "commanded-ending-" + messageType);
 
             OrderIntentRow next = Intent("next-pickup-leg", "UPPER-NEXT-PICKUP", "TO_PICKUP", 11);
             context.OrderIntents.Add(next);
@@ -5300,7 +5301,10 @@ public sealed class RecoveryStateMachineG2Tests
         context.OrderIntents.AddRange(
             Intent("pickup-leg", "UPPER-PICKUP", "TO_PICKUP", 11),
             Intent("gate-leg", "UPPER-GATE", "TO_GATE", 22));
-        context.JourneyRuntimes.Add(Runtime());
+        JourneyRuntimeRow runtime = Runtime();
+        context.JourneyRuntimes.Add(runtime);
+        // control-server#207: acceptance writes the demand's membership beside the journey row.
+        context.Set<JourneyDemandRow>().Add(JourneyMembershipSeed.For(runtime));
         context.StationOperations.Add(new StationOperationRow
         {
             SlotOperationAttemptId = AttemptId,

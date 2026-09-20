@@ -1,0 +1,13 @@
+diff --git a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+index 6a647d6d..49d5f70c 100644
+--- a/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
++++ b/src/ControlServer.Host/Transport/OnboardRecoveryCoordinator.cs
+@@ -729,7 +729,7 @@ public sealed class OnboardRecoveryCoordinator(
+     {
+         AcceptedDemandRow? demand = await dbContext.AcceptedDemands.AsNoTracking()
+             .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+-        JourneyRuntimeRow? runtime = await DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
++        JourneyRuntimeRow? runtime = await DemandJourneyLookup.JourneyOf(dbContext, "cs207-site-mutant").AsNoTracking()
+             .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+         if (demand?.Status != DemandExecutionStatus.Accepted ||
+             runtime?.Stage != JourneyRuntimeStage.AwaitingSublot ||

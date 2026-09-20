@@ -59,6 +59,7 @@ public sealed class JourneyRuntimeWorkerLoadDeadlineTests
             .ToArrayAsync(TestContext.Current.CancellationToken));
         Assert.Contains(fixture.EngineLog.Entries, entry =>
             entry.Level == LogLevel.Warning && entry.Message.Contains("CANCELLED_BY_STATION_TIMEOUT"));
+        await ZeroChangePin.AssertMatchesAsync(fixture.Context, "determinate-load-failure");
     }
 
     /// <summary>

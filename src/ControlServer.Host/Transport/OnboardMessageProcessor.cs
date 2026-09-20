@@ -978,8 +978,8 @@ public sealed partial class OnboardMessageProcessor(
     /// </summary>
     private async Task<OperationResultReceipt> ReceiptAsync(string demandId, CancellationToken cancellationToken)
     {
-        JourneyRuntimeRow? journey = await dbContext.JourneyRuntimes.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.DemandId == demandId, cancellationToken).ConfigureAwait(false);
+        JourneyRuntimeRow? journey = await DemandJourneyLookup.JourneyOf(dbContext, demandId).AsNoTracking()
+            .SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         return new OperationResultReceipt(
             timeProvider.GetUtcNow(),
             journey is null

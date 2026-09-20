@@ -1,0 +1,67 @@
+Test run for C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\bin\Debug\net8.0\win-x64\ControlServer.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.11.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:31.79]     ControlServer.Tests.Batch7DemandTerminationTests.EndingOneDemandOfTwoLeavesTheJourneyOpenItsOccupanciesHeldAndTheOtherDemandUntouched [FAIL]
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.EndingOneDemandOfTwoLeavesTheJourneyOpenItsOccupanciesHeldAndTheOtherDemandUntouched [1 s]
+  Error Message:
+   Assert.Equal() Failure: Collections differ at index 0
+                                       ↓ (pos 83)
+Expected: ···"ration=1|BlockReasonCode=NULL|BlockReasonSince=NUL"···
+Actual:   ···"ration=1|BlockReasonCode='CANCELLED_BY_OPERATOR'|B"···
+                                       ↑ (pos 83)
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandTerminationTests.EndingOneDemandOfTwoLeavesTheJourneyOpenItsOccupanciesHeldAndTheOtherDemandUntouched() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 45
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndingOneDemandOfTwoLeavesTheJourneyOpenItsOccupanciesHeldAndTheOtherDemandUntouched() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 46
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:32.85]     ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "UNKNOWN") [FAIL]
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "UNKNOWN") [1 s]
+  Error Message:
+   Assert.NotEqual() Failure: Values are equal
+Expected: Not Completed
+Actual:       Completed
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandTerminationTests.AssertOccupanciesHeldAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 343
+   at ControlServer.Tests.Batch7DemandTerminationTests.AssertOccupanciesHeldAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 346
+   at ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(String overallOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 151
+   at ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(String overallOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 151
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:33.51]     ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "FAILED") [FAIL]
+[xUnit.net 00:00:34.38]     ControlServer.Tests.Batch7DemandTerminationTests.ARepeatedEndingNeitherEndsTheJourneyEarlyNorReleasesAnythingASecondTime [FAIL]
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(overallOutcome: "FAILED") [657 ms]
+  Error Message:
+   Assert.NotEqual() Failure: Values are equal
+Expected: Not Completed
+Actual:       Completed
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandTerminationTests.AssertOccupanciesHeldAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 343
+   at ControlServer.Tests.Batch7DemandTerminationTests.AssertOccupanciesHeldAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 346
+   at ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(String overallOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 151
+   at ControlServer.Tests.Batch7DemandTerminationTests.AFailedOrUnknownUnloadResultOfTheLastDemandReleasesNothing(String overallOutcome) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 151
+--- End of stack trace from previous location ---
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.ARepeatedEndingNeitherEndsTheJourneyEarlyNorReleasesAnythingASecondTime [840 ms]
+  Error Message:
+   Assert.NotEqual() Failure: Values are equal
+Expected: Not Completed
+Actual:       Completed
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandTerminationTests.AssertOccupanciesHeldAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 343
+   at ControlServer.Tests.Batch7DemandTerminationTests.AssertOccupanciesHeldAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 346
+   at ControlServer.Tests.Batch7DemandTerminationTests.ARepeatedEndingNeitherEndsTheJourneyEarlyNorReleasesAnythingASecondTime() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 74
+   at ControlServer.Tests.Batch7DemandTerminationTests.ARepeatedEndingNeitherEndsTheJourneyEarlyNorReleasesAnythingASecondTime() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 79
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:35.97]     ControlServer.Tests.Batch7DemandTerminationTests.EndingTheLastDemandClosesTheJourneyAndReleasesAllThreeOccupanciesTogether [FAIL]
+  Failed ControlServer.Tests.Batch7DemandTerminationTests.EndingTheLastDemandClosesTheJourneyAndReleasesAllThreeOccupanciesTogether [835 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 2026-09-19T09:07:00.0000000+00:00
+Actual:   2026-09-19T09:05:00.0000000+00:00
+  Stack Trace:
+     at ControlServer.Tests.Batch7DemandTerminationTests.AssertClosedAtAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime, DateTimeOffset closedAt, String reasonCode) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 359
+   at ControlServer.Tests.Batch7DemandTerminationTests.AssertClosedAtAsync(Batch7JourneyFixture fixture, JourneyRuntimeRow runtime, DateTimeOffset closedAt, String reasonCode) in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 363
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndingTheLastDemandClosesTheJourneyAndReleasesAllThreeOccupanciesTogether() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 58
+   at ControlServer.Tests.Batch7DemandTerminationTests.EndingTheLastDemandClosesTheJourneyAndReleasesAllThreeOccupanciesTogether() in C:\Users\szy\Desktop\8005-workspace-v2\worktrees\b7-02-8005-agv-control-server\tests\ControlServer.Tests\Batch7DemandTerminationTests.cs:line 58
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     5, Passed:    17, Skipped:     0, Total:    22, Duration: 31 s - ControlServer.Tests.dll (net8.0)

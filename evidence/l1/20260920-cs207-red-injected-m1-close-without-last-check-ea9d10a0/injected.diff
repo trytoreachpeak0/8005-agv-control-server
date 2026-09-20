@@ -1,0 +1,14 @@
+diff --git a/src/ControlServer.Host/Runtime/PickupStopTermination.cs b/src/ControlServer.Host/Runtime/PickupStopTermination.cs
+index 80b1a4f0..d73fd07b 100644
+--- a/src/ControlServer.Host/Runtime/PickupStopTermination.cs
++++ b/src/ControlServer.Host/Runtime/PickupStopTermination.cs
+@@ -83,8 +83,7 @@ public sealed class PickupStopTermination(ControlServerDbContext dbContext)
+         ArgumentException.ThrowIfNullOrWhiteSpace(reasonCode);
+ 
+         await StageDemandTerminationAsync(demandId, cancellationToken).ConfigureAwait(false);
+-        if (await DemandJourneyLookup.IsLastOpenDemandAsync(dbContext, runtime.JourneyId, demandId, cancellationToken)
+-                .ConfigureAwait(false))
++        if (true)
+         {
+             await StageJourneyClosureAsync(runtime, reasonCode, endedAt, cancellationToken).ConfigureAwait(false);
+         }
